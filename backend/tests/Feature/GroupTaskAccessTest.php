@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\AttendanceRecord;
+use App\Models\EmployeeWorkInfo;
 use App\Models\Group;
 use App\Models\Organization;
 use App\Models\Task;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -218,6 +221,24 @@ class GroupTaskAccessTest extends TestCase
             ->assertJsonPath('groups.0.id', $digitalGroup->id);
     }
 
+    public function test_admin_cannot_assign_employee_to_multiple_groups(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
+
+        $admin = $this->createUser($organization, 'Admin', 'admin@carevance.test', 'admin');
+        $employee = $this->createUser($organization, 'Employee', 'employee@carevance.test', 'employee');
+
+        $operationsGroup = $this->createGroup($organization, 'Operations');
+        $digitalGroup = $this->createGroup($organization, 'Digital Marketing');
+
+        $this->putJson("/api/users/{$employee->id}", [
+            'group_ids' => [$operationsGroup->id, $digitalGroup->id],
+        ], $this->apiHeadersFor($admin))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('group_ids')
+            ->assertJsonPath('errors.group_ids.0', 'Managers and employees can belong to only one group at a time.');
+    }
+
     public function test_manager_cannot_reassign_another_manager_group_membership(): void
     {
         $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
@@ -234,9 +255,124 @@ class GroupTaskAccessTest extends TestCase
         $this->putJson("/api/users/{$targetManager->id}", [
             'group_ids' => [$digitalGroup->id],
         ], $this->apiHeadersFor($actingManager))
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('group_ids')
-            ->assertJsonPath('errors.group_ids.0', 'You are not allowed to assign this role.');
+            ->assertForbidden();
+    }
+
+    public function test_manager_only_sees_employees_from_their_own_group(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-visible-users']);
+
+        $manager = $this->createUser($organization, 'Group Manager', 'manager-visible@carevance.test', 'manager');
+        $sameGroupEmployee = $this->createUser($organization, 'Same Group Employee', 'same-group@carevance.test', 'employee');
+        $otherGroupEmployee = $this->createUser($organization, 'Other Group Employee', 'other-group@carevance.test', 'employee');
+
+        $digitalGroup = $this->createGroup($organization, 'Digital Marketing');
+        $itGroup = $this->createGroup($organization, 'IT');
+
+        $manager->groups()->sync([$digitalGroup->id]);
+        $sameGroupEmployee->groups()->sync([$digitalGroup->id]);
+        $otherGroupEmployee->groups()->sync([$itGroup->id]);
+
+        $response = $this->getJson('/api/users', $this->apiHeadersFor($manager))
+            ->assertOk();
+
+        $returnedIds = collect($response->json())->pluck('id')->sort()->values()->all();
+
+        $this->assertSame([$manager->id, $sameGroupEmployee->id], $returnedIds);
+        $this->getJson("/api/users/{$sameGroupEmployee->id}", $this->apiHeadersFor($manager))->assertOk();
+        $this->getJson("/api/users/{$otherGroupEmployee->id}", $this->apiHeadersFor($manager))->assertForbidden();
+    }
+
+    public function test_assigning_manager_to_group_syncs_employee_reporting_manager(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-reporting-sync']);
+
+        $admin = $this->createUser($organization, 'Admin', 'admin-sync@carevance.test', 'admin');
+        $manager = $this->createUser($organization, 'Manager', 'manager-sync@carevance.test', 'manager');
+        $employee = $this->createUser($organization, 'Employee', 'employee-sync@carevance.test', 'employee');
+
+        $operationsGroup = $this->createGroup($organization, 'Operations');
+
+        $this->putJson("/api/users/{$employee->id}", [
+            'group_ids' => [$operationsGroup->id],
+        ], $this->apiHeadersFor($admin))->assertOk();
+
+        $this->putJson("/api/users/{$manager->id}", [
+            'group_ids' => [$operationsGroup->id],
+        ], $this->apiHeadersFor($admin))->assertOk();
+
+        $workInfo = EmployeeWorkInfo::query()
+            ->where('organization_id', $organization->id)
+            ->where('user_id', $employee->id)
+            ->first();
+
+        $this->assertNotNull($workInfo);
+        $this->assertSame($operationsGroup->id, (int) $workInfo->report_group_id);
+        $this->assertSame($manager->id, (int) $workInfo->reporting_manager_id);
+    }
+
+    public function test_manager_attendance_report_only_includes_own_group_employees(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-attendance-scope']);
+
+        $manager = $this->createUser($organization, 'Group Manager', 'manager-attendance@carevance.test', 'manager');
+        $sameGroupEmployee = $this->createUser($organization, 'Same Group Employee', 'same-attendance@carevance.test', 'employee');
+        $otherGroupEmployee = $this->createUser($organization, 'Other Group Employee', 'other-attendance@carevance.test', 'employee');
+
+        $digitalGroup = $this->createGroup($organization, 'Digital Marketing');
+        $itGroup = $this->createGroup($organization, 'IT');
+
+        $manager->groups()->sync([$digitalGroup->id]);
+        $sameGroupEmployee->groups()->sync([$digitalGroup->id]);
+        $otherGroupEmployee->groups()->sync([$itGroup->id]);
+
+        AttendanceRecord::create([
+            'organization_id' => $organization->id,
+            'user_id' => $sameGroupEmployee->id,
+            'attendance_date' => Carbon::parse('2026-04-22')->toDateString(),
+            'status' => 'present',
+            'check_in_at' => Carbon::parse('2026-04-22 09:00:00'),
+            'check_out_at' => Carbon::parse('2026-04-22 18:00:00'),
+            'worked_seconds' => 8 * 3600,
+        ]);
+
+        AttendanceRecord::create([
+            'organization_id' => $organization->id,
+            'user_id' => $otherGroupEmployee->id,
+            'attendance_date' => Carbon::parse('2026-04-22')->toDateString(),
+            'status' => 'present',
+            'check_in_at' => Carbon::parse('2026-04-22 09:15:00'),
+            'check_out_at' => Carbon::parse('2026-04-22 18:15:00'),
+            'worked_seconds' => 8 * 3600,
+        ]);
+
+        $response = $this->getJson('/api/reports/attendance?start_date=2026-04-22&end_date=2026-04-22', $this->apiHeadersFor($manager))
+            ->assertOk();
+
+        $returnedIds = collect($response->json('data'))->pluck('user.id')->sort()->values()->all();
+        $this->assertSame([$sameGroupEmployee->id], $returnedIds);
+    }
+
+    public function test_manager_overall_report_only_includes_own_group_employees(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-overall-scope']);
+
+        $manager = $this->createUser($organization, 'Group Manager', 'manager-overall@carevance.test', 'manager');
+        $sameGroupEmployee = $this->createUser($organization, 'Same Group Employee', 'same-overall@carevance.test', 'employee');
+        $otherGroupEmployee = $this->createUser($organization, 'Other Group Employee', 'other-overall@carevance.test', 'employee');
+
+        $digitalGroup = $this->createGroup($organization, 'Digital Marketing');
+        $itGroup = $this->createGroup($organization, 'IT');
+
+        $manager->groups()->sync([$digitalGroup->id]);
+        $sameGroupEmployee->groups()->sync([$digitalGroup->id]);
+        $otherGroupEmployee->groups()->sync([$itGroup->id]);
+
+        $response = $this->getJson('/api/reports/overall?start_date=2026-04-22&end_date=2026-04-22', $this->apiHeadersFor($manager))
+            ->assertOk();
+
+        $returnedIds = collect($response->json('by_user'))->pluck('user.id')->sort()->values()->all();
+        $this->assertSame([$sameGroupEmployee->id], $returnedIds);
     }
 
     private function createUser(Organization $organization, string $name, string $email, string $role): User

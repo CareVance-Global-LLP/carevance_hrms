@@ -841,9 +841,11 @@ export default function AdminDashboard() {
   const employeeSummary: any = profile?.summary || {};
   const employeeOverallSummary: any = employeeOverall?.summary || {};
   const employeeStatus: any = profile?.status || {};
+  const employeeAssignments: any = profile?.assignments || {};
   const employeeStats: any = employeeInsights?.stats || {};
   const selectedUserTools = employeeInsights?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
   const employeeTrend = employeeOverall?.by_day || [];
+  const employeeProjectBreakdown = profile?.project_breakdown || [];
   const latestAttendance: any = employeeStatus.latest_attendance;
   const employeeLiveMonitoring: any = employeeInsights?.live_monitoring?.selected_user || null;
   const employeeTrackedDuration = Number(employeeOverallSummary.total_duration ?? employeeSummary.total_duration ?? employeeStats.total_duration ?? 0);
@@ -862,6 +864,10 @@ export default function AdminDashboard() {
     unproductive: Number(selectedUserTools.unproductive?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
     neutral: Number(selectedUserTools.neutral?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
   };
+  const employeeGroupNames = (employeeAssignments.groups || []).map((group: any) => group.name).filter(Boolean);
+  const primaryGroupName = employeeAssignments.primary_group?.name || employeeGroupNames[0] || 'Not assigned';
+  const reportingManager = employeeAssignments.reporting_manager || null;
+  const assignedProjects = employeeAssignments.assigned_projects || [];
 
   const toggleScreenshotSelection = (screenshotId: number) => {
     setSelectedScreenshotIds((current) =>
@@ -1632,6 +1638,126 @@ export default function AdminDashboard() {
                 { id: 'approved-leaves', label: 'Approved leaves', value: employeeSummary.approved_leave_days || 0 },
                 { id: 'screenshots', label: 'Screenshots', value: employeeScreenshotTotal },
               ]}
+            />
+          </section>
+
+          <section className="space-y-4">
+            <SectionHeader
+              eyebrow="Assignment snapshot"
+              title="Group, manager, and project workload"
+              description="This makes it easier for admins to inspect who the employee reports to, which group they belong to, and how their tracked work is split across projects."
+            />
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+              <SurfaceCard className="p-5 sm:p-6">
+                <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Employee assignment</h3>
+                <p className="mt-1 text-sm text-slate-500">Current team placement and reporting structure for the selected employee.</p>
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Primary group</p>
+                    <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{primaryGroupName}</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {employeeGroupNames.length > 1
+                        ? `${employeeGroupNames.length} total groups linked`
+                        : employeeGroupNames.length === 1
+                          ? 'Single active group'
+                          : 'No group assigned yet'}
+                    </p>
+                  </div>
+                  <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Reporting manager</p>
+                    <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{reportingManager?.name || 'Not assigned'}</p>
+                    <p className="mt-1 text-sm text-slate-500">{reportingManager?.email || 'No manager email available'}</p>
+                  </div>
+                </div>
+                <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">All group memberships</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {employeeGroupNames.length > 0 ? (
+                      employeeGroupNames.map((name: string) => (
+                        <span key={name} className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">
+                          {name}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-slate-500">No group memberships found.</span>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  {[
+                    { id: 'assigned-projects', label: 'Assigned Projects', value: assignedProjects.length },
+                    { id: 'project-breakdown', label: 'Worked Projects', value: employeeProjectBreakdown.length },
+                    { id: 'tracked-sessions', label: 'Tracked Sessions', value: employeeSummary.entries_count || 0 },
+                    { id: 'tracked-duration', label: 'Tracked Time', value: formatDuration(employeeTrackedDuration) },
+                  ].map((item) => (
+                    <div key={item.id} className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
+                      <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </SurfaceCard>
+
+              <DataTable
+                title="Project-wise work summary"
+                description="Projects connected to this employee and how much tracked work was done on each one in the selected date range."
+                rows={employeeProjectBreakdown}
+                emptyMessage="No project work was found for the selected employee in this range."
+                columns={[
+                  {
+                    key: 'project',
+                    header: 'Project',
+                    render: (row: any) => (
+                      <div>
+                        <p className="font-medium text-slate-950">{row.project?.name || 'Unknown project'}</p>
+                        <p className="text-xs text-slate-500">
+                          {row.project?.status || 'status unknown'}
+                          {row.project?.deadline ? ` • deadline ${formatShortDate(row.project.deadline)}` : ''}
+                        </p>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'tracked_duration',
+                    header: 'Worked',
+                    render: (row: any) => formatDuration(Number(row.tracked_duration || 0)),
+                  },
+                  {
+                    key: 'entries_count',
+                    header: 'Sessions',
+                    render: (row: any) => String(row.entries_count || 0),
+                  },
+                  {
+                    key: 'billable_duration',
+                    header: 'Billable',
+                    render: (row: any) => formatDuration(Number(row.billable_duration || 0)),
+                  },
+                  {
+                    key: 'last_tracked_at',
+                    header: 'Last tracked',
+                    render: (row: any) => formatDateTime(row.last_tracked_at),
+                  },
+                ]}
+              />
+            </div>
+            <CompactList
+              title="Project assignment list"
+              description="Projects that are currently connected to the employee through assignments or tracked work."
+              rows={assignedProjects.map((project: any) => ({
+                id: String(project.id),
+                title: project.name,
+                subtitle: `${project.status || 'status unknown'}${project.deadline ? ` • deadline ${formatShortDate(project.deadline)}` : ''}`,
+                value:
+                  employeeProjectBreakdown.find((item: any) => Number(item.project?.id) === Number(project.id))
+                    ? formatDuration(
+                        Number(
+                          employeeProjectBreakdown.find((item: any) => Number(item.project?.id) === Number(project.id))?.tracked_duration || 0
+                        )
+                      )
+                    : 'No work tracked',
+              }))}
+              emptyTitle="No project assignments"
+              emptyDescription="This employee does not have any project assignments or tracked project work yet."
             />
           </section>
 

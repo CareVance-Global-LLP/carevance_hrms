@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\InteractsWithApiResponses;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\ReportGroups\StoreReportGroupRequest;
+use App\Models\EmployeeWorkInfo;
 use App\Http\Requests\Api\ReportGroups\UpdateReportGroupRequest;
 use App\Models\Group;
 use App\Models\User;
@@ -60,10 +61,12 @@ class ReportGroupController extends Controller
         ]);
 
         $userIds = $this->resolveOrgUserIds($currentUser->organization_id, $request->input('user_ids', []));
+        $this->assertAssignableUsersForGroup($currentUser->organization_id, $userIds, null);
         if ($currentUser->role === 'manager' && !in_array((int) $currentUser->id, $userIds, true)) {
             $userIds[] = (int) $currentUser->id;
         }
         $group->users()->sync($userIds);
+        $this->syncEmployeesForGroup((int) $currentUser->organization_id, (int) $group->id);
 
         return $this->createdResponse($group->load(['users:id,name,email,role'])->loadCount('tasks')->toArray(), 'Group created.');
     }
@@ -131,7 +134,9 @@ class ReportGroupController extends Controller
 
         if ($request->has('user_ids')) {
             $userIds = $this->resolveOrgUserIds($currentUser->organization_id, $request->input('user_ids', []));
+            $this->assertAssignableUsersForGroup($currentUser->organization_id, $userIds, (int) $group->id);
             $group->users()->sync($userIds);
+            $this->syncEmployeesForGroup((int) $currentUser->organization_id, (int) $group->id);
         }
 
         return $this->updatedResponse($group->fresh()->load(['users:id,name,email,role'])->loadCount('tasks')->toArray(), 'Group updated.');
@@ -206,5 +211,71 @@ class ReportGroupController extends Controller
             ->map(fn ($id) => (int) $id)
             ->values()
             ->all();
+    }
+
+    private function assertAssignableUsersForGroup(int $organizationId, array $userIds, ?int $currentGroupId): void
+    {
+        if (empty($userIds)) {
+            return;
+        }
+
+        $conflictingUser = User::query()
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $userIds)
+            ->whereIn('role', ['manager', 'employee'])
+            ->whereHas('groups', function ($query) use ($currentGroupId) {
+                if ($currentGroupId) {
+                    $query->where('groups.id', '!=', $currentGroupId);
+                    return;
+                }
+
+                $query->whereNotNull('groups.id');
+            })
+            ->first(['id', 'name', 'role']);
+
+        if (! $conflictingUser) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'user_ids' => [sprintf(
+                '%s is already assigned to another group. Move %s instead of adding to multiple groups.',
+                $conflictingUser->name,
+                $conflictingUser->role === 'manager' ? 'this manager' : 'this employee'
+            )],
+        ]);
+    }
+
+    private function resolveGroupManagerId(int $organizationId, int $groupId): ?int
+    {
+        return User::query()
+            ->where('organization_id', $organizationId)
+            ->where('role', 'manager')
+            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
+            ->orderBy('name')
+            ->value('id');
+    }
+
+    private function syncEmployeesForGroup(int $organizationId, int $groupId): void
+    {
+        $managerId = $this->resolveGroupManagerId($organizationId, $groupId);
+        $employeeIds = User::query()
+            ->where('organization_id', $organizationId)
+            ->where('role', 'employee')
+            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
+            ->pluck('id');
+
+        foreach ($employeeIds as $employeeId) {
+            EmployeeWorkInfo::query()->updateOrCreate(
+                [
+                    'organization_id' => $organizationId,
+                    'user_id' => (int) $employeeId,
+                ],
+                [
+                    'report_group_id' => $groupId,
+                    'reporting_manager_id' => $managerId,
+                ]
+            );
+        }
     }
 }

@@ -6,7 +6,10 @@ use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\PayrollProfile;
+use App\Models\Project;
 use App\Models\ReportGroup;
+use App\Models\Task;
+use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithoutMiddleware;
@@ -56,6 +59,8 @@ class EmployeeWorkspaceTest extends TestCase
             'organization_id' => $org->id,
             'name' => 'Operations',
         ]);
+        $manager->groups()->sync([$department->id]);
+        $employee->groups()->sync([$department->id]);
 
         PayrollProfile::create([
             'organization_id' => $org->id,
@@ -215,5 +220,158 @@ class EmployeeWorkspaceTest extends TestCase
         $this->assertDatabaseMissing('users', [
             'id' => $employee->id,
         ]);
+    }
+
+    public function test_profile_360_includes_employee_assignment_and_project_breakdown(): void
+    {
+        $org = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance-profile-360',
+        ]);
+
+        $admin = User::create([
+            'name' => 'Admin User',
+            'email' => 'admin-profile@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'admin',
+            'organization_id' => $org->id,
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager User',
+            'email' => 'manager-profile@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'manager',
+            'organization_id' => $org->id,
+        ]);
+
+        $employee = User::create([
+            'name' => 'Ava Employee',
+            'email' => 'employee-profile@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'employee',
+            'organization_id' => $org->id,
+        ]);
+
+        $group = ReportGroup::create([
+            'organization_id' => $org->id,
+            'name' => 'Operations',
+        ]);
+
+        $manager->groups()->sync([$group->id]);
+        $employee->groups()->sync([$group->id]);
+
+        $this->actingAs($admin)
+            ->putJson("/api/employees/{$employee->id}/work-info", [
+                'employee_code' => 'EMP-420',
+                'report_group_id' => $group->id,
+                'designation' => 'Operations Executive',
+                'reporting_manager_id' => $manager->id,
+                'employment_status' => 'active',
+            ])
+            ->assertOk();
+
+        $project = Project::create([
+            'organization_id' => $org->id,
+            'name' => 'Migration Project',
+            'status' => 'active',
+        ]);
+
+        $task = Task::create([
+            'group_id' => $group->id,
+            'project_id' => $project->id,
+            'assignee_id' => $employee->id,
+            'title' => 'Clean imported records',
+            'status' => 'in_progress',
+            'priority' => 'high',
+        ]);
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'project_id' => $project->id,
+            'task_id' => $task->id,
+            'start_time' => now()->subHours(3),
+            'end_time' => now()->subHours(2),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'project_id' => null,
+            'task_id' => $task->id,
+            'start_time' => now()->subHours(2),
+            'end_time' => now()->subHour(),
+            'duration' => 3600,
+            'billable' => false,
+        ]);
+
+        $this->actingAs($admin)
+            ->getJson("/api/users/{$employee->id}/profile-360")
+            ->assertOk()
+            ->assertJsonPath('assignments.primary_group.name', 'Operations')
+            ->assertJsonPath('assignments.reporting_manager.name', 'Manager User')
+            ->assertJsonPath('assignments.assigned_projects.0.name', 'Migration Project')
+            ->assertJsonPath('project_breakdown.0.project.name', 'Migration Project')
+            ->assertJsonPath('project_breakdown.0.entries_count', 2)
+            ->assertJsonPath('project_breakdown.0.tracked_duration', 7200)
+            ->assertJsonPath('project_breakdown.0.billable_duration', 3600)
+            ->assertJsonPath('project_breakdown.0.non_billable_duration', 3600);
+    }
+
+    public function test_profile_360_falls_back_to_group_manager_when_explicit_manager_is_missing(): void
+    {
+        $org = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance-group-manager-fallback',
+        ]);
+
+        $admin = User::create([
+            'name' => 'Admin User',
+            'email' => 'admin-fallback@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'admin',
+            'organization_id' => $org->id,
+        ]);
+
+        $manager = User::create([
+            'name' => 'Group Manager',
+            'email' => 'group-manager@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'manager',
+            'organization_id' => $org->id,
+        ]);
+
+        $employee = User::create([
+            'name' => 'Employee User',
+            'email' => 'employee-fallback@carevance.test',
+            'password' => bcrypt('password123'),
+            'role' => 'employee',
+            'organization_id' => $org->id,
+        ]);
+
+        $group = ReportGroup::create([
+            'organization_id' => $org->id,
+            'name' => 'Digital Marketing',
+        ]);
+
+        $manager->groups()->sync([$group->id]);
+        $employee->groups()->sync([$group->id]);
+
+        $this->actingAs($admin)
+            ->putJson("/api/employees/{$employee->id}/work-info", [
+                'employee_code' => 'EMP-777',
+                'report_group_id' => $group->id,
+                'designation' => 'Executive',
+                'employment_status' => 'active',
+            ])
+            ->assertOk();
+
+        $this->actingAs($admin)
+            ->getJson("/api/users/{$employee->id}/profile-360")
+            ->assertOk()
+            ->assertJsonPath('assignments.primary_group.name', 'Digital Marketing')
+            ->assertJsonPath('assignments.reporting_manager.name', 'Group Manager')
+            ->assertJsonPath('assignments.reporting_manager.email', 'group-manager@carevance.test');
     }
 }

@@ -22,6 +22,7 @@ use App\Services\Reports\UsageProcessingService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
@@ -55,9 +56,59 @@ class ReportController extends Controller
         return $user && in_array($user->role, ['admin', 'manager'], true);
     }
 
+    private function canViewOrganization(?User $user): bool
+    {
+        return $user?->role === 'admin';
+    }
+
     private function restrictMonitoringToEmployees(?User $user): bool
     {
         return $user?->role === 'manager';
+    }
+
+    private function managerGroupIds(User $user): array
+    {
+        return $user->groups()
+            ->pluck('groups.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    private function visibleUsersQuery(User $user, bool $employeesOnlyForManager = false): Builder
+    {
+        $query = User::query()->where('organization_id', $user->organization_id);
+
+        if ($user->role === 'admin') {
+            return $query;
+        }
+
+        if ($user->role === 'manager') {
+            $groupIds = $this->managerGroupIds($user);
+            if ($groupIds === []) {
+                return User::query()->whereRaw('1 = 0');
+            }
+
+            if ($employeesOnlyForManager) {
+                $query->where('role', 'employee');
+            }
+
+            return $query->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds));
+        }
+
+        return $query->whereKey($user->id);
+    }
+
+    private function visibleUserIds(?User $user, bool $employeesOnlyForManager = false): Collection
+    {
+        if (!$user || !$user->organization_id) {
+            return collect();
+        }
+
+        return $this->visibleUsersQuery($user, $employeesOnlyForManager)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
     }
 
     private function summarizeBrowserTrackingConnections(Collection $connections): array
@@ -341,8 +392,7 @@ class ReportController extends Controller
             ->orderBy('start_time', 'desc');
 
         if ($this->canViewAll($user) && $scope === 'organization' && $user->organization_id) {
-            $orgUserIds = User::where('organization_id', $user->organization_id)->pluck('id');
-            $query->whereIn('user_id', $orgUserIds);
+            $query->whereIn('user_id', $this->visibleUserIds($user));
         } else {
             $query->where('user_id', $user->id);
         }
@@ -374,8 +424,7 @@ class ReportController extends Controller
             ->orderBy('start_time', 'desc');
 
         if ($this->canViewAll($user) && $scope === 'organization' && $user->organization_id) {
-            $orgUserIds = User::where('organization_id', $user->organization_id)->pluck('id');
-            $query->whereIn('user_id', $orgUserIds);
+            $query->whereIn('user_id', $this->visibleUserIds($user));
         } else {
             $query->where('user_id', $user->id);
         }
@@ -418,8 +467,7 @@ class ReportController extends Controller
             ->orderBy('start_time', 'desc');
 
         if ($this->canViewAll($user) && $scope === 'organization' && $user->organization_id) {
-            $orgUserIds = User::where('organization_id', $user->organization_id)->pluck('id');
-            $query->whereIn('user_id', $orgUserIds);
+            $query->whereIn('user_id', $this->visibleUserIds($user));
         } else {
             $query->where('user_id', $user->id);
         }
@@ -558,42 +606,35 @@ class ReportController extends Controller
             ->unique()
             ->values();
 
-        $usersQuery = User::where('organization_id', $currentUser->organization_id);
-        if ($this->restrictMonitoringToEmployees($currentUser)) {
-            $usersQuery->where('role', 'employee');
+        $usersQuery = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser));
+        if ($selectedGroupIds->isNotEmpty()) {
+            $groupUserIds = ReportGroup::where('organization_id', $currentUser->organization_id)
+                ->whereIn('id', $selectedGroupIds)
+                ->with('users:id')
+                ->get()
+                ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if ($groupUserIds->isEmpty()) {
+                return response()->json([
+                    'start_date' => $startDate->toDateString(),
+                    'end_date' => $endDate->toDateString(),
+                    'summary' => [
+                        'users_count' => 0,
+                        'active_users' => 0,
+                    ] + $this->timeBreakdownService->build(0, 0),
+                    'by_user' => [],
+                    'by_day' => [],
+                ]);
+            }
+
+            $usersQuery->whereIn('id', $groupUserIds);
         }
-        if (!$this->canViewAll($currentUser)) {
-            $usersQuery->where('id', $currentUser->id);
-        } else {
-            if ($selectedGroupIds->isNotEmpty()) {
-                $groupUserIds = ReportGroup::where('organization_id', $currentUser->organization_id)
-                    ->whereIn('id', $selectedGroupIds)
-                    ->with('users:id')
-                    ->get()
-                    ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
-                    ->map(fn ($id) => (int) $id)
-                    ->unique()
-                    ->values();
 
-                if ($groupUserIds->isEmpty()) {
-                    return response()->json([
-                        'start_date' => $startDate->toDateString(),
-                        'end_date' => $endDate->toDateString(),
-                        'summary' => [
-                            'users_count' => 0,
-                            'active_users' => 0,
-                        ] + $this->timeBreakdownService->build(0, 0),
-                        'by_user' => [],
-                        'by_day' => [],
-                    ]);
-                }
-
-                $usersQuery->whereIn('id', $groupUserIds);
-            }
-
-            if ($selectedIds->isNotEmpty()) {
-                $usersQuery->whereIn('id', $selectedIds);
-            }
+        if ($selectedIds->isNotEmpty()) {
+            $usersQuery->whereIn('id', $selectedIds);
         }
         $users = $usersQuery->orderBy('name')->get(['id', 'name', 'email', 'role']);
         if ($users->isEmpty()) {
@@ -817,9 +858,7 @@ class ReportController extends Controller
             ->whereBetween('start_time', [$startDate, $endDate]);
 
         if ($this->canViewAll($user) && $user->organization_id) {
-            $organizationUserIds = User::query()
-                ->where('organization_id', $user->organization_id)
-                ->pluck('id');
+            $organizationUserIds = $this->visibleUserIds($user);
 
             $selectedUserIds = collect($request->input('user_ids', []))
                 ->map(fn ($id) => (int) $id)
@@ -919,23 +958,16 @@ class ReportController extends Controller
             ->reject(fn (string $date) => Carbon::parse($date)->isWeekend())
             ->values();
 
-        $usersQuery = User::where('organization_id', $currentUser->organization_id);
-        if ($this->restrictMonitoringToEmployees($currentUser)) {
-            $usersQuery->where('role', 'employee');
+        $usersQuery = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser));
+        if ($request->filled('user_id')) {
+            $usersQuery->where('id', (int) $request->user_id);
         }
-        if (!$this->canViewAll($currentUser)) {
-            $usersQuery->where('id', $currentUser->id);
-        } else {
-            if ($request->filled('user_id')) {
-                $usersQuery->where('id', (int) $request->user_id);
-            }
-            if ($request->filled('q')) {
-                $term = trim((string) $request->q);
-                $usersQuery->where(function ($query) use ($term) {
-                    $query->where('name', 'like', "%{$term}%")
-                        ->orWhere('email', 'like', "%{$term}%");
-                });
-            }
+        if ($request->filled('q')) {
+            $term = trim((string) $request->q);
+            $usersQuery->where(function ($query) use ($term) {
+                $query->where('name', 'like', "%{$term}%")
+                    ->orWhere('email', 'like', "%{$term}%");
+            });
         }
 
         $users = $usersQuery->orderBy('name')->get();
@@ -1080,76 +1112,69 @@ class ReportController extends Controller
             ->unique()
             ->values();
 
-        $usersQuery = User::where('organization_id', $currentUser->organization_id);
-        if ($this->restrictMonitoringToEmployees($currentUser)) {
-            $usersQuery->where('role', 'employee');
-        }
-        if (!$this->canViewAll($currentUser)) {
-            $usersQuery->where('id', $currentUser->id);
-        } else {
-            if ($selectedGroupIds->isNotEmpty()) {
-                $groupUserIds = ReportGroup::where('organization_id', $currentUser->organization_id)
-                    ->whereIn('id', $selectedGroupIds)
-                    ->with('users:id')
-                    ->get()
-                    ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
-                    ->map(fn ($id) => (int) $id)
-                    ->unique()
-                    ->values();
+        $usersQuery = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser));
+        if ($selectedGroupIds->isNotEmpty()) {
+            $groupUserIds = ReportGroup::where('organization_id', $currentUser->organization_id)
+                ->whereIn('id', $selectedGroupIds)
+                ->with('users:id')
+                ->get()
+                ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
 
-                if ($groupUserIds->isEmpty()) {
-                    return response()->json([
-                        'start_date' => $startDate->toDateString(),
-                        'end_date' => $endDate->toDateString(),
-                        'matched_users' => [],
+            if ($groupUserIds->isEmpty()) {
+                return response()->json([
+                    'start_date' => $startDate->toDateString(),
+                    'end_date' => $endDate->toDateString(),
+                    'matched_users' => [],
+                    'selected_user' => null,
+                    'stats' => null,
+                    'activity_breakdown' => [],
+                    'selected_user_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+                    'organization_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+                    'organization_summary' => [
+                        'productive_duration' => 0,
+                        'unproductive_duration' => 0,
+                        'neutral_duration' => 0,
+                        'context_dependent_duration' => 0,
+                        'productive_share' => 0,
+                        'unproductive_share' => 0,
+                        'neutral_share' => 0,
+                        'context_dependent_share' => 0,
+                    ],
+                    'employee_rankings' => [
+                        'most_productive' => null,
+                        'most_unproductive' => null,
+                        'by_productive_duration' => [],
+                        'by_unproductive_duration' => [],
+                    ],
+                    'team_rankings' => [
+                        'by_efficiency' => [],
+                        'top_productive' => null,
+                        'least_productive' => null,
+                    ],
+                    'live_monitoring' => [
                         'selected_user' => null,
-                        'stats' => null,
-                        'activity_breakdown' => [],
-                        'selected_user_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
-                        'organization_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
-                        'organization_summary' => [
-                            'productive_duration' => 0,
-                            'unproductive_duration' => 0,
-                            'neutral_duration' => 0,
-                            'context_dependent_duration' => 0,
-                            'productive_share' => 0,
-                            'unproductive_share' => 0,
-                            'neutral_share' => 0,
-                            'context_dependent_share' => 0,
-                        ],
-                        'employee_rankings' => [
-                            'most_productive' => null,
-                            'most_unproductive' => null,
-                            'by_productive_duration' => [],
-                            'by_unproductive_duration' => [],
-                        ],
-                        'team_rankings' => [
-                            'by_efficiency' => [],
-                            'top_productive' => null,
-                            'least_productive' => null,
-                        ],
-                        'live_monitoring' => [
-                            'selected_user' => null,
-                            'working_now' => [],
-                            'all_users' => [],
-                            'employees_active' => [],
-                            'employees_inactive' => [],
-                            'employees_on_leave' => [],
-                        ],
-                        'recent_screenshots' => [],
-                    ]);
-                }
-
-                $usersQuery->whereIn('id', $groupUserIds);
+                        'working_now' => [],
+                        'all_users' => [],
+                        'employees_active' => [],
+                        'employees_inactive' => [],
+                        'employees_on_leave' => [],
+                    ],
+                    'recent_screenshots' => [],
+                ]);
             }
 
-            if ($request->filled('q')) {
-                $term = trim((string) $request->q);
-                $usersQuery->where(function ($query) use ($term) {
-                    $query->where('name', 'like', "%{$term}%")
-                        ->orWhere('email', 'like', "%{$term}%");
-                });
-            }
+            $usersQuery->whereIn('id', $groupUserIds);
+        }
+
+        if ($request->filled('q')) {
+            $term = trim((string) $request->q);
+            $usersQuery->where(function ($query) use ($term) {
+                $query->where('name', 'like', "%{$term}%")
+                    ->orWhere('email', 'like', "%{$term}%");
+            });
         }
 
         $matchedUsers = (clone $usersQuery)->orderBy('name')->limit(20)->get(['id', 'name', 'email', 'role']);
@@ -1170,8 +1195,7 @@ class ReportController extends Controller
             ]);
         }
 
-        $selectedUser = User::where('organization_id', $currentUser->organization_id)
-            ->when($this->restrictMonitoringToEmployees($currentUser), fn ($query) => $query->where('role', 'employee'))
+        $selectedUser = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser))
             ->where('id', $selectedUserId)
             ->first();
         if (!$selectedUser) {

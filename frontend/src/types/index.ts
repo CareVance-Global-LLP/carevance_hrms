@@ -439,6 +439,7 @@ export interface InviteValidationResponse {
   email?: string;
   role?: string | null;
   expires_at?: string | null;
+  organization?: Pick<Organization, 'id' | 'name' | 'slug'> | null;
   message?: string;
 }
 

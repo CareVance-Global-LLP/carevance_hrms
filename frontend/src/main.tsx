@@ -9,6 +9,7 @@ import AppMetadataManager from './components/seo/AppMetadataManager'
 import AnalyticsRouteTracker from './components/analytics/AnalyticsRouteTracker'
 import CookieConsentBanner from './components/public/CookieConsentBanner'
 import RouteViewportManager from './components/router/RouteViewportManager'
+import { installDesktopTrackerCompatibilityMarkers } from './lib/desktopTrackerCompatibility'
 import './index.css'
 
 const routerFuture = {
@@ -29,6 +30,8 @@ const queryClient = new QueryClient({
     },
   },
 })
+
+installDesktopTrackerCompatibilityMarkers()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

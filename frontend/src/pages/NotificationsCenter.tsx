@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { notificationApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { getNotificationDisplay } from '@/lib/notificationDisplay';
+import { canOpenNotificationFromCenter, getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { hasAdminAccess } from '@/lib/permissions';
 import type { AppNotificationItem } from '@/types';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -103,7 +103,7 @@ export default function NotificationsCenter() {
 
   const openNotification = async (item: AppNotificationItem) => {
     await markRead(item.id);
-    navigate(String(item.meta?.route || '/notifications').trim() || '/notifications');
+    navigate(resolveNotificationRoute(item, user));
   };
 
   const markAllRead = async () => {
@@ -211,6 +211,8 @@ export default function NotificationsCenter() {
               <option value="announcement">Announcement</option>
               <option value="news">News</option>
               <option value="salary_credited">Salary credited</option>
+              <option value="leave_request">Leave request</option>
+              <option value="time_edit">Time edit</option>
             </SelectInput>
           </div>
           <div>
@@ -290,7 +292,13 @@ export default function NotificationsCenter() {
       ) : (
         <div className="space-y-3">
           {filteredNotifications.map((item) => (
-            <SurfaceCard key={item.id} className={`p-5 ${item.is_read ? '' : 'border-sky-200 bg-sky-50/40'}`}>
+            <SurfaceCard
+              key={item.id}
+              className={`p-5 ${item.is_read ? '' : 'border-sky-200 bg-sky-50/40'} ${
+                canOpenNotificationFromCenter(item, user) ? 'cursor-pointer transition hover:border-sky-200 hover:bg-sky-50/50' : ''
+              }`}
+              onClick={canOpenNotificationFromCenter(item, user) ? () => void openNotification(item) : undefined}
+            >
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-1">
                   {(() => {
@@ -317,11 +325,27 @@ export default function NotificationsCenter() {
                 </div>
 
                 <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openNotification(item)}>
-                    Open
-                  </Button>
+                  {canOpenNotificationFromCenter(item, user) ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void openNotification(item);
+                      }}
+                    >
+                      Review
+                    </Button>
+                  ) : null}
                   {!item.is_read ? (
-                    <Button size="sm" variant="secondary" onClick={() => markRead(item.id)}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void markRead(item.id);
+                      }}
+                    >
                       Mark read
                     </Button>
                   ) : null}

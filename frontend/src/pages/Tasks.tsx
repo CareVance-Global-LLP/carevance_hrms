@@ -79,6 +79,7 @@ export default function Tasks() {
   const [assigneeFilter] = useState('all');
   const [groupDirectoryQuery, setGroupDirectoryQuery] = useState('');
   const [groupDirectoryFilter, setGroupDirectoryFilter] = useState('all');
+  const [expandedAddMemberGroupId, setExpandedAddMemberGroupId] = useState<number | null>(null);
   const [memberDrafts, setMemberDrafts] = useState<Record<number, number[]>>({});
   const [memberSearchDrafts, setMemberSearchDrafts] = useState<Record<number, string>>({});
   const [memberSearchSelectionDrafts, setMemberSearchSelectionDrafts] = useState<Record<number, number | null>>({});
@@ -109,6 +110,7 @@ export default function Tasks() {
     [users]
   );
   const canManageGroupMember = (member: User) => member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
+  const isEligibleForDirectGroupAdd = (member: User) => canManageGroupMember(member) && (member.groups || []).length === 0;
   const selectedGroupId = taskForm.group_id ? Number(taskForm.group_id) : null;
   const availableAssignees = useMemo(
     () => users.filter((member) => !selectedGroupId || member.groups?.some((group) => group.id === selectedGroupId)),
@@ -313,17 +315,9 @@ export default function Tasks() {
       return;
     }
 
-    const currentGroupIds = (member.groups || []).map((assignedGroup) => assignedGroup.id);
-    const nextGroupIds = Array.from(
-      new Set([
-        ...currentGroupIds.filter((groupId) => groupId !== currentGroup.id),
-        targetGroup.id,
-      ])
-    );
-
     syncMembershipMutation.mutate({
       userId: member.id,
-      groupIds: nextGroupIds,
+      groupIds: [targetGroup.id],
       successMessage: `${member.name} was moved to ${targetGroup.name}.`,
     });
 
@@ -488,9 +482,7 @@ export default function Tasks() {
                 const selectedMemberIds = memberDrafts[group.id] || [];
                 const memberSearchQuery = memberSearchDrafts[group.id] || '';
                 const selectedSearchMemberId = memberSearchSelectionDrafts[group.id] ?? null;
-                const availableMembers = internalUsers
-                  .filter((member) => canManageGroupMember(member))
-                  .filter((member) => !(member.groups || []).some((assignedGroup) => assignedGroup.id === group.id));
+                const availableMembers = internalUsers.filter((member) => isEligibleForDirectGroupAdd(member));
                 const availableMemberSuggestions = buildSearchSuggestions(availableMembers, (member) => ({
                   id: member.id,
                   label: member.name,
@@ -542,101 +534,120 @@ export default function Tasks() {
                     </div>
 
                     <div className="mt-5 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                      <div className="flex flex-col gap-3">
-                        <div className="min-w-0 flex-1">
-                          <FieldLabel hint={`${selectedMemberIds.length} selected`}>Add Existing Member</FieldLabel>
-                          <SearchSuggestInput
-                            aria-label={`Search eligible members for ${group.name}`}
-                            value={memberSearchQuery}
-                            onValueChange={(value) => {
-                              setMemberSearchDrafts((current) => ({ ...current, [group.id]: value }));
-                              const selectedMemberName = availableMembers.find((member) => Number(member.id) === Number(selectedSearchMemberId))?.name || '';
-                              if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedMemberName)) {
-                                setMemberSearchSelectionDrafts((current) => ({ ...current, [group.id]: null }));
-                              }
-                            }}
-                            onSuggestionSelect={(suggestion) => {
-                              const nextMemberId = Number((suggestion.payload as User | undefined)?.id || suggestion.id || 0);
-                              setMemberSearchDrafts((current) => ({ ...current, [group.id]: getSuggestionDisplayValue(suggestion) }));
-                              setMemberSearchSelectionDrafts((current) => ({
-                                ...current,
-                                [group.id]: Number.isFinite(nextMemberId) && nextMemberId > 0 ? nextMemberId : null,
-                              }));
-                            }}
-                            suggestions={availableMemberSuggestions}
-                            placeholder={availableMembers.length === 0 ? 'All eligible members are already assigned' : 'Search eligible members'}
-                            className="border-slate-200 bg-white shadow-none focus:bg-white"
-                            icon={<Search className="h-4 w-4" />}
-                            emptyMessage="No eligible members match this search."
-                            disabled={availableMembers.length === 0 || addMembersToGroupMutation.isPending}
-                          />
-                        </div>
-                        {availableMembers.length === 0 ? (
-                          <div className="rounded-[20px] border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-500">
-                            All eligible members are already assigned to this group.
-                          </div>
-                        ) : (
-                          <div className="max-h-56 space-y-2 overflow-auto pr-1">
-                            {filteredAvailableMembers.map((member) => {
-                              const checked = selectedMemberIds.includes(member.id);
-
-                              return (
-                                <label
-                                  key={member.id}
-                                  className={`flex cursor-pointer items-start gap-3 rounded-[20px] border px-3 py-3 transition ${
-                                    checked ? 'border-sky-300 bg-sky-50/70' : 'border-slate-200/80 bg-white/80 hover:border-slate-300'
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="mt-1"
-                                    checked={checked}
-                                    onChange={(event) =>
-                                      setMemberDrafts((current) => ({
-                                        ...current,
-                                        [group.id]: event.target.checked
-                                          ? [...selectedMemberIds, member.id]
-                                          : selectedMemberIds.filter((id) => id !== member.id),
-                                      }))
-                                    }
-                                    disabled={addMembersToGroupMutation.isPending}
-                                  />
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <p className="text-sm font-semibold text-slate-950">{member.name}</p>
-                                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                                        {titleCase(member.role)}
-                                      </span>
-                                    </div>
-                                    <p className="mt-1 text-xs text-slate-500">{member.email}</p>
-                                  </div>
-                                </label>
-                              );
-                            })}
-                            {filteredAvailableMembers.length === 0 ? (
-                              <div className="rounded-[20px] border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-500">
-                                No eligible members match this search.
-                              </div>
-                            ) : null}
-                          </div>
-                        )}
-                        <div className="flex justify-end">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            iconLeft={<UserPlus2 className="h-4 w-4" />}
-                            aria-label={`Add members to ${group.name}`}
-                            disabled={selectedMemberIds.length === 0 || addMembersToGroupMutation.isPending}
-                            onClick={() => handleAddMemberToGroup(group)}
-                          >
-                            {addMembersToGroupMutation.isPending
-                              ? 'Saving...'
-                              : selectedMemberIds.length > 1
-                                ? 'Add Members'
-                                : 'Add Member'}
-                          </Button>
-                        </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <FieldLabel hint={expandedAddMemberGroupId === group.id ? `${selectedMemberIds.length} selected` : undefined}>
+                          Add Existing Member
+                        </FieldLabel>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          iconLeft={<UserPlus2 className="h-4 w-4" />}
+                          aria-label={`${expandedAddMemberGroupId === group.id ? 'Close' : 'Open'} add member for ${group.name}`}
+                          onClick={() => {
+                            setExpandedAddMemberGroupId((current) => (current === group.id ? null : group.id));
+                            setMemberDrafts((current) => ({ ...current, [group.id]: current[group.id] || [] }));
+                          }}
+                        >
+                          {expandedAddMemberGroupId === group.id ? 'Close Add Member' : 'Add Member'}
+                        </Button>
                       </div>
+
+                      {expandedAddMemberGroupId === group.id ? (
+                        <div className="mt-3 flex flex-col gap-3">
+                          <div className="min-w-0 flex-1">
+                            <SearchSuggestInput
+                              aria-label={`Search eligible members for ${group.name}`}
+                              value={memberSearchQuery}
+                              onValueChange={(value) => {
+                                setMemberSearchDrafts((current) => ({ ...current, [group.id]: value }));
+                                const selectedMemberName = availableMembers.find((member) => Number(member.id) === Number(selectedSearchMemberId))?.name || '';
+                                if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedMemberName)) {
+                                  setMemberSearchSelectionDrafts((current) => ({ ...current, [group.id]: null }));
+                                }
+                              }}
+                              onSuggestionSelect={(suggestion) => {
+                                const nextMemberId = Number((suggestion.payload as User | undefined)?.id || suggestion.id || 0);
+                                setMemberSearchDrafts((current) => ({ ...current, [group.id]: getSuggestionDisplayValue(suggestion) }));
+                                setMemberSearchSelectionDrafts((current) => ({
+                                  ...current,
+                                  [group.id]: Number.isFinite(nextMemberId) && nextMemberId > 0 ? nextMemberId : null,
+                                }));
+                              }}
+                              suggestions={availableMemberSuggestions}
+                              placeholder={availableMembers.length === 0 ? 'No unassigned eligible members available' : 'Search eligible members'}
+                              className="border-slate-200 bg-white shadow-none focus:bg-white"
+                              icon={<Search className="h-4 w-4" />}
+                              emptyMessage="No eligible members match this search."
+                              disabled={availableMembers.length === 0 || addMembersToGroupMutation.isPending}
+                            />
+                          </div>
+                          {availableMembers.length === 0 ? (
+                            <div className="rounded-[20px] border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-500">
+                              Only unassigned employees and unassigned managers can be added here. Move existing members from their current group instead.
+                            </div>
+                          ) : (
+                            <div className="max-h-56 space-y-2 overflow-auto pr-1">
+                              {filteredAvailableMembers.map((member) => {
+                                const checked = selectedMemberIds.includes(member.id);
+
+                                return (
+                                  <label
+                                    key={member.id}
+                                    className={`flex cursor-pointer items-start gap-3 rounded-[20px] border px-3 py-3 transition ${
+                                      checked ? 'border-sky-300 bg-sky-50/70' : 'border-slate-200/80 bg-white/80 hover:border-slate-300'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="mt-1"
+                                      checked={checked}
+                                      onChange={(event) =>
+                                        setMemberDrafts((current) => ({
+                                          ...current,
+                                          [group.id]: event.target.checked
+                                            ? [...selectedMemberIds, member.id]
+                                            : selectedMemberIds.filter((id) => id !== member.id),
+                                        }))
+                                      }
+                                      disabled={addMembersToGroupMutation.isPending}
+                                    />
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <p className="text-sm font-semibold text-slate-950">{member.name}</p>
+                                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                                          {titleCase(member.role)}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-xs text-slate-500">{member.email}</p>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                              {filteredAvailableMembers.length === 0 ? (
+                                <div className="rounded-[20px] border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-500">
+                                  No eligible members match this search.
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+                          <div className="flex justify-end">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              iconLeft={<UserPlus2 className="h-4 w-4" />}
+                              aria-label={`Add members to ${group.name}`}
+                              disabled={selectedMemberIds.length === 0 || addMembersToGroupMutation.isPending}
+                              onClick={() => handleAddMemberToGroup(group)}
+                            >
+                              {addMembersToGroupMutation.isPending
+                                ? 'Saving...'
+                                : selectedMemberIds.length > 1
+                                  ? 'Add Members'
+                                  : 'Add Member'}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="mt-5 space-y-3">

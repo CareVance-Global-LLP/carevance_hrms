@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Organization;
+use App\Models\Group;
 use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
@@ -648,6 +649,20 @@ class ScreenshotSecurityTest extends TestCase
                 'organization_id' => $organization->id,
             ]);
 
+            $primaryGroup = Group::create([
+                'name' => 'Primary Group',
+                'slug' => 'primary-group',
+                'organization_id' => $organization->id,
+            ]);
+
+            $otherGroup = Group::create([
+                'name' => 'Other Group',
+                'slug' => 'other-group',
+                'organization_id' => $organization->id,
+            ]);
+
+            $manager->groups()->attach($primaryGroup->id);
+
             $employee = User::create([
                 'name' => 'Employee User',
                 'email' => 'employee@example.com',
@@ -655,6 +670,16 @@ class ScreenshotSecurityTest extends TestCase
                 'role' => 'employee',
                 'organization_id' => $organization->id,
             ]);
+            $employee->groups()->attach($primaryGroup->id);
+
+            $otherEmployee = User::create([
+                'name' => 'Other Employee',
+                'email' => 'other-employee@example.com',
+                'password' => 'password123',
+                'role' => 'employee',
+                'organization_id' => $organization->id,
+            ]);
+            $otherEmployee->groups()->attach($otherGroup->id);
 
             $anotherManager = User::create([
                 'name' => 'Another Manager',
@@ -666,6 +691,14 @@ class ScreenshotSecurityTest extends TestCase
 
             $employeeEntry = TimeEntry::create([
                 'user_id' => $employee->id,
+                'start_time' => '2026-03-16 09:00:00',
+                'end_time' => '2026-03-16 10:00:00',
+                'duration' => 3600,
+                'billable' => true,
+            ]);
+
+            $otherEmployeeEntry = TimeEntry::create([
+                'user_id' => $otherEmployee->id,
                 'start_time' => '2026-03-16 09:00:00',
                 'end_time' => '2026-03-16 10:00:00',
                 'duration' => 3600,
@@ -690,6 +723,11 @@ class ScreenshotSecurityTest extends TestCase
                 'filename' => 'manager.png',
             ]);
 
+            Screenshot::create([
+                'time_entry_id' => $otherEmployeeEntry->id,
+                'filename' => 'other-employee.png',
+            ]);
+
             $this->getJson('/api/screenshots?start_date=2026-03-16&end_date=2026-03-16', $this->apiHeadersFor($manager))
                 ->assertOk()
                 ->assertJsonPath('total', 1)
@@ -699,6 +737,61 @@ class ScreenshotSecurityTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_manager_cannot_open_other_group_employee_screenshot_directly(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager User',
+            'email' => 'manager-group-scope@example.com',
+            'password' => 'password123',
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $managerGroup = Group::create([
+            'name' => 'Manager Group',
+            'slug' => 'manager-group',
+            'organization_id' => $organization->id,
+        ]);
+
+        $otherGroup = Group::create([
+            'name' => 'Other Group',
+            'slug' => 'other-group-access',
+            'organization_id' => $organization->id,
+        ]);
+
+        $manager->groups()->attach($managerGroup->id);
+
+        $otherEmployee = User::create([
+            'name' => 'Other Employee',
+            'email' => 'other-group-employee@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+        $otherEmployee->groups()->attach($otherGroup->id);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $otherEmployee->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $screenshot = Screenshot::create([
+            'time_entry_id' => $timeEntry->id,
+            'filename' => 'other-group-employee.png',
+        ]);
+
+        $this->getJson("/api/screenshots/{$screenshot->id}", $this->apiHeadersFor($manager))
+            ->assertForbidden();
     }
 
     public function test_manager_cannot_open_manager_screenshot_directly_but_admin_can(): void

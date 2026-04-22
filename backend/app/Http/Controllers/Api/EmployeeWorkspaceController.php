@@ -19,7 +19,7 @@ class EmployeeWorkspaceController extends Controller
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
-        if (!$currentUser || !$employee || !$this->canManage($currentUser)) {
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -32,7 +32,7 @@ class EmployeeWorkspaceController extends Controller
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
-        if (!$currentUser || !$employee || !$this->canManage($currentUser)) {
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -63,7 +63,7 @@ class EmployeeWorkspaceController extends Controller
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
-        if (!$currentUser || !$employee || !$this->canManage($currentUser)) {
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -93,7 +93,7 @@ class EmployeeWorkspaceController extends Controller
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
-        if (!$currentUser || !$employee || !$this->canManage($currentUser)) {
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -131,7 +131,7 @@ class EmployeeWorkspaceController extends Controller
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
-        if (!$currentUser || !$employee || !$this->canManage($currentUser)) {
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -175,7 +175,7 @@ class EmployeeWorkspaceController extends Controller
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
-        if (!$currentUser || !$employee || !$this->canManage($currentUser)) {
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -200,7 +200,7 @@ class EmployeeWorkspaceController extends Controller
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
-        if (!$currentUser || !$employee || !$this->canManage($currentUser)) {
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -231,5 +231,23 @@ class EmployeeWorkspaceController extends Controller
     private function canManage(User $user): bool
     {
         return in_array($user->role, ['admin', 'manager'], true);
+    }
+
+    private function canManageEmployee(User $actor, User $employee): bool
+    {
+        if (!$this->canManage($actor)) {
+            return false;
+        }
+
+        if ($actor->role === 'admin') {
+            return true;
+        }
+
+        $groupIds = $actor->groups()->pluck('groups.id')->all();
+        if (empty($groupIds)) {
+            return false;
+        }
+
+        return $employee->groups()->whereIn('groups.id', $groupIds)->exists();
     }
 }

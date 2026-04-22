@@ -10,6 +10,7 @@ use App\Models\EmployeeGovernmentId;
 use App\Models\EmployeeProfile;
 use App\Models\EmployeeSalaryAssignment;
 use App\Models\EmployeeWorkInfo;
+use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\PayrollAdjustment;
 use App\Models\PayrollAuditLog;
@@ -34,6 +35,7 @@ class EmployeeWorkspaceService
     public function workspace(User $employee, string $payrollMonth): array
     {
         $employee->loadMissing([
+            'groups:id,name,slug',
             'employeeProfile',
             'employeeWorkInfo.department',
             'employeeWorkInfo.reportingManager:id,name,email',
@@ -44,6 +46,13 @@ class EmployeeWorkspaceService
         $profile = $employee->employeeProfile;
         $workInfo = $employee->employeeWorkInfo;
         $payrollProfile = $employee->payrollProfile;
+        $fallbackReportingManager = User::query()
+            ->where('organization_id', $employee->organization_id)
+            ->where('role', 'manager')
+            ->whereHas('groups', fn ($query) => $query->whereIn('groups.id', $employee->groups->pluck('id')))
+            ->orderBy('name')
+            ->first(['id', 'name', 'email']);
+        $resolvedReportingManager = $workInfo?->reportingManager ?: $fallbackReportingManager;
         $attendance = $this->attendanceSummary($employee, $payrollMonth);
         $leave = $this->leaveSummary($employee, $payrollMonth);
         $documents = EmployeeDocument::query()
@@ -116,7 +125,7 @@ class EmployeeWorkspaceService
             'leave' => $leave,
             'activity' => $this->activityFeed($employee),
             'overview' => [
-                'reporting_manager' => $workInfo?->reportingManager?->only(['id', 'name', 'email']),
+                'reporting_manager' => $resolvedReportingManager?->only(['id', 'name', 'email']),
                 'department' => $workInfo?->department?->name,
                 'designation' => $workInfo?->designation,
                 'documents_uploaded' => $documents->count(),
@@ -158,6 +167,11 @@ class EmployeeWorkspaceService
 
     public function upsertWorkInfo(User $employee, array $data): EmployeeWorkInfo
     {
+        if (!empty($data['report_group_id'])) {
+            $resolvedManagerId = $this->resolveGroupManagerId((int) $employee->organization_id, (int) $data['report_group_id']);
+            $data['reporting_manager_id'] = $resolvedManagerId;
+        }
+
         $workInfo = EmployeeWorkInfo::query()->firstOrNew([
             'organization_id' => $employee->organization_id,
             'user_id' => $employee->id,
@@ -168,6 +182,25 @@ class EmployeeWorkspaceService
         $workInfo->save();
 
         return $workInfo->fresh(['department', 'reportingManager']);
+    }
+
+    private function resolveGroupManagerId(int $organizationId, int $groupId): ?int
+    {
+        $groupExists = Group::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($groupId)
+            ->exists();
+
+        if (!$groupExists) {
+            return null;
+        }
+
+        return User::query()
+            ->where('organization_id', $organizationId)
+            ->where('role', 'manager')
+            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
+            ->orderBy('name')
+            ->value('id');
     }
 
     public function storeDocument(User $employee, User $actor, array $data, UploadedFile $file): EmployeeDocument

@@ -266,6 +266,7 @@ describe('AuthProvider', () => {
         updated_at: new Date().toISOString(),
       },
     } as any);
+    vi.mocked(authApi.logout).mockResolvedValue({ data: { success: true } } as any);
     vi.mocked(timeEntryApi.stop).mockResolvedValue({ data: null } as any);
 
     renderWithProviders(
@@ -281,6 +282,11 @@ describe('AuthProvider', () => {
     await prepareForCloseHandler?.();
 
     expect(timeEntryApi.stop).toHaveBeenCalledWith({ timer_slot: 'primary' });
+    expect(authApi.logout).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
+    });
     expect(confirmCloseReady).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem('token')).toBeNull();
   });
 });

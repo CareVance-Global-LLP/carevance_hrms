@@ -38,6 +38,14 @@ class ScreenshotController extends Controller
         return $user?->role === 'manager';
     }
 
+    private function managerGroupIds(User $user): array
+    {
+        return $user->groups()
+            ->pluck('groups.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -410,7 +418,18 @@ class ScreenshotController extends Controller
         }
 
         if ($viewer->role === 'manager') {
-            return $subject->role === 'employee';
+            if ($subject->role !== 'employee') {
+                return false;
+            }
+
+            $visibleGroupIds = $this->managerGroupIds($viewer);
+            if (empty($visibleGroupIds)) {
+                return false;
+            }
+
+            return $subject->groups()
+                ->whereIn('groups.id', $visibleGroupIds)
+                ->exists();
         }
 
         return (int) $viewer->id === (int) $subject->id;
@@ -430,7 +449,14 @@ class ScreenshotController extends Controller
             ->whereHas('timeEntry.user', function ($query) use ($user) {
                 $query->where('organization_id', $user->organization_id);
                 if ($this->restrictMonitoringToEmployees($user)) {
-                    $query->where('role', 'employee');
+                    $visibleGroupIds = $this->managerGroupIds($user);
+                    if (empty($visibleGroupIds)) {
+                        $query->whereRaw('1 = 0');
+                        return;
+                    }
+
+                    $query->where('role', 'employee')
+                        ->whereHas('groups', fn ($groupQuery) => $groupQuery->whereIn('groups.id', $visibleGroupIds));
                 }
             })
             ->when(!$this->canViewAll($user), function ($query) use ($user) {

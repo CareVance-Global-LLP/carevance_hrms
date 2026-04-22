@@ -710,14 +710,6 @@ export default function DesktopTimerDashboard() {
             {activeTimer?.task?.group?.name && (
               <p className="mt-1 text-sm text-cyan-50/90">Group: {activeTimer.task.group.name}</p>
             )}
-            {halfDayLeaveApplied ? (
-              <div className="mt-4 rounded-2xl border border-amber-200/35 bg-amber-300/10 px-3 py-3 text-sm text-amber-50">
-                <p className="font-medium">{leaveTodayLabel}</p>
-                <p className="mt-1 text-amber-50/85">
-                  Today&apos;s target is reduced to {formatDuration(shiftTargetSeconds)} so you can clearly track the remaining half-day hours.
-                </p>
-              </div>
-            ) : null}
             {activeTimer && !activeTimer?.task?.title ? (
               <p className="mt-3 text-sm text-cyan-50/90">Choose a task from your assigned groups for this running timer.</p>
             ) : null}
@@ -781,6 +773,14 @@ export default function DesktopTimerDashboard() {
 
         <div className="mt-4 text-sm text-cyan-50/85">
           Total elapsed (all sessions): {formatDuration(allTimeTotal)} | Today's attendance worked: {formatDuration(currentWorkedSeconds)}
+          {halfDayLeaveApplied ? (
+            <>
+              {' | '}
+              <span className="font-semibold text-rose-200 underline decoration-rose-300/70 underline-offset-4">
+                {leaveTodayLabel}, target {formatDuration(shiftTargetSeconds)}
+              </span>
+            </>
+          ) : null}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button

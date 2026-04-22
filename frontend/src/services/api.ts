@@ -195,8 +195,8 @@ export const inviteApi = {
     api.post('/invites/send', data),
   validate: (token: string) =>
     api.get<InviteValidationResponse>('/invites/validate', { params: { token } }),
-  accept: (token: string) =>
-    api.post('/invites/accept', { token }),
+  accept: (data: { token: string; name: string; password: string; password_confirmation: string }) =>
+    api.post<AuthResponse>('/invites/accept', data),
 };
 
 // User API

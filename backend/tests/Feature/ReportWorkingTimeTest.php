@@ -7,6 +7,7 @@ use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
 use App\Models\BrowserTrackingConnection;
+use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\Payslip;
@@ -1107,6 +1108,24 @@ class ReportWorkingTimeTest extends TestCase
                 'role' => 'manager',
                 'organization_id' => $organization->id,
             ]);
+
+            $digitalGroup = Group::create([
+                'organization_id' => $organization->id,
+                'name' => 'Digital Marketing',
+                'slug' => 'digital-marketing',
+                'is_active' => true,
+            ]);
+
+            $itGroup = Group::create([
+                'organization_id' => $organization->id,
+                'name' => 'IT',
+                'slug' => 'it',
+                'is_active' => true,
+            ]);
+
+            $manager->groups()->sync([$digitalGroup->id]);
+            $employee->groups()->sync([$digitalGroup->id]);
+            $anotherManager->groups()->sync([$itGroup->id]);
 
             $employeeEntry = $this->createOpenEntryFor($employee);
             $managerEntry = $this->createOpenEntryFor($anotherManager, '2026-03-16 10:50:00');

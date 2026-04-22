@@ -222,6 +222,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.desktopTracker.onPrepareForClose(async () => {
       try {
         if (!DEMO_MODE && isTrackedTimerUser(user) && token) {
+          const trackerFlushDetail: { promise?: Promise<void> } = {};
+          window.dispatchEvent(new CustomEvent('desktop-tracker:flush', {
+            detail: trackerFlushDetail,
+          }));
+
+          try {
+            await trackerFlushDetail.promise;
+          } catch (error) {
+            console.error('Activity flush on desktop close error:', error);
+          }
+
           try {
             await timeEntryApi.stop({ timer_slot: 'primary' });
           } catch (error) {
@@ -232,7 +243,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        if (!DEMO_MODE && token) {
+          try {
+            await authApi.logout();
+          } catch (error) {
+            const status = getResponseStatus(error);
+            if (status !== 401 && status !== 403) {
+              console.error('Logout on desktop close error:', error);
+            }
+          }
+        }
+
         localStorage.removeItem(ACTIVE_TIMER_KEY);
+        clearAuthState();
       } finally {
         try {
           await window.desktopTracker?.confirmCloseReady?.();

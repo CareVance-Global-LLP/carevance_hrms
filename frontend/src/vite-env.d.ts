@@ -82,6 +82,7 @@ declare global {
   interface Window {
     desktopTracker?: DesktopTrackerBridge;
     __APP_CONFIG__?: AppRuntimeConfig;
+    __CAREVANCE_DESKTOP_TRACKER_COMPAT__?: readonly string[];
     gtag?: (...args: unknown[]) => void;
     plausible?: (eventName: string, options?: { props?: Record<string, unknown> }) => void;
     posthog?: {
