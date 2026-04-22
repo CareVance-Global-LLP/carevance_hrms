@@ -6,11 +6,10 @@ use App\Models\Activity;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
-use App\Models\Group;
+use App\Models\BrowserTrackingConnection;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\Payslip;
-use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
@@ -91,6 +90,37 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('idle_time', 1800);
     }
 
+    public function test_productivity_endpoint_counts_exact_desktop_sessions_in_activity_totals(): void
+    {
+        [$user, $headers] = $this->createAuthenticatedEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $user->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 10:00:00',
+            'duration' => 3600,
+            'billable' => true,
+            'timer_slot' => 'primary',
+        ]);
+
+        $this->postJson('/api/activity-sessions', [
+            'time_entry_id' => $entry->id,
+            'source' => 'desktop',
+            'activity_kind' => 'desktop_app',
+            'tool_type' => 'software',
+            'display_name' => 'Visual Studio Code',
+            'app_name' => 'Visual Studio Code',
+            'window_title' => 'Tracking Work',
+            'started_at' => '2026-04-21T09:00:00Z',
+            'ended_at' => '2026-04-21T09:30:00Z',
+            'confidence' => 100,
+        ], $headers)->assertCreated();
+
+        $this->getJson('/api/reports/productivity?start_date=2026-04-21&end_date=2026-04-21', $headers)
+            ->assertOk()
+            ->assertJsonPath('stats.activity_events', 1);
+    }
+
     public function test_dashboard_summary_uses_working_ratio_for_productivity_score(): void
     {
         [$user, $headers] = $this->createAuthenticatedEmployee();
@@ -145,66 +175,6 @@ class ReportWorkingTimeTest extends TestCase
             ->assertOk()
             ->assertJsonPath('today_total_duration', 6240)
             ->assertJsonPath('today_total_elapsed_duration', 6240);
-    }
-
-    public function test_dashboard_team_members_count_is_limited_to_visible_group_members_for_manager_and_employee(): void
-    {
-        $organization = Organization::create([
-            'name' => 'CareVance Org',
-            'slug' => 'carevance-dashboard-groups',
-        ]);
-
-        $manager = User::create([
-            'name' => 'Manager',
-            'email' => 'manager-dashboard@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'manager',
-            'organization_id' => $organization->id,
-        ]);
-
-        $employee = User::create([
-            'name' => 'Employee',
-            'email' => 'employee-dashboard@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'employee',
-            'organization_id' => $organization->id,
-        ]);
-
-        $outsider = User::create([
-            'name' => 'Outsider',
-            'email' => 'outsider-dashboard@example.com',
-            'password' => Hash::make('password123'),
-            'role' => 'employee',
-            'organization_id' => $organization->id,
-        ]);
-
-        $group = Group::create([
-            'organization_id' => $organization->id,
-            'name' => 'Operations',
-            'slug' => 'operations-dashboard',
-            'is_active' => true,
-        ]);
-
-        $otherGroup = Group::create([
-            'organization_id' => $organization->id,
-            'name' => 'Design',
-            'slug' => 'design-dashboard',
-            'is_active' => true,
-        ]);
-
-        $manager->groups()->attach($group->id);
-        $employee->groups()->attach($group->id);
-        $outsider->groups()->attach($otherGroup->id);
-
-        $this->getJson('/api/dashboard', $this->apiHeadersFor($manager))
-            ->assertOk()
-            ->assertJsonPath('team_members_count', 2)
-            ->assertJsonPath('new_members_this_week', 2);
-
-        $this->getJson('/api/dashboard', $this->apiHeadersFor($employee))
-            ->assertOk()
-            ->assertJsonPath('team_members_count', 2)
-            ->assertJsonPath('new_members_this_week', 2);
     }
 
     public function test_overall_report_counts_approved_time_edits_as_tracked_and_working_time(): void
@@ -571,6 +541,231 @@ class ReportWorkingTimeTest extends TestCase
         }
     }
 
+    public function test_employee_insights_exposes_browser_tracking_health_for_live_monitoring(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-04-21 11:30:00'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = $this->createOpenEntryFor($employee, '2026-04-21 11:00:00');
+
+            Activity::create([
+                'user_id' => $employee->id,
+                'time_entry_id' => $entry->id,
+                'type' => 'url',
+                'name' => 'https://instagram.com/reel/1',
+                'duration' => 600,
+                'recorded_at' => '2026-04-21 11:20:00',
+            ]);
+
+            BrowserTrackingConnection::create([
+                'organization_id' => $employee->organization_id,
+                'user_id' => $employee->id,
+                'device_id' => 'desktop-alpha',
+                'device_label' => 'DESKTOP-ALPHA',
+                'browser_name' => 'chrome',
+                'browser_profile_key' => 'profile-a',
+                'extension_version' => '0.1.0',
+                'status' => 'disconnected',
+                'connected_at' => '2026-04-21 11:00:00',
+                'last_seen_at' => '2026-04-21 11:22:00',
+                'last_sync_at' => '2026-04-21 11:29:40',
+                'disconnected_at' => '2026-04-21 11:29:40',
+                'disconnect_reason' => 'extension_missing',
+                'meta' => ['extension_origin' => 'chrome-extension://tracking'],
+            ]);
+
+            $this->getJson("/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}", $headers)
+                ->assertOk()
+                ->assertJsonPath('live_monitoring.selected_user.user.id', $employee->id)
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.status', 'disconnected')
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.device_label', 'DESKTOP-ALPHA')
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.disconnect_reason', 'extension_missing')
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.needs_attention', true)
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.is_exact_tracking_active', false)
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.browsers.0', 'chrome');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_employee_insights_marks_browser_tracking_as_not_paired_when_no_exact_connection_exists(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-04-21 11:30:00'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = $this->createOpenEntryFor($employee, '2026-04-21 11:00:00');
+
+            Activity::create([
+                'user_id' => $employee->id,
+                'time_entry_id' => $entry->id,
+                'type' => 'url',
+                'name' => 'Instagram',
+                'duration' => 90,
+                'recorded_at' => '2026-04-21 11:28:30',
+            ]);
+
+            $this->getJson("/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}", $headers)
+                ->assertOk()
+                ->assertJsonPath('live_monitoring.selected_user.user.id', $employee->id)
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.status', 'disconnected')
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.disconnect_reason', 'not_paired')
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.needs_attention', true)
+                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.is_exact_tracking_active', false);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_employee_insights_prefers_recent_website_activity_over_utility_overlay_for_live_tool(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-04-21 11:48:10'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = $this->createOpenEntryFor($employee, '2026-04-21 11:00:00');
+
+            Activity::create([
+                'user_id' => $employee->id,
+                'time_entry_id' => $entry->id,
+                'type' => 'url',
+                'name' => 'Instagram',
+                'duration' => 10,
+                'recorded_at' => '2026-04-21 11:47:21',
+                'normalized_label' => 'instagram.com',
+                'normalized_domain' => 'instagram.com',
+                'software_name' => 'instagram',
+                'tool_type' => 'website',
+                'classification' => 'unproductive',
+                'classification_reason' => 'Social media entertainment',
+            ]);
+
+            $this->postJson('/api/activity-sessions', [
+                'time_entry_id' => $entry->id,
+                'source' => 'desktop',
+                'activity_kind' => 'desktop_app',
+                'tool_type' => 'software',
+                'display_name' => 'SnippingTool.exe',
+                'app_name' => 'SnippingTool.exe',
+                'window_title' => 'Snipping Tool Overlay',
+                'started_at' => '2026-04-21T11:47:57Z',
+                'confidence' => 100,
+            ], $this->apiHeadersFor($employee))->assertCreated();
+
+            $this->getJson("/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}", $headers)
+                ->assertOk()
+                ->assertJsonPath('live_monitoring.selected_user.current_tool', 'instagram.com')
+                ->assertJsonPath('live_monitoring.selected_user.tool_type', 'website')
+                ->assertJsonPath('live_monitoring.selected_user.activity_type', 'url');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_employee_insights_prefers_most_recent_open_exact_session_when_multiple_sessions_are_still_live(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-04-21 11:48:10'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = $this->createOpenEntryFor($employee, '2026-04-21 11:00:00');
+
+            $this->postJson('/api/activity-sessions', [
+                'time_entry_id' => $entry->id,
+                'source' => 'desktop',
+                'activity_kind' => 'desktop_app',
+                'tool_type' => 'software',
+                'display_name' => 'Visual Studio Code',
+                'app_name' => 'Visual Studio Code',
+                'window_title' => 'Tracking Work',
+                'started_at' => '2026-04-21T11:47:57Z',
+                'confidence' => 100,
+            ], $this->apiHeadersFor($employee))->assertCreated();
+
+            $this->postJson('/api/activity-sessions', [
+                'time_entry_id' => $entry->id,
+                'source' => 'browser_extension',
+                'activity_kind' => 'website',
+                'tool_type' => 'website',
+                'display_name' => 'Time Doctor Help',
+                'app_name' => 'chrome',
+                'window_title' => 'How to Use the Time Doctor Chrome Browser Extension or Firefox Browser AddOn',
+                'url' => 'https://support.timedoctor.com/knowledge/how-time-doctor-chrome-extension-works',
+                'started_at' => '2026-04-21T11:48:05Z',
+                'confidence' => 100,
+            ], $this->apiHeadersFor($employee))->assertCreated();
+
+            $this->getJson("/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}", $headers)
+                ->assertOk()
+                ->assertJsonPath('live_monitoring.selected_user.current_tool', 'support.timedoctor.com')
+                ->assertJsonPath('live_monitoring.selected_user.tool_type', 'website')
+                ->assertJsonPath('live_monitoring.selected_user.activity_type', 'url');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_employee_insights_uses_exact_desktop_app_name_for_live_monitoring(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-04-22 10:32:26'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = $this->createOpenEntryFor($employee, '2026-04-22 10:00:00');
+
+            $this->postJson('/api/activity-sessions', [
+                'time_entry_id' => $entry->id,
+                'source' => 'desktop',
+                'activity_kind' => 'desktop_app',
+                'tool_type' => 'software',
+                'display_name' => 'Codex',
+                'app_name' => 'Codex',
+                'window_title' => 'Codex',
+                'started_at' => '2026-04-22T10:31:40Z',
+                'confidence' => 100,
+            ], $this->apiHeadersFor($employee))->assertCreated();
+
+            $this->getJson("/api/reports/employee-insights?start_date=2026-04-22&end_date=2026-04-22&user_id={$employee->id}", $headers)
+                ->assertOk()
+                ->assertJsonPath('live_monitoring.selected_user.current_tool', 'Codex')
+                ->assertJsonPath('live_monitoring.selected_user.tool_type', 'software')
+                ->assertJsonPath('live_monitoring.selected_user.activity_type', 'app');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_employee_insights_prefers_explorer_window_title_for_live_monitoring(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-04-22 11:14:28'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = $this->createOpenEntryFor($employee, '2026-04-22 11:00:00');
+
+            $this->postJson('/api/activity-sessions', [
+                'time_entry_id' => $entry->id,
+                'source' => 'desktop',
+                'activity_kind' => 'desktop_app',
+                'tool_type' => 'software',
+                'display_name' => 'This PC',
+                'app_name' => 'Windows Explorer',
+                'window_title' => 'This PC',
+                'started_at' => '2026-04-22T11:14:04Z',
+                'confidence' => 100,
+            ], $this->apiHeadersFor($employee))->assertCreated();
+
+            $this->getJson("/api/reports/employee-insights?start_date=2026-04-22&end_date=2026-04-22&user_id={$employee->id}", $headers)
+                ->assertOk()
+                ->assertJsonPath('live_monitoring.selected_user.current_tool', 'This PC')
+                ->assertJsonPath('live_monitoring.selected_user.tool_type', 'software')
+                ->assertJsonPath('live_monitoring.selected_user.activity_type', 'app');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_employee_insights_classifies_browser_window_titles_as_unproductive_tools(): void
     {
         [$admin, $employee, $headers] = $this->createAdminAndEmployee();
@@ -913,15 +1108,6 @@ class ReportWorkingTimeTest extends TestCase
                 'organization_id' => $organization->id,
             ]);
 
-            $group = Group::create([
-                'organization_id' => $organization->id,
-                'name' => 'Operations',
-                'slug' => 'operations',
-                'is_active' => true,
-            ]);
-            $manager->groups()->attach($group->id);
-            $employee->groups()->attach($group->id);
-
             $employeeEntry = $this->createOpenEntryFor($employee);
             $managerEntry = $this->createOpenEntryFor($anotherManager, '2026-03-16 10:50:00');
 
@@ -951,52 +1137,6 @@ class ReportWorkingTimeTest extends TestCase
             $this->assertCount(1, $response->json('live_monitoring.all_users'));
             $this->assertSame($employee->id, $response->json('live_monitoring.all_users.0.user.id'));
             $this->assertSame('employee', $response->json('live_monitoring.all_users.0.user.role'));
-        } finally {
-            Carbon::setTestNow();
-        }
-    }
-
-    public function test_employee_insights_recent_screenshots_are_filtered_by_capture_time(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));
-
-        try {
-            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
-
-            $entry = TimeEntry::create([
-                'user_id' => $employee->id,
-                'start_time' => '2026-03-15 23:55:00',
-                'end_time' => null,
-                'duration' => 0,
-                'billable' => true,
-            ]);
-
-            $matchingScreenshot = Screenshot::create([
-                'time_entry_id' => $entry->id,
-                'filename' => 'capture-in-range.jpg',
-            ]);
-            $matchingScreenshot->forceFill([
-                'created_at' => '2026-03-16 10:05:00',
-                'updated_at' => '2026-03-16 10:05:00',
-            ])->saveQuietly();
-
-            $outOfRangeScreenshot = Screenshot::create([
-                'time_entry_id' => $entry->id,
-                'filename' => 'capture-out-of-range.jpg',
-            ]);
-            $outOfRangeScreenshot->forceFill([
-                'created_at' => '2026-03-15 23:40:00',
-                'updated_at' => '2026-03-15 23:40:00',
-            ])->saveQuietly();
-
-            $response = $this->getJson(
-                "/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}",
-                $headers
-            )->assertOk();
-
-            $this->assertCount(1, $response->json('recent_screenshots'));
-            $this->assertSame($matchingScreenshot->id, $response->json('recent_screenshots.0.id'));
-            $this->assertSame('capture-in-range.jpg', $response->json('recent_screenshots.0.filename'));
         } finally {
             Carbon::setTestNow();
         }

@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\ActivityController;
+use App\Http\Controllers\Api\ActivitySessionController;
+use App\Http\Controllers\Api\BrowserTrackingConnectionController;
 use App\Http\Controllers\Api\ScreenshotController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,3 +14,5 @@ Route::put('/screenshots/{screenshot}', [ScreenshotController::class, 'update'])
 Route::patch('/screenshots/{screenshot}', [ScreenshotController::class, 'update']);
 Route::delete('/screenshots/{screenshot}', [ScreenshotController::class, 'destroy']);
 Route::apiResource('activities', ActivityController::class);
+Route::apiResource('activity-sessions', ActivitySessionController::class)->only(['store', 'update']);
+Route::post('/browser-tracking/connections/sync', [BrowserTrackingConnectionController::class, 'sync']);

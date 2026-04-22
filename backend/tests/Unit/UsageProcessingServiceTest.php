@@ -164,6 +164,35 @@ class UsageProcessingServiceTest extends TestCase
         $this->assertSame(480, $summary['tools']['unproductive'][0]['total_duration']);
     }
 
+    public function test_usage_processing_keeps_website_labels_from_stored_domain_context(): void
+    {
+        $service = app(UsageProcessingService::class);
+
+        $summary = $service->buildUsageSummary([
+            [
+                'id' => 1,
+                'user_id' => 1,
+                'time_entry_id' => 55,
+                'type' => 'url',
+                'name' => 'GitHub',
+                'app_name' => 'Google Chrome',
+                'window_title' => 'OpenAI/Codex - Pull requests - Google Chrome',
+                'url' => 'https://github.com/openai/codex/pulls',
+                'duration' => 10,
+                'recorded_at' => '2026-04-20T10:00:10Z',
+                'normalized_label' => 'github.com',
+                'normalized_domain' => 'github.com',
+                'tool_type' => 'website',
+            ],
+        ]);
+
+        $this->assertTrue(
+            collect($summary['tools']['productive'] ?? [])->contains(
+                fn ($row) => ($row['label'] ?? null) === 'github.com'
+            )
+        );
+    }
+
     private function log(int $id, int $timeEntryId, string $type, string $name, int $duration, string $recordedAt): array
     {
         return [

@@ -3,10 +3,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { productivityRuleApi, settingsApi } from '@/services/api';
 import type { ProductivityRule as ProductivityRuleType } from '@/types';
-import { User, Bell, Lock, CreditCard, Building, Briefcase } from 'lucide-react';
+import { User, Bell, Lock, CreditCard, Building, Briefcase, Link2 } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
+import DesktopBrowserTrackingPanel from '@/components/desktop/DesktopBrowserTrackingPanel';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -61,6 +62,7 @@ export default function SettingsPage() {
   const isEmployee = isEmployeeUser(user);
   const isOrgEditable = canManageOrg && hasAdminAccess(user) && !isEmployee;
   const canEditEmail = hasStrictAdminAccess(user);
+  const hasDesktopBrowserTracking = Boolean(window.desktopTracker);
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
@@ -68,6 +70,7 @@ export default function SettingsPage() {
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
     { id: 'billing', name: 'Billing', icon: CreditCard },
+    ...(hasDesktopBrowserTracking ? [{ id: 'browser-tracking', name: 'Browser Tracking', icon: Link2 }] : []),
     ...(hasStrictAdminAccess(user) ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
   ];
 
@@ -449,6 +452,18 @@ export default function SettingsPage() {
                 </p>
               </div>
               <Button disabled variant="secondary">Manage Subscription (Coming soon)</Button>
+            </div>
+          )}
+
+          {activeTab === 'browser-tracking' && hasDesktopBrowserTracking && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Browser Tracking</h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Install once, pair once, and let the desktop app keep the browser connected across restarts. Published desktop builds can open direct browser install pages, while local builds still provide the unpacked extension folder.
+                </p>
+              </div>
+              <DesktopBrowserTrackingPanel />
             </div>
           )}
 

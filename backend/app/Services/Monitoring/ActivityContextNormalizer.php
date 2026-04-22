@@ -39,20 +39,16 @@ class ActivityContextNormalizer
         $cleanWindowTitle = $this->cleanBrowserWindowTitle($windowTitle !== '' ? $windowTitle : $rawName);
         $resolvedAppName = $appName !== '' ? $appName : $rawName;
         $normalizedApp = $this->normalizeAppName($resolvedAppName);
-        $isBrowserApp = $this->isBrowserApp($normalizedApp ?: $resolvedAppName) || $type === 'url';
         $domain = $url !== '' ? $this->extractDomain($url) : null;
-        if ($domain === null && $isBrowserApp) {
-            $domain = $this->extractDomain($rawName);
+
+        if ($domain === null && $type === 'url') {
+            $domain = $this->extractDomain($rawName) ?? $this->extractDomain($cleanWindowTitle);
         }
 
-        $browserContext = $isBrowserApp || ($domain !== null && $domain !== '');
-
-        if ($domain === null && $browserContext) {
-            $domain = $this->extractDomain($cleanWindowTitle);
-        }
-
-        $softwareName = $browserContext ? $normalizedApp : ($normalizedApp ?: null);
-        $normalizedLabel = $domain ?: ($softwareName ?: ($cleanWindowTitle !== '' ? mb_strtolower($cleanWindowTitle) : null));
+        $browserContext = $type === 'url' || ($domain !== null && $domain !== '');
+        $softwareName = $normalizedApp ?: null;
+        $normalizedLabel = $domain
+            ?: ($softwareName ?: ($cleanWindowTitle !== '' ? mb_strtolower($cleanWindowTitle) : null));
 
         return [
             'normalized_label' => $normalizedLabel ?: ($type === 'url' ? 'unknown-site' : 'unknown-app'),
@@ -62,7 +58,7 @@ class ActivityContextNormalizer
             'clean_window_title' => $cleanWindowTitle,
             'raw_name' => $rawName,
             'activity_type' => $type !== '' ? $type : 'app',
-            'is_browser_context' => $browserContext,
+            'is_browser_context' => $browserContext || $this->isBrowserApp($normalizedApp ?: $resolvedAppName),
         ];
     }
 

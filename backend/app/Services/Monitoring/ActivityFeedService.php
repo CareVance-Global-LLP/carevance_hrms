@@ -1,0 +1,255 @@
+<?php
+
+namespace App\Services\Monitoring;
+
+use App\Models\Activity;
+use App\Models\ActivitySession;
+use Carbon\Carbon;
+use Illuminate\Support\Collection;
+
+class ActivityFeedService
+{
+    public function forUsersInRange(iterable $userIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
+    {
+        $userIdCollection = $this->normalizeIds($userIds);
+        if ($userIdCollection->isEmpty()) {
+            return collect();
+        }
+
+        $activities = Activity::query()
+            ->whereIn('user_id', $userIdCollection)
+            ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+            ->get()
+            ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        $sessionModels = ActivitySession::query()
+            ->whereIn('user_id', $userIdCollection)
+            ->when($startDate || $endDate, function ($query) use ($startDate, $endDate) {
+                $this->applySessionOverlapFilter($query, $startDate, $endDate);
+            })
+            ->orderBy('user_id')
+            ->orderBy('source')
+            ->orderBy('started_at')
+            ->orderBy('id')
+            ->get();
+
+        $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
+
+        return $activities
+            ->concat($sessions)
+            ->sortByDesc(fn ($item) => $this->sortTimestamp($item))
+            ->values();
+    }
+
+    public function forTimeEntries(iterable $timeEntryIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
+    {
+        $timeEntryIdCollection = $this->normalizeIds($timeEntryIds);
+        if ($timeEntryIdCollection->isEmpty()) {
+            return collect();
+        }
+
+        $activities = Activity::query()
+            ->whereIn('time_entry_id', $timeEntryIdCollection)
+            ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+            ->get()
+            ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        $sessionModels = ActivitySession::query()
+            ->whereIn('time_entry_id', $timeEntryIdCollection)
+            ->when($startDate || $endDate, function ($query) use ($startDate, $endDate) {
+                $this->applySessionOverlapFilter($query, $startDate, $endDate);
+            })
+            ->orderBy('user_id')
+            ->orderBy('source')
+            ->orderBy('started_at')
+            ->orderBy('id')
+            ->get();
+
+        $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
+
+        return $activities
+            ->concat($sessions)
+            ->sortByDesc(fn ($item) => $this->sortTimestamp($item))
+            ->values();
+    }
+
+    public function recentForUsers(iterable $userIds, Carbon $since, ?Carbon $until = null): Collection
+    {
+        return $this->forUsersInRange($userIds, $since, $until ?? now());
+    }
+
+    private function normalizeIds(iterable $ids): Collection
+    {
+        return collect($ids)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+    }
+
+    private function applySessionOverlapFilter($query, ?Carbon $startDate, ?Carbon $endDate): void
+    {
+        if ($endDate) {
+            $query->where('started_at', '<=', $endDate);
+        }
+
+        if ($startDate) {
+            $query->where(function ($nestedQuery) use ($startDate) {
+                $nestedQuery->whereNull('ended_at')
+                    ->orWhere('ended_at', '>=', $startDate);
+            });
+        }
+    }
+
+    private function mapActivity(Activity $activity): object
+    {
+        return (object) [
+            'id' => (int) $activity->id,
+            'source' => 'activity',
+            'user_id' => (int) $activity->user_id,
+            'time_entry_id' => $activity->time_entry_id ? (int) $activity->time_entry_id : null,
+            'type' => (string) $activity->type,
+            'name' => (string) $activity->name,
+            'duration' => max(0, (int) $activity->duration),
+            'recorded_at' => $activity->recorded_at?->copy(),
+            'normalized_label' => $activity->normalized_label,
+            'normalized_domain' => $activity->normalized_domain,
+            'software_name' => $activity->software_name,
+            'tool_type' => $activity->tool_type,
+            'classification' => $activity->classification,
+            'classification_reason' => $activity->classification_reason,
+            'created_at' => $activity->created_at?->copy(),
+            'updated_at' => $activity->updated_at?->copy(),
+        ];
+    }
+
+    private function mapSessions(Collection $sessions, ?Carbon $rangeStart, ?Carbon $rangeEnd): Collection
+    {
+        $nextSessionStarts = [];
+
+        foreach ($sessions->reverse()->values() as $session) {
+            if (! $session instanceof ActivitySession) {
+                continue;
+            }
+
+            $partitionKey = $this->sessionPartitionKey($session);
+            $nextSessionStarts[$session->id] = $nextSessionStarts[$partitionKey] ?? null;
+
+            if ($session->started_at instanceof Carbon) {
+                $nextSessionStarts[$partitionKey] = $session->started_at->copy();
+            }
+        }
+
+        return $sessions
+            ->map(fn (ActivitySession $session) => $this->mapSession(
+                $session,
+                $rangeStart,
+                $rangeEnd,
+                $nextSessionStarts[$session->id] ?? null,
+            ))
+            ->filter()
+            ->values();
+    }
+
+    private function mapSession(ActivitySession $session, ?Carbon $rangeStart, ?Carbon $rangeEnd, ?Carbon $nextStartedAt = null): ?object
+    {
+        $effectiveStart = $session->started_at?->copy();
+        if (! $effectiveStart) {
+            return null;
+        }
+
+        $effectiveEnd = $session->ended_at?->copy()
+            ?? ($nextStartedAt?->copy() ?: now());
+
+        if ($rangeStart && $effectiveEnd->lessThanOrEqualTo($rangeStart)) {
+            return null;
+        }
+
+        if ($rangeEnd && $effectiveStart->greaterThanOrEqualTo($rangeEnd)) {
+            return null;
+        }
+
+        if ($rangeStart && $effectiveStart->lessThan($rangeStart)) {
+            $effectiveStart = $rangeStart->copy();
+        }
+
+        if ($rangeEnd && $effectiveEnd->greaterThan($rangeEnd)) {
+            $effectiveEnd = $rangeEnd->copy();
+        }
+
+        if ($effectiveEnd->lessThanOrEqualTo($effectiveStart)) {
+            return null;
+        }
+
+        $type = $this->resolveSessionType($session);
+        $duration = max(0, $effectiveStart->diffInSeconds($effectiveEnd));
+
+        return (object) [
+            'id' => (int) $session->id,
+            'source' => 'activity_session',
+            'user_id' => (int) $session->user_id,
+            'time_entry_id' => $session->time_entry_id ? (int) $session->time_entry_id : null,
+            'type' => $type,
+            'name' => $this->resolveSessionName($session),
+            'duration' => $duration,
+            'recorded_at' => $effectiveEnd->copy(),
+            'normalized_label' => $session->normalized_label,
+            'normalized_domain' => $session->normalized_domain,
+            'software_name' => $session->software_name,
+            'tool_type' => $session->tool_type,
+            'classification' => $session->classification,
+            'classification_reason' => $session->classification_reason,
+            'started_at' => $effectiveStart,
+            'ended_at' => $effectiveEnd->copy(),
+            'display_name' => $session->display_name,
+            'app_name' => $session->app_name,
+            'window_title' => $session->window_title,
+            'url' => $session->url,
+            'confidence' => $session->confidence,
+            'metadata' => $session->metadata,
+            'created_at' => $session->created_at?->copy(),
+            'updated_at' => $session->updated_at?->copy(),
+        ];
+    }
+
+    private function sessionPartitionKey(ActivitySession $session): string
+    {
+        return implode('|', [
+            (int) $session->user_id,
+            strtolower(trim((string) $session->source)),
+        ]);
+    }
+
+    private function resolveSessionType(ActivitySession $session): string
+    {
+        return match (strtolower(trim((string) $session->activity_kind))) {
+            'desktop_idle', 'idle' => 'idle',
+            'website', 'browser', 'browser_tab' => 'url',
+            default => 'app',
+        };
+    }
+
+    private function resolveSessionName(ActivitySession $session): string
+    {
+        return (string) (
+            $session->display_name
+            ?: $session->app_name
+            ?: $session->window_title
+            ?: $session->url
+            ?: 'Unknown Activity'
+        );
+    }
+
+    private function sortTimestamp(object $item): int
+    {
+        $recordedAt = $item->recorded_at;
+
+        if ($recordedAt instanceof Carbon) {
+            return $recordedAt->getTimestamp();
+        }
+
+        return Carbon::parse((string) $recordedAt)->getTimestamp();
+    }
+}

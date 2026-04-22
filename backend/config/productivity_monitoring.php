@@ -30,7 +30,7 @@ return [
         '/\s*-\s*vivaldi$/iu',
     ],
     'app_aliases' => [
-        'vscode' => ['visual studio code', 'vs code', 'code.exe', 'vscode'],
+        'vscode' => ['visual studio code', 'vs code', 'code.exe', 'vscode', 'code'],
         'terminal' => ['terminal', 'windows terminal', 'powershell', 'cmd', 'command prompt', 'git bash'],
         'figma' => ['figma'],
         'postman' => ['postman'],
@@ -78,6 +78,7 @@ return [
         ['name' => 'Claude', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'claude', 'classification' => 'productive', 'priority' => 210, 'reason' => 'Work assistant tooling'],
         ['name' => 'Gemini', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'gemini', 'classification' => 'productive', 'priority' => 210, 'reason' => 'Work assistant tooling'],
         ['name' => 'YouTube', 'target_type' => 'domain', 'match_mode' => 'contains', 'target_value' => 'youtube.com', 'classification' => 'context_dependent', 'priority' => 210, 'reason' => 'Video can be training or entertainment depending on context'],
+        ['name' => 'WhatsApp Web', 'target_type' => 'domain', 'match_mode' => 'contains', 'target_value' => 'web.whatsapp.com', 'classification' => 'unproductive', 'priority' => 215, 'reason' => 'Web chat usage is treated as non-work browsing in monitoring summaries'],
         ['name' => 'WhatsApp', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'whatsapp', 'classification' => 'context_dependent', 'priority' => 210, 'reason' => 'Messaging can be work or personal'],
         ['name' => 'Telegram', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'telegram', 'classification' => 'context_dependent', 'priority' => 210, 'reason' => 'Messaging can be work or personal'],
         ['name' => 'Discord', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'discord', 'classification' => 'context_dependent', 'priority' => 180, 'reason' => 'Chat server may or may not be work-related'],

@@ -7,10 +7,11 @@
   "main": "main.cjs",
   "scripts": {
     "prepare:app-config": "node scripts/write-app-config.cjs",
-    "start": "npm run prepare:app-config && node scripts/run-electron.cjs .",
-    "pack": "npm run prepare:app-config && electron-builder --dir",
-    "dist:win": "npm run prepare:app-config && electron-builder --win nsis",
-    "dist:portable": "npm run prepare:app-config && electron-builder --win portable"
+    "prepare:browser-extension": "node scripts/sync-browser-extension.cjs",
+    "start": "npm run prepare:app-config && npm run prepare:browser-extension && node scripts/run-electron.cjs .",
+    "pack": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --dir",
+    "dist:win": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win nsis",
+    "dist:portable": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win portable"
   },
   "build": {
     "appId": "com.carevance.tracker",
@@ -19,6 +20,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "browser-tracking-bridge.cjs",
       "app-config.json",
       "scripts/**/*",
       "assets/**/*",

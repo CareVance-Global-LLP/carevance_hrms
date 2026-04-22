@@ -6,11 +6,22 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\ReportGroup;
 use App\Models\TimeEntry;
+use App\Models\User;
+use App\Services\Monitoring\ActivityFeedService;
+use App\Services\Reports\UsageProcessingService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class ActivityController extends Controller
 {
+    public function __construct(
+        private readonly ActivityFeedService $activityFeedService,
+        private readonly UsageProcessingService $usageProcessingService,
+    ) {
+    }
+
     private function canViewAll(?\App\Models\User $user): bool
     {
         return $user && in_array($user->role, ['admin', 'manager'], true);
@@ -52,43 +63,173 @@ class ActivityController extends Controller
 
         $perPage = (int) $request->get('per_page', 50);
         $perPage = max(1, min($perPage, 200));
+        $page = max(1, (int) $request->get('page', 1));
 
-        $activities = Activity::query()
-            ->with(['user:id,name,email,role'])
-            ->whereHas('user', function ($query) use ($user) {
-                $query->where('organization_id', $user->organization_id);
-            })
-            ->when(!$canViewAll, fn ($query) => $query->where('user_id', $user->id))
-            ->when($canViewAll && $request->user_id, function ($query) use ($request) {
-                $query->where('user_id', $request->user_id);
-            })
+        $scopedUserIds = User::query()
+            ->where('organization_id', $user->organization_id)
+            ->when(! $canViewAll, fn ($query) => $query->where('id', $user->id))
+            ->when($canViewAll && $request->user_id, fn ($query) => $query->where('id', (int) $request->user_id))
             ->when($canViewAll && $groupUserIds !== null, function ($query) use ($groupUserIds, $request) {
                 $selectedUserId = $request->user_id ? (int) $request->user_id : null;
                 if ($selectedUserId) {
-                    $query->whereIn('user_id', $groupUserIds->intersect([$selectedUserId]));
+                    $query->whereIn('id', $groupUserIds->intersect([$selectedUserId]));
                 } else {
-                    $query->whereIn('user_id', $groupUserIds);
+                    $query->whereIn('id', $groupUserIds);
                 }
             })
-            ->when($request->type, function ($query, $type) {
-                $query->where('type', $type);
-            })
-            ->when($request->classification, function ($query, $classification) {
-                $query->where('classification', $classification);
-            })
-            ->when($request->tool_type, function ($query, $toolType) {
-                $query->where('tool_type', $toolType);
-            })
-            ->when($request->start_date, function ($query, $startDate) {
-                $query->where('recorded_at', '>=', Carbon::parse((string) $startDate)->startOfDay());
-            })
-            ->when($request->end_date, function ($query, $endDate) {
-                $query->where('recorded_at', '<=', Carbon::parse((string) $endDate)->endOfDay());
-            })
-            ->orderBy('recorded_at', 'desc')
-            ->paginate($perPage);
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
 
-        return response()->json($activities);
+        if ($scopedUserIds->isEmpty()) {
+            return response()->json(new LengthAwarePaginator(
+                collect(),
+                0,
+                $perPage,
+                $page,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            ));
+        }
+
+        $startDate = $request->start_date
+            ? Carbon::parse((string) $request->start_date)->startOfDay()
+            : null;
+        $endDate = $request->end_date
+            ? Carbon::parse((string) $request->end_date)->endOfDay()
+            : null;
+
+        $usersById = User::query()
+            ->whereIn('id', $scopedUserIds)
+            ->get(['id', 'name', 'email', 'role'])
+            ->mapWithKeys(fn (User $scopedUser) => [
+                (int) $scopedUser->id => [
+                    'id' => (int) $scopedUser->id,
+                    'name' => $scopedUser->name,
+                    'email' => $scopedUser->email,
+                    'role' => $scopedUser->role,
+                ],
+            ]);
+
+        $feed = $this->activityFeedService
+            ->forUsersInRange($scopedUserIds, $startDate, $endDate)
+            ->filter(function (object $item) use ($request) {
+                if ($request->type && (string) $item->type !== (string) $request->type) {
+                    return false;
+                }
+
+                if ($request->classification && (string) ($item->classification ?? '') !== (string) $request->classification) {
+                    return false;
+                }
+
+                if ($request->tool_type && (string) ($item->tool_type ?? '') !== (string) $request->tool_type) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->values();
+
+        if ($request->boolean('processed')) {
+            $processedRows = $this->buildProcessedTimelineRows($feed, $usersById);
+
+            return response()->json(new LengthAwarePaginator(
+                $processedRows->slice(($page - 1) * $perPage, $perPage)->values(),
+                $processedRows->count(),
+                $perPage,
+                $page,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            ));
+        }
+
+        $rows = $feed->map(fn (object $item) => $this->mapFeedItemForResponse($item, $usersById))
+            ->values();
+
+        return response()->json(new LengthAwarePaginator(
+            $rows->slice(($page - 1) * $perPage, $perPage)->values(),
+            $rows->count(),
+            $perPage,
+            $page,
+            [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]
+        ));
+    }
+
+    private function buildProcessedTimelineRows(iterable $activities, Collection $usersById): Collection
+    {
+        return $this->usageProcessingService->buildTimelineRows($activities)
+            ->map(function (array $row) use ($usersById) {
+                $recordedAt = data_get($row, 'recorded_at');
+                $toolType = (string) ($row['tool_type'] ?? 'software');
+                $label = (string) ($row['label'] ?? '');
+                $rawName = (string) ($row['raw_name'] ?? '');
+
+                return [
+                    'id' => (int) ($row['id'] ?? 0),
+                    'user_id' => (int) ($row['user_id'] ?? 0),
+                    'time_entry_id' => (int) ($row['time_entry_id'] ?? 0),
+                    'type' => (string) ($row['type'] ?? 'app'),
+                    'name' => $rawName !== '' ? $rawName : ($label !== '' ? $label : 'Unknown'),
+                    'duration' => (int) ($row['duration'] ?? 0),
+                    'recorded_at' => $recordedAt instanceof Carbon
+                        ? $recordedAt->toIso8601String()
+                        : (string) $recordedAt,
+                    'normalized_label' => $label !== '' ? $label : null,
+                    'normalized_domain' => $toolType === 'website' && $label !== '' ? $label : null,
+                    'software_name' => $toolType === 'software' && $label !== '' ? $label : null,
+                    'tool_type' => $toolType,
+                    'classification' => (string) ($row['classification'] ?? 'neutral'),
+                    'classification_reason' => (string) ($row['classification_reason'] ?? ''),
+                    'user' => $usersById->get((int) ($row['user_id'] ?? 0)),
+                    'raw_events_count' => (int) ($row['raw_events_count'] ?? 1),
+                ];
+            })
+            ->values();
+    }
+
+    private function mapFeedItemForResponse(object $item, Collection $usersById): array
+    {
+        $startedAt = $item->started_at ?? null;
+        $endedAt = $item->ended_at ?? null;
+
+        return [
+            'id' => (int) ($item->id ?? 0),
+            'source' => (string) ($item->source ?? 'activity'),
+            'user_id' => (int) ($item->user_id ?? 0),
+            'time_entry_id' => $item->time_entry_id ? (int) $item->time_entry_id : null,
+            'type' => (string) ($item->type ?? 'app'),
+            'name' => (string) ($item->name ?? 'Unknown'),
+            'duration' => max(0, (int) ($item->duration ?? 0)),
+            'recorded_at' => $item->recorded_at instanceof Carbon
+                ? $item->recorded_at->toIso8601String()
+                : (string) ($item->recorded_at ?? ''),
+            'normalized_label' => $item->normalized_label ?? null,
+            'normalized_domain' => $item->normalized_domain ?? null,
+            'software_name' => $item->software_name ?? null,
+            'tool_type' => $item->tool_type ?? null,
+            'classification' => $item->classification ?? null,
+            'classification_reason' => $item->classification_reason ?? null,
+            'app_name' => $item->app_name ?? null,
+            'window_title' => $item->window_title ?? null,
+            'url' => $item->url ?? null,
+            'started_at' => $startedAt instanceof Carbon
+                ? $startedAt->toIso8601String()
+                : null,
+            'ended_at' => $endedAt instanceof Carbon
+                ? $endedAt->toIso8601String()
+                : null,
+            'confidence' => $item->confidence ?? null,
+            'metadata' => $item->metadata ?? null,
+            'user' => $usersById->get((int) ($item->user_id ?? 0)),
+        ];
     }
 
     /**
@@ -101,6 +242,9 @@ class ActivityController extends Controller
             'time_entry_id' => 'nullable|exists:time_entries,id',
             'type' => 'required|in:app,url,idle',
             'name' => 'required|string|max:255',
+            'app_name' => 'nullable|string|max:255',
+            'window_title' => 'nullable|string|max:255',
+            'url' => 'nullable|string|max:2048',
             'duration' => 'nullable|integer|min:0',
             'recorded_at' => 'nullable|date',
         ]);
@@ -167,6 +311,9 @@ class ActivityController extends Controller
             'time_entry_id' => 'nullable|exists:time_entries,id',
             'type' => 'sometimes|in:app,url,idle',
             'name' => 'sometimes|string|max:255',
+            'app_name' => 'nullable|string|max:255',
+            'window_title' => 'nullable|string|max:255',
+            'url' => 'nullable|string|max:2048',
             'duration' => 'nullable|integer|min:0',
             'recorded_at' => 'nullable|date',
         ]);

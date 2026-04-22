@@ -17,6 +17,7 @@ import { classifyActivityProductivity as classifyProductivity, normalizeActivity
 import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
+import type { BrowserTrackingHealthSummary } from '@/types';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
 type SectionFeedback = {
@@ -88,6 +89,94 @@ const productivityTone = (classification?: string | null) =>
     : classification === 'unproductive'
       ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
       : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200';
+
+const browserTrackingTone = (status?: string | null) =>
+  status === 'connected'
+    ? 'text-emerald-700'
+    : status === 'disconnected' || status === 'disabled'
+      ? 'text-amber-700'
+      : 'text-slate-950';
+
+const formatBrowserTrackingBrowsers = (summary?: BrowserTrackingHealthSummary | null) => {
+  const browsers = Array.isArray(summary?.browsers) ? summary.browsers : [];
+  if (!browsers.length) {
+    return 'Browser tracking';
+  }
+
+  return browsers
+    .map((browser) => {
+      const normalized = String(browser || '').trim().toLowerCase();
+      return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : '';
+    })
+    .filter(Boolean)
+    .join(', ');
+};
+
+const formatBrowserTrackingStatus = (summary?: BrowserTrackingHealthSummary | null) => {
+  switch (String(summary?.status || 'unknown')) {
+    case 'connected':
+      return 'Connected';
+    case 'disconnected':
+      return 'Tracking off';
+    case 'disabled':
+      return 'Bridge offline';
+    default:
+      return 'Unknown';
+  }
+};
+
+const shouldPreferWindowTitleForDesktopRow = (item: any) => {
+  const appName = String(item?.app_name || '').trim().toLowerCase();
+  const windowTitle = String(item?.window_title || '').trim();
+
+  if (!windowTitle) {
+    return false;
+  }
+
+  return ['explorer.exe', 'windows explorer', 'file explorer'].some((keyword) => appName.includes(keyword));
+};
+
+const resolveExactActivityLabel = (item: any, mode: MonitoringWorkspaceMode) => {
+  if (mode === 'website-usage') {
+    return normalizeToolLabel(item?.name || 'Unknown', item?.type || 'url');
+  }
+
+  if (shouldPreferWindowTitleForDesktopRow(item)) {
+    return String(item?.window_title || 'Unknown').trim();
+  }
+
+  return String(
+    item?.app_name
+    || item?.name
+    || item?.window_title
+    || item?.software_name
+    || item?.normalized_label
+    || 'Unknown'
+  ).trim();
+};
+
+const formatBrowserTrackingHint = (summary?: BrowserTrackingHealthSummary | null) => {
+  const deviceLabel = String(summary?.device_label || '').trim();
+  const disconnectReason = String(summary?.disconnect_reason || '').trim().replace(/_/g, ' ');
+
+  switch (String(summary?.status || 'unknown')) {
+    case 'connected':
+      return [
+        formatBrowserTrackingBrowsers(summary),
+        deviceLabel ? `active on ${deviceLabel}` : 'exact tracking active',
+      ].filter(Boolean).join(' ');
+    case 'disconnected':
+      return deviceLabel
+        ? `${deviceLabel} reported ${disconnectReason || 'extension missing'}`
+        : `Extension reported ${disconnectReason || 'missing'}`;
+    case 'disabled':
+      return deviceLabel
+        ? `${deviceLabel} reported ${disconnectReason || 'bridge unavailable'}`
+        : `Desktop app reported ${disconnectReason || 'bridge unavailable'}`;
+    default:
+      return 'No exact browser tracking health reported yet';
+  }
+};
 
 const modeCopy: Record<MonitoringWorkspaceMode, { title: string; description: string; eyebrow: string }> = {
   'productive-time': {
@@ -394,7 +483,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     const mapped = new Map<string, { label: string; duration: number; count: number; users: Set<string>; classification: string }>();
 
     activityRows.forEach((item: any) => {
-      const label = normalizeToolLabel(item.name || 'Unknown', item.type || (mode === 'website-usage' ? 'url' : 'app'));
+      const label = resolveExactActivityLabel(item, mode);
       const key = label || 'Unknown';
       const classification = classifyProductivity(label, item.type || (mode === 'website-usage' ? 'url' : 'app'));
       if (!mapped.has(key)) {
@@ -501,6 +590,17 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const topUnproductiveTool = selectedUserTools.unproductive?.[0] || null;
   const productiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.productive || [] : organizationTools.productive || [];
   const unproductiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.unproductive || [] : organizationTools.unproductive || [];
+  const selectedUserBrowserTracking = (selectedUserLive?.browser_tracking || null) as BrowserTrackingHealthSummary | null;
+
+  const renderBrowserTrackingCard = (browserTracking: BrowserTrackingHealthSummary | null) => (
+    <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Browser tracking</p>
+      <p className={`mt-2 text-base font-semibold ${browserTrackingTone(browserTracking?.status)}`}>
+        {formatBrowserTrackingStatus(browserTracking)}
+      </p>
+      <p className="mt-1 text-sm text-slate-500">{formatBrowserTrackingHint(browserTracking)}</p>
+    </div>
+  );
 
   const openScreenshotGallery = () => {
     if (!hasExplicitEmployeeSelection || !effectiveSelectedUserId || screenshotTotal <= 0) {
@@ -682,7 +782,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
                     <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.current_tool || 'No active tool detected'}</p>
@@ -698,6 +798,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                     <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
                     <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
                   </div>
+                  {renderBrowserTrackingCard(selectedUserBrowserTracking)}
                 </div>
 
                 <div className="mt-4 rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
@@ -875,7 +976,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 </div>
               </div>
 
-              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current activity</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.current_tool || 'No active tool detected'}</p>
@@ -891,6 +992,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
                   <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
                 </div>
+                {renderBrowserTrackingCard(selectedUserBrowserTracking)}
               </div>
             </SurfaceCard>
           ) : null}
@@ -1054,21 +1156,6 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             <MetricCard label="Employees" value={new Set(activityRows.map((row: any) => row.user?.id).filter(Boolean)).size} hint="Employees in result set" icon={Users} accent="violet" />
           </div>
 
-          <DataTable
-            title={mode === 'app-usage' ? 'Application Usage' : 'Website Usage'}
-            description="Aggregated duration, event count, and employee coverage for each tool."
-            rows={aggregatedActivity}
-            emptyMessage="No activity usage found."
-            headerAction={renderPanelRefreshButton()}
-            columns={[
-              { key: 'label', header: 'Name', render: (row: any) => row.label },
-              { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(row.classification)}`}>{row.classification}</span> },
-              { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
-              { key: 'count', header: 'Events', render: (row: any) => row.count },
-              { key: 'users', header: 'Employees', render: (row: any) => row.user_count },
-            ]}
-          />
-
           {hasExplicitEmployeeSelection && selectedUserLive ? (
             <SurfaceCard className="p-5">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1083,7 +1170,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   {renderPanelRefreshButton()}
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Employee</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.user?.name || 'Unknown'}</p>
@@ -1099,31 +1186,53 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
                   <p className="mt-1 text-sm text-slate-500">Most recent monitoring signal</p>
                 </div>
+                {renderBrowserTrackingCard(selectedUserBrowserTracking)}
               </div>
             </SurfaceCard>
           ) : null}
 
-          {mode === 'website-usage' ? (
+          <div className={`grid grid-cols-1 gap-5 ${mode === 'website-usage' ? 'xl:grid-cols-2 xl:items-start' : ''}`.trim()}>
             <DataTable
-              title={hasExplicitEmployeeSelection ? 'Selected Employee Website Breakdown' : 'Website Usage By Employee'}
-              description={
-                hasExplicitEmployeeSelection
-                  ? 'Website-by-website productivity view for the selected employee.'
-                  : 'All employees, which websites they used, and whether each site was productive or not.'
-              }
-              rows={employeeWebsiteRows}
-              emptyMessage="No website rows found."
+              title={mode === 'app-usage' ? 'Application Usage' : 'Website Usage'}
+              description="Aggregated duration, event count, and employee coverage for each tool."
+              rows={aggregatedActivity}
+              emptyMessage="No activity usage found."
               headerAction={renderPanelRefreshButton()}
+              bodyClassName="max-h-[30rem] overflow-y-auto"
+              stickyHeader
               columns={[
-                { key: 'employee', header: 'Employee', render: (row: any) => row.employee?.name || 'Unknown' },
-                { key: 'website', header: 'Website', render: (row: any) => row.website },
+                { key: 'label', header: 'Name', render: (row: any) => row.label },
                 { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(row.classification)}`}>{row.classification}</span> },
                 { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
-                { key: 'events', header: 'Events', render: (row: any) => row.events },
-                { key: 'last_used_at', header: 'Last Used', render: (row: any) => formatDateTime(row.last_used_at) },
+                { key: 'count', header: 'Events', render: (row: any) => row.count },
+                { key: 'users', header: 'Employees', render: (row: any) => row.user_count },
               ]}
             />
-          ) : null}
+
+            {mode === 'website-usage' ? (
+              <DataTable
+                title={hasExplicitEmployeeSelection ? 'Selected Employee Website Breakdown' : 'Website Usage By Employee'}
+                description={
+                  hasExplicitEmployeeSelection
+                    ? 'Website-by-website productivity view for the selected employee.'
+                    : 'All employees, which websites they used, and whether each site was productive or not.'
+                }
+                rows={employeeWebsiteRows}
+                emptyMessage="No website rows found."
+                headerAction={renderPanelRefreshButton()}
+                bodyClassName="max-h-[30rem] overflow-y-auto"
+                stickyHeader
+                columns={[
+                  { key: 'employee', header: 'Employee', render: (row: any) => row.employee?.name || 'Unknown' },
+                  { key: 'website', header: 'Website', render: (row: any) => row.website },
+                  { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(row.classification)}`}>{row.classification}</span> },
+                  { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
+                  { key: 'events', header: 'Events', render: (row: any) => row.events },
+                  { key: 'last_used_at', header: 'Last Used', render: (row: any) => formatDateTime(row.last_used_at) },
+                ]}
+              />
+            ) : null}
+          </div>
 
           <DataTable
             title="Raw Activity"
@@ -1131,6 +1240,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             rows={activityRows.slice().sort((a: any, b: any) => +new Date(b.recorded_at) - +new Date(a.recorded_at))}
             emptyMessage="No raw events found."
             headerAction={renderPanelRefreshButton()}
+            bodyClassName="max-h-[34rem] overflow-y-auto"
+            stickyHeader
             columns={[
               { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },

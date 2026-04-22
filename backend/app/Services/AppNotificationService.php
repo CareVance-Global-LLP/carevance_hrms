@@ -93,6 +93,7 @@ class AppNotificationService
                 'chat_group_message' => ! empty($resolvedMeta['group_id'])
                     ? sprintf('/chat?threadType=group&threadId=%d', (int) $resolvedMeta['group_id'])
                     : '/chat',
+                'browser_tracking_disconnected' => '/monitoring/website-usage',
                 'salary_credited' => '/payroll',
                 default => '/notifications',
             };

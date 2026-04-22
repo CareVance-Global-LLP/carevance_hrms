@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CareVance Browser Tracking Options</title>
+  </head>
+  <body>
+    <main>
+      <h1>Pair browser tracking</h1>
+      <p>Paste the one-time pairing code from the desktop app to connect this browser profile.</p>
+      <label for="pairingCode">Pairing code</label>
+      <input id="pairingCode" name="pairingCode" type="text" autocomplete="off" />
+      <button id="pair" type="button">Pair browser</button>
+      <p id="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

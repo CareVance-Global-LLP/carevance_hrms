@@ -94,6 +94,32 @@ const resolveKnownSiteLabel = (value: string) => {
   return matchedSite?.label || '';
 };
 
+const decodePercentEncodedText = (value: string) => {
+  const source = String(value || '').trim();
+  if (!source || !source.includes('%')) {
+    return source;
+  }
+
+  try {
+    return decodeURIComponent(source);
+  } catch {
+    return source;
+  }
+};
+
+const looksLikeResolvableUrl = (value: string) => {
+  const candidate = String(value || '').trim();
+  if (!candidate) {
+    return false;
+  }
+
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate)
+    || /^www\./i.test(candidate)
+    || /^localhost(?::\d+)?(?:\/|$)/i.test(candidate)
+    || /^127\.0\.0\.1(?::\d+)?(?:\/|$)/i.test(candidate)
+    || /([a-z0-9-]+\.)+[a-z]{2,}/i.test(candidate);
+};
+
 export const normalizeActivityToolLabel = (name: string, activityType: string) => {
   const trimmed = String(name || '').trim();
   const normalizedType = String(activityType || '').trim().toLowerCase();
@@ -103,17 +129,26 @@ export const normalizeActivityToolLabel = (name: string, activityType: string) =
   }
 
   if (normalizedType === 'url') {
-    try {
-      const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-      return parsed.hostname.replace(/^www\./, '').toLowerCase();
-    } catch {
-      const match = trimmed.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
+    const decodedValue = decodePercentEncodedText(trimmed);
+
+    if (looksLikeResolvableUrl(decodedValue)) {
+      try {
+        const parsed = new URL(decodedValue.includes('://') ? decodedValue : `https://${decodedValue}`);
+        return parsed.hostname.replace(/^www\./, '').toLowerCase();
+      } catch {
+        const match = decodedValue.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
+        if (match?.[0]) {
+          return match[0].replace(/^www\./, '').toLowerCase();
+        }
+      }
+    } else {
+      const match = decodedValue.match(/([a-z0-9-]+\.)+[a-z]{2,}/i);
       if (match?.[0]) {
         return match[0].replace(/^www\./, '').toLowerCase();
       }
     }
 
-    const cleanedTitle = cleanBrowserWindowTitle(trimmed);
+    const cleanedTitle = cleanBrowserWindowTitle(decodedValue);
     const knownSiteLabel = resolveKnownSiteLabel(cleanedTitle);
     if (knownSiteLabel) {
       return knownSiteLabel;

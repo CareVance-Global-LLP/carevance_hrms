@@ -137,13 +137,50 @@ const formatTimelineDuration = (seconds: number) => {
 
   return `${remainingSeconds}s`;
 };
+const shouldPreferWindowTitleForSoftwareRow = (row: any) => {
+  const appName = String(row?.app_name || '').trim().toLowerCase();
+  const windowTitle = String(row?.window_title || '').trim();
+
+  if (!windowTitle) {
+    return false;
+  }
+
+  return ['explorer.exe', 'windows explorer', 'file explorer'].some((keyword) => appName.includes(keyword));
+};
+
+const formatTimelineSoftwareLabel = (row: any) => (
+  shouldPreferWindowTitleForSoftwareRow(row)
+  ? row?.window_title
+  : row?.app_name
+  || row?.name
+  || row?.window_title
+  || row?.software_name
+  || row?.normalized_label
+  || 'Unknown app'
+);
 const formatTimelineToolLabel = (row: any) => {
   if (row?.type === 'idle') {
     return row?.name || 'Idle';
   }
 
-  return row?.normalized_label || row?.software_name || row?.normalized_domain || row?.name || 'Unknown';
+  if (row?.tool_type === 'website') {
+    return row?.normalized_domain || row?.normalized_label || row?.name || 'Unknown site';
+  }
+
+  if (row?.tool_type === 'software') {
+    return formatTimelineSoftwareLabel(row);
+  }
+
+  return row?.normalized_label || formatTimelineSoftwareLabel(row) || row?.normalized_domain || row?.name || 'Unknown';
 };
+const timelineProductivityTone = (classification?: string | null) =>
+  classification === 'productive'
+    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+    : classification === 'unproductive'
+      ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
+      : classification === 'context_dependent'
+        ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+        : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200';
 const formatPreviewList = (items: unknown[], emptyLabel: string, limit = 3) => {
   const normalizedItems = Array.from(new Set(items.map((item) => String(item || '').trim()).filter(Boolean)));
   if (!normalizedItems.length) {
@@ -341,7 +378,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         ? previousData
         : undefined
     ),
-    refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 10000 : false,
+    refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 1000 : false,
     refetchIntervalInBackground: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity',
     queryFn: async () => {
       if (mode === 'attendance') {
@@ -376,15 +413,14 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       }
 
       if (mode === 'timeline') {
-        const response = await activityApi.getAll({
+        return activityApi.getAllPages({
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
-          page: 1,
+          processed: true,
           per_page: 200,
         });
-        return response.data?.data || [];
       }
 
       if (mode === 'web-app-usage') {
@@ -1024,6 +1060,15 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                       <p className="text-xs text-slate-500">{row.name}</p>
                     ) : null}
                   </div>
+                ),
+              },
+              {
+                key: 'classification',
+                header: 'Productivity',
+                render: (row: any) => (
+                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${timelineProductivityTone(row.classification)}`}>
+                    {row.classification || 'neutral'}
+                  </span>
                 ),
               },
               { key: 'duration', header: 'Duration', render: (row: any) => formatTimelineDuration(row.duration || 0) },

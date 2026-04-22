@@ -131,14 +131,11 @@ export interface Activity {
   id: number;
   user_id: number;
   time_entry_id?: number;
-  session_key?: string | null;
+  source?: 'activity' | 'activity_session';
   type: 'app' | 'url' | 'idle';
   name: string;
   duration: number;
   recorded_at: string;
-  started_at?: string | null;
-  last_seen_at?: string | null;
-  ended_at?: string | null;
   normalized_label?: string | null;
   normalized_domain?: string | null;
   software_name?: string | null;
@@ -147,13 +144,126 @@ export interface Activity {
   classification_reason?: string | null;
   classified_at?: string | null;
   classifier_version?: string | null;
-  start_at?: string | null;
-  end_at?: string | null;
-  source_ids?: number[];
-  source_count?: number;
-  raw_events_count?: number;
   user?: User;
   time_entry?: TimeEntry;
+}
+
+export interface ActivitySession {
+  id: number;
+  user_id: number;
+  time_entry_id?: number | null;
+  source: string;
+  activity_kind: string;
+  tool_type: 'software' | 'website' | 'idle' | string;
+  display_name: string;
+  app_name?: string | null;
+  window_title?: string | null;
+  url?: string | null;
+  normalized_label?: string | null;
+  normalized_domain?: string | null;
+  software_name?: string | null;
+  classification?: 'productive' | 'unproductive' | 'neutral' | 'context_dependent' | null;
+  classification_reason?: string | null;
+  started_at: string;
+  ended_at?: string | null;
+  duration_seconds: number;
+  confidence?: number;
+  metadata?: Record<string, any> | null;
+  created_at?: string;
+  updated_at?: string;
+  user?: User;
+  time_entry?: TimeEntry;
+}
+
+export interface BrowserTrackingEvent {
+  kind: 'tab-focused' | 'tab-updated' | 'tab-closed' | 'window-blurred' | 'heartbeat';
+  browser_name: string;
+  profile_key: string;
+  tab_id?: number | null;
+  window_id?: number | null;
+  url?: string | null;
+  title?: string | null;
+  recorded_at: string;
+}
+
+export interface BrowserTrackingPairingCode {
+  value: string;
+  expires_at: string;
+  browser_name?: string;
+  user_id?: number | null;
+}
+
+export interface BrowserTrackingConnection {
+  browser_name: string;
+  profile_key: string;
+  extension_origin?: string | null;
+  last_seen_at?: string | null;
+  extension_version?: string | null;
+  paired_at?: string | null;
+  user_id?: number | null;
+}
+
+export interface BrowserTrackingState {
+  ready: boolean;
+  local_url?: string | null;
+  connections: BrowserTrackingConnection[];
+  pairing_code?: BrowserTrackingPairingCode | null;
+  last_event_at?: string | null;
+  last_error?: string | null;
+}
+
+export interface DesktopDeviceIdentity {
+  device_id: string;
+  device_label: string | null;
+}
+
+export interface BrowserTrackingConnectionSyncItem {
+  browser_name: string;
+  profile_key: string;
+  extension_origin?: string | null;
+  extension_version?: string | null;
+  paired_at?: string | null;
+  last_seen_at?: string | null;
+}
+
+export interface BrowserTrackingConnectionSyncRequest {
+  device_id: string;
+  device_label?: string | null;
+  ready: boolean;
+  last_error?: string | null;
+  last_event_at?: string | null;
+  connections: BrowserTrackingConnectionSyncItem[];
+}
+
+export interface BrowserTrackingConnectionSyncRecord {
+  id: number;
+  user_id: number;
+  organization_id: number;
+  device_id: string;
+  device_label?: string | null;
+  browser_name: string;
+  browser_profile_key: string;
+  extension_version?: string | null;
+  status: 'connected' | 'disconnected' | 'disabled' | string;
+  connected_at?: string | null;
+  last_seen_at?: string | null;
+  last_sync_at?: string | null;
+  disconnected_at?: string | null;
+  disconnect_reason?: string | null;
+  meta?: Record<string, any> | null;
+}
+
+export interface BrowserTrackingHealthSummary {
+  status: 'connected' | 'disconnected' | 'disabled' | 'unknown' | string;
+  device_label?: string | null;
+  connection_count: number;
+  connected_connections: number;
+  browsers: string[];
+  last_seen_at?: string | null;
+  last_sync_at?: string | null;
+  disconnect_reason?: string | null;
+  needs_attention: boolean;
+  is_exact_tracking_active: boolean;
 }
 
 export interface ProductivityRule {
@@ -330,7 +440,6 @@ export interface InviteValidationResponse {
   role?: string | null;
   expires_at?: string | null;
   message?: string;
-  organization?: Pick<Organization, 'id' | 'name' | 'slug'> | null;
 }
 
 export interface BillingSnapshot {
@@ -883,28 +992,6 @@ export interface UserProfile360 {
     start_date: string;
     end_date: string;
   };
-  assignments: {
-    groups: Array<{
-      id: number;
-      name: string;
-      slug?: string | null;
-    }>;
-    primary_group?: {
-      id: number;
-      name: string;
-    } | null;
-    reporting_manager?: {
-      id: number;
-      name: string;
-      email: string;
-    } | null;
-    assigned_projects: Array<{
-      id: number;
-      name: string;
-      status?: string | null;
-      deadline?: string | null;
-    }>;
-  };
   summary: {
     entries_count: number;
     total_duration: number;
@@ -938,19 +1025,6 @@ export interface UserProfile360 {
     latest_notification?: AppNotificationItem | null;
   };
   recent_time_entries: TimeEntry[];
-  project_breakdown: Array<{
-    project: {
-      id: number;
-      name: string;
-      status?: string | null;
-      deadline?: string | null;
-    };
-    entries_count: number;
-    tracked_duration: number;
-    billable_duration: number;
-    non_billable_duration: number;
-    last_tracked_at?: string | null;
-  }>;
   attendance_records: Array<{
     id: number;
     attendance_date: string;
@@ -964,7 +1038,6 @@ export interface UserProfile360 {
     id: number;
     start_date: string;
     end_date: string;
-    leave_type?: 'full_day' | 'half_day';
     reason?: string | null;
     status: string;
     revoke_status?: string | null;

@@ -87,4 +87,32 @@ class ActivityClassificationPersistenceTest extends TestCase
         $this->assertSame('whatsapp', $activity->normalized_label);
         $this->assertSame('context_dependent', $activity->classification);
     }
+
+    public function test_activity_save_uses_raw_browser_context_fields_when_available(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance Labs', 'slug' => 'carevance-labs']);
+        $user = User::create([
+            'name' => 'Browser User',
+            'email' => 'browser.user@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $activity = Activity::create([
+            'user_id' => $user->id,
+            'type' => 'url',
+            'name' => 'GitHub',
+            'app_name' => 'Google Chrome',
+            'window_title' => 'OpenAI/Codex - Pull requests - Google Chrome',
+            'url' => 'https://github.com/openai/codex/pulls',
+            'duration' => 10,
+            'recorded_at' => now(),
+        ]);
+
+        $this->assertSame('website', $activity->tool_type);
+        $this->assertSame('google chrome', $activity->software_name);
+        $this->assertSame('github.com', $activity->normalized_label);
+        $this->assertSame('github.com', $activity->normalized_domain);
+    }
 }

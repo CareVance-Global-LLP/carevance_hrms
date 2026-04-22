@@ -183,6 +183,10 @@ class UsageProcessingService
                 (string) ($row['type'] ?? 'app'),
             );
 
+            if (($row['type'] ?? 'app') === 'app' && ($row['classification'] ?? 'neutral') === 'neutral') {
+                $row['classification'] = 'productive';
+            }
+
             return $row;
         })->values();
 
@@ -224,6 +228,40 @@ class UsageProcessingService
         ];
     }
 
+    public function buildTimelineRows(iterable $logs, iterable $activityEvents = []): Collection
+    {
+        $normalizedLogs = $this->normalizeUsageLogs($logs);
+        $idleResult = $this->detectAndFilterIdleTime($normalizedLogs, $activityEvents);
+        $classifiedActiveLogs = $idleResult['active_logs']->map(function (array $row) {
+            $row['classification'] = $this->classifyUsage(
+                (string) ($row['label'] ?? ''),
+                (string) ($row['raw_name'] ?? ''),
+                (string) ($row['type'] ?? 'app'),
+            );
+
+            if (($row['type'] ?? 'app') === 'app' && ($row['classification'] ?? 'neutral') === 'neutral') {
+                $row['classification'] = 'productive';
+            }
+
+            return $row;
+        })->values();
+
+        $idleRows = $idleResult['idle_logs']->map(function (array $row) {
+            $row['classification'] = 'neutral';
+
+            return $row;
+        })->values();
+
+        return $classifiedActiveLogs
+            ->concat($idleRows)
+            ->sortBy([
+                ['end_timestamp', 'desc'],
+                ['start_timestamp', 'desc'],
+                ['id', 'desc'],
+            ])
+            ->values();
+    }
+
     public function buildWebAppUsageSummary(iterable $logs, iterable $activityEvents = []): array
     {
         $normalizedLogs = $this->normalizeUsageLogs($logs);
@@ -239,6 +277,10 @@ class UsageProcessingService
                 (string) ($row['type'] ?? 'app'),
             );
 
+            if (($row['type'] ?? 'app') === 'app' && ($row['classification'] ?? 'neutral') === 'neutral') {
+                $row['classification'] = 'productive';
+            }
+
             return $row;
         })->values();
 
@@ -248,6 +290,10 @@ class UsageProcessingService
                 (string) ($row['raw_name'] ?? ''),
                 (string) ($row['type'] ?? 'app'),
             );
+
+            if (($row['type'] ?? 'app') === 'app' && ($row['classification'] ?? 'neutral') === 'neutral') {
+                $row['classification'] = 'productive';
+            }
 
             return $row;
         })->values();
@@ -575,9 +621,20 @@ class UsageProcessingService
         }
 
         $rawName = trim((string) data_get($log, 'name', ''));
+        $rawUrl = trim((string) data_get($log, 'url', ''));
+        $softwareName = trim((string) data_get($log, 'software_name', ''));
+        $normalizedDomain = trim((string) data_get($log, 'normalized_domain', ''));
+        $candidateToolType = $type === 'idle'
+            ? 'idle'
+            : (string) data_get($log, 'tool_type', $this->resolveToolType($type, $rawUrl !== '' ? $rawUrl : $rawName, ''));
         $label = $type === 'idle'
             ? 'idle'
-            : (string) data_get($log, 'normalized_label', $this->canonicalizeToolLabel($rawName, $type));
+            : (string) (
+                data_get($log, 'normalized_label')
+                ?: ($candidateToolType === 'website'
+                    ? ($normalizedDomain !== '' ? $normalizedDomain : $this->canonicalizeToolLabel($rawUrl !== '' ? $rawUrl : $rawName, 'url'))
+                    : ($softwareName !== '' ? $softwareName : $this->canonicalizeToolLabel($rawName, 'app')))
+            );
         if ($type !== 'idle' && $this->isNoiseLabel($label, $rawName)) {
             return null;
         }
@@ -589,12 +646,14 @@ class UsageProcessingService
             'type' => $type,
             'raw_name' => $rawName,
             'label' => $label,
-            'tool_type' => $type === 'idle'
-                ? 'idle'
-                : (string) data_get($log, 'tool_type', $this->resolveToolType($type, $rawName, $label)),
+            'tool_type' => $candidateToolType === 'website' && $label !== ''
+                ? 'website'
+                : ($type === 'idle'
+                    ? 'idle'
+                    : (string) data_get($log, 'tool_type', $this->resolveToolType($type, $rawUrl !== '' ? $rawUrl : $rawName, $label))),
             'classification' => $type === 'idle'
                 ? 'neutral'
-                : (string) data_get($log, 'classification', $this->classifyUsage($label, $rawName, $type)),
+                : (string) data_get($log, 'classification', $this->classifyUsage($label, $rawUrl !== '' ? $rawUrl : $rawName, $type)),
             'classification_reason' => (string) data_get($log, 'classification_reason', ''),
             'start_at' => $startAt,
             'end_at' => $recordedAt,
@@ -1011,10 +1070,6 @@ class UsageProcessingService
             return 'idle';
         }
 
-        if ($normalizedType === 'url') {
-            return 'website';
-        }
-
         $normalizedRaw = strtolower(trim($rawName));
         $normalizedLabel = strtolower(trim($label));
         $browserKeywords = [
@@ -1037,6 +1092,14 @@ class UsageProcessingService
             fn (string $keyword) => $normalizedLabel === $keyword
         );
         $looksLikeWebsite = (bool) preg_match('/([a-z0-9-]+\.)+[a-z]{2,}$/i', $normalizedLabel);
+
+        if ($normalizedType === 'url') {
+            if (! $isBrowserContext && ! $looksLikeWebsite) {
+                return $this->activityProductivityService->guessToolType('app');
+            }
+
+            return 'website';
+        }
 
         if ($looksLikeWebsite || ($isBrowserContext && $normalizedLabel !== '' && ! $isBrowserLabel)) {
             return 'website';

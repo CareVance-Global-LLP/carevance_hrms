@@ -3,16 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Activity;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
+use App\Models\BrowserTrackingConnection;
 use App\Models\LeaveRequest;
 use App\Models\Project;
 use App\Models\ReportGroup;
 use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Services\Monitoring\ActivityFeedService;
 use App\Services\Reports\ActivityProductivityService;
 use App\Services\Reports\DashboardSummaryService;
 use App\Services\Reports\ReportPayloadBuilder;
@@ -21,11 +22,23 @@ use App\Services\Reports\UsageProcessingService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class ReportController extends Controller
 {
+    private const LIVE_MONITORING_UTILITY_TOOL_LABELS = [
+        'snippingtool.exe',
+        'snipping tool',
+        'windows explorer',
+        'windows shell experience host',
+        'searchhost.exe',
+        'startmenuexperiencehost.exe',
+        'shellexperiencehost.exe',
+    ];
+
+    private const LIVE_MONITORING_MEANINGFUL_ACTIVITY_WINDOW_SECONDS = 120;
+
     public function __construct(
         private readonly ActivityProductivityService $activityProductivityService,
         private readonly DashboardSummaryService $dashboardSummaryService,
@@ -33,6 +46,7 @@ class ReportController extends Controller
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly UsageProcessingService $usageProcessingService,
+        private readonly ActivityFeedService $activityFeedService,
     ) {
     }
 
@@ -46,36 +60,230 @@ class ReportController extends Controller
         return $user?->role === 'manager';
     }
 
-    private function managerGroupIds(User $user): array
+    private function summarizeBrowserTrackingConnections(Collection $connections): array
     {
-        return $user->groups()
-            ->pluck('groups.id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+        if ($connections->isEmpty()) {
+            return [
+                'status' => 'disconnected',
+                'device_label' => null,
+                'connection_count' => 0,
+                'connected_connections' => 0,
+                'browsers' => [],
+                'last_seen_at' => null,
+                'last_sync_at' => null,
+                'disconnect_reason' => 'not_paired',
+                'needs_attention' => true,
+                'is_exact_tracking_active' => false,
+            ];
+        }
+
+        $sortedConnections = $connections
+            ->sortByDesc(function (BrowserTrackingConnection $connection) {
+                $sortTimestamp = $connection->last_seen_at
+                    ?? $connection->last_sync_at
+                    ?? $connection->disconnected_at
+                    ?? $connection->connected_at
+                    ?? $connection->updated_at
+                    ?? $connection->created_at;
+
+                return $sortTimestamp ? Carbon::parse($sortTimestamp)->getTimestamp() : 0;
+            })
+            ->values();
+
+        $latestConnection = $sortedConnections->first();
+        $connectedConnections = $sortedConnections
+            ->filter(fn (BrowserTrackingConnection $connection) => (string) $connection->status === 'connected')
+            ->values();
+        $primaryConnection = $connectedConnections->first() ?: $latestConnection;
+
+        return [
+            'status' => $connectedConnections->isNotEmpty()
+                ? 'connected'
+                : (string) ($latestConnection?->status ?: 'unknown'),
+            'device_label' => $primaryConnection?->device_label,
+            'connection_count' => $sortedConnections->count(),
+            'connected_connections' => $connectedConnections->count(),
+            'browsers' => $sortedConnections
+                ->pluck('browser_name')
+                ->filter()
+                ->map(fn ($browserName) => strtolower((string) $browserName))
+                ->unique()
+                ->values()
+                ->all(),
+            'last_seen_at' => optional($primaryConnection?->last_seen_at)->toIso8601String(),
+            'last_sync_at' => optional($latestConnection?->last_sync_at)->toIso8601String(),
+            'disconnect_reason' => $connectedConnections->isNotEmpty()
+                ? null
+                : $latestConnection?->disconnect_reason,
+            'needs_attention' => $connectedConnections->isEmpty()
+                && in_array((string) ($latestConnection?->status ?: ''), ['disconnected', 'disabled'], true),
+            'is_exact_tracking_active' => $connectedConnections->isNotEmpty(),
+        ];
     }
 
-    private function visibleUsersQuery(User $user, bool $employeesOnlyForManager = false): Builder
+    private function isLiveMonitoringUtilityActivity(?object $activity): bool
     {
-        $query = User::query()->where('organization_id', $user->organization_id);
-
-        if ($user->role === 'admin') {
-            return $query;
+        if (! $activity) {
+            return false;
         }
 
-        if ($user->role === 'manager') {
-            $groupIds = $this->managerGroupIds($user);
-            if (empty($groupIds)) {
-                return User::query()->whereRaw('1 = 0');
-            }
+        $toolType = strtolower(trim((string) ($activity->tool_type ?? '')));
+        $activityType = strtolower(trim((string) ($activity->type ?? '')));
 
-            if ($employeesOnlyForManager) {
-                $query->where('role', 'employee');
-            }
-
-            return $query->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds));
+        if ($toolType === 'website' || $activityType === 'url') {
+            return false;
         }
 
-        return $query->whereKey($user->id);
+        $candidates = [
+            (string) ($activity->normalized_label ?? ''),
+            (string) ($activity->software_name ?? ''),
+            (string) ($activity->display_name ?? ''),
+            (string) ($activity->app_name ?? ''),
+            (string) ($activity->name ?? ''),
+        ];
+
+        foreach ($candidates as $candidate) {
+            $normalized = strtolower(trim($candidate));
+            if ($normalized === '') {
+                continue;
+            }
+
+            if (in_array($normalized, self::LIVE_MONITORING_UTILITY_TOOL_LABELS, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function selectPreferredLiveMonitoringActivity(Collection $activities): ?object
+    {
+        if ($activities->isEmpty()) {
+            return null;
+        }
+
+        $sorted = $activities
+            ->filter(fn ($activity) => isset($activity->recorded_at))
+            ->sort(function ($left, $right) {
+                $recordedAtComparison = $this->compareLiveMonitoringActivityTimestamps(
+                    $right->recorded_at ?? null,
+                    $left->recorded_at ?? null,
+                );
+
+                if ($recordedAtComparison !== 0) {
+                    return $recordedAtComparison;
+                }
+
+                $startedAtComparison = $this->compareLiveMonitoringActivityTimestamps(
+                    $right->started_at ?? null,
+                    $left->started_at ?? null,
+                );
+
+                if ($startedAtComparison !== 0) {
+                    return $startedAtComparison;
+                }
+
+                return (int) ($right->id ?? 0) <=> (int) ($left->id ?? 0);
+            })
+            ->values();
+
+        $latest = $sorted->first();
+        if (! $latest) {
+            return null;
+        }
+
+        if (! $this->isLiveMonitoringUtilityActivity($latest)) {
+            return $latest;
+        }
+
+        $latestTimestamp = Carbon::parse((string) $latest->recorded_at);
+        $preferredMeaningful = $sorted->first(function ($activity) use ($latestTimestamp) {
+            if ($this->isLiveMonitoringUtilityActivity($activity)) {
+                return false;
+            }
+
+            $activityTimestamp = Carbon::parse((string) $activity->recorded_at);
+            return $latestTimestamp->diffInSeconds($activityTimestamp) <= self::LIVE_MONITORING_MEANINGFUL_ACTIVITY_WINDOW_SECONDS;
+        });
+
+        return $preferredMeaningful ?: $latest;
+    }
+
+    private function compareLiveMonitoringActivityTimestamps(mixed $left, mixed $right): int
+    {
+        $leftTimestamp = $left ? Carbon::parse((string) $left)->getTimestamp() : 0;
+        $rightTimestamp = $right ? Carbon::parse((string) $right)->getTimestamp() : 0;
+
+        return $leftTimestamp <=> $rightTimestamp;
+    }
+
+    private function shouldPreferDesktopWindowTitle(?string $appName, ?string $windowTitle): bool
+    {
+        $normalizedAppName = strtolower(trim((string) $appName));
+        $normalizedWindowTitle = strtolower(trim((string) $windowTitle));
+
+        if ($normalizedWindowTitle === '') {
+            return false;
+        }
+
+        foreach (['explorer.exe', 'windows explorer', 'file explorer'] as $keyword) {
+            if (str_contains($normalizedAppName, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function resolveLiveMonitoringToolLabel(?object $activity, array $toolDescriptor = []): ?string
+    {
+        if (! $activity) {
+            return null;
+        }
+
+        $toolType = strtolower(trim((string) ($activity->tool_type ?? '')));
+        $activityType = strtolower(trim((string) ($activity->type ?? 'app')));
+
+        if ($toolType === 'website' || $activityType === 'url') {
+            foreach ([
+                $activity->normalized_domain ?? null,
+                $activity->normalized_label ?? null,
+                $toolDescriptor['label'] ?? null,
+                $activity->name ?? null,
+                $activity->url ?? null,
+            ] as $candidate) {
+                $value = trim((string) $candidate);
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+
+            return null;
+        }
+
+        $appName = trim((string) ($activity->app_name ?? ''));
+        $windowTitle = trim((string) ($activity->window_title ?? ''));
+
+        if ($this->shouldPreferDesktopWindowTitle($appName, $windowTitle)) {
+            return $windowTitle;
+        }
+
+        foreach ([
+            $activity->display_name ?? null,
+            $activity->app_name ?? null,
+            $activity->name ?? null,
+            $activity->window_title ?? null,
+            $activity->software_name ?? null,
+            $activity->normalized_label ?? null,
+            $toolDescriptor['label'] ?? null,
+        ] as $candidate) {
+            $value = trim((string) $candidate);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     private function calculateAttendanceWorkedSeconds(AttendanceRecord $record): int
@@ -108,29 +316,6 @@ class ReportController extends Controller
         );
     }
 
-    private function activityReportColumns(array $extra = []): array
-    {
-        return array_values(array_unique(array_merge([
-            'id',
-            'user_id',
-            'time_entry_id',
-            'session_key',
-            'type',
-            'name',
-            'duration',
-            'recorded_at',
-            'started_at',
-            'last_seen_at',
-            'ended_at',
-            'normalized_label',
-            'normalized_domain',
-            'software_name',
-            'tool_type',
-            'classification',
-            'classification_reason',
-        ], $extra)));
-    }
-
     public function dashboard(Request $request)
     {
         $user = $request->user();
@@ -156,7 +341,7 @@ class ReportController extends Controller
             ->orderBy('start_time', 'desc');
 
         if ($this->canViewAll($user) && $scope === 'organization' && $user->organization_id) {
-            $orgUserIds = $this->visibleUsersQuery($user, true)->pluck('id');
+            $orgUserIds = User::where('organization_id', $user->organization_id)->pluck('id');
             $query->whereIn('user_id', $orgUserIds);
         } else {
             $query->where('user_id', $user->id);
@@ -189,7 +374,7 @@ class ReportController extends Controller
             ->orderBy('start_time', 'desc');
 
         if ($this->canViewAll($user) && $scope === 'organization' && $user->organization_id) {
-            $orgUserIds = $this->visibleUsersQuery($user, true)->pluck('id');
+            $orgUserIds = User::where('organization_id', $user->organization_id)->pluck('id');
             $query->whereIn('user_id', $orgUserIds);
         } else {
             $query->where('user_id', $user->id);
@@ -233,7 +418,7 @@ class ReportController extends Controller
             ->orderBy('start_time', 'desc');
 
         if ($this->canViewAll($user) && $scope === 'organization' && $user->organization_id) {
-            $orgUserIds = $this->visibleUsersQuery($user, true)->pluck('id');
+            $orgUserIds = User::where('organization_id', $user->organization_id)->pluck('id');
             $query->whereIn('user_id', $orgUserIds);
         } else {
             $query->where('user_id', $user->id);
@@ -290,9 +475,7 @@ class ReportController extends Controller
                 ->whereDate('attendance_date', '>=', $startDate->toDateString())
                 ->whereDate('attendance_date', '<=', $endDate->toDateString())
                 ->sum('manual_adjustment_seconds');
-        $activities = Activity::where('user_id', $user->id)
-            ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get($this->activityReportColumns());
+        $activities = $this->activityFeedService->forUsersInRange([$user->id], $startDate, $endDate);
         $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
         $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration);
         $score = $this->timeBreakdownService->productivityScore($trackedDuration, $idleDuration);
@@ -305,6 +488,9 @@ class ReportController extends Controller
             'working_time' => $timeBreakdown['working_duration'],
             'active_time' => $timeBreakdown['working_duration'],
             'idle_time' => $timeBreakdown['idle_duration'],
+            'stats' => [
+                'activity_events' => $activities->count(),
+            ],
         ] + $timeBreakdown);
     }
 
@@ -318,7 +504,7 @@ class ReportController extends Controller
         $startDate = $request->get('start_date', Carbon::now()->startOfWeek()->toDateString());
         $endDate = $request->get('end_date', Carbon::now()->endOfWeek()->toDateString());
 
-        $users = $this->visibleUsersQuery($currentUser, true)->get();
+        $users = User::where('organization_id', $currentUser->organization_id)->get();
         $resolvedNow = now();
         $byUser = $users->map(function (User $user) use ($startDate, $endDate, $resolvedNow) {
             $entries = TimeEntry::where('user_id', $user->id)
@@ -372,10 +558,37 @@ class ReportController extends Controller
             ->unique()
             ->values();
 
-        $usersQuery = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser));
-        if ($this->canViewAll($currentUser)) {
+        $usersQuery = User::where('organization_id', $currentUser->organization_id);
+        if ($this->restrictMonitoringToEmployees($currentUser)) {
+            $usersQuery->where('role', 'employee');
+        }
+        if (!$this->canViewAll($currentUser)) {
+            $usersQuery->where('id', $currentUser->id);
+        } else {
             if ($selectedGroupIds->isNotEmpty()) {
-                $usersQuery->whereHas('groups', fn (Builder $query) => $query->whereIn('groups.id', $selectedGroupIds));
+                $groupUserIds = ReportGroup::where('organization_id', $currentUser->organization_id)
+                    ->whereIn('id', $selectedGroupIds)
+                    ->with('users:id')
+                    ->get()
+                    ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                if ($groupUserIds->isEmpty()) {
+                    return response()->json([
+                        'start_date' => $startDate->toDateString(),
+                        'end_date' => $endDate->toDateString(),
+                        'summary' => [
+                            'users_count' => 0,
+                            'active_users' => 0,
+                        ] + $this->timeBreakdownService->build(0, 0),
+                        'by_user' => [],
+                        'by_day' => [],
+                    ]);
+                }
+
+                $usersQuery->whereIn('id', $groupUserIds);
             }
 
             if ($selectedIds->isNotEmpty()) {
@@ -407,9 +620,7 @@ class ReportController extends Controller
             ->whereDate('attendance_date', '<=', $endDate->toDateString())
             ->get(['id', 'user_id', 'attendance_date', 'manual_adjustment_seconds']);
 
-        $activities = Activity::whereIn('user_id', $userIds)
-            ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get($this->activityReportColumns());
+        $activities = $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
 
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
@@ -560,9 +771,7 @@ class ReportController extends Controller
             ->get();
         $idleDuration = 0;
         if ($entries->isNotEmpty()) {
-            $activities = Activity::query()
-                ->whereIn('time_entry_id', $entries->pluck('id'))
-                ->get($this->activityReportColumns());
+            $activities = $this->activityFeedService->forTimeEntries($entries->pluck('id'), $startDate, $endDate);
             $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
         }
         $timeBreakdown = $this->timeBreakdownService->build(
@@ -608,7 +817,8 @@ class ReportController extends Controller
             ->whereBetween('start_time', [$startDate, $endDate]);
 
         if ($this->canViewAll($user) && $user->organization_id) {
-            $organizationUserIds = $this->visibleUsersQuery($user, true)
+            $organizationUserIds = User::query()
+                ->where('organization_id', $user->organization_id)
                 ->pluck('id');
 
             $selectedUserIds = collect($request->input('user_ids', []))
@@ -623,9 +833,15 @@ class ReportController extends Controller
                 ->values();
 
             if ($selectedGroupIds->isNotEmpty()) {
-                $groupUserIds = $this->visibleUsersQuery($user, true)
-                    ->whereHas('groups', fn (Builder $query) => $query->whereIn('groups.id', $selectedGroupIds))
-                    ->pluck('id');
+                $groupUserIds = ReportGroup::query()
+                    ->where('organization_id', $user->organization_id)
+                    ->whereIn('id', $selectedGroupIds)
+                    ->with('users:id')
+                    ->get()
+                    ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
 
                 if ($selectedUserIds->isEmpty()) {
                     $selectedUserIds = $groupUserIds;
@@ -703,8 +919,13 @@ class ReportController extends Controller
             ->reject(fn (string $date) => Carbon::parse($date)->isWeekend())
             ->values();
 
-        $usersQuery = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser));
-        if ($this->canViewAll($currentUser)) {
+        $usersQuery = User::where('organization_id', $currentUser->organization_id);
+        if ($this->restrictMonitoringToEmployees($currentUser)) {
+            $usersQuery->where('role', 'employee');
+        }
+        if (!$this->canViewAll($currentUser)) {
+            $usersQuery->where('id', $currentUser->id);
+        } else {
             if ($request->filled('user_id')) {
                 $usersQuery->where('id', (int) $request->user_id);
             }
@@ -779,15 +1000,14 @@ class ReportController extends Controller
                 ->where('status', 'approved')
                 ->whereDate('start_date', '<=', $endDate->toDateString())
                 ->whereDate('end_date', '>=', $startDate->toDateString())
-                ->get(['start_date', 'end_date', 'leave_type'])
-                ->flatMap(fn (LeaveRequest $leave) => $leave->effectiveDateEntriesInRange($startDate, $endDate, true))
-                ->groupBy('date')
-                ->map(function ($entries, string $date) {
-                    $maxUnits = (float) collect($entries)->max('units');
-                    return $maxUnits >= 1
-                        ? $date
-                        : sprintf('%s (half day)', $date);
+                ->get(['start_date', 'end_date'])
+                ->flatMap(function ($leave) {
+                    return collect(CarbonPeriod::create($leave->start_date, $leave->end_date))
+                        ->filter(fn ($date) => !$date->isWeekend())
+                        ->map(fn ($date) => $date->toDateString())
+                        ->values();
                 })
+                ->unique()
                 ->values();
 
             $absentDates = $workingDates
@@ -796,14 +1016,7 @@ class ReportController extends Controller
 
             $workedSeconds = (int) $records->sum(fn (AttendanceRecord $record) => $this->calculateAttendanceWorkedSeconds($record));
             $daysPresent = $presentDates->count();
-            $leaveDays = (float) LeaveRequest::query()
-                ->where('organization_id', $currentUser->organization_id)
-                ->where('user_id', $user->id)
-                ->where('status', 'approved')
-                ->whereDate('start_date', '<=', $endDate->toDateString())
-                ->whereDate('end_date', '>=', $startDate->toDateString())
-                ->get(['start_date', 'end_date', 'leave_type'])
-                ->sum(fn (LeaveRequest $leave) => $leave->effectiveDateEntriesInRange($startDate, $endDate, true)->sum('units'));
+            $leaveDays = $approvedLeaveDates->count();
             $attendanceRate = (float) round(($daysPresent / $calendarDaysCount) * 100, 2);
 
             $isWorking = $activeTimeEntryUserIds->contains((int) $user->id)
@@ -867,10 +1080,67 @@ class ReportController extends Controller
             ->unique()
             ->values();
 
-        $usersQuery = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser));
-        if ($this->canViewAll($currentUser)) {
+        $usersQuery = User::where('organization_id', $currentUser->organization_id);
+        if ($this->restrictMonitoringToEmployees($currentUser)) {
+            $usersQuery->where('role', 'employee');
+        }
+        if (!$this->canViewAll($currentUser)) {
+            $usersQuery->where('id', $currentUser->id);
+        } else {
             if ($selectedGroupIds->isNotEmpty()) {
-                $usersQuery->whereHas('groups', fn (Builder $query) => $query->whereIn('groups.id', $selectedGroupIds));
+                $groupUserIds = ReportGroup::where('organization_id', $currentUser->organization_id)
+                    ->whereIn('id', $selectedGroupIds)
+                    ->with('users:id')
+                    ->get()
+                    ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                if ($groupUserIds->isEmpty()) {
+                    return response()->json([
+                        'start_date' => $startDate->toDateString(),
+                        'end_date' => $endDate->toDateString(),
+                        'matched_users' => [],
+                        'selected_user' => null,
+                        'stats' => null,
+                        'activity_breakdown' => [],
+                        'selected_user_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+                        'organization_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+                        'organization_summary' => [
+                            'productive_duration' => 0,
+                            'unproductive_duration' => 0,
+                            'neutral_duration' => 0,
+                            'context_dependent_duration' => 0,
+                            'productive_share' => 0,
+                            'unproductive_share' => 0,
+                            'neutral_share' => 0,
+                            'context_dependent_share' => 0,
+                        ],
+                        'employee_rankings' => [
+                            'most_productive' => null,
+                            'most_unproductive' => null,
+                            'by_productive_duration' => [],
+                            'by_unproductive_duration' => [],
+                        ],
+                        'team_rankings' => [
+                            'by_efficiency' => [],
+                            'top_productive' => null,
+                            'least_productive' => null,
+                        ],
+                        'live_monitoring' => [
+                            'selected_user' => null,
+                            'working_now' => [],
+                            'all_users' => [],
+                            'employees_active' => [],
+                            'employees_inactive' => [],
+                            'employees_on_leave' => [],
+                        ],
+                        'recent_screenshots' => [],
+                    ]);
+                }
+
+                $usersQuery->whereIn('id', $groupUserIds);
             }
 
             if ($request->filled('q')) {
@@ -917,9 +1187,7 @@ class ReportController extends Controller
         $entriesCount = $entries->count();
         $resolvedNow = now();
 
-        $activities = Activity::where('user_id', $selectedUser->id)
-            ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get($this->activityReportColumns());
+        $activities = $this->activityFeedService->forUsersInRange([$selectedUser->id], $startDate, $endDate);
         $selectedUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
             (int) $selectedUser->id,
             $activities,
@@ -936,10 +1204,10 @@ class ReportController extends Controller
         $selectedToolBreakdown = (array) ($selectedUsageSummary['tools'] ?? ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []]);
 
         $recentScreenshots = Screenshot::query()
-            ->whereHas('timeEntry', function ($query) use ($selectedUser) {
-                $query->where('user_id', $selectedUser->id);
+            ->whereHas('timeEntry', function ($query) use ($selectedUser, $startDate, $endDate) {
+                $query->where('user_id', $selectedUser->id)
+                    ->whereBetween('start_time', [$startDate, $endDate]);
             })
-            ->whereBetween('created_at', [$startDate, $endDate])
             ->orderByDesc('created_at')
             ->limit(60)
             ->get();
@@ -953,9 +1221,7 @@ class ReportController extends Controller
         $organizationEntriesByUser = $organizationEntries->groupBy(fn ($entry) => (int) $entry->user_id);
         $organizationActivities = $analyticsUserIds->isEmpty()
             ? collect()
-            : Activity::whereIn('user_id', $analyticsUserIds)
-                ->whereBetween('recorded_at', [$startDate, $endDate])
-                ->get($this->activityReportColumns());
+            : $this->activityFeedService->forUsersInRange($analyticsUserIds, $startDate, $endDate);
         $organizationActivitiesByUser = collect($organizationActivities)->groupBy(fn ($activity) => (int) $activity->user_id);
 
         $toolTotalsByKey = [];
@@ -1156,17 +1422,25 @@ class ReportController extends Controller
             ->sortByDesc('efficiency_score')
             ->values();
 
-        $latestRecentActivities = $analyticsUserIds->isEmpty()
+        $recentActivitiesByUser = $analyticsUserIds->isEmpty()
             ? collect()
-            : Activity::whereIn('user_id', $analyticsUserIds)
-                ->where('recorded_at', '>=', now()->subMinutes(5))
-                ->orderByDesc('recorded_at')
-                ->get($this->activityReportColumns())
-                ->groupBy('user_id')
-                ->map(fn ($group) => $group->first());
+            : $this->activityFeedService
+                ->recentForUsers($analyticsUserIds, now()->subMinutes(5))
+                ->groupBy('user_id');
 
-        $liveMonitoringRows = $analyticsUsers->map(function ($user) use ($latestRecentActivities, $activeTimeEntryUserIds) {
-            $latest = $latestRecentActivities->get((int) $user->id);
+        $browserTrackingByUser = $analyticsUserIds->isEmpty()
+            ? collect()
+            : BrowserTrackingConnection::query()
+                ->whereIn('user_id', $analyticsUserIds)
+                ->orderByDesc('last_seen_at')
+                ->orderByDesc('last_sync_at')
+                ->get()
+                ->groupBy(fn (BrowserTrackingConnection $connection) => (int) $connection->user_id)
+                ->map(fn (Collection $connections) => $this->summarizeBrowserTrackingConnections($connections));
+
+        $liveMonitoringRows = $analyticsUsers->map(function ($user) use ($recentActivitiesByUser, $activeTimeEntryUserIds, $browserTrackingByUser) {
+            $userRecentActivities = collect($recentActivitiesByUser->get((int) $user->id, collect()));
+            $latest = $this->selectPreferredLiveMonitoringActivity($userRecentActivities);
             $classification = 'neutral';
             $toolLabel = null;
             $toolType = null;
@@ -1174,7 +1448,7 @@ class ReportController extends Controller
 
             if ($latest) {
                 $toolDescriptor = $this->usageProcessingService->describeTool((string) ($latest->name ?? ''), (string) ($latest->type ?? 'app'));
-                $toolLabel = (string) ($latest->normalized_label ?: ($toolDescriptor['label'] ?? ''));
+                $toolLabel = $this->resolveLiveMonitoringToolLabel($latest, $toolDescriptor);
                 $classification = (string) ($latest->classification ?: ($toolDescriptor['classification'] ?? 'neutral'));
                 $toolType = (string) ($latest->tool_type ?: ($toolDescriptor['type'] ?? ''));
                 $activityType = (string) ($latest->type ?? 'app');
@@ -1193,6 +1467,7 @@ class ReportController extends Controller
                 'activity_type' => $activityType,
                 'classification' => $classification,
                 'last_activity_at' => $latest ? Carbon::parse($latest->recorded_at)->toIso8601String() : null,
+                'browser_tracking' => $browserTrackingByUser->get((int) $user->id, $this->summarizeBrowserTrackingConnections(collect())),
             ];
         })->values();
 

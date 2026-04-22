@@ -115,4 +115,34 @@ class ProductivityClassifierTest extends TestCase
 
         $this->assertSame('neutral', $result['classification']);
     }
+
+    public function test_classifier_prefers_domain_when_browser_url_is_available(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'type' => 'url',
+            'name' => 'GitHub',
+            'app_name' => 'Google Chrome',
+            'window_title' => 'OpenAI/Codex - Pull requests - Google Chrome',
+            'url' => 'https://github.com/openai/codex/pulls',
+        ]);
+
+        $this->assertSame('github.com', $result['normalized_domain']);
+        $this->assertSame('github.com', $result['normalized_label']);
+        $this->assertSame('website', $result['tool_type']);
+    }
+
+    public function test_classifier_falls_back_to_software_name_when_browser_url_is_missing(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'type' => 'app',
+            'name' => 'Google Chrome',
+            'app_name' => 'Google Chrome',
+            'window_title' => 'Google Chrome',
+            'url' => null,
+        ]);
+
+        $this->assertNull($result['normalized_domain']);
+        $this->assertSame('google chrome', $result['software_name']);
+        $this->assertSame('software', $result['tool_type']);
+    }
 }

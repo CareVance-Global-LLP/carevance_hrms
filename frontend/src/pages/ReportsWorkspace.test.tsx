@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getAllUsersMock: vi.fn(),
   groupsListMock: vi.fn(),
   overallMock: vi.fn(),
-  activityGetAllMock: vi.fn(),
+  activityGetAllPagesMock: vi.fn(),
   authUser: {
     id: 1,
     name: 'Admin User',
@@ -44,7 +44,7 @@ vi.mock('@/services/api', async () => {
     },
     activityApi: {
       ...actual.activityApi,
-      getAll: mocks.activityGetAllMock,
+      getAllPages: mocks.activityGetAllPagesMock,
     },
   };
 });
@@ -85,23 +85,23 @@ describe('ReportsWorkspace timeline navigation', () => {
       },
     });
 
-    mocks.activityGetAllMock.mockResolvedValue({
-      data: {
-        data: [
-          {
-            id: 11,
-            type: 'app',
-            name: 'Visual Studio Code',
-            duration: 180,
-            recorded_at: '2026-04-14T09:30:00.000Z',
-            user: {
-              id: 1,
-              name: 'Irbaz Mavli',
-            },
-          },
-        ],
+    mocks.activityGetAllPagesMock.mockResolvedValue([
+      {
+        id: 11,
+        type: 'app',
+        name: 'Visual Studio Code',
+        app_name: 'Visual Studio Code',
+        software_name: 'vscode',
+        normalized_label: 'vscode',
+        tool_type: 'software',
+        duration: 180,
+        recorded_at: '2026-04-14T09:30:00.000Z',
+        user: {
+          id: 1,
+          name: 'Irbaz Mavli',
+        },
       },
-    });
+    ]);
   });
 
   it('renders timeline safely when switching from another report mode', async () => {
@@ -116,5 +116,98 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(await screen.findByText('Activity Timeline')).toBeInTheDocument();
     expect(await screen.findByText('All timeline events')).toBeInTheDocument();
     expect(screen.getByText('Visual Studio Code')).toBeInTheDocument();
+  });
+
+  it('renders canonical website and software labels from backend activity fields', async () => {
+    mocks.activityGetAllPagesMock.mockResolvedValue([
+      {
+        id: 1,
+        type: 'url',
+        name: 'GitHub',
+        normalized_label: 'github.com',
+        normalized_domain: 'github.com',
+        tool_type: 'website',
+        duration: 1,
+        recorded_at: '2026-04-20T10:00:01.000Z',
+        user: { id: 1, name: 'Irbaz Mavli' },
+      },
+      {
+        id: 2,
+        type: 'app',
+        name: 'Slack',
+        normalized_label: 'slack',
+        software_name: 'slack',
+        tool_type: 'software',
+        duration: 1,
+        recorded_at: '2026-04-20T10:00:02.000Z',
+        user: { id: 1, name: 'Irbaz Mavli' },
+      },
+    ]);
+
+    renderWithProviders(<ReportsWorkspace mode="timeline" />);
+
+    expect(await screen.findByText('github.com')).toBeInTheDocument();
+    expect(await screen.findByText('Slack')).toBeInTheDocument();
+  });
+
+  it('requests processed activity rows for the timeline so durations stay aligned with usage summaries', async () => {
+    renderWithProviders(<ReportsWorkspace mode="timeline" />);
+
+    await screen.findByText('Timeline');
+
+    expect(mocks.activityGetAllPagesMock).toHaveBeenCalledWith(expect.objectContaining({
+      processed: true,
+    }));
+  });
+
+  it('prefers exact desktop app labels over normalized aliases in the timeline', async () => {
+    mocks.activityGetAllPagesMock.mockResolvedValue([
+      {
+        id: 44,
+        type: 'app',
+        name: 'Codex',
+        app_name: 'Codex',
+        software_name: 'vscode',
+        normalized_label: 'vscode',
+        tool_type: 'software',
+        duration: 90,
+        recorded_at: '2026-04-22T10:32:26.000Z',
+        user: {
+          id: 1,
+          name: 'Irbaz Mavli',
+        },
+      },
+    ]);
+
+    renderWithProviders(<ReportsWorkspace mode="timeline" />);
+
+    expect(await screen.findByText('Codex')).toBeInTheDocument();
+    expect(screen.queryByText(/^vscode$/i)).not.toBeInTheDocument();
+  });
+
+  it('prefers the explorer window title over the generic explorer app name in the timeline', async () => {
+    mocks.activityGetAllPagesMock.mockResolvedValue([
+      {
+        id: 55,
+        type: 'app',
+        name: 'This PC',
+        app_name: 'Windows Explorer',
+        window_title: 'This PC',
+        software_name: 'windows explorer',
+        normalized_label: 'windows explorer',
+        tool_type: 'software',
+        duration: 19,
+        recorded_at: '2026-04-22T11:14:04.000Z',
+        user: {
+          id: 1,
+          name: 'Irbaz Mavli',
+        },
+      },
+    ]);
+
+    renderWithProviders(<ReportsWorkspace mode="timeline" />);
+
+    expect(await screen.findByText('This PC')).toBeInTheDocument();
+    expect(screen.queryByText(/^Windows Explorer$/i)).not.toBeInTheDocument();
   });
 });

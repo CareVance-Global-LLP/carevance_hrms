@@ -7,6 +7,8 @@ const updateProvider = (process.env.DESKTOP_UPDATE_PROVIDER || '').trim().toLowe
 const updateUrl = (process.env.DESKTOP_UPDATE_URL || '').trim();
 const updateOwner = (process.env.DESKTOP_UPDATE_OWNER || '').trim();
 const updateRepo = (process.env.DESKTOP_UPDATE_REPO || '').trim();
+const browserTrackingChromeStoreUrl = (process.env.BROWSER_TRACKING_CHROME_STORE_URL || '').trim();
+const browserTrackingEdgeStoreUrl = (process.env.BROWSER_TRACKING_EDGE_STORE_URL || '').trim();
 
 const resolveUpdateConfig = () => {
   if (updateProvider === 'github' || (!updateProvider && updateOwner && updateRepo)) {
@@ -38,6 +40,10 @@ const resolveUpdateConfig = () => {
 const config = {
   appUrl,
   update: resolveUpdateConfig(),
+  browserTracking: {
+    chromeStoreUrl: browserTrackingChromeStoreUrl || null,
+    edgeStoreUrl: browserTrackingEdgeStoreUrl || null,
+  },
 };
 
 fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');

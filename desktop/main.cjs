@@ -1,7 +1,15 @@
 const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell } = require('electron');
+const crypto = require('crypto');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { NsisUpdater } = require('electron-updater');
+const { createBrowserTrackingBridge } = require('./browser-tracking-bridge.cjs');
+const {
+  getBrowserTrackingManagerUrl,
+  getBrowserTrackingOptionsUrl,
+  prepareManagedBrowserTrackingExtensionDir,
+} = require('./browser-tracking-install-guide.cjs');
 let activeWin = null;
 
 try {
@@ -27,6 +35,14 @@ const readConfiguredAppConfig = () => {
 const APP_CONFIG = readConfiguredAppConfig();
 const APP_URL = process.env.APP_URL || (typeof APP_CONFIG.appUrl === 'string' ? APP_CONFIG.appUrl.trim() : '') || DEFAULT_APP_URL;
 const IS_REMOTE_APP_URL = /^https?:\/\//i.test(APP_URL);
+const BROWSER_TRACKING_STORE_URLS = {
+  chrome: typeof APP_CONFIG?.browserTracking?.chromeStoreUrl === 'string'
+    ? APP_CONFIG.browserTracking.chromeStoreUrl.trim()
+    : '',
+  edge: typeof APP_CONFIG?.browserTracking?.edgeStoreUrl === 'string'
+    ? APP_CONFIG.browserTracking.edgeStoreUrl.trim()
+    : '',
+};
 const APP_ICON = process.platform === 'win32'
   ? path.join(__dirname, 'assets', 'icon.ico')
   : path.join(__dirname, 'assets', 'icon.png');
@@ -34,12 +50,17 @@ const APP_ID = 'com.carevance.tracker';
 const DEFAULT_SCREENSHOT_MAX_WIDTH = 1920;
 const DEFAULT_SCREENSHOT_MAX_HEIGHT = 1080;
 const DEFAULT_SCREENSHOT_JPEG_QUALITY = 82;
+const FOREGROUND_WINDOW_POLL_INTERVAL_MS = 1000;
+const DEVICE_IDENTITY_FILENAME = 'desktop-device.json';
+const BROWSER_TRACKING_STATE_FILENAME = 'browser-tracking-state.json';
 let mainWindow = null;
 let allowWindowClose = false;
 let closePreparationInProgress = false;
 let closePreparationTimeout = null;
 let autoUpdater = null;
 let updateCheckInterval = null;
+let foregroundWindowWatcherInterval = null;
+let lastForegroundWindowSignature = null;
 let updateState = {
   enabled: false,
   status: 'disabled',
@@ -51,6 +72,8 @@ let updateState = {
   downloadedVersion: null,
   progressPercent: 0,
 };
+let browserTrackingBridge = null;
+let desktopDeviceIdentity = null;
 
 app.setName('CareVance Tracker');
 
@@ -127,6 +150,61 @@ const configureRuntimeStorage = () => {
 };
 
 configureRuntimeStorage();
+
+const normalizeDeviceLabel = (value) => {
+  const normalized = String(value || '').trim();
+  if (normalized) {
+    return normalized.slice(0, 255);
+  }
+
+  const hostName = String(process.env.COMPUTERNAME || os.hostname() || '').trim();
+  if (hostName) {
+    return hostName.slice(0, 255);
+  }
+
+  return 'CareVance Desktop';
+};
+
+const buildDesktopDeviceIdentity = () => {
+  const identityPath = path.join(app.getPath('userData'), DEVICE_IDENTITY_FILENAME);
+  let persistedIdentity = null;
+
+  try {
+    if (fs.existsSync(identityPath)) {
+      const parsed = JSON.parse(fs.readFileSync(identityPath, 'utf8'));
+      if (parsed && typeof parsed === 'object') {
+        persistedIdentity = parsed;
+      }
+    }
+  } catch {
+    persistedIdentity = null;
+  }
+
+  const deviceId = String(persistedIdentity?.device_id || '').trim()
+    || `desktop-${crypto.randomUUID()}`;
+  const deviceLabel = normalizeDeviceLabel(persistedIdentity?.device_label);
+  const identity = {
+    device_id: deviceId.slice(0, 120),
+    device_label: deviceLabel,
+  };
+
+  try {
+    fs.writeFileSync(identityPath, JSON.stringify(identity, null, 2), 'utf8');
+  } catch {
+    // Best-effort persistence. We still return the generated identity for this session.
+  }
+
+  return identity;
+};
+
+const getDesktopDeviceIdentity = () => {
+  if (desktopDeviceIdentity) {
+    return desktopDeviceIdentity;
+  }
+
+  desktopDeviceIdentity = buildDesktopDeviceIdentity();
+  return desktopDeviceIdentity;
+};
 
 const parseIntEnv = (key, fallback, min, max) => {
   const parsed = Number.parseInt(String(process.env[key] || ''), 10);
@@ -298,6 +376,14 @@ const broadcastUpdateState = () => {
   mainWindow.webContents.send('desktop:update-state', updateState);
 };
 
+const broadcastBrowserTrackingState = () => {
+  if (!mainWindow || mainWindow.isDestroyed() || !browserTrackingBridge) {
+    return;
+  }
+
+  mainWindow.webContents.send('desktop:browser-tracking-state', browserTrackingBridge.getRendererState());
+};
+
 const setUpdateState = (patch) => {
   updateState = {
     ...updateState,
@@ -322,6 +408,98 @@ const proceedToCloseWindow = () => {
   allowWindowClose = true;
   mainWindow.close();
   return true;
+};
+
+const stopForegroundWindowWatcher = () => {
+  if (foregroundWindowWatcherInterval) {
+    clearInterval(foregroundWindowWatcherInterval);
+    foregroundWindowWatcherInterval = null;
+  }
+  lastForegroundWindowSignature = null;
+};
+
+const getForegroundWindowPayload = async () => {
+  if (!activeWin) {
+    return null;
+  }
+
+  try {
+    const context = await activeWin();
+    return {
+      app: context?.owner?.name || null,
+      title: context?.title || null,
+      url: context?.url || null,
+      captured_at: new Date().toISOString(),
+    };
+  } catch {
+    return {
+      app: null,
+      title: null,
+      url: null,
+      captured_at: new Date().toISOString(),
+    };
+  }
+};
+
+const emitForegroundWindowChange = async () => {
+  if (!mainWindow || mainWindow.isDestroyed() || !activeWin) {
+    return;
+  }
+
+  const payload = await getForegroundWindowPayload();
+  if (!payload) {
+    return;
+  }
+
+  const signature = JSON.stringify({
+    app: payload.app || null,
+    title: payload.title || null,
+    url: payload.url || null,
+  });
+
+  if (signature === lastForegroundWindowSignature) {
+    return;
+  }
+
+  lastForegroundWindowSignature = signature;
+  mainWindow.webContents.send('desktop:foreground-window-changed', payload);
+};
+
+const startForegroundWindowWatcher = () => {
+  stopForegroundWindowWatcher();
+
+  if (!activeWin) {
+    return;
+  }
+
+  foregroundWindowWatcherInterval = setInterval(() => {
+    void emitForegroundWindowChange();
+  }, FOREGROUND_WINDOW_POLL_INTERVAL_MS);
+
+  void emitForegroundWindowChange();
+};
+
+const ensureBrowserTrackingBridge = () => {
+  if (browserTrackingBridge) {
+    return browserTrackingBridge;
+  }
+
+  browserTrackingBridge = createBrowserTrackingBridge({
+    stateFilePath: path.join(app.getPath('userData'), BROWSER_TRACKING_STATE_FILENAME),
+    onBrowserEvent: async (event) => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+
+      mainWindow.webContents.send('desktop:browser-tracking-event', event);
+      broadcastBrowserTrackingState();
+    },
+    onStateChanged: () => {
+      broadcastBrowserTrackingState();
+    },
+  });
+
+  return browserTrackingBridge;
 };
 
 const createWindow = async () => {
@@ -351,6 +529,8 @@ const createWindow = async () => {
 
   mainWindow.webContents.on('did-finish-load', () => {
     broadcastUpdateState();
+    broadcastBrowserTrackingState();
+    startForegroundWindowWatcher();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -388,6 +568,7 @@ const createWindow = async () => {
       clearTimeout(closePreparationTimeout);
       closePreparationTimeout = null;
     }
+    stopForegroundWindowWatcher();
     allowWindowClose = false;
     closePreparationInProgress = false;
     mainWindow = null;
@@ -662,6 +843,69 @@ ipcMain.handle('desktop:confirm-close-ready', async () => {
   return proceedToCloseWindow();
 });
 
+ipcMain.handle('desktop:get-device-identity', async () => {
+  return getDesktopDeviceIdentity();
+});
+
+ipcMain.handle('desktop:get-browser-tracking-state', async () => {
+  return ensureBrowserTrackingBridge().getRendererState();
+});
+
+ipcMain.handle('desktop:open-browser-tracking-guide', async (_event, payload) => {
+  const extensionDir = prepareManagedBrowserTrackingExtensionDir({
+    sourceDir: path.join(__dirname, 'assets', 'browser-extension', 'chromium'),
+    userDataPath: app.getPath('userData'),
+    browserName: payload?.browser_name || 'chrome',
+    appVersion: app.getVersion(),
+  });
+  const openError = await shell.openPath(extensionDir);
+
+  if (openError) {
+    throw new Error(openError);
+  }
+
+  return true;
+});
+
+ipcMain.handle('desktop:open-browser-tracking-install', async (_event, payload) => {
+  const browserName = String(payload?.browser_name || 'chrome').trim().toLowerCase() || 'chrome';
+  const storeUrl = BROWSER_TRACKING_STORE_URLS[browserName]
+    || (browserName !== 'edge' ? BROWSER_TRACKING_STORE_URLS.chrome : '');
+
+  if (storeUrl) {
+    await shell.openExternal(storeUrl);
+    return true;
+  }
+
+  await shell.openExternal(getBrowserTrackingManagerUrl(browserName));
+  return true;
+});
+
+ipcMain.handle('desktop:open-browser-tracking-options', async (_event, payload) => {
+  const optionsUrl = getBrowserTrackingOptionsUrl(payload?.extension_origin);
+  if (!optionsUrl) {
+    throw new Error('The browser extension options page is not available yet. Install and pair the extension first.');
+  }
+
+  await shell.openExternal(optionsUrl);
+  return true;
+});
+
+ipcMain.handle('desktop:create-browser-tracking-pairing-code', async (_event, payload) => {
+  const requestedUserId = Number(payload?.user_id);
+  if (!Number.isFinite(requestedUserId)) {
+    throw new Error('A signed-in user id is required to create a browser tracking pairing code.');
+  }
+
+  const pairing = ensureBrowserTrackingBridge().issuePairingCode({
+    browserName: payload?.browser_name || 'chrome',
+    userId: requestedUserId,
+  });
+
+  broadcastBrowserTrackingState();
+  return pairing;
+});
+
 ipcMain.handle('desktop:get-update-state', async () => {
   return updateState;
 });
@@ -692,7 +936,12 @@ ipcMain.handle('desktop:install-update', async () => {
   return true;
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const browserTrackingState = await ensureBrowserTrackingBridge().start();
+  if (!browserTrackingState?.ready) {
+    console.warn('[desktop-tracker] browser tracking bridge unavailable', browserTrackingState?.last_error || '');
+  }
+
   void createWindow();
   initializeAutoUpdater();
 
@@ -711,5 +960,11 @@ app.on('before-quit', () => {
   if (updateCheckInterval) {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;
+  }
+  stopForegroundWindowWatcher();
+  if (browserTrackingBridge) {
+    void browserTrackingBridge.stop().catch(() => {
+      // Best-effort shutdown.
+    });
   }
 });

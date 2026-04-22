@@ -17,6 +17,9 @@ import type {
   TimeEntry,
   Screenshot,
   Activity,
+  ActivitySession,
+  BrowserTrackingConnectionSyncRecord,
+  BrowserTrackingConnectionSyncRequest,
   ProductivityRule,
   Invoice,
   DailyReport,
@@ -192,8 +195,8 @@ export const inviteApi = {
     api.post('/invites/send', data),
   validate: (token: string) =>
     api.get<InviteValidationResponse>('/invites/validate', { params: { token } }),
-  accept: (data: { token: string; name: string; password: string; password_confirmation: string }) =>
-    api.post<AuthResponse>('/invites/accept', data),
+  accept: (token: string) =>
+    api.post('/invites/accept', { token }),
 };
 
 // User API
@@ -427,8 +430,45 @@ export const screenshotApi = {
 
 // Activity API
 export const activityApi = {
-  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; normalized?: boolean; page?: number; per_page?: number }) => 
-    api.get<PaginatedResponse<Activity>>('/activities', { params }),
+  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; page?: number; per_page?: number }) => 
+    api.get<{ data: Activity[] }>('/activities', { params }),
+
+  getAllPages: async (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; per_page?: number }) => {
+    const pageSize = Math.max(1, Number(params?.per_page || 200));
+    let page = 1;
+    let hasMore = true;
+    const results: Activity[] = [];
+
+    while (hasMore) {
+      const response = await api.get<{
+        data: Activity[];
+        current_page?: number;
+        last_page?: number;
+        next_page_url?: string | null;
+      }>('/activities', {
+        params: {
+          ...params,
+          page,
+          per_page: pageSize,
+        },
+      });
+
+      const payload = response.data;
+      results.push(...(Array.isArray(payload.data) ? payload.data : []));
+
+      if (payload.next_page_url) {
+        page += 1;
+        continue;
+      }
+
+      const currentPage = Number(payload.current_page || page);
+      const lastPage = Number(payload.last_page || currentPage);
+      hasMore = currentPage < lastPage;
+      page += 1;
+    }
+
+    return results;
+  },
   
   get: (id: number) => 
     api.get<Activity>(`/activities/${id}`),
@@ -441,6 +481,19 @@ export const activityApi = {
   
   delete: (id: number) => 
     api.delete(`/activities/${id}`),
+};
+
+export const activitySessionApi = {
+  create: (data: Partial<ActivitySession>) =>
+    api.post<ActivitySession>('/activity-sessions', data),
+
+  update: (id: number, data: Partial<ActivitySession>) =>
+    api.patch<ActivitySession>(`/activity-sessions/${id}`, data),
+};
+
+export const browserTrackingConnectionApi = {
+  sync: (data: BrowserTrackingConnectionSyncRequest) =>
+    api.post<{ data: BrowserTrackingConnectionSyncRecord[] }>('/browser-tracking/connections/sync', data),
 };
 
 export const productivityRuleApi = {
@@ -524,7 +577,7 @@ export const attendanceApi = {
   today: () =>
     api.get<{
       record: {
-        id: number | null;
+        id: number;
         attendance_date: string;
         check_in_at?: string | null;
         check_out_at?: string | null;
@@ -537,8 +590,6 @@ export const attendanceApi = {
         shift_target_seconds: number;
         remaining_shift_seconds: number;
         completed_shift: boolean;
-        leave_type?: 'full_day' | 'half_day' | null;
-        leave_units?: number;
         punches: Array<{
           id: number;
           punch_in_at: string;
@@ -549,12 +600,6 @@ export const attendanceApi = {
       late_after: string;
       shift_target_seconds: number;
       has_approved_leave_today: boolean;
-      has_half_day_leave_today: boolean;
-      leave_today?: {
-        leave_type: 'full_day' | 'half_day';
-        units: number;
-        label: string;
-      } | null;
     }>('/attendance/today'),
 
   checkIn: () => api.post('/attendance/check-in'),
@@ -569,12 +614,9 @@ export const attendanceApi = {
       viewer_country?: string;
       days: Array<{
         date: string;
-        status: 'present' | 'checked_in' | 'leave' | 'half_leave' | 'holiday' | 'none';
+        status: 'present' | 'checked_in' | 'leave' | 'holiday' | 'none';
         is_weekend: boolean;
         is_leave?: boolean;
-        is_half_leave?: boolean;
-        leave_units?: number;
-        leave_type?: 'full_day' | 'half_day' | null;
         is_holiday?: boolean;
         check_in_at?: string | null;
         check_out_at?: string | null;
@@ -661,7 +703,6 @@ export const leaveApi = {
         organization_id: number;
         start_date: string;
         end_date: string;
-        leave_type?: 'full_day' | 'half_day';
         reason?: string | null;
         status: 'pending' | 'approved' | 'rejected' | 'revoked';
         revoke_status?: 'pending' | 'approved' | 'rejected' | null;
@@ -679,7 +720,7 @@ export const leaveApi = {
       }>;
     }>('/leave-requests', { params }),
 
-  create: (data: { start_date: string; end_date: string; leave_type?: 'full_day' | 'half_day'; reason?: string }) =>
+  create: (data: { start_date: string; end_date: string; reason?: string }) =>
     api.post('/leave-requests', data),
 
   approve: (id: number, review_note?: string) =>
