@@ -720,7 +720,12 @@ export const leaveApi = {
       }>;
     }>('/leave-requests', { params }),
 
-  create: (data: { start_date: string; end_date: string; reason?: string }) =>
+  create: (data: {
+    start_date: string;
+    end_date: string;
+    reason?: string;
+    leave_type?: 'full_day' | 'half_day';
+  }) =>
     api.post('/leave-requests', data),
 
   approve: (id: number, review_note?: string) =>
