@@ -35,6 +35,7 @@ export default function Dashboard() {
   const [workedSeconds, setWorkedSeconds] = useState(0);
   const [isSubmittingOvertime, setIsSubmittingOvertime] = useState(false);
   const [notice, setNotice] = useState('');
+  const [leaveToday, setLeaveToday] = useState<any | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -57,6 +58,7 @@ export default function Dashboard() {
         setActiveTasksCount(Number(data?.active_tasks_count ?? data?.active_projects_count) || 0);
         setTotalTasksCount(Number(data?.total_tasks_count ?? data?.total_projects_count) || 0);
         setAttendanceToday(attendanceRecord);
+        setLeaveToday(attendancePayload?.leave_today || null);
         setShiftTargetSeconds(Number(attendancePayload?.shift_target_seconds || attendanceRecord?.shift_target_seconds || 8 * 3600));
         setWorkedSeconds(Number(attendanceRecord?.worked_seconds || data?.today_total_elapsed_duration || data?.today_total_duration || 0) || 0);
 
@@ -84,6 +86,7 @@ export default function Dashboard() {
     ? Math.min(100, Math.round((workedSeconds / shiftTargetSeconds) * 100))
     : 0;
   const completedShift = workedSeconds >= shiftTargetSeconds;
+  const hasHalfDayLeaveToday = leaveToday?.leave_type === 'half_day';
   const completedSessions = todayEntries.filter((entry) => Boolean(entry.end_time)).length;
   const averageEntrySeconds = todayEntries.length > 0 ? Math.round(todayTotal / todayEntries.length) : 0;
   const trackedTodaySeconds = Math.max(todayTotal, workedSeconds);
@@ -165,6 +168,11 @@ export default function Dashboard() {
                 ? `You have completed today's target and logged ${formatDuration(overtimeSeconds)} of overtime.`
                 : `You are ${completionPercent}% through today's shift target. Keep going to close the remaining ${formatDuration(remainingShiftSeconds)}.`}
             </p>
+            {hasHalfDayLeaveToday ? (
+              <p className="mt-3 inline-flex rounded-full border border-amber-200/40 bg-amber-300/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-amber-100">
+                Half day leave applied today
+              </p>
+            ) : null}
           </div>
 
           <div className="grid min-w-[280px] grid-cols-2 gap-3">
@@ -230,9 +238,21 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Worked Today" value={formatDuration(workedSeconds)} hint={todayDeltaLabel} icon={Clock} accent="sky" />
-        <MetricCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} accent="violet" />
+        <MetricCard
+          label="Time Left Today"
+          value={formatDuration(remainingShiftSeconds)}
+          hint={`${hasHalfDayLeaveToday ? 'Half-day target' : 'Target'} ${formatDuration(shiftTargetSeconds)}`}
+          icon={Hourglass}
+          accent="violet"
+        />
         <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} accent="amber" />
-        <MetricCard label="Active Tasks" value={activeTasksCount} hint={`${totalTasksCount} total tasks`} icon={FolderKanban} accent="emerald" />
+        <MetricCard
+          label={hasHalfDayLeaveToday ? 'Leave Today' : 'Active Tasks'}
+          value={hasHalfDayLeaveToday ? 'Half Day' : activeTasksCount}
+          hint={hasHalfDayLeaveToday ? 'Attendance target reduced for today' : `${totalTasksCount} total tasks`}
+          icon={FolderKanban}
+          accent="emerald"
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.95fr]">
@@ -292,6 +312,9 @@ export default function Dashboard() {
               <p className="mt-1 text-sm text-slate-600">
                 Worked {formatDuration(workedSeconds)} out of {formatDuration(shiftTargetSeconds)} today.
               </p>
+              {hasHalfDayLeaveToday ? (
+                <p className="mt-2 text-sm font-medium text-amber-700">Half day leave is active for today.</p>
+              ) : null}
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

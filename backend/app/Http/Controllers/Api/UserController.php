@@ -11,6 +11,8 @@ use App\Models\EmployeeWorkInfo;
 use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Payslip;
+use App\Models\Project;
+use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Authorization\OrganizationRoleService;
@@ -22,6 +24,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -64,6 +67,17 @@ class UserController extends Controller
 
         $users = User::where('organization_id', $currentUser->organization_id)
             ->with('groups:id,name,slug')
+            ->when($currentUser->role === 'manager', function ($query) use ($currentUser) {
+                $visibleGroupIds = $this->groupIdsForUser($currentUser);
+
+                return $query->where(function ($scopedQuery) use ($currentUser, $visibleGroupIds) {
+                    $scopedQuery->where('id', $currentUser->id)
+                        ->orWhere(function ($employeeQuery) use ($visibleGroupIds) {
+                            $employeeQuery->where('role', 'employee')
+                                ->whereHas('groups', fn ($groupQuery) => $groupQuery->whereIn('groups.id', $visibleGroupIds));
+                        });
+                });
+            })
             ->when(!in_array($currentUser->role, ['admin', 'manager'], true), fn ($query) => $query->where('id', $currentUser->id))
             ->orderBy('created_at', 'desc')
             ->get();
@@ -146,8 +160,9 @@ class UserController extends Controller
                 ->pluck('id')
                 ->all();
 
+            $this->assertSingleGroupMembershipLimit($selectedRole, $groupIds);
             $user->groups()->sync($groupIds);
-            $this->syncPrimaryGroup($user, $groupIds);
+            $this->syncPrimaryGroup($user, $groupIds, []);
         }
 
         $this->auditLogService->log(
@@ -208,8 +223,10 @@ class UserController extends Controller
                 ->pluck('id')
                 ->all();
 
+            $this->assertSingleGroupMembershipLimit($user->role, $groupIds);
+            $previousGroupIds = $user->groups()->pluck('groups.id')->map(fn ($id) => (int) $id)->all();
             $user->groups()->sync($groupIds);
-            $this->syncPrimaryGroup($user, $groupIds);
+            $this->syncPrimaryGroup($user, $groupIds, $previousGroupIds);
         }
 
         $this->auditLogService->log(
@@ -273,7 +290,7 @@ class UserController extends Controller
         if (!$user) {
             return response()->json(['message' => 'User not found'], 404);
         }
-        if (!$this->canManageUsers($currentUser) && $currentUser->id !== $user->id) {
+        if (!$this->canAccessUser($request, $user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -320,11 +337,18 @@ class UserController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $user = User::where('organization_id', $currentUser->organization_id)->find($id);
+        $user = User::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->with([
+                'groups:id,name,slug',
+                'employeeWorkInfo.department:id,name',
+                'employeeWorkInfo.reportingManager:id,name,email',
+            ])
+            ->find($id);
         if (!$user) {
             return response()->json(['message' => 'User not found'], 404);
         }
-        if (!$this->canManageUsers($currentUser) && $currentUser->id !== $user->id) {
+        if (!$this->canAccessUser($request, $user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -338,7 +362,7 @@ class UserController extends Controller
             [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
         }
 
-        $entries = TimeEntry::with(['project:id,name', 'task:id,title'])
+        $entries = TimeEntry::with(['project:id,name,status,deadline', 'task:id,title,project_id'])
             ->where('user_id', $user->id)
             ->whereBetween('start_time', [$startDate, $endDate])
             ->orderByDesc('start_time')
@@ -349,6 +373,93 @@ class UserController extends Controller
 
             return $entry;
         });
+
+        $groupMembershipModels = $user->groups;
+        $groupMemberships = $groupMembershipModels
+            ->map(fn ($group) => [
+                'id' => (int) $group->id,
+                'name' => $group->name,
+                'slug' => $group->slug,
+            ])
+            ->values();
+
+        $workInfo = $user->employeeWorkInfo;
+        $fallbackReportingManager = User::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->where('role', 'manager')
+            ->whereHas('groups', fn ($query) => $query->whereIn('groups.id', $groupMembershipModels->pluck('id')))
+            ->orderBy('name')
+            ->first(['id', 'name', 'email']);
+        $resolvedReportingManager = $workInfo?->reportingManager ?: $fallbackReportingManager;
+        $assignedProjectIds = Task::query()
+            ->where('assignee_id', $user->id)
+            ->whereNotNull('project_id')
+            ->distinct()
+            ->pluck('project_id')
+            ->map(fn ($projectId) => (int) $projectId)
+            ->all();
+        $trackedProjectIds = $entries
+            ->map(function (TimeEntry $entry) {
+                return (int) ($entry->project_id ?: $entry->task?->project_id ?: 0);
+            })
+            ->filter(fn (int $projectId) => $projectId > 0)
+            ->unique()
+            ->values()
+            ->all();
+        $allRelevantProjectIds = collect(array_merge($assignedProjectIds, $trackedProjectIds))
+            ->filter(fn (int $projectId) => $projectId > 0)
+            ->unique()
+            ->values();
+        $projectsById = Project::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->whereIn('id', $allRelevantProjectIds)
+            ->get(['id', 'name', 'status', 'deadline'])
+            ->keyBy('id');
+
+        $projectBreakdown = $entries
+            ->groupBy(function (TimeEntry $entry) {
+                return (int) ($entry->project_id ?: $entry->task?->project_id ?: 0);
+            })
+            ->filter(fn ($groupedEntries, $projectId) => (int) $projectId > 0)
+            ->map(function ($groupedEntries, $projectId) use ($projectsById) {
+                $project = $projectsById->get((int) $projectId);
+                if (!$project) {
+                    return null;
+                }
+
+                $trackedDuration = (int) $groupedEntries->sum(fn (TimeEntry $entry) => (int) ($entry->duration ?? 0));
+                $billableDuration = (int) $groupedEntries
+                    ->filter(fn (TimeEntry $entry) => (bool) $entry->billable)
+                    ->sum(fn (TimeEntry $entry) => (int) ($entry->duration ?? 0));
+
+                return [
+                    'project' => [
+                        'id' => (int) $project->id,
+                        'name' => $project->name,
+                        'status' => $project->status,
+                        'deadline' => optional($project->deadline)?->toDateString(),
+                    ],
+                    'entries_count' => $groupedEntries->count(),
+                    'tracked_duration' => $trackedDuration,
+                    'billable_duration' => $billableDuration,
+                    'non_billable_duration' => max(0, $trackedDuration - $billableDuration),
+                    'last_tracked_at' => optional($groupedEntries->sortByDesc('start_time')->first()?->start_time)?->toISOString(),
+                ];
+            })
+            ->filter()
+            ->sortByDesc('tracked_duration')
+            ->values();
+
+        $assignedProjects = $allRelevantProjectIds
+            ->map(fn (int $projectId) => $projectsById->get($projectId))
+            ->filter()
+            ->map(fn (Project $project) => [
+                'id' => (int) $project->id,
+                'name' => $project->name,
+                'status' => $project->status,
+                'deadline' => optional($project->deadline)?->toDateString(),
+            ])
+            ->values();
 
         $attendanceSummaryRecords = AttendanceRecord::query()
             ->where('user_id', $user->id)
@@ -369,7 +480,7 @@ class UserController extends Controller
             ->where('status', 'approved')
             ->whereDate('end_date', '>=', $startDate->toDateString())
             ->whereDate('start_date', '<=', $endDate->toDateString())
-            ->get(['start_date', 'end_date']);
+            ->get(['start_date', 'end_date', 'leave_type']);
 
         $timeEditRequests = AttendanceTimeEditRequest::query()
             ->with('reviewer:id,name,email')
@@ -418,15 +529,11 @@ class UserController extends Controller
         $lateAttendanceDays = (int) $attendanceSummaryRecords
             ->filter(fn (AttendanceRecord $record) => (int) ($record->late_minutes ?? 0) > 0)
             ->count();
-        $approvedLeaveDays = (int) $approvedLeaveRequestsInRange
-            ->sum(function (LeaveRequest $leaveRequest) use ($startDate, $endDate) {
-                $overlapStart = Carbon::parse($leaveRequest->start_date)->startOfDay()->max($startDate->copy());
-                $overlapEnd = Carbon::parse($leaveRequest->end_date)->endOfDay()->min($endDate->copy());
-
-                return $overlapStart->greaterThan($overlapEnd)
-                    ? 0
-                    : $overlapStart->diffInDays($overlapEnd) + 1;
-            });
+        $approvedLeaveDays = round(
+            (float) $approvedLeaveRequestsInRange
+                ->sum(fn (LeaveRequest $leaveRequest) => $leaveRequest->effectiveUnitsInRange($startDate, $endDate)),
+            2
+        );
 
         $latestAttendance = $attendanceRecords->first();
         $activeEntry = TimeEntry::query()
@@ -441,6 +548,23 @@ class UserController extends Controller
             'range' => [
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
+            ],
+            'assignments' => [
+                'groups' => $groupMemberships,
+                'primary_group' => $workInfo?->department
+                    ? [
+                        'id' => (int) $workInfo->department->id,
+                        'name' => $workInfo->department->name,
+                    ]
+                    : null,
+                'reporting_manager' => $resolvedReportingManager
+                    ? [
+                        'id' => (int) $resolvedReportingManager->id,
+                        'name' => $resolvedReportingManager->name,
+                        'email' => $resolvedReportingManager->email,
+                    ]
+                    : null,
+                'assigned_projects' => $assignedProjects,
             ],
             'summary' => [
                 'entries_count' => $entries->count(),
@@ -462,6 +586,7 @@ class UserController extends Controller
                 'latest_notification' => $latestNotification,
             ],
             'recent_time_entries' => $entries->take(8)->values(),
+            'project_breakdown' => $projectBreakdown,
             'attendance_records' => $attendanceRecords,
             'leave_requests' => $leaveRequests,
             'time_edit_requests' => $timeEditRequests,
@@ -487,7 +612,19 @@ class UserController extends Controller
             return false;
         }
 
-        return $this->canManageUsers($currentUser) || $currentUser->id === $user->id;
+        if ($currentUser->role === 'admin') {
+            return true;
+        }
+
+        if ($currentUser->id === $user->id) {
+            return true;
+        }
+
+        if ($currentUser->role === 'manager') {
+            return $user->role === 'employee' && $this->usersShareAGroup($currentUser, $user);
+        }
+
+        return false;
     }
 
     private function canManageUsers(User $user): bool
@@ -500,17 +637,97 @@ class UserController extends Controller
         return $user?->role === 'admin';
     }
 
-    private function syncPrimaryGroup(User $user, array $groupIds): void
+    private function syncPrimaryGroup(User $user, array $groupIds, array $previousGroupIds = []): void
     {
+        $primaryGroupId = $groupIds[0] ?? null;
+        $reportingManagerId = $user->role === 'employee'
+            ? $this->resolveGroupManagerId($user->organization_id, $primaryGroupId)
+            : null;
+
         EmployeeWorkInfo::query()->updateOrCreate(
             [
                 'organization_id' => $user->organization_id,
                 'user_id' => $user->id,
             ],
             [
-                'report_group_id' => $groupIds[0] ?? null,
+                'report_group_id' => $primaryGroupId,
+                'reporting_manager_id' => $reportingManagerId,
             ]
         );
+
+        if ($user->role === 'manager') {
+            collect(array_merge($previousGroupIds, $groupIds))
+                ->filter(fn ($groupId) => (int) $groupId > 0)
+                ->unique()
+                ->each(fn ($groupId) => $this->syncEmployeesForGroup((int) $user->organization_id, (int) $groupId));
+        }
+    }
+
+    private function assertSingleGroupMembershipLimit(string $role, array $groupIds): void
+    {
+        if (in_array($role, ['employee', 'manager'], true) && count($groupIds) > 1) {
+            throw ValidationException::withMessages([
+                'group_ids' => ['Managers and employees can belong to only one group at a time.'],
+            ]);
+        }
+    }
+
+    private function groupIdsForUser(User $user): array
+    {
+        return $user->groups()
+            ->pluck('groups.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    private function usersShareAGroup(User $leftUser, User $rightUser): bool
+    {
+        $leftGroupIds = $this->groupIdsForUser($leftUser);
+
+        if (empty($leftGroupIds)) {
+            return false;
+        }
+
+        return $rightUser->groups()
+            ->whereIn('groups.id', $leftGroupIds)
+            ->exists();
+    }
+
+    private function resolveGroupManagerId(?int $organizationId, ?int $groupId): ?int
+    {
+        if (!$organizationId || !$groupId) {
+            return null;
+        }
+
+        return User::query()
+            ->where('organization_id', $organizationId)
+            ->where('role', 'manager')
+            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
+            ->orderBy('name')
+            ->value('id');
+    }
+
+    private function syncEmployeesForGroup(int $organizationId, int $groupId): void
+    {
+        $managerId = $this->resolveGroupManagerId($organizationId, $groupId);
+        $employeeIds = User::query()
+            ->where('organization_id', $organizationId)
+            ->where('role', 'employee')
+            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
+            ->pluck('id');
+
+        foreach ($employeeIds as $employeeId) {
+            EmployeeWorkInfo::query()->updateOrCreate(
+                [
+                    'organization_id' => $organizationId,
+                    'user_id' => (int) $employeeId,
+                ],
+                [
+                    'report_group_id' => $groupId,
+                    'reporting_manager_id' => $managerId,
+                ]
+            );
+        }
     }
 
     private function resolveCurrentProjectLabel(?TimeEntry $activeEntry): ?string

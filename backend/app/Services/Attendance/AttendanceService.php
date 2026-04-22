@@ -15,12 +15,45 @@ use Illuminate\Http\Request;
 
 class AttendanceService
 {
+    private function managerGroupIds(User $user): array
+    {
+        return $user->groups()
+            ->pluck('groups.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    private function visibleUsersQuery(User $user, bool $employeesOnlyForManager = false): Builder
+    {
+        $query = User::query()->where('organization_id', $user->organization_id);
+
+        if ($user->role === 'admin') {
+            return $query;
+        }
+
+        if ($user->role === 'manager') {
+            $groupIds = $this->managerGroupIds($user);
+            if (empty($groupIds)) {
+                return User::query()->whereRaw('1 = 0');
+            }
+
+            if ($employeesOnlyForManager) {
+                $query->where('role', 'employee');
+            }
+
+            return $query->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds));
+        }
+
+        return $query->whereKey($user->id);
+    }
+
     public function todayPayload(?User $user): array
     {
         if (!$user || !$user->organization_id) {
             return [
                 'record' => null,
                 'has_approved_leave_today' => false,
+                'has_half_day_leave_today' => false,
             ];
         }
 
@@ -29,12 +62,20 @@ class AttendanceService
             ->whereDate('attendance_date', $today)
             ->with('punches')
             ->first();
+        $leaveForToday = $this->approvedLeaveForDate($user, $today);
+        $shiftTarget = $this->shiftTargetSecondsForLeave($leaveForToday);
 
         return [
-            'record' => $this->decorateRecord($record),
+            'record' => $this->decorateRecord($record, $leaveForToday),
             'late_after' => env('ATTENDANCE_LATE_AFTER', '09:30:00'),
-            'shift_target_seconds' => $this->shiftTargetSeconds(),
-            'has_approved_leave_today' => $this->hasApprovedLeaveOnDate($user, $today),
+            'shift_target_seconds' => $shiftTarget,
+            'has_approved_leave_today' => $leaveForToday && !$leaveForToday->isHalfDay(),
+            'has_half_day_leave_today' => (bool) ($leaveForToday?->isHalfDay()),
+            'leave_today' => $leaveForToday ? [
+                'leave_type' => $leaveForToday->leave_type,
+                'units' => $leaveForToday->unitsForDate($today),
+                'label' => $leaveForToday->isHalfDay() ? 'Half day applied' : 'Approved leave',
+            ] : null,
         ];
     }
 
@@ -45,7 +86,7 @@ class AttendanceService
         }
 
         $today = now()->toDateString();
-        if ($this->hasApprovedLeaveOnDate($user, $today)) {
+        if ($this->hasApprovedFullDayLeaveOnDate($user, $today)) {
             return ['status' => 422, 'payload' => ['message' => 'You are on approved leave today. Punch in is blocked.']];
         }
 
@@ -164,8 +205,7 @@ class AttendanceService
             return ['status' => 403, 'payload' => ['message' => 'Forbidden']];
         }
 
-        $targetUser = User::query()
-            ->where('organization_id', $currentUser->organization_id)
+        $targetUser = $this->visibleUsersQuery($currentUser, $currentUser->role === 'manager')
             ->where('id', $targetUserId)
             ->first();
         if (!$targetUser) {
@@ -189,15 +229,22 @@ class AttendanceService
             ->where('status', 'approved')
             ->whereDate('start_date', '<=', $monthEnd->toDateString())
             ->whereDate('end_date', '>=', $monthStart->toDateString())
-            ->get(['start_date', 'end_date']);
+            ->get(['start_date', 'end_date', 'leave_type']);
 
-        $leaveDateSet = $approvedLeaves
-            ->flatMap(function ($leave) {
-                return collect(CarbonPeriod::create($leave->start_date, $leave->end_date))
-                    ->map(fn (Carbon $date) => $date->toDateString());
-            })
-            ->unique()
-            ->flip();
+        $leaveByDate = $approvedLeaves
+            ->flatMap(fn (LeaveRequest $leave) => $leave->effectiveDateEntriesInRange($monthStart, $monthEnd))
+            ->groupBy('date')
+            ->map(function ($entries) {
+                $maxUnits = (float) collect($entries)->max('units');
+                $leaveType = collect($entries)->contains(fn ($entry) => ($entry['leave_type'] ?? null) === 'half_day')
+                    ? 'half_day'
+                    : 'full_day';
+
+                return [
+                    'units' => $maxUnits,
+                    'leave_type' => $leaveType,
+                ];
+            });
 
         $holidays = AttendanceHoliday::query()
             ->where('organization_id', $currentUser->organization_id)
@@ -225,7 +272,10 @@ class AttendanceService
             $dateStr = $date->toDateString();
             $isWeekend = $date->isWeekend();
             $record = $records->get($dateStr);
-            $isLeave = $leaveDateSet->has($dateStr);
+            $leaveEntry = $leaveByDate->get($dateStr);
+            $leaveUnits = (float) ($leaveEntry['units'] ?? 0);
+            $isLeave = $leaveUnits > 0;
+            $isHalfLeave = $leaveUnits > 0 && $leaveUnits < 1;
             $holiday = $holidayByDate->get($dateStr);
             $isHoliday = (bool) $holiday;
 
@@ -236,9 +286,16 @@ class AttendanceService
                     $present++;
                     $totalWorked += $this->calculateEffectiveWorkedSeconds($record);
                 }
+            } elseif ($isHalfLeave) {
+                $status = 'half_leave';
+                $leaveDays += $leaveUnits;
+                if ($record && $record->check_in_at) {
+                    $present++;
+                    $totalWorked += $this->calculateEffectiveWorkedSeconds($record);
+                }
             } elseif ($isLeave) {
                 $status = 'leave';
-                $leaveDays++;
+                $leaveDays += $leaveUnits;
             } elseif ($record && $record->check_in_at && !$record->check_out_at) {
                 $status = 'checked_in';
                 $present++;
@@ -265,6 +322,9 @@ class AttendanceService
                 'status' => $status,
                 'is_weekend' => $isWeekend,
                 'is_leave' => $isLeave,
+                'is_half_leave' => $isHalfLeave,
+                'leave_units' => $leaveUnits,
+                'leave_type' => $leaveEntry['leave_type'] ?? null,
                 'is_holiday' => $isHoliday,
                 'check_in_at' => $record?->check_in_at,
                 'check_out_at' => $record?->check_out_at,
@@ -292,7 +352,7 @@ class AttendanceService
                     'present_days' => $present,
                     'absent_days' => $absent,
                     'weekend_days' => $weekend,
-                    'leave_days' => $leaveDays,
+                    'leave_days' => round($leaveDays, 2),
                     'holiday_days' => $holidayDays,
                     'late_days' => $late,
                     'total_worked_seconds' => (int) $totalWorked,
@@ -306,8 +366,7 @@ class AttendanceService
     {
         $countryFilter = AttendanceHoliday::normalizeCountry((string) $request->get('country', 'ALL'));
 
-        $users = User::query()
-            ->where('organization_id', $currentUser->organization_id)
+        $users = $this->visibleUsersQuery($currentUser, $currentUser->role === 'manager')
             ->get(['id', 'settings']);
 
         if ($countryFilter !== 'ALL') {
@@ -376,15 +435,23 @@ class AttendanceService
             ->where('status', 'approved')
             ->whereDate('start_date', '<=', $monthEnd->toDateString())
             ->whereDate('end_date', '>=', $monthStart->toDateString())
-            ->get(['user_id', 'start_date', 'end_date']);
+            ->get(['user_id', 'start_date', 'end_date', 'leave_type']);
 
         foreach ($approvedLeaves as $leave) {
-            foreach (CarbonPeriod::create($leave->start_date, $leave->end_date) as $date) {
-                $dateStr = $date->toDateString();
-                if ($dateStr < $monthStart->toDateString() || $dateStr > $monthEnd->toDateString()) {
+            foreach ($leave->effectiveDateEntriesInRange($monthStart, $monthEnd) as $entry) {
+                $dateStr = (string) ($entry['date'] ?? '');
+                if ($dateStr === '') {
                     continue;
                 }
-                $leaveCountsByDate->put($dateStr, (int) $leaveCountsByDate->get($dateStr, 0) + 1);
+
+                $existing = $leaveCountsByDate->get($dateStr, ['units' => 0.0, 'half_day_count' => 0, 'full_day_count' => 0]);
+                $existing['units'] = (float) $existing['units'] + (float) ($entry['units'] ?? 0);
+                if (($entry['leave_type'] ?? null) === 'half_day') {
+                    $existing['half_day_count'] = (int) $existing['half_day_count'] + 1;
+                } else {
+                    $existing['full_day_count'] = (int) $existing['full_day_count'] + 1;
+                }
+                $leaveCountsByDate->put($dateStr, $existing);
             }
         }
 
@@ -422,7 +489,9 @@ class AttendanceService
             $presentCount = $dayRecords->filter(fn ($record) => (bool) $record->check_in_at)->count();
             $lateCount = $dayRecords->filter(fn ($record) => (int) $record->late_minutes > 0)->count();
             $workedSeconds = (int) $dayRecords->sum(fn ($record) => (int) ($record->worked_seconds ?? 0) + (int) ($record->manual_adjustment_seconds ?? 0));
-            $leaveCount = (int) $leaveCountsByDate->get($dateStr, 0);
+            $leaveMeta = $leaveCountsByDate->get($dateStr, ['units' => 0.0, 'half_day_count' => 0, 'full_day_count' => 0]);
+            $leaveUnits = (float) ($leaveMeta['units'] ?? 0);
+            $hasHalfLeave = (int) ($leaveMeta['half_day_count'] ?? 0) > 0;
             $holiday = $holidayByDate->get($dateStr);
             $isHoliday = (bool) $holiday;
 
@@ -432,12 +501,18 @@ class AttendanceService
                 if ($presentCount > 0) {
                     $present++;
                 }
+            } elseif ($hasHalfLeave) {
+                $status = 'half_leave';
+                $leaveDays += $leaveUnits;
+                if ($presentCount > 0) {
+                    $present++;
+                }
             } elseif ($presentCount > 0) {
                 $status = $presentCount >= $totalEmployees ? 'present' : 'checked_in';
                 $present++;
-            } elseif ($leaveCount > 0) {
+            } elseif ($leaveUnits > 0) {
                 $status = 'leave';
-                $leaveDays++;
+                $leaveDays += $leaveUnits;
             } else {
                 $status = 'none';
                 if ($isWeekend) {
@@ -457,7 +532,10 @@ class AttendanceService
                 'date' => $dateStr,
                 'status' => $status,
                 'is_weekend' => $isWeekend,
-                'is_leave' => $leaveCount > 0,
+                'is_leave' => $leaveUnits > 0,
+                'is_half_leave' => $hasHalfLeave,
+                'leave_units' => $leaveUnits,
+                'leave_type' => $hasHalfLeave ? 'half_day' : ($leaveUnits > 0 ? 'full_day' : null),
                 'is_holiday' => $isHoliday,
                 'check_in_at' => null,
                 'check_out_at' => null,
@@ -485,7 +563,7 @@ class AttendanceService
                     'present_days' => $present,
                     'absent_days' => $absent,
                     'weekend_days' => $weekend,
-                    'leave_days' => $leaveDays,
+                    'leave_days' => round($leaveDays, 2),
                     'holiday_days' => $holidayDays,
                     'late_days' => $late,
                     'total_worked_seconds' => (int) $totalWorked,
@@ -507,10 +585,8 @@ class AttendanceService
             [$start, $end] = [$end->copy()->startOfDay(), $start->copy()->endOfDay()];
         }
 
-        $usersQuery = User::where('organization_id', $currentUser->organization_id);
-        if (!$this->canManage($currentUser)) {
-            $usersQuery->where('id', $currentUser->id);
-        } elseif ($request->filled('q')) {
+        $usersQuery = $this->visibleUsersQuery($currentUser, $currentUser->role === 'manager');
+        if ($this->canManage($currentUser) && $request->filled('q')) {
             $term = trim((string) $request->q);
             $usersQuery->where(function ($q) use ($term) {
                 $q->where('name', 'like', "%{$term}%")
@@ -551,7 +627,7 @@ class AttendanceService
     private function resolveTargetUserId(User $currentUser, Request $request): ?int
     {
         if ($this->canManage($currentUser) && $request->filled('user_id')) {
-            $target = User::where('organization_id', $currentUser->organization_id)
+            $target = $this->visibleUsersQuery($currentUser, $currentUser->role === 'manager')
                 ->where('id', (int) $request->user_id)
                 ->first();
 
@@ -566,10 +642,33 @@ class AttendanceService
         return in_array($user->role, ['admin', 'manager'], true);
     }
 
-    private function decorateRecord(?AttendanceRecord $record): ?array
+    private function decorateRecord(?AttendanceRecord $record, ?LeaveRequest $leaveForDate = null): ?array
     {
         if (!$record) {
-            return null;
+            if (!$leaveForDate) {
+                return null;
+            }
+
+            $target = $this->shiftTargetSecondsForLeave($leaveForDate);
+
+            return [
+                'id' => null,
+                'attendance_date' => now()->toDateString(),
+                'check_in_at' => null,
+                'check_out_at' => null,
+                'worked_seconds' => 0,
+                'manual_adjustment_seconds' => 0,
+                'late_minutes' => 0,
+                'status' => $leaveForDate->isHalfDay() ? 'half_leave' : 'absent',
+                'is_checked_in' => false,
+                'total_break_seconds' => 0,
+                'shift_target_seconds' => $target,
+                'remaining_shift_seconds' => $target,
+                'completed_shift' => false,
+                'leave_type' => $leaveForDate->leave_type,
+                'leave_units' => $leaveForDate->unitsForDate(now()),
+                'punches' => [],
+            ];
         }
 
         if (!$record->relationLoaded('punches')) {
@@ -578,7 +677,7 @@ class AttendanceService
 
         $worked = $this->calculateEffectiveWorkedSeconds($record);
         $breakSeconds = $this->calculateBreakSeconds($record);
-        $target = $this->shiftTargetSeconds();
+        $target = $this->shiftTargetSecondsForLeave($leaveForDate);
 
         return [
             'id' => $record->id,
@@ -594,6 +693,8 @@ class AttendanceService
             'shift_target_seconds' => $target,
             'remaining_shift_seconds' => max(0, $target - $worked),
             'completed_shift' => $worked >= $target,
+            'leave_type' => $leaveForDate?->leave_type,
+            'leave_units' => $leaveForDate ? $leaveForDate->unitsForDate($record->attendance_date) : 0,
             'punches' => $record->punches->map(fn (AttendancePunch $punch) => [
                 'id' => $punch->id,
                 'punch_in_at' => $punch->punch_in_at,
@@ -608,14 +709,32 @@ class AttendanceService
         return max(1, (int) env('ATTENDANCE_SHIFT_SECONDS', 8 * 3600));
     }
 
-    private function hasApprovedLeaveOnDate(User $user, string $date): bool
+    private function shiftTargetSecondsForLeave(?LeaveRequest $leave): int
+    {
+        $baseTarget = $this->shiftTargetSeconds();
+        if (!$leave || !$leave->isHalfDay()) {
+            return $baseTarget;
+        }
+
+        return max(1, (int) floor($baseTarget / 2));
+    }
+
+    private function approvedLeaveForDate(User $user, string $date): ?LeaveRequest
     {
         return LeaveRequest::where('organization_id', $user->organization_id)
             ->where('user_id', $user->id)
             ->where('status', 'approved')
             ->whereDate('start_date', '<=', $date)
             ->whereDate('end_date', '>=', $date)
-            ->exists();
+            ->orderByRaw("case when leave_type = 'full_day' then 0 else 1 end")
+            ->first();
+    }
+
+    private function hasApprovedFullDayLeaveOnDate(User $user, string $date): bool
+    {
+        $leave = $this->approvedLeaveForDate($user, $date);
+
+        return (bool) $leave && !$leave->isHalfDay();
     }
 
     private function calculateClosedWorkedSeconds(AttendanceRecord $record): int

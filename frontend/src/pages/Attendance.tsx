@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, reportGroupApi, screenshotApi, userApi } from '@/services/api';
+import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, screenshotApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { canReviewApprovalRequest, hasAdminAccess } from '@/lib/permissions';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
@@ -186,7 +186,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   const [todayRecord, setTodayRecord] = useState<null | {
-    id: number;
+    id: number | null;
     attendance_date: string;
     check_in_at?: string | null;
     check_out_at?: string | null;
@@ -199,6 +199,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     shift_target_seconds: number;
     remaining_shift_seconds: number;
     completed_shift: boolean;
+    leave_type?: 'full_day' | 'half_day' | null;
+    leave_units?: number;
     punches: Array<{
       id: number;
       punch_in_at: string;
@@ -228,6 +230,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [isLeaveSubmitting, setIsLeaveSubmitting] = useState(false);
   const [leaveStartDate, setLeaveStartDate] = useState(formatLocalDate(new Date()));
   const [leaveEndDate, setLeaveEndDate] = useState(formatLocalDate(new Date()));
+  const [leaveType, setLeaveType] = useState<'full_day' | 'half_day'>('full_day');
   const [leaveReason, setLeaveReason] = useState('');
   const [timeEditRequests, setTimeEditRequests] = useState<any[]>([]);
   const [isTimeEditLoading, setIsTimeEditLoading] = useState(false);
@@ -256,6 +259,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   }, [calendarScope, countryFilter, datePreset, endDate, selectedFilterUserId, startDate]);
   const [organizationMembersCount, setOrganizationMembersCount] = useState(0);
   const [isEmployeePanelLoading, setIsEmployeePanelLoading] = useState(false);
+  const [hasHalfDayLeaveToday, setHasHalfDayLeaveToday] = useState(false);
+  const [leaveToday, setLeaveToday] = useState<{ leave_type: 'full_day' | 'half_day'; units: number; label: string } | null>(null);
 
   const isAdmin = hasAdminAccess(user);
   const canSeeAttendanceMonitoring = isAdmin;
@@ -377,6 +382,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       setTodayRecord(res.data.record);
       setLateAfter(res.data.late_after || '09:30:00');
       setHasApprovedLeaveToday(Boolean((res.data as any).has_approved_leave_today));
+      setHasHalfDayLeaveToday(Boolean((res.data as any).has_half_day_leave_today));
+      setLeaveToday((res.data as any).leave_today || null);
     } catch (e) {
       console.error('Attendance today fetch failed:', e);
     }
@@ -536,16 +543,24 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       return;
     }
 
+    if (leaveType === 'half_day' && leaveStartDate !== leaveEndDate) {
+      setLeaveFeedback('', 'Half day leave can only be requested for one date.');
+      return;
+    }
+
     setIsLeaveSubmitting(true);
     setLeaveFeedback();
     try {
       await leaveApi.create({
         start_date: leaveStartDate,
         end_date: leaveEndDate,
+        leave_type: leaveType,
         reason: leaveReason || undefined,
       });
       setLeaveReason('');
+      setLeaveType('full_day');
       await fetchLeaveRequests();
+      await Promise.all([fetchCalendar(), fetchToday(), fetchAttendance()]);
       setLeaveFeedback('Leave request submitted');
     } catch (e) {
       console.error('Leave request submit failed:', e);
@@ -638,7 +653,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       setTimeEditFeedback('', 'Time edit request is not allowed on holidays.');
       return;
     }
-    if (requestedDay?.status === 'leave' || requestedDay?.is_leave) {
+    if (requestedDay?.status === 'leave' || (requestedDay?.is_leave && !requestedDay?.is_half_leave)) {
       setTimeEditFeedback('', 'Time edit request is not allowed on leave days.');
       return;
     }
@@ -1324,6 +1339,14 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               {hasApprovedLeaveToday ? (
                 <p className="text-xs text-red-600 mt-1">Approved leave for today. Punch-in is disabled.</p>
               ) : null}
+              {hasHalfDayLeaveToday ? (
+                <p className="text-xs text-amber-700 mt-1">
+                  Half day leave applied for today. Your shift target is reduced to {formatDuration(todayRecord?.shift_target_seconds || 4 * 3600)}.
+                </p>
+              ) : null}
+              {leaveToday && !hasApprovedLeaveToday && !hasHalfDayLeaveToday ? (
+                <p className="text-xs text-slate-600 mt-1">{leaveToday.label}</p>
+              ) : null}
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
                   <p className="text-[11px] text-gray-500">First Punch In</p>
@@ -1487,6 +1510,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   const statusLabel =
                     status === 'leave'
                       ? 'take a leave'
+                      : status === 'half_leave'
+                        ? 'half day'
                       : status === 'holiday'
                         ? item?.holiday?.title || 'holiday'
                       : status === 'none'
@@ -1500,6 +1525,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         ? 'bg-blue-50 border-blue-200 text-blue-900'
                         : status === 'leave'
                           ? 'bg-red-50 border-red-200 text-red-900'
+                          : status === 'half_leave'
+                            ? 'bg-orange-50 border-orange-200 text-orange-900'
                           : status === 'holiday'
                             ? 'bg-amber-50 border-amber-200 text-amber-900'
                           : 'bg-gray-50 border-gray-200 text-gray-600';
@@ -1508,6 +1535,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                     ? [
                         item.date,
                         `status ${status}`,
+                        item?.leave_units ? `leave units ${item.leave_units}` : null,
                         item?.holiday?.title ? `holiday ${item.holiday.title}` : null,
                         item?.holiday?.country ? `country ${formatCountryLabel(item.holiday.country)}` : null,
                         `worked ${formatDuration(item.worked_seconds || 0)}`,
@@ -1712,16 +1740,51 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         ) : null}
         <SurfaceCard className="p-4">
           <h2 className="font-semibold text-gray-900 mb-3">Request Leave</h2>
+          <div className="mb-3">
+            <FieldLabel>Leave Type</FieldLabel>
+            <SelectInput
+              value={leaveType}
+              onChange={(e) => {
+                const nextType = e.target.value === 'half_day' ? 'half_day' : 'full_day';
+                setLeaveType(nextType);
+                if (nextType === 'half_day') {
+                  setLeaveEndDate(leaveStartDate);
+                }
+              }}
+            >
+              <option value="full_day">Full Day</option>
+              <option value="half_day">Half Day</option>
+            </SelectInput>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <FieldLabel>Start Date</FieldLabel>
-              <TextInput type="date" value={leaveStartDate} onChange={(e) => setLeaveStartDate(e.target.value)} />
+              <TextInput
+                type="date"
+                value={leaveStartDate}
+                onChange={(e) => {
+                  setLeaveStartDate(e.target.value);
+                  if (leaveType === 'half_day') {
+                    setLeaveEndDate(e.target.value);
+                  }
+                }}
+              />
             </div>
             <div>
               <FieldLabel>End Date</FieldLabel>
-              <TextInput type="date" value={leaveEndDate} onChange={(e) => setLeaveEndDate(e.target.value)} />
+              <TextInput
+                type="date"
+                value={leaveEndDate}
+                onChange={(e) => setLeaveEndDate(e.target.value)}
+                disabled={leaveType === 'half_day'}
+              />
             </div>
           </div>
+          {leaveType === 'half_day' ? (
+            <p className="mt-2 text-xs text-amber-700">
+              Half day leave reduces the day target to half of normal working hours.
+            </p>
+          ) : null}
           <div className="mt-3">
             <FieldLabel>Reason (Optional)</FieldLabel>
             <TextareaInput
@@ -1757,6 +1820,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                     </p>
                     <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : item.status === 'revoked' ? 'neutral' : 'warning'}>{item.status}</StatusBadge>
                   </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {item.leave_type === 'half_day' ? 'Half day leave' : 'Full day leave'}
+                  </p>
                   {item.reason ? <p className="text-xs text-gray-600 mt-1">{item.reason}</p> : null}
                   {item.revoke_status ? (
                     <p className="text-xs mt-1 text-gray-600">

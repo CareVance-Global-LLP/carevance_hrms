@@ -85,6 +85,7 @@ class AttendanceTimeEditRequestController extends Controller
             ->where('organization_id', $currentUser->organization_id)
             ->where('user_id', $currentUser->id)
             ->where('status', 'approved')
+            ->where('leave_type', '!=', 'half_day')
             ->whereDate('start_date', '<=', $date)
             ->whereDate('end_date', '>=', $date)
             ->exists();
@@ -109,6 +110,12 @@ class AttendanceTimeEditRequestController extends Controller
             ->exists();
         if ($hasPending) {
             return response()->json(['message' => 'A pending time edit request already exists for this date.'], 422);
+        }
+
+        if (! $this->approvalRoutingService->hasEligibleReviewer($currentUser)) {
+            return response()->json([
+                'message' => $this->approvalRoutingService->missingReviewerMessage($currentUser),
+            ], 422);
         }
 
         $created = AttendanceTimeEditRequest::create([
@@ -139,7 +146,7 @@ class AttendanceTimeEditRequestController extends Controller
             organizationId: (int) $currentUser->organization_id,
             userIds: $reviewerIds,
             senderId: (int) $currentUser->id,
-            type: 'announcement',
+            type: 'time_edit',
             title: 'Time Edit Request Submitted',
             message: sprintf(
                 '%s submitted a time edit request for %s. Worked: %s, Requested overtime: %s.',
@@ -149,6 +156,8 @@ class AttendanceTimeEditRequestController extends Controller
                 $this->formatDuration($overtimeSeconds)
             ),
             meta: [
+                'route' => '/approval-inbox',
+                'approval_kind' => 'time_edit',
                 'request_id' => $created->id,
                 'employee_id' => (int) $currentUser->id,
                 'employee_name' => (string) $currentUser->name,
@@ -327,7 +336,7 @@ class AttendanceTimeEditRequestController extends Controller
             organizationId: (int) $item->organization_id,
             userIds: collect([(int) $item->user_id]),
             senderId: (int) $reviewer->id,
-            type: 'announcement',
+            type: 'time_edit',
             title: $status === 'approved' ? 'Time Edit Request Approved' : 'Time Edit Request Rejected',
             message: sprintf(
                 'Your time edit request for %s (%s) was %s%s.%s',

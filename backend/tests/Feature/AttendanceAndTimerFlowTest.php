@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\Group;
+use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\Project;
 use App\Models\Task;
@@ -120,6 +121,48 @@ class AttendanceAndTimerFlowTest extends TestCase
             'id' => $entry->id,
             'end_time' => null,
         ]);
+    }
+
+    public function test_half_day_leave_keeps_check_in_allowed_and_halves_shift_target(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Employee',
+            'email' => 'half-day-timer@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        LeaveRequest::create([
+            'organization_id' => $organization->id,
+            'user_id' => $user->id,
+            'start_date' => now()->toDateString(),
+            'end_date' => now()->toDateString(),
+            'leave_type' => 'half_day',
+            'status' => 'approved',
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $this->getJson('/api/attendance/today', $headers)
+            ->assertOk()
+            ->assertJsonPath('has_approved_leave_today', false)
+            ->assertJsonPath('has_half_day_leave_today', true)
+            ->assertJsonPath('shift_target_seconds', 14400);
+
+        $this->postJson('/api/attendance/check-in', [], $headers)->assertOk();
+
+        $this->assertDatabaseHas('time_entries', [
+            'user_id' => $user->id,
+            'timer_slot' => 'primary',
+            'end_time' => null,
+        ]);
+
+        $this->getJson('/api/attendance/today', $headers)
+            ->assertOk()
+            ->assertJsonPath('record.shift_target_seconds', 14400)
+            ->assertJsonPath('record.leave_type', 'half_day');
     }
 
     public function test_timer_start_with_task_moves_task_to_in_progress(): void

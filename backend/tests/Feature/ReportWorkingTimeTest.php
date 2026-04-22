@@ -6,9 +6,11 @@ use App\Models\Activity;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
+use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\Payslip;
+use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
@@ -143,6 +145,66 @@ class ReportWorkingTimeTest extends TestCase
             ->assertOk()
             ->assertJsonPath('today_total_duration', 6240)
             ->assertJsonPath('today_total_elapsed_duration', 6240);
+    }
+
+    public function test_dashboard_team_members_count_is_limited_to_visible_group_members_for_manager_and_employee(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance Org',
+            'slug' => 'carevance-dashboard-groups',
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-dashboard@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-dashboard@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $outsider = User::create([
+            'name' => 'Outsider',
+            'email' => 'outsider-dashboard@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Operations',
+            'slug' => 'operations-dashboard',
+            'is_active' => true,
+        ]);
+
+        $otherGroup = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Design',
+            'slug' => 'design-dashboard',
+            'is_active' => true,
+        ]);
+
+        $manager->groups()->attach($group->id);
+        $employee->groups()->attach($group->id);
+        $outsider->groups()->attach($otherGroup->id);
+
+        $this->getJson('/api/dashboard', $this->apiHeadersFor($manager))
+            ->assertOk()
+            ->assertJsonPath('team_members_count', 2)
+            ->assertJsonPath('new_members_this_week', 2);
+
+        $this->getJson('/api/dashboard', $this->apiHeadersFor($employee))
+            ->assertOk()
+            ->assertJsonPath('team_members_count', 2)
+            ->assertJsonPath('new_members_this_week', 2);
     }
 
     public function test_overall_report_counts_approved_time_edits_as_tracked_and_working_time(): void
@@ -851,6 +913,15 @@ class ReportWorkingTimeTest extends TestCase
                 'organization_id' => $organization->id,
             ]);
 
+            $group = Group::create([
+                'organization_id' => $organization->id,
+                'name' => 'Operations',
+                'slug' => 'operations',
+                'is_active' => true,
+            ]);
+            $manager->groups()->attach($group->id);
+            $employee->groups()->attach($group->id);
+
             $employeeEntry = $this->createOpenEntryFor($employee);
             $managerEntry = $this->createOpenEntryFor($anotherManager, '2026-03-16 10:50:00');
 
@@ -880,6 +951,52 @@ class ReportWorkingTimeTest extends TestCase
             $this->assertCount(1, $response->json('live_monitoring.all_users'));
             $this->assertSame($employee->id, $response->json('live_monitoring.all_users.0.user.id'));
             $this->assertSame('employee', $response->json('live_monitoring.all_users.0.user.role'));
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_employee_insights_recent_screenshots_are_filtered_by_capture_time(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+            $entry = TimeEntry::create([
+                'user_id' => $employee->id,
+                'start_time' => '2026-03-15 23:55:00',
+                'end_time' => null,
+                'duration' => 0,
+                'billable' => true,
+            ]);
+
+            $matchingScreenshot = Screenshot::create([
+                'time_entry_id' => $entry->id,
+                'filename' => 'capture-in-range.jpg',
+            ]);
+            $matchingScreenshot->forceFill([
+                'created_at' => '2026-03-16 10:05:00',
+                'updated_at' => '2026-03-16 10:05:00',
+            ])->saveQuietly();
+
+            $outOfRangeScreenshot = Screenshot::create([
+                'time_entry_id' => $entry->id,
+                'filename' => 'capture-out-of-range.jpg',
+            ]);
+            $outOfRangeScreenshot->forceFill([
+                'created_at' => '2026-03-15 23:40:00',
+                'updated_at' => '2026-03-15 23:40:00',
+            ])->saveQuietly();
+
+            $response = $this->getJson(
+                "/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}",
+                $headers
+            )->assertOk();
+
+            $this->assertCount(1, $response->json('recent_screenshots'));
+            $this->assertSame($matchingScreenshot->id, $response->json('recent_screenshots.0.id'));
+            $this->assertSame('capture-in-range.jpg', $response->json('recent_screenshots.0.filename'));
         } finally {
             Carbon::setTestNow();
         }

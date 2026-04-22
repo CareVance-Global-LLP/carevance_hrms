@@ -23,7 +23,6 @@ use App\Models\SalaryTemplateComponent;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
-use Carbon\CarbonPeriod;
 use Illuminate\Support\Collection;
 
 class PayrollWorkspaceService
@@ -81,7 +80,7 @@ class PayrollWorkspaceService
                     'payable_days' => (float) $attendance['payable_days'],
                     'worked_seconds' => (int) $attendance['worked_seconds'],
                     'overtime_seconds' => (int) $attendance['overtime_seconds'],
-                    'approved_leave_days' => (int) $attendance['approved_leave_days'],
+                    'approved_leave_days' => (float) $attendance['approved_leave_days'],
                     'approved_time_edit_seconds' => (int) $attendance['approved_time_edit_seconds'],
                     'gross_pay' => round((float) ($record->gross_salary ?: ((float) $record->basic_salary + (float) $record->allowances + (float) $record->bonus)), 2),
                     'total_deductions' => round((float) $record->deductions + (float) $record->tax, 2),
@@ -255,14 +254,10 @@ class PayrollWorkspaceService
             ->where('status', 'approved')
             ->whereDate('start_date', '<=', $end->toDateString())
             ->whereDate('end_date', '>=', $start->toDateString())
-            ->get(['start_date', 'end_date']);
+            ->get(['start_date', 'end_date', 'leave_type']);
 
-        $approvedLeaveDays = $approvedLeaves
-            ->flatMap(fn ($leave) => collect(CarbonPeriod::create($leave->start_date, $leave->end_date))
-                ->filter(fn (Carbon $date) => $date->betweenIncluded($start, $end))
-                ->map(fn (Carbon $date) => $date->toDateString()))
-            ->unique()
-            ->count();
+        $approvedLeaveDays = (float) $approvedLeaves
+            ->sum(fn (LeaveRequest $leave) => $leave->effectiveUnitsInRange($start, $end));
 
         $approvedTimeEditSeconds = (int) AttendanceTimeEditRequest::query()
             ->where('organization_id', $organizationId)

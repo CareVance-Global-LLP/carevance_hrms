@@ -67,6 +67,7 @@ class LeaveRequestController extends Controller
         $request->validate([
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
+            'leave_type' => 'nullable|in:full_day,half_day',
             'reason' => 'nullable|string|max:2000',
         ]);
 
@@ -77,6 +78,11 @@ class LeaveRequestController extends Controller
 
         $startDate = Carbon::parse($request->start_date)->startOfDay();
         $endDate = Carbon::parse($request->end_date)->startOfDay();
+        $leaveType = (string) ($request->input('leave_type') ?: 'full_day');
+
+        if ($leaveType === 'half_day' && !$startDate->isSameDay($endDate)) {
+            return response()->json(['message' => 'Half day leave can only be requested for a single date.'], 422);
+        }
 
         $overlapExists = LeaveRequest::where('organization_id', $currentUser->organization_id)
             ->where('user_id', $currentUser->id)
@@ -89,11 +95,18 @@ class LeaveRequestController extends Controller
             return response()->json(['message' => 'An overlapping leave request already exists.'], 422);
         }
 
+        if (! $this->approvalRoutingService->hasEligibleReviewer($currentUser)) {
+            return response()->json([
+                'message' => $this->approvalRoutingService->missingReviewerMessage($currentUser),
+            ], 422);
+        }
+
         $leave = LeaveRequest::create([
             'organization_id' => $currentUser->organization_id,
             'user_id' => $currentUser->id,
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
+            'leave_type' => $leaveType,
             'reason' => $request->reason,
             'status' => 'pending',
         ]);
@@ -105,6 +118,7 @@ class LeaveRequestController extends Controller
             metadata: [
                 'start_date' => $leave->start_date,
                 'end_date' => $leave->end_date,
+                'leave_type' => $leave->leave_type,
             ],
             request: $request
         );
@@ -157,6 +171,7 @@ class LeaveRequestController extends Controller
                 'employee_id' => $leave->user_id,
                 'start_date' => $leave->start_date,
                 'end_date' => $leave->end_date,
+                'leave_type' => $leave->leave_type,
             ],
             request: $request
         );
@@ -207,6 +222,7 @@ class LeaveRequestController extends Controller
                 'employee_id' => $leave->user_id,
                 'start_date' => $leave->start_date,
                 'end_date' => $leave->end_date,
+                'leave_type' => $leave->leave_type,
             ],
             request: $request
         );
@@ -259,6 +275,7 @@ class LeaveRequestController extends Controller
             metadata: [
                 'start_date' => $leave->start_date,
                 'end_date' => $leave->end_date,
+                'leave_type' => $leave->leave_type,
             ],
             request: $request
         );
@@ -310,6 +327,7 @@ class LeaveRequestController extends Controller
                 'employee_id' => $leave->user_id,
                 'start_date' => $leave->start_date,
                 'end_date' => $leave->end_date,
+                'leave_type' => $leave->leave_type,
             ],
             request: $request
         );
@@ -358,6 +376,7 @@ class LeaveRequestController extends Controller
                 'employee_id' => $leave->user_id,
                 'start_date' => $leave->start_date,
                 'end_date' => $leave->end_date,
+                'leave_type' => $leave->leave_type,
             ],
             request: $request
         );
@@ -392,7 +411,7 @@ class LeaveRequestController extends Controller
                 'check_out_at' => null,
                 'worked_seconds' => 0,
                 'late_minutes' => 0,
-                'status' => 'absent',
+                'status' => $leave->isHalfDay() ? 'half_leave' : 'absent',
             ]);
             $record->save();
         }
@@ -411,7 +430,7 @@ class LeaveRequestController extends Controller
                 ->whereNull('check_in_at')
                 ->whereNull('check_out_at')
                 ->where('worked_seconds', 0)
-                ->where('status', 'absent')
+                ->whereIn('status', ['absent', 'half_leave'])
                 ->delete();
         }
     }
@@ -432,18 +451,22 @@ class LeaveRequestController extends Controller
             organizationId: (int) $leave->organization_id,
             userIds: $reviewerIds,
             senderId: (int) $requester->id,
-            type: 'announcement',
-            title: 'Leave Request Submitted',
+            type: 'leave_request',
+            title: $leave->isHalfDay() ? 'Half Day Leave Request Submitted' : 'Leave Request Submitted',
             message: sprintf(
-                '%s submitted a leave request from %s to %s.',
+                '%s submitted a %s leave request from %s to %s.',
                 (string) $requester->name,
+                $leave->isHalfDay() ? 'half day' : 'full day',
                 Carbon::parse($leave->start_date)->toDateString(),
                 Carbon::parse($leave->end_date)->toDateString()
             ),
             meta: [
+                'route' => '/approval-inbox',
+                'approval_kind' => 'leave_request',
                 'request_id' => (int) $leave->id,
                 'employee_id' => (int) $leave->user_id,
                 'employee_name' => (string) $requester->name,
+                'leave_type' => $leave->leave_type,
                 'start_date' => Carbon::parse($leave->start_date)->toDateString(),
                 'end_date' => Carbon::parse($leave->end_date)->toDateString(),
             ]
@@ -469,10 +492,13 @@ class LeaveRequestController extends Controller
             organizationId: (int) $leave->organization_id,
             userIds: collect([(int) $leave->user_id]),
             senderId: (int) $reviewer->id,
-            type: 'announcement',
-            title: $status === 'approved' ? 'Leave Request Approved' : 'Leave Request Rejected',
+            type: 'leave_request',
+            title: $status === 'approved'
+                ? ($leave->isHalfDay() ? 'Half Day Leave Request Approved' : 'Leave Request Approved')
+                : ($leave->isHalfDay() ? 'Half Day Leave Request Rejected' : 'Leave Request Rejected'),
             message: sprintf(
-                'Your leave request from %s to %s was %s%s.%s',
+                'Your %s leave request from %s to %s was %s%s.%s',
+                $leave->isHalfDay() ? 'half day' : 'full day',
                 Carbon::parse($leave->start_date)->toDateString(),
                 Carbon::parse($leave->end_date)->toDateString(),
                 $status,
@@ -481,6 +507,7 @@ class LeaveRequestController extends Controller
             ),
             meta: [
                 'request_id' => (int) $leave->id,
+                'leave_type' => $leave->leave_type,
                 'status' => $status,
                 'start_date' => Carbon::parse($leave->start_date)->toDateString(),
                 'end_date' => Carbon::parse($leave->end_date)->toDateString(),

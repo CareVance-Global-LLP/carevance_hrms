@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Authorization\GroupAccessService;
+use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 
 class DashboardSummaryService
@@ -17,6 +18,7 @@ class DashboardSummaryService
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly UsageProcessingService $usageProcessingService,
         private readonly GroupAccessService $groupAccessService,
+        private readonly TimeEntryDurationService $timeEntryDurationService,
     ) {
     }
 
@@ -29,6 +31,8 @@ class DashboardSummaryService
         $yesterdayEnd = $now->copy()->subDay()->endOfDay();
         $weekStart = $now->copy()->startOfWeek();
         $weekEnd = $now->copy()->endOfWeek();
+
+        $this->closeStalePrimaryRunningEntries((int) $user->id, $todayStart);
 
         $todayEntries = TimeEntry::with('project', 'task.group')
             ->where('user_id', $user->id)
@@ -88,8 +92,9 @@ class DashboardSummaryService
         $totalTasksCount = 0;
 
         if ($user->organization_id) {
-            $teamMembersCount = User::where('organization_id', $user->organization_id)->count();
-            $newMembersThisWeek = User::where('organization_id', $user->organization_id)
+            $visibleUsersQuery = $this->visibleTeamMembersQuery($user);
+            $teamMembersCount = (clone $visibleUsersQuery)->count();
+            $newMembersThisWeek = (clone $visibleUsersQuery)
                 ->where('created_at', '>=', $weekStart)
                 ->count();
 
@@ -165,10 +170,52 @@ class DashboardSummaryService
             ->sum('manual_adjustment_seconds');
     }
 
+    private function visibleTeamMembersQuery(User $user)
+    {
+        $query = User::query()->where('organization_id', $user->organization_id);
+
+        if ($user->role === 'admin') {
+            return $query;
+        }
+
+        $visibleGroupIds = $this->groupAccessService->visibleGroupIds($user);
+        if (is_array($visibleGroupIds)) {
+            if (empty($visibleGroupIds)) {
+                return User::query()->whereRaw('1 = 0');
+            }
+
+            return $query
+                ->whereHas('groups', fn ($groupQuery) => $groupQuery->whereIn('groups.id', $visibleGroupIds))
+                ->distinct('users.id');
+        }
+
+        return $query;
+    }
+
     private function manualAdjustmentDurationForUser(int $userId): int
     {
         return (int) AttendanceRecord::query()
             ->where('user_id', $userId)
             ->sum('manual_adjustment_seconds');
+    }
+
+    private function closeStalePrimaryRunningEntries(int $userId, Carbon $boundaryAt): void
+    {
+        $staleEntries = TimeEntry::query()
+            ->where('user_id', $userId)
+            ->whereNull('end_time')
+            ->where(function ($query) {
+                $query->where('timer_slot', 'primary')
+                    ->orWhereNull('timer_slot');
+            })
+            ->where('start_time', '<', $boundaryAt)
+            ->get();
+
+        foreach ($staleEntries as $entry) {
+            $entry->update([
+                'end_time' => $boundaryAt,
+                'duration' => $this->timeEntryDurationService->effectiveDuration($entry, $boundaryAt),
+            ]);
+        }
     }
 }

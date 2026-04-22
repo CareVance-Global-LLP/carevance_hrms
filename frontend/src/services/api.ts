@@ -192,8 +192,8 @@ export const inviteApi = {
     api.post('/invites/send', data),
   validate: (token: string) =>
     api.get<InviteValidationResponse>('/invites/validate', { params: { token } }),
-  accept: (token: string) =>
-    api.post('/invites/accept', { token }),
+  accept: (data: { token: string; name: string; password: string; password_confirmation: string }) =>
+    api.post<AuthResponse>('/invites/accept', data),
 };
 
 // User API
@@ -427,8 +427,8 @@ export const screenshotApi = {
 
 // Activity API
 export const activityApi = {
-  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; page?: number; per_page?: number }) => 
-    api.get<{ data: Activity[] }>('/activities', { params }),
+  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; normalized?: boolean; page?: number; per_page?: number }) => 
+    api.get<PaginatedResponse<Activity>>('/activities', { params }),
   
   get: (id: number) => 
     api.get<Activity>(`/activities/${id}`),
@@ -524,7 +524,7 @@ export const attendanceApi = {
   today: () =>
     api.get<{
       record: {
-        id: number;
+        id: number | null;
         attendance_date: string;
         check_in_at?: string | null;
         check_out_at?: string | null;
@@ -537,6 +537,8 @@ export const attendanceApi = {
         shift_target_seconds: number;
         remaining_shift_seconds: number;
         completed_shift: boolean;
+        leave_type?: 'full_day' | 'half_day' | null;
+        leave_units?: number;
         punches: Array<{
           id: number;
           punch_in_at: string;
@@ -547,6 +549,12 @@ export const attendanceApi = {
       late_after: string;
       shift_target_seconds: number;
       has_approved_leave_today: boolean;
+      has_half_day_leave_today: boolean;
+      leave_today?: {
+        leave_type: 'full_day' | 'half_day';
+        units: number;
+        label: string;
+      } | null;
     }>('/attendance/today'),
 
   checkIn: () => api.post('/attendance/check-in'),
@@ -561,9 +569,12 @@ export const attendanceApi = {
       viewer_country?: string;
       days: Array<{
         date: string;
-        status: 'present' | 'checked_in' | 'leave' | 'holiday' | 'none';
+        status: 'present' | 'checked_in' | 'leave' | 'half_leave' | 'holiday' | 'none';
         is_weekend: boolean;
         is_leave?: boolean;
+        is_half_leave?: boolean;
+        leave_units?: number;
+        leave_type?: 'full_day' | 'half_day' | null;
         is_holiday?: boolean;
         check_in_at?: string | null;
         check_out_at?: string | null;
@@ -650,6 +661,7 @@ export const leaveApi = {
         organization_id: number;
         start_date: string;
         end_date: string;
+        leave_type?: 'full_day' | 'half_day';
         reason?: string | null;
         status: 'pending' | 'approved' | 'rejected' | 'revoked';
         revoke_status?: 'pending' | 'approved' | 'rejected' | null;
@@ -667,7 +679,7 @@ export const leaveApi = {
       }>;
     }>('/leave-requests', { params }),
 
-  create: (data: { start_date: string; end_date: string; reason?: string }) =>
+  create: (data: { start_date: string; end_date: string; leave_type?: 'full_day' | 'half_day'; reason?: string }) =>
     api.post('/leave-requests', data),
 
   approve: (id: number, review_note?: string) =>

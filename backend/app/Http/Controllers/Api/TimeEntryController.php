@@ -211,6 +211,9 @@ class TimeEntryController extends Controller
 
         [$projectId, $taskId] = $assignment;
         $slot = $request->get('timer_slot', 'primary');
+        $todayStart = now()->startOfDay();
+
+        $this->closeStalePrimaryRunningEntries((int) $user->id, $todayStart, $slot);
 
         if ($slot === 'primary') {
             $attendanceGuard = $this->ensureAttendanceCheckedIn($user);
@@ -253,6 +256,7 @@ class TimeEntryController extends Controller
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
         $slot = $request->get('timer_slot', 'primary');
+        $this->closeStalePrimaryRunningEntries((int) $user->id, now()->startOfDay(), $slot);
 
         $runningEntries = $this->runningEntriesQuery((int) $user->id, $slot)
             ->orderByDesc('start_time')
@@ -326,6 +330,7 @@ class TimeEntryController extends Controller
             return response()->json(null);
         }
         $slot = $request->get('timer_slot', 'primary');
+        $this->closeStalePrimaryRunningEntries((int) $user->id, now()->startOfDay(), $slot);
 
         $timeEntry = $this->runningEntriesQuery((int) $user->id, $slot)
             ->with(['task.group', 'project'])
@@ -350,6 +355,7 @@ class TimeEntryController extends Controller
         }
 
         $today = now()->startOfDay();
+        $this->closeStalePrimaryRunningEntries((int) $user->id, $today, 'primary');
 
         $timeEntries = TimeEntry::with(['task.group', 'project'])
             ->where('user_id', $user->id)
@@ -406,7 +412,7 @@ class TimeEntryController extends Controller
     private function ensureAttendanceCheckedIn($user)
     {
         $today = now()->toDateString();
-        if ($this->hasApprovedLeaveOnDate((int) $user->organization_id, (int) $user->id, $today)) {
+        if ($this->hasApprovedFullDayLeaveOnDate((int) $user->organization_id, (int) $user->id, $today)) {
             return response()->json(['message' => 'You are on approved leave today. Timer cannot start.'], 422);
         }
 
@@ -477,11 +483,12 @@ class TimeEntryController extends Controller
         ]);
     }
 
-    private function hasApprovedLeaveOnDate(int $organizationId, int $userId, string $date): bool
+    private function hasApprovedFullDayLeaveOnDate(int $organizationId, int $userId, string $date): bool
     {
         return LeaveRequest::where('organization_id', $organizationId)
             ->where('user_id', $userId)
             ->where('status', 'approved')
+            ->where('leave_type', '!=', 'half_day')
             ->whereDate('start_date', '<=', $date)
             ->whereDate('end_date', '>=', $date)
             ->exists();
@@ -517,6 +524,24 @@ class TimeEntryController extends Controller
                 'duration' => $this->timeEntryDurationService->effectiveDuration($running, $endedAt),
             ]);
         }
+    }
+
+    private function closeStalePrimaryRunningEntries(int $userId, Carbon $boundaryAt, string $slot): void
+    {
+        if ($slot !== 'primary') {
+            return;
+        }
+
+        $staleEntries = $this->runningEntriesQuery($userId, 'primary')
+            ->where('start_time', '<', $boundaryAt)
+            ->orderByDesc('start_time')
+            ->get();
+
+        if ($staleEntries->isEmpty()) {
+            return;
+        }
+
+        $this->closeRunningEntries($staleEntries, $boundaryAt);
     }
 
     private function resolveProjectAndTask(Request $request, User $user, ?TimeEntry $existingEntry = null): array|JsonResponse

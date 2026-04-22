@@ -56,6 +56,17 @@ const getLocalDateString = () => {
   return new Date(now.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
 };
 
+const getEntryLocalDateString = (value?: string) => {
+  const parsedMs = getStartTimeMs(value);
+  if (!Number.isFinite(parsedMs)) {
+    return '';
+  }
+
+  const date = new Date(parsedMs);
+  const timezoneOffsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
+};
+
 const restoreTimerSnapshot = (
   userId: number | null,
   organizationId: number | null | undefined,
@@ -77,6 +88,11 @@ const restoreTimerSnapshot = (
     const startTime = typeof parsed.start_time === 'string' ? parsed.start_time : '';
 
     if (!entryId || !startTime) {
+      localStorage.removeItem(ACTIVE_TIMER_KEY);
+      return null;
+    }
+
+    if (getEntryLocalDateString(startTime) !== getLocalDateString()) {
       localStorage.removeItem(ACTIVE_TIMER_KEY);
       return null;
     }
@@ -599,6 +615,12 @@ export default function DesktopTimerDashboard() {
   const timerDisplaySeconds = activeTimer ? liveDuration : 0;
   const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
   const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
+  const halfDayLeaveApplied = Boolean(
+    attendanceToday?.has_half_day_leave_today
+    || attendanceToday?.leave_type === 'half_day'
+    || attendanceToday?.record?.leave_type === 'half_day'
+  );
+  const leaveTodayLabel = attendanceToday?.leave_today?.label || attendanceToday?.leave_label || 'Half day leave applied today';
   const availableTasks = allowedTasks.filter((task) => task.status !== 'done');
   const activeTasksHint = `${totalTasksCount} total task${totalTasksCount === 1 ? '' : 's'}`;
 
@@ -688,6 +710,14 @@ export default function DesktopTimerDashboard() {
             {activeTimer?.task?.group?.name && (
               <p className="mt-1 text-sm text-cyan-50/90">Group: {activeTimer.task.group.name}</p>
             )}
+            {halfDayLeaveApplied ? (
+              <div className="mt-4 rounded-2xl border border-amber-200/35 bg-amber-300/10 px-3 py-3 text-sm text-amber-50">
+                <p className="font-medium">{leaveTodayLabel}</p>
+                <p className="mt-1 text-amber-50/85">
+                  Today&apos;s target is reduced to {formatDuration(shiftTargetSeconds)} so you can clearly track the remaining half-day hours.
+                </p>
+              </div>
+            ) : null}
             {activeTimer && !activeTimer?.task?.title ? (
               <p className="mt-3 text-sm text-cyan-50/90">Choose a task from your assigned groups for this running timer.</p>
             ) : null}
@@ -770,7 +800,13 @@ export default function DesktopTimerDashboard() {
         <MetricCard
           label="Today's Time"
           value={formatDuration(todayDisplaySeconds)}
-          hint={todayDisplaySeconds > todayTotal ? 'Includes approved attendance edits' : todayDeltaLabel}
+          hint={
+            halfDayLeaveApplied
+              ? `Half day applied, target ${formatDuration(shiftTargetSeconds)}`
+              : todayDisplaySeconds > todayTotal
+                ? 'Includes approved attendance edits'
+                : todayDeltaLabel
+          }
           icon={Clock}
           accent="sky"
         />

@@ -36,7 +36,7 @@ class PayRunItem extends Model
             'payable_days' => 'float',
             'worked_seconds' => 'integer',
             'overtime_seconds' => 'integer',
-            'approved_leave_days' => 'integer',
+            'approved_leave_days' => 'float',
             'approved_time_edit_seconds' => 'integer',
             'gross_pay' => 'float',
             'total_deductions' => 'float',

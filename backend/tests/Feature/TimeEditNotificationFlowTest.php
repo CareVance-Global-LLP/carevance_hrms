@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AppNotification;
 use App\Models\AttendanceTimeEditRequest;
-use App\Models\EmployeeWorkInfo;
+use App\Models\Group;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,7 +15,7 @@ class TimeEditNotificationFlowTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_employee_time_edit_request_notifies_reporting_manager_and_blocks_admin_review_when_manager_is_assigned(): void
+    public function test_employee_time_edit_request_notifies_same_group_manager_and_blocks_admin_review(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
         $admin = User::create([
@@ -40,11 +40,14 @@ class TimeEditNotificationFlowTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
-        EmployeeWorkInfo::create([
+        $group = Group::create([
             'organization_id' => $organization->id,
-            'user_id' => $employee->id,
-            'reporting_manager_id' => $manager->id,
+            'name' => 'Operations',
+            'slug' => 'operations',
+            'is_active' => true,
         ]);
+        $manager->groups()->attach($group->id);
+        $employee->groups()->attach($group->id);
 
         $createResponse = $this->postJson('/api/attendance-time-edit-requests', [
             'attendance_date' => now()->toDateString(),
@@ -71,6 +74,34 @@ class TimeEditNotificationFlowTest extends TestCase
         $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/approve", [], $this->apiHeadersFor($manager))
             ->assertOk()
             ->assertJsonPath('data.status', 'approved');
+    }
+
+    public function test_employee_time_edit_request_requires_a_manager_in_the_same_group(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-no-manager@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'QA',
+            'slug' => 'qa',
+            'is_active' => true,
+        ]);
+        $employee->groups()->attach($group->id);
+
+        $this->postJson('/api/attendance-time-edit-requests', [
+            'attendance_date' => now()->toDateString(),
+            'extra_minutes' => 30,
+            'message' => 'Stayed late for release handoff',
+        ], $this->apiHeadersFor($employee))
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'No manager is assigned to your group yet. Please contact an admin.');
     }
 
     public function test_manager_time_edit_request_notifies_admin_and_manager_cannot_self_approve(): void
@@ -136,6 +167,23 @@ class TimeEditNotificationFlowTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Support',
+            'slug' => 'support',
+            'is_active' => true,
+        ]);
+        $admin->groups()->attach($group->id);
+        $employee->groups()->attach($group->id);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-reject@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+        $manager->groups()->attach($group->id);
+
         $createResponse = $this->postJson('/api/attendance-time-edit-requests', [
             'attendance_date' => now()->toDateString(),
             'extra_minutes' => 60,
@@ -146,7 +194,7 @@ class TimeEditNotificationFlowTest extends TestCase
 
         $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/reject", [
             'review_note' => 'Overtime could not be approved.',
-        ], $this->apiHeadersFor($admin))
+        ], $this->apiHeadersFor($manager))
             ->assertOk()
             ->assertJsonPath('message', 'Time edit request rejected.');
 
@@ -158,7 +206,7 @@ class TimeEditNotificationFlowTest extends TestCase
 
         $this->assertNotNull($notification);
         $this->assertSame('Time Edit Request Rejected', $notification->title);
-        $this->assertStringContainsString('was rejected by Admin', $notification->message);
+        $this->assertStringContainsString('was rejected by Manager', $notification->message);
         $this->assertStringContainsString('Overtime could not be approved.', $notification->message);
     }
 

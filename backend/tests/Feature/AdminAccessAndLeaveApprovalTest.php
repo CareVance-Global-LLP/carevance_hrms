@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AttendanceRecord;
 use App\Models\AppNotification;
-use App\Models\EmployeeWorkInfo;
+use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\User;
@@ -17,7 +17,7 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_employee_leave_request_notifies_reporting_manager_and_admin_cannot_approve_when_manager_is_assigned(): void
+    public function test_employee_leave_request_notifies_same_group_manager_and_admin_cannot_approve_employee_request(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
         $admin = User::create([
@@ -42,11 +42,14 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
-        EmployeeWorkInfo::create([
+        $group = Group::create([
             'organization_id' => $organization->id,
-            'user_id' => $employee->id,
-            'reporting_manager_id' => $manager->id,
+            'name' => 'Operations',
+            'slug' => 'operations',
+            'is_active' => true,
         ]);
+        $manager->groups()->attach($group->id);
+        $employee->groups()->attach($group->id);
 
         $leaveDate = Carbon::tomorrow()->startOfDay();
         while ($leaveDate->isWeekend()) {
@@ -87,6 +90,39 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
 
         $this->assertNotNull($notification);
         $this->assertSame('Leave Request Approved', $notification->title);
+    }
+
+    public function test_employee_leave_request_requires_a_manager_in_the_same_group(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-no-group-manager@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Design',
+            'slug' => 'design',
+            'is_active' => true,
+        ]);
+        $employee->groups()->attach($group->id);
+
+        $leaveDate = Carbon::tomorrow()->startOfDay();
+        while ($leaveDate->isWeekend()) {
+            $leaveDate->addDay();
+        }
+
+        $this->postJson('/api/leave-requests', [
+            'start_date' => $leaveDate->toDateString(),
+            'end_date' => $leaveDate->toDateString(),
+            'reason' => 'Personal work',
+        ], $this->apiHeadersFor($employee))
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'No manager is assigned to your group yet. Please contact an admin.');
     }
 
     public function test_manager_leave_request_notifies_admin_and_manager_cannot_self_approve(): void
@@ -149,6 +185,13 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
             'role' => 'admin',
             'organization_id' => $organization->id,
         ]);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-attendance@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
         $employee = User::create([
             'name' => 'Employee',
             'email' => 'employee@org.test',
@@ -157,8 +200,17 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Support',
+            'slug' => 'support',
+            'is_active' => true,
+        ]);
+        $manager->groups()->attach($group->id);
+        $employee->groups()->attach($group->id);
+
         $employeeHeaders = $this->apiHeadersFor($employee);
-        $adminHeaders = $this->apiHeadersFor($admin);
+        $managerHeaders = $this->apiHeadersFor($manager);
         $leaveDate = Carbon::tomorrow()->startOfDay();
         while ($leaveDate->isWeekend()) {
             $leaveDate->addDay();
@@ -174,7 +226,7 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
 
         $leaveId = (int) $createResponse->json('data.id');
 
-        $this->patchJson("/api/leave-requests/{$leaveId}/approve", [], $adminHeaders)
+        $this->patchJson("/api/leave-requests/{$leaveId}/approve", [], $managerHeaders)
             ->assertOk()
             ->assertJsonPath('data.status', 'approved');
 
@@ -186,6 +238,59 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
         $this->assertSame('approved', $leave->status);
         $this->assertNotNull($attendance);
         $this->assertSame('absent', $attendance->status);
+    }
+
+    public function test_half_day_leave_approval_marks_attendance_as_half_leave(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-half-day@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-half-day@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Support',
+            'slug' => 'support-half-day',
+            'is_active' => true,
+        ]);
+        $manager->groups()->attach($group->id);
+        $employee->groups()->attach($group->id);
+
+        $leaveDate = Carbon::tomorrow()->startOfDay();
+        while ($leaveDate->isWeekend()) {
+            $leaveDate->addDay();
+        }
+
+        $createResponse = $this->postJson('/api/leave-requests', [
+            'start_date' => $leaveDate->toDateString(),
+            'end_date' => $leaveDate->toDateString(),
+            'leave_type' => 'half_day',
+            'reason' => 'Half day leave',
+        ], $this->apiHeadersFor($employee))->assertCreated();
+
+        $leaveId = (int) $createResponse->json('data.id');
+
+        $this->patchJson("/api/leave-requests/{$leaveId}/approve", [], $this->apiHeadersFor($manager))
+            ->assertOk()
+            ->assertJsonPath('data.leave_type', 'half_day');
+
+        $attendance = AttendanceRecord::where('user_id', $employee->id)
+            ->whereDate('attendance_date', $leaveDate->toDateString())
+            ->first();
+
+        $this->assertNotNull($attendance);
+        $this->assertSame('half_leave', $attendance->status);
     }
 
     public function test_employee_is_forbidden_from_admin_reports_and_org_settings_but_admin_is_allowed(): void
