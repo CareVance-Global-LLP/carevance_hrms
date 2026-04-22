@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { AppNotificationItem, User } from '@/types';
 import {
   Bell,
   Briefcase,
@@ -15,6 +16,18 @@ type NotificationDisplay = {
 };
 
 const createIcon = (node: ReactNode) => <span className="inline-flex h-4 w-4 items-center justify-center">{node}</span>;
+
+export const resolveNotificationRoute = (notification: AppNotificationItem, _user?: User | null) =>
+  String(notification.meta?.route || '/notifications').trim() || '/notifications';
+
+export const canOpenNotificationFromCenter = (
+  notification: AppNotificationItem,
+  _user?: User | null,
+) => {
+  const route = resolveNotificationRoute(notification);
+
+  return route !== '/notifications';
+};
 
 export const getNotificationDisplay = (type: string): NotificationDisplay => {
   switch (String(type || '').trim()) {
