@@ -35,7 +35,7 @@ class AttendanceTimeEditRequestController extends Controller
             return response()->json(['data' => []]);
         }
 
-        $query = AttendanceTimeEditRequest::with(['user:id,name,email,role', 'reviewer:id,name,email'])
+        $query = AttendanceTimeEditRequest::with(['user:id,name,email,role,organization_id', 'reviewer:id,name,email'])
             ->where('organization_id', $currentUser->organization_id)
             ->orderByDesc('created_at');
 
@@ -59,7 +59,7 @@ class AttendanceTimeEditRequestController extends Controller
         }
 
         return response()->json([
-            'data' => $query->limit(200)->get(),
+            'data' => $query->limit(200)->get()->map(fn (AttendanceTimeEditRequest $item) => $this->withApprovalDestination($item)),
         ]);
     }
 
@@ -76,6 +76,10 @@ class AttendanceTimeEditRequestController extends Controller
         $currentUser = $request->user();
         if (!$currentUser || !$currentUser->organization_id) {
             return response()->json(['message' => 'Organization is required.'], 422);
+        }
+
+        if (array_key_exists('can_edit_time', $currentUser->settings ?? []) && $currentUser->settings['can_edit_time'] === false) {
+            return response()->json(['message' => 'Time edit requests are disabled for your account.'], 403);
         }
 
         $date = Carbon::parse($request->attendance_date)->toDateString();
@@ -141,6 +145,9 @@ class AttendanceTimeEditRequestController extends Controller
         );
 
         $reviewerIds = $this->approvalRoutingService->reviewerUserIds($currentUser);
+        $reviewers = User::query()
+            ->whereIn('id', $reviewerIds)
+            ->get(['id', 'name']);
 
         $this->notificationService->sendToUsers(
             organizationId: (int) $currentUser->organization_id,
@@ -182,8 +189,8 @@ class AttendanceTimeEditRequestController extends Controller
         );
 
         return response()->json([
-            'message' => 'Time edit request submitted.',
-            'data' => $created->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+            'message' => $this->submissionMessage($currentUser, $reviewers->pluck('name')->all()),
+            'data' => $this->withApprovalDestination($created->load(['user:id,name,email,role,organization_id', 'reviewer:id,name,email'])),
         ], 201);
     }
 
@@ -319,6 +326,64 @@ class AttendanceTimeEditRequestController extends Controller
         $minutes = intdiv(max(0, $seconds) % 3600, 60);
 
         return sprintf('%dh %02dm', $hours, $minutes);
+    }
+
+    /**
+     * @param array<int, string|null> $reviewerNames
+     */
+    private function submissionMessage(User $requester, array $reviewerNames): string
+    {
+        $names = collect($reviewerNames)
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->values();
+
+        $reviewerLabel = match ($requester->role) {
+            'employee' => $names->count() === 1 ? 'your group manager' : 'your group managers',
+            'manager' => $names->count() === 1 ? 'an admin' : 'admins',
+            default => 'the reviewer',
+        };
+
+        if ($names->isEmpty()) {
+            return sprintf('Time edit request submitted and sent to %s.', $reviewerLabel);
+        }
+
+        return sprintf(
+            'Time edit request submitted and sent to %s: %s.',
+            $reviewerLabel,
+            $names->implode(', ')
+        );
+    }
+
+    private function withApprovalDestination(AttendanceTimeEditRequest $item): AttendanceTimeEditRequest
+    {
+        $item->loadMissing('user.employeeWorkInfo');
+        if (! $item->user) {
+            $item->setAttribute('approval_destination', 'Sent to reviewer');
+            return $item;
+        }
+
+        $reviewerNames = User::query()
+            ->whereIn('id', $this->approvalRoutingService->reviewerUserIds($item->user))
+            ->pluck('name')
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->values();
+
+        $reviewerLabel = match ($item->user->role) {
+            'employee' => $reviewerNames->count() === 1 ? 'your group manager' : 'your group managers',
+            'manager' => $reviewerNames->count() === 1 ? 'an admin' : 'admins',
+            default => 'the reviewer',
+        };
+
+        $item->setAttribute(
+            'approval_destination',
+            $reviewerNames->isEmpty()
+                ? "Sent to {$reviewerLabel}"
+                : sprintf('Sent to %s: %s', $reviewerLabel, $reviewerNames->implode(', '))
+        );
+
+        return $item;
     }
 
     private function sendReviewNotification(AttendanceTimeEditRequest $item, User $reviewer, string $status): void

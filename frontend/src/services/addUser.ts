@@ -16,7 +16,7 @@ export interface InviteDefaults {
 }
 
 export interface AdditionalInviteSettings {
-  monitoringInterval: 10 | 15 | 30;
+  monitoringInterval: 1 | 3 | 5 | 10 | 15 | 30;
   canEditTime: boolean;
   attendanceMonitoring: boolean;
   payrollVisibility: boolean;

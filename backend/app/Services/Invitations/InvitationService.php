@@ -283,7 +283,7 @@ class InvitationService
                 'token_hash' => Invitation::hashPublicToken($token),
                 'invited_by' => $actor->id,
                 'status' => 'pending',
-                'settings' => $payload['settings'] ?? null,
+                'settings' => $this->normalizeSettings($payload['settings'] ?? null, (string) $payload['role']),
                 'metadata' => [
                     'group_ids' => $allowedGroupIds,
                     'project_ids' => $payload['project_ids'] ?? [],
@@ -344,6 +344,36 @@ class InvitationService
         $merged = array_replace($defaults, $rowSettings);
 
         return empty($merged) ? null : $merged;
+    }
+
+    private function normalizeSettings(?array $settings, string $role): ?array
+    {
+        if ($settings === null) {
+            return null;
+        }
+
+        $normalized = [];
+        $interval = (int) ($settings['monitoring_interval_minutes'] ?? 10);
+        $normalized['monitoring_interval_minutes'] = in_array($interval, [1, 3, 5, 10, 15, 30], true)
+            ? $interval
+            : 10;
+
+        foreach ([
+            'can_edit_time',
+            'attendance_monitoring',
+            'payroll_visibility',
+            'task_assignment_access',
+        ] as $key) {
+            if (array_key_exists($key, $settings)) {
+                $normalized[$key] = filter_var($settings[$key], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
+            }
+        }
+
+        if ($role === 'employee') {
+            $normalized['payroll_visibility'] = false;
+        }
+
+        return $normalized;
     }
 
     private function sendInvitationMail(Invitation $invitation, string $token): bool

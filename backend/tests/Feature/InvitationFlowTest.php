@@ -243,6 +243,117 @@ class InvitationFlowTest extends TestCase
         $this->assertDatabaseCount('invitations', 120);
     }
 
+    public function test_invitation_settings_support_all_monitoring_intervals_and_are_copied_to_user(): void
+    {
+        [$organization, $owner] = $this->createWorkspaceOwner();
+
+        $inviteResponse = $this->postJson('/api/invitations', [
+            'email' => 'settings-user@example.com',
+            'role' => 'employee',
+            'delivery' => 'link',
+            'settings' => [
+                'monitoring_interval_minutes' => 1,
+                'can_edit_time' => true,
+                'attendance_monitoring' => true,
+                'payroll_visibility' => true,
+                'task_assignment_access' => false,
+            ],
+        ], $this->apiHeadersFor($owner));
+
+        $inviteResponse
+            ->assertCreated()
+            ->assertJsonPath('invitations.0.metadata.group_ids', [])
+            ->assertJsonPath('invitations.0.role', 'employee');
+
+        $invitation = Invitation::query()->where('email', 'settings-user@example.com')->firstOrFail();
+        $this->assertSame(1, $invitation->settings['monitoring_interval_minutes']);
+        $this->assertTrue($invitation->settings['can_edit_time']);
+        $this->assertFalse($invitation->settings['payroll_visibility']);
+
+        $token = basename(parse_url((string) $inviteResponse->json('invitations.0.invite_url'), PHP_URL_PATH) ?: '');
+
+        $this->postJson("/api/invitations/{$token}/accept", [
+            'name' => 'Settings User',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertCreated();
+
+        $accepted = User::query()->where('email', 'settings-user@example.com')->firstOrFail();
+        $this->assertSame($organization->id, $accepted->organization_id);
+        $this->assertSame(1, $accepted->settings['monitoring_interval_minutes']);
+        $this->assertTrue($accepted->settings['can_edit_time']);
+        $this->assertFalse($accepted->settings['payroll_visibility']);
+    }
+
+    public function test_each_invited_employee_keeps_their_own_monitoring_and_edit_time_settings(): void
+    {
+        [$organization, $owner] = $this->createWorkspaceOwner();
+
+        $firstInviteResponse = $this->postJson('/api/invitations', [
+            'email' => 'employee-one@example.com',
+            'role' => 'employee',
+            'delivery' => 'link',
+            'settings' => [
+                'monitoring_interval_minutes' => 1,
+                'can_edit_time' => false,
+                'attendance_monitoring' => true,
+                'task_assignment_access' => true,
+            ],
+        ], $this->apiHeadersFor($owner))->assertCreated();
+
+        $secondInviteResponse = $this->postJson('/api/invitations', [
+            'email' => 'employee-two@example.com',
+            'role' => 'employee',
+            'delivery' => 'link',
+            'settings' => [
+                'monitoring_interval_minutes' => 5,
+                'can_edit_time' => true,
+                'attendance_monitoring' => true,
+                'task_assignment_access' => true,
+            ],
+        ], $this->apiHeadersFor($owner))->assertCreated();
+
+        foreach ([
+            [$firstInviteResponse, 'Employee One'],
+            [$secondInviteResponse, 'Employee Two'],
+        ] as [$response, $name]) {
+            $token = basename(parse_url((string) $response->json('invitations.0.invite_url'), PHP_URL_PATH) ?: '');
+
+            $this->postJson("/api/invitations/{$token}/accept", [
+                'name' => $name,
+                'password' => 'password123',
+                'password_confirmation' => 'password123',
+            ])->assertCreated();
+        }
+
+        $firstEmployee = User::query()->where('email', 'employee-one@example.com')->firstOrFail();
+        $secondEmployee = User::query()->where('email', 'employee-two@example.com')->firstOrFail();
+
+        $this->assertSame($organization->id, $firstEmployee->organization_id);
+        $this->assertSame(1, $firstEmployee->settings['monitoring_interval_minutes']);
+        $this->assertFalse($firstEmployee->settings['can_edit_time']);
+
+        $this->assertSame($organization->id, $secondEmployee->organization_id);
+        $this->assertSame(5, $secondEmployee->settings['monitoring_interval_minutes']);
+        $this->assertTrue($secondEmployee->settings['can_edit_time']);
+    }
+
+    public function test_invitation_rejects_unsupported_monitoring_interval(): void
+    {
+        [, $owner] = $this->createWorkspaceOwner();
+
+        $this->postJson('/api/invitations', [
+            'email' => 'invalid-interval@example.com',
+            'role' => 'employee',
+            'delivery' => 'link',
+            'settings' => [
+                'monitoring_interval_minutes' => 2,
+            ],
+        ], $this->apiHeadersFor($owner))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['settings.monitoring_interval_minutes']);
+    }
+
     private function createWorkspaceOwner(): array
     {
         $organization = Organization::create([

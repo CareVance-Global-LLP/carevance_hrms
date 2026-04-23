@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Loader2, UserPlus, X } from 'lucide-react';
+import { Loader2, UserPlus, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { organizationApi } from '@/services/api';
 import { getAssignableRoles } from '@/lib/permissions';
@@ -44,6 +44,15 @@ const defaultSettings: AdditionalInviteSettings = {
   taskAssignmentAccess: true,
 };
 
+const monitoringIntervalOptions: Array<{ value: AdditionalInviteSettings['monitoringInterval']; label: string }> = [
+  { value: 1, label: 'Every 1 minute' },
+  { value: 3, label: 'Every 3 minutes' },
+  { value: 5, label: 'Every 5 minutes' },
+  { value: 10, label: 'Every 10 minutes' },
+  { value: 15, label: 'Every 15 minutes' },
+  { value: 30, label: 'Every 30 minutes' },
+];
+
 export default function AddUserDrawer({
   open,
   onClose,
@@ -65,7 +74,6 @@ export default function AddUserDrawer({
   const [role, setRole] = useState<InviteUserRole>('employee');
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>(storedDefaults.groupIds);
   const [rememberDefaults, setRememberDefaults] = useState(storedDefaults.remember);
-  const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [settings, setSettings] = useState<AdditionalInviteSettings>(defaultSettings);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
@@ -129,6 +137,18 @@ export default function AddUserDrawer({
       setRole(allowedRoles[0]);
     }
   }, [allowedRoles, role]);
+
+  useEffect(() => {
+    if (role !== 'employee') {
+      return;
+    }
+
+    setSettings((current) => (
+      current.payrollVisibility
+        ? { ...current, payrollVisibility: false }
+        : current
+    ));
+  }, [role]);
 
   const protectedEmailSet = useMemo(() => {
     const next = new Set<string>();
@@ -402,29 +422,26 @@ export default function AddUserDrawer({
             ) : null}
 
             <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70">
-              <button
-                type="button"
-                onClick={() => setShowAdditionalSettings((current) => !current)}
-                className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
-              >
+              <div className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left">
                 <div>
                   <p className="text-sm font-semibold text-slate-950">Additional settings</p>
                   <p className="mt-1 text-sm text-slate-500">Optional permissions that fit the current HRMS workflow.</p>
                 </div>
-                <ChevronDown className={`h-5 w-5 text-slate-400 transition ${showAdditionalSettings ? 'rotate-180' : ''}`} />
-              </button>
+              </div>
 
-              {showAdditionalSettings ? (
-                <div className="grid grid-cols-1 gap-4 border-t border-slate-200 px-5 py-5 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 border-t border-slate-200 px-5 py-5 md:grid-cols-2">
                   <div>
                     <FieldLabel>Monitoring Interval</FieldLabel>
                     <SelectInput
                       value={settings.monitoringInterval}
-                      onChange={(event) => setSettings((current) => ({ ...current, monitoringInterval: Number(event.target.value) as 10 | 15 | 30 }))}
+                      onChange={(event) => setSettings((current) => ({
+                        ...current,
+                        monitoringInterval: Number(event.target.value) as AdditionalInviteSettings['monitoringInterval'],
+                      }))}
                     >
-                      <option value={10}>Every 10 minutes</option>
-                      <option value={15}>Every 15 minutes</option>
-                      <option value={30}>Every 30 minutes</option>
+                      {monitoringIntervalOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
                     </SelectInput>
                   </div>
 
@@ -480,8 +497,7 @@ export default function AddUserDrawer({
                       />
                     </div>
                   </div>
-                </div>
-              ) : null}
+              </div>
             </div>
 
             <label className="flex items-start gap-3 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4 text-sm text-slate-600">

@@ -74,4 +74,25 @@ class AttendanceTimeEditRestrictionTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('message', 'Time edit request is not allowed on approved leave days.');
     }
+
+    public function test_employee_cannot_request_time_edit_when_disabled_in_user_settings(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-time-edit-disabled@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+            'settings' => ['can_edit_time' => false],
+        ]);
+
+        $this->postJson('/api/attendance-time-edit-requests', [
+            'attendance_date' => now()->toDateString(),
+            'extra_minutes' => 20,
+            'message' => 'Worked extra',
+        ], $this->apiHeadersFor($employee))
+            ->assertStatus(403)
+            ->assertJsonPath('message', 'Time edit requests are disabled for your account.');
+    }
 }

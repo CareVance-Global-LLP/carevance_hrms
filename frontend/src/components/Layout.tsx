@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
-import { getNotificationDisplay } from '@/lib/notificationDisplay';
+import { getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { webAppUrl } from '@/lib/runtimeConfig';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
@@ -50,6 +50,8 @@ export default function Layout() {
   const hasLoadedNotificationsRef = useRef(false);
   const isAdminView = hasAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
+  const canAccessAttendance = isAdminView || user?.settings?.attendance_monitoring !== false;
+  const canAccessEditTime = isAdminView || user?.settings?.can_edit_time !== false;
   const isDesktopShell = Boolean(window.desktopTracker);
   const webAppBaseUrl = webAppUrl.replace(/\/+$/, '');
   const notificationSettings = (user?.settings?.notifications || {}) as Record<string, boolean | undefined>;
@@ -78,9 +80,6 @@ export default function Layout() {
     window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
   };
 
-  const resolveNotificationRoute = (notification: AppNotificationItem) =>
-    String(notification.meta?.route || '/notifications').trim() || '/notifications';
-
   const openNotification = async (notification: AppNotificationItem) => {
     if (!notification.is_read) {
       try {
@@ -100,7 +99,7 @@ export default function Layout() {
     setNotificationsOpen(false);
     setProfileOpen(false);
     setMobileNavigationOpen(false);
-    navigate(resolveNotificationRoute(notification));
+    navigate(resolveNotificationRoute(notification, user));
   };
 
   const showDesktopNotification = (notification: AppNotificationItem) => {
@@ -118,7 +117,7 @@ export default function Layout() {
         id: notificationId,
         title: notification.title,
         body: notification.message,
-        route: resolveNotificationRoute(notification),
+        route: resolveNotificationRoute(notification, user),
         type: notification.type,
       });
       return;
@@ -188,10 +187,27 @@ export default function Layout() {
         })
         .map((group) => {
           const filteredItems = group.items?.filter((item) => {
+            if (item.to === '/attendance' && !canAccessAttendance) return false;
+            if (item.to === '/edit-time' && !canAccessEditTime) return false;
             if (item.strictAdminOnly) return isStrictAdminView;
             if (item.adminOnly) return isAdminView;
             return true;
           });
+
+          if (group.label === 'Attendance' && filteredItems?.length === 1) {
+            const singleItem = filteredItems[0];
+
+            return {
+              ...group,
+              label: singleItem.to === '/attendance' ? 'Attendance' : singleItem.label,
+              to: singleItem.to,
+              icon: singleItem.icon,
+              unreadCount: singleItem.unreadCount,
+              external: singleItem.external,
+              externalPath: singleItem.externalPath,
+              items: undefined,
+            };
+          }
 
           if (group.label === 'Chat') {
             return {
@@ -221,7 +237,7 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [isAdminView, isDesktopShell, isStrictAdminView, pendingApprovals, unreadChatMessages]
+    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, pendingApprovals, unreadChatMessages]
   );
 
   const handleLogout = async () => {

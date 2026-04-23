@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
@@ -8,10 +8,10 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
-import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
+import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
-import { KeyRound, MailPlus, ShieldCheck, Users } from 'lucide-react';
+import { KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 
@@ -20,6 +20,42 @@ const formatDuration = (seconds: number) => {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   return `${hours}h ${minutes}m`;
+};
+
+const monitoringIntervalOptions = [
+  { value: 1, label: 'Every 1 minute' },
+  { value: 3, label: 'Every 3 minutes' },
+  { value: 5, label: 'Every 5 minutes' },
+  { value: 10, label: 'Every 10 minutes' },
+  { value: 15, label: 'Every 15 minutes' },
+  { value: 30, label: 'Every 30 minutes' },
+] as const;
+
+type MonitoringInterval = typeof monitoringIntervalOptions[number]['value'];
+
+type EmployeeSettingsDraft = {
+  monitoringInterval: MonitoringInterval;
+  canEditTime: boolean;
+  attendanceMonitoring: boolean;
+  payrollVisibility: boolean;
+  taskAssignmentAccess: boolean;
+};
+
+const allowedMonitoringIntervals = monitoringIntervalOptions.map((option) => option.value);
+
+const resolveEmployeeSettings = (targetUser: any): EmployeeSettingsDraft => {
+  const settings = targetUser?.settings || {};
+  const interval = Number(settings.monitoring_interval_minutes || 10);
+
+  return {
+    monitoringInterval: allowedMonitoringIntervals.includes(interval as MonitoringInterval)
+      ? interval as MonitoringInterval
+      : 10,
+    canEditTime: settings.can_edit_time !== false,
+    attendanceMonitoring: settings.attendance_monitoring !== false,
+    payrollVisibility: targetUser?.role === 'employee' ? false : settings.payroll_visibility !== false,
+    taskAssignmentAccess: settings.task_assignment_access !== false,
+  };
 };
 
 const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: string; eyebrow: string }> = {
@@ -53,7 +89,10 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee'>('employee');
+  const [settingsUserId, setSettingsUserId] = useState<number | null>(null);
+  const [settingsDraft, setSettingsDraft] = useState<EmployeeSettingsDraft | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const settingsPanelRef = useRef<HTMLDivElement | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
   const employeeRoleOptions = useMemo(() => allowedRoles, [allowedRoles]);
@@ -96,6 +135,10 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const selectedUser = useMemo(
     () => (usersQuery.data || []).find((item: any) => item.id === selectedUserId) || (usersQuery.data || [])[0] || null,
     [selectedUserId, usersQuery.data]
+  );
+  const settingsTargetUser = useMemo(
+    () => (usersQuery.data || []).find((item: any) => item.id === settingsUserId) || null,
+    [settingsUserId, usersQuery.data]
   );
 
   useEffect(() => {
@@ -178,6 +221,31 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     },
   });
 
+  const updateSettingsMutation = useMutation({
+    mutationFn: async ({ targetUser, draft }: { targetUser: any; draft: EmployeeSettingsDraft }) => {
+      await userApi.update(targetUser.id, {
+        settings: {
+          ...(targetUser.settings || {}),
+          monitoring_interval_minutes: draft.monitoringInterval,
+          can_edit_time: draft.canEditTime,
+          attendance_monitoring: draft.attendanceMonitoring,
+          payroll_visibility: targetUser.role === 'employee' ? false : draft.payrollVisibility,
+          task_assignment_access: draft.taskAssignmentAccess,
+        },
+      });
+    },
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Additional settings updated successfully.' });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-profile'] }),
+      ]);
+    },
+    onError: (error: any) => {
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to update additional settings.' });
+    },
+  });
+
   const deleteUserMutation = useMutation({
     mutationFn: async ({ userId }: { userId: number }) => {
       await userApi.delete(userId);
@@ -216,6 +284,28 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
 
     deleteUserMutation.mutate({ userId: targetUser.id });
+  };
+
+  const handleOpenSettings = (targetUser: any) => {
+    setSelectedUserId(targetUser.id);
+    setSettingsUserId(targetUser.id);
+    setSettingsDraft(resolveEmployeeSettings(targetUser));
+    setFeedback(null);
+
+    window.requestAnimationFrame(() => {
+      settingsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const handleSaveSettings = () => {
+    if (!settingsTargetUser || !settingsDraft) {
+      return;
+    }
+
+    updateSettingsMutation.mutate({
+      targetUser: settingsTargetUser,
+      draft: settingsDraft,
+    });
   };
 
   if (isLoading) {
@@ -273,12 +363,13 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               { key: 'project', header: 'Current Task', render: (row: any) => row.current_task || row.current_project || 'No active timer' },
               { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.total_elapsed_duration || row.total_duration || 0) },
               {
-                key: 'profile',
-                header: 'Profile',
+                key: 'settings',
+                header: 'Settings',
                 render: (row: any) => (
-                  <Link to={`/employees/${row.id}`}>
-                    <Button variant="secondary" size="sm">Open Profile</Button>
-                  </Link>
+                  <Button variant="secondary" size="sm" onClick={() => handleOpenSettings(row)}>
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Settings
+                  </Button>
                 ),
               },
               ...(isStrictAdmin
@@ -321,6 +412,103 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                 : []),
             ]}
           />
+
+          {settingsTargetUser && settingsDraft ? (
+            <div ref={settingsPanelRef} className="scroll-mt-28">
+              <SurfaceCard className="p-5">
+                <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">Additional settings</p>
+                    <h2 className="mt-2 text-lg font-semibold text-slate-950">{settingsTargetUser.name}</h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Update monitoring interval and permission toggles for this {settingsTargetUser.role}. Screenshot capture uses this monitoring interval after the user refreshes or signs in again.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleSaveSettings}
+                    disabled={updateSettingsMutation.isPending}
+                  >
+                    {updateSettingsMutation.isPending ? 'Saving...' : 'Save Settings'}
+                  </Button>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <FieldLabel>Monitoring Interval</FieldLabel>
+                    <SelectInput
+                      value={settingsDraft.monitoringInterval}
+                      onChange={(event) => setSettingsDraft((current) => current ? {
+                        ...current,
+                        monitoringInterval: Number(event.target.value) as MonitoringInterval,
+                      } : current)}
+                    >
+                      {monitoringIntervalOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </SelectInput>
+                    <p className="mt-2 text-xs text-slate-500">Desktop screenshot capture follows this interval for the selected user.</p>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Can edit time</p>
+                        <p className="mt-1 text-sm text-slate-500">Allow time edit and overtime correction requests.</p>
+                      </div>
+                      <ToggleInput
+                        checked={settingsDraft.canEditTime}
+                        onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, canEditTime: checked }) : current)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Attendance monitoring</p>
+                        <p className="mt-1 text-sm text-slate-500">Show attendance overview and attendance workflows.</p>
+                      </div>
+                      <ToggleInput
+                        checked={settingsDraft.attendanceMonitoring}
+                        onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, attendanceMonitoring: checked }) : current)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Payroll visibility</p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          {settingsTargetUser.role === 'employee'
+                            ? 'Employees do not receive payroll reporting access.'
+                            : 'Allow payroll and reporting visibility for this user.'}
+                        </p>
+                      </div>
+                      <ToggleInput
+                        checked={settingsDraft.payrollVisibility}
+                        disabled={settingsTargetUser.role === 'employee'}
+                        onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, payrollVisibility: checked }) : current)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3 md:col-span-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">Task assignment defaults</p>
+                        <p className="mt-1 text-sm text-slate-500">Grant task assignment workflow access by default.</p>
+                      </div>
+                      <ToggleInput
+                        checked={settingsDraft.taskAssignmentAccess}
+                        onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, taskAssignmentAccess: checked }) : current)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </SurfaceCard>
+            </div>
+          ) : null}
 
           {!profile ? (
             <PageEmptyState title="No employee selected" description="Select an employee to load the profile summary." />

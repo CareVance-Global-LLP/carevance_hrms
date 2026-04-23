@@ -111,6 +111,164 @@ describe('Layout navigation', () => {
     expect(screen.queryByText('Audit Logs')).not.toBeInTheDocument();
   });
 
+  it('hides edit time navigation when employee time edits are disabled', async () => {
+    authState.value = {
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        settings: {
+          can_edit_time: false,
+        },
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    expect(await screen.findByRole('link', { name: /attendance/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Edit Time')).not.toBeInTheDocument();
+  });
+
+  it('hides edit time navigation in desktop shell when employee time edits are disabled', async () => {
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      getUpdateState: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+    authState.value = {
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        settings: {
+          can_edit_time: false,
+        },
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    expect(await screen.findByRole('link', { name: /attendance/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Edit Time')).not.toBeInTheDocument();
+  });
+
+  it('hides attendance overview but keeps edit time when only attendance monitoring is disabled', async () => {
+    authState.value = {
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        settings: {
+          attendance_monitoring: false,
+          can_edit_time: true,
+        },
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    expect(await screen.findByRole('link', { name: /edit time/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Attendance Overview')).not.toBeInTheDocument();
+  });
+
+  it('hides attendance overview but keeps edit time in desktop shell when only attendance monitoring is disabled', async () => {
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      getUpdateState: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+    authState.value = {
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        settings: {
+          attendance_monitoring: false,
+          can_edit_time: true,
+        },
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    expect(await screen.findByRole('link', { name: /edit time/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Attendance Overview')).not.toBeInTheDocument();
+  });
+
+  it('keeps attendance dropdown when employee can access attendance and edit time', async () => {
+    authState.value = {
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        settings: {
+          attendance_monitoring: true,
+          can_edit_time: true,
+        },
+        created_at: '',
+        updated_at: '',
+      },
+      logout: vi.fn(),
+      token: 'test-token',
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    fireEvent.click(await screen.findByRole('button', { name: /attendance/i }));
+
+    expect(await screen.findByText('Attendance Overview')).toBeInTheDocument();
+    expect(screen.getByText('Edit Time')).toBeInTheDocument();
+  });
+
   it('hides the add user button for managers', async () => {
     authState.value = {
       user: {

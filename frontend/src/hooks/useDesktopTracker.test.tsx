@@ -356,6 +356,52 @@ describe('useDesktopTracker', () => {
     );
   });
 
+  it('uses the invited user monitoring interval for screenshot captures', async () => {
+    mocks.authUser = {
+      ...mocks.authUser,
+      settings: {
+        monitoring_interval_minutes: 1,
+      },
+    };
+    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+    });
+
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a separate 5 minute screenshot interval for another invited user', async () => {
+    mocks.authUser = {
+      ...mocks.authUser,
+      id: 2,
+      email: 'employee-two@example.com',
+      settings: {
+        monitoring_interval_minutes: 5,
+      },
+    };
+    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+    });
+
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+    });
+
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+  });
+
   it('continues screenshot capture when the user is idle at the screenshot interval', async () => {
     const idleSince = Date.now();
     mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');

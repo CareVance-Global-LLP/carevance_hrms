@@ -21,6 +21,11 @@ class StoreInvitationRequest extends ApiFormRequest
             'project_ids' => 'nullable|array',
             'project_ids.*' => 'integer',
             'settings' => 'nullable|array',
+            'settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in([1, 3, 5, 10, 15, 30])],
+            'settings.can_edit_time' => 'nullable|boolean',
+            'settings.attendance_monitoring' => 'nullable|boolean',
+            'settings.payroll_visibility' => 'nullable|boolean',
+            'settings.task_assignment_access' => 'nullable|boolean',
         ];
     }
 

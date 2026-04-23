@@ -27,7 +27,8 @@ import type {
 } from '@/types';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 1000;
-const SCREENSHOT_INTERVAL_MS = 3 * 60 * 1000;
+const DEFAULT_SCREENSHOT_INTERVAL_MINUTES = 3;
+const ALLOWED_SCREENSHOT_INTERVAL_MINUTES = [1, 3, 5, 10, 15, 30] as const;
 const SCREENSHOT_CAPTURE_TIMEOUT_MS = 15 * 1000;
 const SCREENSHOT_UPLOAD_TIMEOUT_MS = 30 * 1000;
 const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
@@ -106,6 +107,17 @@ const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
 ];
 
 let desktopTrackerRunSequence = 0;
+
+const resolveScreenshotIntervalMs = (settings?: Record<string, any> | null) => {
+  const rawInterval = Number(settings?.monitoring_interval_minutes);
+  const intervalMinutes = ALLOWED_SCREENSHOT_INTERVAL_MINUTES.includes(
+    rawInterval as (typeof ALLOWED_SCREENSHOT_INTERVAL_MINUTES)[number]
+  )
+    ? rawInterval
+    : DEFAULT_SCREENSHOT_INTERVAL_MINUTES;
+
+  return intervalMinutes * 60 * 1000;
+};
 
 type ActiveSegment = {
   activityId: number;
@@ -391,6 +403,7 @@ export const useDesktopTracker = () => {
     const runId = ++desktopTrackerRunSequence;
     const isCurrentRun = () => desktopTrackerRunSequence === runId;
     const hasForegroundWindowBridge = typeof desktopApi.onForegroundWindowChange === 'function';
+    const screenshotIntervalMs = resolveScreenshotIntervalMs(user?.settings);
     let inFlight = false;
     let screenshotInFlight = false;
     clearTrackerIntervals();
@@ -433,7 +446,7 @@ export const useDesktopTracker = () => {
 
       screenshotIntervalRef.current = setInterval(() => {
         void captureScreenshotOnInterval();
-      }, SCREENSHOT_INTERVAL_MS);
+      }, screenshotIntervalMs);
     };
 
     const clearTrackedActivitySegment = () => {

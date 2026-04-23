@@ -16,6 +16,8 @@ type NotificationDisplay = {
 };
 
 const createIcon = (node: ReactNode) => <span className="inline-flex h-4 w-4 items-center justify-center">{node}</span>;
+const APPROVAL_NOTIFICATION_TYPES = new Set(['leave_request', 'time_edit']);
+const APPROVAL_NOTIFICATION_TITLES = ['leave request submitted', 'time edit request submitted'];
 
 export const resolveNotificationRoute = (notification: AppNotificationItem, _user?: User | null) =>
   String(notification.meta?.route || '/notifications').trim() || '/notifications';
@@ -71,3 +73,33 @@ export const getNotificationDisplay = (type: string): NotificationDisplay => {
       };
   }
 };
+
+export const isApprovalNotification = (notification: AppNotificationItem | null | undefined): boolean => {
+  const type = String(notification?.type || '').trim().toLowerCase();
+  if (APPROVAL_NOTIFICATION_TYPES.has(type)) {
+    return true;
+  }
+
+  const title = String(notification?.title || '').trim().toLowerCase();
+  if (APPROVAL_NOTIFICATION_TITLES.some((candidate) => title.startsWith(candidate))) {
+    return true;
+  }
+
+  return String(notification?.meta?.route || '').trim() === '/approval-inbox';
+};
+
+export const resolveNotificationRoute = (
+  notification: AppNotificationItem,
+  user: Pick<User, 'role'> | null | undefined
+): string => {
+  if ((user?.role === 'admin' || user?.role === 'manager') && isApprovalNotification(notification)) {
+    return '/approval-inbox';
+  }
+
+  return String(notification.meta?.route || '/notifications').trim() || '/notifications';
+};
+
+export const canOpenNotificationFromCenter = (
+  notification: AppNotificationItem,
+  user: Pick<User, 'role'> | null | undefined
+): boolean => (user?.role === 'admin' || user?.role === 'manager') && isApprovalNotification(notification);

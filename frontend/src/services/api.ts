@@ -716,6 +716,7 @@ export const leaveApi = {
         user?: { id: number; name: string; email: string; role: string };
         reviewer?: { id: number; name: string; email: string } | null;
         revoke_reviewer?: { id: number; name: string; email: string } | null;
+        approval_destination?: string | null;
         created_at: string;
       }>;
     }>('/leave-requests', { params }),
@@ -760,6 +761,7 @@ export const attendanceTimeEditApi = {
         review_note?: string | null;
         user?: { id: number; name: string; email: string; role: string };
         reviewer?: { id: number; name: string; email: string } | null;
+        approval_destination?: string | null;
         created_at: string;
       }>;
     }>('/attendance-time-edit-requests', { params }),

@@ -28,6 +28,8 @@ use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
+    private const ALLOWED_MONITORING_INTERVALS = [1, 3, 5, 10, 15, 30];
+
     public function __construct(
         private readonly AuditLogService $auditLogService,
         private readonly TimeBreakdownService $timeBreakdownService,
@@ -138,6 +140,11 @@ class UserController extends Controller
             'role' => 'nullable|in:admin,manager,employee,client',
             'password' => 'nullable|string|min:8',
             'settings' => 'nullable|array',
+            'settings.monitoring_interval_minutes' => 'nullable|integer|in:1,3,5,10,15,30',
+            'settings.can_edit_time' => 'nullable|boolean',
+            'settings.attendance_monitoring' => 'nullable|boolean',
+            'settings.payroll_visibility' => 'nullable|boolean',
+            'settings.task_assignment_access' => 'nullable|boolean',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
         ]);
@@ -145,13 +152,17 @@ class UserController extends Controller
         $selectedRole = $validated['role'] ?? 'employee';
         $this->organizationRoleService->assertCanAssignRole($currentUser, $selectedRole);
 
+        $normalizedSettings = array_key_exists('settings', $validated)
+            ? $this->normalizeUserSettings($validated['settings'] ?? [], $selectedRole)
+            : null;
+
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password'] ?? Str::random(12)),
             'role' => $selectedRole,
             'organization_id' => $currentUser->organization_id,
-            'settings' => $validated['settings'] ?? null,
+            'settings' => $normalizedSettings,
         ]);
 
         if (array_key_exists('group_ids', $validated)) {
@@ -200,6 +211,11 @@ class UserController extends Controller
             'email' => 'sometimes|string|email|max:255|unique:users,email,' . $user->id,
             'role' => 'sometimes|in:admin,manager,employee,client',
             'settings' => 'nullable|array',
+            'settings.monitoring_interval_minutes' => 'nullable|integer|in:1,3,5,10,15,30',
+            'settings.can_edit_time' => 'nullable|boolean',
+            'settings.attendance_monitoring' => 'nullable|boolean',
+            'settings.payroll_visibility' => 'nullable|boolean',
+            'settings.task_assignment_access' => 'nullable|boolean',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
         ]);
@@ -210,6 +226,17 @@ class UserController extends Controller
 
         $originalRole = $user->role;
         $originalAttributes = $user->only(['name', 'email', 'role', 'settings']);
+
+        $nextRole = $validated['role'] ?? $user->role;
+        if (array_key_exists('settings', $validated)) {
+            $validated['settings'] = $this->normalizeUserSettings(
+                array_merge($user->settings ?? [], $validated['settings'] ?? []),
+                $nextRole
+            );
+        } elseif (array_key_exists('role', $validated)) {
+            $validated['settings'] = $this->normalizeUserSettings($user->settings ?? [], $nextRole);
+        }
+
         $updatable = collect($validated)
             ->except(['group_ids'])
             ->all();
@@ -635,6 +662,38 @@ class UserController extends Controller
     private function canDeleteUsers(?User $user): bool
     {
         return $user?->role === 'admin';
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     * @return array<string, mixed>
+     */
+    private function normalizeUserSettings(array $settings, string $role): array
+    {
+        $interval = (int) ($settings['monitoring_interval_minutes'] ?? 10);
+        if (! in_array($interval, self::ALLOWED_MONITORING_INTERVALS, true)) {
+            $interval = 10;
+        }
+
+        return array_merge($settings, [
+            'monitoring_interval_minutes' => $interval,
+            'attendance_monitoring' => array_key_exists('attendance_monitoring', $settings)
+                ? filter_var($settings['attendance_monitoring'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false
+                : true,
+            'can_edit_time' => array_key_exists('can_edit_time', $settings)
+                ? filter_var($settings['can_edit_time'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false
+                : true,
+            'payroll_visibility' => $role === 'employee'
+                ? false
+                : (
+                    array_key_exists('payroll_visibility', $settings)
+                        ? filter_var($settings['payroll_visibility'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false
+                        : true
+                ),
+            'task_assignment_access' => array_key_exists('task_assignment_access', $settings)
+                ? filter_var($settings['task_assignment_access'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false
+                : true,
+        ]);
     }
 
     private function syncPrimaryGroup(User $user, array $groupIds, array $previousGroupIds = []): void

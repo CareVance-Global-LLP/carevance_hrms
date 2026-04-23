@@ -34,7 +34,7 @@ class LeaveRequestController extends Controller
             return response()->json(['data' => []]);
         }
 
-        $query = LeaveRequest::with(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email'])
+        $query = LeaveRequest::with(['user:id,name,email,role,organization_id', 'reviewer:id,name,email', 'revokeReviewer:id,name,email'])
             ->where('organization_id', $currentUser->organization_id)
             ->orderByDesc('created_at');
 
@@ -58,7 +58,7 @@ class LeaveRequestController extends Controller
         }
 
         return response()->json([
-            'data' => $query->limit(200)->get(),
+            'data' => $query->limit(200)->get()->map(fn (LeaveRequest $leave) => $this->withApprovalDestination($leave)),
         ]);
     }
 
@@ -127,7 +127,7 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave request submitted.',
-            'data' => $leave->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+            'data' => $this->withApprovalDestination($leave->load(['user:id,name,email,role,organization_id', 'reviewer:id,name,email', 'revokeReviewer:id,name,email'])),
         ], 201);
     }
 
@@ -471,6 +471,37 @@ class LeaveRequestController extends Controller
                 'end_date' => Carbon::parse($leave->end_date)->toDateString(),
             ]
         );
+    }
+
+    private function withApprovalDestination(LeaveRequest $leave): LeaveRequest
+    {
+        $leave->loadMissing('user.employeeWorkInfo');
+        if (! $leave->user) {
+            $leave->setAttribute('approval_destination', 'Sent to reviewer');
+            return $leave;
+        }
+
+        $reviewerNames = User::query()
+            ->whereIn('id', $this->approvalRoutingService->reviewerUserIds($leave->user))
+            ->pluck('name')
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->values();
+
+        $reviewerLabel = match ($leave->user->role) {
+            'employee' => $reviewerNames->count() === 1 ? 'your group manager' : 'your group managers',
+            'manager' => $reviewerNames->count() === 1 ? 'an admin' : 'admins',
+            default => 'the reviewer',
+        };
+
+        $leave->setAttribute(
+            'approval_destination',
+            $reviewerNames->isEmpty()
+                ? "Sent to {$reviewerLabel}"
+                : sprintf('Sent to %s: %s', $reviewerLabel, $reviewerNames->implode(', '))
+        );
+
+        return $leave;
     }
 
     private function sendReviewNotification(LeaveRequest $leave, User $reviewer, string $status): void

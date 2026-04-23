@@ -53,9 +53,16 @@ class TimeEditNotificationFlowTest extends TestCase
             'attendance_date' => now()->toDateString(),
             'extra_minutes' => 30,
             'message' => 'Stayed late for release handoff',
-        ], $this->apiHeadersFor($employee))->assertCreated();
+        ], $this->apiHeadersFor($employee))
+            ->assertCreated()
+            ->assertJsonPath('message', 'Time edit request submitted and sent to your group manager: Manager.')
+            ->assertJsonPath('data.approval_destination', 'Sent to your group manager: Manager');
 
         $requestId = (int) $createResponse->json('data.id');
+
+        $this->getJson('/api/attendance-time-edit-requests', $this->apiHeadersFor($employee))
+            ->assertOk()
+            ->assertJsonPath('data.0.approval_destination', 'Sent to your group manager: Manager');
 
         $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,

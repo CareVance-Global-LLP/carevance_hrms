@@ -60,9 +60,15 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
             'start_date' => $leaveDate->toDateString(),
             'end_date' => $leaveDate->toDateString(),
             'reason' => 'Family function',
-        ], $this->apiHeadersFor($employee))->assertCreated();
+        ], $this->apiHeadersFor($employee))
+            ->assertCreated()
+            ->assertJsonPath('data.approval_destination', 'Sent to your group manager: Manager');
 
         $leaveId = (int) $createResponse->json('data.id');
+
+        $this->getJson('/api/leave-requests', $this->apiHeadersFor($employee))
+            ->assertOk()
+            ->assertJsonPath('data.0.approval_destination', 'Sent to your group manager: Manager');
 
         $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,

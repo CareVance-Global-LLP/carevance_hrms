@@ -264,6 +264,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const isAdmin = hasAdminAccess(user);
   const canSeeAttendanceMonitoring = isAdmin;
+  const canAccessAttendance = isAdmin || user?.settings?.attendance_monitoring !== false;
+  const canRequestTimeEdit = user?.settings?.can_edit_time !== false;
   const adminUsersQuery = useQuery({
     queryKey: ['attendance-admin-users'],
     queryFn: async () => {
@@ -643,6 +645,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   };
 
   const submitTimeEditRequest = async () => {
+    if (!canRequestTimeEdit) {
+      setTimeEditFeedback('', 'Time edit requests are disabled for your account.');
+      return;
+    }
+
     if (!timeEditDate || !extraMinutes || extraMinutes <= 0) {
       setTimeEditFeedback('', 'Please enter a valid date and extra minutes');
       return;
@@ -661,14 +668,14 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     setIsTimeEditSubmitting(true);
     setTimeEditFeedback();
     try {
-      await attendanceTimeEditApi.create({
+      const response = await attendanceTimeEditApi.create({
         attendance_date: timeEditDate,
         extra_minutes: extraMinutes,
         message: timeEditMessage || undefined,
       });
       setTimeEditMessage('');
       await fetchTimeEditRequests();
-      setTimeEditFeedback('Time edit request submitted');
+      setTimeEditFeedback((response.data as any)?.message || 'Time edit request submitted and sent to your group manager.');
     } catch (e) {
       console.error('Time edit request submit failed:', e);
       setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to submit time edit request');
@@ -1029,7 +1036,25 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     navigate(`/monitoring/screenshots?${params.toString()}`);
   };
 
+  if (!canAccessAttendance && mode !== 'time-edit') {
+    return (
+      <PageEmptyState
+        title="Attendance monitoring disabled"
+        description="Attendance monitoring is not enabled for your account."
+      />
+    );
+  }
+
   if (mode === 'time-edit') {
+    if (!canRequestTimeEdit) {
+      return (
+        <PageEmptyState
+          title="Edit time disabled"
+          description="Time edit requests are not enabled for your account."
+        />
+      );
+    }
+
     return (
       <div className="space-y-6 animate-fade-in">
         <PageHeader eyebrow="Attendance adjustments" title="Edit Time" description="Request overtime or attendance time adjustments and review approval status." />
@@ -1093,6 +1118,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                       </p>
                       <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'}>{item.status}</StatusBadge>
                     </div>
+                    {item.approval_destination ? (
+                      <p className="mt-1 text-xs font-medium text-sky-700">{item.approval_destination}</p>
+                    ) : null}
                     {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
                     {canReviewTimeEditRequest(item) && item.status === 'pending' ? (
                       <div className="mt-2 flex gap-2">
@@ -1823,6 +1851,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   <p className="mt-1 text-xs text-slate-500">
                     {item.leave_type === 'half_day' ? 'Half day leave' : 'Full day leave'}
                   </p>
+                  {item.approval_destination ? (
+                    <p className="mt-1 text-xs font-medium text-sky-700">{item.approval_destination}</p>
+                  ) : null}
                   {item.reason ? <p className="text-xs text-gray-600 mt-1">{item.reason}</p> : null}
                   {item.revoke_status ? (
                     <p className="text-xs mt-1 text-gray-600">
@@ -1857,46 +1888,48 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {timeEditFeedback ? (
+        {timeEditFeedback && canRequestTimeEdit ? (
           <div className="lg:col-span-2">
             <FeedbackBanner tone={timeEditFeedback.tone} message={timeEditFeedback.message} />
           </div>
         ) : null}
-        <SurfaceCard className="p-4">
-          <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <FieldLabel>Attendance Date</FieldLabel>
-              <TextInput type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} />
+        {canRequestTimeEdit ? (
+          <SurfaceCard className="p-4">
+            <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <FieldLabel>Attendance Date</FieldLabel>
+                <TextInput type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} />
+              </div>
+              <div>
+                <FieldLabel>Extra Minutes</FieldLabel>
+                <TextInput
+                  type="number"
+                  min={1}
+                  max={600}
+                  value={extraMinutes}
+                  onChange={(e) => setExtraMinutes(Number(e.target.value))}
+                />
+              </div>
             </div>
-            <div>
-              <FieldLabel>Extra Minutes</FieldLabel>
-              <TextInput
-                type="number"
-                min={1}
-                max={600}
-                value={extraMinutes}
-                onChange={(e) => setExtraMinutes(Number(e.target.value))}
+            <div className="mt-3">
+              <FieldLabel>Message to Admin</FieldLabel>
+              <TextareaInput
+                value={timeEditMessage}
+                onChange={(e) => setTimeEditMessage(e.target.value)}
+                rows={3}
+                placeholder="Example: I worked 1 hour extra after shift due to release deployment."
               />
             </div>
-          </div>
-          <div className="mt-3">
-            <FieldLabel>Message to Admin</FieldLabel>
-            <TextareaInput
-              value={timeEditMessage}
-              onChange={(e) => setTimeEditMessage(e.target.value)}
-              rows={3}
-              placeholder="Example: I worked 1 hour extra after shift due to release deployment."
-            />
-          </div>
-          <div className="mt-3">
-            <Button onClick={submitTimeEditRequest} disabled={isTimeEditSubmitting}>
-              {isTimeEditSubmitting ? 'Submitting...' : 'Submit Time Edit Request'}
-            </Button>
-          </div>
-        </SurfaceCard>
+            <div className="mt-3">
+              <Button onClick={submitTimeEditRequest} disabled={isTimeEditSubmitting}>
+                {isTimeEditSubmitting ? 'Submitting...' : 'Submit Time Edit Request'}
+              </Button>
+            </div>
+          </SurfaceCard>
+        ) : null}
 
-        <SurfaceCard className="p-4">
+        <SurfaceCard className={`p-4 ${!canRequestTimeEdit ? 'lg:col-span-2' : ''}`}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-900">Time Edit Requests</h2>
             <Button onClick={fetchTimeEditRequests} variant="ghost" size="sm">Refresh</Button>
@@ -1915,6 +1948,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                     </p>
                     <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'}>{item.status}</StatusBadge>
                   </div>
+                  {item.approval_destination ? (
+                    <p className="mt-1 text-xs font-medium text-sky-700">{item.approval_destination}</p>
+                  ) : null}
                   {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
                   {canReviewTimeEditRequest(item) && item.status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
