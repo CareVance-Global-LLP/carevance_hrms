@@ -2,6 +2,7 @@ import {
   Children,
   isValidElement,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
@@ -58,7 +60,9 @@ export function SelectInput({
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   const [open, setOpen] = useState(false);
   const [internalValue, setInternalValue] = useState<string>(() => String(value ?? defaultValue ?? ''));
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0, width: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const controlledValue = value !== undefined ? String(value) : internalValue;
   const options = useMemo(() => (
     Children.toArray(children)
@@ -88,7 +92,10 @@ export function SelectInput({
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (target && containerRef.current && !containerRef.current.contains(target)) {
+      const clickedTrigger = Boolean(target && containerRef.current?.contains(target));
+      const clickedMenu = Boolean(target && menuRef.current?.contains(target));
+
+      if (target && !clickedTrigger && !clickedMenu) {
         setOpen(false);
       }
     };
@@ -96,6 +103,31 @@ export function SelectInput({
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!open || !containerRef.current) {
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      setMenuPosition({
+        left: rect.left,
+        top: rect.bottom + 8,
+        width: rect.width,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
 
   const emitChange = (nextValue: string) => {
     setInternalValue(nextValue);
@@ -127,11 +159,13 @@ export function SelectInput({
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-500 transition', open && 'rotate-180')} />
       </button>
 
-      {open ? (
+      {open && typeof document !== 'undefined' ? createPortal(
         <div
+          ref={menuRef}
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute left-0 right-0 top-full z-50 mt-2 max-h-72 overflow-auto rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.32)]"
+          className="fixed z-[9999] max-h-72 overflow-auto rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.32)]"
+          style={{ left: menuPosition.left, top: menuPosition.top, width: menuPosition.width }}
         >
           {options.map((option) => {
             const isSelected = option.value === controlledValue;
@@ -159,7 +193,8 @@ export function SelectInput({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body
       ) : null}
     </div>
   );
