@@ -15,11 +15,18 @@ const navItems = [
   { label: 'FAQ', href: '#faq' },
 ];
 
-export default function Navbar() {
+type NavbarMode = 'marketing' | 'desktop-auth';
+
+interface NavbarProps {
+  mode?: NavbarMode;
+}
+
+export default function Navbar({ mode = 'marketing' }: NavbarProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const location = useLocation();
+  const isDesktopAuthMode = mode === 'desktop-auth';
 
   useEffect(() => {
     let lastScrollY = window.scrollY;
@@ -85,41 +92,49 @@ export default function Navbar() {
             />
           </Link>
 
-          <nav className="hidden items-center gap-8 lg:flex">
-            {navItems.map((item) => (
-              <a
-                key={item.label}
-                href={location.pathname === '/' ? item.href : `/${item.href}`}
-                className="rounded-full px-3.5 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
-              >
-                {item.label}
-              </a>
-            ))}
-          </nav>
+          {!isDesktopAuthMode ? (
+            <nav className="hidden items-center gap-8 lg:flex">
+              {navItems.map((item) => (
+                <a
+                  key={item.label}
+                  href={location.pathname === '/' ? item.href : `/${item.href}`}
+                  className="rounded-full px-3.5 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
+                >
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+          ) : (
+            <div className="hidden flex-1 lg:block" />
+          )}
 
           <div className="hidden items-center gap-3 lg:flex">
-            <a
-              href={desktopDownloadUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-300/90 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition duration-300 hover:-translate-y-0.5 hover:border-slate-950 hover:text-slate-950"
-            >
-              <Download className="h-4 w-4" />
-              Download
-            </a>
+            {desktopDownloadUrl && !isDesktopAuthMode ? (
+              <a
+                href={desktopDownloadUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-slate-300/90 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition duration-300 hover:-translate-y-0.5 hover:border-slate-950 hover:text-slate-950"
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </a>
+            ) : null}
             <Link
               to="/login"
               className="rounded-full px-4 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
             >
               Login
             </Link>
-            <Link
-              to="/contact-sales"
-              onClick={() => analytics.trackEvent('book_demo_clicked', { location: 'navbar' })}
-              className="rounded-full px-4 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
-            >
-              Book Demo
-            </Link>
+            {!isDesktopAuthMode ? (
+              <Link
+                to="/contact-sales"
+                onClick={() => analytics.trackEvent('book_demo_clicked', { location: 'navbar' })}
+                className="rounded-full px-4 py-2 text-sm font-semibold text-slate-900 transition duration-300 hover:-translate-y-0.5 hover:text-sky-700"
+              >
+                Book Demo
+              </Link>
+            ) : null}
             <Link
               to="/start-trial"
               onClick={() => analytics.trackEvent('start_trial_clicked', { location: 'navbar' })}
@@ -148,34 +163,47 @@ export default function Navbar() {
               className="overflow-hidden border-t border-slate-200/80 lg:hidden"
             >
               <div className="space-y-3 px-5 py-4">
-                <a
-                  href={desktopDownloadUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white/90 px-4 py-3 text-sm font-medium text-slate-700"
-                >
-                  <Download className="h-4 w-4" />
-                  Download Desktop App
-                </a>
-                {navItems.map((item) =>
+                {desktopDownloadUrl && !isDesktopAuthMode ? (
                   <a
-                    key={item.label}
-                    href={location.pathname === '/' ? item.href : `/${item.href}`}
-                    onClick={() => setIsOpen(false)}
-                    className="block rounded-2xl px-3 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-950/5 hover:text-sky-700"
+                    href={desktopDownloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white/90 px-4 py-3 text-sm font-medium text-slate-700"
                   >
-                    {item.label}
+                    <Download className="h-4 w-4" />
+                    Download Desktop App
                   </a>
-                )}
+                ) : null}
+                {!isDesktopAuthMode
+                  ? navItems.map((item) =>
+                      <a
+                        key={item.label}
+                        href={location.pathname === '/' ? item.href : `/${item.href}`}
+                        onClick={() => setIsOpen(false)}
+                        className="block rounded-2xl px-3 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-950/5 hover:text-sky-700"
+                      >
+                        {item.label}
+                      </a>
+                    )
+                  : null}
+                {!isDesktopAuthMode ? (
+                  <Link
+                    to="/contact-sales"
+                    onClick={() => {
+                      analytics.trackEvent('book_demo_clicked', { location: 'navbar-mobile' });
+                      setIsOpen(false);
+                    }}
+                    className="block rounded-2xl border border-slate-200/90 px-4 py-3 text-center text-sm font-semibold text-slate-900"
+                  >
+                    Book Demo
+                  </Link>
+                ) : null}
                 <Link
-                  to="/contact-sales"
-                  onClick={() => {
-                    analytics.trackEvent('book_demo_clicked', { location: 'navbar-mobile' });
-                    setIsOpen(false);
-                  }}
+                  to="/login"
+                  onClick={() => setIsOpen(false)}
                   className="block rounded-2xl border border-slate-200/90 px-4 py-3 text-center text-sm font-semibold text-slate-900"
                 >
-                  Book Demo
+                  Login
                 </Link>
                 <Link
                   to="/start-trial"

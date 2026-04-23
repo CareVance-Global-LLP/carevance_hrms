@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   AlertCircle,
-  ArrowLeft,
   ArrowRight,
   BarChart3,
   CheckCircle2,
@@ -79,15 +78,6 @@ export default function Login() {
               backgroundColor="rgba(255,255,255,0.8)"
             >
               <div className="mb-6">
-                <div className="mb-6 flex items-center">
-                  <Link
-                    to="/"
-                    aria-label="Back to home"
-                    className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200/80 bg-white/80 text-slate-600 shadow-[0_16px_35px_-24px_rgba(15,23,42,0.25)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-slate-950 hover:text-slate-950"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                  </Link>
-                </div>
                 <BrandLogo variant="full" size="sm" className="mb-5 max-w-[16rem]" />
                 <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-[3.2rem] sm:leading-[0.95]">
                   Sign in to CareVance
