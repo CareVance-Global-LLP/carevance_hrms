@@ -145,4 +145,33 @@ class ProductivityClassifierTest extends TestCase
         $this->assertSame('google chrome', $result['software_name']);
         $this->assertSame('software', $result['tool_type']);
     }
+
+    public function test_classifier_uses_keyword_fallback_for_browser_titles_when_url_is_missing(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'type' => 'url',
+            'name' => 'Instagram - Google Chrome',
+            'app_name' => 'Google Chrome',
+            'window_title' => 'Instagram - Google Chrome',
+            'url' => null,
+        ]);
+
+        $this->assertSame('instagram.com', $result['normalized_domain']);
+        $this->assertSame('unproductive', $result['classification']);
+    }
+
+    public function test_classifier_uses_keyword_fallback_for_browser_internal_pages(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'type' => 'url',
+            'name' => 'Extensions',
+            'app_name' => 'Google Chrome',
+            'window_title' => 'Extensions',
+            'url' => 'chrome://extensions',
+        ]);
+
+        $this->assertSame('browser extensions', $result['normalized_label']);
+        $this->assertSame('productive', $result['classification']);
+        $this->assertSame('website', $result['tool_type']);
+    }
 }

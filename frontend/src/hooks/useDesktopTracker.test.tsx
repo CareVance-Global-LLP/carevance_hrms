@@ -440,13 +440,13 @@ describe('useDesktopTracker', () => {
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 1000);
+      await vi.advanceTimersByTimeAsync(1 * 1000);
     });
 
     expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
       type: 'url',
       name: 'Instagram',
-      duration: 5,
+      duration: 1,
     }));
   });
 
@@ -573,6 +573,48 @@ describe('useDesktopTracker', () => {
     }));
   });
 
+  it('flushes active desktop and browser sessions immediately when logout requests a tracker flush', async () => {
+    mocks.createActivitySessionMock
+      .mockResolvedValueOnce({ data: { id: 1501 } })
+      .mockResolvedValueOnce({ data: { id: 1502 } });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Visual Studio Code',
+        title: 'Tracking Work',
+        url: null,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      });
+    });
+
+    await act(async () => {
+      browserTrackingListeners[0]?.({
+        kind: 'tab-focused',
+        browser_name: 'chrome',
+        profile_key: 'profile-a',
+        tab_id: 91,
+        window_id: 5,
+        url: 'https://example.com',
+        title: 'Example',
+        recorded_at: '2026-04-21T09:00:05.000Z',
+      });
+    });
+
+    const flushDetail: { promise?: Promise<void> } = {};
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('desktop-tracker:flush', { detail: flushDetail }));
+      await flushDetail.promise;
+    });
+
+    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1502, expect.objectContaining({
+      ended_at: expect.any(String),
+      duration_seconds: expect.any(Number),
+    }));
+  });
+
   it('reuses the last reliable external context when active window lookup temporarily falls back to the app shell', async () => {
     document.title = 'CareVance HRMS Workspace';
     mocks.getActiveWindowContextMock
@@ -590,17 +632,13 @@ describe('useDesktopTracker', () => {
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 1000);
-    });
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 1000);
+      await vi.advanceTimersByTimeAsync(2 * 1000);
     });
 
     expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
       type: 'url',
       name: 'GitHub',
-      duration: 5,
+      duration: 1,
     }));
     expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
       name: 'CareVance HRMS Workspace',
@@ -644,19 +682,11 @@ describe('useDesktopTracker', () => {
     expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
       name: 'CareVance HRMS Workspace',
     }));
-    expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
-      name: 'ChatGPT',
-    }));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(20 * 1000);
-    });
-
-    expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'url',
-      name: 'ChatGPT',
-      duration: 10,
-    }));
+    expect(
+      mocks.createActivityMock.mock.calls.some(
+        ([payload]) => payload?.type === 'url' && payload?.name === 'ChatGPT' && Number(payload?.duration ?? 0) <= 2,
+      ),
+    ).toBe(true);
   });
 
   it('reuses the last reliable website context when the browser briefly reports a generic new tab', async () => {
@@ -675,17 +705,13 @@ describe('useDesktopTracker', () => {
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 1000);
-    });
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 1000);
+      await vi.advanceTimersByTimeAsync(2 * 1000);
     });
 
     expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
       type: 'url',
       name: 'YouTube',
-      duration: 5,
+      duration: 1,
     }));
     expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({
       name: 'New Tab',
@@ -708,7 +734,7 @@ describe('useDesktopTracker', () => {
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15 * 1000);
+      await vi.advanceTimersByTimeAsync(3 * 1000);
     });
 
     const trackedDurations = mocks.updateActivityMock.mock.calls
@@ -718,14 +744,14 @@ describe('useDesktopTracker', () => {
     expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
       type: 'url',
       name: 'Instagram',
-      duration: 5,
+      duration: 1,
     }));
-    expect(Math.max(...trackedDurations)).toBe(10);
-    expect(trackedDurations).not.toContain(15);
+    expect(Math.max(...trackedDurations)).toBe(2);
+    expect(trackedDurations).not.toContain(3);
     expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
       type: 'url',
       name: 'browser activity',
-      duration: 5,
+      duration: 1,
     }));
   });
 
@@ -983,13 +1009,13 @@ describe('useDesktopTracker', () => {
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 1000);
+      await vi.advanceTimersByTimeAsync(1 * 1000);
     });
 
     expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
       type: 'url',
       name: 'YouTube',
-      duration: 5,
+      duration: 1,
     }));
   });
 

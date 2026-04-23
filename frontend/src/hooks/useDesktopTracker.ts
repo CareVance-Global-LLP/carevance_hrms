@@ -26,7 +26,7 @@ import type {
   TimeEntry,
 } from '@/types';
 
-const ACTIVITY_TRACK_INTERVAL_MS = 5000;
+const ACTIVITY_TRACK_INTERVAL_MS = 1000;
 const SCREENSHOT_INTERVAL_MS = 3 * 60 * 1000;
 const SCREENSHOT_CAPTURE_TIMEOUT_MS = 15 * 1000;
 const SCREENSHOT_UPLOAD_TIMEOUT_MS = 30 * 1000;
@@ -442,6 +442,17 @@ export const useDesktopTracker = () => {
       }
 
       pendingIdleRewindRef.current.clear();
+    };
+
+    const flushTrackerState = async (endedAt?: string) => {
+      const resolvedEndedAt = endedAt || new Date().toISOString();
+      await closeActiveDesktopSession(resolvedEndedAt);
+      await closeActiveBrowserSession(resolvedEndedAt);
+      activeSegmentRef.current = null;
+      activeEntryRef.current = null;
+      pendingIdleRewindRef.current.clear();
+      pendingTrackedSecondsRef.current = 0;
+      syncScreenshotInterval(null);
     };
 
     const getOrLoadActiveEntry = async () => {
@@ -1248,15 +1259,12 @@ export const useDesktopTracker = () => {
         return;
       }
 
-      void closeActiveDesktopSession(new Date().toISOString());
-      void closeActiveBrowserSession(new Date().toISOString());
-      activeEntryRef.current = null;
-      activeSegmentRef.current = null;
-      activeDesktopSessionRef.current = null;
-      activeBrowserSessionRef.current = null;
-      pendingIdleRewindRef.current.clear();
-      pendingTrackedSecondsRef.current = 0;
-      syncScreenshotInterval(null);
+      void flushTrackerState(new Date().toISOString());
+    };
+
+    const handleTrackerFlush = (event: Event) => {
+      const detail = (event as CustomEvent<{ promise?: Promise<void> }>).detail || {};
+      detail.promise = flushTrackerState(new Date().toISOString());
     };
 
     const removeForegroundWindowChangeListener = hasForegroundWindowBridge
@@ -1285,6 +1293,7 @@ export const useDesktopTracker = () => {
     }, IDLE_GUARD_INTERVAL_MS);
     window.addEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
     window.addEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);
+    window.addEventListener('desktop-tracker:flush', handleTrackerFlush as EventListener);
     if (typeof desktopApi.getDesktopDeviceIdentity === 'function') {
       void desktopApi.getDesktopDeviceIdentity()
         .then((deviceIdentity) => {
@@ -1347,6 +1356,7 @@ export const useDesktopTracker = () => {
       }
       window.removeEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
       window.removeEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);
+      window.removeEventListener('desktop-tracker:flush', handleTrackerFlush as EventListener);
       if (desktopTrackerRunSequence === runId) {
         desktopTrackerRunSequence += 1;
       }

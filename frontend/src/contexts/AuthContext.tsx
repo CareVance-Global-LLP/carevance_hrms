@@ -401,6 +401,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    if (!DEMO_MODE) {
+      try {
+        const trackerFlushDetail: { promise?: Promise<void> } = {};
+        window.dispatchEvent(new CustomEvent('desktop-tracker:flush', { detail: trackerFlushDetail }));
+        await trackerFlushDetail.promise;
+      } catch (error) {
+        console.error('Desktop tracker flush on logout error:', error);
+      }
+    }
+
     if (!DEMO_MODE && isTrackedTimerUser(user)) {
       try {
         await timeEntryApi.stop({ timer_slot: 'primary' });

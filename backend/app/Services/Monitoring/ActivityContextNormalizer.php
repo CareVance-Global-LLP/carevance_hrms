@@ -38,17 +38,28 @@ class ActivityContextNormalizer
 
         $cleanWindowTitle = $this->cleanBrowserWindowTitle($windowTitle !== '' ? $windowTitle : $rawName);
         $resolvedAppName = $appName !== '' ? $appName : $rawName;
-        $normalizedApp = $this->normalizeAppName($resolvedAppName);
         $domain = $url !== '' ? $this->extractDomain($url) : null;
+        $websiteKeywordRule = null;
 
         if ($domain === null && $type === 'url') {
             $domain = $this->extractDomain($rawName) ?? $this->extractDomain($cleanWindowTitle);
         }
 
+        if ($domain === null && $type === 'url') {
+            $websiteKeywordRule = $this->findKeywordFallbackRule(
+                [$url, $rawName, $cleanWindowTitle, $resolvedAppName],
+                'website'
+            );
+            $domain = $this->normalizeDomain((string) ($websiteKeywordRule['domain'] ?? '')) ?: null;
+        }
+
+        $normalizedApp = $this->normalizeAppName($resolvedAppName);
         $browserContext = $type === 'url' || ($domain !== null && $domain !== '');
         $softwareName = $normalizedApp ?: null;
         $normalizedLabel = $domain
-            ?: ($softwareName ?: ($cleanWindowTitle !== '' ? mb_strtolower($cleanWindowTitle) : null));
+            ?: ($type === 'url' && $websiteKeywordRule
+                ? mb_strtolower((string) ($websiteKeywordRule['label'] ?? ''))
+                : ($softwareName ?: ($cleanWindowTitle !== '' ? mb_strtolower($cleanWindowTitle) : null)));
 
         return [
             'normalized_label' => $normalizedLabel ?: ($type === 'url' ? 'unknown-site' : 'unknown-app'),
@@ -153,6 +164,11 @@ class ActivityContextNormalizer
             }
         }
 
+        $keywordRule = $this->findKeywordFallbackRule([$normalized], 'software');
+        if ($keywordRule) {
+            return mb_strtolower((string) ($keywordRule['label'] ?? $normalized));
+        }
+
         return $normalized;
     }
 
@@ -189,5 +205,42 @@ class ActivityContextNormalizer
         }
 
         return in_array((string) end($segments), self::INVALID_DOMAIN_SUFFIXES, true);
+    }
+
+    private function findKeywordFallbackRule(array $haystacks, string $toolType): ?array
+    {
+        $normalizedHaystacks = collect($haystacks)
+            ->map(fn ($value) => mb_strtolower(trim((string) $value)))
+            ->filter()
+            ->values();
+
+        if ($normalizedHaystacks->isEmpty()) {
+            return null;
+        }
+
+        foreach ((array) config('productivity_monitoring.keyword_fallback_rules', []) as $rule) {
+            if (($rule['tool_type'] ?? null) !== $toolType) {
+                continue;
+            }
+
+            $keywords = collect((array) ($rule['keywords'] ?? []))
+                ->map(fn ($keyword) => mb_strtolower(trim((string) $keyword)))
+                ->filter()
+                ->values();
+
+            if ($keywords->isEmpty()) {
+                continue;
+            }
+
+            foreach ($normalizedHaystacks as $haystack) {
+                foreach ($keywords as $keyword) {
+                    if ($keyword !== '' && str_contains($haystack, $keyword)) {
+                        return $rule;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 }

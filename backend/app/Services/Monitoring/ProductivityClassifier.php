@@ -65,12 +65,22 @@ class ProductivityClassifier
         }
 
         if (($normalized['tool_type'] ?? null) === 'website' && ! ($normalized['normalized_domain'] ?? null)) {
+            $keywordRule = $this->matchKeywordFallbackRule($normalized, $context, 'website');
+            if ($keywordRule) {
+                return $this->buildKeywordResult($normalized, $keywordRule);
+            }
+
             return $this->buildResult(
                 $normalized,
                 (string) config('productivity_monitoring.fallback_classification.browser_without_context', 'context_dependent'),
                 'Browser activity without a reliable domain stays context-dependent until configured.',
                 null
             );
+        }
+
+        $keywordRule = $this->matchKeywordFallbackRule($normalized, $context);
+        if ($keywordRule) {
+            return $this->buildKeywordResult($normalized, $keywordRule);
         }
 
         return $this->buildResult(
@@ -198,6 +208,53 @@ class ProductivityClassifier
         return null;
     }
 
+    private function matchKeywordFallbackRule(array $normalized, array $context, ?string $toolType = null): ?array
+    {
+        $resolvedToolType = $toolType ?: (string) ($normalized['tool_type'] ?? '');
+        $haystacks = collect([
+            (string) ($context['raw_name'] ?? ''),
+            (string) ($context['window_title'] ?? ''),
+            (string) ($context['app_name'] ?? ''),
+            (string) ($context['url'] ?? ''),
+            (string) ($normalized['normalized_domain'] ?? ''),
+            (string) ($normalized['normalized_label'] ?? ''),
+            (string) ($normalized['clean_window_title'] ?? ''),
+            (string) ($normalized['software_name'] ?? ''),
+        ])
+            ->map(fn ($value) => mb_strtolower(trim($value)))
+            ->filter()
+            ->values();
+
+        if ($haystacks->isEmpty()) {
+            return null;
+        }
+
+        foreach ((array) config('productivity_monitoring.keyword_fallback_rules', []) as $rule) {
+            if (($rule['tool_type'] ?? null) !== $resolvedToolType) {
+                continue;
+            }
+
+            $keywords = collect((array) ($rule['keywords'] ?? []))
+                ->map(fn ($keyword) => mb_strtolower(trim((string) $keyword)))
+                ->filter()
+                ->values();
+
+            if ($keywords->isEmpty()) {
+                continue;
+            }
+
+            foreach ($haystacks as $haystack) {
+                foreach ($keywords as $keyword) {
+                    if ($keyword !== '' && str_contains($haystack, $keyword)) {
+                        return $rule;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     private function ruleMatches(ProductivityRule $rule, array $normalized, array $context): bool
     {
         $haystack = match ($rule->target_type) {
@@ -242,6 +299,29 @@ class ProductivityClassifier
                 'scope_id' => $rule->scope_id,
                 'priority' => (int) $rule->priority,
             ] : null,
+            'classifier_version' => (string) config('productivity_monitoring.classifier_version'),
+        ];
+    }
+
+    private function buildKeywordResult(array $normalized, array $rule): array
+    {
+        return [
+            'normalized_label' => $normalized['normalized_label'] ?? null,
+            'normalized_domain' => $normalized['normalized_domain'] ?? null,
+            'software_name' => $normalized['software_name'] ?? null,
+            'tool_type' => $normalized['tool_type'] ?? null,
+            'classification' => (string) ($rule['classification'] ?? config('productivity_monitoring.fallback_classification.unknown', 'neutral')),
+            'classification_reason' => (string) ($rule['reason'] ?? 'Matched configured keyword fallback rule.'),
+            'matched_rule' => [
+                'id' => null,
+                'name' => (string) ($rule['label'] ?? 'Keyword fallback'),
+                'target_type' => 'keyword_fallback',
+                'match_mode' => 'contains',
+                'target_value' => implode(', ', (array) ($rule['keywords'] ?? [])),
+                'scope_type' => 'global',
+                'scope_id' => null,
+                'priority' => (int) ($rule['priority'] ?? 120),
+            ],
             'classifier_version' => (string) config('productivity_monitoring.classifier_version'),
         ];
     }
