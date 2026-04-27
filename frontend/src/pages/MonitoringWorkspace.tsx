@@ -337,7 +337,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             start_date: startDate,
             end_date: endDate,
             page: screenshotPage,
-            per_page: 24,
+            per_page: RECENT_SCREENSHOT_PREVIEW_LIMIT,
           }),
           reportApi.employeeInsights({
             start_date: startDate,
@@ -345,6 +345,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             q: query || undefined,
             user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
             recent_screenshot_limit: RECENT_SCREENSHOT_PREVIEW_LIMIT,
+            dashboard_lite: true,
           }),
         ]);
 
@@ -361,6 +362,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
           start_date: startDate,
           end_date: endDate,
           page: 1,
+          per_page: 10,
         }),
         reportApi.employeeInsights({
           start_date: startDate,

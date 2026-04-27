@@ -417,7 +417,7 @@ export default function AdminDashboard() {
         ),
         withDashboardFallback(
           'Website activity',
-          activityApi.getAll({ start_date: filters.startDate, end_date: filters.endDate, type: 'url', page: 1 }),
+          activityApi.getAll({ start_date: filters.startDate, end_date: filters.endDate, type: 'url', page: 1, per_page: 10 }),
           [],
           (response) => response.data?.data || []
         ),
@@ -584,7 +584,7 @@ export default function AdminDashboard() {
         start_date: filters.startDate,
         end_date: filters.endDate,
         page: screenshotManagerPage,
-        per_page: 24,
+        per_page: 10,
       });
 
       return response.data;

@@ -56,9 +56,11 @@ class ScreenshotController extends Controller
             return response()->json(['data' => []]);
         }
 
+        $perPage = max(1, min((int) $request->get('per_page', 10), 10));
+
         $screenshots = $this->scopedScreenshotsQuery($request, $user)
             ->orderBy('created_at', 'desc')
-            ->paginate((int) $request->get('per_page', 15));
+            ->paginate($perPage);
 
         return response()->json($screenshots);
     }

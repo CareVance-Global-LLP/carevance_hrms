@@ -392,6 +392,58 @@ class ScreenshotSecurityTest extends TestCase
         }
     }
 
+    public function test_screenshot_index_caps_pages_to_ten_items(): void
+    {
+        try {
+            $organization = Organization::create([
+                'name' => 'CareVance',
+                'slug' => 'carevance',
+            ]);
+
+            $admin = User::create([
+                'name' => 'Admin User',
+                'email' => 'admin-screenshot-cap@example.com',
+                'password' => 'password123',
+                'role' => 'admin',
+                'organization_id' => $organization->id,
+            ]);
+
+            $employee = User::create([
+                'name' => 'Employee User',
+                'email' => 'employee-screenshot-cap@example.com',
+                'password' => 'password123',
+                'role' => 'employee',
+                'organization_id' => $organization->id,
+            ]);
+
+            $entry = TimeEntry::create([
+                'user_id' => $employee->id,
+                'start_time' => '2026-03-16 09:00:00',
+                'end_time' => '2026-03-16 10:00:00',
+                'duration' => 3600,
+                'billable' => true,
+            ]);
+
+            foreach (range(1, 12) as $index) {
+                Carbon::setTestNow(Carbon::parse('2026-03-16 09:00:00')->addMinutes($index));
+                Screenshot::create([
+                    'time_entry_id' => $entry->id,
+                    'filename' => sprintf('cap-%02d.png', $index),
+                ]);
+            }
+
+            $this->getJson(
+                "/api/screenshots?user_id={$employee->id}&start_date=2026-03-16&end_date=2026-03-16&per_page=100",
+                $this->apiHeadersFor($admin)
+            )
+                ->assertOk()
+                ->assertJsonPath('per_page', 10)
+                ->assertJsonCount(10, 'data');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_admin_can_bulk_delete_selected_screenshots(): void
     {
         $organization = Organization::create([

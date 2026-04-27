@@ -57,12 +57,12 @@ class ActivityController extends Controller
                 ->values();
 
             if ($groupUserIds->isEmpty()) {
-                return response()->json(Activity::query()->whereRaw('1 = 0')->paginate(15));
+                return response()->json(Activity::query()->whereRaw('1 = 0')->paginate(10));
             }
         }
 
-        $perPage = (int) $request->get('per_page', 50);
-        $perPage = max(1, min($perPage, 200));
+        $perPage = (int) $request->get('per_page', 10);
+        $perPage = max(1, min($perPage, 10));
         $page = max(1, (int) $request->get('page', 1));
 
         $scopedUserIds = User::query()
@@ -114,31 +114,25 @@ class ActivityController extends Controller
                 ],
             ]);
 
-        $feed = $this->activityFeedService
-            ->forUsersInRange($scopedUserIds, $startDate, $endDate)
-            ->filter(function (object $item) use ($request) {
-                if ($request->type && (string) $item->type !== (string) $request->type) {
-                    return false;
-                }
-
-                if ($request->classification && (string) ($item->classification ?? '') !== (string) $request->classification) {
-                    return false;
-                }
-
-                if ($request->tool_type && (string) ($item->tool_type ?? '') !== (string) $request->tool_type) {
-                    return false;
-                }
-
-                return true;
-            })
-            ->values();
+        $feedPage = $this->activityFeedService->pageForUsersInRange(
+            $scopedUserIds,
+            $startDate,
+            $endDate,
+            $page,
+            $perPage,
+            $request->type ? (string) $request->type : null,
+            $request->classification ? (string) $request->classification : null,
+            $request->tool_type ? (string) $request->tool_type : null,
+        );
+        $feed = $feedPage['items'];
+        $total = (int) $feedPage['total'];
 
         if ($request->boolean('processed')) {
             $processedRows = $this->buildProcessedTimelineRows($feed, $usersById);
 
             return response()->json(new LengthAwarePaginator(
-                $processedRows->slice(($page - 1) * $perPage, $perPage)->values(),
-                $processedRows->count(),
+                $processedRows->take($perPage)->values(),
+                $total,
                 $perPage,
                 $page,
                 [
@@ -152,8 +146,8 @@ class ActivityController extends Controller
             ->values();
 
         return response()->json(new LengthAwarePaginator(
-            $rows->slice(($page - 1) * $perPage, $perPage)->values(),
-            $rows->count(),
+            $rows->take($perPage)->values(),
+            $total,
             $perPage,
             $page,
             [

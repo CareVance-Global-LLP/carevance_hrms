@@ -626,6 +626,44 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('recent_screenshots.9.filename', 'capture-03.png');
     }
 
+    public function test_activity_timeline_caps_pages_to_ten_items(): void
+    {
+        Carbon::setTestNow('2026-04-21 12:00:00');
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = TimeEntry::create([
+                'user_id' => $employee->id,
+                'task_id' => null,
+                'start_time' => Carbon::parse('2026-04-21 08:00:00'),
+                'end_time' => Carbon::parse('2026-04-21 09:00:00'),
+                'duration' => 3600,
+                'status' => 'completed',
+            ]);
+
+            foreach (range(1, 15) as $index) {
+                Activity::create([
+                    'user_id' => $employee->id,
+                    'time_entry_id' => $entry->id,
+                    'type' => 'app',
+                    'name' => sprintf('Tool %02d', $index),
+                    'duration' => 60,
+                    'recorded_at' => Carbon::parse('2026-04-21 08:00:00')->addMinutes($index),
+                ]);
+            }
+
+            $this->getJson(
+                "/api/activities?user_id={$employee->id}&start_date=2026-04-21&end_date=2026-04-21&processed=1&per_page=200",
+                $headers
+            )
+                ->assertOk()
+                ->assertJsonPath('per_page', 10)
+                ->assertJsonCount(10, 'data');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_dashboard_lite_overall_report_returns_selected_employee_summary_without_activity_rollups(): void
     {
         [$admin, $employee, $headers] = $this->createAdminAndEmployee();
