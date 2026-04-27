@@ -3,8 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Activity;
-use App\Models\ActivitySession;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
@@ -813,29 +811,47 @@ class ReportController extends Controller
         $resolvedNow = now();
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
-        $idleByUser = $this->liteIdleDurationsByUser($users->pluck('id'), $startDate, $endDate, $resolvedNow);
+        $activities = $this->activityFeedService->forUsersInRange($users->pluck('id'), $startDate, $endDate);
+        $activitiesByUser = $activities->groupBy('user_id');
+        $activitiesByUserAndDay = $activities->groupBy(fn ($activity) => sprintf(
+            '%d|%s',
+            (int) data_get($activity, 'user_id', 0),
+            Carbon::parse((string) data_get($activity, 'recorded_at'))->toDateString()
+        ));
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activeUserIds, $idleByUser, $resolvedNow) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow) {
             $userEntries = $entriesByUser->get($user->id, collect());
+            $userActivities = $activitiesByUser->get($user->id, collect());
             $adjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
+            $idleDuration = $this->usageProcessingService->calculateIdleTime($userActivities);
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration,
-                (int) $idleByUser->get((int) $user->id, 0)
+                $idleDuration
             );
 
             return [
                 'user' => $user,
                 'entries_count' => $userEntries->count(),
-                'last_activity_at' => null,
+                'last_activity_at' => $userActivities->max('recorded_at'),
                 'is_working' => $activeUserIds->contains((int) $user->id),
             ] + $timeBreakdown;
         })->values();
 
-        $dayDurations = [];
+        $dayUserBuckets = [];
         foreach ($entries as $entry) {
             $date = Carbon::parse($entry->start_time)->toDateString();
-            $dayDurations[$date] = ($dayDurations[$date] ?? 0) + $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+            $key = (string) $entry->user_id.'|'.$date;
+
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['total_duration'] += $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
         }
 
         foreach ($attendanceAdjustments as $record) {
@@ -845,13 +861,50 @@ class ReportController extends Controller
             }
 
             $date = Carbon::parse($record->attendance_date)->toDateString();
-            $dayDurations[$date] = ($dayDurations[$date] ?? 0) + $adjustmentSeconds;
+            $key = (string) $record->user_id.'|'.$date;
+
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['total_duration'] += $adjustmentSeconds;
         }
 
-        $byDay = collect($dayDurations)
-            ->map(fn (int $duration, string $date) => [
-                'date' => $date,
-            ] + $this->timeBreakdownService->build($duration, 0))
+        foreach ($activitiesByUserAndDay as $key => $dayActivities) {
+            [, $date] = explode('|', (string) $key, 2);
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['idle_duration'] = $this->usageProcessingService->calculateIdleTime($dayActivities);
+        }
+
+        $byDay = collect($dayUserBuckets)
+            ->map(function (array $bucket) {
+                return [
+                    'date' => $bucket['date'],
+                ] + $this->timeBreakdownService->build(
+                    (int) ($bucket['total_duration'] ?? 0),
+                    (int) ($bucket['idle_duration'] ?? 0)
+                );
+            })
+            ->groupBy('date')
+            ->map(function ($rows, $date) {
+                return [
+                    'date' => $date,
+                ] + $this->timeBreakdownService->build(
+                    (int) $rows->sum('total_duration'),
+                    (int) $rows->sum('idle_duration')
+                );
+            })
             ->sortBy('date')
             ->values();
 
@@ -872,62 +925,6 @@ class ReportController extends Controller
             'by_user' => $byUser,
             'by_day' => $byDay,
         ];
-    }
-
-    private function liteIdleDurationsByUser(iterable $userIds, Carbon $startDate, Carbon $endDate, Carbon $resolvedNow): Collection
-    {
-        $ids = collect($userIds)
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn (int $id) => $id > 0)
-            ->unique()
-            ->values();
-
-        if ($ids->isEmpty()) {
-            return collect();
-        }
-
-        $activityIdle = Activity::query()
-            ->whereIn('user_id', $ids)
-            ->where('type', 'idle')
-            ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->get(['user_id', 'duration'])
-            ->groupBy(fn (Activity $activity) => (int) $activity->user_id)
-            ->map(fn (Collection $rows) => (int) $rows->sum('duration'));
-
-        $sessionIdle = ActivitySession::query()
-            ->whereIn('user_id', $ids)
-            ->whereIn('activity_kind', ['desktop_idle', 'idle'])
-            ->where('started_at', '<=', $endDate)
-            ->where(function ($query) use ($startDate) {
-                $query->whereNull('ended_at')
-                    ->orWhere('ended_at', '>=', $startDate);
-            })
-            ->get(['user_id', 'started_at', 'ended_at'])
-            ->groupBy(fn (ActivitySession $session) => (int) $session->user_id)
-            ->map(function (Collection $sessions) use ($startDate, $endDate, $resolvedNow) {
-                return (int) $sessions->sum(function (ActivitySession $session) use ($startDate, $endDate, $resolvedNow) {
-                    $effectiveStart = $session->started_at?->copy();
-                    if (! $effectiveStart) {
-                        return 0;
-                    }
-
-                    $effectiveEnd = $session->ended_at?->copy() ?: $resolvedNow->copy();
-                    if ($effectiveStart->lessThan($startDate)) {
-                        $effectiveStart = $startDate->copy();
-                    }
-                    if ($effectiveEnd->greaterThan($endDate)) {
-                        $effectiveEnd = $endDate->copy();
-                    }
-
-                    return $effectiveEnd->greaterThan($effectiveStart)
-                        ? $effectiveStart->diffInSeconds($effectiveEnd)
-                        : 0;
-                });
-            });
-
-        return $ids->mapWithKeys(fn (int $id) => [
-            $id => (int) $activityIdle->get($id, 0) + (int) $sessionIdle->get($id, 0),
-        ]);
     }
 
     public function project(Request $request, int $projectId)
@@ -1746,8 +1743,8 @@ class ReportController extends Controller
         Carbon $endDate,
         Carbon $resolvedNow,
     ): array {
-        $idleDuration = (int) $this->liteIdleDurationsByUser([$selectedUser->id], $startDate, $endDate, $resolvedNow)
-            ->get((int) $selectedUser->id, 0);
+        $activities = $this->activityFeedService->forUsersInRange([$selectedUser->id], $startDate, $endDate);
+        $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
             $idleDuration
