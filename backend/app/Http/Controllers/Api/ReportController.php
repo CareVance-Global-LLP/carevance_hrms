@@ -582,6 +582,7 @@ class ReportController extends Controller
             'user_ids.*' => 'integer',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
+            'dashboard_lite' => 'nullable|boolean',
         ]);
 
         $currentUser = $request->user();
@@ -661,13 +662,24 @@ class ReportController extends Controller
             ->whereDate('attendance_date', '<=', $endDate->toDateString())
             ->get(['id', 'user_id', 'attendance_date', 'manual_adjustment_seconds']);
 
-        $activities = $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
-
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
             ->distinct()
             ->pluck('user_id')
             ->map(fn ($id) => (int) $id);
+
+        if ($request->boolean('dashboard_lite')) {
+            return response()->json($this->buildLiteOverallReport(
+                $users,
+                $entries,
+                $attendanceAdjustments,
+                $activeUserIds,
+                $startDate,
+                $endDate,
+            ));
+        }
+
+        $activities = $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
 
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
@@ -786,6 +798,74 @@ class ReportController extends Controller
             'by_user' => $byUser,
             'by_day' => $byDay,
         ]);
+    }
+
+    private function buildLiteOverallReport(
+        Collection $users,
+        Collection $entries,
+        Collection $attendanceAdjustments,
+        Collection $activeUserIds,
+        Carbon $startDate,
+        Carbon $endDate,
+    ): array {
+        $resolvedNow = now();
+        $entriesByUser = $entries->groupBy('user_id');
+        $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
+
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activeUserIds, $resolvedNow) {
+            $userEntries = $entriesByUser->get($user->id, collect());
+            $adjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
+                ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
+            $timeBreakdown = $this->timeBreakdownService->build(
+                $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration,
+                0
+            );
+
+            return [
+                'user' => $user,
+                'entries_count' => $userEntries->count(),
+                'last_activity_at' => null,
+                'is_working' => $activeUserIds->contains((int) $user->id),
+            ] + $timeBreakdown;
+        })->values();
+
+        $dayDurations = [];
+        foreach ($entries as $entry) {
+            $date = Carbon::parse($entry->start_time)->toDateString();
+            $dayDurations[$date] = ($dayDurations[$date] ?? 0) + $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+        }
+
+        foreach ($attendanceAdjustments as $record) {
+            $adjustmentSeconds = (int) ($record->manual_adjustment_seconds ?? 0);
+            if ($adjustmentSeconds <= 0) {
+                continue;
+            }
+
+            $date = Carbon::parse($record->attendance_date)->toDateString();
+            $dayDurations[$date] = ($dayDurations[$date] ?? 0) + $adjustmentSeconds;
+        }
+
+        $byDay = collect($dayDurations)
+            ->map(fn (int $duration, string $date) => [
+                'date' => $date,
+            ] + $this->timeBreakdownService->build($duration, 0))
+            ->sortBy('date')
+            ->values();
+
+        $summaryBreakdown = $this->timeBreakdownService->build((int) $byUser->sum('total_duration'), 0);
+
+        return [
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
+            'summary' => [
+                'users_count' => $users->count(),
+                'active_users' => $activeUserIds->unique()->count(),
+                'is_lite' => true,
+            ] + $summaryBreakdown,
+            'users' => $users,
+            'by_user' => $byUser,
+            'by_day' => $byDay,
+        ];
     }
 
     public function project(Request $request, int $projectId)
@@ -1094,6 +1174,7 @@ class ReportController extends Controller
             'user_id' => 'nullable|integer',
             'q' => 'nullable|string|max:255',
             'recent_screenshot_limit' => 'nullable|integer|min:1|max:50',
+            'dashboard_lite' => 'nullable|boolean',
         ]);
 
         $currentUser = $request->user();
@@ -1212,6 +1293,18 @@ class ReportController extends Controller
             ->get(['id', 'start_time', 'end_time', 'duration']);
         $entriesCount = $entries->count();
         $resolvedNow = now();
+
+        if ($request->boolean('dashboard_lite')) {
+            return response()->json($this->buildLiteEmployeeInsights(
+                $selectedUser,
+                $matchedUsers,
+                $entries,
+                $entriesCount,
+                $startDate,
+                $endDate,
+                $resolvedNow,
+            ));
+        }
 
         $activities = $this->activityFeedService->forUsersInRange([$selectedUser->id], $startDate, $endDate);
         $selectedUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
@@ -1580,6 +1673,114 @@ class ReportController extends Controller
             ],
             'recent_screenshots' => $recentScreenshots,
         ]);
+    }
+
+    private function buildLiteEmployeeInsights(
+        User $selectedUser,
+        Collection $matchedUsers,
+        Collection $entries,
+        int $entriesCount,
+        Carbon $startDate,
+        Carbon $endDate,
+        Carbon $resolvedNow,
+    ): array {
+        $timeBreakdown = $this->timeBreakdownService->build(
+            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
+            0
+        );
+        $isWorking = TimeEntry::query()
+            ->where('user_id', $selectedUser->id)
+            ->whereNull('end_time')
+            ->exists();
+        $browserTracking = BrowserTrackingConnection::query()
+            ->where('user_id', $selectedUser->id)
+            ->orderByDesc('last_seen_at')
+            ->orderByDesc('last_sync_at')
+            ->get();
+        $selectedUserLive = [
+            'user' => [
+                'id' => (int) $selectedUser->id,
+                'name' => $selectedUser->name,
+                'email' => $selectedUser->email,
+                'role' => $selectedUser->role,
+            ],
+            'is_working' => $isWorking,
+            'current_tool' => null,
+            'tool_type' => null,
+            'activity_type' => null,
+            'classification' => 'neutral',
+            'last_activity_at' => null,
+            'browser_tracking' => $this->summarizeBrowserTrackingConnections($browserTracking),
+            'is_on_leave' => false,
+            'work_status' => $isWorking ? 'active' : 'inactive',
+        ];
+        $isEmployee = strtolower((string) $selectedUser->role) === 'employee';
+
+        return [
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
+            'matched_users' => $matchedUsers,
+            'analytics_users_count' => 1,
+            'selected_user' => $selectedUser,
+            'stats' => [
+                'entries_count' => $entriesCount,
+                'tracked_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
+                'tracked_hours' => round(((int) ($timeBreakdown['total_duration'] ?? 0)) / 3600, 2),
+                'total_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
+                'total_hours' => round(((int) ($timeBreakdown['total_duration'] ?? 0)) / 3600, 2),
+                'working_duration' => (int) ($timeBreakdown['working_duration'] ?? 0),
+                'working_hours' => round(((int) ($timeBreakdown['working_duration'] ?? 0)) / 3600, 2),
+                'billable_duration' => (int) ($timeBreakdown['billable_duration'] ?? 0),
+                'productive_duration' => 0,
+                'unproductive_duration' => 0,
+                'neutral_duration' => 0,
+                'context_dependent_duration' => 0,
+                'activity_total_duration' => 0,
+                'idle_total_duration' => 0,
+                'idle_avg_duration' => 0,
+                'activity_events' => 0,
+                'is_lite' => true,
+            ],
+            'activity_breakdown' => [],
+            'selected_user_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+            'organization_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+            'organization_summary' => [
+                'tracked_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
+                'total_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
+                'working_duration' => (int) ($timeBreakdown['working_duration'] ?? 0),
+                'idle_duration' => 0,
+                'activity_total_duration' => 0,
+                'productive_duration' => 0,
+                'unproductive_duration' => 0,
+                'neutral_duration' => 0,
+                'context_dependent_duration' => 0,
+                'productive_share' => 0,
+                'unproductive_share' => 0,
+                'neutral_share' => 0,
+                'context_dependent_share' => 0,
+                'is_lite' => true,
+            ],
+            'employee_rankings' => [
+                'most_productive' => null,
+                'most_unproductive' => null,
+                'by_productive_duration' => [],
+                'by_unproductive_duration' => [],
+            ],
+            'team_rankings' => [
+                'by_efficiency' => [],
+                'top_productive' => null,
+                'least_productive' => null,
+            ],
+            'live_monitoring' => [
+                'selected_user' => $selectedUserLive,
+                'working_now' => $isWorking ? [$selectedUserLive] : [],
+                'all_users' => [$selectedUserLive],
+                'employees_active' => $isWorking && $isEmployee ? [$selectedUserLive] : [],
+                'employees_inactive' => ! $isWorking && $isEmployee ? [$selectedUserLive] : [],
+                'employees_on_leave' => [],
+            ],
+            'recent_screenshots' => [],
+        ];
     }
 
     private function csvValue(string $value): string

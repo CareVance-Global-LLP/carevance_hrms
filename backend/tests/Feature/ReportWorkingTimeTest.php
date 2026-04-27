@@ -626,6 +626,69 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('recent_screenshots.9.filename', 'capture-03.png');
     }
 
+    public function test_dashboard_lite_overall_report_returns_selected_employee_summary_without_activity_rollups(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 11:00:00',
+            'duration' => 7200,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'type' => 'idle',
+            'name' => 'Large idle history row',
+            'duration' => 600,
+            'recorded_at' => '2026-04-21 10:00:00',
+        ]);
+
+        $this->getJson(
+            "/api/reports/overall?start_date=2026-04-21&end_date=2026-04-21&user_ids[]={$employee->id}&dashboard_lite=1",
+            $headers
+        )
+            ->assertOk()
+            ->assertJsonPath('summary.is_lite', true)
+            ->assertJsonPath('summary.total_duration', 7200)
+            ->assertJsonPath('summary.idle_duration', 0)
+            ->assertJsonPath('by_user.0.entries_count', 1);
+    }
+
+    public function test_dashboard_lite_employee_insights_returns_selected_employee_shape_without_tool_rollups(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 11:00:00',
+            'duration' => 7200,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'type' => 'url',
+            'name' => 'https://example.com/history',
+            'duration' => 600,
+            'recorded_at' => '2026-04-21 10:00:00',
+        ]);
+
+        $this->getJson(
+            "/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}&dashboard_lite=1",
+            $headers
+        )
+            ->assertOk()
+            ->assertJsonPath('stats.is_lite', true)
+            ->assertJsonPath('stats.total_duration', 7200)
+            ->assertJsonPath('stats.activity_events', 0)
+            ->assertJsonPath('live_monitoring.selected_user.user.id', $employee->id)
+            ->assertJsonCount(0, 'selected_user_tools.productive');
+    }
+
     public function test_employee_insights_marks_browser_tracking_as_not_paired_when_no_exact_connection_exists(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-04-21 11:30:00'));

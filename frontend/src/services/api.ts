@@ -553,10 +553,10 @@ export const reportApi = {
   attendance: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; country?: string }) =>
     api.get('/reports/attendance', { params }),
 
-  employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; recent_screenshot_limit?: number }) =>
+  employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; recent_screenshot_limit?: number; dashboard_lite?: boolean }) =>
     api.get('/reports/employee-insights', { params }),
 
-  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[] }) =>
+  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[]; dashboard_lite?: boolean }) =>
     api.get('/reports/overall', { params }),
   
   project: (projectId: number, params?: { start_date?: string; end_date?: string }) => 
