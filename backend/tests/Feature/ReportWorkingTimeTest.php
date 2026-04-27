@@ -11,6 +11,7 @@ use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\Payslip;
+use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
@@ -588,6 +589,41 @@ class ReportWorkingTimeTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_employee_insights_honors_recent_screenshot_limit(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 18:00:00',
+            'duration' => 32400,
+            'billable' => true,
+        ]);
+
+        try {
+            foreach (range(1, 12) as $offset) {
+                Carbon::setTestNow(Carbon::parse(sprintf('2026-04-21 12:%02d:00', $offset)));
+
+                Screenshot::create([
+                    'time_entry_id' => $entry->id,
+                    'filename' => sprintf('capture-%02d.png', $offset),
+                ]);
+            }
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->getJson(
+            "/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}&recent_screenshot_limit=10",
+            $headers
+        )
+            ->assertOk()
+            ->assertJsonCount(10, 'recent_screenshots')
+            ->assertJsonPath('recent_screenshots.0.filename', 'capture-12.png')
+            ->assertJsonPath('recent_screenshots.9.filename', 'capture-03.png');
     }
 
     public function test_employee_insights_marks_browser_tracking_as_not_paired_when_no_exact_connection_exists(): void

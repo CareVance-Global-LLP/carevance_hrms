@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getAllUsersMock: vi.fn(),
   employeeInsightsMock: vi.fn(),
   activityGetAllMock: vi.fn(),
+  screenshotGetAllMock: vi.fn(),
   authUser: {
     id: 1,
     name: 'Admin User',
@@ -36,6 +37,10 @@ vi.mock('@/services/api', async () => {
     reportApi: {
       ...actual.reportApi,
       employeeInsights: mocks.employeeInsightsMock,
+    },
+    screenshotApi: {
+      ...actual.screenshotApi,
+      getAll: mocks.screenshotGetAllMock,
     },
     activityApi: {
       ...actual.activityApi,
@@ -76,6 +81,15 @@ describe('MonitoringWorkspace', () => {
             },
           },
         ],
+      },
+    });
+
+    mocks.screenshotGetAllMock.mockResolvedValue({
+      data: {
+        data: [],
+        current_page: 1,
+        last_page: 1,
+        total: 0,
       },
     });
 
@@ -175,6 +189,19 @@ describe('MonitoringWorkspace', () => {
     expect(await screen.findByText('Tracking off')).toBeInTheDocument();
     expect(screen.getByText('DESKTOP-ALPHA reported extension missing')).toBeInTheDocument();
     expect(screen.getAllByText('instagram.com').length).toBeGreaterThan(0);
+  });
+
+  it('requests only a small recent screenshot preview for screenshot views', async () => {
+    renderWithProviders(
+      <MonitoringWorkspace mode="screenshots" />,
+      { route: '/monitoring/screenshots?user=7' },
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Screenshots', level: 1 })).toBeInTheDocument();
+
+    expect(mocks.employeeInsightsMock).toHaveBeenCalledWith(expect.objectContaining({
+      recent_screenshot_limit: 10,
+    }));
   });
 
   it('uses exact desktop app names instead of normalized aliases in app usage tables', async () => {

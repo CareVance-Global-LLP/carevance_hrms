@@ -20,6 +20,7 @@ import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, Ref
 import type { BrowserTrackingHealthSummary } from '@/types';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
+const RECENT_SCREENSHOT_PREVIEW_LIMIT = 10;
 type SectionFeedback = {
   tone: 'success' | 'error';
   message: string;
@@ -324,6 +325,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
           end_date: endDate,
           q: query || undefined,
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
+          recent_screenshot_limit: RECENT_SCREENSHOT_PREVIEW_LIMIT,
         });
         return response.data;
       }
@@ -342,6 +344,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             end_date: endDate,
             q: query || undefined,
             user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
+            recent_screenshot_limit: RECENT_SCREENSHOT_PREVIEW_LIMIT,
           }),
         ]);
 
@@ -364,6 +367,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
           end_date: endDate,
           q: query || undefined,
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
+          recent_screenshot_limit: RECENT_SCREENSHOT_PREVIEW_LIMIT,
         }),
       ]);
 
