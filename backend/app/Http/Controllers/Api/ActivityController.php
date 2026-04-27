@@ -101,6 +101,7 @@ class ActivityController extends Controller
         $endDate = $request->end_date
             ? Carbon::parse((string) $request->end_date)->endOfDay()
             : null;
+        $simplePagination = $request->boolean('simple');
 
         $usersById = User::query()
             ->whereIn('id', $scopedUserIds)
@@ -123,14 +124,18 @@ class ActivityController extends Controller
             $request->type ? (string) $request->type : null,
             $request->classification ? (string) $request->classification : null,
             $request->tool_type ? (string) $request->tool_type : null,
+            ! $simplePagination,
         );
         $feed = $feedPage['items'];
-        $total = (int) $feedPage['total'];
+        $hasMore = (bool) ($feedPage['has_more'] ?? false);
+        $total = $feedPage['total'] === null
+            ? (($page - 1) * $perPage) + $feed->count() + ($hasMore ? 1 : 0)
+            : (int) $feedPage['total'];
 
         if ($request->boolean('processed')) {
             $processedRows = $this->buildProcessedTimelineRows($feed, $usersById);
 
-            return response()->json(new LengthAwarePaginator(
+            $paginator = new LengthAwarePaginator(
                 $processedRows->take($perPage)->values(),
                 $total,
                 $perPage,
@@ -139,13 +144,15 @@ class ActivityController extends Controller
                     'path' => $request->url(),
                     'query' => $request->query(),
                 ]
-            ));
+            );
+
+            return response()->json($this->withHasMore($paginator, $hasMore));
         }
 
         $rows = $feed->map(fn (object $item) => $this->mapFeedItemForResponse($item, $usersById))
             ->values();
 
-        return response()->json(new LengthAwarePaginator(
+        $paginator = new LengthAwarePaginator(
             $rows->take($perPage)->values(),
             $total,
             $perPage,
@@ -154,7 +161,17 @@ class ActivityController extends Controller
                 'path' => $request->url(),
                 'query' => $request->query(),
             ]
-        ));
+        );
+
+        return response()->json($this->withHasMore($paginator, $hasMore));
+    }
+
+    private function withHasMore(LengthAwarePaginator $paginator, bool $hasMore): array
+    {
+        $payload = $paginator->toArray();
+        $payload['has_more'] = $hasMore;
+
+        return $payload;
     }
 
     private function buildProcessedTimelineRows(iterable $activities, Collection $usersById): Collection

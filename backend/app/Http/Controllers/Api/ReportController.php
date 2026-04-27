@@ -582,7 +582,7 @@ class ReportController extends Controller
             'user_ids.*' => 'integer',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
-            'dashboard_lite' => 'nullable|boolean',
+            'dashboard_lite' => 'nullable',
         ]);
 
         $currentUser = $request->user();
@@ -1174,7 +1174,7 @@ class ReportController extends Controller
             'user_id' => 'nullable|integer',
             'q' => 'nullable|string|max:255',
             'recent_screenshot_limit' => 'nullable|integer|min:1|max:50',
-            'dashboard_lite' => 'nullable|boolean',
+            'dashboard_lite' => 'nullable',
         ]);
 
         $currentUser = $request->user();

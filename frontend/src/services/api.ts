@@ -430,10 +430,10 @@ export const screenshotApi = {
 
 // Activity API
 export const activityApi = {
-  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; page?: number; per_page?: number }) => 
-    api.get<{ data: Activity[] }>('/activities', { params }),
+  getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; simple?: boolean | number; page?: number; per_page?: number }) =>
+    api.get<{ data: Activity[]; current_page?: number; last_page?: number; total?: number; has_more?: boolean }>('/activities', { params }),
 
-  getAllPages: async (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; per_page?: number }) => {
+  getAllPages: async (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; simple?: boolean | number; per_page?: number }) => {
     const pageSize = Math.max(1, Number(params?.per_page || 200));
     let page = 1;
     let hasMore = true;
@@ -553,10 +553,10 @@ export const reportApi = {
   attendance: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; country?: string }) =>
     api.get('/reports/attendance', { params }),
 
-  employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; recent_screenshot_limit?: number; dashboard_lite?: boolean }) =>
+  employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; recent_screenshot_limit?: number; dashboard_lite?: boolean | number }) =>
     api.get('/reports/employee-insights', { params }),
 
-  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[]; dashboard_lite?: boolean }) =>
+  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[]; dashboard_lite?: boolean | number }) =>
     api.get('/reports/overall', { params }),
   
   project: (projectId: number, params?: { start_date?: string; end_date?: string }) => 

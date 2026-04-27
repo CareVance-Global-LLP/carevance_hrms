@@ -521,7 +521,7 @@ export default function AdminDashboard() {
             end_date: filters.endDate,
             user_id: userId,
             recent_screenshot_limit: 10,
-            dashboard_lite: true,
+            dashboard_lite: 1,
           }),
           {
             stats: {},
@@ -536,7 +536,7 @@ export default function AdminDashboard() {
         ),
         withDashboardFallback(
           'Employee overall report',
-          reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate, user_ids: [userId], dashboard_lite: true }),
+          reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate, user_ids: [userId], dashboard_lite: 1 }),
           { summary: {}, by_user: [], by_day: [] },
           (response) => response.data || { summary: {}, by_user: [], by_day: [] }
         ),

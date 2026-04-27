@@ -425,7 +425,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
-          processed: true,
+          simple: 1,
           page: timelinePage,
           per_page: TIMELINE_PAGE_SIZE,
         });

@@ -51,6 +51,7 @@ class ActivityFeedService
         ?string $type = null,
         ?string $classification = null,
         ?string $toolType = null,
+        bool $includeTotal = true,
     ): array {
         $userIdCollection = $this->normalizeIds($userIds);
         if ($userIdCollection->isEmpty()) {
@@ -60,7 +61,7 @@ class ActivityFeedService
         $page = max(1, $page);
         $perPage = max(1, min($perPage, 10));
         $offset = ($page - 1) * $perPage;
-        $windowSize = $offset + ($perPage * 3);
+        $windowSize = $offset + $perPage + ($includeTotal ? ($perPage * 2) : 1);
 
         $activitiesQuery = Activity::query()
             ->whereIn('user_id', $userIdCollection)
@@ -68,7 +69,7 @@ class ActivityFeedService
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate));
         $this->applyActivityFilters($activitiesQuery, $type, $classification, $toolType);
 
-        $activityTotal = (clone $activitiesQuery)->count();
+        $activityTotal = $includeTotal ? (clone $activitiesQuery)->count() : null;
         $activities = (clone $activitiesQuery)
             ->orderByDesc('recorded_at')
             ->orderByDesc('id')
@@ -83,7 +84,7 @@ class ActivityFeedService
             });
         $this->applySessionFilters($sessionsQuery, $type, $classification, $toolType);
 
-        $sessionTotal = (clone $sessionsQuery)->count();
+        $sessionTotal = $includeTotal ? (clone $sessionsQuery)->count() : null;
         $sessionModels = (clone $sessionsQuery)
             ->orderByRaw('COALESCE(ended_at, started_at) DESC')
             ->orderByDesc('id')
@@ -95,12 +96,14 @@ class ActivityFeedService
         $items = $activities
             ->concat($sessions)
             ->sortByDesc(fn ($item) => $this->sortTimestamp($item))
-            ->slice($offset, $perPage)
+            ->slice($offset, $perPage + ($includeTotal ? 0 : 1))
             ->values();
+        $hasMore = $items->count() > $perPage;
 
         return [
-            'items' => $items,
-            'total' => $activityTotal + $sessionTotal,
+            'items' => $items->take($perPage)->values(),
+            'total' => $includeTotal ? ((int) $activityTotal + (int) $sessionTotal) : null,
+            'has_more' => $hasMore,
         ];
     }
 
