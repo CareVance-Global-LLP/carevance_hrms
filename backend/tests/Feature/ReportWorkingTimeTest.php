@@ -691,7 +691,8 @@ class ReportWorkingTimeTest extends TestCase
             ->assertOk()
             ->assertJsonPath('summary.is_lite', true)
             ->assertJsonPath('summary.total_duration', 7200)
-            ->assertJsonPath('summary.idle_duration', 0)
+            ->assertJsonPath('summary.idle_duration', 600)
+            ->assertJsonPath('summary.working_duration', 6600)
             ->assertJsonPath('by_user.0.entries_count', 1);
     }
 
@@ -709,9 +710,9 @@ class ReportWorkingTimeTest extends TestCase
 
         Activity::create([
             'user_id' => $employee->id,
-            'type' => 'url',
-            'name' => 'https://example.com/history',
-            'duration' => 600,
+            'type' => 'idle',
+            'name' => 'System idle',
+            'duration' => 900,
             'recorded_at' => '2026-04-21 10:00:00',
         ]);
 
@@ -722,6 +723,9 @@ class ReportWorkingTimeTest extends TestCase
             ->assertOk()
             ->assertJsonPath('stats.is_lite', true)
             ->assertJsonPath('stats.total_duration', 7200)
+            ->assertJsonPath('stats.working_duration', 6300)
+            ->assertJsonPath('stats.idle_total_duration', 900)
+            ->assertJsonPath('organization_summary.idle_duration', 900)
             ->assertJsonPath('stats.activity_events', 0)
             ->assertJsonPath('live_monitoring.selected_user.user.id', $employee->id)
             ->assertJsonCount(0, 'selected_user_tools.productive');

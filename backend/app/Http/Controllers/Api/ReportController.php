@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Activity;
+use App\Models\ActivitySession;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
@@ -811,14 +813,15 @@ class ReportController extends Controller
         $resolvedNow = now();
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
+        $idleByUser = $this->liteIdleDurationsByUser($users->pluck('id'), $startDate, $endDate, $resolvedNow);
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activeUserIds, $resolvedNow) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activeUserIds, $idleByUser, $resolvedNow) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $adjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration,
-                0
+                (int) $idleByUser->get((int) $user->id, 0)
             );
 
             return [
@@ -852,7 +855,10 @@ class ReportController extends Controller
             ->sortBy('date')
             ->values();
 
-        $summaryBreakdown = $this->timeBreakdownService->build((int) $byUser->sum('total_duration'), 0);
+        $summaryBreakdown = $this->timeBreakdownService->build(
+            (int) $byUser->sum('total_duration'),
+            (int) $byUser->sum('idle_duration')
+        );
 
         return [
             'start_date' => $startDate->toDateString(),
@@ -866,6 +872,62 @@ class ReportController extends Controller
             'by_user' => $byUser,
             'by_day' => $byDay,
         ];
+    }
+
+    private function liteIdleDurationsByUser(iterable $userIds, Carbon $startDate, Carbon $endDate, Carbon $resolvedNow): Collection
+    {
+        $ids = collect($userIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        $activityIdle = Activity::query()
+            ->whereIn('user_id', $ids)
+            ->where('type', 'idle')
+            ->whereBetween('recorded_at', [$startDate, $endDate])
+            ->get(['user_id', 'duration'])
+            ->groupBy(fn (Activity $activity) => (int) $activity->user_id)
+            ->map(fn (Collection $rows) => (int) $rows->sum('duration'));
+
+        $sessionIdle = ActivitySession::query()
+            ->whereIn('user_id', $ids)
+            ->whereIn('activity_kind', ['desktop_idle', 'idle'])
+            ->where('started_at', '<=', $endDate)
+            ->where(function ($query) use ($startDate) {
+                $query->whereNull('ended_at')
+                    ->orWhere('ended_at', '>=', $startDate);
+            })
+            ->get(['user_id', 'started_at', 'ended_at'])
+            ->groupBy(fn (ActivitySession $session) => (int) $session->user_id)
+            ->map(function (Collection $sessions) use ($startDate, $endDate, $resolvedNow) {
+                return (int) $sessions->sum(function (ActivitySession $session) use ($startDate, $endDate, $resolvedNow) {
+                    $effectiveStart = $session->started_at?->copy();
+                    if (! $effectiveStart) {
+                        return 0;
+                    }
+
+                    $effectiveEnd = $session->ended_at?->copy() ?: $resolvedNow->copy();
+                    if ($effectiveStart->lessThan($startDate)) {
+                        $effectiveStart = $startDate->copy();
+                    }
+                    if ($effectiveEnd->greaterThan($endDate)) {
+                        $effectiveEnd = $endDate->copy();
+                    }
+
+                    return $effectiveEnd->greaterThan($effectiveStart)
+                        ? $effectiveStart->diffInSeconds($effectiveEnd)
+                        : 0;
+                });
+            });
+
+        return $ids->mapWithKeys(fn (int $id) => [
+            $id => (int) $activityIdle->get($id, 0) + (int) $sessionIdle->get($id, 0),
+        ]);
     }
 
     public function project(Request $request, int $projectId)
@@ -1684,9 +1746,11 @@ class ReportController extends Controller
         Carbon $endDate,
         Carbon $resolvedNow,
     ): array {
+        $idleDuration = (int) $this->liteIdleDurationsByUser([$selectedUser->id], $startDate, $endDate, $resolvedNow)
+            ->get((int) $selectedUser->id, 0);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-            0
+            $idleDuration
         );
         $isWorking = TimeEntry::query()
             ->where('user_id', $selectedUser->id)
@@ -1736,8 +1800,8 @@ class ReportController extends Controller
                 'neutral_duration' => 0,
                 'context_dependent_duration' => 0,
                 'activity_total_duration' => 0,
-                'idle_total_duration' => 0,
-                'idle_avg_duration' => 0,
+                'idle_total_duration' => (int) ($timeBreakdown['idle_duration'] ?? 0),
+                'idle_avg_duration' => (int) ($timeBreakdown['idle_duration'] ?? 0),
                 'activity_events' => 0,
                 'is_lite' => true,
             ],
@@ -1748,7 +1812,7 @@ class ReportController extends Controller
                 'tracked_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
                 'total_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
                 'working_duration' => (int) ($timeBreakdown['working_duration'] ?? 0),
-                'idle_duration' => 0,
+                'idle_duration' => (int) ($timeBreakdown['idle_duration'] ?? 0),
                 'activity_total_duration' => 0,
                 'productive_duration' => 0,
                 'unproductive_duration' => 0,
