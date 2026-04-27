@@ -67,6 +67,7 @@ import { apiUrl } from '@/lib/runtimeConfig';
 
 const api = axios.create({
   baseURL: apiUrl,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',

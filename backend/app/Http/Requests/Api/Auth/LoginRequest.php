@@ -18,6 +18,7 @@ class LoginRequest extends ApiFormRequest
         return [
             'email' => 'required|email',
             'password' => 'required|string',
+            'remember' => 'sometimes|boolean',
         ];
     }
 }

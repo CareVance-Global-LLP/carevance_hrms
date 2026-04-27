@@ -24,10 +24,6 @@ class StripePayrollPayoutService implements PayrollPayoutService
             ->withToken($secret)
             ->timeout(30);
 
-        if ((bool) config('payroll.stripe_disable_ssl_verify', false)) {
-            $request = $request->withOptions(['verify' => false]);
-        }
-
         $response = $request->post('https://api.stripe.com/v1/checkout/sessions', [
                 'mode' => 'payment',
                 'success_url' => $successUrl.'&payroll_id='.$payroll->id.'&checkout_session_id={CHECKOUT_SESSION_ID}',
@@ -79,9 +75,6 @@ class StripePayrollPayoutService implements PayrollPayoutService
         }
 
         $request = Http::withToken($secret)->timeout(30);
-        if ((bool) config('payroll.stripe_disable_ssl_verify', false)) {
-            $request = $request->withOptions(['verify' => false]);
-        }
 
         $response = $request->get("https://api.stripe.com/v1/checkout/sessions/{$checkoutSessionId}", [
             'expand' => ['payment_intent'],

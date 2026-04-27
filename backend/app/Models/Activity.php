@@ -12,6 +12,7 @@ class Activity extends Model
     protected $fillable = [
         'user_id',
         'time_entry_id',
+        'session_key',
         'type',
         'name',
         'app_name',
@@ -19,6 +20,9 @@ class Activity extends Model
         'url',
         'duration',
         'recorded_at',
+        'started_at',
+        'last_seen_at',
+        'ended_at',
         'normalized_label',
         'normalized_domain',
         'software_name',
@@ -31,6 +35,9 @@ class Activity extends Model
 
     protected $casts = [
         'recorded_at' => 'datetime',
+        'started_at' => 'datetime',
+        'last_seen_at' => 'datetime',
+        'ended_at' => 'datetime',
         'classified_at' => 'datetime',
     ];
 

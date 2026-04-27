@@ -1,4 +1,11 @@
 {
   "appUrl": "http://localhost:5173",
-  "update": null
+  "update": null,
+  "browserTracking": {
+    "chromeStoreUrl": null,
+    "edgeStoreUrl": null,
+    "chromeExtensionOrigin": null,
+    "edgeExtensionOrigin": null,
+    "allowedExtensionOrigins": []
+  }
 }

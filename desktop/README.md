@@ -40,6 +40,12 @@ $env:APP_URL="https://your-frontend-domain.com"
 npm start
 ```
 
+Security rules for `APP_URL`:
+
+- `https://` is allowed for deployed frontends
+- `http://` is allowed only for `localhost` or `127.0.0.1`
+- other protocols and insecure remote HTTP URLs are rejected at app startup
+
 ## Screenshot Capture Notes
 
 The desktop app captures the active display and now auto-falls back when the first screen source is empty (which can happen on some Windows maximize/fullscreen states).

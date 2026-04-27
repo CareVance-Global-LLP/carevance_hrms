@@ -393,22 +393,18 @@ export const addUserService = {
     }
 
     if (lowerName.endsWith('.xlsx')) {
-      const XLSX = await import('xlsx');
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const firstSheetName = workbook.SheetNames[0];
+      const { default: readXlsxFile } = await import('read-excel-file/browser');
+      const tableRows = await readXlsxFile(await file.arrayBuffer()) as unknown as TabularRow[];
 
-      if (!firstSheetName) {
+      if (tableRows.length === 0) {
         return { rows: [], errors: ['XLSX file is empty.'] };
       }
 
-      const worksheet = workbook.Sheets[firstSheetName];
-      const tableRows = XLSX.utils.sheet_to_json<TabularRow>(worksheet, {
-        header: 1,
-        raw: false,
-        defval: '',
-      });
-
-      return this.parseTableRows(tableRows, groups, projects);
+      return this.parseTableRows(
+        tableRows.map((row) => row.map((cell) => normalizeCell(cell))),
+        groups,
+        projects
+      );
     }
 
     return {

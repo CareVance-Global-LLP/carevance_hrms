@@ -29,6 +29,8 @@ describe('useDesktopBrowserTracking', () => {
   });
 
   it('filters browser tracking state to the signed-in user and refreshes when the user changes', async () => {
+    const futurePairingExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
     const getBrowserTrackingState = vi.fn().mockResolvedValue({
       ready: true,
       local_url: 'http://127.0.0.1:43841',
@@ -45,7 +47,7 @@ describe('useDesktopBrowserTracking', () => {
       ],
       pairing_code: {
         value: 'PAIR-OLD',
-        expires_at: '2026-04-21T12:05:00.000Z',
+        expires_at: futurePairingExpiry,
         user_id: 7,
       },
       last_event_at: '2026-04-21T12:04:30.000Z',

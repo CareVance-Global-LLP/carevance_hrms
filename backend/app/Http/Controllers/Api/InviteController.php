@@ -7,6 +7,7 @@ use App\Mail\InviteUserMail;
 use App\Models\Invite;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -112,9 +113,14 @@ class InviteController extends Controller
     {
         $validated = $request->validate([
             'token' => 'required|string',
+            'name' => 'required|string|max:255',
+            'password' => 'required|string|min:8|confirmed',
         ]);
 
-        $invite = Invite::query()->where('token', $validated['token'])->first();
+        $invite = Invite::query()
+            ->with('creator.organization')
+            ->where('token', $validated['token'])
+            ->first();
 
         if (!$invite) {
             return response()->json([
@@ -137,14 +143,57 @@ class InviteController extends Controller
             ], 410);
         }
 
+        $creator = $invite->creator;
+        if (!$creator || !$creator->organization_id || !$creator->organization) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invite is missing organization context.',
+            ], 422);
+        }
+
+        $email = mb_strtolower(trim((string) $invite->email));
+
+        if (User::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This email already exists.',
+            ], 422);
+        }
+
+        $user = User::create([
+            'name' => trim((string) $validated['name']),
+            'email' => $email,
+            'password' => Hash::make((string) $validated['password']),
+            'role' => $invite->role ?: 'employee',
+            'organization_id' => $creator->organization_id,
+            'invited_by' => $creator->id,
+        ]);
+
         $invite->forceFill([
             'accepted_at' => now(),
         ])->save();
 
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Throwable $exception) {
+            Log::warning('Verification email dispatch failed for legacy invite acceptance.', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        $user->load('organization');
+
         return response()->json([
             'success' => true,
-            'message' => 'Invite marked as accepted.',
-        ]);
+            'message' => 'Invitation accepted successfully. Please verify your email before signing in.',
+            'user' => $user,
+            'organization' => $user->organization,
+            'requires_verification' => true,
+            'email' => $user->email,
+        ], 201);
     }
 
     private function buildInviteLink(string $token): string

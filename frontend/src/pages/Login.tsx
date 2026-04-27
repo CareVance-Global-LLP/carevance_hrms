@@ -21,10 +21,21 @@ import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import { desktopDownloadLabel, desktopDownloadUrl } from '@/lib/runtimeConfig';
 import { analytics } from '@/lib/analytics';
 
+const REMEMBERED_EMAIL_KEY = 'carevance.rememberedEmail';
+
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const getRememberedEmail = () => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    return window.localStorage.getItem(REMEMBERED_EMAIL_KEY) || '';
+  };
+
+  const [email, setEmail] = useState(getRememberedEmail);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => getRememberedEmail() !== '');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
@@ -37,15 +48,22 @@ export default function Login() {
     const form = new FormData(e.currentTarget as HTMLFormElement);
     const submittedEmail = String(form.get('email') || '').trim();
     const submittedPassword = String(form.get('password') || '');
+    const shouldRemember = form.get('remember-me') === 'on';
 
     setEmail(submittedEmail);
     setPassword(submittedPassword);
+    setRememberMe(shouldRemember);
     
     try {
       analytics.trackEvent('login_submitted', {
         source: 'login-page',
       });
-      await login(submittedEmail, submittedPassword);
+      await login(submittedEmail, submittedPassword, { remember: shouldRemember });
+      if (shouldRemember) {
+        window.localStorage.setItem(REMEMBERED_EMAIL_KEY, submittedEmail);
+      } else {
+        window.localStorage.removeItem(REMEMBERED_EMAIL_KEY);
+      }
       navigate('/dashboard');
     } catch (err: any) {
       const errorCode = err.response?.data?.error_code;
@@ -157,6 +175,8 @@ export default function Login() {
                       id="remember-me"
                       name="remember-me"
                       type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
                       className="h-4 w-4 rounded border-slate-300 bg-white text-sky-600 focus:ring-sky-400"
                     />
                     Remember me

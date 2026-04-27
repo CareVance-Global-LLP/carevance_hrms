@@ -23,6 +23,7 @@ vi.mock('react-router-dom', async () => {
 describe('Login page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('submits credentials and navigates to dashboard on success', async () => {
@@ -35,7 +36,7 @@ describe('Login page', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
-      expect(loginMock).toHaveBeenCalledWith('admin@example.com', 'password123');
+      expect(loginMock).toHaveBeenCalledWith('admin@example.com', 'password123', { remember: false });
       expect(navigateMock).toHaveBeenCalledWith('/dashboard');
     });
   });
@@ -55,8 +56,24 @@ describe('Login page', () => {
     fireEvent.submit(emailInput.closest('form') as HTMLFormElement);
 
     await waitFor(() => {
-      expect(loginMock).toHaveBeenCalledWith('Admin@Example.com', 'password123');
+      expect(loginMock).toHaveBeenCalledWith('Admin@Example.com', 'password123', { remember: false });
       expect(navigateMock).toHaveBeenCalledWith('/dashboard');
+    });
+  });
+
+  it('remembers the email address when remember me is selected', async () => {
+    loginMock.mockResolvedValue(undefined);
+
+    renderWithProviders(<Login />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /email address/i }), { target: { value: 'admin@example.com' } });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /remember me/i }));
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledWith('admin@example.com', 'password123', { remember: true });
+      expect(window.localStorage.getItem('carevance.rememberedEmail')).toBe('admin@example.com');
     });
   });
 
