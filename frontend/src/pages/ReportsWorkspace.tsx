@@ -57,6 +57,7 @@ type PersistedReportsWorkspaceFilters = {
 const REPORTS_WORKSPACE_FILTER_STORAGE_KEY = 'reports-workspace-filters';
 const getReportsWorkspaceFilterStorageKey = (mode: ReportsWorkspaceMode) => `${REPORTS_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
 const defaultDateRange = deriveDateRangeFromPreset('today');
+const TIMELINE_PAGE_SIZE = 10;
 
 const getDefaultReportsWorkspaceFilters = (): PersistedReportsWorkspaceFilters => ({
   datePreset: 'today',
@@ -272,6 +273,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [selectedTaskId, setSelectedTaskId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedTaskId);
   const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedUserId);
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedGroupId);
+  const [timelinePage, setTimelinePage] = useState(1);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
 
@@ -283,6 +285,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     setSelectedTaskId(persisted.selectedTaskId);
     setSelectedUserId(persisted.selectedUserId);
     setSelectedGroupId(persisted.selectedGroupId);
+    setTimelinePage(1);
   }, [mode]);
 
   useEffect(() => {
@@ -370,16 +373,20 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     }
   }, [selectedUserId, users, usersQuery.isSuccess]);
 
+  useEffect(() => {
+    setTimelinePage(1);
+  }, [startDate, endDate, effectiveSelectedUserId, selectedGroupId]);
+
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId, mode === 'timeline' ? timelinePage : 1],
     enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
     placeholderData: (previousData, previousQuery) => (
       shouldReuseReportPlaceholderData(previousQuery?.queryKey, mode)
         ? previousData
         : undefined
     ),
-    refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 1000 : false,
-    refetchIntervalInBackground: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity',
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       if (mode === 'attendance') {
         const response = await reportApi.attendance({
@@ -413,14 +420,16 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       }
 
       if (mode === 'timeline') {
-        return activityApi.getAllPages({
+        const response = await activityApi.getAll({
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
           processed: true,
-          per_page: 200,
+          page: timelinePage,
+          per_page: TIMELINE_PAGE_SIZE,
         });
+        return response.data;
       }
 
       if (mode === 'web-app-usage') {
@@ -643,7 +652,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     return taskAllocationRows.find((row: any) => Number(row.id) === Number(effectiveSelectedTaskId)) || null;
   }, [effectiveSelectedTaskId, hasSelectedTask, mode, taskAllocationRows]);
 
-  const timelineRows = Array.isArray(dataQuery.data) ? dataQuery.data : [];
+  const timelinePayload = dataQuery.data as any;
+  const timelineRows = mode === 'timeline' ? (timelinePayload?.data || []) : [];
+  const timelineCurrentPage = Math.max(1, Number(timelinePayload?.current_page || timelinePage));
+  const timelineLastPage = Math.max(1, Number(timelinePayload?.last_page || 1));
+  const timelineTotal = Math.max(timelineRows.length, Number(timelinePayload?.total || 0));
   const timelineSummary = useMemo(() => {
     if (mode !== 'timeline') return null;
     return {
@@ -1033,7 +1046,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {mode === 'timeline' && timelineSummary && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Events" value={timelineRows.length} hint="All timeline events" icon={Waypoints} accent="sky" />
+            <MetricCard label="Events" value={timelineTotal} hint="All timeline events" icon={Waypoints} accent="sky" />
             <MetricCard label="Apps" value={timelineSummary.apps} hint="Desktop/app events" icon={Activity} accent="emerald" />
             <MetricCard label="Web" value={timelineSummary.urls} hint="Website events" icon={LineChart} accent="violet" />
             <MetricCard label="Idle" value={timelineSummary.idle} hint="Idle periods" icon={TimerReset} accent="amber" />
@@ -1074,6 +1087,30 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               { key: 'duration', header: 'Duration', render: (row: any) => formatTimelineDuration(row.duration || 0) },
             ]}
           />
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-slate-200 bg-white/80 px-4 py-3">
+            <p className="text-sm text-slate-500">
+              Page {timelineCurrentPage} of {timelineLastPage}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setTimelinePage((current) => Math.max(1, current - 1))}
+                disabled={timelineCurrentPage <= 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setTimelinePage((current) => Math.min(timelineLastPage, current + 1))}
+                disabled={timelineCurrentPage >= timelineLastPage}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </>
       )}
 

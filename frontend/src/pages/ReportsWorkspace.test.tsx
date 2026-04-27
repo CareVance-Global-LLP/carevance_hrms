@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getAllUsersMock: vi.fn(),
   groupsListMock: vi.fn(),
   overallMock: vi.fn(),
+  activityGetAllMock: vi.fn(),
   activityGetAllPagesMock: vi.fn(),
   authUser: {
     id: 1,
@@ -44,6 +45,7 @@ vi.mock('@/services/api', async () => {
     },
     activityApi: {
       ...actual.activityApi,
+      getAll: mocks.activityGetAllMock,
       getAllPages: mocks.activityGetAllPagesMock,
     },
   };
@@ -102,6 +104,31 @@ describe('ReportsWorkspace timeline navigation', () => {
         },
       },
     ]);
+
+    mocks.activityGetAllMock.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 11,
+            type: 'app',
+            name: 'Visual Studio Code',
+            app_name: 'Visual Studio Code',
+            software_name: 'vscode',
+            normalized_label: 'vscode',
+            tool_type: 'software',
+            duration: 180,
+            recorded_at: '2026-04-14T09:30:00.000Z',
+            user: {
+              id: 1,
+              name: 'Irbaz Mavli',
+            },
+          },
+        ],
+        current_page: 1,
+        last_page: 3,
+        total: 21,
+      },
+    });
   });
 
   it('renders timeline safely when switching from another report mode', async () => {
@@ -119,30 +146,37 @@ describe('ReportsWorkspace timeline navigation', () => {
   });
 
   it('renders canonical website and software labels from backend activity fields', async () => {
-    mocks.activityGetAllPagesMock.mockResolvedValue([
-      {
-        id: 1,
-        type: 'url',
-        name: 'GitHub',
-        normalized_label: 'github.com',
-        normalized_domain: 'github.com',
-        tool_type: 'website',
-        duration: 1,
-        recorded_at: '2026-04-20T10:00:01.000Z',
-        user: { id: 1, name: 'Irbaz Mavli' },
+    mocks.activityGetAllMock.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 1,
+            type: 'url',
+            name: 'GitHub',
+            normalized_label: 'github.com',
+            normalized_domain: 'github.com',
+            tool_type: 'website',
+            duration: 1,
+            recorded_at: '2026-04-20T10:00:01.000Z',
+            user: { id: 1, name: 'Irbaz Mavli' },
+          },
+          {
+            id: 2,
+            type: 'app',
+            name: 'Slack',
+            normalized_label: 'slack',
+            software_name: 'slack',
+            tool_type: 'software',
+            duration: 1,
+            recorded_at: '2026-04-20T10:00:02.000Z',
+            user: { id: 1, name: 'Irbaz Mavli' },
+          },
+        ],
+        current_page: 1,
+        last_page: 1,
+        total: 2,
       },
-      {
-        id: 2,
-        type: 'app',
-        name: 'Slack',
-        normalized_label: 'slack',
-        software_name: 'slack',
-        tool_type: 'software',
-        duration: 1,
-        recorded_at: '2026-04-20T10:00:02.000Z',
-        user: { id: 1, name: 'Irbaz Mavli' },
-      },
-    ]);
+    });
 
     renderWithProviders(<ReportsWorkspace mode="timeline" />);
 
@@ -155,29 +189,47 @@ describe('ReportsWorkspace timeline navigation', () => {
 
     await screen.findByText('Timeline');
 
-    expect(mocks.activityGetAllPagesMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mocks.activityGetAllMock).toHaveBeenCalledWith(expect.objectContaining({
       processed: true,
+      page: 1,
+      per_page: 10,
     }));
+    expect(mocks.activityGetAllPagesMock).not.toHaveBeenCalled();
+  });
+
+  it('shows timeline paging controls when more rows are available', async () => {
+    renderWithProviders(<ReportsWorkspace mode="timeline" />);
+
+    expect(await screen.findByText('Timeline')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Previous' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Next' })).toBeInTheDocument();
   });
 
   it('prefers exact desktop app labels over normalized aliases in the timeline', async () => {
-    mocks.activityGetAllPagesMock.mockResolvedValue([
-      {
-        id: 44,
-        type: 'app',
-        name: 'Codex',
-        app_name: 'Codex',
-        software_name: 'vscode',
-        normalized_label: 'vscode',
-        tool_type: 'software',
-        duration: 90,
-        recorded_at: '2026-04-22T10:32:26.000Z',
-        user: {
-          id: 1,
-          name: 'Irbaz Mavli',
-        },
+    mocks.activityGetAllMock.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 44,
+            type: 'app',
+            name: 'Codex',
+            app_name: 'Codex',
+            software_name: 'vscode',
+            normalized_label: 'vscode',
+            tool_type: 'software',
+            duration: 90,
+            recorded_at: '2026-04-22T10:32:26.000Z',
+            user: {
+              id: 1,
+              name: 'Irbaz Mavli',
+            },
+          },
+        ],
+        current_page: 1,
+        last_page: 1,
+        total: 1,
       },
-    ]);
+    });
 
     renderWithProviders(<ReportsWorkspace mode="timeline" />);
 
@@ -186,24 +238,31 @@ describe('ReportsWorkspace timeline navigation', () => {
   });
 
   it('prefers the explorer window title over the generic explorer app name in the timeline', async () => {
-    mocks.activityGetAllPagesMock.mockResolvedValue([
-      {
-        id: 55,
-        type: 'app',
-        name: 'This PC',
-        app_name: 'Windows Explorer',
-        window_title: 'This PC',
-        software_name: 'windows explorer',
-        normalized_label: 'windows explorer',
-        tool_type: 'software',
-        duration: 19,
-        recorded_at: '2026-04-22T11:14:04.000Z',
-        user: {
-          id: 1,
-          name: 'Irbaz Mavli',
-        },
+    mocks.activityGetAllMock.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 55,
+            type: 'app',
+            name: 'This PC',
+            app_name: 'Windows Explorer',
+            window_title: 'This PC',
+            software_name: 'windows explorer',
+            normalized_label: 'windows explorer',
+            tool_type: 'software',
+            duration: 19,
+            recorded_at: '2026-04-22T11:14:04.000Z',
+            user: {
+              id: 1,
+              name: 'Irbaz Mavli',
+            },
+          },
+        ],
+        current_page: 1,
+        last_page: 1,
+        total: 1,
       },
-    ]);
+    });
 
     renderWithProviders(<ReportsWorkspace mode="timeline" />);
 

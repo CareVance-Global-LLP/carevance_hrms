@@ -1093,6 +1093,7 @@ class ReportController extends Controller
             'end_date' => 'nullable|date',
             'user_id' => 'nullable|integer',
             'q' => 'nullable|string|max:255',
+            'recent_screenshot_limit' => 'nullable|integer|min:1|max:50',
         ]);
 
         $currentUser = $request->user();
@@ -1105,6 +1106,7 @@ class ReportController extends Controller
         if ($startDate->greaterThan($endDate)) {
             [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
         }
+        $recentScreenshotLimit = max(1, min((int) $request->integer('recent_screenshot_limit', 10), 50));
 
         $selectedGroupIds = collect($request->input('group_ids', []))
             ->map(fn ($id) => (int) $id)
@@ -1233,7 +1235,7 @@ class ReportController extends Controller
                     ->whereBetween('start_time', [$startDate, $endDate]);
             })
             ->orderByDesc('created_at')
-            ->limit(60)
+            ->limit($recentScreenshotLimit)
             ->get();
 
         $analyticsUserIds = $analyticsUsers->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();

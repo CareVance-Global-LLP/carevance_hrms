@@ -553,7 +553,7 @@ export const reportApi = {
   attendance: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; country?: string }) =>
     api.get('/reports/attendance', { params }),
 
-  employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string }) =>
+  employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; recent_screenshot_limit?: number }) =>
     api.get('/reports/employee-insights', { params }),
 
   overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[] }) =>
