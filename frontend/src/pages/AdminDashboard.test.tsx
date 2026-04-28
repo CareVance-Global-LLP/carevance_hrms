@@ -175,19 +175,15 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect((await screen.findAllByText('Alex Johnson')).length).toBeGreaterThan(0);
     expect(screen.getByText('Date Filter')).toBeInTheDocument();
+    expect(screen.getByText('Dashboard Scope')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Overall' })).toBeInTheDocument();
+    expect(screen.getByText('Scope Summary')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Last 7 days' })).toBeInTheDocument();
     expect(screen.getByText('Total Employees')).toBeInTheDocument();
-    expect(screen.getByText('Present')).toBeInTheDocument();
+    expect(screen.getAllByText('Present').length).toBeGreaterThan(0);
     expect(screen.getByText('Attendance Overview')).toBeInTheDocument();
     expect(screen.getByText('Leave Summary')).toBeInTheDocument();
     expect(screen.getByText('Department Distribution')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Employee Deep Dive' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Search employee details')).toBeInTheDocument();
-    expect(await screen.findByText('Screenshot Access')).toBeInTheDocument();
-    expect(screen.getByText('Productivity')).toBeInTheDocument();
-    expect(screen.getByText('Top Tools & Sites')).toBeInTheDocument();
-    expect(screen.getByText('Recent Work')).toBeInTheDocument();
-    expect(screen.getByText('Attendance History')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Communication Hub' })).toBeInTheDocument();
     expect(screen.getByText('Birthdays')).toBeInTheDocument();
     expect(screen.getByText('Activity')).toBeInTheDocument();
@@ -217,14 +213,20 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('Projects')).toBeInTheDocument();
   });
 
-  it('searches an employee and updates the deep-dive panel', async () => {
+  it('switches to a specific employee and updates the scoped detail panel', async () => {
     renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
 
-    expect(await screen.findByRole('heading', { name: 'Employee Deep Dive' })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Search employee details'), { target: { value: 'leslie' } });
+    expect(await screen.findByText('Dashboard Scope')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Specific Employee' }));
+    fireEvent.change(screen.getByLabelText('Search scoped employee'), { target: { value: 'leslie' } });
 
-    expect(screen.getByRole('button', { name: 'Leslie Alexander' })).toBeInTheDocument();
-    expect(screen.getAllByText('Leslie Alexander').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Select dashboard employee')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Selected Employee Detail' })).toBeInTheDocument();
+    expect(await screen.findByText('Screenshot Access')).toBeInTheDocument();
+    expect(screen.getByText('Productivity')).toBeInTheDocument();
+    expect(screen.getByText('Top Tools & Sites')).toBeInTheDocument();
+    expect(screen.getByText('Recent Work')).toBeInTheDocument();
+    expect(screen.getByText('Attendance History')).toBeInTheDocument();
   });
 
   it('filters current work status by status and search term', async () => {

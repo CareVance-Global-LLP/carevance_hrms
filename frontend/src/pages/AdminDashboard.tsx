@@ -80,6 +80,8 @@ type DateRange = {
   endDate: string;
 };
 
+type DashboardScope = 'overall' | 'employee';
+
 const departmentPalette = ['#2563eb', '#22c55e', '#f97316', '#8b5cf6', '#14b8a6', '#f59e0b', '#64748b'];
 const toIsoDate = (date: Date) => {
   const year = date.getFullYear();
@@ -365,7 +367,9 @@ export default function AdminDashboard() {
   const [workSearch, setWorkSearch] = useState('');
   const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
-  const [employeeDetailSearch, setEmployeeDetailSearch] = useState('');
+  const [dashboardScope, setDashboardScope] = useState<DashboardScope>('overall');
+  const [scopeSearch, setScopeSearch] = useState('');
+  const [scopeDepartmentFilter, setScopeDepartmentFilter] = useState('All');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
   const [customRange, setCustomRange] = useState<DateRange>(() => ({ startDate: todayIso(), endDate: todayIso() }));
@@ -380,8 +384,11 @@ export default function AdminDashboard() {
   const dateLabel = selectedRangeLabel;
 
   const dashboardQuery = useQuery({
-    queryKey: ['real-admin-dashboard', selectedStartDate, selectedEndDate],
+    queryKey: ['real-admin-dashboard', selectedStartDate, selectedEndDate, dashboardScope, selectedEmployeeId, scopeDepartmentFilter],
     queryFn: async () => {
+      const reportScopeParams = dashboardScope === 'employee' && selectedEmployeeId
+        ? { start_date: selectedStartDate, end_date: selectedEndDate, user_ids: [selectedEmployeeId] }
+        : { start_date: selectedStartDate, end_date: selectedEndDate };
       const [
         usersResponse,
         attendanceResponse,
@@ -400,7 +407,7 @@ export default function AdminDashboard() {
         userApi.getAll(),
         attendanceApi.summary({ start_date: selectedStartDate, end_date: selectedEndDate }),
         leaveApi.list({ status: 'approved' }),
-        reportApi.overall({ start_date: selectedStartDate, end_date: selectedEndDate }),
+        reportApi.overall(reportScopeParams),
         dashboardApi.summary(),
         taskApi.getAll(),
         payrollApi.getRecords({ payroll_month: selectedStartDate.slice(0, 7) }),
@@ -408,8 +415,12 @@ export default function AdminDashboard() {
         reportGroupApi.list(),
         auditApi.list({ per_page: 8 }),
         reportApi.weekly({ start_date: selectedStartDate, end_date: selectedEndDate, scope: 'organization' }),
-        reportApi.overall({ start_date: selectedStartDate, end_date: selectedEndDate }),
-        Promise.allSettled(enumerateMonths({ startDate: selectedStartDate, endDate: selectedEndDate }).map((month) => attendanceApi.calendar({ month, scope: 'overall' }))),
+        reportApi.overall(reportScopeParams),
+        Promise.allSettled(enumerateMonths({ startDate: selectedStartDate, endDate: selectedEndDate }).map((month) => attendanceApi.calendar({
+          month,
+          scope: dashboardScope === 'employee' && selectedEmployeeId ? 'selected' : 'overall',
+          user_id: dashboardScope === 'employee' && selectedEmployeeId ? selectedEmployeeId : undefined,
+        }))),
       ]);
 
       return {
@@ -451,18 +462,44 @@ export default function AdminDashboard() {
   const leavesInRange = data.leaves.filter((leave: any) =>
     leave.status === 'approved' && rangesOverlap(leave.start_date, leave.end_date, selectedRange)
   );
-  const leaveUserIdsInRange = new Set(leavesInRange.map((leave: any) => Number(leave.user_id)));
-  const employees = data.employees.map((employee) => leaveUserIdsInRange.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
+  const allEmployees = data.employees;
 
   const departments = useMemo(() => {
-    const names = Array.from(new Set(employees.map((employee) => employee.department).filter(Boolean)));
+    const names = Array.from(new Set(allEmployees.map((employee) => employee.department).filter(Boolean)));
     return ['All', ...names];
-  }, [employees]);
+  }, [allEmployees]);
+
+  const scopeEmployeeMatches = allEmployees.filter((employee) => {
+    const search = scopeSearch.trim().toLowerCase();
+    const matchesSearch = !search || [employee.name, employee.email, employee.position, employee.department]
+      .some((value) => String(value || '').toLowerCase().includes(search));
+    const matchesDepartment = scopeDepartmentFilter === 'All' || employee.department === scopeDepartmentFilter;
+    return matchesSearch && matchesDepartment;
+  });
+  const selectedEmployee = dashboardScope === 'employee'
+    ? allEmployees.find((employee) => employee.id === selectedEmployeeId)
+      || scopeEmployeeMatches[0]
+      || allEmployees[0]
+      || null
+    : null;
+  const scopedEmployeeIds = new Set(
+    dashboardScope === 'employee' && selectedEmployee
+      ? [selectedEmployee.id]
+      : allEmployees
+        .filter((employee) => scopeDepartmentFilter === 'All' || employee.department === scopeDepartmentFilter)
+        .map((employee) => employee.id)
+  );
+  const scopedLeavesInRange = leavesInRange.filter((leave: any) => scopedEmployeeIds.has(Number(leave.user_id)));
+  const leaveUserIdsInRange = new Set(scopedLeavesInRange.map((leave: any) => Number(leave.user_id)));
+  const employees = allEmployees
+    .filter((employee) => scopedEmployeeIds.has(employee.id))
+    .map((employee) => leaveUserIdsInRange.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
+  const attendanceRows = data.attendanceRows.filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || row.employee_id)));
 
   const totalEmployees = employees.length;
-  const presentToday = data.attendanceRows.filter((row: any) => Number(row.present_days || 0) > 0 || row.is_checked_in).length;
-  const lateToday = data.attendanceRows.reduce((sum: number, row: any) => sum + Number(row.late_days || 0), 0);
-  const onLeave = leavesInRange.length;
+  const presentToday = attendanceRows.filter((row: any) => Number(row.present_days || 0) > 0 || row.is_checked_in).length;
+  const lateToday = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.late_days || 0), 0);
+  const onLeave = scopedLeavesInRange.length;
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
   const totalDuration = Number(data.overall.summary?.total_duration || data.summary?.today_total_elapsed_duration || 0);
@@ -549,8 +586,7 @@ export default function AdminDashboard() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 7);
 
-  const leaveSummary: Array<{ label: string; value: number; color: string; bgClass: string }> = Object.values(data.leaves
-    .filter((leave: any) => leave.status === 'approved' && rangesOverlap(leave.start_date, leave.end_date, selectedRange))
+  const leaveSummary: Array<{ label: string; value: number; color: string; bgClass: string }> = Object.values(scopedLeavesInRange
     .reduce((acc: Record<string, { label: string; value: number; color: string; bgClass: string }>, leave: any, index: number) => {
       const key = String(leave.leave_type || 'full_day');
       const label = key.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
@@ -566,7 +602,11 @@ export default function AdminDashboard() {
       return acc;
     }, {}));
 
-  const weeklyEntries = safeArray<any>(weeklyReport.time_entries || weeklyReport.entries);
+  const weeklyEntries = safeArray<any>(weeklyReport.time_entries || weeklyReport.entries)
+    .filter((entry: any) => {
+      const entryUserId = Number(entry.user_id || entry.user?.id || entry.employee_id || entry.employee?.id || entry.task?.user_id || 0);
+      return !entryUserId || scopedEmployeeIds.has(entryUserId);
+    });
   const timesheetDates = allRangeDates.length > 15 ? allRangeDates.slice(-15) : allRangeDates;
   const timesheetDateCount = timesheetDates.length || 1;
   const timesheetRangeLabel = allRangeDates.length > timesheetDates.length
@@ -604,7 +644,7 @@ export default function AdminDashboard() {
   const presentPercent = totalEmployees ? Math.round((presentToday / totalEmployees) * 100) : 0;
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
   const latePercent = totalEmployees ? Math.round((lateToday / totalEmployees) * 100) : 0;
-  const attendanceByEmployeeId = new Map(data.attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
+  const attendanceByEmployeeId = new Map(attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
   const workStatusRows = employees.map((employee) => {
     const attendance = attendanceByEmployeeId.get(employee.id);
     const isWorking = employee.status !== 'On Leave' && hasActiveAttendance(attendance);
@@ -643,21 +683,10 @@ export default function AdminDashboard() {
     return acc;
   }, { 'To Do': 0, 'In Progress': 0, Done: 0 });
   const taskTotal = Math.max(1, data.tasks.length);
-  const employeeDetailMatches = employees.filter((employee) => {
-    const search = employeeDetailSearch.trim().toLowerCase();
-    if (!search) return true;
-    return [employee.name, employee.email, employee.position, employee.department]
-      .some((value) => String(value || '').toLowerCase().includes(search));
-  });
-  const selectedEmployee = employees.find((employee) => employee.id === selectedEmployeeId)
-    || employeeDetailMatches[0]
-    || workStatusRows.find((row) => row.status === 'Working')?.employee
-    || employees[0]
-    || null;
   const selectedWorkStatus = selectedEmployee ? workStatusRows.find((row) => row.employee.id === selectedEmployee.id) : null;
   const selectedEmployeeDetailQuery = useQuery({
     queryKey: ['dashboard-employee-detail', selectedEmployee?.id, selectedStartDate, selectedEndDate],
-    enabled: Boolean(selectedEmployee?.id),
+    enabled: dashboardScope === 'employee' && Boolean(selectedEmployee?.id),
     queryFn: async () => {
       if (!selectedEmployee?.id) return null;
       const [profileResponse, insightsResponse, screenshotsResponse] = await Promise.allSettled([
@@ -765,6 +794,70 @@ export default function AdminDashboard() {
         ) : null}
       </Card>
 
+      <Card className="p-3">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Dashboard Scope</p>
+            <p className="mt-1 text-sm font-medium text-slate-900">
+              {dashboardScope === 'employee' && selectedEmployee ? selectedEmployee.name : scopeDepartmentFilter === 'All' ? 'Overall organization' : `${scopeDepartmentFilter} department`}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {(['overall', 'employee'] as DashboardScope[]).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                onClick={() => {
+                  setDashboardScope(scope);
+                  if (scope === 'overall') setSelectedEmployeeId(null);
+                }}
+                className={`h-9 rounded-lg border px-3 text-xs font-medium capitalize transition ${dashboardScope === scope ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'}`}
+              >
+                {scope === 'employee' ? 'Specific Employee' : 'Overall'}
+              </button>
+            ))}
+            <select
+              aria-label="Filter dashboard by department"
+              value={scopeDepartmentFilter}
+              onChange={(event) => {
+                setScopeDepartmentFilter(event.target.value);
+                setSelectedEmployeeId(null);
+              }}
+              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none"
+            >
+              {departments.map((department) => <option key={department} value={department}>{department === 'All' ? 'All departments' : department}</option>)}
+            </select>
+          </div>
+        </div>
+        {dashboardScope === 'employee' ? (
+          <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 xl:grid-cols-[minmax(0,1fr)_minmax(220px,320px)] xl:items-start">
+            <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
+              <Search className="h-4 w-4 shrink-0" />
+              <input
+                aria-label="Search scoped employee"
+                value={scopeSearch}
+                onChange={(event) => {
+                  setScopeSearch(event.target.value);
+                  setSelectedEmployeeId(null);
+                }}
+                className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400"
+                placeholder="Search employee name, email, role, department..."
+              />
+            </label>
+            <select
+              aria-label="Select dashboard employee"
+              value={selectedEmployee?.id || ''}
+              onChange={(event) => setSelectedEmployeeId(Number(event.target.value) || null)}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none"
+            >
+              {scopeEmployeeMatches.length ? scopeEmployeeMatches.map((employee) => (
+                <option key={employee.id} value={employee.id}>{employee.name} - {employee.department}</option>
+              )) : <option value="">No employee found</option>}
+            </select>
+          </div>
+        ) : null}
+      </Card>
+
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
         <KpiCard label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
         <KpiCard label="Present" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
@@ -820,42 +913,17 @@ export default function AdminDashboard() {
       <Card className="p-4">
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-950">Employee Deep Dive</h2>
-            <p className="mt-1 text-xs text-slate-500">Search an employee to see live work state, attendance, idle time, productivity, screenshots, and recent work.</p>
+            <h2 className="text-lg font-semibold text-slate-950">{dashboardScope === 'employee' ? 'Selected Employee Detail' : 'Scope Summary'}</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              {dashboardScope === 'employee'
+                ? 'The whole dashboard is focused on the selected employee and date range.'
+                : 'The whole dashboard is showing the selected overall scope, department, and date range.'}
+            </p>
           </div>
-          <div className="w-full xl:w-[420px]">
-            <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
-              <Search className="h-4 w-4 shrink-0" />
-              <input
-                aria-label="Search employee details"
-                value={employeeDetailSearch}
-                onChange={(event) => {
-                  setEmployeeDetailSearch(event.target.value);
-                  setSelectedEmployeeId(null);
-                }}
-                className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400"
-                placeholder="Search employee for complete details..."
-              />
-            </label>
-            {employeeDetailSearch.trim() ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {employeeDetailMatches.slice(0, 4).map((employee) => (
-                  <button
-                    key={employee.id}
-                    type="button"
-                    onClick={() => setSelectedEmployeeId(employee.id)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${selectedEmployee?.id === employee.id ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600'}`}
-                  >
-                    {employee.name}
-                  </button>
-                ))}
-                {employeeDetailMatches.length === 0 ? <span className="text-xs text-slate-500">No employee found</span> : null}
-              </div>
-            ) : null}
-          </div>
+          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">{dateLabel}</span>
         </div>
 
-        {selectedEmployee ? (
+        {dashboardScope === 'employee' && selectedEmployee ? (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <div className="space-y-4">
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
@@ -984,7 +1052,47 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
-        ) : <EmptyInline>Search or add an employee to view complete details</EmptyInline>}
+        ) : dashboardScope === 'overall' ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p className="text-[11px] text-slate-500">People in scope</p>
+                <p className="mt-2 text-xl font-semibold text-slate-950">{totalEmployees}</p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p className="text-[11px] text-slate-500">Working now</p>
+                <p className="mt-2 text-xl font-semibold text-emerald-700">{workingCount}</p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p className="text-[11px] text-slate-500">Present</p>
+                <p className="mt-2 text-xl font-semibold text-blue-700">{presentToday}</p>
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <p className="text-[11px] text-slate-500">Late</p>
+                <p className="mt-2 text-xl font-semibold text-rose-600">{lateToday}</p>
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-100 p-4">
+              <div className="mb-3 flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-700">Department scope</span>
+                <span className="text-slate-400">{scopeDepartmentFilter === 'All' ? 'All departments' : scopeDepartmentFilter}</span>
+              </div>
+              {departmentCounts.length ? (
+                <div className="space-y-3">
+                  {departmentCounts.slice(0, 5).map((item, index) => (
+                    <div key={item.department} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate text-slate-600">{item.department}</span>
+                      <span className="h-1.5 flex-1 rounded-full bg-slate-100">
+                        <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(8, (item.count / Math.max(1, totalEmployees)) * 100)}%`, background: departmentPalette[index % departmentPalette.length] }} />
+                      </span>
+                      <span className="text-slate-500">{item.count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyInline>No people match this scope</EmptyInline>}
+            </div>
+          </div>
+        ) : <EmptyInline>Select an employee above to view complete details</EmptyInline>}
         {selectedEmployeeDetailQuery.isFetching ? <p className="mt-3 text-xs text-blue-600">Loading employee details...</p> : null}
       </Card>
 
