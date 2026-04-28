@@ -70,7 +70,7 @@ describe('Dashboard', () => {
   it('shows employee progress metrics without timer controls', async () => {
     renderWithProviders(<Dashboard />);
 
-    expect(await screen.findByText("Today's shift", { selector: 'p' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "Today's shift" })).toBeInTheDocument();
     expect(screen.getByText('Worked Today')).toBeInTheDocument();
     expect(screen.getByText('Time Left Today')).toBeInTheDocument();
     expect(screen.getByText('Attendance & Shift')).toBeInTheDocument();
