@@ -287,7 +287,7 @@ export default function Payroll() {
           </SelectInput>
         </div>
         <div className="flex items-end">
-          <label className="flex min-h-11 items-center gap-2 rounded-[20px] border border-slate-200/90 bg-white/85 px-3.5 text-sm text-slate-700 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.25)]">
+          <label className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm text-slate-700 shadow-sm">
             <input type="checkbox" checked={allowOverwrite} onChange={(e) => setAllowOverwrite(e.target.checked)} />
             Allow overwrite
           </label>
@@ -347,7 +347,7 @@ export default function Payroll() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <SurfaceCard className="xl:col-span-2 overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50/80">
+              <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Employee</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Month</th>
@@ -362,7 +362,7 @@ export default function Payroll() {
                 ) : records.map((record) => (
                   <tr
                     key={record.id}
-                    className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50/70 ${selectedRecord?.id === record.id ? 'bg-sky-50/80' : ''}`}
+                    className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 ${selectedRecord?.id === record.id ? 'bg-sky-50' : ''}`}
                     onClick={() => onSelectRecord(record)}
                   >
                     <td className="px-4 py-3">
@@ -407,7 +407,7 @@ export default function Payroll() {
                   </div>
                 </div>
 
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs text-gray-600">Gross Salary</p>
                   <p className="text-sm font-medium text-gray-900">{money(Number(selectedRecord.basic_salary || 0) + Number(selectedRecord.allowances || 0) + Number(selectedRecord.bonus || 0))}</p>
                   <p className="text-xs text-gray-600 mt-2">Total Deductions</p>
@@ -418,15 +418,15 @@ export default function Payroll() {
 
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={saveSelected} disabled={isSaving} variant="secondary" size="sm">Save Draft</Button>
-                  <Button onClick={() => updateStatus('processed')} disabled={isSaving} size="sm" className="bg-amber-600 shadow-[0_18px_40px_-24px_rgba(217,119,6,0.6)] hover:bg-amber-700">Mark Processed</Button>
+                  <Button onClick={() => updateStatus('processed')} disabled={isSaving} size="sm" className="bg-amber-600 shadow-sm hover:bg-amber-700">Mark Processed</Button>
                   <Button onClick={() => payout()} disabled={isSaving} size="sm">Run Payout</Button>
                 </div>
 
                 {payrollMode === 'mock' ? (
                   <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => payout('success')} disabled={isSaving} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Simulate Success</Button>
+                    <Button onClick={() => payout('success')} disabled={isSaving} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Simulate Success</Button>
                     <Button onClick={() => payout('failed')} disabled={isSaving} variant="danger" size="sm">Simulate Failure</Button>
-                    <Button onClick={() => payout('pending')} disabled={isSaving} size="sm" className="bg-amber-600 shadow-[0_18px_40px_-24px_rgba(217,119,6,0.6)] hover:bg-amber-700">Simulate Pending</Button>
+                    <Button onClick={() => payout('pending')} disabled={isSaving} size="sm" className="bg-amber-600 shadow-sm hover:bg-amber-700">Simulate Pending</Button>
                   </div>
                 ) : null}
 

@@ -121,7 +121,7 @@ export default function TaskSelect({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          'flex w-full items-center justify-between rounded-[20px] border border-slate-200/90 bg-white/85 px-3.5 py-2.5 text-left text-sm text-slate-900 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.25)] outline-none transition duration-300 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400',
+          'flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-left text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400',
           open && 'border-sky-300 bg-white ring-2 ring-sky-300/25'
         )}
       >
@@ -132,9 +132,9 @@ export default function TaskSelect({
       </button>
 
       {open ? (
-        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_70px_-32px_rgba(15,23,42,0.32)]">
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 p-3">
-            <div className="flex items-center gap-2 rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-2">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <Search className="h-4 w-4 text-slate-400" />
               <input
                 value={search}

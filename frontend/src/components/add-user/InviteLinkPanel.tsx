@@ -21,7 +21,7 @@ export default function InviteLinkPanel({
   isCopying = false,
 }: InviteLinkPanelProps) {
   return (
-    <div className="space-y-4 rounded-[26px] border border-slate-200/90 bg-white/90 p-5 shadow-[0_24px_50px_-34px_rgba(15,23,42,0.2)]">
+    <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div>
         <p className="text-sm font-semibold text-slate-950">Single-use secure invite link</p>
         <p className="mt-1 text-sm text-slate-500">
@@ -39,14 +39,14 @@ export default function InviteLinkPanel({
         />
       </div>
 
-      <div className="rounded-[22px] border border-slate-200 bg-slate-50/80 px-4 py-3">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
         <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Invite URL</p>
         <p className="mt-2 break-all text-sm font-medium text-slate-950">
           {inviteUrl || 'Generate a link to preview the onboarding URL.'}
         </p>
       </div>
 
-      <div className="rounded-[22px] border border-sky-200/80 bg-sky-50/80 px-4 py-3 text-sm text-sky-800">
+      <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
         This link is secure and single-use. If you need reusable links later, keep this panel as the starting point for a future multi-use flow.
       </div>
 

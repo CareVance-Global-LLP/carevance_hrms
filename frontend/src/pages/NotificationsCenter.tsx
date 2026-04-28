@@ -158,7 +158,7 @@ export default function NotificationsCenter() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <SurfaceCard className="p-5">
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl bg-sky-100 p-3 text-sky-700"><BellRing className="h-5 w-5" /></div>
+            <div className="rounded-lg bg-sky-100 p-3 text-sky-700"><BellRing className="h-5 w-5" /></div>
             <div>
               <p className="text-sm text-slate-500">Visible notifications</p>
               <p className="text-2xl font-semibold text-slate-950">{filteredNotifications.length}</p>
@@ -260,7 +260,7 @@ export default function NotificationsCenter() {
 
           <div className="mt-4">
             <FieldLabel>Recipients</FieldLabel>
-            <div className="max-h-44 overflow-auto rounded-[22px] border border-slate-200 p-3">
+            <div className="max-h-44 overflow-auto rounded-lg border border-slate-200 p-3">
               {users.length === 0 ? (
                 <p className="text-sm text-slate-500">All users in your organization will receive this update.</p>
               ) : (

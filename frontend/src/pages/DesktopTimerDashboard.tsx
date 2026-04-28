@@ -675,14 +675,14 @@ export default function DesktopTimerDashboard() {
         title={`Welcome back, ${user?.name?.split(' ')[0]}!`}
         description="Start the timer, review today's attendance progress, and keep your current activity in one place."
         actions={
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 shadow-sm">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm">
             <Calendar className="h-4 w-4 text-sky-700" />
             {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </div>
         }
       />
 
-      <div className="overflow-hidden rounded-[32px] bg-[linear-gradient(135deg,#020617_0%,#0f172a_28%,#0369a1_76%,#22d3ee_100%)] p-6 text-white shadow-[0_38px_100px_-48px_rgba(2,6,23,0.92)]">
+      <div className="overflow-hidden rounded-lg bg-[linear-gradient(135deg,#020617_0%,#0f172a_28%,#0369a1_76%,#22d3ee_100%)] p-6 text-white shadow-sm">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="mb-1 text-sm font-medium text-cyan-100/80">
@@ -692,11 +692,11 @@ export default function DesktopTimerDashboard() {
               {formatTime(timerDisplaySeconds)}
             </div>
             <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-              <div className="rounded-2xl border border-white/15 bg-white/10 px-3 py-3">
+              <div className="rounded-lg border border-slate-200 bg-white/10 px-3 py-3">
                 <p className="text-xs text-cyan-100/70">Shift Remaining</p>
                 <p className="font-semibold">{formatTime(remainingShiftSeconds)}</p>
               </div>
-              <div className="rounded-2xl border border-white/15 bg-white/10 px-3 py-3">
+              <div className="rounded-lg border border-slate-200 bg-white/10 px-3 py-3">
                 <p className="text-xs text-cyan-100/70">Overtime Timer</p>
                 <p className="font-semibold">{formatTime(overtimeSeconds)}</p>
               </div>
@@ -715,7 +715,7 @@ export default function DesktopTimerDashboard() {
             ) : null}
           </div>
           <div className="flex flex-col items-start gap-3 lg:items-end">
-            <StatusBadge tone={activeTimer ? 'success' : 'info'} className="border-white/15 bg-white/10 text-white">
+            <StatusBadge tone={activeTimer ? 'success' : 'info'} className="border-slate-200 bg-white/10 text-white">
               {isUpdatingTimerContext ? 'Updating timer' : activeTimer ? 'Live session' : 'Ready to start'}
             </StatusBadge>
             <Button
@@ -725,7 +725,7 @@ export default function DesktopTimerDashboard() {
               variant="secondary"
               size="lg"
               className={`h-16 w-16 rounded-full border-0 px-0 ${
-                activeTimer ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-white text-primary-700 hover:bg-sky-50'
+                activeTimer ? 'bg-white text-white hover:bg-white' : 'bg-white text-primary-700 hover:bg-sky-50'
               }`}
             >
               {activeTimer ? <Pause className="h-8 w-8" /> : <Play className="ml-1 h-8 w-8" />}
@@ -740,7 +740,7 @@ export default function DesktopTimerDashboard() {
         ) : null}
 
         <div className="mt-5">
-          <div className="rounded-[24px] border border-white/15 bg-white/10 p-4">
+          <div className="rounded-lg border border-slate-200 bg-white/10 p-4">
             <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-cyan-100/70">
               <Building2 className="h-3.5 w-3.5" />
               <p>{activeTimer ? 'Running Timer Task' : 'Select Task'}</p>
@@ -750,7 +750,7 @@ export default function DesktopTimerDashboard() {
               value={selectedTaskId ?? ''}
               onChange={(e) => void handleTaskSelection(e.target.value ? Number(e.target.value) : null)}
               disabled={availableTasks.length === 0 || isUpdatingTimerContext || isStarting}
-              className="mt-3 border-white/35 bg-white/90 text-slate-950 shadow-none focus:border-white focus:bg-white focus:ring-white/30 disabled:bg-white/60 disabled:text-slate-500"
+              className="mt-3 border-slate-200 bg-white text-slate-950 shadow-none focus:border-white focus:bg-white focus:ring-white/30 disabled:bg-white disabled:text-slate-500"
             >
               <option value="" className="text-gray-900">
                 {availableTasks.length === 0 ? 'No tasks available for your group' : 'Choose task'}
@@ -816,7 +816,7 @@ export default function DesktopTimerDashboard() {
       </div>
 
       <SurfaceCard className="overflow-hidden">
-        <div className="border-b border-slate-200/80 p-5">
+        <div className="border-b border-slate-200 p-5">
           <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Today's Time Entries</h2>
         </div>
         <div className="divide-y divide-slate-200/80">
@@ -828,9 +828,9 @@ export default function DesktopTimerDashboard() {
             </div>
           ) : (
             todayEntries.map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between gap-4 p-4 transition hover:bg-slate-50/80">
+              <div key={entry.id} className="flex items-center justify-between gap-4 p-4 transition hover:bg-slate-50">
                 <div className="flex min-w-0 items-center gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100">
                     <Clock className="h-5 w-5 text-slate-600" />
                   </div>
                   <div className="min-w-0">

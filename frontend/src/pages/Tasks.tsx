@@ -30,9 +30,9 @@ type TaskFormState = {
 };
 
 const STATUS_OPTIONS: Array<{ value: SavedTaskStatus; label: string; accent: string }> = [
-  { value: 'todo', label: 'To Do', accent: 'border-sky-100 bg-sky-50/70' },
+  { value: 'todo', label: 'To Do', accent: 'border-sky-100 bg-sky-50' },
   { value: 'in_progress', label: 'In Progress', accent: 'border-amber-100 bg-amber-50/70' },
-  { value: 'done', label: 'Done', accent: 'border-emerald-100 bg-emerald-50/70' },
+  { value: 'done', label: 'Done', accent: 'border-emerald-100 bg-emerald-50' },
 ];
 
 const PRIORITY_OPTIONS: TaskPriority[] = ['low', 'medium', 'high', 'urgent'];
@@ -417,13 +417,13 @@ export default function Tasks() {
               <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">See every group and manage members from this page.</h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Add existing members into a group, review who is already inside each department, or move an employee directly to another group without leaving the task workspace.</p>
             </div>
-            <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Quick rule</p>
               <p className="mt-2">Adding keeps existing memberships. Moving switches active assignment, and remove detaches the employee from this specific group.</p>
             </div>
           </div>
 
-          <div className="mt-5 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
+          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_auto] lg:items-end">
               <div>
                 <FieldLabel>Search Group</FieldLabel>
@@ -468,11 +468,11 @@ export default function Tasks() {
           </div>
 
           {groups.length === 0 ? (
-            <div className="mt-5 rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-5 text-sm text-slate-500">No groups have been created yet. Create the first group to start organizing users and tasks.</div>
+            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No groups have been created yet. Create the first group to start organizing users and tasks.</div>
           ) : !shouldShowDirectoryResults ? (
-            <div className="mt-5 rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-5 text-sm text-slate-500">Search for a group name to view directory cards.</div>
+            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Search for a group name to view directory cards.</div>
           ) : filteredDirectoryGroups.length === 0 ? (
-            <div className="mt-5 rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-5 text-sm text-slate-500">No groups match your search right now. Try a different name or reset the group filters.</div>
+            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No groups match your search right now. Try a different name or reset the group filters.</div>
           ) : (
             <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
               {filteredDirectoryGroups.map((group) => {
@@ -499,7 +499,7 @@ export default function Tasks() {
                 });
 
                 return (
-                  <div key={group.id} className="rounded-[28px] border border-slate-200/90 bg-white/90 p-5 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.18)]">
+                  <div key={group.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -533,7 +533,7 @@ export default function Tasks() {
                       </div>
                     </div>
 
-                    <div className="mt-5 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
+                    <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <FieldLabel hint={expandedAddMemberGroupId === group.id ? `${selectedMemberIds.length} selected` : undefined}>
                           Add Existing Member
@@ -582,7 +582,7 @@ export default function Tasks() {
                             />
                           </div>
                           {availableMembers.length === 0 ? (
-                            <div className="rounded-[20px] border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-500">
+                            <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
                               Only unassigned employees and unassigned managers can be added here. Move existing members from their current group instead.
                             </div>
                           ) : (
@@ -593,8 +593,8 @@ export default function Tasks() {
                                 return (
                                   <label
                                     key={member.id}
-                                    className={`flex cursor-pointer items-start gap-3 rounded-[20px] border px-3 py-3 transition ${
-                                      checked ? 'border-sky-300 bg-sky-50/70' : 'border-slate-200/80 bg-white/80 hover:border-slate-300'
+                                    className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition ${
+                                      checked ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white hover:border-slate-300'
                                     }`}
                                   >
                                     <input
@@ -624,7 +624,7 @@ export default function Tasks() {
                                 );
                               })}
                               {filteredAvailableMembers.length === 0 ? (
-                                <div className="rounded-[20px] border border-dashed border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-500">
+                                <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
                                   No eligible members match this search.
                                 </div>
                               ) : null}
@@ -652,14 +652,14 @@ export default function Tasks() {
 
                     <div className="mt-5 space-y-3">
                       {members.length === 0 ? (
-                        <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">No members are assigned to this group yet.</div>
+                        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">No members are assigned to this group yet.</div>
                       ) : (
                         members.map((member) => {
                           const moveKey = `${group.id}:${member.id}`;
                           const canManageMembership = member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
 
                           return (
-                            <div key={moveKey} className="rounded-[22px] border border-slate-200/80 bg-white/90 p-4">
+                            <div key={moveKey} className="rounded-lg border border-slate-200 bg-white p-4">
                               <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                                 <div className="min-w-0">
                                   <div className="flex flex-wrap items-center gap-2">
@@ -750,7 +750,7 @@ export default function Tasks() {
             </div>
             <div className="max-h-[38rem] space-y-4 overflow-y-auto p-4">
               {filteredTasks.filter((task) => task.status === section.value).map((task) => (
-                <article key={task.id} className="rounded-[24px] border border-slate-200 bg-white/90 p-4 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.18)]">
+                <article key={task.id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -795,14 +795,14 @@ export default function Tasks() {
                     <TaskDetail icon={TimerReset} label="Estimate" value={formatMinutes(task.estimated_time)} />
                     <TaskDetail icon={Clock3} label="Updated" value={formatDate(task.updated_at)} />
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200/80 pt-4">
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
                     {task.status !== 'todo' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'todo' })}>Move To Do</Button> : null}
                     {task.status !== 'in_progress' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'in_progress' })}>Start Work</Button> : null}
                     {task.status !== 'done' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'done' })}>Mark Done</Button> : null}
                   </div>
                 </article>
               ))}
-              {filteredTasks.filter((task) => task.status === section.value).length === 0 ? <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-5 text-sm text-slate-500">No tasks in this column.</div> : null}
+              {filteredTasks.filter((task) => task.status === section.value).length === 0 ? <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No tasks in this column.</div> : null}
             </div>
           </SurfaceCard>
         ))}
@@ -810,7 +810,7 @@ export default function Tasks() {
 
       {showTaskModal ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/60 p-4">
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[32px] bg-white p-6 shadow-[0_40px_120px_-48px_rgba(15,23,42,0.45)] sm:p-7">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-sm sm:p-7">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">Task composer</p>
@@ -917,7 +917,7 @@ export default function Tasks() {
 
 function TaskDetail({ icon: Icon, label, value }: { icon: typeof UserRound; label: string; value: string }) {
   return (
-    <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/80 p-3">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
         <Icon className="h-3.5 w-3.5" />
         <span>{label}</span>

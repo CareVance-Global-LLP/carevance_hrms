@@ -150,7 +150,7 @@ export default function AuditLogs() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50/80">
+                <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">When</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Action</th>
@@ -179,7 +179,7 @@ export default function AuditLogs() {
                         <p className="text-xs text-slate-500">{log.target_id ? `#${log.target_id}` : 'No target id'}</p>
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-600">
-                        <pre className="max-w-[34rem] whitespace-pre-wrap break-words rounded-[18px] bg-slate-50 p-3">
+                    <pre className="max-w-[34rem] whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3">
                           {JSON.stringify(log.metadata || {}, null, 2)}
                         </pre>
                       </td>

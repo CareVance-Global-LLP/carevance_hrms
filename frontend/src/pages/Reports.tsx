@@ -287,7 +287,7 @@ export default function Reports() {
         actions={
           <button
             onClick={handleExport}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_22px_50px_-20px_rgba(14,165,233,0.55)]"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-3 text-sm font-semibold text-white shadow-sm"
           >
             <Download className="h-4 w-4" />
             Export
@@ -320,7 +320,7 @@ export default function Reports() {
               setDatePreset('custom');
               setEndDate(value);
             }}
-            inputClassName="rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm shadow-none"
+            inputClassName="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-none"
           />
           {isAdmin ? (
               <div>
@@ -341,7 +341,7 @@ export default function Reports() {
         {isAdmin && filterMode === 'user' ? (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Select Users</label>
-            <div className="grid max-h-36 grid-cols-1 gap-2 overflow-auto rounded-2xl border border-slate-200 p-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid max-h-36 grid-cols-1 gap-2 overflow-auto rounded-lg border border-slate-200 p-3 md:grid-cols-2 lg:grid-cols-3">
               {users.map((u) => (
                 <label key={u.id} className="text-sm flex items-center gap-2">
                   <input
@@ -359,7 +359,7 @@ export default function Reports() {
         {isAdmin && filterMode === 'group' ? (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Select Groups</label>
-            <div className="grid max-h-36 grid-cols-1 gap-2 overflow-auto rounded-2xl border border-slate-200 p-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid max-h-36 grid-cols-1 gap-2 overflow-auto rounded-lg border border-slate-200 p-3 md:grid-cols-2 lg:grid-cols-3">
               {groups.map((g) => (
                 <label key={g.id} className="text-sm flex items-center gap-2">
                   <input

@@ -50,7 +50,7 @@ export default function ProjectMultiSelect({
   return (
     <div>
       <FieldLabel hint={`${selectedIds.length} selected`}>Projects they can access</FieldLabel>
-      <div className="rounded-[24px] border border-slate-200/90 bg-white/90 p-4 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.2)]">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <SearchSuggestInput
           value={query}
           onValueChange={(value) => {
@@ -89,8 +89,8 @@ export default function ProjectMultiSelect({
               return (
                 <label
                   key={option.id}
-                  className={`flex cursor-pointer items-start gap-3 rounded-[20px] border px-3 py-3 transition ${
-                    checked ? 'border-sky-300 bg-sky-50/70' : 'border-slate-200/80 bg-slate-50/60 hover:border-slate-300'
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition ${
+                    checked ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-slate-50 hover:border-slate-300'
                   }`}
                 >
                   <input

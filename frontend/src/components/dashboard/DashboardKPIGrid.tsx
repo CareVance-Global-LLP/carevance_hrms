@@ -21,12 +21,12 @@ interface DashboardKPIGridProps {
 }
 
 const accentClasses: Record<NonNullable<KPIItem['accent']>, string> = {
-  sky: 'bg-sky-100 text-sky-700',
-  emerald: 'bg-emerald-100 text-emerald-700',
-  violet: 'bg-violet-100 text-violet-700',
-  amber: 'bg-amber-100 text-amber-700',
-  rose: 'bg-rose-100 text-rose-700',
-  slate: 'bg-slate-200 text-slate-700',
+  sky: 'bg-blue-50 text-blue-600',
+  emerald: 'bg-emerald-50 text-emerald-600',
+  violet: 'bg-violet-50 text-violet-600',
+  amber: 'bg-amber-50 text-amber-600',
+  rose: 'bg-rose-50 text-rose-600',
+  slate: 'bg-slate-100 text-slate-600',
 };
 
 export default function DashboardKPIGrid({ items, secondaryItems = [] }: DashboardKPIGridProps) {
@@ -37,15 +37,15 @@ export default function DashboardKPIGrid({ items, secondaryItems = [] }: Dashboa
           const Icon = item.icon;
 
           return (
-            <SurfaceCard key={item.id} className="p-5 sm:p-6">
-              <div className="flex items-start justify-between gap-4">
+            <SurfaceCard key={item.id} className="p-4">
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{item.label}</p>
-                  <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-slate-950">{item.value}</p>
-                  {item.caption ? <p className="mt-2 text-sm text-slate-600">{item.caption}</p> : null}
-                  {item.meta ? <p className="mt-1 text-xs text-slate-400">{item.meta}</p> : null}
+                  <p className="text-xs text-slate-500">{item.label}</p>
+                  <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{item.value}</p>
+                  {item.caption ? <p className="mt-2 text-[11px] text-slate-500">{item.caption}</p> : null}
+                  {item.meta ? <p className="mt-1 text-[11px] text-slate-400">{item.meta}</p> : null}
                 </div>
-                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${accentClasses[item.accent || 'sky']}`}>
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${accentClasses[item.accent || 'sky']}`}>
                   <Icon className="h-5 w-5" />
                 </div>
               </div>
@@ -55,12 +55,12 @@ export default function DashboardKPIGrid({ items, secondaryItems = [] }: Dashboa
       </div>
 
       {secondaryItems.length > 0 ? (
-        <SurfaceCard className="p-4 sm:p-5">
+        <SurfaceCard className="p-4">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {secondaryItems.map((item) => (
-              <div key={item.id} className="rounded-[22px] border border-slate-200/80 bg-slate-50/75 px-4 py-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-                <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{item.value}</p>
+              <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
+                <p className="text-xs text-slate-500">{item.label}</p>
+                <p className="mt-2 text-lg font-semibold text-slate-950">{item.value}</p>
               </div>
             ))}
           </div>

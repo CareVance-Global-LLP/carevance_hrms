@@ -1111,7 +1111,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             ) : (
               <div className="mt-3 space-y-2 max-h-72 overflow-auto">
                 {timeEditRequests.map((item) => (
-                  <div key={item.id} className="rounded-[22px] border border-slate-200 p-3">
+                  <div key={item.id} className="rounded-lg border border-slate-200 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-gray-900">
                         {item.user?.name || 'You'}: {item.attendance_date} (+{formatDuration(item.extra_seconds)})
@@ -1124,7 +1124,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                     {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
                     {canReviewTimeEditRequest(item) && item.status === 'pending' ? (
                       <div className="mt-2 flex gap-2">
-                        <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
+                        <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
                         <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
                       </div>
                     ) : null}
@@ -1213,7 +1213,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   {organization?.name || 'Organization workspace'}
                 </p>
               </div>
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 {isEmployeePanelLoading ? (
                   <p>Loading workspace details...</p>
                 ) : (
@@ -1234,7 +1234,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               {employeeSummaryCards.map((item) => (
-                <div key={item.label} className="rounded-[24px] border border-slate-200 bg-white/85 p-4 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.25)]">
+                <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
                     <item.icon className="h-4 w-4 text-sky-700" />
@@ -1263,17 +1263,17 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
               <p className="mt-2 text-sm font-semibold text-slate-950">{employeeLiveMonitoring?.current_tool || 'No active tool detected'}</p>
               <p className="mt-1 text-xs capitalize text-slate-500">{employeeLiveMonitoring?.tool_type || employeeLiveMonitoring?.activity_type || 'No tool type'}</p>
             </div>
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
               <p className="mt-2 text-sm font-semibold capitalize text-slate-950">{employeeLiveMonitoring?.work_status?.replace('_', ' ') || 'inactive'}</p>
               <p className="mt-1 text-xs text-slate-500">{employeeLiveMonitoring?.is_working ? 'Timer active now' : 'No active timer right now'}</p>
             </div>
-            <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
               <p className="mt-2 text-sm font-semibold text-slate-950">{formatDateTime(employeeLiveMonitoring?.last_activity_at)}</p>
               <p className="mt-1 text-xs text-slate-500">{employeeMonitoring?.stats?.activity_events || 0} activity events in selected range</p>
@@ -1281,7 +1281,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="font-semibold text-slate-950">Screenshot captures</h3>
                 <div className="flex items-center gap-2">
@@ -1307,7 +1307,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                       href={shot.path}
                       target="_blank"
                       rel="noreferrer"
-                      className="overflow-hidden rounded-[20px] border border-slate-200 bg-white transition hover:border-sky-200"
+                      className="overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-sky-200"
                     >
                       <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-32 w-full object-cover" />
                       <div className="space-y-2 p-3">
@@ -1320,7 +1320,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               )}
             </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="font-semibold text-slate-950">Website productivity</h3>
                 <span className="text-xs text-slate-500">Selected range</span>
@@ -1330,7 +1330,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               ) : (
                 <div className="mt-4 space-y-3">
                   {employeeWebsiteUsage.slice(0, 6).map((item: any) => (
-                    <div key={`${item.website}-${item.classification}`} className="rounded-[20px] border border-slate-200 bg-slate-50/70 p-3">
+                    <div key={`${item.website}-${item.classification}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-semibold text-slate-950">{item.website}</p>
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${productivityTone(item.classification)}`}>
@@ -1434,7 +1434,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       <SurfaceCard className="overflow-hidden">
         <div className="max-h-[26rem] overflow-auto">
         <table className="w-full text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50/80">
+          <thead className="border-b border-slate-200 bg-slate-50">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Employee</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Present Days</th>
@@ -1452,7 +1452,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             ) : rows.map((row) => (
               <tr
                 key={row.user.id}
-                className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50/70 ${selectedRow?.user?.id === row.user.id ? 'bg-sky-50/80' : ''}`}
+                className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 ${selectedRow?.user?.id === row.user.id ? 'bg-sky-50' : ''}`}
                 onClick={() => setSelectedUserId(row.user.id)}
               >
                 <td className="px-4 py-3">
@@ -1841,7 +1841,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           ) : (
             <div className="mt-3 space-y-2 max-h-72 overflow-auto">
               {leaveRequests.map((item) => (
-                <div key={item.id} className="rounded-[22px] border border-slate-200 p-3">
+                <div key={item.id} className="rounded-lg border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium text-gray-900">
                       {item.user?.name || 'You'}: {item.start_date} to {item.end_date}
@@ -1862,7 +1862,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   ) : null}
                   {canReviewLeaveRequest(item) && item.status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
-                      <Button onClick={() => approveLeave(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
+                      <Button onClick={() => approveLeave(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
                       <Button onClick={() => rejectLeave(item.id)} variant="danger" size="sm">Reject</Button>
                     </div>
                   ) : null}
@@ -1873,7 +1873,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   ) : null}
                   {canReviewLeaveRequest(item) && item.status === 'approved' && item.revoke_status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
-                      <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve Revoke</Button>
+                      <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve Revoke</Button>
                       <Button onClick={() => rejectLeaveRevoke(item.id)} variant="danger" size="sm">Reject Revoke</Button>
                     </div>
                   ) : null}
@@ -1941,7 +1941,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           ) : (
             <div className="mt-3 space-y-2 max-h-72 overflow-auto">
               {timeEditRequests.map((item) => (
-                <div key={item.id} className="rounded-[22px] border border-slate-200 p-3">
+                <div key={item.id} className="rounded-lg border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium text-gray-900">
                       {item.user?.name || 'You'}: {item.attendance_date} (+{formatDuration(item.extra_seconds)})
@@ -1954,7 +1954,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
                   {canReviewTimeEditRequest(item) && item.status === 'pending' ? (
                     <div className="mt-2 flex gap-2">
-                      <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700">Approve</Button>
+                      <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
                       <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
                     </div>
                   ) : null}

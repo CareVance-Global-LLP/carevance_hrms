@@ -14,7 +14,7 @@ import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 const baseControlClassName =
-  'w-full rounded-[20px] border border-slate-200/90 bg-white/85 px-3.5 py-2.5 text-sm text-slate-900 shadow-[0_16px_30px_-24px_rgba(15,23,42,0.25)] outline-none transition duration-300 placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
+  'w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
 
 export function FieldLabel({
   children,
@@ -131,7 +131,7 @@ export function SelectInput({
         <div
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute left-0 right-0 top-full z-50 mt-2 max-h-72 overflow-auto rounded-[24px] border border-slate-200 bg-white p-2 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.32)]"
+          className="absolute left-0 right-0 top-full z-50 mt-2 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-sm"
         >
           {options.map((option) => {
             const isSelected = option.value === controlledValue;
@@ -149,7 +149,7 @@ export function SelectInput({
                   setOpen(false);
                 }}
                 className={cn(
-                  'flex w-full items-center justify-between gap-3 rounded-[18px] px-3.5 py-2.5 text-left text-sm transition',
+                  'flex w-full items-center justify-between gap-3 rounded-lg px-3.5 py-2.5 text-left text-sm transition',
                   isSelected ? 'bg-sky-50 text-sky-800' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-950',
                   option.disabled && 'cursor-not-allowed opacity-50'
                 )}

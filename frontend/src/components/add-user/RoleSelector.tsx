@@ -50,14 +50,14 @@ export default function RoleSelector({
               key={option.value}
               type="button"
               onClick={() => onChange(option.value)}
-              className={`rounded-[24px] border px-4 py-4 text-left transition ${
+              className={`rounded-lg border px-4 py-4 text-left transition ${
                 active
-                  ? 'border-sky-300 bg-sky-50/85 shadow-[0_22px_46px_-34px_rgba(14,165,233,0.45)]'
-                  : 'border-slate-200/90 bg-white/85 hover:border-slate-300'
+                  ? 'border-sky-300 bg-sky-50 shadow-sm'
+                  : 'border-slate-200 bg-white hover:border-slate-300'
               }`}
             >
               <div className="flex items-start gap-3">
-                <div className={`rounded-2xl p-2.5 ${active ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                <div className={`rounded-lg p-2.5 ${active ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
                   <Icon className="h-4 w-4" />
                 </div>
                 <div>

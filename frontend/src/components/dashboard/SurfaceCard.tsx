@@ -10,9 +10,9 @@ export default function SurfaceCard({ children, className = '', ...props }: Surf
   return (
     <AdaptiveSurface
       {...props}
-      className={`glass-panel premium-ring rounded-[28px] border border-white/70 bg-white/80 shadow-[0_24px_70px_-46px_rgba(15,23,42,0.42)] ${className}`.trim()}
+      className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`.trim()}
       tone="light"
-      backgroundColor="rgba(255,255,255,0.8)"
+      backgroundColor="#ffffff"
     >
       {children}
     </AdaptiveSurface>

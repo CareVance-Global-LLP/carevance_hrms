@@ -1168,11 +1168,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               {renderPanelRefreshButton()}
             </div>
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Date Range</p>
                 <p className="mt-2 text-lg font-semibold text-slate-950">{startDate} to {endDate}</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Filters</p>
                 <p className="mt-2 text-lg font-semibold text-slate-950">
                   {effectiveSelectedUserId ? 'Single employee' : selectedGroupId ? 'Single group' : 'Organization-wide'}

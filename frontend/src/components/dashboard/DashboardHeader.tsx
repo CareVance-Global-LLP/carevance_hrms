@@ -21,9 +21,9 @@ export default function DashboardHeader({
 }: DashboardHeaderProps) {
   return (
     <div className="relative z-20 space-y-4">
-      <SurfaceCard className="relative z-20 overflow-visible border-white/90 bg-white/96 p-5 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.24)] sm:p-6">
+      <SurfaceCard className="relative z-20 overflow-visible p-4">
         <PageHeader eyebrow={eyebrow} title={title} titleClassName={titleClassName} description={description} actions={actions} />
-        {children ? <div className="mt-5 border-t border-slate-200/80 pt-5">{children}</div> : null}
+        {children ? <div className="mt-5 border-t border-slate-200 pt-5">{children}</div> : null}
       </SurfaceCard>
     </div>
   );

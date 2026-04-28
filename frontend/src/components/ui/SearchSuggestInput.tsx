@@ -140,7 +140,7 @@ export default function SearchSuggestInput({
         <div
           id={listboxId}
           role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_24px_70px_-32px_rgba(15,23,42,0.32)]"
+          className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
         >
           {rankedSuggestions.length === 0 ? (
             <div className="px-4 py-3 text-sm text-slate-500">{emptyMessage}</div>

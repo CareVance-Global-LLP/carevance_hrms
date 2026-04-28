@@ -37,7 +37,7 @@ export default function EmailTagInput({
   return (
     <div>
       <FieldLabel hint={`${emails.length} added`}>Invite By Email</FieldLabel>
-      <div className="rounded-[24px] border border-slate-200/90 bg-white/90 p-3 shadow-[0_20px_40px_-30px_rgba(15,23,42,0.2)]">
+      <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap gap-2">
           {emails.map((email) => (
             <span

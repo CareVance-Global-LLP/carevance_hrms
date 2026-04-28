@@ -46,7 +46,7 @@ export default function DashboardFilterBar({
   actionSlot,
 }: DashboardFilterBarProps) {
   return (
-    <div className="relative z-30 grid grid-cols-1 gap-4 rounded-[24px] border border-slate-200/80 bg-slate-50/75 p-4 xl:grid-cols-[1.2fr_1.3fr_1fr_auto]">
+    <div className="relative z-30 grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 xl:grid-cols-[1.2fr_1.3fr_1fr_auto]">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
           <FieldLabel>Scope</FieldLabel>

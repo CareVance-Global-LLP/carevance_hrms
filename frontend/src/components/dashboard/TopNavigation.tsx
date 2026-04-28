@@ -83,7 +83,7 @@ function MenuItemRow({
 }) {
   const description = getItemDescription(groupLabel, item.label);
   const itemClassName = cn(
-    'flex items-start gap-3 rounded-[18px] px-3 py-3 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white',
+    'flex items-start gap-3 rounded-lg px-3 py-3 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white',
     active ? 'bg-sky-50 text-sky-800' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
   );
 
@@ -153,10 +153,10 @@ export default function TopNavigation({
     'inline-flex h-10 shrink-0 items-center whitespace-nowrap rounded-full border text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
     isCompactDesktopNav ? 'gap-1.5 px-3.5' : 'gap-2 px-4'
   );
-  const desktopPillActiveClassName = 'border-slate-950 bg-slate-950 text-white shadow-[0_18px_38px_-26px_rgba(15,23,42,0.8)]';
-  const desktopPillInactiveClassName = 'border-transparent text-slate-600 hover:border-white/80 hover:bg-white hover:text-slate-950';
+  const desktopPillActiveClassName = 'border-blue-600 bg-blue-600 text-white shadow-sm';
+  const desktopPillInactiveClassName = 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-950';
   const mobilePillBaseClassName =
-    'w-full rounded-[20px] border border-slate-200/80 px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white';
+    'w-full rounded-lg border border-slate-200 px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white';
 
   useLayoutEffect(() => {
     if (mobile) {
@@ -392,7 +392,7 @@ export default function TopNavigation({
         className={
           mobile
             ? 'flex w-full flex-col gap-2'
-            : 'rounded-full border border-white/85 bg-white/72 p-1.5 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.45)]'
+            : 'rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm'
         }
       >
         {mobile ? (
@@ -416,7 +416,7 @@ export default function TopNavigation({
                       'inline-flex items-center gap-2 whitespace-nowrap justify-between',
                       mobilePillBaseClassName,
                       isActive || expanded
-                        ? 'bg-slate-950 text-white shadow-[0_18px_38px_-26px_rgba(15,23,42,0.8)]'
+                        ? 'bg-blue-600 text-white shadow-sm'
                         : 'text-slate-600 hover:bg-white hover:text-slate-950'
                     )}
                   >
@@ -427,7 +427,7 @@ export default function TopNavigation({
                   </button>
 
                   {expanded ? (
-                    <div role="menu" className="mt-2 space-y-1 rounded-[24px] border border-slate-200/80 bg-white/92 p-2 shadow-[0_20px_50px_-36px_rgba(15,23,42,0.45)]">
+                    <div role="menu" className="mt-2 space-y-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
                       {group.items.map((item) => (
                         <MenuItemRow
                           key={item.to}
@@ -467,7 +467,7 @@ export default function TopNavigation({
                   'inline-flex items-center gap-2 whitespace-nowrap justify-start',
                   mobilePillBaseClassName,
                   isActive
-                    ? 'bg-slate-950 text-white shadow-[0_18px_38px_-26px_rgba(15,23,42,0.8)]'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-white hover:text-slate-950'
                 )}
               >
@@ -483,7 +483,7 @@ export default function TopNavigation({
                   'inline-flex items-center gap-2 whitespace-nowrap justify-start',
                   mobilePillBaseClassName,
                   isActive
-                    ? 'bg-slate-950 text-white shadow-[0_18px_38px_-26px_rgba(15,23,42,0.8)]'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-white hover:text-slate-950'
                 )}
               >
@@ -607,7 +607,7 @@ export default function TopNavigation({
             <div
               ref={dropdownRef}
               role="menu"
-              className="fixed z-[120] max-h-[min(70vh,32rem)] overflow-y-auto overscroll-contain rounded-[24px] border border-white/80 bg-white/95 p-2 shadow-[0_32px_90px_-48px_rgba(15,23,42,0.55)] backdrop-blur-2xl"
+              className="fixed z-[120] max-h-[min(70vh,32rem)] overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white p-2 shadow-sm"
               style={{
                 top: `${dropdownStyle.top}px`,
                 left: `${dropdownStyle.left}px`,
@@ -621,7 +621,7 @@ export default function TopNavigation({
 
                     if (!group.items?.length) {
                       const directGroupClassName = cn(
-                        'flex items-center gap-3 rounded-[18px] px-3 py-3 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white',
+                  'flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white',
                         directGroupActive ? 'bg-sky-50 text-sky-800' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
                       );
 

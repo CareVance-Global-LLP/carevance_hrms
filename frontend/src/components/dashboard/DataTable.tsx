@@ -31,41 +31,39 @@ export default function DataTable<T>({
 }: DataTableProps<T>) {
   return (
     <SurfaceCard className="overflow-hidden">
-      <div className="border-b border-slate-200/80 px-5 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">{title}</h2>
-            {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
-          </div>
-          {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-[15px] font-semibold text-slate-950">{title}</h2>
+          {description ? <p className="mt-1 text-xs text-slate-500">{description}</p> : null}
         </div>
+        {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
       </div>
       <div className={`overflow-x-auto ${bodyClassName || ''}`.trim()}>
-        <table className="min-w-full text-sm">
-          <thead className={stickyHeader ? 'sticky top-0 z-10 bg-slate-50/95 backdrop-blur' : 'bg-slate-50/80'}>
+        <table className="min-w-full text-left text-xs">
+          <thead className={stickyHeader ? 'sticky top-0 z-10 bg-slate-50' : 'bg-slate-50'}>
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`whitespace-nowrap px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 ${column.className || ''}`.trim()}
+                  className={`whitespace-nowrap px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-slate-500 ${column.className || ''}`.trim()}
                 >
                   {column.header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100 bg-white">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-5 py-8 text-center text-sm text-slate-500">
+                <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-slate-500">
                   {emptyMessage}
                 </td>
               </tr>
             ) : (
               rows.map((row, index) => (
-                <tr key={index} className="border-t border-slate-100/90">
+                <tr key={index}>
                   {columns.map((column) => (
-                    <td key={column.key} className={`px-5 py-3 align-top text-slate-700 ${column.className || ''}`.trim()}>
+                    <td key={column.key} className={`px-4 py-3 align-top text-slate-700 ${column.className || ''}`.trim()}>
                       {column.render(row)}
                     </td>
                   ))}

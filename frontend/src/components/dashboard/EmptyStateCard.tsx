@@ -15,9 +15,9 @@ export default function EmptyStateCard({
   className = '',
 }: EmptyStateCardProps) {
   return (
-    <SurfaceCard className={`p-5 ${className}`.trim()}>
+    <SurfaceCard className={`p-4 ${className}`.trim()}>
       <div className="flex items-start gap-4">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
           <Icon className="h-5 w-5" />
         </div>
         <div>

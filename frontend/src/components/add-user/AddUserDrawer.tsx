@@ -322,10 +322,10 @@ export default function AddUserDrawer({
         <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm" onClick={onClose} />
       ) : null}
       <aside className={presentation === 'modal' ? 'absolute inset-0 flex items-start justify-center overflow-y-auto p-4 sm:p-6 lg:p-8' : 'relative'}>
-        <div className={`flex w-full flex-col gap-6 rounded-[34px] border border-white/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.97),rgba(255,255,255,0.99))] p-4 shadow-[0_40px_120px_-48px_rgba(15,23,42,0.55)] sm:p-6 ${
+        <div className={`flex w-full flex-col gap-6 rounded-lg border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.97),rgba(255,255,255,0.99))] p-4 shadow-sm sm:p-6 ${
           presentation === 'modal' ? 'mt-16 max-w-[72rem] sm:mt-20' : ''
         }`}>
-          <div className="flex items-start justify-between gap-4 rounded-[30px] border border-white/70 bg-white/85 p-5 shadow-[0_28px_70px_-42px_rgba(15,23,42,0.3)]">
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
                 <UserPlus className="h-3.5 w-3.5" />
@@ -350,16 +350,16 @@ export default function AddUserDrawer({
             />
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 rounded-[28px] border border-slate-200/80 bg-slate-50/80 p-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
             {tabOptions.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`rounded-[22px] px-4 py-3 text-left transition ${
+                className={`rounded-lg px-4 py-3 text-left transition ${
                   activeTab === tab.id
-                    ? 'bg-white text-slate-950 shadow-[0_24px_50px_-36px_rgba(15,23,42,0.28)]'
-                    : 'text-slate-500 hover:bg-white/70 hover:text-slate-900'
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-slate-500 hover:bg-white hover:text-slate-900'
                 }`}
               >
                 <p className="text-sm font-semibold">{tab.label}</p>
@@ -368,7 +368,7 @@ export default function AddUserDrawer({
             ))}
           </div>
 
-          <section className={`space-y-6 rounded-[30px] border border-white/70 bg-white/85 p-5 shadow-[0_28px_70px_-42px_rgba(15,23,42,0.3)] ${
+          <section className={`space-y-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm ${
             presentation === 'modal' ? 'max-h-[calc(100vh-14rem)] overflow-y-auto' : ''
           }`}>
             {activeTab === 'email' ? (
@@ -421,7 +421,7 @@ export default function AddUserDrawer({
               </>
             ) : null}
 
-            <div className="rounded-[26px] border border-slate-200/80 bg-slate-50/70">
+            <div className="rounded-lg border border-slate-200 bg-slate-50">
               <div className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left">
                 <div>
                   <p className="text-sm font-semibold text-slate-950">Additional settings</p>
@@ -445,7 +445,7 @@ export default function AddUserDrawer({
                     </SelectInput>
                   </div>
 
-                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Can edit time</p>
@@ -458,7 +458,7 @@ export default function AddUserDrawer({
                     </div>
                   </div>
 
-                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Attendance monitoring</p>
@@ -471,7 +471,7 @@ export default function AddUserDrawer({
                     </div>
                   </div>
 
-                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Payroll visibility</p>
@@ -485,7 +485,7 @@ export default function AddUserDrawer({
                     </div>
                   </div>
 
-                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3 md:col-span-2">
+                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 md:col-span-2">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Task assignment defaults</p>
@@ -500,7 +500,7 @@ export default function AddUserDrawer({
               </div>
             </div>
 
-            <label className="flex items-start gap-3 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4 text-sm text-slate-600">
+            <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
               <input
                 type="checkbox"
                 checked={rememberDefaults}
@@ -529,14 +529,14 @@ export default function AddUserDrawer({
             ) : null}
 
             {groupsQuery.isLoading ? (
-              <div className="flex items-center gap-2 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
+              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Preparing invite configuration data...
               </div>
             ) : null}
 
             {membersQuery.isLoading ? (
-              <div className="flex items-center gap-2 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3 text-sm text-slate-500">
+              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Checking existing organization members...
               </div>

@@ -39,9 +39,9 @@ export default function DashboardInsightList({
   contentClassName,
 }: DashboardInsightListProps) {
   return (
-    <SurfaceCard className={cn('flex h-full min-h-[320px] max-h-[420px] flex-col p-5', className)}>
-      <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">{title}</h2>
-      <p className="mt-1 text-sm text-slate-500">{description}</p>
+    <SurfaceCard className={cn('flex h-full min-h-[320px] max-h-[420px] flex-col p-4', className)}>
+      <h2 className="text-[15px] font-semibold text-slate-950">{title}</h2>
+      <p className="mt-1 text-xs text-slate-500">{description}</p>
 
       <div className={cn('mt-5 min-h-0 flex-1 overflow-y-auto pr-1', contentClassName)}>
         {items.length === 0 ? (
@@ -49,7 +49,7 @@ export default function DashboardInsightList({
         ) : (
           <div className="space-y-3">
             {items.map((item) => (
-              <div key={item.id} className="flex items-start justify-between gap-4 rounded-[22px] border border-slate-200 bg-slate-50/70 px-4 py-3">
+              <div key={item.id} className="flex items-start justify-between gap-4 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
                 <div className="min-w-0">
                   <p className="font-medium text-slate-950">{item.title}</p>
                   {item.subtitle ? <p className="mt-1 text-sm text-slate-500">{item.subtitle}</p> : null}

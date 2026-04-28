@@ -593,7 +593,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const selectedUserBrowserTracking = (selectedUserLive?.browser_tracking || null) as BrowserTrackingHealthSummary | null;
 
   const renderBrowserTrackingCard = (browserTracking: BrowserTrackingHealthSummary | null) => (
-    <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
       <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Browser tracking</p>
       <p className={`mt-2 text-base font-semibold ${browserTrackingTone(browserTracking?.status)}`}>
         {formatBrowserTrackingStatus(browserTracking)}
@@ -783,17 +783,17 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 </div>
 
                 <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
                     <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.current_tool || 'No active tool detected'}</p>
                     <p className="mt-1 text-sm capitalize text-slate-500">{selectedUserLive.tool_type || selectedUserLive.activity_type || 'No tool type'}</p>
                   </div>
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
                     <p className="mt-2 text-base font-semibold capitalize text-slate-950">{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
                     <p className="mt-1 text-sm text-slate-500">{selectedUserLive.is_working ? 'Timer is active right now' : 'No active timer right now'}</p>
                   </div>
-                  <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
                     <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
                     <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
@@ -801,7 +801,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   {renderBrowserTrackingCard(selectedUserBrowserTracking)}
                 </div>
 
-                <div className="mt-4 rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Top unproductive tool</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{topUnproductiveTool?.label || 'No unproductive tool found'}</p>
                   <p className="mt-1 text-sm text-slate-500">
@@ -862,7 +862,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                           href={shotPath}
                           target="_blank"
                           rel="noreferrer"
-                          className="overflow-hidden rounded-[20px] border border-slate-200 bg-white transition hover:border-sky-200"
+                          className="overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-sky-200"
                         >
                           <img
                             src={shotPath}
@@ -977,17 +977,17 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
               </div>
 
               <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current activity</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.current_tool || 'No active tool detected'}</p>
                   <p className="mt-1 text-sm capitalize text-slate-500">{selectedUserLive.tool_type || selectedUserLive.activity_type || 'No tool type'}</p>
                 </div>
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
                   <p className="mt-2 text-base font-semibold capitalize text-slate-950">{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
                   <p className="mt-1 text-sm text-slate-500">{selectedUserLive.is_working ? 'Timer is active right now' : 'No active timer right now'}</p>
                 </div>
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
                   <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
@@ -1003,17 +1003,17 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             <SurfaceCard className="p-5">
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Total in range</p>
                     <p className="mt-2 text-lg font-semibold text-slate-950">{screenshotTotal}</p>
                   </div>
                   {canDeleteScreenshots ? (
-                    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                       <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
                       <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
                     </div>
                   ) : null}
-                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Date range</p>
                     <p className="mt-2 text-sm font-semibold text-slate-950">{startDate} to {endDate}</p>
                   </div>
@@ -1066,8 +1066,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   return (
                     <div
                       key={shot.id}
-                      className={`overflow-hidden rounded-[24px] border bg-white transition ${
-                        isSelected ? 'border-sky-300 shadow-[0_18px_40px_-28px_rgba(14,165,233,0.45)]' : 'border-slate-200'
+                      className={`overflow-hidden rounded-lg border bg-white transition ${
+                        isSelected ? 'border-sky-300 shadow-sm' : 'border-slate-200'
                       }`}
                     >
                       <div className="relative">
@@ -1085,7 +1085,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                           }}
                         />
                         {canDeleteScreenshots ? (
-                          <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
+                          <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
                             <input
                               type="checkbox"
                               className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
@@ -1116,7 +1116,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   );
                 })}
               </div>
-              <div className="mt-5 flex flex-col gap-3 border-t border-slate-200/80 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-500">
                   Page {screenshotCurrentPage} of {screenshotLastPage}
                   {screenshotTotal > 0 ? ` • ${screenshotTotal} total screenshot${screenshotTotal === 1 ? '' : 's'}` : ''}
@@ -1171,17 +1171,17 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 </div>
               </div>
               <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Employee</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.user?.name || 'Unknown'}</p>
                   <p className="mt-1 text-sm text-slate-500">{selectedUserLive.user?.email || 'No email available'}</p>
                 </div>
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.current_tool || 'No active tool detected'}</p>
                   <p className="mt-1 text-sm capitalize text-slate-500">{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
                 </div>
-                <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last seen</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
                   <p className="mt-1 text-sm text-slate-500">Most recent monitoring signal</p>

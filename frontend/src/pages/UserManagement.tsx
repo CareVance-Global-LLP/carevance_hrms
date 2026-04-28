@@ -438,7 +438,7 @@ export default function UserManagement() {
             type="button"
             onClick={() => setSelectedProfileUserId(u.id)}
             className={`bg-white rounded-xl border p-5 text-left transition ${
-              selectedUser?.id === u.id ? 'border-sky-300 shadow-[0_18px_36px_-28px_rgba(14,165,233,0.45)]' : 'border-gray-200 hover:border-sky-200'
+              selectedUser?.id === u.id ? 'border-sky-300 shadow-sm' : 'border-gray-200 hover:border-sky-200'
             }`}
           >
             <div className="flex items-start justify-between">
@@ -498,22 +498,22 @@ export default function UserManagement() {
         ) : (
           <div className="mt-5 space-y-5">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Worked</p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">{formatDuration(profile360Query.data.summary.total_duration)}</p>
                 <p className="mt-1 text-xs text-slate-500">{profile360Query.data.summary.entries_count} entries in range</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Attendance</p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">{profile360Query.data.summary.present_days}</p>
                 <p className="mt-1 text-xs text-slate-500">{profile360Query.data.summary.attendance_days} tracked days</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Approved Leave</p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">{profile360Query.data.summary.approved_leave_days}</p>
                 <p className="mt-1 text-xs text-slate-500">Days approved</p>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Time Adjustments</p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">{formatDuration(profile360Query.data.summary.approved_time_edit_seconds)}</p>
                 <p className="mt-1 text-xs text-slate-500">Approved overtime/time edits</p>
@@ -521,7 +521,7 @@ export default function UserManagement() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">Current status</h3>
                 <div className="mt-3 space-y-2 text-sm text-slate-600">
                   <p>Role: <span className="font-medium text-slate-950">{profile360Query.data.user.role}</span></p>
@@ -531,7 +531,7 @@ export default function UserManagement() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">Latest attendance</h3>
                 {profile360Query.data.status.latest_attendance ? (
                   <div className="mt-3 space-y-2 text-sm text-slate-600">
@@ -543,7 +543,7 @@ export default function UserManagement() {
                 ) : <p className="mt-3 text-sm text-slate-500">No attendance record found.</p>}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">Latest notification</h3>
                 {profile360Query.data.status.latest_notification ? (
                   <div className="mt-3 space-y-2 text-sm text-slate-600">
@@ -556,7 +556,7 @@ export default function UserManagement() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">Recent time entries</h3>
                 <div className="mt-3 space-y-2">
                   {profile360Query.data.recent_time_entries.length === 0 ? (
@@ -573,7 +573,7 @@ export default function UserManagement() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">Payroll snapshots</h3>
                 <div className="mt-3 space-y-2">
                   {profile360Query.data.payslips.length === 0 ? (
@@ -598,7 +598,7 @@ export default function UserManagement() {
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">Leave history</h3>
                 <div className="mt-3 space-y-2">
                   {profile360Query.data.leave_requests.length === 0 ? (
@@ -615,7 +615,7 @@ export default function UserManagement() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">Time edit history</h3>
                 <div className="mt-3 space-y-2">
                   {profile360Query.data.time_edit_requests.length === 0 ? (

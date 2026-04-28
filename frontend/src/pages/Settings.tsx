@@ -340,7 +340,7 @@ export default function SettingsPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 rounded-[20px] px-4 py-3 text-sm font-medium transition ${activeTab === tab.id ? 'bg-sky-50 text-sky-700 shadow-[0_16px_34px_-26px_rgba(14,165,233,0.45)]' : 'text-gray-600 hover:bg-slate-50'}`}
+                className={`w-full flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition ${activeTab === tab.id ? 'bg-sky-50 text-sky-700 shadow-sm' : 'text-gray-600 hover:bg-slate-50'}`}
               >
                 <tab.icon className="h-5 w-5" />
                 {tab.name}
@@ -390,7 +390,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <FieldLabel>Role</FieldLabel>
-                  <div className="flex min-h-11 items-center rounded-[20px] border border-slate-200 bg-slate-50 px-3.5">
+                  <div className="flex min-h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3.5">
                     <StatusBadge tone="info">{user?.role || 'Unknown'}</StatusBadge>
                   </div>
                 </div>
@@ -440,7 +440,7 @@ export default function SettingsPage() {
                 { label: 'Project updates', value: notifyProject, set: setNotifyProject },
                 { label: 'Task assignments', value: notifyTask, set: setNotifyTask },
               ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between rounded-[22px] border border-slate-100 bg-slate-50/65 px-4 py-3">
+                <div key={item.label} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
                   <span className="text-gray-700">{item.label}</span>
                   <ToggleInput checked={item.value} onChange={item.set} />
                 </div>
@@ -462,7 +462,7 @@ export default function SettingsPage() {
           {activeTab === 'billing' && (
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Billing & Subscription</h2>
-              <div className="rounded-[24px] border border-sky-200/80 bg-sky-50/80 p-4">
+              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
                 <p className="text-sm text-primary-600">Current Plan: <span className="font-semibold">{billingPlan?.name || 'Basic'}</span></p>
                 <p className="text-xs text-primary-500 mt-1">
                   Status: {billingPlan?.status || 'N/A'}
@@ -549,7 +549,7 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Productivity Rule Engine</h2>
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <div className="space-y-4 rounded-[24px] border border-slate-200 bg-slate-50/50 p-4">
+                <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div><FieldLabel>Name</FieldLabel><TextInput type="text" value={ruleForm.name} onChange={(e) => setRuleForm((current) => ({ ...current, name: e.target.value }))} /></div>
                     <div><FieldLabel>Target Value</FieldLabel><TextInput type="text" value={ruleForm.target_value} onChange={(e) => setRuleForm((current) => ({ ...current, target_value: e.target.value }))} /></div>
@@ -562,13 +562,13 @@ export default function SettingsPage() {
                   </div>
                   <div><FieldLabel>Reason</FieldLabel><TextInput type="text" value={ruleForm.reason} onChange={(e) => setRuleForm((current) => ({ ...current, reason: e.target.value }))} /></div>
                   <div><FieldLabel>Notes</FieldLabel><TextInput type="text" value={ruleForm.notes} onChange={(e) => setRuleForm((current) => ({ ...current, notes: e.target.value }))} /></div>
-                  <div className="flex items-center justify-between rounded-[20px] border border-slate-200 bg-white px-4 py-3"><span className="text-sm text-slate-700">Rule enabled</span><ToggleInput checked={ruleForm.is_active} onChange={(checked) => setRuleForm((current) => ({ ...current, is_active: checked }))} /></div>
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3"><span className="text-sm text-slate-700">Rule enabled</span><ToggleInput checked={ruleForm.is_active} onChange={(checked) => setRuleForm((current) => ({ ...current, is_active: checked }))} /></div>
                   <div className="flex gap-3">
                     <Button onClick={saveRule}>{ruleForm.id ? 'Update Rule' : 'Create Rule'}</Button>
                     <Button variant="secondary" onClick={() => setRuleForm({ id: 0, name: '', target_type: 'app', match_mode: 'contains', target_value: '', classification: 'productive', priority: '100', scope_type: 'global', scope_id: '', is_active: true, reason: '', notes: '' })}>Reset</Button>
                   </div>
                 </div>
-                <div className="space-y-4 rounded-[24px] border border-slate-200 bg-slate-50/50 p-4">
+                <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <h3 className="font-semibold text-slate-900">Test Classification</h3>
                   <div><FieldLabel>Name</FieldLabel><TextInput type="text" value={ruleTest.name} onChange={(e) => setRuleTest((current) => ({ ...current, name: e.target.value }))} /></div>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -578,12 +578,12 @@ export default function SettingsPage() {
                   <div><FieldLabel>Window Title</FieldLabel><TextInput type="text" value={ruleTest.window_title} onChange={(e) => setRuleTest((current) => ({ ...current, window_title: e.target.value }))} /></div>
                   <div><FieldLabel>URL</FieldLabel><TextInput type="text" value={ruleTest.url} onChange={(e) => setRuleTest((current) => ({ ...current, url: e.target.value }))} /></div>
                   <Button variant="secondary" onClick={runRuleTest}>Run Test</Button>
-                  {ruleTestResult ? <div className="rounded-[20px] border border-slate-200 bg-white p-4 text-sm text-slate-700"><p><strong>Classification:</strong> {String(ruleTestResult.classification || 'neutral')}</p><p><strong>Label:</strong> {String(ruleTestResult.normalized_label || 'n/a')}</p><p><strong>Reason:</strong> {String(ruleTestResult.classification_reason || 'n/a')}</p></div> : null}
+                  {ruleTestResult ? <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700"><p><strong>Classification:</strong> {String(ruleTestResult.classification || 'neutral')}</p><p><strong>Label:</strong> {String(ruleTestResult.normalized_label || 'n/a')}</p><p><strong>Reason:</strong> {String(ruleTestResult.classification_reason || 'n/a')}</p></div> : null}
                 </div>
               </div>
               <div className="space-y-3">
                 {productivityRules.map((rule) => (
-                  <div key={rule.id} className="flex flex-col gap-3 rounded-[22px] border border-slate-200 bg-white px-4 py-4 md:flex-row md:items-center md:justify-between">
+                  <div key={rule.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-4 md:flex-row md:items-center md:justify-between">
                     <div>
                       <p className="font-medium text-slate-950">{rule.name || rule.target_value}</p>
                       <p className="text-sm text-slate-500">{rule.scope_type} • {rule.target_type} • {rule.match_mode} • {rule.classification}</p>

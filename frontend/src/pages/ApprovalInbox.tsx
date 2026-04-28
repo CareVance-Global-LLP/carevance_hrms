@@ -202,7 +202,7 @@ export default function ApprovalInbox() {
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
-                    className="bg-emerald-600 shadow-[0_18px_40px_-24px_rgba(5,150,105,0.6)] hover:bg-emerald-700"
+                    className="bg-emerald-600 shadow-sm hover:bg-emerald-700"
                     onClick={() => handleAction(item.onApprove, `${item.employee_name}'s request approved.`)}
                   >
                     <CheckCircle2 className="h-4 w-4" />
