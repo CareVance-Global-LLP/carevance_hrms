@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminDashboard from '@/pages/AdminDashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -16,6 +16,9 @@ const apiMocks = vi.hoisted(() => ({
   auditLogs: vi.fn(),
   weeklyReport: vi.fn(),
   monthlyReport: vi.fn(),
+  profile360: vi.fn(),
+  employeeInsights: vi.fn(),
+  screenshots: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -28,10 +31,11 @@ vi.mock('@/services/api', async () => {
   const actual = await vi.importActual<typeof import('@/services/api')>('@/services/api');
   return {
     ...actual,
-    userApi: { getAll: apiMocks.users },
+    userApi: { getAll: apiMocks.users, getProfile360: apiMocks.profile360 },
     attendanceApi: { summary: apiMocks.attendanceSummary },
     leaveApi: { list: apiMocks.leaveList },
-    reportApi: { overall: apiMocks.overall, weekly: apiMocks.weeklyReport, monthly: apiMocks.monthlyReport },
+    reportApi: { overall: apiMocks.overall, weekly: apiMocks.weeklyReport, monthly: apiMocks.monthlyReport, employeeInsights: apiMocks.employeeInsights },
+    screenshotApi: { getAll: apiMocks.screenshots },
     dashboardApi: { summary: apiMocks.dashboardSummary },
     taskApi: { getAll: apiMocks.tasks },
     payrollApi: { getRecords: apiMocks.payrollRecords },
@@ -49,13 +53,37 @@ describe('AdminDashboard WorkWise redesign', () => {
       data: [
         { id: 1, name: 'Alex Johnson', email: 'alex@carevance.test', role: 'employee', department: 'Design', position: 'UI/UX Designer', is_active: true },
         { id: 2, name: 'Leslie Alexander', email: 'leslie@carevance.test', role: 'employee', department: 'Marketing', position: 'Marketing Manager', is_active: true },
+        { id: 3, name: 'Morgan Lee', email: 'morgan@carevance.test', role: 'employee', department: 'Design', position: 'QA Analyst', is_active: true },
       ],
     });
     apiMocks.attendanceSummary.mockResolvedValue({
       data: {
         data: [
-          { user: { id: 1, name: 'Alex Johnson', email: 'alex@carevance.test', role: 'employee' }, present_days: 1, late_days: 0, total_worked_seconds: 19800, is_checked_in: true },
-          { user: { id: 2, name: 'Leslie Alexander', email: 'leslie@carevance.test', role: 'employee' }, present_days: 0, late_days: 1, total_worked_seconds: 0, is_checked_in: false },
+          {
+            user: { id: 1, name: 'Alex Johnson', email: 'alex@carevance.test', role: 'employee' },
+            present_days: 1,
+            late_days: 0,
+            late_minutes: 0,
+            total_worked_seconds: 19800,
+            is_checked_in: true,
+            check_in_at: '2026-04-27T09:00:00Z',
+            check_out_at: null,
+            open_punch_in_at: '2026-04-27T09:00:00Z',
+            last_check_in_at: '2026-04-27T09:00:00Z',
+            last_check_out_at: null,
+          },
+          {
+            user: { id: 2, name: 'Leslie Alexander', email: 'leslie@carevance.test', role: 'employee' },
+            present_days: 0,
+            late_days: 1,
+            late_minutes: 12,
+            total_worked_seconds: 0,
+            is_checked_in: false,
+            check_in_at: '2026-04-27T10:05:00Z',
+            check_out_at: '2026-04-27T12:10:00Z',
+            last_check_in_at: '2026-04-27T10:05:00Z',
+            last_check_out_at: '2026-04-27T12:10:00Z',
+          },
         ],
       },
     });
@@ -87,26 +115,113 @@ describe('AdminDashboard WorkWise redesign', () => {
     apiMocks.auditLogs.mockResolvedValue({ data: { data: [{ id: 1, action: 'auth.login', actor: { name: 'Akash Admin' }, created_at: '2026-04-27T08:00:00Z' }] } });
     apiMocks.weeklyReport.mockResolvedValue({ data: { time_entries: [], by_project: [], total_duration: 0 } });
     apiMocks.monthlyReport.mockResolvedValue({ data: { by_day: [] } });
+    apiMocks.profile360.mockResolvedValue({
+      data: {
+        summary: { present_days: 4, idle_duration: 1800, attendance_days: 5 },
+        status: { is_working: true, latest_attendance: { check_in_at: '2026-04-27T09:00:00Z', check_out_at: null } },
+        recent_time_entries: [{ id: 11, description: 'UI polish', duration: 3600, start_time: '2026-04-27T09:00:00Z', project: { name: 'Website Redesign' } }],
+        attendance_records: [{ id: 21, attendance_date: '2026-04-27', status: 'present', worked_seconds: 19800, late_minutes: 0 }],
+      },
+    });
+    apiMocks.employeeInsights.mockResolvedValue({
+      data: {
+        stats: {
+          tracked_duration: 19800,
+          working_duration: 18000,
+          idle_total_duration: 1800,
+          productive_duration: 12600,
+          unproductive_duration: 900,
+          neutral_duration: 450,
+          context_dependent_duration: 0,
+          activity_total_duration: 13950,
+        },
+        selected_user_tools: {
+          productive: [{ label: 'Figma', classification: 'productive', total_duration: 7200 }],
+          unproductive: [{ label: 'Social media', classification: 'unproductive', total_duration: 900 }],
+          neutral: [],
+          context_dependent: [],
+        },
+        recent_screenshots: [],
+      },
+    });
+    apiMocks.screenshots.mockResolvedValue({
+      data: {
+        total: 2,
+        data: [
+          { id: 31, filename: 'screen-1.png', recorded_at: '2026-04-27T09:30:00Z' },
+          { id: 32, filename: 'screen-2.png', recorded_at: '2026-04-27T10:30:00Z' },
+        ],
+      },
+    });
   });
 
   it('renders the WorkWise-style dashboard sections', async () => {
     renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
 
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect((await screen.findAllByText('Alex Johnson')).length).toBeGreaterThan(0);
     expect(screen.getByText('Total Employees')).toBeInTheDocument();
     expect(screen.getByText('Present Today')).toBeInTheDocument();
     expect(screen.getByText('Attendance Overview')).toBeInTheDocument();
     expect(screen.getByText('Leave Summary')).toBeInTheDocument();
     expect(screen.getByText('Department Distribution')).toBeInTheDocument();
-    expect(screen.getByText('Upcoming Birthdays')).toBeInTheDocument();
-    expect(screen.getByText('Recent Activities')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Employee Deep Dive' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search employee details')).toBeInTheDocument();
+    expect(await screen.findByText('Screenshot Access')).toBeInTheDocument();
+    expect(screen.getByText('Productivity')).toBeInTheDocument();
+    expect(screen.getByText('Top Tools & Sites')).toBeInTheDocument();
+    expect(screen.getByText('Recent Work')).toBeInTheDocument();
+    expect(screen.getByText('Attendance History')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Communication Hub' })).toBeInTheDocument();
+    expect(screen.getByText('Birthdays')).toBeInTheDocument();
+    expect(screen.getByText('Activity')).toBeInTheDocument();
     expect(screen.getByText('Announcements')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Current Work Status' })).toBeInTheDocument();
+    expect(screen.getAllByText('Working').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Not working').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Search work status')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter work status by department')).toBeInTheDocument();
+    expect(screen.getByLabelText('Filter work status')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Check-In / Check-Out Log' })).toBeInTheDocument();
+    expect(screen.getAllByText('Last check in').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Last check out').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Still checked in').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('On time').length).toBeGreaterThan(0);
+    expect(screen.getByText('12 min late')).toBeInTheDocument();
+    expect(screen.getByText('No punch')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Attendance Health' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'People Summary' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Employees' })).not.toBeInTheDocument();
+    expect(screen.getByText('Manage Employees')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Time Tracker' })).toBeInTheDocument();
-    expect(screen.getByText('Timesheets')).toBeInTheDocument();
-    expect(screen.getByText('Payroll Summary')).toBeInTheDocument();
+    expect(screen.getAllByText('Timesheets').length).toBeGreaterThan(0);
+    expect(screen.getByText('Payroll Snapshot')).toBeInTheDocument();
+    expect(screen.getByText('Task Pipeline')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();
     expect(screen.getByText('Projects')).toBeInTheDocument();
+  });
+
+  it('searches an employee and updates the deep-dive panel', async () => {
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    expect(await screen.findByRole('heading', { name: 'Employee Deep Dive' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Search employee details'), { target: { value: 'leslie' } });
+
+    expect(screen.getByRole('button', { name: 'Leslie Alexander' })).toBeInTheDocument();
+    expect(screen.getAllByText('Leslie Alexander').length).toBeGreaterThan(0);
+  });
+
+  it('filters current work status by status and search term', async () => {
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    expect((await screen.findAllByText('Alex Johnson')).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText('Filter work status'), { target: { value: 'Working' } });
+
+    expect(screen.getAllByText('Alex Johnson').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Leslie Alexander')).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText('Search work status'), { target: { value: 'leslie' } });
+    expect(screen.getByText('No employees found')).toBeInTheDocument();
   });
 
   it('does not render demo fallback records when the database is empty', async () => {
@@ -122,10 +237,13 @@ describe('AdminDashboard WorkWise redesign', () => {
     apiMocks.auditLogs.mockResolvedValue({ data: { data: [] } });
     apiMocks.weeklyReport.mockResolvedValue({ data: { time_entries: [], by_project: [], total_duration: 0 } });
     apiMocks.monthlyReport.mockResolvedValue({ data: { by_day: [] } });
+    apiMocks.profile360.mockResolvedValue({ data: null });
+    apiMocks.employeeInsights.mockResolvedValue({ data: null });
+    apiMocks.screenshots.mockResolvedValue({ data: { data: [], total: 0 } });
 
     renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
 
-    expect(await screen.findByText('No employees found')).toBeInTheDocument();
+    expect((await screen.findAllByText('No employees found')).length).toBeGreaterThan(0);
     expect(screen.getByText('No birthdays available')).toBeInTheDocument();
     expect(screen.getByText('No recent activity yet')).toBeInTheDocument();
     expect(screen.getByText('No announcements yet')).toBeInTheDocument();

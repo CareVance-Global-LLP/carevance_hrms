@@ -650,8 +650,16 @@ export const attendanceApi = {
         user: { id: number; name: string; email: string; role: string };
         present_days: number;
         late_days: number;
+        late_minutes?: number;
         total_worked_seconds: number;
         is_checked_in: boolean;
+        check_in_at?: string | null;
+        check_out_at?: string | null;
+        open_punch_in_at?: string | null;
+        last_check_in_at?: string | null;
+        last_check_out_at?: string | null;
+        last_attendance_date?: string | null;
+        attendance_status?: string | null;
       }>;
     }>('/attendance/summary', { params }),
 };

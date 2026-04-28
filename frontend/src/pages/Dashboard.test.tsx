@@ -59,6 +59,9 @@ describe('Dashboard', () => {
           is_checked_in: true,
           shift_target_seconds: 28800,
           attendance_date: '2026-03-11',
+          check_in_at: '2026-03-11T09:00:00Z',
+          check_out_at: null,
+          late_minutes: 0,
         },
       },
     });
@@ -67,10 +70,13 @@ describe('Dashboard', () => {
   it('shows employee progress metrics without timer controls', async () => {
     renderWithProviders(<Dashboard />);
 
-    expect(await screen.findByText(/today's work progress/i)).toBeInTheDocument();
+    expect(await screen.findByText("Today's shift", { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByText('Worked Today')).toBeInTheDocument();
     expect(screen.getByText('Time Left Today')).toBeInTheDocument();
-    expect(screen.getByText('Today at a glance')).toBeInTheDocument();
+    expect(screen.getByText('Attendance & Shift')).toBeInTheDocument();
+    expect(screen.getByText('My Focus')).toBeInTheDocument();
+    expect(screen.getByText('Quick Actions')).toBeInTheDocument();
+    expect(screen.queryByText(/people in your organization/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /sending|send overtime proof/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/start tracking/i)).not.toBeInTheDocument();
   });
@@ -106,6 +112,9 @@ describe('Dashboard', () => {
           is_checked_in: false,
           shift_target_seconds: 28800,
           attendance_date: '2026-03-11',
+          check_in_at: '2026-03-11T09:00:00Z',
+          check_out_at: '2026-03-11T18:27:00Z',
+          late_minutes: 0,
         },
       },
     });

@@ -6,8 +6,6 @@ import {
   Bell,
   Briefcase,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   FileBarChart,
   FileClock,
@@ -32,6 +30,7 @@ import {
   payrollApi,
   reportApi,
   reportGroupApi,
+  screenshotApi,
   taskApi,
   userApi,
 } from '@/services/api';
@@ -105,11 +104,27 @@ const formatCompactDuration = (seconds: number) => {
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(amount || 0));
 
+const formatPercent = (value: number) => `${Math.round(Number.isFinite(value) ? value : 0)}%`;
+
 const formatDate = (value?: string | null) => {
   if (!value) return 'Today';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return 'Today';
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatTime = (value?: string | null) => {
+  if (!value) return 'Not recorded';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Not recorded';
+  return parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return 'Not recorded';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Not recorded';
+  return `${parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 };
 
 const initials = (name: string) =>
@@ -126,6 +141,14 @@ const humanizeAction = (action?: string | null) =>
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const safeArray = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+
+const hasActiveAttendance = (attendance: any) =>
+  Boolean(
+    attendance?.is_checked_in ||
+      attendance?.open_punch_in_at ||
+      attendance?.open_punch?.punch_in_at ||
+      (attendance?.check_in_at && !attendance?.check_out_at)
+  );
 
 const normalizeEmployee = (item: any): DashboardEmployee => {
   const workInfo = item?.employee_work_info || item?.employeeWorkInfo || item?.work_info || {};
@@ -242,9 +265,11 @@ const DonutChart = ({ items }: { items: Array<{ label: string; value: number; co
 
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const [employeeSearch, setEmployeeSearch] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [workSearch, setWorkSearch] = useState('');
+  const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
+  const [workStatusFilter, setWorkStatusFilter] = useState('All');
+  const [employeeDetailSearch, setEmployeeDetailSearch] = useState('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const now = new Date();
   const weekStart = startOfWeek(now);
   const weekEnd = endOfWeek(now);
@@ -324,15 +349,6 @@ export default function AdminDashboard() {
     const names = Array.from(new Set(employees.map((employee) => employee.department).filter(Boolean)));
     return ['All', ...names];
   }, [employees]);
-
-  const filteredEmployees = employees
-    .filter((employee) => departmentFilter === 'All' || employee.department === departmentFilter)
-    .filter((employee) => statusFilter === 'All' || employee.status === statusFilter)
-    .filter((employee) => {
-      const term = employeeSearch.trim().toLowerCase();
-      if (!term) return true;
-      return [employee.name, employee.email, employee.department, employee.position].some((value) => value.toLowerCase().includes(term));
-    });
 
   const totalEmployees = employees.length;
   const presentToday = data.attendanceRows.filter((row: any) => Number(row.present_days || 0) > 0 || row.is_checked_in).length;
@@ -432,17 +448,104 @@ export default function AdminDashboard() {
   const presentPercent = totalEmployees ? Math.round((presentToday / totalEmployees) * 100) : 0;
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
   const latePercent = totalEmployees ? Math.round((lateToday / totalEmployees) * 100) : 0;
+  const attendanceByEmployeeId = new Map(data.attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
+  const workStatusRows = employees.map((employee) => {
+    const attendance = attendanceByEmployeeId.get(employee.id);
+    const isWorking = employee.status !== 'On Leave' && hasActiveAttendance(attendance);
+    const checkInAt = attendance?.check_in_at || attendance?.open_punch_in_at || attendance?.last_check_in_at || null;
+    const checkOutAt = attendance?.check_out_at || attendance?.last_check_out_at || null;
+    return {
+      employee,
+      status: employee.status === 'On Leave' ? 'On Leave' : isWorking ? 'Working' : 'Not working',
+      todaySeconds: Number(attendance?.total_worked_seconds || attendance?.worked_seconds || 0),
+      lateMinutes: Number(attendance?.late_minutes || 0),
+      checkInAt,
+      checkOutAt,
+      lastSeen: isWorking ? 'Checked in now' : checkOutAt ? `Checked out ${formatTime(checkOutAt)}` : attendance ? 'Seen today' : 'No punch today',
+    };
+  });
+  const filteredWorkStatusRows = workStatusRows.filter((row) => {
+    const search = workSearch.trim().toLowerCase();
+    const matchesSearch = !search || [row.employee.name, row.employee.email, row.employee.position, row.employee.department]
+      .some((value) => String(value || '').toLowerCase().includes(search));
+    const matchesDepartment = workDepartmentFilter === 'All' || row.employee.department === workDepartmentFilter;
+    const matchesStatus = workStatusFilter === 'All' || row.status === workStatusFilter;
+    return matchesSearch && matchesDepartment && matchesStatus;
+  });
+  const workingCount = workStatusRows.filter((row) => row.status === 'Working').length;
+  const notWorkingCount = workStatusRows.filter((row) => row.status === 'Not working').length;
+  const attendanceHealth = [
+    { label: 'Working now', value: workingCount, color: 'bg-emerald-500' },
+    { label: 'Not started', value: notWorkingCount, color: 'bg-slate-400' },
+    { label: 'Late today', value: lateToday, color: 'bg-rose-500' },
+    { label: 'On leave', value: onLeave, color: 'bg-amber-500' },
+  ];
+  const taskStatusCounts: Record<string, number> = data.tasks.reduce((acc: Record<string, number>, task: any) => {
+    const status = String(task.status || 'todo').toLowerCase();
+    const key = status.includes('progress') ? 'In Progress' : status.includes('done') || status.includes('complete') ? 'Done' : 'To Do';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, { 'To Do': 0, 'In Progress': 0, Done: 0 });
+  const taskTotal = Math.max(1, data.tasks.length);
+  const employeeDetailMatches = employees.filter((employee) => {
+    const search = employeeDetailSearch.trim().toLowerCase();
+    if (!search) return true;
+    return [employee.name, employee.email, employee.position, employee.department]
+      .some((value) => String(value || '').toLowerCase().includes(search));
+  });
+  const selectedEmployee = employees.find((employee) => employee.id === selectedEmployeeId)
+    || employeeDetailMatches[0]
+    || workStatusRows.find((row) => row.status === 'Working')?.employee
+    || employees[0]
+    || null;
+  const selectedWorkStatus = selectedEmployee ? workStatusRows.find((row) => row.employee.id === selectedEmployee.id) : null;
+  const selectedEmployeeDetailQuery = useQuery({
+    queryKey: ['dashboard-employee-detail', selectedEmployee?.id, toIsoDate(weekStart), todayIso()],
+    enabled: Boolean(selectedEmployee?.id),
+    queryFn: async () => {
+      if (!selectedEmployee?.id) return null;
+      const [profileResponse, insightsResponse, screenshotsResponse] = await Promise.allSettled([
+        userApi.getProfile360(selectedEmployee.id, { start_date: toIsoDate(weekStart), end_date: todayIso() }),
+        reportApi.employeeInsights({ start_date: toIsoDate(weekStart), end_date: todayIso(), user_id: selectedEmployee.id }),
+        screenshotApi.getAll({ user_id: selectedEmployee.id, start_date: toIsoDate(weekStart), end_date: todayIso(), page: 1, per_page: 4 }),
+      ]);
+
+      return {
+        profile: profileResponse.status === 'fulfilled' ? profileResponse.value.data : null,
+        insights: insightsResponse.status === 'fulfilled' ? insightsResponse.value.data : null,
+        screenshots: screenshotsResponse.status === 'fulfilled' ? screenshotsResponse.value.data : null,
+      };
+    },
+  });
+  const employeeDetail = selectedEmployeeDetailQuery.data;
+  const employeeProfile: any = employeeDetail?.profile || null;
+  const employeeInsights: any = employeeDetail?.insights || null;
+  const employeeScreenshots: any = employeeDetail?.screenshots || null;
+  const employeeStats = employeeInsights?.stats || employeeProfile?.summary || {};
+  const employeeTools = employeeInsights?.selected_user_tools || {};
+  const employeeActivityTotal = Math.max(1, Number(employeeStats.activity_total_duration || 0));
+  const employeeProductiveShare = (Number(employeeStats.productive_duration || 0) / employeeActivityTotal) * 100;
+  const employeeScreenshotRows = safeArray<any>(employeeScreenshots?.data || employeeInsights?.recent_screenshots).slice(0, 4);
+  const employeeScreenshotCount = Number(employeeScreenshots?.total || employeeScreenshots?.meta?.total || employeeScreenshotRows.length || 0);
+  const employeeRecentEntries = safeArray<any>(employeeProfile?.recent_time_entries).slice(0, 4);
+  const employeeAttendanceRecords = safeArray<any>(employeeProfile?.attendance_records).slice(0, 4);
+  const employeeTopTools = [
+    ...safeArray<any>(employeeTools.productive),
+    ...safeArray<any>(employeeTools.unproductive),
+    ...safeArray<any>(employeeTools.neutral),
+    ...safeArray<any>(employeeTools.context_dependent),
+  ].sort((a, b) => Number(b.total_duration || 0) - Number(a.total_duration || 0)).slice(0, 4);
 
   return (
-    <div className="min-w-[1120px] space-y-4 bg-[#f5f7fb] text-slate-900">
-      <header className="flex items-center justify-between gap-4">
+    <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 text-slate-900">
+      <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
           <p className="mt-3 text-sm font-medium text-slate-900">Good morning, {user?.name?.split(' ')[0] || 'there'}!</p>
           <p className="mt-1 text-xs text-slate-500">Here&apos;s what&apos;s happening in your organization today.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex h-10 w-64 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex h-10 min-w-64 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400 xl:w-80 xl:flex-none">
             <Search className="h-4 w-4" />
             <input className="w-full bg-transparent outline-none placeholder:text-slate-400" placeholder="Search anything..." />
           </label>
@@ -457,7 +560,7 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      <section className="grid grid-cols-6 gap-3">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
         <KpiCard label="Total Employees" value={totalEmployees} hint={`${newHires} new this month`} icon={Users} tint="bg-blue-50 text-blue-600" />
         <KpiCard label="Present Today" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
         <KpiCard label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
@@ -466,7 +569,7 @@ export default function AdminDashboard() {
         <KpiCard label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited this month" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
       </section>
 
-      <section className="grid grid-cols-[1.4fr_1fr_1fr] gap-4">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
         <Card className="p-4">
           <SectionTitle title="Attendance Overview" action={<button className="text-xs text-slate-500">This Week</button>} />
           <MiniLineChart values={attendanceTrend} />
@@ -496,130 +599,258 @@ export default function AdminDashboard() {
         </Card>
       </section>
 
-      <section className="grid grid-cols-[1fr_1fr_1fr_1.35fr_280px] gap-4">
-        <Card className="p-4">
-          <SectionTitle title="Upcoming Birthdays" action={<Link to="/employees" className="text-xs font-medium text-blue-600">View All</Link>} />
-          {upcomingBirthdays.length ? (
-            <div className="space-y-3">
-              {upcomingBirthdays.map((item) => (
-                <div key={item.id} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">{initials(item.name)}</div>
-                    <div>
-                      <p className="text-xs font-semibold text-slate-900">{item.name}</p>
-                      <p className="text-[11px] text-slate-500">{item.nextBirthday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+      <Card className="p-4">
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">Employee Deep Dive</h2>
+            <p className="mt-1 text-xs text-slate-500">Search an employee to see live work state, attendance, idle time, productivity, screenshots, and recent work.</p>
+          </div>
+          <div className="w-full xl:w-[420px]">
+            <label className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
+              <Search className="h-4 w-4 shrink-0" />
+              <input
+                aria-label="Search employee details"
+                value={employeeDetailSearch}
+                onChange={(event) => {
+                  setEmployeeDetailSearch(event.target.value);
+                  setSelectedEmployeeId(null);
+                }}
+                className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400"
+                placeholder="Search employee for complete details..."
+              />
+            </label>
+            {employeeDetailSearch.trim() ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {employeeDetailMatches.slice(0, 4).map((employee) => (
+                  <button
+                    key={employee.id}
+                    type="button"
+                    onClick={() => setSelectedEmployeeId(employee.id)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${selectedEmployee?.id === employee.id ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600'}`}
+                  >
+                    {employee.name}
+                  </button>
+                ))}
+                {employeeDetailMatches.length === 0 ? <span className="text-xs text-slate-500">No employee found</span> : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {selectedEmployee ? (
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="space-y-4">
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700">{initials(selectedEmployee.name)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-base font-semibold text-slate-950">{selectedEmployee.name}</h3>
+                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${selectedWorkStatus?.status === 'Working' ? 'bg-emerald-50 text-emerald-700' : selectedWorkStatus?.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {selectedWorkStatus?.status || selectedEmployee.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-slate-500">{selectedEmployee.email}</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                      <div><p className="text-slate-400">Department</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployee.department}</p></div>
+                      <div><p className="text-slate-400">Role</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployee.position}</p></div>
+                      <div><p className="text-slate-400">Last check in</p><p className="mt-1 font-semibold text-slate-800">{formatDateTime(selectedWorkStatus?.checkInAt || employeeProfile?.status?.latest_attendance?.check_in_at)}</p></div>
+                      <div><p className="text-slate-400">Last check out</p><p className="mt-1 font-semibold text-slate-800">{selectedWorkStatus?.status === 'Working' ? 'Still checked in' : formatDateTime(selectedWorkStatus?.checkOutAt || employeeProfile?.status?.latest_attendance?.check_out_at)}</p></div>
                     </div>
                   </div>
-                  <Gift className="h-4 w-4 text-rose-400" />
                 </div>
-              ))}
-            </div>
-          ) : <EmptyInline>No birthdays available</EmptyInline>}
-        </Card>
+              </div>
 
-        <Card className="p-4">
-          <SectionTitle title="Recent Activities" action={<Link to="/audit-logs" className="text-xs font-medium text-blue-600">View All</Link>} />
-          {activities.length ? (
-            <div className="space-y-3">
-              {activities.map((activity) => (
-                <div key={activity.id} className="grid grid-cols-[24px_1fr_auto] gap-2 text-xs">
-                  <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full ${activity.tone === 'green' ? 'bg-emerald-50 text-emerald-600' : activity.tone === 'blue' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  </span>
-                  <span className="text-slate-700">{activity.title}</span>
-                  <span className="text-[11px] text-slate-400">{activity.meta}</span>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Today</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedWorkStatus?.todaySeconds || 0)}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{Number(employeeStats.present_days || 0)} present</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0))}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Screenshots</p><p className="mt-2 text-lg font-semibold text-blue-700">{employeeScreenshotCount}</p></div>
+              </div>
+
+              <div className="rounded-lg border border-slate-100 p-3">
+                <div className="mb-3 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700">Screenshot Access</span>
+                  <Link to={`/monitoring?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Open Monitoring</Link>
                 </div>
-              ))}
-            </div>
-          ) : <EmptyInline>No recent activity yet</EmptyInline>}
-        </Card>
-
-        <Card className="p-4">
-          <SectionTitle title="Announcements" action={<Link to="/notifications" className="text-xs font-medium text-blue-600">View All</Link>} />
-          {announcements.length ? (
-            <div className="space-y-3">
-              {announcements.map((item, index) => (
-                <div key={item.id} className="flex gap-2 text-xs">
-                  <Megaphone className={`mt-0.5 h-4 w-4 ${index === 0 ? 'text-amber-500' : 'text-blue-500'}`} />
-                  <div>
-                    <p className="text-slate-700">{item.title}</p>
-                    <p className="mt-1 text-[11px] text-slate-400">{item.date}</p>
+                {employeeScreenshotRows.length ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {employeeScreenshotRows.map((shot: any) => (
+                      <div key={shot.id} className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-xs">
+                        <p className="truncate font-medium text-slate-700">{shot.filename || `Screenshot ${shot.id}`}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{formatDateTime(shot.recorded_at || shot.created_at)}</p>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                ) : <EmptyInline>No screenshots in this range</EmptyInline>}
+              </div>
             </div>
-          ) : <EmptyInline>No announcements yet</EmptyInline>}
-        </Card>
 
-        <Card className="row-span-2 p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-950">Employees</h2>
-            <Link to="/employees" className="text-xs font-medium text-blue-600">View All</Link>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-lg border border-slate-100 p-3">
+                <div className="mb-3 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700">Productivity</span>
+                  <span className="text-slate-500">{formatPercent(employeeProductiveShare)} productive</span>
+                </div>
+                {[
+                  ['Productive', Number(employeeStats.productive_duration || 0), 'bg-emerald-500'],
+                  ['Unproductive', Number(employeeStats.unproductive_duration || 0), 'bg-rose-500'],
+                  ['Neutral', Number(employeeStats.neutral_duration || 0), 'bg-slate-400'],
+                  ['Context', Number(employeeStats.context_dependent_duration || 0), 'bg-amber-500'],
+                ].map(([label, seconds, color]) => (
+                  <div key={String(label)} className="mb-3 last:mb-0">
+                    <div className="mb-1 flex justify-between text-xs"><span className="text-slate-600">{label}</span><span className="text-slate-500">{formatDuration(Number(seconds))}</span></div>
+                    <div className="h-2 rounded-full bg-slate-100"><span className={`block h-2 rounded-full ${color}`} style={{ width: `${Math.max(Number(seconds) ? 8 : 0, (Number(seconds) / employeeActivityTotal) * 100)}%` }} /></div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-lg border border-slate-100 p-3">
+                <div className="mb-3 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700">Top Tools & Sites</span>
+                  <Link to={`/monitoring?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Details</Link>
+                </div>
+                {employeeTopTools.length ? (
+                  <div className="space-y-3">
+                    {employeeTopTools.map((tool: any, index) => (
+                      <div key={`${tool.label}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-slate-700">{tool.label || 'Unknown tool'}</p>
+                          <p className="text-[11px] capitalize text-slate-400">{String(tool.classification || 'neutral').replace('_', ' ')}</p>
+                        </div>
+                        <span className="shrink-0 text-slate-500">{formatDuration(Number(tool.total_duration || 0))}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : <EmptyInline>No activity tools found</EmptyInline>}
+              </div>
+
+              <div className="rounded-lg border border-slate-100 p-3">
+                <div className="mb-3 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700">Recent Work</span>
+                  <Link to={`/reports/hours-tracked?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Timesheets</Link>
+                </div>
+                {employeeRecentEntries.length ? (
+                  <div className="space-y-3">
+                    {employeeRecentEntries.map((entry: any) => (
+                      <div key={entry.id} className="flex items-center justify-between gap-3 text-xs">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-slate-700">{entry.project?.name || entry.task?.project?.name || 'Unassigned'}</p>
+                          <p className="truncate text-[11px] text-slate-400">{entry.task?.title || entry.description || formatDateTime(entry.start_time)}</p>
+                        </div>
+                        <span className="shrink-0 text-slate-500">{formatDuration(Number(entry.effective_duration || entry.duration || 0))}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : <EmptyInline>No recent time entries</EmptyInline>}
+              </div>
+
+              <div className="rounded-lg border border-slate-100 p-3">
+                <div className="mb-3 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700">Attendance History</span>
+                  <Link to={`/attendance?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Open</Link>
+                </div>
+                {employeeAttendanceRecords.length ? (
+                  <div className="space-y-3">
+                    {employeeAttendanceRecords.map((record: any) => (
+                      <div key={record.id || record.attendance_date} className="flex items-center justify-between gap-3 text-xs">
+                        <div>
+                          <p className="font-medium text-slate-700">{formatDate(record.attendance_date)}</p>
+                          <p className="text-[11px] text-slate-400">{record.late_minutes ? `${record.late_minutes} min late` : 'On time'}</p>
+                        </div>
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] capitalize text-slate-600">{String(record.status || 'none').replace('_', ' ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : <EmptyInline>No attendance records</EmptyInline>}
+              </div>
+            </div>
           </div>
-          <div className="mb-4 grid grid-cols-[1fr_120px_100px_auto] gap-2">
-            <label className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs text-slate-400">
-              <Search className="h-3.5 w-3.5" />
-              <input value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} className="w-full bg-transparent outline-none" placeholder="Search employees..." />
+        ) : <EmptyInline>Search or add an employee to view complete details</EmptyInline>}
+        {selectedEmployeeDetailQuery.isFetching ? <p className="mt-3 text-xs text-blue-600">Loading employee details...</p> : null}
+      </Card>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <Card className="p-4">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Current Work Status</h2>
+              <p className="mt-1 text-xs text-slate-500">Live attendance and working state for today, with department and status filters.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700"><p className="font-semibold">{workingCount}</p><p>Working</p></div>
+              <div className="rounded-lg bg-slate-100 px-3 py-2 text-slate-600"><p className="font-semibold">{notWorkingCount}</p><p>Not working</p></div>
+              <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-700"><p className="font-semibold">{onLeave}</p><p>On leave</p></div>
+            </div>
+          </div>
+          <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_170px]">
+            <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
+              <Search className="h-4 w-4 shrink-0" />
+              <input
+                aria-label="Search work status"
+                value={workSearch}
+                onChange={(event) => setWorkSearch(event.target.value)}
+                className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400"
+                placeholder="Search employee, role, email..."
+              />
             </label>
-            <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600">
-              {departments.map((department) => <option key={department}>{department}</option>)}
+            <select
+              aria-label="Filter work status by department"
+              value={workDepartmentFilter}
+              onChange={(event) => setWorkDepartmentFilter(event.target.value)}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 outline-none"
+            >
+              {departments.map((department) => <option key={department} value={department}>{department}</option>)}
             </select>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600">
-              {['All', 'Active', 'Inactive', 'On Leave'].map((status) => <option key={status}>{status}</option>)}
+            <select
+              aria-label="Filter work status"
+              value={workStatusFilter}
+              onChange={(event) => setWorkStatusFilter(event.target.value)}
+              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 outline-none"
+            >
+              {['All', 'Working', 'Not working', 'On Leave'].map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
-            <Link to="/add-user" className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white">
-              <Plus className="h-3.5 w-3.5" />
-              Add Employee
-            </Link>
           </div>
-          <div className="overflow-hidden rounded-lg border border-slate-100">
-            <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto rounded-lg border border-slate-100">
+            <table className="min-w-[760px] w-full text-left text-xs">
               <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Department</th>
-                  <th className="px-4 py-3 font-medium">Position</th>
+                  <th className="px-4 py-3 font-medium">Today</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Last signal</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredEmployees.slice(0, 8).map((employee) => (
-                  <tr key={employee.id}>
+                {filteredWorkStatusRows.slice(0, 8).map((row) => (
+                  <tr key={row.employee.id}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">{initials(employee.name)}</div>
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">{initials(row.employee.name)}</div>
                         <div>
-                          <p className="font-semibold text-slate-900">{employee.name}</p>
-                          <p className="text-[11px] text-slate-500">{employee.email}</p>
+                          <p className="font-semibold text-slate-900">{row.employee.name}</p>
+                          <p className="text-[11px] text-slate-500">{row.employee.position}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{employee.department}</td>
-                    <td className="px-4 py-3 text-slate-600">{employee.position}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.employee.department}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{formatDuration(row.todaySeconds)}</td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${employee.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : employee.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{employee.status}</span>
+                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${row.status === 'Working' ? 'bg-emerald-50 text-emerald-700' : row.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{row.status}</span>
                     </td>
+                    <td className="px-4 py-3 text-slate-500">{row.lastSeen}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {filteredEmployees.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No employees found</EmptyInline></div> : null}
+            {filteredWorkStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No employees found</EmptyInline></div> : null}
           </div>
-          <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-            <span>Showing {filteredEmployees.length ? 1 : 0} to {Math.min(8, filteredEmployees.length)} of {employees.length}</span>
-            <div className="flex items-center gap-1">
-              <button className="rounded border border-slate-200 px-2 py-1"><ChevronLeft className="h-3.5 w-3.5" /></button>
-              <button className="rounded bg-blue-600 px-2.5 py-1 text-white">1</button>
-              <button className="rounded border border-slate-200 px-2 py-1"><ChevronRight className="h-3.5 w-3.5" /></button>
-            </div>
-          </div>
+          <div className="mt-3 text-[11px] text-slate-400">Showing {Math.min(filteredWorkStatusRows.length, 8)} of {filteredWorkStatusRows.length} matching employees</div>
         </Card>
 
-        <Card className="row-span-3 p-4">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-950">Time Tracker</h2>
-            <Settings className="h-4 w-4 text-slate-400" />
-          </div>
+        <Card className="p-4">
+          <SectionTitle title="Time Tracker" action={<Settings className="h-4 w-4 text-slate-400" />} />
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
             <p className="text-xs text-slate-500">{activeTimer ? 'You are on the clock' : 'No active timer'}</p>
             <p className="mt-2 text-3xl font-semibold text-blue-600">{activeTimer ? formatCompactDuration(activeTimerSeconds) : '00:00'}</p>
@@ -645,30 +876,191 @@ export default function AdminDashboard() {
               <p className="mt-2 text-lg font-semibold">{formatDuration(weeklyTotal)}</p>
             </div>
           </div>
-          <div className="mt-5">
-            <SectionTitle title="Recent Timers" action={<Link to="/reports/hours-tracked" className="text-xs font-medium text-blue-600">View All</Link>} />
-            {recentTimers.length ? (
-              <div className="space-y-3">
-                {recentTimers.map((entry: any) => (
-                  <div key={entry.id} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500"><TimerReset className="h-4 w-4" /></div>
-                      <div>
-                        <p className="font-semibold text-slate-900">{entry.project?.name || entry.task?.project?.name || entry.task?.group?.name || 'Unassigned'}</p>
-                        <p className="text-[11px] text-slate-500">{entry.task?.title || entry.description || 'Time entry'}</p>
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <Card className="p-4">
+          <SectionTitle title="Check-In / Check-Out Log" action={<Link to="/attendance" className="text-xs font-medium text-blue-600">Open Attendance</Link>} />
+          <div className="overflow-x-auto rounded-lg border border-slate-100">
+            <table className="min-w-[760px] w-full text-left text-xs">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Employee</th>
+                  <th className="px-4 py-3 font-medium">Last check in</th>
+                  <th className="px-4 py-3 font-medium">Last check out</th>
+                  <th className="px-4 py-3 font-medium">Session</th>
+                  <th className="px-4 py-3 font-medium">Late</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredWorkStatusRows.slice(0, 6).map((row) => (
+                  <tr key={row.employee.id}>
+                    <td className="px-4 py-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">{initials(row.employee.name)}</div>
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-900">{row.employee.name}</p>
+                          <p className="truncate text-[11px] text-slate-500">{row.employee.email}</p>
+                        </div>
                       </div>
-                    </div>
-                    <span className="text-slate-500">{formatCompactDuration(Number(entry.effective_duration || entry.duration || 0))}</span>
-                  </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{formatDateTime(row.checkInAt)}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.status === 'Working' ? 'Still checked in' : formatDateTime(row.checkOutAt)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.status === 'Working' ? 'Working now' : formatDuration(row.todaySeconds)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${!row.checkInAt ? 'bg-slate-100 text-slate-600' : row.lateMinutes > 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                        {!row.checkInAt ? 'No punch' : row.lateMinutes > 0 ? `${row.lateMinutes} min late` : 'On time'}
+                      </span>
+                    </td>
+                  </tr>
                 ))}
+              </tbody>
+            </table>
+            {filteredWorkStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No punch records match the filters</EmptyInline></div> : null}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <SectionTitle title="Attendance Health" action={<span className="text-xs text-slate-500">Today</span>} />
+          <div className="space-y-4">
+            {attendanceHealth.map((item) => (
+              <div key={item.label}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-700">{item.label}</span>
+                  <span className="text-slate-500">{item.value}</span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-100">
+                  <span className={`block h-2 rounded-full ${item.color}`} style={{ width: `${Math.max(item.value ? 8 : 0, (item.value / Math.max(1, totalEmployees)) * 100)}%` }} />
+                </div>
               </div>
-            ) : <EmptyInline>No recent timers</EmptyInline>}
+            ))}
+          </div>
+          <div className="mt-5 rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <p className="text-xs font-semibold text-slate-700">Quick insight</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              {workingCount > 0 ? `${workingCount} employee${workingCount === 1 ? '' : 's'} currently checked in.` : 'No one is actively checked in right now.'}
+            </p>
           </div>
         </Card>
       </section>
 
-      <section className="grid grid-cols-[1.4fr_0.48fr_0.42fr_0.42fr_0.55fr_280px] gap-4">
-        <Card className="col-span-2 p-4">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <Card className="p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-950">Communication Hub</h2>
+            <Link to="/chat" className="text-xs font-medium text-blue-600">Open Chat</Link>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="min-w-0 rounded-lg border border-slate-100 p-3">
+              <SectionTitle title="Birthdays" action={<Gift className="h-4 w-4 text-rose-400" />} />
+              {upcomingBirthdays.length ? (
+                <div className="space-y-3">
+                  {upcomingBirthdays.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">{initials(item.name)}</div>
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-slate-900">{item.name}</p>
+                        <p className="text-[11px] text-slate-500">{item.nextBirthday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyInline>No birthdays available</EmptyInline>}
+            </div>
+            <div className="min-w-0 rounded-lg border border-slate-100 p-3">
+              <SectionTitle title="Activity" action={<Link to="/audit-logs" className="text-xs font-medium text-blue-600">View</Link>} />
+              {activities.length ? (
+                <div className="space-y-3">
+                  {activities.slice(0, 5).map((activity) => (
+                    <div key={activity.id} className="grid grid-cols-[24px_1fr] gap-2 text-xs">
+                      <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full ${activity.tone === 'green' ? 'bg-emerald-50 text-emerald-600' : activity.tone === 'blue' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="min-w-0"><span className="block truncate text-slate-700">{activity.title}</span><span className="text-[11px] text-slate-400">{activity.meta}</span></span>
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyInline>No recent activity yet</EmptyInline>}
+            </div>
+            <div className="min-w-0 rounded-lg border border-slate-100 p-3">
+              <SectionTitle title="Announcements" action={<Link to="/notifications" className="text-xs font-medium text-blue-600">View</Link>} />
+              {announcements.length ? (
+                <div className="space-y-3">
+                  {announcements.map((item, index) => (
+                    <div key={item.id} className="flex gap-2 text-xs">
+                      <Megaphone className={`mt-0.5 h-4 w-4 shrink-0 ${index === 0 ? 'text-amber-500' : 'text-blue-500'}`} />
+                      <div className="min-w-0">
+                        <p className="truncate text-slate-700">{item.title}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{item.date}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : <EmptyInline>No announcements yet</EmptyInline>}
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">People Summary</h2>
+              <p className="mt-1 text-xs text-slate-500">Use the work-status table above for live people details.</p>
+            </div>
+            <Link to="/employees" className="text-xs font-medium text-blue-600">Manage Employees</Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[11px] text-slate-500">Active Accounts</p>
+              <p className="mt-2 text-xl font-semibold text-slate-950">{employees.filter((employee) => employee.status !== 'Inactive').length}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[11px] text-slate-500">Departments</p>
+              <p className="mt-2 text-xl font-semibold text-slate-950">{Math.max(0, departments.length - 1)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[11px] text-slate-500">New Hires</p>
+              <p className="mt-2 text-xl font-semibold text-blue-700">{newHires}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+              <p className="text-[11px] text-slate-500">On Leave</p>
+              <p className="mt-2 text-xl font-semibold text-amber-700">{onLeave}</p>
+            </div>
+          </div>
+          <div className="mt-4 rounded-lg border border-slate-100 p-3">
+            <div className="mb-3 flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-700">Largest Departments</span>
+              <span className="text-slate-400">{totalEmployees} people</span>
+            </div>
+            {departmentCounts.length ? (
+              <div className="space-y-2">
+                {departmentCounts.slice(0, 3).map((item, index) => (
+                  <div key={item.department} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="truncate text-slate-600">{item.department}</span>
+                    <span className="h-1.5 flex-1 rounded-full bg-slate-100">
+                      <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(8, (item.count / Math.max(1, totalEmployees)) * 100)}%`, background: departmentPalette[index % departmentPalette.length] }} />
+                    </span>
+                    <span className="text-slate-500">{item.count}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <EmptyInline>No employees found</EmptyInline>}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link to="/add-user" className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white">
+              <Plus className="h-3.5 w-3.5" />
+              Add Employee
+            </Link>
+            <Link to="/employees" className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+              Open Directory
+            </Link>
+          </div>
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <Card className="p-4">
           <div className="mb-5 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold">Timesheets</h2>
@@ -698,45 +1090,66 @@ export default function AdminDashboard() {
           ) : <EmptyInline>No time entries this week</EmptyInline>}
         </Card>
 
-        <Card className="p-4">
-          <SectionTitle title="Calendar" action={<button className="text-xs text-slate-500">Month</button>} />
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-500">
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
-            {Array.from({ length: 35 }).map((_, index) => {
-              const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-              const dayNumber = index - monthStart.getDay() + 1;
-              const isValid = dayNumber > 0 && dayNumber <= new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-              const isToday = isValid && dayNumber === now.getDate();
-              return <span key={index} className={`rounded-md py-1 ${isToday ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>{isValid ? dayNumber : ''}</span>;
-            })}
-          </div>
-        </Card>
-
-        <Card className="p-4">
-          <SectionTitle title="Leave Balance" action={<Link to="/approval-inbox" className="text-xs font-medium text-blue-600">View All</Link>} />
-          {leaveSummary.length ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Card className="p-4">
+            <SectionTitle title="Task Pipeline" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">Manage</Link>} />
             <div className="space-y-4">
-              {leaveSummary.map((item) => (
-                <div key={item.label}>
-                  <div className="mb-1 flex justify-between text-xs"><span>{item.label}</span><span className="text-slate-500">{item.value} used</span></div>
-                  <div className="h-1.5 rounded-full bg-slate-100"><span className={`block h-1.5 rounded-full ${item.bgClass}`} style={{ width: `${Math.min(100, item.value * 10)}%` }} /></div>
+              {Object.entries(taskStatusCounts).map(([label, count]) => (
+                <div key={label}>
+                  <div className="mb-1 flex justify-between text-xs"><span className="font-medium text-slate-700">{label}</span><span className="text-slate-500">{count}</span></div>
+                  <div className="h-2 rounded-full bg-slate-100">
+                    <span className={`block h-2 rounded-full ${label === 'Done' ? 'bg-emerald-500' : label === 'In Progress' ? 'bg-blue-600' : 'bg-amber-500'}`} style={{ width: `${Math.max(8, (count / taskTotal) * 100)}%` }} />
+                  </div>
                 </div>
               ))}
             </div>
-          ) : <EmptyInline>No leave balance records</EmptyInline>}
-        </Card>
+          </Card>
+          <Card className="p-4">
+            <SectionTitle title="Payroll Snapshot" action={<Link to="/payroll" className="text-xs text-blue-600">{monthIso()}</Link>} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Payroll Cost</p><p className="mt-2 font-semibold">{formatCurrency(payrollTotal + payrollDeductions)}</p></div>
+              <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Net Pay</p><p className="mt-2 font-semibold text-emerald-700">{formatCurrency(payrollTotal)}</p></div>
+              <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Deductions</p><p className="mt-2 font-semibold text-rose-600">{formatCurrency(payrollDeductions)}</p></div>
+              <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Employees Paid</p><p className="mt-2 font-semibold">{data.payrollRecords.length}</p></div>
+            </div>
+          </Card>
+          <Card className="p-4">
+            <SectionTitle title="Leave Balance" action={<Link to="/approval-inbox" className="text-xs font-medium text-blue-600">View All</Link>} />
+            {leaveSummary.length ? (
+              <div className="space-y-4">
+                {leaveSummary.map((item) => (
+                  <div key={item.label}>
+                    <div className="mb-1 flex justify-between text-xs"><span>{item.label}</span><span className="text-slate-500">{item.value} used</span></div>
+                    <div className="h-1.5 rounded-full bg-slate-100"><span className={`block h-1.5 rounded-full ${item.bgClass}`} style={{ width: `${Math.min(100, item.value * 10)}%` }} /></div>
+                  </div>
+                ))}
+              </div>
+            ) : <EmptyInline>No leave balance records</EmptyInline>}
+          </Card>
+          <Card className="p-4">
+            <SectionTitle title="Recent Timers" action={<Link to="/reports/hours-tracked" className="text-xs font-medium text-blue-600">View All</Link>} />
+            {recentTimers.length ? (
+              <div className="space-y-3">
+                {recentTimers.map((entry: any) => (
+                  <div key={entry.id} className="flex items-center justify-between gap-3 text-xs">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"><TimerReset className="h-4 w-4" /></div>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900">{entry.project?.name || entry.task?.project?.name || entry.task?.group?.name || 'Unassigned'}</p>
+                        <p className="truncate text-[11px] text-slate-500">{entry.task?.title || entry.description || 'Time entry'}</p>
+                      </div>
+                    </div>
+                    <span className="text-slate-500">{formatCompactDuration(Number(entry.effective_duration || entry.duration || 0))}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <EmptyInline>No recent timers</EmptyInline>}
+          </Card>
+        </div>
+      </section>
 
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <Card className="p-4">
-          <SectionTitle title="Payroll Summary" action={<Link to="/payroll" className="text-xs text-blue-600">{monthIso()}</Link>} />
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Total Payroll Cost</p><p className="mt-2 font-semibold">{formatCurrency(payrollTotal + payrollDeductions)}</p></div>
-            <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Net Pay</p><p className="mt-2 font-semibold text-emerald-700">{formatCurrency(payrollTotal)}</p></div>
-            <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Deductions</p><p className="mt-2 font-semibold text-rose-600">{formatCurrency(payrollDeductions)}</p></div>
-            <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Employees Paid</p><p className="mt-2 font-semibold">{data.payrollRecords.length}</p></div>
-          </div>
-        </Card>
-
-        <Card className="row-span-2 p-4">
           <SectionTitle title="Projects" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">View All</Link>} />
           {projectProgress.length ? (
             <div className="space-y-3">
@@ -775,7 +1188,7 @@ export default function AdminDashboard() {
           </div>
         </Card>
 
-        <Card className="col-span-2 p-4">
+        <Card className="p-4">
           <SectionTitle title="Attendance Trend" action={<button className="text-xs text-slate-500">This Month</button>} />
           <MiniLineChart values={attendanceTrend} />
         </Card>

@@ -606,14 +606,26 @@ class AttendanceService
             $presentDays = $records->whereNotNull('check_in_at')->count();
             $lateDays = $records->filter(fn ($r) => (int) $r->late_minutes > 0)->count();
             $totalWorkedSeconds = (int) $records->sum(fn (AttendanceRecord $r) => $this->calculateEffectiveWorkedSeconds($r));
-            $checkedInToday = $records->first(fn (AttendanceRecord $r) => $this->hasOpenPunch($r) && Carbon::parse($r->attendance_date)->isToday());
+            $todayRecord = $records->first(fn (AttendanceRecord $r) => Carbon::parse($r->attendance_date)->isToday());
+            $latestRecord = $records->sortByDesc(fn (AttendanceRecord $r) => Carbon::parse($r->attendance_date)->timestamp)->first();
+            $openPunch = $todayRecord?->punches?->first(fn (AttendancePunch $punch) => !$punch->punch_out_at);
+            $latestPunch = $latestRecord?->punches?->sortByDesc(fn (AttendancePunch $punch) => Carbon::parse($punch->punch_in_at)->timestamp)->first();
+            $checkedInToday = $todayRecord && $this->hasOpenPunch($todayRecord);
 
             return [
                 'user' => $user,
                 'present_days' => $presentDays,
                 'late_days' => $lateDays,
+                'late_minutes' => (int) ($todayRecord?->late_minutes ?? 0),
                 'total_worked_seconds' => $totalWorkedSeconds,
                 'is_checked_in' => (bool) $checkedInToday,
+                'check_in_at' => $todayRecord?->check_in_at,
+                'check_out_at' => $todayRecord?->check_out_at,
+                'open_punch_in_at' => $openPunch?->punch_in_at,
+                'last_check_in_at' => $latestPunch?->punch_in_at ?? $latestRecord?->check_in_at,
+                'last_check_out_at' => $latestPunch?->punch_out_at ?? $latestRecord?->check_out_at,
+                'last_attendance_date' => $latestRecord ? Carbon::parse($latestRecord->attendance_date)->toDateString() : null,
+                'attendance_status' => $todayRecord?->status,
             ];
         })->values();
 

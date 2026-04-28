@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, dashboardApi } from '@/services/api';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -7,13 +8,18 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
 import {
+  Activity,
+  Briefcase,
   Calendar,
   CheckCircle2,
+  ClipboardCheck,
   Clock,
   FolderKanban,
   Hourglass,
+  LogIn,
+  LogOut,
+  TimerReset,
   TrendingUp,
-  Users,
 } from 'lucide-react';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import type { TimeEntry } from '@/types';
@@ -23,8 +29,6 @@ export default function Dashboard() {
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
-  const [teamMembersCount, setTeamMembersCount] = useState(0);
-  const [newMembersThisWeek, setNewMembersThisWeek] = useState(0);
   const [productivityScore, setProductivityScore] = useState(0);
   const [activeTasksCount, setActiveTasksCount] = useState(0);
   const [totalTasksCount, setTotalTasksCount] = useState(0);
@@ -52,8 +56,6 @@ export default function Dashboard() {
         setActiveTimer(data?.active_timer || null);
         setTodayEntries(data?.today_entries || []);
         setTodayTotal(Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0);
-        setTeamMembersCount(Number(data?.team_members_count) || 0);
-        setNewMembersThisWeek(Number(data?.new_members_this_week) || 0);
         setProductivityScore(Number(data?.productivity_score) || 0);
         setActiveTasksCount(Number(data?.active_tasks_count ?? data?.active_projects_count) || 0);
         setTotalTasksCount(Number(data?.total_tasks_count ?? data?.total_projects_count) || 0);
@@ -131,6 +133,30 @@ export default function Dashboard() {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const formatClockTime = (value?: string | null) => {
+    if (!value) return 'Not recorded';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'Not recorded';
+    return parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  };
+
+  const punches = Array.isArray(attendanceToday?.punches) ? attendanceToday.punches : [];
+  const latestPunch = punches[punches.length - 1];
+  const checkInAt = attendanceToday?.check_in_at || punches[0]?.punch_in_at || null;
+  const checkOutAt = attendanceToday?.check_out_at || latestPunch?.punch_out_at || null;
+  const lateMinutes = Number(attendanceToday?.late_minutes || 0);
+  const attendanceLabel = hasHalfDayLeaveToday
+    ? 'Half day leave'
+    : isCheckedIn
+      ? 'Checked in'
+      : checkOutAt
+        ? 'Checked out'
+        : 'Not checked in';
+  const activeWorkTitle = activeTimer ? getTimeEntryTitle(activeTimer) : 'No active timer';
+  const activeWorkSubtitle = activeTimer
+    ? getTimeEntrySubtitle(activeTimer)
+    : 'Start your timer when you begin a project or task.';
+
   if (isLoading) {
     return <PageLoadingState label="Loading dashboard..." />;
   }
@@ -140,7 +166,7 @@ export default function Dashboard() {
       <PageHeader
         eyebrow="Personal overview"
         title={`Welcome back, ${user?.name?.split(' ')[0]}!`}
-        description="Review today's worked hours, shift progress, remaining time, and your recent work summary from one place."
+        description="Track your shift, attendance, active work, and today's task progress from one clear place."
         actions={
           <div className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-4 py-2 text-sm font-medium text-slate-600 shadow-sm">
             <Calendar className="h-4 w-4 text-sky-700" />
@@ -149,10 +175,10 @@ export default function Dashboard() {
         }
       />
 
-      <SurfaceCard className="overflow-hidden border-0 bg-[linear-gradient(135deg,#082f49_0%,#0f172a_38%,#155e75_100%)] p-6 text-white shadow-[0_38px_100px_-48px_rgba(2,6,23,0.92)]">
+      <SurfaceCard className="overflow-hidden border-0 bg-[linear-gradient(135deg,#082f49_0%,#0f172a_42%,#155e75_100%)] p-6 text-white shadow-[0_28px_80px_-52px_rgba(2,6,23,0.9)]">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
-            <p className="text-sm font-medium text-cyan-100/80">Today's work progress</p>
+            <p className="text-sm font-medium text-cyan-100/80">Today's shift</p>
             <div className="mt-3 flex flex-wrap items-end gap-x-8 gap-y-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.28em] text-cyan-100/60">Worked today</p>
@@ -168,6 +194,11 @@ export default function Dashboard() {
                 ? `You have completed today's target and logged ${formatDuration(overtimeSeconds)} of overtime.`
                 : `You are ${completionPercent}% through today's shift target. Keep going to close the remaining ${formatDuration(remainingShiftSeconds)}.`}
             </p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs font-medium text-cyan-50">
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Status: {attendanceLabel}</span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Check-in: {formatClockTime(checkInAt)}</span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Check-out: {isCheckedIn ? 'Still checked in' : formatClockTime(checkOutAt)}</span>
+            </div>
             {hasHalfDayLeaveToday ? (
               <p className="mt-3 inline-flex rounded-full border border-amber-200/40 bg-amber-300/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-amber-100">
                 Half day leave applied today
@@ -182,7 +213,7 @@ export default function Dashboard() {
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
               <p className="text-xs text-cyan-100/70">Attendance</p>
-              <p className="mt-2 text-xl font-semibold">{isCheckedIn ? 'Checked in' : completedShift ? 'Completed' : 'Not checked in'}</p>
+              <p className="mt-2 text-xl font-semibold">{attendanceLabel}</p>
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
               <p className="text-xs text-cyan-100/70">Progress</p>
@@ -255,11 +286,11 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.95fr]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.25fr_0.95fr]">
         <SurfaceCard className="overflow-hidden">
           <div className="border-b border-slate-200/80 p-5">
-            <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Today's Work Log</h2>
-            <p className="mt-1 text-sm text-slate-500">A summary of the sessions you have already completed today.</p>
+            <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">My Work Log</h2>
+            <p className="mt-1 text-sm text-slate-500">Your sessions for today with project, task, duration, and start time.</p>
           </div>
           <div className="divide-y divide-slate-200/80">
             {todayEntries.length === 0 ? (
@@ -292,50 +323,101 @@ export default function Dashboard() {
           </div>
         </SurfaceCard>
 
-        <SurfaceCard className="p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Today at a glance</h2>
-              <p className="mt-1 text-sm text-slate-500">Quick checkpoints for your working day.</p>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-              <Users className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="mt-6 space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Attendance status</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">
-                {isCheckedIn ? 'You are currently checked in' : completedShift ? 'Shift target reached' : 'Waiting for more logged work'}
-              </p>
-              <p className="mt-1 text-sm text-slate-600">
-                Worked {formatDuration(workedSeconds)} out of {formatDuration(shiftTargetSeconds)} today.
-              </p>
-              {hasHalfDayLeaveToday ? (
-                <p className="mt-2 text-sm font-medium text-amber-700">Half day leave is active for today.</p>
-              ) : null}
+        <div className="space-y-6">
+          <SurfaceCard className="p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Attendance & Shift</h2>
+                <p className="mt-1 text-sm text-slate-500">Your check-in status and shift timing for today.</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
+                <ClipboardCheck className="h-5 w-5" />
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Remaining focus block</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{formatTime(remainingShiftSeconds)}</p>
-              <p className="mt-1 text-sm text-slate-600">
-                {remainingShiftSeconds > 0
-                  ? 'This is the time left to complete your standard workday.'
-                  : 'Your standard workday target is complete.'}
-              </p>
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                  <LogIn className="h-4 w-4 text-emerald-600" />
+                  Last check-in
+                </div>
+                <p className="mt-2 text-lg font-semibold text-slate-950">{formatClockTime(checkInAt)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                  <LogOut className="h-4 w-4 text-amber-600" />
+                  Last check-out
+                </div>
+                <p className="mt-2 text-lg font-semibold text-slate-950">{isCheckedIn ? 'Still checked in' : formatClockTime(checkOutAt)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-medium text-slate-600">Late time</p>
+                <p className={`mt-2 text-lg font-semibold ${lateMinutes > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {lateMinutes > 0 ? `${lateMinutes}m late` : 'On time'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-medium text-slate-600">Overtime</p>
+                <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(overtimeSeconds)}</p>
+              </div>
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard className="p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">My Focus</h2>
+                <p className="mt-1 text-sm text-slate-500">Only the work details you need for your day.</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                <Activity className="h-5 w-5" />
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Workspace context</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{teamMembersCount} people in your organization</p>
-              <p className="mt-1 text-sm text-slate-600">
-                {newMembersThisWeek} joined this week and {activeTasksCount} active tasks are open right now.
-              </p>
+            <div className="mt-5 space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Current work</p>
+                <p className="mt-2 truncate text-lg font-semibold text-slate-950">{activeWorkTitle}</p>
+                <p className="mt-1 truncate text-sm text-slate-600">{activeWorkSubtitle}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Tasks</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">{activeTasksCount}</p>
+                  <p className="text-xs text-slate-500">{totalTasksCount} total</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm text-slate-500">Productivity</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">{productivityScore}%</p>
+                  <p className="text-xs text-slate-500">weekly ratio</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </SurfaceCard>
+          </SurfaceCard>
+
+          <SurfaceCard className="p-6">
+            <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Quick Actions</h2>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Link to="/time-tracker" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700">
+                <TimerReset className="h-4 w-4" />
+                Time Tracker
+              </Link>
+              <Link to="/tasks" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700">
+                <FolderKanban className="h-4 w-4" />
+                My Tasks
+              </Link>
+              <Link to="/attendance" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700">
+                <ClipboardCheck className="h-4 w-4" />
+                Attendance
+              </Link>
+              <Link to="/projects" className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700">
+                <Briefcase className="h-4 w-4" />
+                Projects
+              </Link>
+            </div>
+          </SurfaceCard>
+        </div>
       </div>
     </div>
   );
