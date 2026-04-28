@@ -196,7 +196,8 @@ describe('DesktopTimerDashboard', () => {
       expect(mocks.getTasksMock).toHaveBeenCalledWith({ timer_only: true });
     });
 
-    await user.selectOptions(screen.getByRole('combobox', { name: /active timer task/i }), '42');
+    await user.click(screen.getByRole('button', { name: /active timer task/i }));
+    await user.click(screen.getByRole('option', { name: /write sync logic - digital marketing/i }));
 
     await waitFor(() => {
       expect(mocks.updateMock).toHaveBeenCalledWith(99, expect.objectContaining({ project_id: 7, task_id: 42 }));
@@ -211,7 +212,7 @@ describe('DesktopTimerDashboard', () => {
     renderWithProviders(<DesktopTimerDashboard />);
 
     expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: /active timer task/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /active timer task/i })).toBeDisabled();
     expect(screen.getByText(/no tasks are currently available for your assigned groups/i)).toBeInTheDocument();
   });
 

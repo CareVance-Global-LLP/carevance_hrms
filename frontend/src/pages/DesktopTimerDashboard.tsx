@@ -21,22 +21,21 @@ import {
   suppressAutoStart,
 } from '@/lib/desktopTimerSession';
 import { isTrackedTimerUser } from '@/lib/permissions';
-import PageHeader from '@/components/dashboard/PageHeader';
-import MetricCard from '@/components/dashboard/MetricCard';
-import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { SelectInput } from '@/components/ui/FormField';
-import StatusBadge from '@/components/ui/StatusBadge';
 import {
+  Calendar,
+  CalendarDays,
   Clock,
-  Play,
+  ClipboardList,
+  Hourglass,
+  Info,
   Pause,
+  Play,
+  Settings,
   TrendingUp,
   Users,
-  FolderKanban,
-  Calendar,
-  Building2,
+  UploadCloud,
 } from 'lucide-react';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import type { TimeEntry } from '@/types';
@@ -664,191 +663,276 @@ export default function DesktopTimerDashboard() {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const selectedTask = availableTasks.find((task) => task.id === selectedTaskId) || activeTimer?.task || null;
+  const currentWorkTitle = selectedTask?.title || (activeTimer ? getTimeEntryTitle(activeTimer) : 'No task selected');
+  const currentWorkDescription = activeTimer?.description || selectedTask?.description || 'No description provided';
+  const displayedEntries = activeTimer && !todayEntries.some((entry) => entry.id === activeTimer.id)
+    ? [activeTimer, ...todayEntries]
+    : todayEntries;
+
   if (isLoading) {
     return <PageLoadingState label="Loading dashboard..." />;
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        eyebrow="Workspace overview"
-        title={`Welcome back, ${user?.name?.split(' ')[0]}!`}
-        description="Start the timer, review today's attendance progress, and keep your current activity in one place."
-        actions={
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm">
-            <Calendar className="h-4 w-4 text-sky-700" />
+    <main className="min-h-screen bg-slate-50 px-6 py-7 text-slate-950 animate-fade-in">
+      <div className="mx-auto max-w-[1800px] space-y-5">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-normal text-slate-950">
+              Welcome back, {user?.name?.split(' ')[0] || 'there'}!
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              Start the timer, review today's attendance progress, and keep your current activity in one place.
+            </p>
+          </div>
+          <div className="inline-flex h-12 items-center gap-3 self-start rounded-full border border-slate-200 bg-white px-5 text-sm font-medium text-slate-700 shadow-sm">
+            <Calendar className="h-5 w-5 text-sky-600" />
             {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </div>
-        }
-      />
+        </header>
 
-      <div className="overflow-hidden rounded-lg bg-[linear-gradient(135deg,#020617_0%,#0f172a_28%,#0369a1_76%,#22d3ee_100%)] p-6 text-white shadow-sm">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="mb-1 text-sm font-medium text-cyan-100/80">
-              {activeTimer ? 'Timer Running' : currentWorkedSeconds > 0 ? 'Timer Paused' : 'Desktop timer'}
-            </p>
-            <div className="text-4xl font-semibold tracking-[-0.05em] sm:text-5xl">
-              {formatTime(timerDisplaySeconds)}
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-              <div className="rounded-lg border border-slate-200 bg-white/10 px-3 py-3">
-                <p className="text-xs text-cyan-100/70">Shift Remaining</p>
-                <p className="font-semibold">{formatTime(remainingShiftSeconds)}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-white/10 px-3 py-3">
-                <p className="text-xs text-cyan-100/70">Overtime Timer</p>
-                <p className="font-semibold">{formatTime(overtimeSeconds)}</p>
-              </div>
-            </div>
-            {activeTimer?.description && (
-              <p className="mt-3 text-sm text-cyan-50/90">{activeTimer.description}</p>
-            )}
-            {activeTimer?.task?.title && (
-              <p className="mt-1 text-sm text-cyan-50/90">Task: {activeTimer.task.title}</p>
-            )}
-            {activeTimer?.task?.group?.name && (
-              <p className="mt-1 text-sm text-cyan-50/90">Group: {activeTimer.task.group.name}</p>
-            )}
-            {activeTimer && !activeTimer?.task?.title ? (
-              <p className="mt-3 text-sm text-cyan-50/90">Choose a task from your assigned groups for this running timer.</p>
-            ) : null}
-          </div>
-          <div className="flex flex-col items-start gap-3 lg:items-end">
-            <StatusBadge tone={activeTimer ? 'success' : 'info'} className="border-slate-200 bg-white/10 text-white">
-              {isUpdatingTimerContext ? 'Updating timer' : activeTimer ? 'Live session' : 'Ready to start'}
-            </StatusBadge>
-            <Button
-              onClick={() => (activeTimer ? handleStopTimer() : handleStartTimer())}
-              aria-label={activeTimer ? 'Pause timer' : 'Start timer'}
-              disabled={isStarting || isUpdatingTimerContext}
-              variant="secondary"
-              size="lg"
-              className={`h-16 w-16 rounded-full border-0 px-0 ${
-                activeTimer ? 'bg-white text-white hover:bg-white' : 'bg-white text-primary-700 hover:bg-sky-50'
-              }`}
-            >
-              {activeTimer ? <Pause className="h-8 w-8" /> : <Play className="ml-1 h-8 w-8" />}
-            </Button>
-          </div>
-        </div>
+        {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
-        {feedback ? (
-          <div className="mt-5">
-            <FeedbackBanner tone={feedback.tone} message={feedback.message} />
-          </div>
-        ) : null}
-
-        <div className="mt-5">
-          <div className="rounded-lg border border-slate-200 bg-white/10 p-4">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-cyan-100/70">
-              <Building2 className="h-3.5 w-3.5" />
-              <p>{activeTimer ? 'Running Timer Task' : 'Select Task'}</p>
-            </div>
-            <SelectInput
-              aria-label="Active timer task"
-              value={selectedTaskId ?? ''}
-              onChange={(e) => void handleTaskSelection(e.target.value ? Number(e.target.value) : null)}
-              disabled={availableTasks.length === 0 || isUpdatingTimerContext || isStarting}
-              className="mt-3 border-slate-200 bg-white text-slate-950 shadow-none focus:border-white focus:bg-white focus:ring-white/30 disabled:bg-white disabled:text-slate-500"
-            >
-              <option value="" className="text-gray-900">
-                {availableTasks.length === 0 ? 'No tasks available for your group' : 'Choose task'}
-              </option>
-              {availableTasks.map((task) => (
-                <option key={task.id} value={task.id} className="text-gray-900">
-                  {task.group?.name ? `${task.title} - ${task.group.name}` : task.title}
-                </option>
-              ))}
-            </SelectInput>
-            <p className="mt-2 text-xs text-cyan-100/75">
-              {availableTasks.length === 0
-                ? 'No tasks are currently available for your assigned groups.'
-                : activeTimer
-                  ? 'Only tasks you are allowed to work on are listed here.'
-                  : 'Pick a task before starting, or attach one after the timer is already running.'}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 text-sm text-cyan-50/85">
-          Total elapsed (all sessions): {formatDuration(allTimeTotal)} | Today's attendance worked: {formatDuration(currentWorkedSeconds)}
-          {halfDayLeaveApplied ? (
-            <>
-              {' | '}
-              <span className="font-semibold text-rose-200 underline decoration-rose-300/70 underline-offset-4">
-                {leaveTodayLabel}, target {formatDuration(shiftTargetSeconds)}
+        <section className="grid grid-cols-1 gap-7 xl:grid-cols-[1.35fr_1fr]">
+          <div className="rounded-lg border border-blue-100 bg-white p-8 shadow-sm">
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold uppercase text-blue-700">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
+                <Play className="h-3 w-3 fill-current" />
               </span>
-            </>
-          ) : null}
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button
-            onClick={submitOvertimeProof}
-            disabled={isSubmittingOvertime || overtimeSeconds <= 0}
-            variant="secondary"
-            size="sm"
-            className="bg-white text-primary-700 hover:bg-sky-50"
-          >
-            {isSubmittingOvertime ? 'Sending...' : 'Send Overtime Proof to Admin'}
-          </Button>
-          {notice ? <span className="text-xs text-cyan-50">{notice}</span> : null}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Today's Time"
-          value={formatDuration(todayDisplaySeconds)}
-          hint={
-            halfDayLeaveApplied
-              ? `Half day applied, target ${formatDuration(shiftTargetSeconds)}`
-              : todayDisplaySeconds > todayTotal
-                ? 'Includes approved attendance edits'
-                : todayDeltaLabel
-          }
-          icon={Clock}
-          accent="sky"
-        />
-        <MetricCard label="Active Tasks" value={activeTasksCount} hint={activeTasksHint} icon={FolderKanban} accent="violet" />
-        <MetricCard label="Team Members" value={teamMembersCount} hint={`${newMembersThisWeek} new this week`} icon={Users} accent="emerald" />
-        <MetricCard label="Productivity" value={`${productivityScore}%`} hint="Based on working ratio this week" icon={TrendingUp} accent="amber" />
-      </div>
-
-      <SurfaceCard className="overflow-hidden">
-        <div className="border-b border-slate-200 p-5">
-          <h2 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Today's Time Entries</h2>
-        </div>
-        <div className="divide-y divide-slate-200/80">
-          {todayEntries.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">
-              <Clock className="mx-auto mb-3 h-12 w-12 text-slate-300" />
-              <p>No time entries yet today</p>
-              <p className="text-sm">Start tracking to see your entries here</p>
+              {activeTimer ? 'Timer Running' : currentWorkedSeconds > 0 ? 'Timer Paused' : 'Desktop Timer'}
             </div>
-          ) : (
-            todayEntries.map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between gap-4 p-4 transition hover:bg-slate-50">
-                <div className="flex min-w-0 items-center gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100">
-                    <Clock className="h-5 w-5 text-slate-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-950">{getTimeEntryTitle(entry)}</p>
-                    <p className="truncate text-sm text-slate-500">{getTimeEntrySubtitle(entry, 'No description')}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-medium text-slate-950">{formatDuration(entry.duration)}</p>
-                  <p className="text-sm text-slate-500">
-                    {new Date(entry.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+
+            <div className="mt-6 text-center">
+              <p className="text-base font-medium text-slate-500">Current Session</p>
+              <div className="mt-4 text-8xl font-semibold leading-none tracking-normal text-slate-950">
+                {formatTime(timerDisplaySeconds)}
+              </div>
+              <div className="mt-8 flex flex-wrap justify-center gap-5">
+                <button
+                  type="button"
+                  aria-label="Start timer"
+                  onClick={() => void handleStartTimer()}
+                  disabled={Boolean(activeTimer) || isStarting || isUpdatingTimerContext}
+                  className="inline-flex h-14 min-w-44 items-center justify-center gap-3 rounded-lg bg-blue-600 px-7 text-lg font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Play className="h-5 w-5 fill-current" />
+                  Start
+                </button>
+                <button
+                  type="button"
+                  aria-label="Pause timer"
+                  onClick={() => void handleStopTimer()}
+                  disabled={!activeTimer || isStarting || isUpdatingTimerContext}
+                  className="inline-flex h-14 min-w-44 items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white px-7 text-lg font-semibold text-blue-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Pause className="h-5 w-5 fill-current" />
+                  Pause
+                </button>
+              </div>
+            </div>
+
+            <div className="mx-auto mt-8 h-px max-w-4xl bg-slate-200" />
+            <div className="mx-auto mt-7 grid max-w-3xl grid-cols-1 divide-y divide-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+              <div className="flex items-center justify-center gap-4 py-4 sm:pr-8">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <Clock className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="text-sm text-slate-500">Shift Remaining</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-950">{formatTime(remainingShiftSeconds)}</p>
                 </div>
               </div>
-            ))
-          )}
-        </div>
-      </SurfaceCard>
-    </div>
+              <div className="flex items-center justify-center gap-4 py-4 sm:pl-8">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-50 text-violet-600">
+                  <Hourglass className="h-6 w-6" />
+                </span>
+                <div>
+                  <p className="text-sm text-slate-500">Overtime Timer</p>
+                  <p className="mt-1 text-2xl font-semibold text-slate-950">{formatTime(overtimeSeconds)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mx-auto mt-7 h-px max-w-4xl bg-slate-200" />
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-6 text-sm text-slate-600">
+              <span className="inline-flex items-center gap-2">
+                <Clock className="h-5 w-5 text-slate-500" />
+                Total elapsed (all sessions): {formatDuration(allTimeTotal)}
+              </span>
+              <span className="hidden h-5 w-px bg-slate-300 sm:inline-block" />
+              <span className="inline-flex items-center gap-2">
+                <Users className="h-5 w-5 text-slate-500" />
+                Today's attendance worked: {formatDuration(currentWorkedSeconds)}
+              </span>
+              {halfDayLeaveApplied ? <span className="text-blue-700">{leaveTodayLabel}, target {formatDuration(shiftTargetSeconds)}</span> : null}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-4">
+                <span className="flex h-14 w-14 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                  <Calendar className="h-8 w-8" />
+                </span>
+                <div>
+                  <p className="text-lg font-semibold text-slate-950">
+                    {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">Good to see you today. Let's stay productive!</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center gap-3 text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+                <span>{activeTimer ? 'Running Timer Task' : 'Select Task'}</span>
+              </div>
+              <SelectInput
+                aria-label="Active timer task"
+                value={selectedTaskId ?? ''}
+                onChange={(e) => void handleTaskSelection(e.target.value ? Number(e.target.value) : null)}
+                disabled={availableTasks.length === 0 || isUpdatingTimerContext || isStarting}
+                className="mt-4 h-12 border-slate-300 bg-white text-slate-700 shadow-none disabled:bg-slate-50 disabled:text-slate-500"
+              >
+                <option value="" className="text-gray-900">
+                  {availableTasks.length === 0 ? 'No tasks available for your group' : 'Choose task'}
+                </option>
+                {availableTasks.map((task) => (
+                  <option key={task.id} value={task.id} className="text-gray-900">
+                    {task.group?.name ? `${task.title} - ${task.group.name}` : task.title}
+                  </option>
+                ))}
+              </SelectInput>
+              <p className="mt-3 text-sm text-slate-500">
+                {availableTasks.length === 0
+                  ? 'No tasks are currently available for your assigned groups.'
+                  : activeTimer
+                    ? 'Only tasks you are allowed to work on are listed here.'
+                  : 'Pick a task before starting, or attach one after the timer is already running.'}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">Current Work</p>
+                  <p className="mt-4 truncate text-xl font-semibold text-slate-950">{currentWorkTitle}</p>
+                  <p className="mt-1 truncate text-base text-slate-500">{currentWorkDescription}</p>
+                </div>
+                <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <ClipboardList className="h-9 w-9" />
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={submitOvertimeProof}
+              disabled={isSubmittingOvertime || overtimeSeconds <= 0}
+              className="inline-flex h-14 w-full items-center justify-center gap-3 rounded-lg border border-blue-500 bg-white px-5 text-base font-semibold text-blue-600 shadow-sm transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <UploadCloud className="h-5 w-5" />
+              {isSubmittingOvertime ? 'Sending...' : 'Send Overtime Proof to Admin'}
+            </button>
+            {notice ? <p className="text-sm text-slate-500">{notice}</p> : null}
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              label: "Today's Time",
+              value: formatDuration(todayDisplaySeconds),
+              hint: halfDayLeaveApplied
+                ? `Half day applied, target ${formatDuration(shiftTargetSeconds)}`
+                : todayDisplaySeconds > todayTotal
+                  ? 'Includes approved attendance edits'
+                  : todayDeltaLabel,
+              icon: Clock,
+              tone: 'bg-blue-50 text-blue-600',
+            },
+            { label: 'Active Tasks', value: activeTasksCount, hint: activeTasksHint, icon: CalendarDays, tone: 'bg-violet-50 text-violet-600' },
+            { label: 'Team Members', value: teamMembersCount, hint: `${newMembersThisWeek} new this week`, icon: Users, tone: 'bg-emerald-50 text-emerald-600' },
+            { label: 'Productivity', value: `${productivityScore}%`, hint: 'Based on working ratio this week', icon: TrendingUp, tone: 'bg-orange-50 text-orange-600' },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-base text-slate-500">{item.label}</p>
+                    <p className="mt-4 text-3xl font-semibold text-slate-950">{item.value}</p>
+                    <p className="mt-3 text-sm text-slate-500">{item.hint}</p>
+                  </div>
+                  <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${item.tone}`}>
+                    <Icon className="h-7 w-7" />
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-semibold tracking-normal text-slate-950">Today's Time Entries</h2>
+          <div className="mt-5 overflow-hidden rounded-none border border-slate-200">
+            <table className="w-full table-fixed text-left text-sm">
+              <thead className="bg-slate-50 text-slate-700">
+                <tr>
+                  <th className="px-4 py-4 font-semibold">Project / Task</th>
+                  <th className="px-4 py-4 font-semibold">Started</th>
+                  <th className="px-4 py-4 font-semibold">Duration</th>
+                  <th className="px-4 py-4 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayedEntries.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="h-44 px-4 py-8 text-center text-slate-500">
+                      <div className="flex flex-col items-center justify-center">
+                        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                          <ClipboardList className="h-8 w-8" />
+                        </span>
+                        <p className="mt-4 text-base font-semibold text-slate-700">No time entries recorded for today.</p>
+                        <p className="mt-1 text-sm">Your time entries will appear here once you start tracking.</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  displayedEntries.map((entry) => (
+                    <tr key={entry.id} className="border-t border-slate-200">
+                      <td className="px-4 py-4 text-slate-700">
+                        <p className="font-semibold text-slate-950">{getTimeEntryTitle(entry)}</p>
+                        <p className="mt-1 text-sm text-slate-500">{getTimeEntrySubtitle(entry, 'No description provided')}</p>
+                      </td>
+                      <td className="px-4 py-4 text-slate-700">
+                        {new Date(entry.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="px-4 py-4 text-slate-700">{formatDuration(entry.duration)}</td>
+                      <td className="px-4 py-4 text-slate-700">
+                        <span className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium ${
+                          entry.end_time ? 'bg-slate-100 text-slate-600' : 'bg-blue-50 text-blue-700'
+                        }`}>
+                          <span className={`h-2 w-2 rounded-full ${entry.end_time ? 'bg-slate-400' : 'bg-blue-600'}`} />
+                          {entry.end_time ? 'Completed' : 'Running'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+                {displayedEntries.length > 0 ? (
+                  <tr className="border-t border-slate-200">
+                    <td colSpan={4} className="px-4 py-3 text-center text-sm text-slate-500">
+                      No more time entries for today
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }
