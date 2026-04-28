@@ -88,7 +88,7 @@ export const topNavigation: NavGroup[] = [
     icon: FolderKanban,
     items: [
       { label: 'Timesheets', to: '/reports/hours-tracked', icon: FileClock, adminOnly: true },
-      { label: 'Projects', to: '/tasks', icon: FolderKanban },
+      { label: 'Projects', to: '/projects', icon: FolderKanban },
       { label: 'Tasks', to: '/tasks', icon: SquareKanban },
     ],
   },
@@ -109,8 +109,8 @@ export const topNavigation: NavGroup[] = [
     adminOnly: true,
     items: [
       { label: 'Settings', to: '/settings', icon: Settings, adminOnly: true },
-      { label: 'Integrations', to: '/settings', icon: Building2, adminOnly: true },
-      { label: 'Custom Fields', to: '/settings', icon: FileSpreadsheet, adminOnly: true },
+      { label: 'Integrations', to: '/settings/integrations', icon: Building2, adminOnly: true },
+      { label: 'Custom Fields', to: '/settings/custom-fields', icon: FileSpreadsheet, adminOnly: true },
       { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true },
     ],
   },

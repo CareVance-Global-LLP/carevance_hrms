@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { productivityRuleApi, settingsApi } from '@/services/api';
 import type { ProductivityRule as ProductivityRuleType } from '@/types';
-import { User, Bell, Lock, CreditCard, Building, Briefcase, Link2 } from 'lucide-react';
+import { User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
@@ -14,6 +15,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 
 export default function SettingsPage() {
   const { user, organization, updateUser, updateOrganization } = useAuth();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState('profile');
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -69,6 +71,8 @@ export default function SettingsPage() {
     { id: 'organization', name: 'Organization', icon: Building },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
+    ...(hasAdminAccess(user) ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
+    ...(hasAdminAccess(user) ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
     { id: 'billing', name: 'Billing', icon: CreditCard },
     ...(hasDesktopBrowserTracking ? [{ id: 'browser-tracking', name: 'Browser Tracking', icon: Link2 }] : []),
     ...(hasStrictAdminAccess(user) ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
@@ -78,6 +82,20 @@ export default function SettingsPage() {
     () => ['UTC', 'Asia/Kolkata', 'Asia/Dubai', 'Europe/London', 'America/New_York', 'America/Los_Angeles'],
     []
   );
+
+  useEffect(() => {
+    if (location.pathname.endsWith('/integrations')) {
+      setActiveTab('integrations');
+      return;
+    }
+    if (location.pathname.endsWith('/custom-fields')) {
+      setActiveTab('custom-fields');
+      return;
+    }
+    if (activeTab === 'integrations' || activeTab === 'custom-fields') {
+      setActiveTab('profile');
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     setProfileName(user?.name || '');
@@ -452,6 +470,66 @@ export default function SettingsPage() {
                 </p>
               </div>
               <Button disabled variant="secondary">Manage Subscription (Coming soon)</Button>
+            </div>
+          )}
+
+          {activeTab === 'integrations' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Integrations</h2>
+                <p className="mt-2 text-sm text-slate-500">Manage connected services and workspace integrations from one clean panel.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {[
+                  ['Desktop App', 'Connected through the CareVance desktop tracker for attendance, screenshots, and activity data.', 'Configured'],
+                  ['Browser Tracking', 'Pair browser activity with desktop tracking when the extension is available.', hasDesktopBrowserTracking ? 'Available' : 'Desktop app required'],
+                  ['Payroll Export', 'Use payroll reports and exports from the payroll workspace.', 'Ready'],
+                  ['Notifications', 'Email, in-app, desktop, and chat notification preferences are managed here.', 'Ready'],
+                ].map(([title, description, status]) => (
+                  <div key={title} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-slate-950">{title}</p>
+                      <StatusBadge tone={status === 'Configured' || status === 'Ready' || status === 'Available' ? 'success' : 'neutral'}>{status}</StatusBadge>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-500">{description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'custom-fields' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Custom Fields</h2>
+                <p className="mt-2 text-sm text-slate-500">Keep employee and workspace metadata organized with consistent fields.</p>
+              </div>
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Field</th>
+                      <th className="px-4 py-3 font-medium">Applies To</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {[
+                      ['Employee Code', 'Employees', 'Default'],
+                      ['Department', 'Employees', 'Default'],
+                      ['Designation', 'Employees', 'Default'],
+                      ['Payroll Profile', 'Payroll', 'Default'],
+                    ].map(([field, target, status]) => (
+                      <tr key={field}>
+                        <td className="px-4 py-3 font-semibold text-slate-900">{field}</td>
+                        <td className="px-4 py-3 text-slate-600">{target}</td>
+                        <td className="px-4 py-3"><StatusBadge tone="info">{status}</StatusBadge></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Button disabled variant="secondary">Add Custom Field (Coming soon)</Button>
             </div>
           )}
 

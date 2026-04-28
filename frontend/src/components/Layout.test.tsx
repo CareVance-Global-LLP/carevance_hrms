@@ -77,6 +77,28 @@ describe('Layout navigation', () => {
     expect(screen.getByText('Audit Logs')).toBeInTheDocument();
   });
 
+  it('highlights only the selected settings subpage', async () => {
+    renderWithProviders(<Layout />, { route: '/settings/integrations' });
+
+    const integrationLinks = await screen.findAllByRole('link', { name: /^integrations$/i });
+    const settingsLinks = screen.getAllByRole('link', { name: /^settings$/i });
+    const customFieldLinks = screen.getAllByRole('link', { name: /^custom fields$/i });
+
+    expect(integrationLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
+    expect(settingsLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+    expect(customFieldLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+  });
+
+  it('keeps projects and tasks navigation states separate', async () => {
+    renderWithProviders(<Layout />, { route: '/projects' });
+
+    const projectLinks = await screen.findAllByRole('link', { name: /^projects$/i });
+    const taskLinks = screen.getAllByRole('link', { name: /^tasks$/i });
+
+    expect(projectLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
+    expect(taskLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+  });
+
   it('hides admin-only navigation items for employees', async () => {
     authState.value = {
       user: {

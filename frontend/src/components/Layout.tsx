@@ -405,6 +405,7 @@ export default function Layout() {
 
   const isRouteActive = (to?: string) => {
     if (!to) return false;
+    if (to === '/settings') return location.pathname === to;
     return location.pathname === to || (to !== '/dashboard' && location.pathname.startsWith(`${to}/`));
   };
 

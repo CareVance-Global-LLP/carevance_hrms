@@ -296,7 +296,7 @@ function App() {
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
             <Route path="time-tracker" element={<DesktopTimerDashboard />} />
-            <Route path="projects" element={<Navigate to="/tasks" replace />} />
+            <Route path="projects" element={<Tasks />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />
             <Route path="attendance" element={<Attendance />} />
@@ -340,6 +340,8 @@ function App() {
             <Route path="users/add-user" element={<AdminRoute><AddUserPage /></AdminRoute>} />
             <Route path="notifications" element={<NotificationsCenter />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="settings/integrations" element={<Settings />} />
+            <Route path="settings/custom-fields" element={<Settings />} />
             <Route path="settings/billing" element={<AdminRoute><BillingSettingsPage /></AdminRoute>} />
             <Route path="legacy/reports" element={<AdminRoute><Reports /></AdminRoute>} />
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
