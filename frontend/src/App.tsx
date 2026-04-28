@@ -295,6 +295,7 @@ function App() {
             }
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
+            <Route path="time-tracker" element={<DesktopTimerDashboard />} />
             <Route path="projects" element={<Navigate to="/tasks" replace />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />

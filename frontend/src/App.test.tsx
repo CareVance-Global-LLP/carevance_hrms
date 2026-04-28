@@ -117,6 +117,35 @@ describe('App routes', () => {
 
     expect(await screen.findByText('Dashboard Page')).toBeInTheDocument();
     expect(screen.queryByText('Reports Page')).not.toBeInTheDocument();
+    expect(screen.queryByText('Desktop Timer Page')).not.toBeInTheDocument();
+  });
+
+  it('renders the time tracker page on /time-tracker', async () => {
+    authState.value = {
+      isAuthenticated: true,
+      isLoading: false,
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    };
+
+    render(
+      <MemoryRouter future={routerFuture} initialEntries={['/time-tracker']}>
+        <Routes>
+          <Route path="*" element={<App />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Desktop Timer Page')).toBeInTheDocument();
+    expect(screen.queryByText('Dashboard Page')).not.toBeInTheDocument();
   });
 
   it('renders the admin dashboard for admins on /dashboard', async () => {

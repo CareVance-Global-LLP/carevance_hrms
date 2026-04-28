@@ -88,7 +88,7 @@ export const topNavigation: NavGroup[] = [
     label: 'Time Tracker',
     icon: Clock3,
     items: [
-      { label: 'Time Tracker', to: '/dashboard', icon: Clock3 },
+      { label: 'Time Tracker', to: '/time-tracker', icon: Clock3 },
       { label: 'Timesheets', to: '/reports/hours-tracked', icon: FileClock, adminOnly: true },
       { label: 'Projects', to: '/tasks', icon: FolderKanban },
       { label: 'Tasks', to: '/tasks', icon: SquareKanban },
