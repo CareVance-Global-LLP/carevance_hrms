@@ -42,6 +42,7 @@ describe('Dashboard', () => {
           },
         ],
         today_total_elapsed_duration: 14400,
+        weekly_total_elapsed_duration: 45600,
         all_time_total_elapsed_duration: 86400,
         team_members_count: 4,
         new_members_this_week: 1,
@@ -75,6 +76,9 @@ describe('Dashboard', () => {
     expect(screen.getByText('Time Left Today')).toBeInTheDocument();
     expect(screen.getByText('Attendance & Shift')).toBeInTheDocument();
     expect(screen.getByText('My Focus')).toBeInTheDocument();
+    expect(screen.getByText('Time Tracker')).toBeInTheDocument();
+    expect(screen.getByText('This Week')).toBeInTheDocument();
+    expect(screen.getByText('12h 40m')).toBeInTheDocument();
     expect(screen.getByText('Quick Actions')).toBeInTheDocument();
     expect(screen.queryByText(/people in your organization/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /sending|send overtime proof/i })).not.toBeInTheDocument();
@@ -95,6 +99,7 @@ describe('Dashboard', () => {
           },
         ],
         today_total_elapsed_duration: 4560,
+        weekly_total_elapsed_duration: 4560,
         all_time_total_elapsed_duration: 4560,
         team_members_count: 4,
         new_members_this_week: 1,
@@ -148,6 +153,7 @@ describe('Dashboard', () => {
           },
         ],
         today_total_elapsed_duration: 6300,
+        weekly_total_elapsed_duration: 6300,
         all_time_total_elapsed_duration: 6300,
         team_members_count: 4,
         new_members_this_week: 1,

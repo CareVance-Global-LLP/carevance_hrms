@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
+  FileClock,
   FolderKanban,
   Hourglass,
   LogIn,
@@ -60,6 +61,7 @@ export default function Dashboard() {
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
+  const [weeklyTotal, setWeeklyTotal] = useState(0);
   const [productivityScore, setProductivityScore] = useState(0);
   const [activeTasksCount, setActiveTasksCount] = useState(0);
   const [totalTasksCount, setTotalTasksCount] = useState(0);
@@ -87,6 +89,7 @@ export default function Dashboard() {
         setActiveTimer(data?.active_timer || null);
         setTodayEntries(data?.today_entries || []);
         setTodayTotal(Number(data?.today_total_elapsed_duration ?? data?.today_total_duration ?? 0) || 0);
+        setWeeklyTotal(Number(data?.weekly_total_elapsed_duration ?? data?.weekly_total_duration ?? 0) || 0);
         setProductivityScore(Number(data?.productivity_score) || 0);
         setActiveTasksCount(Number(data?.active_tasks_count ?? data?.active_projects_count) || 0);
         setTotalTasksCount(Number(data?.total_tasks_count ?? data?.total_projects_count) || 0);
@@ -155,6 +158,13 @@ export default function Dashboard() {
     return `${hours}h ${minutes}m`;
   };
 
+  const formatTimerClock = (seconds: number) => {
+    const safeSeconds = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+
   const formatClockTime = (value?: string | null) => {
     if (!value) return 'Not recorded';
     const parsed = new Date(value);
@@ -178,6 +188,11 @@ export default function Dashboard() {
   const activeWorkSubtitle = activeTimer
     ? getTimeEntrySubtitle(activeTimer)
     : 'Start your timer when you begin a project or task.';
+  const activeTimerSeconds = activeTimer?.start_time
+    ? Math.max(0, Math.floor((Date.now() - new Date(activeTimer.start_time).getTime()) / 1000))
+    : 0;
+  const timerProject = activeTimer?.project?.name || activeTimer?.task?.project?.name || 'Not assigned';
+  const timerTask = activeTimer?.task?.title || 'Not assigned';
 
   if (isLoading) {
     return <PageLoadingState label="Loading dashboard..." />;
@@ -331,6 +346,34 @@ export default function Dashboard() {
                 </tbody>
               </table>
             )}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <SectionTitle title="Time Tracker" action={<Settings className="h-4 w-4 text-slate-400" />} />
+          <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
+            <p className="text-xs text-slate-500">{activeTimer ? 'Active timer' : 'No active timer'}</p>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-blue-600">{formatTimerClock(activeTimerSeconds)}</p>
+          </div>
+          <div className="mt-4 space-y-3 rounded-lg border border-slate-100 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-slate-500"><Briefcase className="h-4 w-4" />Project</span>
+              <span className="truncate font-semibold text-slate-900">{timerProject}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-slate-500"><FileClock className="h-4 w-4" />Task</span>
+              <span className="truncate font-semibold text-slate-900">{timerTask}</span>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-100 p-3">
+              <p className="text-xs text-slate-500">Today</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(trackedTodaySeconds)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 p-3">
+              <p className="text-xs text-slate-500">This Week</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(weeklyTotal)}</p>
+            </div>
           </div>
         </Card>
 
