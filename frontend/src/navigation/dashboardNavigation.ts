@@ -5,7 +5,6 @@ import {
   Bell,
   Building2,
   CalendarClock,
-  Clock3,
   CreditCard,
   FileClock,
   FileSpreadsheet,
@@ -85,10 +84,9 @@ export const topNavigation: NavGroup[] = [
     ],
   },
   {
-    label: 'Time Tracker',
-    icon: Clock3,
+    label: 'Work',
+    icon: FolderKanban,
     items: [
-      { label: 'Time Tracker', to: '/time-tracker', icon: Clock3 },
       { label: 'Timesheets', to: '/reports/hours-tracked', icon: FileClock, adminOnly: true },
       { label: 'Projects', to: '/tasks', icon: FolderKanban },
       { label: 'Tasks', to: '/tasks', icon: SquareKanban },

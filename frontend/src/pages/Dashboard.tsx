@@ -18,7 +18,6 @@ import {
   LogOut,
   Search,
   Settings,
-  TimerReset,
   TrendingUp,
 } from 'lucide-react';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
@@ -299,7 +298,7 @@ export default function Dashboard() {
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="p-4">
-          <SectionTitle title="My Work Log" action={<Link to="/time-tracker" className="text-xs font-medium text-blue-600">Open Time Tracker</Link>} />
+          <SectionTitle title="My Work Log" />
           <div className="overflow-x-auto rounded-lg border border-slate-100">
             {todayEntries.length === 0 ? (
               <EmptyInline>No work entries yet today</EmptyInline>
@@ -338,10 +337,6 @@ export default function Dashboard() {
         <Card className="p-4">
           <SectionTitle title="Quick Actions" />
           <div className="grid grid-cols-1 gap-3 text-xs">
-            <Link to="/time-tracker" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">
-              <TimerReset className="h-4 w-4 text-blue-600" />
-              Time Tracker
-            </Link>
             <Link to="/tasks" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">
               <FolderKanban className="h-4 w-4 text-emerald-600" />
               My Tasks
