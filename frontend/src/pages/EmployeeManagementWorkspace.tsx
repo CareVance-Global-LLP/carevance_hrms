@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
-import PageHeader from '@/components/dashboard/PageHeader';
-import MetricCard from '@/components/dashboard/MetricCard';
-import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
@@ -14,6 +11,101 @@ import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
 import { KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
+
+type TableColumn<T> = {
+  key: string;
+  header: string;
+  render: (row: T) => ReactNode;
+  className?: string;
+};
+
+const SurfaceCard = ({ children, className = '' }: { children: ReactNode; className?: string }) => (
+  <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>
+);
+
+const MetricCard = ({ label, value, hint, icon: Icon, accent = 'sky' }: { label: string; value: string | number; hint?: string; icon: any; accent?: 'sky' | 'emerald' | 'violet' | 'amber' | 'rose' | 'slate' }) => {
+  const accentClasses = {
+    sky: 'bg-blue-50 text-blue-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    violet: 'bg-violet-50 text-violet-600',
+    amber: 'bg-amber-50 text-amber-600',
+    rose: 'bg-rose-50 text-rose-600',
+    slate: 'bg-slate-100 text-slate-600',
+  } as const;
+
+  return (
+    <SurfaceCard className="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs text-slate-500">{label}</p>
+          <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+          {hint ? <p className="mt-2 text-[11px] text-slate-500">{hint}</p> : null}
+        </div>
+        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${accentClasses[accent]}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </SurfaceCard>
+  );
+};
+
+function DataTable<T>({
+  title,
+  description,
+  rows,
+  columns,
+  emptyMessage,
+  headerAction,
+  bodyClassName = '',
+}: {
+  title: string;
+  description?: string;
+  rows: T[];
+  columns: TableColumn<T>[];
+  emptyMessage: string;
+  headerAction?: ReactNode;
+  bodyClassName?: string;
+}) {
+  return (
+    <SurfaceCard className="overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-[15px] font-semibold text-slate-950">{title}</h2>
+          {description ? <p className="mt-1 text-xs text-slate-500">{description}</p> : null}
+        </div>
+        {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
+      </div>
+      <div className={`overflow-x-auto ${bodyClassName}`.trim()}>
+        <table className="min-w-full text-left text-xs">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <tr>
+              {columns.map((column) => (
+                <th key={column.key} className={`px-4 py-3 font-medium ${column.className || ''}`.trim()}>{column.header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-slate-500">{emptyMessage}</td>
+              </tr>
+            ) : (
+              rows.map((row, index) => (
+                <tr key={index}>
+                  {columns.map((column) => (
+                    <td key={column.key} className={`px-4 py-3 align-middle text-slate-700 ${column.className || ''}`.trim()}>
+                      {column.render(row)}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </SurfaceCard>
+  );
+}
 
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
@@ -336,8 +428,12 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const profile = profileQuery.data;
 
   return (
-    <div className="space-y-6">
-      <PageHeader eyebrow={pageTitle.eyebrow} title={pageTitle.title} description={pageTitle.description} />
+    <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 text-slate-900">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{pageTitle.title}</h1>
+        <p className="mt-3 text-sm font-medium text-slate-900">{pageTitle.eyebrow}</p>
+        <p className="mt-1 max-w-4xl text-xs text-slate-500">{pageTitle.description}</p>
+      </header>
 
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
@@ -449,7 +545,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     <p className="mt-2 text-xs text-slate-500">Desktop screenshot capture follows this interval for the selected user.</p>
                   </div>
 
-                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Can edit time</p>
@@ -462,7 +558,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     </div>
                   </div>
 
-                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Attendance monitoring</p>
@@ -475,7 +571,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     </div>
                   </div>
 
-                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Payroll visibility</p>
@@ -493,7 +589,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     </div>
                   </div>
 
-                  <div className="rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3 md:col-span-2">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 md:col-span-2">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Task assignment defaults</p>
@@ -517,19 +613,19 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               <SurfaceCard className="p-5">
                 <h2 className="text-lg font-semibold text-slate-950">Employee 360</h2>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Worked</p>
                     <p className="mt-2 text-2xl font-semibold text-slate-950">{formatDuration(profile.summary.total_duration)}</p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Attendance Days</p>
                     <p className="mt-2 text-2xl font-semibold text-slate-950">{profile.summary.present_days}</p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Approved Leave</p>
                     <p className="mt-2 text-2xl font-semibold text-slate-950">{profile.summary.approved_leave_days}</p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Time Adjustments</p>
                     <p className="mt-2 text-2xl font-semibold text-slate-950">{formatDuration(profile.summary.approved_time_edit_seconds)}</p>
                   </div>
@@ -563,7 +659,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               </div>
               <div>
                 <FieldLabel>Members</FieldLabel>
-                <div className="max-h-56 overflow-auto rounded-[22px] border border-slate-200 p-3">
+                <div className="max-h-56 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
                   {users.map((user: any) => (
                     <label key={user.id} className="flex items-center gap-2 py-1.5 text-sm text-slate-700">
                       <input
@@ -679,7 +775,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                 <PageEmptyState title="No users found" description="Users must exist before roles can be updated." />
               ) : (
                 users.map((user: any) => (
-                  <div key={user.id} className="flex flex-col gap-3 rounded-[22px] border border-slate-200 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                  <div key={user.id} className="flex flex-col gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
                     <div>
                       <p className="font-medium text-slate-950">{user.name}</p>
                       <p className="text-sm text-slate-500">{user.email}</p>
