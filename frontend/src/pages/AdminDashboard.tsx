@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import {
   Bell,
   Briefcase,
+  Calendar,
   CheckCircle2,
   Clock3,
   FileBarChart,
@@ -65,27 +66,83 @@ type TimesheetRow = {
   totalSeconds: number;
 };
 
+type DatePreset = 'today' | 'last_2_days' | 'last_5_days' | 'last_7_days' | 'last_15_days' | 'last_month' | 'custom';
+
+type DateRange = {
+  startDate: string;
+  endDate: string;
+};
+
 const departmentPalette = ['#2563eb', '#22c55e', '#f97316', '#8b5cf6', '#14b8a6', '#f59e0b', '#64748b'];
-const todayIso = () => new Date().toISOString().slice(0, 10);
-const monthIso = () => new Date().toISOString().slice(0, 7);
+const toIsoDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const todayIso = () => toIsoDate(new Date());
 
-const startOfWeek = (date = new Date()) => {
-  const copy = new Date(date);
-  const day = copy.getDay() || 7;
-  copy.setDate(copy.getDate() - day + 1);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
+const resolveDateRange = (preset: DatePreset, customRange: DateRange): DateRange => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (preset === 'custom') {
+    const start = customRange.startDate || todayIso();
+    const end = customRange.endDate || start;
+    return start <= end ? { startDate: start, endDate: end } : { startDate: end, endDate: start };
+  }
+
+  if (preset === 'last_month') {
+    const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const end = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { startDate: toIsoDate(start), endDate: toIsoDate(end) };
+  }
+
+  const daysByPreset: Record<Exclude<DatePreset, 'last_month' | 'custom'>, number> = {
+    today: 1,
+    last_2_days: 2,
+    last_5_days: 5,
+    last_7_days: 7,
+    last_15_days: 15,
+  };
+  const start = new Date(today);
+  start.setDate(today.getDate() - daysByPreset[preset] + 1);
+  return { startDate: toIsoDate(start), endDate: toIsoDate(today) };
 };
 
-const endOfWeek = (date = new Date()) => {
-  const start = startOfWeek(date);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
-  return end;
+const datePresetOptions: Array<{ value: DatePreset; label: string }> = [
+  { value: 'today', label: 'Today' },
+  { value: 'last_2_days', label: 'Last 2 days' },
+  { value: 'last_5_days', label: 'Last 5 days' },
+  { value: 'last_7_days', label: 'Last 7 days' },
+  { value: 'last_15_days', label: 'Last 15 days' },
+  { value: 'last_month', label: 'Last month' },
+  { value: 'custom', label: 'Custom' },
+];
+
+const dateInRange = (value: string | null | undefined, range: DateRange) => {
+  if (!value) return false;
+  const date = String(value).slice(0, 10);
+  return date >= range.startDate && date <= range.endDate;
 };
 
-const toIsoDate = (date: Date) => date.toISOString().slice(0, 10);
+const rangesOverlap = (startValue: string | null | undefined, endValue: string | null | undefined, range: DateRange) => {
+  if (!startValue && !endValue) return false;
+  const start = String(startValue || endValue).slice(0, 10);
+  const end = String(endValue || startValue).slice(0, 10);
+  return start <= range.endDate && end >= range.startDate;
+};
+
+const enumerateDateRange = (range: DateRange) => {
+  const dates: Date[] = [];
+  const cursor = new Date(`${range.startDate}T00:00:00`);
+  const end = new Date(`${range.endDate}T00:00:00`);
+  while (cursor <= end && dates.length < 62) {
+    dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+};
 
 const formatDuration = (seconds: number) => {
   const safe = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
@@ -270,14 +327,20 @@ export default function AdminDashboard() {
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
   const [employeeDetailSearch, setEmployeeDetailSearch] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+  const [datePreset, setDatePreset] = useState<DatePreset>('today');
+  const [customRange, setCustomRange] = useState<DateRange>(() => ({ startDate: todayIso(), endDate: todayIso() }));
+  const selectedRange = useMemo(() => resolveDateRange(datePreset, customRange), [customRange, datePreset]);
+  const selectedStartDate = selectedRange.startDate;
+  const selectedEndDate = selectedRange.endDate;
+  const selectedRangeLabel = selectedStartDate === selectedEndDate
+    ? formatDate(selectedStartDate)
+    : `${formatDate(selectedStartDate)} - ${formatDate(selectedEndDate)}`;
+  const selectedRangePresetLabel = datePresetOptions.find((option) => option.value === datePreset)?.label || 'Custom';
   const now = new Date();
-  const weekStart = startOfWeek(now);
-  const weekEnd = endOfWeek(now);
-  const dateLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const weekRangeLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  const dateLabel = selectedRangeLabel;
 
   const dashboardQuery = useQuery({
-    queryKey: ['real-admin-dashboard', todayIso(), toIsoDate(weekStart), toIsoDate(weekEnd)],
+    queryKey: ['real-admin-dashboard', selectedStartDate, selectedEndDate],
     queryFn: async () => {
       const [
         usersResponse,
@@ -290,21 +353,21 @@ export default function AdminDashboard() {
         notificationsResponse,
         groupsResponse,
         auditResponse,
-        weeklyResponse,
-        monthlyResponse,
+        rangeReportResponse,
+        trendResponse,
       ] = await Promise.allSettled([
         userApi.getAll(),
-        attendanceApi.summary({ start_date: todayIso(), end_date: todayIso() }),
+        attendanceApi.summary({ start_date: selectedStartDate, end_date: selectedEndDate }),
         leaveApi.list({ status: 'approved' }),
-        reportApi.overall({ start_date: todayIso(), end_date: todayIso() }),
+        reportApi.overall({ start_date: selectedStartDate, end_date: selectedEndDate }),
         dashboardApi.summary(),
         taskApi.getAll(),
-        payrollApi.getRecords({ payroll_month: monthIso() }),
+        payrollApi.getRecords({ payroll_month: selectedStartDate.slice(0, 7) }),
         notificationApi.list({ limit: 8 }),
         reportGroupApi.list(),
         auditApi.list({ per_page: 8 }),
-        reportApi.weekly({ start_date: toIsoDate(weekStart), end_date: toIsoDate(weekEnd), scope: 'organization' }),
-        reportApi.monthly({ scope: 'organization' }),
+        reportApi.weekly({ start_date: selectedStartDate, end_date: selectedEndDate, scope: 'organization' }),
+        reportApi.overall({ start_date: selectedStartDate, end_date: selectedEndDate }),
       ]);
 
       return {
@@ -318,8 +381,8 @@ export default function AdminDashboard() {
         notifications: notificationsResponse.status === 'fulfilled' ? safeArray<any>(notificationsResponse.value.data?.data) : [],
         groups: groupsResponse.status === 'fulfilled' ? safeArray<any>(groupsResponse.value.data?.data) : [],
         auditLogs: auditResponse.status === 'fulfilled' ? safeArray<any>(auditResponse.value.data?.data) : [],
-        weeklyReport: weeklyResponse.status === 'fulfilled' ? weeklyResponse.value.data : { time_entries: [], by_project: [], total_duration: 0 },
-        monthlyReport: monthlyResponse.status === 'fulfilled' ? monthlyResponse.value.data : { by_day: [] },
+        weeklyReport: rangeReportResponse.status === 'fulfilled' ? rangeReportResponse.value.data : { time_entries: [], by_project: [], total_duration: 0 },
+        monthlyReport: trendResponse.status === 'fulfilled' ? trendResponse.value.data : { by_day: [] },
       };
     },
   });
@@ -339,11 +402,11 @@ export default function AdminDashboard() {
     monthlyReport: { by_day: [] },
   };
 
-  const leavesToday = data.leaves.filter((leave: any) =>
-    leave.status === 'approved' && String(leave.start_date || '') <= todayIso() && String(leave.end_date || '') >= todayIso()
+  const leavesInRange = data.leaves.filter((leave: any) =>
+    leave.status === 'approved' && rangesOverlap(leave.start_date, leave.end_date, selectedRange)
   );
-  const leaveUserIdsToday = new Set(leavesToday.map((leave: any) => Number(leave.user_id)));
-  const employees = data.employees.map((employee) => leaveUserIdsToday.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
+  const leaveUserIdsInRange = new Set(leavesInRange.map((leave: any) => Number(leave.user_id)));
+  const employees = data.employees.map((employee) => leaveUserIdsInRange.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
 
   const departments = useMemo(() => {
     const names = Array.from(new Set(employees.map((employee) => employee.department).filter(Boolean)));
@@ -353,9 +416,9 @@ export default function AdminDashboard() {
   const totalEmployees = employees.length;
   const presentToday = data.attendanceRows.filter((row: any) => Number(row.present_days || 0) > 0 || row.is_checked_in).length;
   const lateToday = data.attendanceRows.reduce((sum: number, row: any) => sum + Number(row.late_days || 0), 0);
-  const onLeave = leavesToday.length;
-  const newHires = employees.filter((employee) => String(employee.joining_date || employee.created_at || '').startsWith(monthIso())).length;
-  const resignations = employees.filter((employee) => String(employee.exit_date || '').startsWith(monthIso())).length;
+  const onLeave = leavesInRange.length;
+  const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
+  const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
   const totalDuration = Number(data.overall.summary?.total_duration || data.summary?.today_total_elapsed_duration || 0);
   const weeklyReport: any = data.weeklyReport || {};
   const weeklyTotal = Number(weeklyReport.total_duration || data.summary?.weekly_total_elapsed_duration || 0);
@@ -400,30 +463,37 @@ export default function AdminDashboard() {
     .slice(0, 7);
 
   const leaveSummary: Array<{ label: string; value: number; color: string; bgClass: string }> = Object.values(data.leaves
-    .filter((leave: any) => leave.status === 'approved' && String(leave.start_date || '').startsWith(monthIso()))
+    .filter((leave: any) => leave.status === 'approved' && rangesOverlap(leave.start_date, leave.end_date, selectedRange))
     .reduce((acc: Record<string, { label: string; value: number; color: string; bgClass: string }>, leave: any, index: number) => {
       const key = String(leave.leave_type || 'full_day');
       const label = key.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
-      const units = key === 'half_day' ? 0.5 : Math.max(1, Math.ceil((new Date(leave.end_date).getTime() - new Date(leave.start_date).getTime()) / 86400000) + 1);
+      const leaveStart = new Date(`${String(leave.start_date || selectedStartDate).slice(0, 10)}T00:00:00`);
+      const leaveEnd = new Date(`${String(leave.end_date || leave.start_date || selectedEndDate).slice(0, 10)}T00:00:00`);
+      const rangeStart = new Date(`${selectedStartDate}T00:00:00`);
+      const rangeEnd = new Date(`${selectedEndDate}T00:00:00`);
+      const clampedStart = new Date(Math.max(leaveStart.getTime(), rangeStart.getTime()));
+      const clampedEnd = new Date(Math.min(leaveEnd.getTime(), rangeEnd.getTime()));
+      const units = key === 'half_day' ? 0.5 : Math.max(1, Math.ceil((clampedEnd.getTime() - clampedStart.getTime()) / 86400000) + 1);
       acc[key] = acc[key] || { label, value: 0, color: departmentPalette[index % departmentPalette.length], bgClass: ['bg-blue-600', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500'][index % 4] };
       acc[key].value += units;
       return acc;
     }, {}));
 
   const weeklyEntries = safeArray<any>(weeklyReport.time_entries || weeklyReport.entries);
-  const weekDates = Array.from({ length: 7 }).map((_, index) => {
-    const day = new Date(weekStart);
-    day.setDate(weekStart.getDate() + index);
-    return day;
-  });
+  const allRangeDates = enumerateDateRange(selectedRange);
+  const timesheetDates = allRangeDates.length > 15 ? allRangeDates.slice(-15) : allRangeDates;
+  const timesheetDateCount = timesheetDates.length || 1;
+  const timesheetRangeLabel = allRangeDates.length > timesheetDates.length
+    ? `Latest ${timesheetDates.length} days from ${selectedRangeLabel}`
+    : selectedRangeLabel;
   const timesheetRows: TimesheetRow[] = Object.values(weeklyEntries.reduce((acc: Record<string, TimesheetRow>, entry: any) => {
     const project = entry.project?.name || entry.task?.project?.name || entry.task?.group?.name || 'Unassigned';
     const task = entry.task?.title || entry.description || 'Time entry';
     const key = `${project}-${task}`;
     const duration = Number(entry.effective_duration || entry.duration || 0);
     const entryDate = String(entry.start_time || '').slice(0, 10);
-    const dayIndex = weekDates.findIndex((day) => toIsoDate(day) === entryDate);
-    acc[key] = acc[key] || { key, project, task, days: Array.from({ length: 7 }).map(() => '-'), daySeconds: Array.from({ length: 7 }).map(() => 0), totalSeconds: 0 };
+    const dayIndex = timesheetDates.findIndex((day) => toIsoDate(day) === entryDate);
+    acc[key] = acc[key] || { key, project, task, days: Array.from({ length: timesheetDateCount }).map(() => '-'), daySeconds: Array.from({ length: timesheetDateCount }).map(() => 0), totalSeconds: 0 };
     if (dayIndex >= 0) {
       acc[key].daySeconds[dayIndex] += duration;
       acc[key].days[dayIndex] = formatCompactDuration(acc[key].daySeconds[dayIndex]);
@@ -461,7 +531,7 @@ export default function AdminDashboard() {
       lateMinutes: Number(attendance?.late_minutes || 0),
       checkInAt,
       checkOutAt,
-      lastSeen: isWorking ? 'Checked in now' : checkOutAt ? `Checked out ${formatTime(checkOutAt)}` : attendance ? 'Seen today' : 'No punch today',
+      lastSeen: isWorking ? 'Checked in now' : checkOutAt ? `Checked out ${formatTime(checkOutAt)}` : attendance ? 'Seen in range' : 'No punch in range',
     };
   });
   const filteredWorkStatusRows = workStatusRows.filter((row) => {
@@ -477,7 +547,7 @@ export default function AdminDashboard() {
   const attendanceHealth = [
     { label: 'Working now', value: workingCount, color: 'bg-emerald-500' },
     { label: 'Not started', value: notWorkingCount, color: 'bg-slate-400' },
-    { label: 'Late today', value: lateToday, color: 'bg-rose-500' },
+    { label: 'Late', value: lateToday, color: 'bg-rose-500' },
     { label: 'On leave', value: onLeave, color: 'bg-amber-500' },
   ];
   const taskStatusCounts: Record<string, number> = data.tasks.reduce((acc: Record<string, number>, task: any) => {
@@ -500,14 +570,14 @@ export default function AdminDashboard() {
     || null;
   const selectedWorkStatus = selectedEmployee ? workStatusRows.find((row) => row.employee.id === selectedEmployee.id) : null;
   const selectedEmployeeDetailQuery = useQuery({
-    queryKey: ['dashboard-employee-detail', selectedEmployee?.id, toIsoDate(weekStart), todayIso()],
+    queryKey: ['dashboard-employee-detail', selectedEmployee?.id, selectedStartDate, selectedEndDate],
     enabled: Boolean(selectedEmployee?.id),
     queryFn: async () => {
       if (!selectedEmployee?.id) return null;
       const [profileResponse, insightsResponse, screenshotsResponse] = await Promise.allSettled([
-        userApi.getProfile360(selectedEmployee.id, { start_date: toIsoDate(weekStart), end_date: todayIso() }),
-        reportApi.employeeInsights({ start_date: toIsoDate(weekStart), end_date: todayIso(), user_id: selectedEmployee.id }),
-        screenshotApi.getAll({ user_id: selectedEmployee.id, start_date: toIsoDate(weekStart), end_date: todayIso(), page: 1, per_page: 4 }),
+        userApi.getProfile360(selectedEmployee.id, { start_date: selectedStartDate, end_date: selectedEndDate }),
+        reportApi.employeeInsights({ start_date: selectedStartDate, end_date: selectedEndDate, user_id: selectedEmployee.id }),
+        screenshotApi.getAll({ user_id: selectedEmployee.id, start_date: selectedStartDate, end_date: selectedEndDate, page: 1, per_page: 4 }),
       ]);
 
       return {
@@ -542,14 +612,17 @@ export default function AdminDashboard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
           <p className="mt-3 text-sm font-medium text-slate-900">Good morning, {user?.name?.split(' ')[0] || 'there'}!</p>
-          <p className="mt-1 text-xs text-slate-500">Here&apos;s what&apos;s happening in your organization today.</p>
+          <p className="mt-1 text-xs text-slate-500">Here&apos;s what&apos;s happening in your organization for the selected date range.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex h-10 min-w-64 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400 xl:w-80 xl:flex-none">
             <Search className="h-4 w-4" />
             <input className="w-full bg-transparent outline-none placeholder:text-slate-400" placeholder="Search anything..." />
           </label>
-          <button className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">{dateLabel}</button>
+          <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700">
+            <Calendar className="h-4 w-4 text-blue-600" />
+            {dateLabel}
+          </div>
           <Link aria-label="Notifications" to="/notifications" className="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
             <Bell className="h-4 w-4" />
             {announcements.length ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
@@ -560,22 +633,68 @@ export default function AdminDashboard() {
         </div>
       </header>
 
+      <Card className="p-3">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Date Filter</p>
+            <p className="mt-1 truncate text-sm font-medium text-slate-900">{selectedRangePresetLabel}: {selectedRangeLabel}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {datePresetOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setDatePreset(option.value)}
+                className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${datePreset === option.value ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {datePreset === 'custom' ? (
+          <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[minmax(0,180px)_minmax(0,180px)_1fr] sm:items-end">
+            <label className="text-xs font-medium text-slate-600">
+              Start date
+              <input
+                type="date"
+                value={customRange.startDate}
+                onChange={(event) => setCustomRange((current) => ({ ...current, startDate: event.target.value }))}
+                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+              />
+            </label>
+            <label className="text-xs font-medium text-slate-600">
+              End date
+              <input
+                type="date"
+                value={customRange.endDate}
+                onChange={(event) => setCustomRange((current) => ({ ...current, endDate: event.target.value }))}
+                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+              />
+            </label>
+            <p className="text-xs leading-5 text-slate-500">
+              Custom ranges automatically apply after you choose dates. If the dates are reversed, the dashboard reads them in the correct order.
+            </p>
+          </div>
+        ) : null}
+      </Card>
+
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
-        <KpiCard label="Total Employees" value={totalEmployees} hint={`${newHires} new this month`} icon={Users} tint="bg-blue-50 text-blue-600" />
-        <KpiCard label="Present Today" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
+        <KpiCard label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
+        <KpiCard label="Present" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
         <KpiCard label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
-        <KpiCard label="Late Today" value={lateToday} hint={`${latePercent}% of total`} icon={Clock3} tint="bg-rose-50 text-rose-600" />
-        <KpiCard label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined this month" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
-        <KpiCard label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited this month" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
+        <KpiCard label="Late" value={lateToday} hint={`${latePercent}% of total`} icon={Clock3} tint="bg-rose-50 text-rose-600" />
+        <KpiCard label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined in range" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
+        <KpiCard label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited in range" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
         <Card className="p-4">
-          <SectionTitle title="Attendance Overview" action={<button className="text-xs text-slate-500">This Week</button>} />
+          <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <MiniLineChart values={attendanceTrend} />
         </Card>
         <Card className="p-4">
-          <SectionTitle title="Leave Summary" action={<button className="text-xs text-slate-500">This Month</button>} />
+          <SectionTitle title="Leave Summary" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <DonutChart items={leaveSummary} />
         </Card>
         <Card className="p-4">
@@ -662,7 +781,7 @@ export default function AdminDashboard() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Today</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedWorkStatus?.todaySeconds || 0)}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Tracked</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedWorkStatus?.todaySeconds || 0)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{Number(employeeStats.present_days || 0)} present</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0))}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Screenshots</p><p className="mt-2 text-lg font-semibold text-blue-700">{employeeScreenshotCount}</p></div>
@@ -775,7 +894,7 @@ export default function AdminDashboard() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">Current Work Status</h2>
-              <p className="mt-1 text-xs text-slate-500">Live attendance and working state for today, with department and status filters.</p>
+              <p className="mt-1 text-xs text-slate-500">Live attendance and working state for the selected range, with department and status filters.</p>
             </div>
             <div className="grid grid-cols-3 gap-2 text-center text-xs">
               <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700"><p className="font-semibold">{workingCount}</p><p>Working</p></div>
@@ -817,7 +936,7 @@ export default function AdminDashboard() {
                 <tr>
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Department</th>
-                  <th className="px-4 py-3 font-medium">Today</th>
+                  <th className="px-4 py-3 font-medium">Tracked</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Last signal</th>
                 </tr>
@@ -868,11 +987,11 @@ export default function AdminDashboard() {
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-slate-100 p-3">
-              <p className="text-xs text-slate-500">Today</p>
+              <p className="text-xs text-slate-500">Selected Range</p>
               <p className="mt-2 text-lg font-semibold">{formatDuration(totalDuration)}</p>
             </div>
             <div className="rounded-lg border border-slate-100 p-3">
-              <p className="text-xs text-slate-500">This Week</p>
+              <p className="text-xs text-slate-500">Range Total</p>
               <p className="mt-2 text-lg font-semibold">{formatDuration(weeklyTotal)}</p>
             </div>
           </div>
@@ -922,7 +1041,7 @@ export default function AdminDashboard() {
         </Card>
 
         <Card className="p-4">
-          <SectionTitle title="Attendance Health" action={<span className="text-xs text-slate-500">Today</span>} />
+          <SectionTitle title="Attendance Health" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <div className="space-y-4">
             {attendanceHealth.map((item) => (
               <div key={item.label}>
@@ -1064,7 +1183,7 @@ export default function AdminDashboard() {
           <div className="mb-5 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold">Timesheets</h2>
-              <span className="text-sm text-slate-500">{weekRangeLabel}</span>
+              <span className="text-sm text-slate-500">{timesheetRangeLabel}</span>
             </div>
             <Link to="/reports/hours-tracked" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Open Timesheets</Link>
           </div>
@@ -1073,7 +1192,7 @@ export default function AdminDashboard() {
               <thead className="text-slate-500">
                 <tr>
                   <th className="pb-3 font-medium">Project / Task</th>
-                  {weekDates.map((day) => <th key={toIsoDate(day)} className="pb-3 text-center font-medium">{day.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}</th>)}
+                  {timesheetDates.map((day) => <th key={toIsoDate(day)} className="pb-3 text-center font-medium">{day.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}</th>)}
                   <th className="pb-3 text-center font-medium">Total</th>
                 </tr>
               </thead>
@@ -1087,7 +1206,7 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
-          ) : <EmptyInline>No time entries this week</EmptyInline>}
+          ) : <EmptyInline>No time entries in this range</EmptyInline>}
         </Card>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1105,7 +1224,7 @@ export default function AdminDashboard() {
             </div>
           </Card>
           <Card className="p-4">
-            <SectionTitle title="Payroll Snapshot" action={<Link to="/payroll" className="text-xs text-blue-600">{monthIso()}</Link>} />
+            <SectionTitle title="Payroll Snapshot" action={<Link to="/payroll" className="text-xs text-blue-600">{selectedStartDate.slice(0, 7)}</Link>} />
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Payroll Cost</p><p className="mt-2 font-semibold">{formatCurrency(payrollTotal + payrollDeductions)}</p></div>
               <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Net Pay</p><p className="mt-2 font-semibold text-emerald-700">{formatCurrency(payrollTotal)}</p></div>
@@ -1189,7 +1308,7 @@ export default function AdminDashboard() {
         </Card>
 
         <Card className="p-4">
-          <SectionTitle title="Attendance Trend" action={<button className="text-xs text-slate-500">This Month</button>} />
+          <SectionTitle title="Attendance Trend" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <MiniLineChart values={attendanceTrend} />
         </Card>
       </section>

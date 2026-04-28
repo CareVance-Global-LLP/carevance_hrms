@@ -160,8 +160,10 @@ describe('AdminDashboard WorkWise redesign', () => {
 
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect((await screen.findAllByText('Alex Johnson')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Date Filter')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Last 7 days' })).toBeInTheDocument();
     expect(screen.getByText('Total Employees')).toBeInTheDocument();
-    expect(screen.getByText('Present Today')).toBeInTheDocument();
+    expect(screen.getByText('Present')).toBeInTheDocument();
     expect(screen.getByText('Attendance Overview')).toBeInTheDocument();
     expect(screen.getByText('Leave Summary')).toBeInTheDocument();
     expect(screen.getByText('Department Distribution')).toBeInTheDocument();
@@ -247,7 +249,7 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('No birthdays available')).toBeInTheDocument();
     expect(screen.getByText('No recent activity yet')).toBeInTheDocument();
     expect(screen.getByText('No announcements yet')).toBeInTheDocument();
-    expect(screen.getByText('No time entries this week')).toBeInTheDocument();
+    expect(screen.getByText('No time entries in this range')).toBeInTheDocument();
     expect(screen.getByText('No projects yet')).toBeInTheDocument();
     expect(screen.queryByText('Website Redesign')).not.toBeInTheDocument();
     expect(screen.queryByText('Mobile App')).not.toBeInTheDocument();
