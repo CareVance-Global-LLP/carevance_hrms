@@ -26,7 +26,10 @@ import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
+  AlertTriangle,
+  Building2,
   CalendarDays,
+  CheckCircle2,
   Download,
   LineChart,
   ListFilter,
@@ -190,6 +193,16 @@ const formatPreviewList = (items: unknown[], emptyLabel: string, limit = 3) => {
   const preview = normalizedItems.slice(0, limit).join(', ');
   return normalizedItems.length > limit ? `${preview} +${normalizedItems.length - limit} more` : preview;
 };
+const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+const resolveAttendanceDepartment = (row: any) =>
+  row?.department
+  || row?.user?.department
+  || row?.user?.employee_work_info?.department?.name
+  || row?.user?.employeeWorkInfo?.department?.name
+  || row?.user?.employee_work_info?.department_name
+  || row?.user?.work_info?.department
+  || 'Unassigned';
 const fetchTimeEntriesForUsers = async (userIds: number[], startDate: string, endDate: string) => {
   const uniqueUserIds = Array.from(new Set(userIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
   if (!uniqueUserIds.length) return [];
@@ -447,12 +460,117 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     const presentDays = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.days_present || 0), 0);
     const leaveDays = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.leave_days || 0), 0);
     const workedSeconds = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.worked_seconds || 0), 0);
+    const expectedDays = attendanceRows.reduce(
+      (sum: number, row: any) => sum + Number(row.calendar_days_in_range || row.working_days_in_range || 0),
+      0
+    );
+    const absentDays = Math.max(0, expectedDays - presentDays - leaveDays);
+    const currentWorking = attendanceRows.filter((row: any) => row.is_working).length;
+    const averageAttendanceRate = attendanceRows.length
+      ? attendanceRows.reduce((sum: number, row: any) => sum + Number(row.attendance_rate || 0), 0) / attendanceRows.length
+      : 0;
     return {
       presentDays,
       leaveDays,
+      absentDays,
       workedSeconds,
       employees: attendanceRows.length,
+      expectedDays,
+      currentWorking,
+      averageAttendanceRate,
     };
+  }, [attendanceRows, mode]);
+  const attendanceDepartmentRows = useMemo(() => {
+    if (mode !== 'attendance') return [];
+    const groupedRows = new Map<string, {
+      department: string;
+      employees: number;
+      presentDays: number;
+      leaveDays: number;
+      absentDays: number;
+      workedSeconds: number;
+      expectedDays: number;
+      workingNow: number;
+    }>();
+
+    attendanceRows.forEach((row: any) => {
+      const department = resolveAttendanceDepartment(row);
+      const expectedDays = Number(row.calendar_days_in_range || row.working_days_in_range || 0);
+      const presentDays = Number(row.days_present || 0);
+      const leaveDays = Number(row.leave_days || 0);
+      const existing = groupedRows.get(department) || {
+        department,
+        employees: 0,
+        presentDays: 0,
+        leaveDays: 0,
+        absentDays: 0,
+        workedSeconds: 0,
+        expectedDays: 0,
+        workingNow: 0,
+      };
+
+      existing.employees += 1;
+      existing.presentDays += presentDays;
+      existing.leaveDays += leaveDays;
+      existing.absentDays += Math.max(0, expectedDays - presentDays - leaveDays);
+      existing.workedSeconds += Number(row.worked_seconds || 0);
+      existing.expectedDays += expectedDays;
+      existing.workingNow += row.is_working ? 1 : 0;
+      groupedRows.set(department, existing);
+    });
+
+    return Array.from(groupedRows.values()).sort((left, right) => right.presentDays - left.presentDays);
+  }, [attendanceRows, mode]);
+  const attendanceExceptionRows = useMemo(() => {
+    if (mode !== 'attendance') return [];
+    return [...attendanceRows]
+      .map((row: any) => {
+        const expectedDays = Number(row.calendar_days_in_range || row.working_days_in_range || 0);
+        const absentDays = Math.max(0, expectedDays - Number(row.days_present || 0) - Number(row.leave_days || 0));
+        return {
+          ...row,
+          absent_days: absentDays,
+          risk_score: absentDays * 10 + Math.max(0, 75 - Number(row.attendance_rate || 0)),
+        };
+      })
+      .filter((row: any) => row.absent_days > 0 || Number(row.attendance_rate || 0) < 80)
+      .sort((left: any, right: any) => Number(right.risk_score || 0) - Number(left.risk_score || 0))
+      .slice(0, 8);
+  }, [attendanceRows, mode]);
+  const attendanceRiskRows = useMemo(() => {
+    if (mode !== 'attendance') return [];
+    return [...attendanceRows]
+      .map((row: any) => {
+        const expectedDays = Number(row.calendar_days_in_range || row.working_days_in_range || 0);
+        const presentDays = Number(row.days_present || 0);
+        const leaveDays = Number(row.leave_days || 0);
+        const absentDays = Math.max(0, expectedDays - presentDays - leaveDays);
+        const rate = Number(row.attendance_rate || 0);
+        return {
+          ...row,
+          absentDays,
+          rate,
+          risk: clampPercent((100 - rate) + absentDays * 6),
+        };
+      })
+      .sort((left: any, right: any) => Number(right.risk || 0) - Number(left.risk || 0))
+      .slice(0, 5);
+  }, [attendanceRows, mode]);
+  const attendanceDayMatrixRows = useMemo(() => {
+    if (mode !== 'attendance') return [];
+    return attendanceRows.slice(0, 6).map((row: any) => {
+      const expectedDays = Math.max(1, Number(row.calendar_days_in_range || row.working_days_in_range || 0));
+      const presentDays = Math.max(0, Number(row.days_present || 0));
+      const leaveDays = Math.max(0, Number(row.leave_days || 0));
+      return {
+        row,
+        cells: Array.from({ length: Math.min(14, expectedDays) }, (_, index) => {
+          if (index < presentDays) return 'present';
+          if (index < presentDays + leaveDays) return 'leave';
+          return 'absent';
+        }),
+      };
+    });
   }, [attendanceRows, mode]);
 
   const overallData = dataQuery.data as any;
@@ -821,6 +939,128 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <MetricCard label="Present Days" value={attendanceTotals.presentDays} hint="Total present days" icon={CalendarDays} accent="emerald" />
             <MetricCard label="Leave Days" value={attendanceTotals.leaveDays} hint="Approved leave in range" icon={ListFilter} accent="amber" />
             <MetricCard label="Worked Time" value={formatDuration(attendanceTotals.workedSeconds)} hint="Tracked attendance time" icon={TimerReset} accent="violet" />
+          </div>
+
+          <SurfaceCard className="p-5">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Report Specific Analysis</p>
+                <h2 className="mt-2 text-lg font-semibold text-slate-950">
+                  {selectedEmployee ? selectedEmployee.name : selectedGroup ? `${selectedGroup.name} Department` : 'Organization Attendance Detail'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Detailed attendance context for {startDate} to {endDate}, including org, department, or employee scope depending on the selected filters.
+                </p>
+              </div>
+              {renderPanelRefreshButton()}
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+              <div className="rounded-lg border border-emerald-200 bg-[linear-gradient(135deg,#f0fdf4_0%,#ffffff_58%,#f8fafc_100%)] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">Attendance Risk Radar</h3>
+                    <p className="mt-1 text-xs text-slate-500">Hover rows to inspect the highest absence and low-rate pressure points.</p>
+                  </div>
+                  <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+                    {formatPercent(attendanceTotals.averageAttendanceRate)}
+                  </span>
+                </div>
+                <div className="mt-5 space-y-3">
+                  {attendanceRiskRows.length === 0 ? (
+                    <p className="text-sm text-slate-500">No attendance risk rows in this scope.</p>
+                  ) : attendanceRiskRows.map((row: any) => (
+                    <div key={row.user?.id || row.user?.email || row.user?.name} className="group rounded-lg border border-white/80 bg-white/85 p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-950">{row.user?.name || 'Unknown employee'}</p>
+                          <p className="text-xs text-slate-500">{resolveAttendanceDepartment(row)} | {row.absentDays} absent days</p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 group-hover:bg-emerald-100 group-hover:text-emerald-700">{formatPercent(row.risk)} risk</span>
+                      </div>
+                      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200">
+                        <div className="h-full rounded-full bg-[linear-gradient(90deg,#10b981_0%,#f59e0b_58%,#ef4444_100%)] transition-all duration-500 group-hover:brightness-110" style={{ width: `${Math.max(8, row.risk)}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    <p className="mt-3 text-xs text-slate-500">Working now</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">{attendanceTotals.currentWorking}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    <p className="mt-3 text-xs text-slate-500">Exception rows</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">{attendanceExceptionRows.length}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
+                    <Building2 className="h-5 w-5 text-blue-600" />
+                    <p className="mt-3 text-xs text-slate-500">Departments</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">{attendanceDepartmentRows.length}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <h3 className="text-sm font-semibold text-slate-950">Employee Day Matrix</h3>
+                  <p className="mt-1 text-xs text-slate-500">Compact day-level pattern: present, leave, and absent signals per employee.</p>
+                  <div className="mt-4 space-y-3">
+                    {attendanceDayMatrixRows.map(({ row, cells }: any) => (
+                      <div key={row.user?.id || row.user?.email || row.user?.name} className="grid grid-cols-[minmax(7rem,0.65fr)_1fr] items-center gap-3">
+                        <p className="truncate text-xs font-medium text-slate-700">{row.user?.name || 'Unknown'}</p>
+                        <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
+                          {cells.map((cell: string, index: number) => (
+                            <span
+                              key={`${row.user?.id || row.user?.email || row.user?.name}-${index}`}
+                              title={`${row.user?.name || 'Employee'} day ${index + 1}: ${cell}`}
+                              className={`h-5 rounded transition duration-200 hover:scale-125 ${
+                                cell === 'present' ? 'bg-emerald-500' : cell === 'leave' ? 'bg-amber-400' : 'bg-rose-400'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </SurfaceCard>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <DataTable
+              title="Department Attendance Detail"
+              description="Department-level rollup for org or group attendance reporting."
+              rows={attendanceDepartmentRows}
+              emptyMessage="No department attendance details found."
+              columns={[
+                { key: 'department', header: 'Department', render: (row: any) => row.department },
+                { key: 'employees', header: 'Employees', render: (row: any) => row.employees },
+                { key: 'present', header: 'Present', render: (row: any) => row.presentDays },
+                { key: 'leave', header: 'Leave', render: (row: any) => row.leaveDays },
+                { key: 'absent', header: 'Absent', render: (row: any) => row.absentDays },
+                { key: 'rate', header: 'Rate', render: (row: any) => formatPercent((row.presentDays / Math.max(1, row.expectedDays)) * 100) },
+                { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.workedSeconds) },
+              ]}
+            />
+
+            <DataTable
+              title="Attendance Exceptions"
+              description="Employees that need attention because absences or attendance percentage are outside expected range."
+              rows={attendanceExceptionRows}
+              emptyMessage="No attendance exceptions found for this scope."
+              columns={[
+                { key: 'employee', header: 'Employee', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
+                { key: 'department', header: 'Department', render: (row: any) => resolveAttendanceDepartment(row) },
+                { key: 'absent', header: 'Absent', render: (row: any) => row.absent_days },
+                { key: 'rate', header: 'Rate', render: (row: any) => `${row.attendance_rate}%` },
+                { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.worked_seconds || 0) },
+              ]}
+            />
           </div>
 
           <DataTable

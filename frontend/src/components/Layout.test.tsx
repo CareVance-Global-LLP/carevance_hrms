@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Layout from '@/components/Layout';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -15,6 +16,9 @@ const apiMocks = vi.hoisted(() => ({
   getUnreadSummary: vi.fn().mockResolvedValue({ data: { unread_messages: 0, unread_conversations: 0, unread_senders: 0 } }),
   leaveList: vi.fn().mockResolvedValue({ data: { data: [] } }),
   attendanceTimeEditList: vi.fn().mockResolvedValue({ data: { data: [] } }),
+  notificationList: vi.fn().mockResolvedValue({ data: { data: [], unread_count: 0 } }),
+  markAllRead: vi.fn().mockResolvedValue({}),
+  markRead: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -33,9 +37,9 @@ vi.mock('@/services/api', async () => {
     leaveApi: { list: apiMocks.leaveList },
     attendanceTimeEditApi: { list: apiMocks.attendanceTimeEditList },
     notificationApi: {
-      list: vi.fn().mockResolvedValue({ data: { data: [], unread_count: 0 } }),
-      markAllRead: vi.fn().mockResolvedValue({}),
-      markRead: vi.fn().mockResolvedValue({}),
+      list: apiMocks.notificationList,
+      markAllRead: apiMocks.markAllRead,
+      markRead: apiMocks.markRead,
     },
   };
 });
@@ -48,6 +52,9 @@ describe('Layout navigation', () => {
     apiMocks.getUnreadSummary.mockResolvedValue({ data: { unread_messages: 0, unread_conversations: 0, unread_senders: 0 } });
     apiMocks.leaveList.mockResolvedValue({ data: { data: [] } });
     apiMocks.attendanceTimeEditList.mockResolvedValue({ data: { data: [] } });
+    apiMocks.notificationList.mockResolvedValue({ data: { data: [], unread_count: 0 } });
+    apiMocks.markAllRead.mockResolvedValue({});
+    apiMocks.markRead.mockResolvedValue({});
     authState.value = {
       user: {
         id: 1,
@@ -97,6 +104,33 @@ describe('Layout navigation', () => {
 
     expect(projectLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
     expect(taskLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+  });
+
+  it('highlights departments without also highlighting employees', async () => {
+    renderWithProviders(<Layout />, { route: '/employees/teams' });
+
+    const employeeLinks = await screen.findAllByRole('link', { name: /^employees$/i });
+    const departmentLinks = screen.getAllByRole('link', { name: /^departments$/i });
+
+    expect(departmentLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
+    expect(employeeLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+  });
+
+  it('shows contextual report links in attendance and payroll sections', async () => {
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    expect(await screen.findByRole('link', { name: /^attendance report$/i })).toHaveAttribute('href', '/reports/attendance');
+    expect(screen.getByRole('link', { name: /^payroll report$/i })).toHaveAttribute('href', '/payroll/reports');
+  });
+
+  it('does not highlight the generic reports link when attendance report is active', async () => {
+    renderWithProviders(<Layout />, { route: '/reports/attendance' });
+
+    const attendanceReportLink = await screen.findByRole('link', { name: /^attendance report$/i });
+    const genericReportLinks = screen.getAllByRole('link', { name: /^reports$/i });
+
+    expect(attendanceReportLink.className).toContain('bg-blue-600');
+    expect(genericReportLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
   });
 
   it('hides admin-only navigation items for employees', async () => {
@@ -318,6 +352,50 @@ describe('Layout navigation', () => {
     await waitFor(() => {
       const chatLink = screen.getByRole('link', { name: /chat/i });
       expect(within(chatLink).getByText('4')).toBeInTheDocument();
+    });
+  });
+
+  it('toggles the desktop notification menu from the bell button', async () => {
+    const user = userEvent.setup();
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      getUpdateState: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+    apiMocks.notificationList.mockResolvedValue({
+      data: {
+        unread_count: 1,
+        data: [
+          {
+            id: 101,
+            title: 'Leave request pending',
+            message: 'A leave request needs review.',
+            type: 'leave_request',
+            is_read: false,
+            created_at: '2026-04-28T09:00:00.000Z',
+          },
+        ],
+      },
+    });
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    const bellButton = await screen.findByRole('button', { name: /notifications/i });
+    await user.click(bellButton);
+
+    expect(await screen.findByText('Leave request pending')).toBeInTheDocument();
+
+    await user.click(bellButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Leave request pending')).not.toBeInTheDocument();
     });
   });
 

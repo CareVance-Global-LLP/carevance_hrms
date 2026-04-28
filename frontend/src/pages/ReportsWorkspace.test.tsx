@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getAllUsersMock: vi.fn(),
   groupsListMock: vi.fn(),
   overallMock: vi.fn(),
+  attendanceMock: vi.fn(),
   activityGetAllPagesMock: vi.fn(),
   authUser: {
     id: 1,
@@ -41,6 +42,7 @@ vi.mock('@/services/api', async () => {
     reportApi: {
       ...actual.reportApi,
       overall: mocks.overallMock,
+      attendance: mocks.attendanceMock,
     },
     activityApi: {
       ...actual.activityApi,
@@ -84,6 +86,32 @@ describe('ReportsWorkspace timeline navigation', () => {
         by_day: [],
       },
     });
+    mocks.attendanceMock.mockResolvedValue({
+      data: {
+        data: [
+          {
+            user: { id: 1, name: 'Irbaz Mavli', email: 'irbaz@example.com' },
+            days_present: 8,
+            leave_days: 1,
+            worked_seconds: 115200,
+            calendar_days_in_range: 10,
+            working_days_in_range: 10,
+            attendance_rate: 80,
+            is_working: true,
+          },
+          {
+            user: { id: 2, name: 'Riya Shah', email: 'riya@example.com', department: 'Finance' },
+            days_present: 5,
+            leave_days: 0,
+            worked_seconds: 72000,
+            calendar_days_in_range: 10,
+            working_days_in_range: 10,
+            attendance_rate: 50,
+            is_working: false,
+          },
+        ],
+      },
+    });
 
     mocks.activityGetAllPagesMock.mockResolvedValue([
       {
@@ -116,6 +144,18 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(await screen.findByText('Activity Timeline')).toBeInTheDocument();
     expect(await screen.findByText('All timeline events')).toBeInTheDocument();
     expect(screen.getByText('Visual Studio Code')).toBeInTheDocument();
+  });
+
+  it('renders detailed report-specific attendance analysis', async () => {
+    renderWithProviders(<ReportsWorkspace mode="attendance" />);
+
+    expect(await screen.findByText('Attendance Report')).toBeInTheDocument();
+    expect(screen.getByText('Report Specific Analysis')).toBeInTheDocument();
+    expect(screen.getByText('Attendance Risk Radar')).toBeInTheDocument();
+    expect(screen.getByText('Employee Day Matrix')).toBeInTheDocument();
+    expect(screen.queryByText('Payroll Cost Waterfall')).not.toBeInTheDocument();
+    expect(screen.getByText('Department Attendance Detail')).toBeInTheDocument();
+    expect(screen.getByText('Attendance Exceptions')).toBeInTheDocument();
   });
 
   it('renders canonical website and software labels from backend activity fields', async () => {

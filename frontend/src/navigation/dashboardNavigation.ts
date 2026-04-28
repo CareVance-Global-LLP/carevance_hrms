@@ -70,6 +70,7 @@ export const topNavigation: NavGroup[] = [
       { label: 'Leave', to: '/approval-inbox', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
       { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true },
+      { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true },
     ],
   },
   {
@@ -81,6 +82,7 @@ export const topNavigation: NavGroup[] = [
       { label: 'Pay Slips', to: '/payroll/payslips', icon: CreditCard, adminOnly: true },
       { label: 'Reimbursements', to: '/payroll/adjustments', icon: Fingerprint, adminOnly: true },
       { label: 'Salary Structure', to: '/payroll/structures', icon: FileSpreadsheet, adminOnly: true },
+      { label: 'Payroll Report', to: '/payroll/reports', icon: BarChart3, adminOnly: true },
     ],
   },
   {
@@ -97,7 +99,7 @@ export const topNavigation: NavGroup[] = [
     icon: BarChart3,
     adminOnly: true,
     items: [
-      { label: 'Reports', to: '/reports/attendance', icon: BarChart3, adminOnly: true },
+      { label: 'Reports', to: '/reports/custom-export', icon: BarChart3, adminOnly: true },
       { label: 'Analytics', to: '/reports/productivity', icon: LineChart, adminOnly: true },
       { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true },
       { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true },

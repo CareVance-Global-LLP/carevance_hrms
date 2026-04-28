@@ -1,4 +1,5 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminDashboard from '@/pages/AdminDashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -174,6 +175,7 @@ describe('AdminDashboard WorkWise redesign', () => {
 
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect((await screen.findAllByText('Alex Johnson')).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Universal dashboard search')).toBeInTheDocument();
     expect(screen.getByText('Date Filter')).toBeInTheDocument();
     expect(screen.getByText('Dashboard Scope')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Overall' })).toBeInTheDocument();
@@ -211,6 +213,30 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('Task Pipeline')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();
     expect(screen.getByText('Projects')).toBeInTheDocument();
+  });
+
+  it('opens universal search suggestions and applies employee results', async () => {
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    expect(await screen.findByText('Dashboard Scope')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Universal dashboard search'), { target: { value: 'leslie' } });
+    fireEvent.click(screen.getByRole('button', { name: /Leslie Alexander/ }));
+
+    expect(screen.getByRole('heading', { name: 'Selected Employee Detail' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search scoped employee')).toHaveValue('Leslie Alexander');
+  });
+
+  it('opens dashboard notifications in a floating panel and keeps the full center behind view all', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    const bellButton = await screen.findByRole('button', { name: /notifications/i });
+    await user.click(bellButton);
+
+    const floatingPanel = await screen.findByRole('region', { name: /dashboard notifications/i });
+    expect(within(floatingPanel).getByText('Office closed on May 27')).toBeInTheDocument();
+    expect(within(floatingPanel).getByRole('link', { name: /view all notifications/i })).toHaveAttribute('href', '/notifications');
   });
 
   it('switches to a specific employee and updates the scoped detail panel', async () => {

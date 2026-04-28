@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Bell,
   Briefcase,
@@ -81,6 +81,17 @@ type DateRange = {
 };
 
 type DashboardScope = 'overall' | 'employee';
+
+type UniversalSuggestion = {
+  id: string;
+  label: string;
+  description: string;
+  category: 'Section' | 'Panel' | 'Employee';
+  keywords: string[];
+  route?: string;
+  sectionId?: string;
+  employeeId?: number;
+};
 
 const departmentPalette = ['#2563eb', '#22c55e', '#f97316', '#8b5cf6', '#14b8a6', '#f59e0b', '#64748b'];
 const toIsoDate = (date: Date) => {
@@ -248,8 +259,8 @@ const normalizeEmployee = (item: any): DashboardEmployee => {
   };
 };
 
-const Card = ({ children, className = '' }: { children: ReactNode; className?: string }) => (
-  <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>
+const Card = ({ children, className = '', id }: { children: ReactNode; className?: string; id?: string }) => (
+  <section id={id} className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>
 );
 
 const SectionTitle = ({ title, action }: { title: string; action?: ReactNode }) => (
@@ -364,6 +375,11 @@ const DonutChart = ({ items }: { items: Array<{ label: string; value: number; co
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [universalSearch, setUniversalSearch] = useState('');
+  const [isUniversalSearchOpen, setIsUniversalSearchOpen] = useState(false);
+  const [isDashboardNotificationsOpen, setIsDashboardNotificationsOpen] = useState(false);
+  const dashboardNotificationsRef = useRef<HTMLDivElement | null>(null);
   const [workSearch, setWorkSearch] = useState('');
   const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
@@ -560,10 +576,16 @@ export default function AdminDashboard() {
     tone: index % 3 === 0 ? 'green' : index % 3 === 1 ? 'blue' : 'amber',
   }));
 
-  const announcements = data.notifications.slice(0, 4).map((item: any, index: number) => ({
+  const dashboardNotifications = data.notifications.slice(0, 5).map((item: any, index: number) => ({
     id: Number(item.id || index),
     title: item.title || item.message || 'Notification',
+    message: item.message || 'Open the notifications center for more details.',
     date: formatDate(item.created_at),
+  }));
+  const announcements = dashboardNotifications.slice(0, 4).map((item) => ({
+    id: item.id,
+    title: item.title,
+    date: item.date,
   }));
 
   const upcomingBirthdays = employees
@@ -721,8 +743,153 @@ export default function AdminDashboard() {
     ...safeArray<any>(employeeTools.context_dependent),
   ].sort((a, b) => Number(b.total_duration || 0) - Number(a.total_duration || 0)).slice(0, 4);
 
+  const baseUniversalSuggestions: UniversalSuggestion[] = [
+    { id: 'date-filter', label: 'Date Filter', description: 'Change today, last days, last month, or custom dates', category: 'Section', sectionId: 'date-filter', keywords: ['date', 'filter', 'today', 'custom', 'month'] },
+    { id: 'dashboard-scope', label: 'Dashboard Scope', description: 'Switch between overall, department, and specific employee views', category: 'Section', sectionId: 'dashboard-scope', keywords: ['scope', 'overall', 'specific employee', 'department'] },
+    { id: 'kpis', label: 'Dashboard Statistics', description: 'Total employees, present, leave, late, hires, and resignations', category: 'Section', sectionId: 'dashboard-kpis', keywords: ['statistics', 'stats', 'cards', 'employees', 'present', 'late', 'leave'] },
+    { id: 'attendance-overview', label: 'Attendance Overview', description: 'Present, late, leave, absent chart for the selected scope', category: 'Section', sectionId: 'attendance-overview', keywords: ['attendance', 'present', 'late', 'absent', 'overview', 'chart'] },
+    { id: 'leave-summary', label: 'Leave Summary', description: 'Approved leave usage in the selected range', category: 'Section', sectionId: 'leave-summary', keywords: ['leave', 'summary', 'approval'] },
+    { id: 'department-distribution', label: 'Department Distribution', description: 'People count by department', category: 'Section', sectionId: 'department-distribution', keywords: ['department', 'distribution', 'team'] },
+    { id: 'scope-summary', label: 'Scope Summary', description: 'Overall or selected employee detail area', category: 'Section', sectionId: 'scope-summary', keywords: ['scope', 'employee detail', 'summary', 'screenshots', 'productivity'] },
+    { id: 'work-status', label: 'Current Work Status', description: 'Working, not working, and leave status table', category: 'Section', sectionId: 'current-work-status', keywords: ['working', 'status', 'not working', 'current'] },
+    { id: 'time-tracker', label: 'Time Tracker', description: 'Current timer, project, task, and selected range totals', category: 'Section', sectionId: 'time-tracker-card', keywords: ['timer', 'time tracker', 'task', 'project'] },
+    { id: 'checkin-log', label: 'Check-In / Check-Out Log', description: 'Last check in, last check out, session, and late status', category: 'Section', sectionId: 'checkin-log', keywords: ['check in', 'check out', 'punch', 'late'] },
+    { id: 'attendance-health', label: 'Attendance Health', description: 'Working now, not started, late, and leave bars', category: 'Section', sectionId: 'attendance-health', keywords: ['attendance health', 'health', 'working now'] },
+    { id: 'communication-hub', label: 'Communication Hub', description: 'Birthdays, activity, and announcements', category: 'Section', sectionId: 'communication-hub', keywords: ['communication', 'birthdays', 'activity', 'announcements'] },
+    { id: 'people-summary', label: 'People Summary', description: 'Active accounts, departments, hires, and leave', category: 'Section', sectionId: 'people-summary', keywords: ['people', 'employees', 'summary'] },
+    { id: 'timesheets', label: 'Timesheets', description: 'Range-based project and task time table', category: 'Section', sectionId: 'timesheets', keywords: ['timesheet', 'hours', 'tracked'] },
+    { id: 'projects-section', label: 'Projects', description: 'Project progress and time distribution', category: 'Section', sectionId: 'projects-section', keywords: ['projects', 'project progress'] },
+    { id: 'reports-section', label: 'Reports', description: 'Quick report shortcuts', category: 'Section', sectionId: 'reports-section', keywords: ['reports', 'export', 'attendance report', 'payroll report'] },
+    { id: 'employees-page', label: 'Employees Panel', description: 'Open employee management', category: 'Panel', route: '/employees', keywords: ['employee', 'employees', 'directory', 'management'] },
+    { id: 'attendance-page', label: 'Attendance Panel', description: 'Open attendance records', category: 'Panel', route: '/attendance', keywords: ['attendance', 'calendar', 'punch'] },
+    { id: 'leave-page', label: 'Leave Panel', description: 'Open leave approvals', category: 'Panel', route: '/approval-inbox', keywords: ['leave', 'approval', 'inbox'] },
+    { id: 'monitoring-page', label: 'Monitoring Panel', description: 'Open screenshots, timeline, web and app usage', category: 'Panel', route: '/monitoring', keywords: ['monitoring', 'screenshots', 'timeline', 'web usage', 'app usage'] },
+    { id: 'payroll-page', label: 'Payroll Panel', description: 'Open payroll workspace', category: 'Panel', route: '/payroll', keywords: ['payroll', 'salary', 'pay'] },
+    { id: 'tasks-page', label: 'Tasks Panel', description: 'Open task management', category: 'Panel', route: '/tasks', keywords: ['tasks', 'task', 'work'] },
+    { id: 'projects-page', label: 'Projects Panel', description: 'Open project workspace', category: 'Panel', route: '/projects', keywords: ['projects', 'project'] },
+    { id: 'chat-page', label: 'Chat Panel', description: 'Open organization chat', category: 'Panel', route: '/chat', keywords: ['chat', 'messages'] },
+    { id: 'settings-page', label: 'Settings Panel', description: 'Open settings, integrations, custom fields, and audit logs', category: 'Panel', route: '/settings', keywords: ['settings', 'integrations', 'custom fields', 'audit logs'] },
+  ];
+
+  const universalSuggestions = [
+    ...baseUniversalSuggestions,
+    ...allEmployees.map((employee): UniversalSuggestion => ({
+      id: `employee-${employee.id}`,
+      label: employee.name,
+      description: `${employee.position} - ${employee.department}`,
+      category: 'Employee',
+      employeeId: employee.id,
+      keywords: [employee.name, employee.email, employee.position, employee.department],
+    })),
+  ];
+  const filteredUniversalSuggestions = universalSearch.trim()
+    ? universalSuggestions
+      .filter((item) => {
+        const search = universalSearch.trim().toLowerCase();
+        return [item.label, item.description, item.category, ...item.keywords]
+          .some((value) => String(value || '').toLowerCase().includes(search));
+      })
+      .slice(0, 8)
+    : universalSuggestions.slice(0, 6);
+  const openUniversalSuggestion = (suggestion?: UniversalSuggestion) => {
+    if (!suggestion) return;
+    setUniversalSearch(suggestion.label);
+    setIsUniversalSearchOpen(false);
+    if (suggestion.employeeId) {
+      setDashboardScope('employee');
+      setSelectedEmployeeId(suggestion.employeeId);
+      setScopeSearch(suggestion.label);
+      window.setTimeout(() => document.getElementById('scope-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      return;
+    }
+    if (suggestion.route) {
+      navigate(suggestion.route);
+      return;
+    }
+    if (suggestion.sectionId) {
+      document.getElementById(suggestion.sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  useEffect(() => {
+    if (!isDashboardNotificationsOpen) return;
+
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (target && !dashboardNotificationsRef.current?.contains(target)) {
+        setIsDashboardNotificationsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDashboardNotificationsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDashboardNotificationsOpen]);
+
   return (
-    <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 text-slate-900">
+    <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 pt-4 text-slate-900">
+      <div className="relative z-20 mx-auto w-full max-w-4xl">
+        <label className="flex h-12 items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 text-sm text-slate-400 shadow-sm">
+          <Search className="h-4 w-4 shrink-0 text-blue-600" />
+          <input
+            aria-label="Universal dashboard search"
+            value={universalSearch}
+            onFocus={() => setIsUniversalSearchOpen(true)}
+            onChange={(event) => {
+              setUniversalSearch(event.target.value);
+              setIsUniversalSearchOpen(true);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                openUniversalSuggestion(filteredUniversalSuggestions[0]);
+              }
+              if (event.key === 'Escape') setIsUniversalSearchOpen(false);
+            }}
+            className="w-full bg-transparent outline-none placeholder:text-slate-400"
+            placeholder="Search panels, employees, reports, settings, attendance..."
+          />
+          <span className="hidden rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500 sm:inline">Enter</span>
+        </label>
+        {isUniversalSearchOpen ? (
+          <div className="absolute left-0 right-0 top-14 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+            {filteredUniversalSuggestions.length ? (
+              <div className="max-h-80 overflow-y-auto p-2">
+                {filteredUniversalSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => openUniversalSuggestion(suggestion)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-blue-50"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-slate-900">{suggestion.label}</span>
+                      <span className="block truncate text-xs text-slate-500">{suggestion.description}</span>
+                    </span>
+                    <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">{suggestion.category}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 text-sm text-slate-500">No matching panel, section, or employee found.</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
@@ -730,25 +897,62 @@ export default function AdminDashboard() {
           <p className="mt-1 text-xs text-slate-500">Here&apos;s what&apos;s happening in your organization for the selected date range.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex h-10 min-w-64 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400 xl:w-80 xl:flex-none">
-            <Search className="h-4 w-4" />
-            <input className="w-full bg-transparent outline-none placeholder:text-slate-400" placeholder="Search anything..." />
-          </label>
           <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700">
             <Calendar className="h-4 w-4 text-blue-600" />
             {dateLabel}
           </div>
-          <Link aria-label="Notifications" to="/notifications" className="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
-            <Bell className="h-4 w-4" />
-            {announcements.length ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
-          </Link>
+          <div ref={dashboardNotificationsRef} className="relative">
+            <button
+              type="button"
+              aria-label="Notifications"
+              aria-haspopup="dialog"
+              aria-expanded={isDashboardNotificationsOpen}
+              onClick={() => setIsDashboardNotificationsOpen((open) => !open)}
+              className={`relative rounded-lg border p-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 ${isDashboardNotificationsOpen ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              <Bell className="h-4 w-4" />
+              {announcements.length ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
+            </button>
+
+            {isDashboardNotificationsOpen ? (
+              <div
+                role="region"
+                aria-label="Dashboard notifications"
+                className="absolute right-0 top-full z-40 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-950">Notifications</p>
+                  <Link
+                    to="/notifications"
+                    onClick={() => setIsDashboardNotificationsOpen(false)}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    View all notifications
+                  </Link>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {dashboardNotifications.length ? (
+                    dashboardNotifications.map((notification) => (
+                      <div key={notification.id} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
+                        <p className="text-sm font-semibold text-slate-950">{notification.title}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">{notification.message}</p>
+                        <p className="mt-2 text-[11px] font-medium text-slate-400">{notification.date}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="px-4 py-5 text-sm text-slate-500">No notifications</p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <Link aria-label="Settings" to="/settings" className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
             <Settings className="h-4 w-4" />
           </Link>
         </div>
       </header>
 
-      <Card className="p-3">
+      <Card id="date-filter" className="scroll-mt-24 p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Date Filter</p>
@@ -794,7 +998,7 @@ export default function AdminDashboard() {
         ) : null}
       </Card>
 
-      <Card className="p-3">
+      <Card id="dashboard-scope" className="scroll-mt-24 p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Dashboard Scope</p>
@@ -858,7 +1062,7 @@ export default function AdminDashboard() {
         ) : null}
       </Card>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
+      <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
         <KpiCard label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
         <KpiCard label="Present" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
         <KpiCard label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
@@ -868,7 +1072,7 @@ export default function AdminDashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
-        <Card className="p-4">
+        <Card id="attendance-overview" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <MiniLineChart points={attendanceTrendPoints} />
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -885,11 +1089,11 @@ export default function AdminDashboard() {
             ))}
           </div>
         </Card>
-        <Card className="p-4">
+        <Card id="leave-summary" className="scroll-mt-24 p-4">
           <SectionTitle title="Leave Summary" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <DonutChart items={leaveSummary} />
         </Card>
-        <Card className="p-4">
+        <Card id="department-distribution" className="scroll-mt-24 p-4">
           <SectionTitle title="Department Distribution" action={<button className="text-xs text-slate-500">All Departments</button>} />
           {departmentCounts.length ? (
             <div className="space-y-3">
@@ -910,7 +1114,7 @@ export default function AdminDashboard() {
         </Card>
       </section>
 
-      <Card className="p-4">
+      <Card id="scope-summary" className="scroll-mt-24 p-4">
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">{dashboardScope === 'employee' ? 'Selected Employee Detail' : 'Scope Summary'}</h2>
@@ -1097,7 +1301,7 @@ export default function AdminDashboard() {
       </Card>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="p-4">
+        <Card id="current-work-status" className="scroll-mt-24 p-4">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">Current Work Status</h2>
@@ -1175,7 +1379,7 @@ export default function AdminDashboard() {
           <div className="mt-3 text-[11px] text-slate-400">Showing {Math.min(filteredWorkStatusRows.length, 8)} of {filteredWorkStatusRows.length} matching employees</div>
         </Card>
 
-        <Card className="p-4">
+        <Card id="time-tracker-card" className="scroll-mt-24 p-4">
           <SectionTitle title="Time Tracker" action={<Settings className="h-4 w-4 text-slate-400" />} />
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
             <p className="text-xs text-slate-500">{activeTimer ? 'You are on the clock' : 'No active timer'}</p>
@@ -1206,7 +1410,7 @@ export default function AdminDashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="p-4">
+        <Card id="checkin-log" className="scroll-mt-24 p-4">
           <SectionTitle title="Check-In / Check-Out Log" action={<Link to="/attendance" className="text-xs font-medium text-blue-600">Open Attendance</Link>} />
           <div className="overflow-x-auto rounded-lg border border-slate-100">
             <table className="min-w-[760px] w-full text-left text-xs">
@@ -1247,7 +1451,7 @@ export default function AdminDashboard() {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card id="attendance-health" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Health" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <div className="space-y-4">
             {attendanceHealth.map((item) => (
@@ -1272,7 +1476,7 @@ export default function AdminDashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <Card className="p-4">
+        <Card id="communication-hub" className="scroll-mt-24 p-4">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-950">Communication Hub</h2>
             <Link to="/chat" className="text-xs font-medium text-blue-600">Open Chat</Link>
@@ -1328,7 +1532,7 @@ export default function AdminDashboard() {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card id="people-summary" className="scroll-mt-24 p-4">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">People Summary</h2>
@@ -1386,7 +1590,7 @@ export default function AdminDashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="p-4">
+        <Card id="timesheets" className="scroll-mt-24 p-4">
           <div className="mb-5 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold">Timesheets</h2>
@@ -1417,7 +1621,7 @@ export default function AdminDashboard() {
         </Card>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Card className="p-4">
+          <Card id="task-pipeline" className="scroll-mt-24 p-4">
             <SectionTitle title="Task Pipeline" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">Manage</Link>} />
             <div className="space-y-4">
               {Object.entries(taskStatusCounts).map(([label, count]) => (
@@ -1430,7 +1634,7 @@ export default function AdminDashboard() {
               ))}
             </div>
           </Card>
-          <Card className="p-4">
+          <Card id="payroll-snapshot" className="scroll-mt-24 p-4">
             <SectionTitle title="Payroll Snapshot" action={<Link to="/payroll" className="text-xs text-blue-600">{selectedStartDate.slice(0, 7)}</Link>} />
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Payroll Cost</p><p className="mt-2 font-semibold">{formatCurrency(payrollTotal + payrollDeductions)}</p></div>
@@ -1439,7 +1643,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Employees Paid</p><p className="mt-2 font-semibold">{data.payrollRecords.length}</p></div>
             </div>
           </Card>
-          <Card className="p-4">
+          <Card id="leave-balance" className="scroll-mt-24 p-4">
             <SectionTitle title="Leave Balance" action={<Link to="/approval-inbox" className="text-xs font-medium text-blue-600">View All</Link>} />
             {leaveSummary.length ? (
               <div className="space-y-4">
@@ -1452,7 +1656,7 @@ export default function AdminDashboard() {
               </div>
             ) : <EmptyInline>No leave balance records</EmptyInline>}
           </Card>
-          <Card className="p-4">
+          <Card id="recent-timers" className="scroll-mt-24 p-4">
             <SectionTitle title="Recent Timers" action={<Link to="/reports/hours-tracked" className="text-xs font-medium text-blue-600">View All</Link>} />
             {recentTimers.length ? (
               <div className="space-y-3">
@@ -1475,7 +1679,7 @@ export default function AdminDashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <Card className="p-4">
+        <Card id="projects-section" className="scroll-mt-24 p-4">
           <SectionTitle title="Projects" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">View All</Link>} />
           {projectProgress.length ? (
             <div className="space-y-3">
@@ -1495,7 +1699,7 @@ export default function AdminDashboard() {
           ) : <EmptyInline>No projects yet</EmptyInline>}
         </Card>
 
-        <Card className="p-4">
+        <Card id="reports-section" className="scroll-mt-24 p-4">
           <SectionTitle title="Reports" action={<Link to="/reports/attendance" className="text-xs font-medium text-blue-600">View All</Link>} />
           <div className="grid grid-cols-3 gap-3">
             {[
@@ -1514,7 +1718,7 @@ export default function AdminDashboard() {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card id="attendance-trend" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Trend" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <MiniLineChart points={attendanceTrendPoints} />
         </Card>

@@ -7,10 +7,12 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
 import { PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { payrollWorkspaceApi } from '@/services/api';
-import { Building2, Clock3, Download, Wallet } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle2, Clock3, Download, FileText, Wallet } from 'lucide-react';
 import PayrollSectionCard from '@/features/payroll/components/PayrollSectionCard';
 import PayrollStatusBadge from '@/features/payroll/components/PayrollStatusBadge';
 import { defaultPayrollMonth, formatPayrollCurrency, formatPayrollDuration, formatPayrollMonth } from '@/features/payroll/utils';
+
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 
 export default function PayrollReportsView() {
   const [payrollMonth, setPayrollMonth] = useState(defaultPayrollMonth());
@@ -30,11 +32,48 @@ export default function PayrollReportsView() {
 
   const reports = reportsQuery.data;
   const monthlySummary = reports.monthly_summary || {};
+  const employeePayrollSheet = reports.employee_payroll_sheet || [];
+  const departmentPayrollCost = reports.department_payroll_cost || [];
+  const grossPayroll = Number(monthlySummary.gross_payroll || 0);
+  const netPayroll = Number(monthlySummary.net_payroll || 0);
+  const totalDeductions = employeePayrollSheet.reduce((sum: number, row: any) => sum + Number(row.total_deductions || 0), 0);
+  const totalGrossFromSheet = employeePayrollSheet.reduce((sum: number, row: any) => sum + Number(row.gross_pay || 0), 0);
+  const totalNetFromSheet = employeePayrollSheet.reduce((sum: number, row: any) => sum + Number(row.net_pay || 0), 0);
+  const payoutRows = reports.payout_status_report || [];
+  const paidPayoutCount = payoutRows
+    .filter((row: any) => ['paid', 'success', 'processed'].includes(String(row.status || '').toLowerCase()))
+    .reduce((sum: number, row: any) => sum + Number(row.count || 0), 0);
+  const totalPayoutCount = payoutRows.reduce((sum: number, row: any) => sum + Number(row.count || 0), 0);
+  const payrollCompletionRate = totalPayoutCount ? (paidPayoutCount / totalPayoutCount) * 100 : 0;
+  const largestDepartmentCost = departmentPayrollCost.reduce((largest: any, row: any) => (
+    Number(row.net_pay || 0) > Number(largest?.net_pay || 0) ? row : largest
+  ), null);
   const trendRows = [...(reports.monthly_trend || [])].sort((left: any, right: any) => String(right.month || '').localeCompare(String(left.month || '')));
   const currentTrend = trendRows.find((row: any) => row.month === payrollMonth) || trendRows[0] || null;
   const previousTrend = currentTrend ? trendRows.find((row: any) => row.month !== currentTrend.month) || null : null;
   const netDelta = currentTrend && previousTrend ? Number(currentTrend.net_payroll || 0) - Number(previousTrend.net_payroll || 0) : null;
   const employeeDelta = currentTrend && previousTrend ? Number(currentTrend.employees_count || 0) - Number(previousTrend.employees_count || 0) : null;
+  const payrollWaterfall = [
+    { label: 'Gross', value: totalGrossFromSheet || grossPayroll, tone: 'bg-sky-500' },
+    { label: 'Deductions', value: -Math.abs(totalDeductions), tone: 'bg-rose-500' },
+    { label: 'Net', value: totalNetFromSheet || netPayroll, tone: 'bg-emerald-500' },
+  ];
+  const maxWaterfallValue = Math.max(1, ...payrollWaterfall.map((row) => Math.abs(row.value)));
+  const deductionExposureRows = employeePayrollSheet
+    .map((row: any) => {
+      const gross = Number(row.gross_pay || 0);
+      const deductions = Number(row.total_deductions || 0);
+      return {
+        ...row,
+        deductionRate: gross ? (deductions / gross) * 100 : 0,
+      };
+    })
+    .sort((left: any, right: any) => Number(right.deductionRate || 0) - Number(left.deductionRate || 0))
+    .slice(0, 5);
+  const payoutRiskRows = [
+    ...(reports.failed_payout_report || []),
+    ...employeePayrollSheet.filter((row: any) => !['paid', 'success', 'processed'].includes(String(row.payout_status || '').toLowerCase())),
+  ].slice(0, 5);
 
   return (
     <div className="space-y-5">
@@ -63,11 +102,90 @@ export default function PayrollReportsView() {
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Gross Payroll" value={formatPayrollCurrency(Number(monthlySummary.gross_payroll || 0))} hint="Selected payroll cycle." icon={Wallet} accent="sky" />
-        <MetricCard label="Net Payroll" value={formatPayrollCurrency(Number(monthlySummary.net_payroll || 0))} hint="Selected payroll cycle." icon={Wallet} accent="emerald" />
+        <MetricCard label="Gross Payroll" value={formatPayrollCurrency(grossPayroll)} hint="Selected payroll cycle." icon={Wallet} accent="sky" />
+        <MetricCard label="Net Payroll" value={formatPayrollCurrency(netPayroll)} hint="Selected payroll cycle." icon={Wallet} accent="emerald" />
         <MetricCard label="Employees" value={Number(monthlySummary.employees_count || 0)} hint="Employees in the current run." icon={Building2} accent="violet" />
         <MetricCard label="Overtime" value={formatPayrollDuration(Number(monthlySummary.overtime_seconds || 0))} hint="Approved overtime included in payroll." icon={Clock3} accent="amber" />
       </div>
+
+      <PayrollSectionCard title="Report Specific Analysis" description="Finance-focused payroll intelligence for the selected month: waterfall movement, deduction exposure, and payout risk.">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="rounded-[22px] border border-sky-200 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_60%,#f8fafc_100%)] px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-950">Payroll Cost Waterfall</h3>
+                <p className="mt-1 text-xs text-slate-500">Gross to deduction to net movement for {formatPayrollMonth(payrollMonth)}.</p>
+              </div>
+              <PayrollStatusBadge status={payrollCompletionRate >= 90 ? 'healthy' : payrollCompletionRate > 0 ? 'processed' : 'pending'} />
+            </div>
+            <div className="mt-5 flex min-h-52 items-end gap-3 rounded-2xl bg-white/75 px-4 pb-4 pt-5 shadow-inner">
+              {payrollWaterfall.map((row) => {
+                const height = clampPercent((Math.abs(row.value) / maxWaterfallValue) * 100);
+                return (
+                  <div key={row.label} className="group flex flex-1 flex-col items-center justify-end gap-2">
+                    <span className="text-xs font-semibold text-slate-700 opacity-0 transition group-hover:opacity-100">{formatPayrollCurrency(Math.abs(row.value))}</span>
+                    <div className="flex h-36 w-full items-end rounded-xl bg-slate-100 px-2 py-2">
+                      <div
+                        title={`${row.label}: ${formatPayrollCurrency(Math.abs(row.value))}`}
+                        className={`w-full rounded-lg ${row.tone} shadow-sm transition-all duration-500 group-hover:scale-x-105 group-hover:brightness-110`}
+                        style={{ height: `${Math.max(12, height)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-medium text-slate-600">{row.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-[22px] border border-slate-200/80 bg-white px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-950">Deduction Exposure</h3>
+                <p className="mt-1 text-xs text-slate-500">Highest deduction percentage by employee, with hover expansion.</p>
+              </div>
+              <FileText className="h-5 w-5 text-rose-500" />
+            </div>
+            <div className="mt-5 space-y-3">
+              {deductionExposureRows.length === 0 ? (
+                <p className="text-sm text-slate-500">No employee deduction data available.</p>
+              ) : deductionExposureRows.map((row: any) => (
+                <div key={row.user?.id || row.user?.name} className="group rounded-xl border border-slate-200 bg-slate-50/80 p-3 transition hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-50/60 hover:shadow-md">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <p className="truncate font-semibold text-slate-950">{row.user?.name || 'Unknown employee'}</p>
+                    <span className="text-xs font-semibold text-rose-700">{row.deductionRate.toFixed(1)}%</span>
+                  </div>
+                  <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white">
+                    <div className="h-full rounded-full bg-rose-500 transition-all duration-500 group-hover:bg-rose-600" style={{ width: `${Math.max(8, clampPercent(row.deductionRate))}%` }} />
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">{formatPayrollCurrency(row.total_deductions || 0)} deducted from {formatPayrollCurrency(row.gross_pay || 0)} gross.</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:col-span-2">
+            <div className="rounded-[22px] border border-slate-200/80 bg-white px-4 py-4 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Payout completion</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">{payrollCompletionRate.toFixed(1)}%</p>
+              <p className="mt-2 text-sm text-slate-500">{paidPayoutCount} of {totalPayoutCount} payout rows completed.</p>
+            </div>
+            <div className="rounded-[22px] border border-slate-200/80 bg-white px-4 py-4 transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md">
+              <Building2 className="h-5 w-5 text-sky-600" />
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Largest department</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">{largestDepartmentCost?.name || 'No department'}</p>
+              <p className="mt-2 text-sm text-slate-500">{formatPayrollCurrency(Number(largestDepartmentCost?.net_pay || 0))} net cost.</p>
+            </div>
+            <div className="rounded-[22px] border border-amber-200 bg-amber-50/70 px-4 py-4 transition hover:-translate-y-0.5 hover:shadow-md">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <p className="text-xs uppercase tracking-[0.18em] text-amber-700">Payout Risk Queue</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">{payoutRiskRows.length}</p>
+              <p className="mt-2 text-sm text-slate-600">{payoutRiskRows.length ? `${payoutRiskRows[0]?.user?.name || 'Employee'} needs payout review first.` : 'No payout risk rows in this cycle.'}</p>
+            </div>
+          </div>
+        </div>
+      </PayrollSectionCard>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.95fr_1.05fr]">
         <PayrollSectionCard title="Reporting Controls" description="Operational reporting scope and export visibility for payroll admins and finance reviewers.">
@@ -98,7 +216,7 @@ export default function PayrollReportsView() {
         <DataTable
           title="Payout Status Distribution"
           description="Current payout distribution for the selected run."
-          rows={reports.payout_status_report || []}
+          rows={payoutRows}
           emptyMessage="No payout report data found."
           columns={[
             { key: 'status', header: 'Status', render: (row: any) => <PayrollStatusBadge status={row.status} /> },
@@ -176,9 +294,9 @@ export default function PayrollReportsView() {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <DataTable
-          title="Employee Payroll Sheet"
           description="Employee-wise payroll sheet for the selected month."
-          rows={reports.employee_payroll_sheet || []}
+          title="Employee Payroll Detail"
+          rows={employeePayrollSheet}
           emptyMessage="No payroll sheet data found."
           stickyHeader
           columns={[
@@ -193,9 +311,9 @@ export default function PayrollReportsView() {
         />
 
         <DataTable
-          title="Department Payroll Cost"
+          title="Department Cost Detail"
           description="Payroll cost grouped by existing team and department groups."
-          rows={reports.department_payroll_cost || []}
+          rows={departmentPayrollCost}
           emptyMessage="No department payroll cost data found."
           stickyHeader
           columns={[

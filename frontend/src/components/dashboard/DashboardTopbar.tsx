@@ -129,6 +129,10 @@ export default function DashboardTopbar({
                 <button
                   type="button"
                   onClick={onToggleNotifications}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onTouchStart={(event) => event.stopPropagation()}
+                  aria-haspopup="menu"
+                  aria-expanded={notificationsOpen}
                   aria-label="Notifications"
                   className={cn(
                     'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',

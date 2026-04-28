@@ -409,9 +409,14 @@ export default function Layout() {
     return location.pathname === to || (to !== '/dashboard' && location.pathname.startsWith(`${to}/`));
   };
 
-  const renderSidebarLink = (item: any, nested = false) => {
+  const getBestMatchedItemTo = (items: any[] = []) =>
+    items
+      .filter((item) => isRouteActive(item.to))
+      .sort((left, right) => String(right.to || '').length - String(left.to || '').length)[0]?.to;
+
+  const renderSidebarLink = (item: any, nested = false, activeOverride?: boolean) => {
     const Icon = item.icon;
-    const active = isRouteActive(item.to);
+    const active = activeOverride ?? isRouteActive(item.to);
 
     return (
       <Link
@@ -446,7 +451,8 @@ export default function Layout() {
 
           <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
             {primaryNavigation.map((group) => {
-              const groupActive = isRouteActive(group.to) || group.items?.some((item) => isRouteActive(item.to));
+              const activeItemTo = getBestMatchedItemTo(group.items);
+              const groupActive = isRouteActive(group.to) || Boolean(activeItemTo);
 
               if (group.to) {
                 return (
@@ -466,7 +472,8 @@ export default function Layout() {
                       item.to === '/approval-inbox'
                         ? { ...item, unreadCount: pendingApprovals }
                         : item,
-                      true
+                      true,
+                      activeItemTo === item.to
                     ))}
                   </div>
                 </div>

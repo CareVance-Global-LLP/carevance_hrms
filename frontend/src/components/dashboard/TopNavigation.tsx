@@ -36,6 +36,16 @@ function Badge({ count, active }: { count?: number; active: boolean }) {
 const isPathMatch = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
 
+const getBestMatchedItemTo = (pathname: string, items: NavLinkItem[] = []) =>
+  items
+    .filter((item) => isPathMatch(pathname, item.to))
+    .sort((left, right) => right.to.length - left.to.length)[0]?.to;
+
+const isItemActive = (pathname: string, item: NavLinkItem, siblings?: NavLinkItem[]) => {
+  const bestMatchedItemTo = getBestMatchedItemTo(pathname, siblings);
+  return bestMatchedItemTo ? bestMatchedItemTo === item.to : isPathMatch(pathname, item.to);
+};
+
 const hasActivePath = (pathname: string, group: NavGroup) =>
   group.to
     ? isPathMatch(pathname, group.to)
@@ -433,7 +443,7 @@ export default function TopNavigation({
                           key={item.to}
                           item={item}
                           groupLabel={group.label}
-                          active={isPathMatch(location.pathname, item.to)}
+                          active={isItemActive(location.pathname, item, group.items)}
                           onOpenExternal={onOpenExternal}
                           onSelect={() => {
                             setOpenGroup(null);
@@ -676,7 +686,7 @@ export default function TopNavigation({
                               key={item.to}
                               item={item}
                               groupLabel={group.label}
-                              active={isPathMatch(location.pathname, item.to)}
+                              active={isItemActive(location.pathname, item, group.items)}
                               onOpenExternal={onOpenExternal}
                               onSelect={() => {
                                 setOpenGroup(null);
@@ -697,7 +707,7 @@ export default function TopNavigation({
                       key={item.to}
                       item={item}
                       groupLabel={openGroup}
-                      active={isPathMatch(location.pathname, item.to)}
+                      active={isItemActive(location.pathname, item, groups.find((group) => group.label === openGroup)?.items)}
                       onOpenExternal={onOpenExternal}
                       onSelect={() => {
                         setOpenGroup(null);
