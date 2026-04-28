@@ -70,7 +70,7 @@ type TrendPoint = {
   label: string;
   detail: string;
   value: number;
-  seconds: number;
+  count: number;
 };
 
 type DatePreset = 'today' | 'last_2_days' | 'last_5_days' | 'last_7_days' | 'last_15_days' | 'last_month' | 'custom';
@@ -149,6 +149,17 @@ const enumerateDateRange = (range: DateRange) => {
     cursor.setDate(cursor.getDate() + 1);
   }
   return dates;
+};
+
+const enumerateMonths = (range: DateRange) => {
+  const months: string[] = [];
+  const cursor = new Date(`${range.startDate.slice(0, 7)}-01T00:00:00`);
+  const end = new Date(`${range.endDate.slice(0, 7)}-01T00:00:00`);
+  while (cursor <= end && months.length < 24) {
+    months.push(toIsoDate(cursor).slice(0, 7));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return months;
 };
 
 const formatDuration = (seconds: number) => {
@@ -272,9 +283,9 @@ const MiniLineChart = ({ points, values }: { points?: TrendPoint[]; values?: num
     ? points
     : (values?.length ? values : [0, 0, 0, 0, 0, 0, 0]).map((value, index) => ({
       label: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index] || `Day ${index + 1}`,
-      detail: `${value}h`,
+      detail: `${value}`,
       value,
-      seconds: value * 3600,
+      count: value,
     }));
   const chartValues = chartPoints.map((point) => point.value);
   const max = Math.max(1, ...chartValues);
@@ -292,7 +303,7 @@ const MiniLineChart = ({ points, values }: { points?: TrendPoint[]; values?: num
         return (
           <g key={line}>
             <line x1="16" x2="294" y1={y} y2={y} stroke="#eef2f7" />
-            {line < 3 ? <text x="296" y={y + 3} fill="#cbd5e1" fontSize="8">{Math.round(max - (line * max) / 3)}h</text> : null}
+            {line < 3 ? <text x="296" y={y + 3} fill="#cbd5e1" fontSize="8">{Math.round(max - (line * max) / 3)}</text> : null}
           </g>
         );
       })}
@@ -384,6 +395,7 @@ export default function AdminDashboard() {
         auditResponse,
         rangeReportResponse,
         trendResponse,
+        attendanceCalendarResponse,
       ] = await Promise.allSettled([
         userApi.getAll(),
         attendanceApi.summary({ start_date: selectedStartDate, end_date: selectedEndDate }),
@@ -397,6 +409,7 @@ export default function AdminDashboard() {
         auditApi.list({ per_page: 8 }),
         reportApi.weekly({ start_date: selectedStartDate, end_date: selectedEndDate, scope: 'organization' }),
         reportApi.overall({ start_date: selectedStartDate, end_date: selectedEndDate }),
+        Promise.allSettled(enumerateMonths({ startDate: selectedStartDate, endDate: selectedEndDate }).map((month) => attendanceApi.calendar({ month, scope: 'overall' }))),
       ]);
 
       return {
@@ -412,6 +425,9 @@ export default function AdminDashboard() {
         auditLogs: auditResponse.status === 'fulfilled' ? safeArray<any>(auditResponse.value.data?.data) : [],
         weeklyReport: rangeReportResponse.status === 'fulfilled' ? rangeReportResponse.value.data : { time_entries: [], by_project: [], total_duration: 0 },
         monthlyReport: trendResponse.status === 'fulfilled' ? trendResponse.value.data : { by_day: [] },
+        attendanceCalendarDays: attendanceCalendarResponse.status === 'fulfilled'
+          ? attendanceCalendarResponse.value.flatMap((result) => result.status === 'fulfilled' ? safeArray<any>(result.value.data?.days) : [])
+          : [],
       };
     },
   });
@@ -429,6 +445,7 @@ export default function AdminDashboard() {
     auditLogs: [],
     weeklyReport: { time_entries: [], by_project: [], total_duration: 0 },
     monthlyReport: { by_day: [] },
+    attendanceCalendarDays: [],
   };
 
   const leavesInRange = data.leaves.filter((leave: any) =>
@@ -455,29 +472,49 @@ export default function AdminDashboard() {
   const activeTimerSeconds = activeTimer?.start_time ? Math.max(0, Math.floor((Date.now() - new Date(activeTimer.start_time).getTime()) / 1000)) : 0;
 
   const allRangeDates = enumerateDateRange(selectedRange);
-  const trendSource = (data.monthlyReport?.by_day?.length ? data.monthlyReport.by_day : data.overall.by_day || []).slice(-7);
+  const calendarDaysInRange = safeArray<any>(data.attendanceCalendarDays)
+    .filter((day) => dateInRange(day?.date, selectedRange))
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  const trendSource = calendarDaysInRange.slice(-7);
   const fallbackTrendDates = allRangeDates.slice(-Math.min(7, Math.max(1, allRangeDates.length)));
   const attendanceTrendPoints: TrendPoint[] = (trendSource.length ? trendSource : fallbackTrendDates).map((item: any, index: number) => {
-    const rawDate = item instanceof Date ? toIsoDate(item) : String(item?.date || item?.day || item?.attendance_date || item?.report_date || item?.start_date || '');
-    const seconds = item instanceof Date ? 0 : Math.max(0, Number(item?.working_duration || item?.total_duration || item?.total_time || item?.duration || 0));
+    const rawDate = item instanceof Date ? toIsoDate(item) : String(item?.date || '');
     const parsedDate = rawDate ? new Date(`${rawDate.slice(0, 10)}T00:00:00`) : null;
     const label = parsedDate && !Number.isNaN(parsedDate.getTime())
       ? parsedDate.toLocaleDateString('en-US', { weekday: 'short' })
       : `Day ${index + 1}`;
+    const status = item instanceof Date ? 'none' : String(item?.status || 'none');
+    const lateMinutes = item instanceof Date ? 0 : Number(item?.late_minutes || 0);
+    const isPresentDay = status === 'present' || status === 'checked_in';
+    const isLeaveDay = status.includes('leave') || Boolean(item?.is_leave);
+    const isHoliday = Boolean(item?.is_holiday);
+    const isWeekend = Boolean(item?.is_weekend);
+    const statusLabel = isPresentDay ? 'Present' : isLeaveDay ? 'On leave' : isHoliday ? 'Holiday' : isWeekend ? 'Weekend' : 'Absent';
     const detail = parsedDate && !Number.isNaN(parsedDate.getTime())
-      ? `${parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${formatDuration(seconds)}`
-      : formatDuration(seconds);
+      ? `${parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${statusLabel}${lateMinutes > 0 ? `, ${lateMinutes} min late` : ''}`
+      : statusLabel;
     return {
       label,
       detail,
-      value: seconds / 3600,
-      seconds,
+      value: isPresentDay ? 1 : isLeaveDay ? 0.5 : 0,
+      count: isPresentDay ? 1 : 0,
     };
   });
-  const attendanceTrendTotal = attendanceTrendPoints.reduce((sum, point) => sum + point.seconds, 0);
-  const attendanceTrendAverage = attendanceTrendPoints.length ? attendanceTrendTotal / attendanceTrendPoints.length : 0;
-  const attendanceTrendPeak = attendanceTrendPoints.reduce<TrendPoint | null>((peak, point) => !peak || point.seconds > peak.seconds ? point : peak, null);
-  const attendanceTrendActiveDays = attendanceTrendPoints.filter((point) => point.seconds > 0).length;
+  const attendancePresentDays = calendarDaysInRange.length
+    ? calendarDaysInRange.filter((day) => ['present', 'checked_in'].includes(String(day.status || ''))).length
+    : presentToday;
+  const attendanceLateDays = calendarDaysInRange.length
+    ? calendarDaysInRange.filter((day) => Number(day.late_minutes || 0) > 0).length
+    : lateToday;
+  const attendanceLeaveDays = calendarDaysInRange.length
+    ? calendarDaysInRange.filter((day) => String(day.status || '').includes('leave') || day.is_leave).length
+    : onLeave;
+  const attendanceAbsentDays = calendarDaysInRange.length
+    ? calendarDaysInRange.filter((day) => {
+      const dayDate = String(day.date || '').slice(0, 10);
+      return String(day.status || 'none') === 'none' && !day.is_weekend && !day.is_holiday && dayDate <= todayIso();
+    }).length
+    : Math.max(0, totalEmployees - presentToday - onLeave);
 
   const activities: DashboardActivity[] = data.auditLogs.map((item: any, index: number) => ({
     id: Number(item.id || index),
@@ -743,10 +780,10 @@ export default function AdminDashboard() {
           <MiniLineChart points={attendanceTrendPoints} />
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             {[
-              ['Total tracked', formatDuration(attendanceTrendTotal)],
-              ['Avg per day', formatDuration(attendanceTrendAverage)],
-              ['Active days', `${attendanceTrendActiveDays}/${attendanceTrendPoints.length}`],
-              ['Best day', attendanceTrendPeak ? `${attendanceTrendPeak.label} ${formatDuration(attendanceTrendPeak.seconds)}` : 'No data'],
+              ['Present days', attendancePresentDays],
+              ['Late days', attendanceLateDays],
+              ['On leave', attendanceLeaveDays],
+              ['Absent days', attendanceAbsentDays],
             ].map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50 hover:shadow-sm">
                 <p className="text-[11px] text-slate-500">{label}</p>

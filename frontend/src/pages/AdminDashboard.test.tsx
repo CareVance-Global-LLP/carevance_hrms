@@ -6,6 +6,7 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 const apiMocks = vi.hoisted(() => ({
   users: vi.fn(),
   attendanceSummary: vi.fn(),
+  attendanceCalendar: vi.fn(),
   leaveList: vi.fn(),
   overall: vi.fn(),
   dashboardSummary: vi.fn(),
@@ -32,7 +33,7 @@ vi.mock('@/services/api', async () => {
   return {
     ...actual,
     userApi: { getAll: apiMocks.users, getProfile360: apiMocks.profile360 },
-    attendanceApi: { summary: apiMocks.attendanceSummary },
+    attendanceApi: { summary: apiMocks.attendanceSummary, calendar: apiMocks.attendanceCalendar },
     leaveApi: { list: apiMocks.leaveList },
     reportApi: { overall: apiMocks.overall, weekly: apiMocks.weeklyReport, monthly: apiMocks.monthlyReport, employeeInsights: apiMocks.employeeInsights },
     screenshotApi: { getAll: apiMocks.screenshots },
@@ -85,6 +86,19 @@ describe('AdminDashboard WorkWise redesign', () => {
             last_check_out_at: '2026-04-27T12:10:00Z',
           },
         ],
+      },
+    });
+    apiMocks.attendanceCalendar.mockResolvedValue({
+      data: {
+        month: '2026-04',
+        scope: 'overall',
+        days: [
+          { date: '2026-04-22', status: 'present', is_weekend: false, is_leave: false, is_holiday: false, late_minutes: 0, worked_seconds: 0 },
+          { date: '2026-04-23', status: 'checked_in', is_weekend: false, is_leave: false, is_holiday: false, late_minutes: 12, worked_seconds: 0 },
+          { date: '2026-04-24', status: 'leave', is_weekend: false, is_leave: true, is_holiday: false, late_minutes: 0, worked_seconds: 0 },
+          { date: '2026-04-25', status: 'none', is_weekend: false, is_leave: false, is_holiday: false, late_minutes: 0, worked_seconds: 0 },
+        ],
+        summary: { present_days: 2, absent_days: 1, weekend_days: 0, leave_days: 1, holiday_days: 0, late_days: 1, total_worked_seconds: 0 },
       },
     });
     apiMocks.leaveList.mockResolvedValue({ data: { data: [{ id: 1, user_id: 2, status: 'approved', start_date: '2026-04-27', end_date: '2026-04-27' }] } });
@@ -229,6 +243,7 @@ describe('AdminDashboard WorkWise redesign', () => {
   it('does not render demo fallback records when the database is empty', async () => {
     apiMocks.users.mockResolvedValue({ data: [] });
     apiMocks.attendanceSummary.mockResolvedValue({ data: { data: [] } });
+    apiMocks.attendanceCalendar.mockResolvedValue({ data: { days: [], summary: {} } });
     apiMocks.leaveList.mockResolvedValue({ data: { data: [] } });
     apiMocks.overall.mockResolvedValue({ data: { summary: {}, by_day: [], by_user: [] } });
     apiMocks.dashboardSummary.mockResolvedValue({ data: { active_timer: null, today_total_elapsed_duration: 0, weekly_total_elapsed_duration: 0, today_entries: [] } });
