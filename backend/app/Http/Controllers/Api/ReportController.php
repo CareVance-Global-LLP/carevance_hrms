@@ -582,6 +582,7 @@ class ReportController extends Controller
             'user_ids.*' => 'integer',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
+            'dashboard_lite' => 'nullable|boolean',
         ]);
 
         $currentUser = $request->user();
@@ -661,13 +662,24 @@ class ReportController extends Controller
             ->whereDate('attendance_date', '<=', $endDate->toDateString())
             ->get(['id', 'user_id', 'attendance_date', 'manual_adjustment_seconds']);
 
-        $activities = $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
-
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
             ->distinct()
             ->pluck('user_id')
             ->map(fn ($id) => (int) $id);
+
+        if ($request->boolean('dashboard_lite')) {
+            return response()->json($this->buildLiteOverallReport(
+                $users,
+                $entries,
+                $attendanceAdjustments,
+                $activeUserIds,
+                $startDate,
+                $endDate,
+            ));
+        }
+
+        $activities = $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
 
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
@@ -786,6 +798,74 @@ class ReportController extends Controller
             'by_user' => $byUser,
             'by_day' => $byDay,
         ]);
+    }
+
+    private function buildLiteOverallReport(
+        Collection $users,
+        Collection $entries,
+        Collection $attendanceAdjustments,
+        Collection $activeUserIds,
+        Carbon $startDate,
+        Carbon $endDate,
+    ): array {
+        $resolvedNow = now();
+        $entriesByUser = $entries->groupBy('user_id');
+        $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
+
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activeUserIds, $resolvedNow) {
+            $userEntries = $entriesByUser->get($user->id, collect());
+            $userAdjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
+                ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
+            $timeBreakdown = $this->timeBreakdownService->build(
+                $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $userAdjustmentDuration,
+                0
+            );
+
+            return [
+                'user' => $user,
+                'entries_count' => $userEntries->count(),
+                'last_activity_at' => null,
+                'is_working' => $activeUserIds->contains((int) $user->id),
+            ] + $timeBreakdown;
+        })->values();
+
+        $dayUserBuckets = [];
+        foreach ($entries as $entry) {
+            $date = Carbon::parse($entry->start_time)->toDateString();
+            $dayUserBuckets[$date] = ($dayUserBuckets[$date] ?? 0) + $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+        }
+
+        foreach ($attendanceAdjustments as $record) {
+            $adjustmentSeconds = (int) ($record->manual_adjustment_seconds ?? 0);
+            if ($adjustmentSeconds <= 0) {
+                continue;
+            }
+
+            $date = Carbon::parse($record->attendance_date)->toDateString();
+            $dayUserBuckets[$date] = ($dayUserBuckets[$date] ?? 0) + $adjustmentSeconds;
+        }
+
+        $byDay = collect($dayUserBuckets)
+            ->map(fn (int $duration, string $date) => [
+                'date' => $date,
+            ] + $this->timeBreakdownService->build($duration, 0))
+            ->sortBy('date')
+            ->values();
+
+        $summaryBreakdown = $this->timeBreakdownService->build((int) $byUser->sum('total_duration'), 0);
+
+        return [
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
+            'summary' => [
+                'users_count' => $users->count(),
+                'active_users' => $activeUserIds->unique()->count(),
+                'is_lite' => true,
+            ] + $summaryBreakdown,
+            'users' => $users,
+            'by_user' => $byUser,
+            'by_day' => $byDay,
+        ];
     }
 
     public function project(Request $request, int $projectId)

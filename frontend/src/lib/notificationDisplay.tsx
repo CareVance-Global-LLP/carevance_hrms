@@ -19,18 +19,6 @@ const createIcon = (node: ReactNode) => <span className="inline-flex h-4 w-4 ite
 const APPROVAL_NOTIFICATION_TYPES = new Set(['leave_request', 'time_edit']);
 const APPROVAL_NOTIFICATION_TITLES = ['leave request submitted', 'time edit request submitted'];
 
-export const resolveNotificationRoute = (notification: AppNotificationItem, _user?: User | null) =>
-  String(notification.meta?.route || '/notifications').trim() || '/notifications';
-
-export const canOpenNotificationFromCenter = (
-  notification: AppNotificationItem,
-  _user?: User | null,
-) => {
-  const route = resolveNotificationRoute(notification);
-
-  return route !== '/notifications';
-};
-
 export const getNotificationDisplay = (type: string): NotificationDisplay => {
   switch (String(type || '').trim()) {
     case 'chat_direct_message':

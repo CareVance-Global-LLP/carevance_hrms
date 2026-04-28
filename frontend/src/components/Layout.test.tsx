@@ -72,10 +72,8 @@ describe('Layout navigation', () => {
     expect(screen.getAllByText('Tasks').length).toBeGreaterThan(0);
     expect(screen.queryByText('Add Employee')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /settings/i }));
-
     expect(await screen.findByText('Employees')).toBeInTheDocument();
-    expect(screen.getByText('Approval Inbox')).toBeInTheDocument();
+    expect(screen.getByText('Leave')).toBeInTheDocument();
     expect(screen.getByText('Audit Logs')).toBeInTheDocument();
   });
 
@@ -197,7 +195,7 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    expect(await screen.findByRole('link', { name: /edit time/i })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /overtime/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Attendance Overview')).not.toBeInTheDocument();
   });
@@ -263,10 +261,9 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    fireEvent.click(await screen.findByRole('button', { name: /attendance/i }));
-
-    expect(await screen.findByText('Attendance Overview')).toBeInTheDocument();
-    expect(screen.getByText('Edit Time')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /^attendance$/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /overtime/i })).toBeInTheDocument();
+    expect(screen.queryByText('Attendance Overview')).not.toBeInTheDocument();
   });
 
   it('hides the add user button for managers', async () => {

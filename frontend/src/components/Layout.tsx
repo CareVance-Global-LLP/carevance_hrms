@@ -1,4 +1,4 @@
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
@@ -11,6 +11,7 @@ import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import StatusBadge from '@/components/ui/StatusBadge';
+import BrandLogo from '@/components/branding/BrandLogo';
 import { topNavigation } from '@/navigation/dashboardNavigation';
 import {
   CalendarClock,
@@ -18,6 +19,7 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  MoreHorizontal,
   Settings,
   Sparkles,
   Wallet,
@@ -34,6 +36,7 @@ export default function Layout() {
   const { user, logout, token } = useAuth();
   useDesktopTracker();
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -186,13 +189,19 @@ export default function Layout() {
           return true;
         })
         .map((group) => {
-          const filteredItems = group.items?.filter((item) => {
+          let filteredItems = group.items?.filter((item) => {
             if (item.to === '/attendance' && !canAccessAttendance) return false;
             if (item.to === '/edit-time' && !canAccessEditTime) return false;
             if (item.strictAdminOnly) return isStrictAdminView;
             if (item.adminOnly) return isAdminView;
             return true;
           });
+
+          filteredItems = filteredItems?.map((item) =>
+            item.to === '/chat'
+              ? { ...item, unreadCount: unreadChatMessages }
+              : item
+          );
 
           if (group.label === 'Attendance' && filteredItems?.length === 1) {
             const singleItem = filteredItems[0];
@@ -219,7 +228,7 @@ export default function Layout() {
 
           if (group.label === 'Settings') {
             const itemsWithCounts = filteredItems?.map((item) =>
-              item.label === 'Approval Inbox'
+              item.to === '/approval-inbox'
                 ? { ...item, unreadCount: pendingApprovals }
                 : item
             );
@@ -393,6 +402,112 @@ export default function Layout() {
       void Notification.requestPermission();
     }
   }, [desktopPushEnabled]);
+
+  const isRouteActive = (to?: string) => {
+    if (!to) return false;
+    return location.pathname === to || (to !== '/dashboard' && location.pathname.startsWith(`${to}/`));
+  };
+
+  const renderSidebarLink = (item: any, nested = false) => {
+    const Icon = item.icon;
+    const active = isRouteActive(item.to);
+
+    return (
+      <Link
+        key={`${item.label}-${item.to}`}
+        to={item.to}
+        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition ${
+          active
+            ? 'bg-blue-600 text-white shadow-sm'
+            : nested
+              ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+              : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'
+        }`}
+      >
+        <Icon className={`h-4 w-4 ${active ? 'text-white' : 'text-slate-500'}`} />
+        <span className="truncate">{item.label}</span>
+        {item.unreadCount ? (
+          <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'}`}>
+            {item.unreadCount > 99 ? '99+' : item.unreadCount}
+          </span>
+        ) : null}
+      </Link>
+    );
+  };
+
+  if (!isDesktopShell) {
+    return (
+      <div className="min-h-screen bg-[#f5f7fb] lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
+        <aside className="hidden h-screen border-r border-slate-200 bg-white lg:sticky lg:top-0 lg:flex lg:flex-col">
+          <div className="flex h-16 items-center border-b border-slate-100 px-5">
+            <BrandLogo variant="full" size="sm" className="max-w-[9.75rem]" />
+          </div>
+
+          <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+            {primaryNavigation.map((group) => {
+              const groupActive = isRouteActive(group.to) || group.items?.some((item) => isRouteActive(item.to));
+
+              if (group.to) {
+                return (
+                  <div key={group.label}>
+                    {renderSidebarLink(group)}
+                  </div>
+                );
+              }
+
+              return (
+                <div key={group.label} className="space-y-1">
+                  <p className={`px-3 text-[10px] font-semibold uppercase tracking-[0.18em] ${groupActive ? 'text-blue-600' : 'text-slate-400'}`}>
+                    {group.label}
+                  </p>
+                  <div className="space-y-1">
+                    {group.items?.map((item) => renderSidebarLink(
+                      item.to === '/approval-inbox'
+                        ? { ...item, unreadCount: pendingApprovals }
+                        : item,
+                      true
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </nav>
+
+          <div className="border-t border-slate-100 p-3">
+            <button
+              type="button"
+              onClick={() => setProfileOpen((prev) => !prev)}
+              className="flex w-full items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3 text-left"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
+                {user?.name?.charAt(0).toUpperCase() || 'A'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-slate-900">{user?.name || 'Jane Cooper'}</p>
+                <p className="truncate text-xs capitalize text-slate-500">{user?.role || 'HR Manager'}</p>
+              </div>
+              <MoreHorizontal className="h-4 w-4 text-slate-400" />
+            </button>
+
+            {profileOpen ? (
+              <div className="mt-2 rounded-lg border border-slate-100 bg-white p-1 shadow-sm">
+                <Link to="/settings" onClick={() => setProfileOpen(false)} className="block rounded-md px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+                  Settings
+                </Link>
+                <button type="button" onClick={handleLogout} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">
+                  Sign Out
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </aside>
+
+        <main className="min-w-0 px-4 py-4 lg:px-5 lg:py-4 xl:px-6">
+          <Outlet />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#eef5ff_45%,#f8fafc_100%)]">

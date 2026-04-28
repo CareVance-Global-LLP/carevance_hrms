@@ -3,10 +3,13 @@ const path = require('path');
 
 const configPath = path.join(__dirname, '..', 'app-config.json');
 const appUrl = (process.env.APP_URL || 'http://localhost:5173').trim();
-const updateProvider = (process.env.DESKTOP_UPDATE_PROVIDER || '').trim().toLowerCase();
+const DEFAULT_UPDATE_PROVIDER = 'github';
+const DEFAULT_UPDATE_OWNER = 'Igrisssssss';
+const DEFAULT_UPDATE_REPO = 'carevance_hrms';
+const updateProvider = (process.env.DESKTOP_UPDATE_PROVIDER || DEFAULT_UPDATE_PROVIDER).trim().toLowerCase();
 const updateUrl = (process.env.DESKTOP_UPDATE_URL || '').trim();
-const updateOwner = (process.env.DESKTOP_UPDATE_OWNER || '').trim();
-const updateRepo = (process.env.DESKTOP_UPDATE_REPO || '').trim();
+const updateOwner = (process.env.DESKTOP_UPDATE_OWNER || DEFAULT_UPDATE_OWNER).trim();
+const updateRepo = (process.env.DESKTOP_UPDATE_REPO || DEFAULT_UPDATE_REPO).trim();
 const browserTrackingChromeStoreUrl = (process.env.BROWSER_TRACKING_CHROME_STORE_URL || '').trim();
 const browserTrackingEdgeStoreUrl = (process.env.BROWSER_TRACKING_EDGE_STORE_URL || '').trim();
 

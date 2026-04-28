@@ -1,4 +1,12 @@
 {
   "appUrl": "http://localhost:5173",
-  "update": null
+  "update": {
+    "provider": "github",
+    "owner": "Igrisssssss",
+    "repo": "carevance_hrms"
+  },
+  "browserTracking": {
+    "chromeStoreUrl": null,
+    "edgeStoreUrl": null
+  }
 }

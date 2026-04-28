@@ -68,7 +68,11 @@ class UserController extends Controller
         );
 
         $users = User::where('organization_id', $currentUser->organization_id)
-            ->with('groups:id,name,slug')
+            ->with([
+                'groups:id,name,slug',
+                'employeeProfile',
+                'employeeWorkInfo.department:id,name,slug',
+            ])
             ->when($currentUser->role === 'manager', function ($query) use ($currentUser) {
                 $visibleGroupIds = $this->groupIdsForUser($currentUser);
 

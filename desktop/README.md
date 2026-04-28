@@ -102,12 +102,12 @@ npm run dist:win
 npm run dist:portable
 ```
 
-Outputs are written to `desktop/release/`.
+Outputs are written to `desktop/release-v<version>/`.
 
 Typical files:
 
-- `CareVance Tracker-Setup-1.0.0-x64.exe`
-- `CareVance Tracker-Portable-1.0.0-x64.exe`
+- `CareVance-Tracker-<version>-x64.exe`
+- `latest.yml`
 
 ## Download Link Flow
 

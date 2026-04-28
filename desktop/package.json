@@ -1,6 +1,6 @@
 {
   "name": "carevance-desktop",
-  "version": "1.0.12",
+  "version": "1.0.14",
   "description": "CareVance Tracker desktop timer and activity tracker",
   "private": true,
   "author": "CareVance",
@@ -9,9 +9,9 @@
     "prepare:app-config": "node scripts/write-app-config.cjs",
     "prepare:browser-extension": "node scripts/sync-browser-extension.cjs",
     "start": "npm run prepare:app-config && npm run prepare:browser-extension && node scripts/run-electron.cjs .",
-    "pack": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --dir",
-    "dist:win": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win nsis",
-    "dist:portable": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win portable"
+    "pack": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --dir --config.directories.output=release-v%npm_package_version%",
+    "dist:win": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win nsis --config.directories.output=release-v%npm_package_version%",
+    "dist:portable": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win portable --config.directories.output=release-v%npm_package_version%"
   },
   "build": {
     "appId": "com.carevance.tracker",
@@ -21,13 +21,14 @@
       "main.cjs",
       "preload.cjs",
       "browser-tracking-bridge.cjs",
+      "browser-tracking-install-guide.cjs",
       "app-config.json",
       "scripts/**/*",
       "assets/**/*",
       "package.json"
     ],
     "directories": {
-      "output": "release"
+      "output": "release-v${version}"
     },
     "publish": [
       {

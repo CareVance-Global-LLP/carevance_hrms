@@ -1,2324 +1,789 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
-  activityApi,
+  Bell,
+  Briefcase,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  FileBarChart,
+  FileClock,
+  Gift,
+  Megaphone,
+  Plus,
+  Search,
+  Settings,
+  TimerReset,
+  Umbrella,
+  UserMinus,
+  UserPlus,
+  Users,
+} from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import {
   attendanceApi,
-  attendanceTimeEditApi,
+  auditApi,
+  dashboardApi,
   leaveApi,
   notificationApi,
   payrollApi,
   reportApi,
   reportGroupApi,
-  screenshotApi,
   taskApi,
-  timeEntryApi,
   userApi,
 } from '@/services/api';
-import DashboardDetailTabs from '@/components/dashboard/DashboardDetailTabs';
-import DashboardFilterBar from '@/components/dashboard/DashboardFilterBar';
-import DashboardHeader from '@/components/dashboard/DashboardHeader';
-import DashboardInsightList from '@/components/dashboard/DashboardInsightList';
-import DashboardKPIGrid from '@/components/dashboard/DashboardKPIGrid';
-import DashboardTrendCard from '@/components/dashboard/DashboardTrendCard';
-import DataTable from '@/components/dashboard/DataTable';
-import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
-import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import Button from '@/components/ui/Button';
-import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
-import { FeedbackBanner, PageErrorState } from '@/components/ui/PageState';
-import { useAuth } from '@/contexts/AuthContext';
-import { classifyActivityProductivity, normalizeActivityToolLabel } from '@/lib/activityProductivity';
-import { deriveDateRangeFromPreset, isDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
-import { getWorkingDuration } from '@/lib/timeBreakdown';
-import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
-import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
-import {
-  Activity,
-  CalendarClock,
-  Camera,
-  ChevronLeft,
-  ChevronRight,
-  CircleDollarSign,
-  Clock3,
-  Eye,
-  Fingerprint,
-  LayoutPanelTop,
-  Sparkles,
-  Trash2,
-  TrendingUp,
-  Users,
-  X,
-} from 'lucide-react';
 
-type DashboardScope = 'organization' | 'employee';
+type DashboardEmployee = {
+  id: number;
+  name: string;
+  email: string;
+  department: string;
+  position: string;
+  status: 'Active' | 'Inactive' | 'On Leave';
+  avatar?: string | null;
+  created_at?: string | null;
+  date_of_birth?: string | null;
+  joining_date?: string | null;
+  exit_date?: string | null;
+};
 
-interface PersistedFilterState {
-  scope: DashboardScope;
-  selectedEmployeeId: number | '';
-  datePreset: DateRangePreset;
-  startDate: string;
-  endDate: string;
-  attendanceSearchQuery: string;
-  attendanceGroupFilter: number | '';
-}
+type DashboardActivity = {
+  id: number;
+  title: string;
+  meta: string;
+  tone: 'green' | 'blue' | 'amber';
+};
 
-interface LegacyPersistedFilterState extends Partial<PersistedFilterState> {
-  selectedUserId?: number | string | null;
-}
+type TimesheetRow = {
+  key: string;
+  project: string;
+  task: string;
+  days: string[];
+  daySeconds: number[];
+  totalSeconds: number;
+};
 
-interface RequestResult<T> {
-  value: T;
-  warning: string | null;
-}
+const departmentPalette = ['#2563eb', '#22c55e', '#f97316', '#8b5cf6', '#14b8a6', '#f59e0b', '#64748b'];
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const monthIso = () => new Date().toISOString().slice(0, 7);
 
-const FILTER_STORAGE_KEY = 'admin-dashboard-filters';
-const ATTENDANCE_TABLE_SCROLL_CLASS = 'max-h-[28rem] overflow-y-auto overscroll-contain';
+const startOfWeek = (date = new Date()) => {
+  const copy = new Date(date);
+  const day = copy.getDay() || 7;
+  copy.setDate(copy.getDate() - day + 1);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+};
+
+const endOfWeek = (date = new Date()) => {
+  const start = startOfWeek(date);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+};
+
+const toIsoDate = (date: Date) => date.toISOString().slice(0, 10);
 
 const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
+  const safe = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   return `${hours}h ${minutes}m`;
 };
 
-const formatCurrency = (amount: number, currency = 'INR') =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(Number(amount || 0));
-
-const formatDateTime = (value?: string | null) => {
-  if (!value) return 'Not available';
-  return new Date(value).toLocaleString();
+const formatCompactDuration = (seconds: number) => {
+  const safe = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 };
 
-const formatShortDate = (value?: string | null) => {
-  if (!value) return 'Not available';
-  return new Date(value).toLocaleDateString();
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(amount || 0));
+
+const formatDate = (value?: string | null) => {
+  if (!value) return 'Today';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Today';
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const percentage = (value: number, total: number) => {
-  if (!total) return 0;
-  return Math.round((value / total) * 100);
-};
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
-const productivityTone = (classification?: string | null) =>
-  classification === 'productive'
-    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-    : classification === 'unproductive'
-      ? 'bg-rose-50 text-rose-700 border-rose-200'
-      : 'bg-slate-100 text-slate-600 border-slate-200';
+const humanizeAction = (action?: string | null) =>
+  String(action || 'activity')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-const defaultFilters = (): PersistedFilterState => {
-  const dates = deriveDateRangeFromPreset('today');
-  return {
-    scope: 'organization',
-    selectedEmployeeId: '',
-    datePreset: 'today',
-    startDate: dates.startDate,
-    endDate: dates.endDate,
-    attendanceSearchQuery: '',
-    attendanceGroupFilter: '',
-  };
-};
+const safeArray = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
 
-const readPersistedAdminDashboardFilters = (): PersistedFilterState => {
-  const fallback = defaultFilters();
-  const parsed = readSessionStorageJson<LegacyPersistedFilterState>(FILTER_STORAGE_KEY);
-  if (!parsed) {
-    return fallback;
-  }
-
-  const datePreset: DateRangePreset = isDateRangePreset(String(parsed.datePreset))
-    ? (parsed.datePreset as DateRangePreset)
-    : fallback.datePreset;
-  const resolvedRange = resolvePersistedDateRange(datePreset, parsed.startDate || fallback.startDate, parsed.endDate || fallback.endDate);
-  const selectedEmployeeId = coercePositiveNumber(parsed.selectedEmployeeId ?? parsed.selectedUserId) ?? '';
-  const scope: DashboardScope =
-    parsed.scope === 'employee' || (parsed.scope == null && selectedEmployeeId !== '')
-      ? 'employee'
-      : 'organization';
+const normalizeEmployee = (item: any): DashboardEmployee => {
+  const workInfo = item?.employee_work_info || item?.employeeWorkInfo || item?.work_info || {};
+  const profile = item?.employee_profile || item?.employeeProfile || item?.profile || {};
+  const department = workInfo?.department?.name || item?.department || item?.groups?.[0]?.name || 'Unassigned';
+  const employmentStatus = String(workInfo?.employment_status || '').toLowerCase();
 
   return {
-    scope,
-    selectedEmployeeId,
-    datePreset,
-    startDate: resolvedRange.startDate,
-    endDate: resolvedRange.endDate,
-    attendanceSearchQuery: typeof parsed.attendanceSearchQuery === 'string' ? parsed.attendanceSearchQuery : fallback.attendanceSearchQuery,
-    attendanceGroupFilter: coercePositiveNumber(parsed.attendanceGroupFilter) ?? '',
+    id: Number(item?.id || 0),
+    name: profile?.display_name || item?.name || 'Unnamed employee',
+    email: item?.email || '',
+    department,
+    position: workInfo?.designation || item?.position || item?.designation || item?.job_title || item?.role || 'Not set',
+    status: item?.is_active === false || ['inactive', 'exited', 'terminated'].includes(employmentStatus) ? 'Inactive' : 'Active',
+    avatar: item?.avatar || null,
+    created_at: item?.created_at || null,
+    date_of_birth: profile?.date_of_birth || null,
+    joining_date: workInfo?.joining_date || null,
+    exit_date: workInfo?.exit_date || null,
   };
 };
 
-const getRequestWarningMessage = (label: string, error: any) => {
-  const message = error?.response?.data?.message || error?.message;
-  return message ? `${label}: ${message}` : `${label} is temporarily unavailable.`;
+const Card = ({ children, className = '' }: { children: ReactNode; className?: string }) => (
+  <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>
+);
+
+const SectionTitle = ({ title, action }: { title: string; action?: ReactNode }) => (
+  <div className="mb-4 flex items-center justify-between gap-3">
+    <h2 className="text-[15px] font-semibold text-slate-950">{title}</h2>
+    {action ?? <span />}
+  </div>
+);
+
+const EmptyInline = ({ children }: { children: ReactNode }) => (
+  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
+    {children}
+  </div>
+);
+
+const KpiCard = ({ label, value, hint, icon: Icon, tint }: { label: string; value: string | number; hint: string; icon: any; tint: string }) => (
+  <Card className="p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-xs text-slate-500">{label}</p>
+        <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+        <p className="mt-2 text-[11px] text-slate-500">{hint}</p>
+      </div>
+      <div className={`flex h-10 w-10 items-center justify-center rounded-full ${tint}`}>
+        <Icon className="h-5 w-5" />
+      </div>
+    </div>
+  </Card>
+);
+
+const MiniLineChart = ({ values }: { values: number[] }) => {
+  const chartValues = values.length ? values : [0, 0, 0, 0, 0, 0, 0];
+  const max = Math.max(1, ...chartValues);
+  const points = chartValues.map((value, index) => {
+    const x = 16 + index * (268 / Math.max(1, chartValues.length - 1));
+    const y = 142 - (value / max) * 112;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <svg viewBox="0 0 310 160" className="h-44 w-full">
+      {[0, 1, 2, 3].map((line) => (
+        <line key={line} x1="16" x2="294" y1={32 + line * 34} y2={32 + line * 34} stroke="#eef2f7" />
+      ))}
+      <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="2.5" />
+      {points.split(' ').map((point, index) => {
+        const [cx, cy] = point.split(',');
+        return <circle key={index} cx={cx} cy={cy} r="3" fill="#fff" stroke="#2563eb" strokeWidth="2" />;
+      })}
+      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
+        <text key={day} x={16 + index * 44} y="156" fill="#94a3b8" fontSize="10">{day}</text>
+      ))}
+    </svg>
+  );
 };
 
-const withDashboardFallback = async <T,>(
-  label: string,
-  request: Promise<any>,
-  fallback: T,
-  select: (response: any) => T
-): Promise<RequestResult<T>> => {
-  try {
-    const response = await request;
-    return {
-      value: select(response),
-      warning: null,
-    };
-  } catch (error: any) {
-    console.error(`[admin-dashboard] ${label} request failed`, error);
-    return {
-      value: fallback,
-      warning: getRequestWarningMessage(label, error),
-    };
+const DonutChart = ({ items }: { items: Array<{ label: string; value: number; color: string; bgClass: string }> }) => {
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  if (total <= 0) {
+    return <EmptyInline>No leave data yet</EmptyInline>;
   }
-};
 
-function DashboardSkeleton() {
-  return (
-    <div className="space-y-8 animate-pulse">
-      <div className="h-52 rounded-[32px] bg-white/75" />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="h-36 rounded-[28px] bg-white/75" />
-        ))}
-      </div>
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <div className="h-80 rounded-[28px] bg-white/75" />
-        <div className="h-80 rounded-[28px] bg-white/75" />
-      </div>
-      <div className="h-96 rounded-[28px] bg-white/75" />
-    </div>
-  );
-}
-
-function SectionHeader({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-700">{eyebrow}</p>
-      <div className="space-y-1">
-        <h2 className="text-2xl font-semibold tracking-[-0.05em] text-slate-950">{title}</h2>
-        <p className="max-w-3xl text-sm text-slate-500">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function StatStrip({
-  items,
-}: {
-  items: Array<{ id: string; label: string; value: string | number; tone?: 'default' | 'warning' | 'good' }>;
-}) {
-  const toneClass = {
-    default: 'bg-slate-50 text-slate-950',
-    warning: 'bg-amber-50 text-amber-900',
-    good: 'bg-emerald-50 text-emerald-900',
-  };
+  let cursor = 0;
+  const gradient = items.map((item) => {
+    const start = cursor;
+    const end = cursor + (item.value / total) * 100;
+    cursor = end;
+    return `${item.color} ${start}% ${end}%`;
+  }).join(', ');
 
   return (
-    <SurfaceCard className="p-4 sm:p-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="flex items-center gap-6">
+      <div className="relative h-36 w-36 rounded-full" style={{ background: `conic-gradient(${gradient})` }}>
+        <div className="absolute inset-7 flex flex-col items-center justify-center rounded-full bg-white">
+          <span className="text-2xl font-semibold text-slate-950">{total}</span>
+          <span className="text-xs text-slate-500">Days</span>
+        </div>
+      </div>
+      <div className="flex-1 space-y-3 text-xs">
         {items.map((item) => (
-          <div key={item.id} className={`rounded-[22px] border border-slate-200/80 px-4 py-3 ${toneClass[item.tone || 'default']}`}>
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-            <p className="mt-2 text-lg font-semibold tracking-[-0.03em]">{item.value}</p>
+          <div key={item.label} className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-slate-600"><span className={`h-2.5 w-2.5 rounded-sm ${item.bgClass}`} />{item.label}</span>
+            <span className="text-slate-500">{item.value}</span>
           </div>
         ))}
       </div>
-    </SurfaceCard>
+    </div>
   );
-}
-
-function CompactList({
-  title,
-  description,
-  rows,
-  emptyTitle,
-  emptyDescription,
-}: {
-  title: string;
-  description: string;
-  rows: Array<{ id: string; title: string; subtitle?: string; value?: string }>;
-  emptyTitle: string;
-  emptyDescription: string;
-}) {
-  return (
-    <SurfaceCard className="p-5">
-      <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">{title}</h3>
-      <p className="mt-1 text-sm text-slate-500">{description}</p>
-      {rows.length === 0 ? (
-        <div className="mt-4">
-          <EmptyStateCard title={emptyTitle} description={emptyDescription} icon={LayoutPanelTop} />
-        </div>
-      ) : (
-        <div className="mt-4 space-y-3">
-          {rows.map((row) => (
-            <div key={row.id} className="flex items-start justify-between gap-3 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-              <div className="min-w-0">
-                <p className="font-medium text-slate-950">{row.title}</p>
-                {row.subtitle ? <p className="mt-1 text-sm text-slate-500">{row.subtitle}</p> : null}
-              </div>
-              {row.value ? <span className="shrink-0 text-sm font-semibold text-slate-950">{row.value}</span> : null}
-            </div>
-          ))}
-        </div>
-      )}
-    </SurfaceCard>
-  );
-}
+};
 
 export default function AdminDashboard() {
   const { user } = useAuth();
-  const canDeleteScreenshots = user?.role === 'admin';
-  const [filters, setFilters] = useState<PersistedFilterState>(() => readPersistedAdminDashboardFilters());
-  const [exportFeedback, setExportFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isScreenshotManagerOpen, setIsScreenshotManagerOpen] = useState(false);
-  const [screenshotManagerPage, setScreenshotManagerPage] = useState(1);
-  const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
-  const [screenshotActionFeedback, setScreenshotActionFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
-  const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
-  const [attendanceSearchQuery, setAttendanceSearchQuery] = useState(filters.attendanceSearchQuery);
-  const [attendanceGroupFilter, setAttendanceGroupFilter] = useState<number | ''>(filters.attendanceGroupFilter);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const now = new Date();
+  const weekStart = startOfWeek(now);
+  const weekEnd = endOfWeek(now);
+  const dateLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const weekRangeLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
-  useEffect(() => {
-    writeSessionStorageJson(FILTER_STORAGE_KEY, {
-      ...filters,
-      selectedUserId: filters.selectedEmployeeId,
-      attendanceSearchQuery,
-      attendanceGroupFilter,
-    } satisfies PersistedFilterState & { selectedUserId: number | '' });
-  }, [attendanceGroupFilter, attendanceSearchQuery, filters]);
-
-  useEffect(() => {
-    setIsScreenshotManagerOpen(false);
-    setScreenshotManagerPage(1);
-    setSelectedScreenshotIds([]);
-    setScreenshotActionFeedback(null);
-  }, [filters.scope, filters.selectedEmployeeId, filters.startDate, filters.endDate]);
-
-  const usersQuery = useQuery({
-    queryKey: ['admin-dashboard-users'],
+  const dashboardQuery = useQuery({
+    queryKey: ['real-admin-dashboard', todayIso(), toIsoDate(weekStart), toIsoDate(weekEnd)],
     queryFn: async () => {
-      const response = await userApi.getAll({ period: 'all' });
-      return (response.data || []).filter((item: any) => item.role !== 'client');
-    },
-  });
-
-  const organizationUsers = usersQuery.data || [];
-  const employees = organizationUsers.filter((item: any) => item.role === 'employee');
-  const selectableUsers = useMemo(
-    () =>
-      organizationUsers.filter((item: any) => {
-        if (user?.role === 'manager') {
-          return item.role === 'employee';
-        }
-
-        return item.role === 'employee' || item.role === 'manager';
-      }),
-    [organizationUsers, user?.role]
-  );
-
-  useEffect(() => {
-    if (filters.scope === 'employee' && filters.selectedEmployeeId === '' && selectableUsers.length > 0) {
-      setFilters((current) => ({ ...current, selectedEmployeeId: selectableUsers[0].id }));
-    }
-  }, [filters.scope, filters.selectedEmployeeId, selectableUsers]);
-
-  useEffect(() => {
-    if (
-      !usersQuery.isSuccess ||
-      filters.scope === 'employee' &&
-      filters.selectedEmployeeId !== '' &&
-      !selectableUsers.some((item: any) => Number(item.id) === Number(filters.selectedEmployeeId))
-    ) {
-      if (!usersQuery.isSuccess) {
-        return;
-      }
-
-      setFilters((current) => ({
-        ...current,
-        selectedEmployeeId: selectableUsers[0]?.id || '',
-      }));
-    }
-  }, [filters.scope, filters.selectedEmployeeId, selectableUsers, usersQuery.isSuccess]);
-
-  const organizationQuery = useQuery({
-    queryKey: ['admin-dashboard-organization', filters.startDate, filters.endDate, organizationUsers.map((user: any) => user.id).join(',')],
-    enabled: filters.scope === 'organization' && usersQuery.isSuccess,
-    queryFn: async () => {
-      const payrollMonth = filters.endDate.slice(0, 7);
-      const organizationTimeEntryResults = organizationUsers.length === 0
-        ? []
-        : await Promise.all(
-            organizationUsers.map((user: any) =>
-              withDashboardFallback(
-                `Time entries for ${user.name || 'employee'}`,
-                timeEntryApi.getAll({
-                  user_id: Number(user.id),
-                  start_date: filters.startDate,
-                  end_date: filters.endDate,
-                  page: 1,
-                  per_page: 500,
-                }),
-                [],
-                (response) => response.data?.data || []
-              )
-            )
-          );
       const [
-        attendanceResult,
-        overallResult,
-        insightsResult,
-        websiteActivityResult,
-        leaveResult,
-        timeEditResult,
-        payrollResult,
-        notificationsResult,
-        groupsResult,
-        tasksResult,
-      ] = await Promise.all([
-        withDashboardFallback(
-          'Attendance summary',
-          attendanceApi.summary({ start_date: filters.startDate, end_date: filters.endDate }),
-          { data: [] },
-          (response) => response.data || { data: [] }
-        ),
-        withDashboardFallback(
-          'Overall report',
-          reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate }),
-          { summary: {}, by_user: [], by_day: [] },
-          (response) => response.data || { summary: {}, by_user: [], by_day: [] }
-        ),
-        withDashboardFallback(
-          'Employee insights',
-          reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate }),
-          {
-            organization_summary: {},
-            live_monitoring: { employees_active: [], employees_inactive: [], employees_on_leave: [] },
-            team_rankings: { by_efficiency: [] },
-          },
-          (response) => response.data || {
-            organization_summary: {},
-            live_monitoring: { employees_active: [], employees_inactive: [], employees_on_leave: [] },
-            team_rankings: { by_efficiency: [] },
-          }
-        ),
-        withDashboardFallback(
-          'Website activity',
-          activityApi.getAll({ start_date: filters.startDate, end_date: filters.endDate, type: 'url', page: 1 }),
-          [],
-          (response) => response.data?.data || []
-        ),
-        withDashboardFallback(
-          'Pending leaves',
-          leaveApi.list({ status: 'pending' }),
-          [],
-          (response) => response.data?.data || []
-        ),
-        withDashboardFallback(
-          'Pending time edits',
-          attendanceTimeEditApi.list({ status: 'pending' }),
-          [],
-          (response) => response.data?.data || []
-        ),
-        withDashboardFallback(
-          'Payroll records',
-          payrollApi.getRecords({ payroll_month: payrollMonth }),
-          [],
-          (response) => response.data?.data || []
-        ),
-        withDashboardFallback(
-          'Notifications',
-          notificationApi.list({ limit: 6 }),
-          [],
-          (response) => response.data?.data || []
-        ),
-        withDashboardFallback(
-          'Groups',
-          reportGroupApi.list(),
-          [],
-          (response) => response.data?.data || []
-        ),
-        withDashboardFallback(
-          'Completed tasks',
-          taskApi.getAll({ status: 'done' }),
-          [],
-          (response) => response.data || []
-        ),
+        usersResponse,
+        attendanceResponse,
+        leaveResponse,
+        overallResponse,
+        dashboardResponse,
+        tasksResponse,
+        payrollResponse,
+        notificationsResponse,
+        groupsResponse,
+        auditResponse,
+        weeklyResponse,
+        monthlyResponse,
+      ] = await Promise.allSettled([
+        userApi.getAll(),
+        attendanceApi.summary({ start_date: todayIso(), end_date: todayIso() }),
+        leaveApi.list({ status: 'approved' }),
+        reportApi.overall({ start_date: todayIso(), end_date: todayIso() }),
+        dashboardApi.summary(),
+        taskApi.getAll(),
+        payrollApi.getRecords({ payroll_month: monthIso() }),
+        notificationApi.list({ limit: 8 }),
+        reportGroupApi.list(),
+        auditApi.list({ per_page: 8 }),
+        reportApi.weekly({ start_date: toIsoDate(weekStart), end_date: toIsoDate(weekEnd), scope: 'organization' }),
+        reportApi.monthly({ scope: 'organization' }),
       ]);
 
-      const requestWarnings = [
-        attendanceResult.warning,
-        overallResult.warning,
-        insightsResult.warning,
-        websiteActivityResult.warning,
-        leaveResult.warning,
-        timeEditResult.warning,
-        payrollResult.warning,
-        notificationsResult.warning,
-        groupsResult.warning,
-        tasksResult.warning,
-      ].filter(Boolean) as string[];
-
-      const failedTimeEntryRequests = organizationTimeEntryResults.filter((result) => result.warning).length;
-      if (failedTimeEntryRequests > 0) {
-        requestWarnings.push(
-          `Time entries are unavailable for ${failedTimeEntryRequests} employee${failedTimeEntryRequests === 1 ? '' : 's'}.`
-        );
-      }
-
       return {
-        attendance: attendanceResult.value,
-        overall: overallResult.value,
-        insights: insightsResult.value,
-        websiteActivity: websiteActivityResult.value,
-        timeEntries: organizationTimeEntryResults.flatMap((result) => result.value),
-        pendingLeaves: leaveResult.value,
-        pendingTimeEdits: timeEditResult.value,
-        payrollRecords: payrollResult.value,
-        notifications: notificationsResult.value,
-        groups: groupsResult.value,
-        completedTasks: tasksResult.value,
-        requestWarnings,
+        employees: usersResponse.status === 'fulfilled' ? safeArray<any>(usersResponse.value.data).map(normalizeEmployee).filter((employee) => employee.id > 0) : [],
+        attendanceRows: attendanceResponse.status === 'fulfilled' ? safeArray<any>(attendanceResponse.value.data?.data) : [],
+        leaves: leaveResponse.status === 'fulfilled' ? safeArray<any>(leaveResponse.value.data?.data) : [],
+        overall: overallResponse.status === 'fulfilled' ? overallResponse.value.data : { summary: {}, by_day: [], by_user: [] },
+        summary: dashboardResponse.status === 'fulfilled' ? dashboardResponse.value.data : {},
+        tasks: tasksResponse.status === 'fulfilled' ? safeArray<any>(tasksResponse.value.data) : [],
+        payrollRecords: payrollResponse.status === 'fulfilled' ? safeArray<any>(payrollResponse.value.data?.data) : [],
+        notifications: notificationsResponse.status === 'fulfilled' ? safeArray<any>(notificationsResponse.value.data?.data) : [],
+        groups: groupsResponse.status === 'fulfilled' ? safeArray<any>(groupsResponse.value.data?.data) : [],
+        auditLogs: auditResponse.status === 'fulfilled' ? safeArray<any>(auditResponse.value.data?.data) : [],
+        weeklyReport: weeklyResponse.status === 'fulfilled' ? weeklyResponse.value.data : { time_entries: [], by_project: [], total_duration: 0 },
+        monthlyReport: monthlyResponse.status === 'fulfilled' ? monthlyResponse.value.data : { by_day: [] },
       };
     },
   });
 
-  const employeeQuery = useQuery({
-    queryKey: ['admin-dashboard-employee', filters.selectedEmployeeId, filters.startDate, filters.endDate],
-    enabled: filters.scope === 'employee' && Boolean(filters.selectedEmployeeId),
-    queryFn: async () => {
-      const userId = Number(filters.selectedEmployeeId);
-      const [
-        profileResult,
-        insightsResult,
-        overallResult,
-        timeEntriesResult,
-        screenshotsResult,
-      ] = await Promise.all([
-        withDashboardFallback(
-          'Employee profile',
-          userApi.getProfile360(userId, { start_date: filters.startDate, end_date: filters.endDate }),
-          { summary: {}, status: {} },
-          (response) => response.data || { summary: {}, status: {} }
-        ),
-        withDashboardFallback(
-          'Employee insights',
-          reportApi.employeeInsights({ start_date: filters.startDate, end_date: filters.endDate, user_id: userId }),
-          {
-            stats: {},
-            selected_user_tools: { productive: [], unproductive: [], neutral: [] },
-            live_monitoring: { selected_user: null },
-          },
-          (response) => response.data || {
-            stats: {},
-            selected_user_tools: { productive: [], unproductive: [], neutral: [] },
-            live_monitoring: { selected_user: null },
-          }
-        ),
-        withDashboardFallback(
-          'Employee overall report',
-          reportApi.overall({ start_date: filters.startDate, end_date: filters.endDate, user_ids: [userId] }),
-          { summary: {}, by_user: [], by_day: [] },
-          (response) => response.data || { summary: {}, by_user: [], by_day: [] }
-        ),
-        withDashboardFallback(
-          'Employee time entries',
-          timeEntryApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1 }),
-          [],
-          (response) => response.data?.data || []
-        ),
-        withDashboardFallback(
-          'Employee screenshots',
-          screenshotApi.getAll({ user_id: userId, start_date: filters.startDate, end_date: filters.endDate, page: 1, per_page: 8 }),
-          { data: [], total: 0 },
-          (response) => response.data || { data: [], total: 0 }
-        ),
-      ]);
-
-      const requestWarnings = [
-        profileResult.warning,
-        insightsResult.warning,
-        overallResult.warning,
-        timeEntriesResult.warning,
-        screenshotsResult.warning,
-      ].filter(Boolean) as string[];
-
-      return {
-        profile: profileResult.value,
-        insights: insightsResult.value,
-        overall: overallResult.value,
-        timeEntries: timeEntriesResult.value,
-        screenshots: screenshotsResult.value?.data || [],
-        screenshotsTotal: Number(screenshotsResult.value?.total || screenshotsResult.value?.data?.length || 0),
-        requestWarnings,
-      };
-    },
-  });
-
-  const screenshotManagerQuery = useQuery({
-    queryKey: ['admin-dashboard-screenshot-gallery', filters.selectedEmployeeId, filters.startDate, filters.endDate, screenshotManagerPage],
-    enabled: filters.scope === 'employee' && Boolean(filters.selectedEmployeeId) && isScreenshotManagerOpen,
-    queryFn: async () => {
-      const userId = Number(filters.selectedEmployeeId);
-      const response = await screenshotApi.getAll({
-        user_id: userId,
-        start_date: filters.startDate,
-        end_date: filters.endDate,
-        page: screenshotManagerPage,
-        per_page: 24,
-      });
-
-      return response.data;
-    },
-  });
-
-  const activeQuery = filters.scope === 'organization' ? organizationQuery : employeeQuery;
-
-  const handleScopeChange = (scope: DashboardScope) => {
-    setExportFeedback(null);
-    setFilters((current) => ({
-      ...current,
-      scope,
-      selectedEmployeeId:
-        scope === 'employee'
-          ? current.selectedEmployeeId || selectableUsers[0]?.id || ''
-          : current.selectedEmployeeId,
-    }));
+  const data = dashboardQuery.data || {
+    employees: [],
+    attendanceRows: [],
+    leaves: [],
+    overall: { summary: {}, by_day: [], by_user: [] },
+    summary: {},
+    tasks: [],
+    payrollRecords: [],
+    notifications: [],
+    groups: [],
+    auditLogs: [],
+    weeklyReport: { time_entries: [], by_project: [], total_duration: 0 },
+    monthlyReport: { by_day: [] },
   };
 
-  const handleDatePresetChange = (preset: DateRangePreset) => {
-    setExportFeedback(null);
-    if (preset === 'custom') {
-      setFilters((current) => ({ ...current, datePreset: preset }));
-      return;
-    }
-
-    const dates = deriveDateRangeFromPreset(preset);
-    setFilters((current) => ({
-      ...current,
-      datePreset: preset,
-      startDate: dates.startDate,
-      endDate: dates.endDate,
-    }));
-  };
-
-  const handleExport = async () => {
-    setExportFeedback(null);
-    setIsExporting(true);
-
-    try {
-      const response = await reportApi.export({
-        start_date: filters.startDate,
-        end_date: filters.endDate,
-        user_ids: filters.scope === 'employee' && filters.selectedEmployeeId ? [Number(filters.selectedEmployeeId)] : undefined,
-      });
-
-      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.setAttribute('download', `dashboard-${filters.scope}-${filters.startDate}-to-${filters.endDate}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(blobUrl);
-
-      setExportFeedback({ tone: 'success', message: 'Dashboard export completed.' });
-    } catch (error: any) {
-      setExportFeedback({
-        tone: 'error',
-        message: error?.response?.data?.message || 'Failed to export dashboard data.',
-      });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const openScreenshotManager = () => {
-    setScreenshotActionFeedback(null);
-    setSelectedScreenshotIds([]);
-    setScreenshotManagerPage(1);
-    setIsScreenshotManagerOpen(true);
-  };
-
-  const closeScreenshotManager = () => {
-    setIsScreenshotManagerOpen(false);
-    setSelectedScreenshotIds([]);
-    setScreenshotActionFeedback(null);
-  };
-
-  if (usersQuery.isLoading || activeQuery.isLoading) {
-    return <DashboardSkeleton />;
-  }
-
-  if (usersQuery.isError || activeQuery.isError) {
-    return (
-      <PageErrorState
-        message={
-          (usersQuery.error as any)?.response?.data?.message ||
-          (activeQuery.error as any)?.response?.data?.message ||
-          'Failed to load the admin dashboard.'
-        }
-        onRetry={() => {
-          void usersQuery.refetch();
-          void activeQuery.refetch();
-        }}
-      />
-    );
-  }
-
-  if (filters.scope === 'employee' && !filters.selectedEmployeeId) {
-    return (
-      <div className="space-y-8 pb-6">
-        <DashboardHeader
-          eyebrow="Admin dashboard"
-          title="Employee analytics view"
-          description="Switch to a single employee to review attendance, productivity, activity, leave, payroll, and monitoring from one calmer workspace."
-        >
-          <DashboardFilterBar
-            scope={filters.scope}
-            onScopeChange={handleScopeChange}
-            selectedEmployeeId={filters.selectedEmployeeId}
-            onEmployeeChange={(value) => setFilters((current) => ({ ...current, selectedEmployeeId: value }))}
-            employees={selectableUsers}
-            datePreset={filters.datePreset}
-            onDatePresetChange={handleDatePresetChange}
-            startDate={filters.startDate}
-            endDate={filters.endDate}
-            onStartDateChange={(value) => setFilters((current) => ({ ...current, startDate: value, datePreset: 'custom' }))}
-            onEndDateChange={(value) => setFilters((current) => ({ ...current, endDate: value, datePreset: 'custom' }))}
-            onRefresh={() => void usersQuery.refetch()}
-            onExport={handleExport}
-            isRefreshing={usersQuery.isFetching}
-            isExporting={isExporting}
-          />
-        </DashboardHeader>
-        <EmptyStateCard title="No employees available" description="Add employees first to unlock the single-employee dashboard view." icon={Users} />
-      </div>
-    );
-  }
-
-  const selectedEmployee = selectableUsers.find((employee: any) => Number(employee.id) === Number(filters.selectedEmployeeId)) || null;
-  const organizationData: any = organizationQuery.data;
-  const employeeData: any = employeeQuery.data;
-  const dashboardWarnings = filters.scope === 'organization'
-    ? organizationData?.requestWarnings || []
-    : employeeData?.requestWarnings || [];
-  const dashboardWarningMessage = dashboardWarnings.length === 0
-    ? null
-    : `${dashboardWarnings.slice(0, 2).join(' ')}${dashboardWarnings.length > 2 ? ' Additional sections may still be unavailable.' : ''}`;
-
-  const attendanceRows = organizationData?.attendance?.data || [];
-  const overallSummary = organizationData?.overall?.summary || {};
-  const overallByUser = organizationData?.overall?.by_user || [];
-  const overallByDay = organizationData?.overall?.by_day || [];
-  const organizationSummary = organizationData?.insights?.organization_summary || {};
-  const liveMonitoring = organizationData?.insights?.live_monitoring || {
-    employees_active: [],
-    employees_inactive: [],
-    employees_on_leave: [],
-  };
-  const organizationTimeEntries = organizationData?.timeEntries || [];
-  const teamRankings = organizationData?.insights?.team_rankings?.by_efficiency || [];
-  const payrollRecords = organizationData?.payrollRecords || [];
-  const organizationWebsiteActivity = organizationData?.websiteActivity || [];
-  const pendingLeaves = organizationData?.pendingLeaves || [];
-  const pendingTimeEdits = organizationData?.pendingTimeEdits || [];
-  const notifications = organizationData?.notifications || [];
-  const groups = organizationData?.groups || [];
-  const completedTasks = organizationData?.completedTasks || [];
-  const employeeGroupsById = groups.reduce((map: Record<number, Array<{ id: number; name: string }>>, group: any) => {
-    const groupId = Number(group?.id || 0);
-    const groupName = String(group?.name || 'Unknown group');
-
-    (group?.users || []).forEach((member: any) => {
-      const memberId = Number(member?.id || 0);
-      if (!memberId) return;
-
-      const existingGroups = map[memberId] || [];
-      if (!existingGroups.some((item) => item.id === groupId)) {
-        existingGroups.push({ id: groupId, name: groupName });
-      }
-      map[memberId] = existingGroups;
-    });
-
-    return map;
-  }, {});
-  const attendanceGroupOptions = groups
-    .map((group: any) => ({ id: Number(group?.id || 0), name: String(group?.name || 'Unknown group') }))
-    .filter((group: { id: number; name: string }) => group.id > 0)
-    .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
-  const normalizedAttendanceSearch = attendanceSearchQuery.trim().toLowerCase();
-  const filteredAttendanceRows = attendanceRows.filter((row: any) => {
-    const userId = Number(row.user?.id || row.user_id || 0);
-    const employeeName = String(row.user?.name || '').toLowerCase();
-    const employeeEmail = String(row.user?.email || '').toLowerCase();
-    const assignedGroups = employeeGroupsById[userId] || [];
-
-    const matchesSearch =
-      normalizedAttendanceSearch.length === 0 ||
-      employeeName.includes(normalizedAttendanceSearch) ||
-      employeeEmail.includes(normalizedAttendanceSearch);
-
-    const matchesGroup =
-      attendanceGroupFilter === '' ||
-      assignedGroups.some((group) => group.id === Number(attendanceGroupFilter));
-
-    return matchesSearch && matchesGroup;
-  });
-  const presentAttendanceRows = filteredAttendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) > 0);
-  const absentAttendanceRows = filteredAttendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) <= 0);
-  const attendanceTimeEntriesByUser = organizationTimeEntries.reduce((map: Record<number, any[]>, entry: any) => {
-    const userId = Number(entry?.user_id || entry?.user?.id || 0);
-    if (!userId) return map;
-
-    const existingEntries = map[userId] || [];
-    existingEntries.push(entry);
-    map[userId] = existingEntries;
-    return map;
-  }, {});
-  const attendanceTimerRows = filteredAttendanceRows.map((row: any) => {
-    const userId = Number(row.user?.id || row.user_id || 0);
-    const userEntries = attendanceTimeEntriesByUser[userId] || [];
-    const firstTimerStart = userEntries.reduce((earliest: string | null, entry: any) => {
-      const startTime = typeof entry?.start_time === 'string' ? entry.start_time : null;
-      if (!startTime) return earliest;
-      if (!earliest) return startTime;
-      return new Date(startTime).getTime() < new Date(earliest).getTime() ? startTime : earliest;
-    }, null);
-    const lastTimerEnd = userEntries.reduce((latest: string | null, entry: any) => {
-      const endTime = typeof entry?.end_time === 'string' ? entry.end_time : null;
-      if (!endTime) return latest;
-      if (!latest) return endTime;
-      return new Date(endTime).getTime() > new Date(latest).getTime() ? endTime : latest;
-    }, null);
-
-    return {
-      ...row,
-      first_timer_start: firstTimerStart,
-      last_timer_end: lastTimerEnd,
-      is_timer_running: userEntries.some((entry: any) => !entry?.end_time),
-    };
-  });
-  const presentEmployees = attendanceRows.filter((row: any) => Number(row.present_days || row.days_present || 0) > 0).length;
-  const lateEmployees = attendanceRows.filter((row: any) => Number(row.late_days || 0) > 0).length;
-  const absentEmployees = Math.max(attendanceRows.length - presentEmployees, 0);
-  const topPerformers = [...overallByUser]
-    .sort((a: any, b: any) => getWorkingDuration(b) - getWorkingDuration(a))
-    .slice(0, 5);
-  const attentionEmployees = [...overallByUser]
-    .sort((a: any, b: any) => Number(b.idle_percentage || 0) - Number(a.idle_percentage || 0))
-    .slice(0, 5);
-  const payrollTotal = payrollRecords.reduce((sum: number, row: any) => sum + Number(row.net_salary || 0), 0);
-  const payrollPaidCount = payrollRecords.filter((row: any) => row.payroll_status === 'paid').length;
-  const totalPendingApprovals = pendingLeaves.length + pendingTimeEdits.length;
-
-  const profile: any = employeeData?.profile;
-  const employeeInsights: any = employeeData?.insights;
-  const employeeOverall: any = employeeData?.overall;
-  const employeeEntries = employeeData?.timeEntries || [];
-  const employeeScreenshots = employeeData?.screenshots || [];
-  const employeeScreenshotTotal = Number(employeeData?.screenshotsTotal || employeeScreenshots.length || 0);
-  const screenshotGallery = screenshotManagerQuery.data;
-  const screenshotGalleryItems = screenshotGallery?.data || [];
-  const screenshotGalleryTotal = Number(screenshotGallery?.total || employeeScreenshotTotal || 0);
-  const screenshotGalleryLastPage = Math.max(1, Number(screenshotGallery?.last_page || 1));
-  const screenshotGalleryCurrentPage = Math.max(1, Number(screenshotGallery?.current_page || screenshotManagerPage));
-  const visibleScreenshotIds = screenshotGalleryItems.map((shot: any) => Number(shot.id));
-  const allVisibleScreenshotsSelected = visibleScreenshotIds.length > 0 && visibleScreenshotIds.every((id: number) => selectedScreenshotIds.includes(id));
-  const employeeSummary: any = profile?.summary || {};
-  const employeeOverallSummary: any = employeeOverall?.summary || {};
-  const employeeStatus: any = profile?.status || {};
-  const employeeAssignments: any = profile?.assignments || {};
-  const employeeStats: any = employeeInsights?.stats || {};
-  const selectedUserTools = employeeInsights?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
-  const employeeTrend = employeeOverall?.by_day || [];
-  const employeeProjectBreakdown = profile?.project_breakdown || [];
-  const latestAttendance: any = employeeStatus.latest_attendance;
-  const employeeLiveMonitoring: any = employeeInsights?.live_monitoring?.selected_user || null;
-  const employeeTrackedDuration = Number(employeeOverallSummary.total_duration ?? employeeSummary.total_duration ?? employeeStats.total_duration ?? 0);
-  const employeeIdleDuration = Number(employeeOverallSummary.idle_duration ?? employeeSummary.idle_duration ?? employeeStats.idle_total_duration ?? 0);
-  const employeeWorkingDuration = Number(employeeOverallSummary.working_duration ?? employeeSummary.working_duration ?? getWorkingDuration(employeeOverallSummary.total_duration ? employeeOverallSummary : employeeSummary));
-  const employeePresentDays = Number(employeeSummary.present_days || 0);
-  const employeeAbsentDays = Number(employeeSummary.absent_days ?? Math.max(Number(employeeSummary.attendance_days || 0) - employeePresentDays, 0));
-  const employeeLateDays = Number(employeeSummary.late_days || 0);
-  const employeeAttendancePercentage = percentage(employeePresentDays, employeePresentDays + employeeAbsentDays);
-  const employeeProductivity = percentage(
-    employeeWorkingDuration,
-    employeeTrackedDuration
+  const leavesToday = data.leaves.filter((leave: any) =>
+    leave.status === 'approved' && String(leave.start_date || '') <= todayIso() && String(leave.end_date || '') >= todayIso()
   );
-  const toolMix = {
-    productive: Number(selectedUserTools.productive?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
-    unproductive: Number(selectedUserTools.unproductive?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
-    neutral: Number(selectedUserTools.neutral?.reduce((sum: number, item: any) => sum + Number(item.total_duration || 0), 0) || 0),
-  };
-  const employeeGroupNames = (employeeAssignments.groups || []).map((group: any) => group.name).filter(Boolean);
-  const primaryGroupName = employeeAssignments.primary_group?.name || employeeGroupNames[0] || 'Not assigned';
-  const reportingManager = employeeAssignments.reporting_manager || null;
-  const assignedProjects = employeeAssignments.assigned_projects || [];
+  const leaveUserIdsToday = new Set(leavesToday.map((leave: any) => Number(leave.user_id)));
+  const employees = data.employees.map((employee) => leaveUserIdsToday.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
 
-  const toggleScreenshotSelection = (screenshotId: number) => {
-    setSelectedScreenshotIds((current) =>
-      current.includes(screenshotId)
-        ? current.filter((id) => id !== screenshotId)
-        : [...current, screenshotId]
-    );
-  };
+  const departments = useMemo(() => {
+    const names = Array.from(new Set(employees.map((employee) => employee.department).filter(Boolean)));
+    return ['All', ...names];
+  }, [employees]);
 
-  const toggleVisibleScreenshotSelection = () => {
-    setSelectedScreenshotIds((current) => {
-      if (allVisibleScreenshotsSelected) {
-        return current.filter((id) => !visibleScreenshotIds.includes(id));
-      }
-
-      return Array.from(new Set([...current, ...visibleScreenshotIds]));
-    });
-  };
-
-  const refreshScreenshotViews = async () => {
-    await employeeQuery.refetch();
-    if (isScreenshotManagerOpen) {
-      await screenshotManagerQuery.refetch();
-    }
-  };
-
-  const handleDeleteSelectedScreenshots = async () => {
-    if (selectedScreenshotIds.length === 0) {
-      return;
-    }
-
-    if (!confirm(`Delete ${selectedScreenshotIds.length} selected screenshot${selectedScreenshotIds.length === 1 ? '' : 's'}?`)) {
-      return;
-    }
-
-    setIsDeletingScreenshots(true);
-    setScreenshotActionFeedback(null);
-
-    try {
-      const response = await screenshotApi.bulkDelete({
-        screenshot_ids: selectedScreenshotIds,
-      });
-
-      setSelectedScreenshotIds([]);
-      setScreenshotManagerPage(1);
-      await refreshScreenshotViews();
-      setScreenshotActionFeedback({
-        tone: 'success',
-        message: response.data?.message || `${selectedScreenshotIds.length} screenshots deleted.`,
-      });
-    } catch (error: any) {
-      setScreenshotActionFeedback({
-        tone: 'error',
-        message: error?.response?.data?.message || 'Failed to delete selected screenshots.',
-      });
-    } finally {
-      setIsDeletingScreenshots(false);
-    }
-  };
-
-  const handleDeleteAllScreenshotsInRange = async () => {
-    if (!filters.selectedEmployeeId || employeeScreenshotTotal <= 0) {
-      return;
-    }
-
-    if (!confirm(`Delete all ${employeeScreenshotTotal} screenshot${employeeScreenshotTotal === 1 ? '' : 's'} for this employee in the current date range?`)) {
-      return;
-    }
-
-    setIsDeletingScreenshots(true);
-    setScreenshotActionFeedback(null);
-
-    try {
-      const response = await screenshotApi.bulkDelete({
-        delete_all_in_range: true,
-        user_id: Number(filters.selectedEmployeeId),
-        start_date: filters.startDate,
-        end_date: filters.endDate,
-      });
-
-      setSelectedScreenshotIds([]);
-      setScreenshotManagerPage(1);
-      await refreshScreenshotViews();
-      setScreenshotActionFeedback({
-        tone: 'success',
-        message: response.data?.message || 'All screenshots in the selected range were deleted.',
-      });
-    } catch (error: any) {
-      setScreenshotActionFeedback({
-        tone: 'error',
-        message: error?.response?.data?.message || 'Failed to delete screenshots in the current range.',
-      });
-    } finally {
-      setIsDeletingScreenshots(false);
-    }
-  };
-  const websiteUsageByEmployee = organizationWebsiteActivity.reduce((rows: any[], item: any) => {
-    const website = normalizeActivityToolLabel(item.name || '', item.type || 'url');
-    const employeeName = item.user?.name || 'Unknown';
-    const classification = classifyActivityProductivity(website, item.type || 'url');
-    const existing = rows.find((row) => row.employeeName === employeeName && row.website === website && row.classification === classification);
-
-    if (existing) {
-      
-      existing.duration += Number(item.duration || 0);
-      existing.events += 1;
-      existing.lastUsedAt =
-        item.recorded_at && (!existing.lastUsedAt || +new Date(item.recorded_at) > +new Date(existing.lastUsedAt))
-          ? item.recorded_at
-          : existing.lastUsedAt;
-      return rows;
-    }
-
-    rows.push({
-      employeeName,
-      website,
-      classification,
-      duration: Number(item.duration || 0),
-      events: 1,
-      lastUsedAt: item.recorded_at || null,
+  const filteredEmployees = employees
+    .filter((employee) => departmentFilter === 'All' || employee.department === departmentFilter)
+    .filter((employee) => statusFilter === 'All' || employee.status === statusFilter)
+    .filter((employee) => {
+      const term = employeeSearch.trim().toLowerCase();
+      if (!term) return true;
+      return [employee.name, employee.email, employee.department, employee.position].some((value) => value.toLowerCase().includes(term));
     });
 
-    return rows;
-  }, []).sort((a: any, b: any) => Number(b.duration || 0) - Number(a.duration || 0));
+  const totalEmployees = employees.length;
+  const presentToday = data.attendanceRows.filter((row: any) => Number(row.present_days || 0) > 0 || row.is_checked_in).length;
+  const lateToday = data.attendanceRows.reduce((sum: number, row: any) => sum + Number(row.late_days || 0), 0);
+  const onLeave = leavesToday.length;
+  const newHires = employees.filter((employee) => String(employee.joining_date || employee.created_at || '').startsWith(monthIso())).length;
+  const resignations = employees.filter((employee) => String(employee.exit_date || '').startsWith(monthIso())).length;
+  const totalDuration = Number(data.overall.summary?.total_duration || data.summary?.today_total_elapsed_duration || 0);
+  const weeklyReport: any = data.weeklyReport || {};
+  const weeklyTotal = Number(weeklyReport.total_duration || data.summary?.weekly_total_elapsed_duration || 0);
+  const activeTimer = data.summary?.active_timer;
+  const activeTimerSeconds = activeTimer?.start_time ? Math.max(0, Math.floor((Date.now() - new Date(activeTimer.start_time).getTime()) / 1000)) : 0;
 
-  const pageTitle =
-    filters.scope === 'organization'
-      ? {
-          
-          title: 'Dashboard',
-          
-          
-        }
-      : {
-          eyebrow: 'Admin dashboard',
-          title: selectedEmployee ? `${selectedEmployee.name} overview` : 'Employee analytics view',
-          description: 'A focused employee view that prioritizes status, attendance, productivity, activity, and only then operational detail.',
-        };
+  const attendanceTrend = (data.monthlyReport?.by_day?.length ? data.monthlyReport.by_day : data.overall.by_day || [])
+    .slice(-7)
+    .map((item: any) => Math.max(0, Math.round(Number(item.working_duration || item.total_duration || item.total_time || 0) / 3600)));
+
+  const activities: DashboardActivity[] = data.auditLogs.map((item: any, index: number) => ({
+    id: Number(item.id || index),
+    title: `${item.actor?.name || 'System'}: ${humanizeAction(item.action)}`,
+    meta: formatDate(item.created_at),
+    tone: index % 3 === 0 ? 'green' : index % 3 === 1 ? 'blue' : 'amber',
+  }));
+
+  const announcements = data.notifications.slice(0, 4).map((item: any, index: number) => ({
+    id: Number(item.id || index),
+    title: item.title || item.message || 'Notification',
+    date: formatDate(item.created_at),
+  }));
+
+  const upcomingBirthdays = employees
+    .filter((employee) => employee.date_of_birth)
+    .map((employee) => {
+      const birthDate = new Date(String(employee.date_of_birth));
+      const nextDate = new Date(now.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+      if (nextDate < now) nextDate.setFullYear(now.getFullYear() + 1);
+      return { ...employee, nextBirthday: nextDate };
+    })
+    .sort((a, b) => a.nextBirthday.getTime() - b.nextBirthday.getTime())
+    .slice(0, 4);
+
+  const departmentCounts = departments
+    .filter((department) => department !== 'All')
+    .map((department) => ({
+      department,
+      count: employees.filter((employee) => employee.department === department).length,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 7);
+
+  const leaveSummary: Array<{ label: string; value: number; color: string; bgClass: string }> = Object.values(data.leaves
+    .filter((leave: any) => leave.status === 'approved' && String(leave.start_date || '').startsWith(monthIso()))
+    .reduce((acc: Record<string, { label: string; value: number; color: string; bgClass: string }>, leave: any, index: number) => {
+      const key = String(leave.leave_type || 'full_day');
+      const label = key.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+      const units = key === 'half_day' ? 0.5 : Math.max(1, Math.ceil((new Date(leave.end_date).getTime() - new Date(leave.start_date).getTime()) / 86400000) + 1);
+      acc[key] = acc[key] || { label, value: 0, color: departmentPalette[index % departmentPalette.length], bgClass: ['bg-blue-600', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500'][index % 4] };
+      acc[key].value += units;
+      return acc;
+    }, {}));
+
+  const weeklyEntries = safeArray<any>(weeklyReport.time_entries || weeklyReport.entries);
+  const weekDates = Array.from({ length: 7 }).map((_, index) => {
+    const day = new Date(weekStart);
+    day.setDate(weekStart.getDate() + index);
+    return day;
+  });
+  const timesheetRows: TimesheetRow[] = Object.values(weeklyEntries.reduce((acc: Record<string, TimesheetRow>, entry: any) => {
+    const project = entry.project?.name || entry.task?.project?.name || entry.task?.group?.name || 'Unassigned';
+    const task = entry.task?.title || entry.description || 'Time entry';
+    const key = `${project}-${task}`;
+    const duration = Number(entry.effective_duration || entry.duration || 0);
+    const entryDate = String(entry.start_time || '').slice(0, 10);
+    const dayIndex = weekDates.findIndex((day) => toIsoDate(day) === entryDate);
+    acc[key] = acc[key] || { key, project, task, days: Array.from({ length: 7 }).map(() => '-'), daySeconds: Array.from({ length: 7 }).map(() => 0), totalSeconds: 0 };
+    if (dayIndex >= 0) {
+      acc[key].daySeconds[dayIndex] += duration;
+      acc[key].days[dayIndex] = formatCompactDuration(acc[key].daySeconds[dayIndex]);
+    }
+    acc[key].totalSeconds += duration;
+    return acc;
+  }, {}));
+
+  const recentTimers = weeklyEntries.slice(0, 4);
+  const projectProgress = (weeklyReport.by_project?.length ? weeklyReport.by_project : [])
+    .filter((item: any) => item.project?.name || item.total_time)
+    .slice(0, 5)
+    .map((item: any) => ({
+      name: item.project?.name || 'Unassigned project',
+      hours: formatDuration(Number(item.total_time || 0)),
+      status: 'Active',
+      percent: Math.min(100, Math.round((Number(item.total_time || 0) / Math.max(1, weeklyTotal)) * 100)),
+    }));
+
+  const payrollTotal = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.net_pay || record.gross_pay || 0), 0);
+  const payrollDeductions = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.deductions || record.tax || 0), 0);
+  const presentPercent = totalEmployees ? Math.round((presentToday / totalEmployees) * 100) : 0;
+  const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
+  const latePercent = totalEmployees ? Math.round((lateToday / totalEmployees) * 100) : 0;
 
   return (
-    <div className="space-y-8 pb-6">
-      <DashboardHeader
-        eyebrow={pageTitle.eyebrow}
-        title={pageTitle.title}
-        titleClassName={filters.scope === 'organization' ? 'text-[2.15rem] sm:text-[2.6rem]' : undefined}
-        description={pageTitle.description}
-      >
-        <DashboardFilterBar
-          scope={filters.scope}
-          onScopeChange={handleScopeChange}
-          selectedEmployeeId={filters.selectedEmployeeId}
-          onEmployeeChange={(value) => {
-            setExportFeedback(null);
-            setFilters((current) => ({ ...current, selectedEmployeeId: value }));
-          }}
-          employees={selectableUsers}
-          datePreset={filters.datePreset}
-          onDatePresetChange={handleDatePresetChange}
-          startDate={filters.startDate}
-          endDate={filters.endDate}
-          onStartDateChange={(value) => setFilters((current) => ({ ...current, startDate: value, datePreset: 'custom' }))}
-          onEndDateChange={(value) => setFilters((current) => ({ ...current, endDate: value, datePreset: 'custom' }))}
-          onRefresh={() => void activeQuery.refetch()}
-          onExport={handleExport}
-          isRefreshing={activeQuery.isFetching}
-          isExporting={isExporting}
-        />
-      </DashboardHeader>
+    <div className="min-w-[1120px] space-y-4 bg-[#f5f7fb] text-slate-900">
+      <header className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
+          <p className="mt-3 text-sm font-medium text-slate-900">Good morning, {user?.name?.split(' ')[0] || 'there'}!</p>
+          <p className="mt-1 text-xs text-slate-500">Here&apos;s what&apos;s happening in your organization today.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="flex h-10 w-64 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
+            <Search className="h-4 w-4" />
+            <input className="w-full bg-transparent outline-none placeholder:text-slate-400" placeholder="Search anything..." />
+          </label>
+          <button className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">{dateLabel}</button>
+          <Link aria-label="Notifications" to="/notifications" className="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
+            <Bell className="h-4 w-4" />
+            {announcements.length ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
+          </Link>
+          <Link aria-label="Settings" to="/settings" className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
+            <Settings className="h-4 w-4" />
+          </Link>
+        </div>
+      </header>
 
-      {dashboardWarningMessage ? <FeedbackBanner tone="error" message={dashboardWarningMessage} /> : null}
-      {exportFeedback ? <FeedbackBanner tone={exportFeedback.tone} message={exportFeedback.message} /> : null}
+      <section className="grid grid-cols-6 gap-3">
+        <KpiCard label="Total Employees" value={totalEmployees} hint={`${newHires} new this month`} icon={Users} tint="bg-blue-50 text-blue-600" />
+        <KpiCard label="Present Today" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
+        <KpiCard label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
+        <KpiCard label="Late Today" value={lateToday} hint={`${latePercent}% of total`} icon={Clock3} tint="bg-rose-50 text-rose-600" />
+        <KpiCard label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined this month" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
+        <KpiCard label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited this month" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
+      </section>
 
-      {filters.scope === 'organization' ? (
-        <>
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Key metrics"
-              title="Operational summary"
-              description="The most important signals are surfaced first; lower-priority counters stay compressed below."
-            />
-            <DashboardKPIGrid
-              items={[
-                {
-                  id: 'present',
-                  label: 'Present today',
-                  value: presentEmployees,
-                  caption: `${employees.length} employees in scope`,
-                  meta: `${absentEmployees} absent`,
-                  icon: CalendarClock,
-                  accent: 'emerald',
-                },
-                {
-                  id: 'active-now',
-                  label: 'Total active employees',
-                  value: liveMonitoring.employees_active?.length || 0,
-                  caption: `${liveMonitoring.employees_inactive?.length || 0} inactive right now`,
-                  meta: `${liveMonitoring.employees_on_leave?.length || 0} on leave`,
-                  icon: Activity,
-                  accent: 'sky',
-                },
-                {
-                  id: 'tracked-hours',
-                  label: 'Total hours tracked',
-                  value: formatDuration(overallSummary.total_duration || 0),
-                  caption: `${formatDuration(getWorkingDuration(overallSummary))} working`,
-                  meta: `${formatDuration(overallSummary.idle_duration || 0)} idle`,
-                  icon: Clock3,
-                  accent: 'violet',
-                },
-                {
-                  id: 'avg-productivity',
-                  label: 'Average productivity',
-                  value: `${Number(organizationSummary.productive_share || 0).toFixed(1)}%`,
-                  caption: 'Organization-wide productive share',
-                  meta: `${overallSummary.active_users || 0} active users tracked`,
-                  icon: TrendingUp,
-                  accent: 'amber',
-                },
-              ]}
-              secondaryItems={[
-                { id: 'late', label: 'Late check-ins', value: lateEmployees },
-                { id: 'approvals', label: 'Pending approvals', value: totalPendingApprovals },
-                { id: 'teams', label: 'Departments / groups', value: groups.length },
-                { id: 'payroll-ready', label: 'Payroll processed', value: `${payrollPaidCount}/${payrollRecords.length}` },
-              ]}
-            />
-          </section>
-
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Trends"
-              title="Hours, productivity, and attendance"
-              description="Charts get more breathing room so the organization can be understood in a few seconds."
-            />
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <DashboardTrendCard
-                title="Weekly hours trend"
-                description="Tracked duration by day for the selected range."
-                points={overallByDay.map((item: any) => ({
-                  id: item.date,
-                  label: item.date,
-                  value: Number(item.total_duration || 0),
-                  formattedValue: formatDuration(item.total_duration || 0),
-                  hint: `${formatDuration(getWorkingDuration(item))} working`,
-                }))}
-                colorClassName="bg-sky-500"
-              />
-              <DashboardTrendCard
-                title="Productivity trend"
-                description="Working time against idle time using the current reporting dataset."
-                points={overallByDay.map((item: any) => ({
-                  id: `productivity-${item.date}`,
-                  label: item.date,
-                  value: getWorkingDuration(item),
-                  formattedValue: `${percentage(getWorkingDuration(item), Number(item.total_duration || 0))}%`,
-                  hint: `${formatDuration(item.idle_duration || 0)} idle`,
-                }))}
-                colorClassName="bg-emerald-500"
-              />
+      <section className="grid grid-cols-[1.4fr_1fr_1fr] gap-4">
+        <Card className="p-4">
+          <SectionTitle title="Attendance Overview" action={<button className="text-xs text-slate-500">This Week</button>} />
+          <MiniLineChart values={attendanceTrend} />
+        </Card>
+        <Card className="p-4">
+          <SectionTitle title="Leave Summary" action={<button className="text-xs text-slate-500">This Month</button>} />
+          <DonutChart items={leaveSummary} />
+        </Card>
+        <Card className="p-4">
+          <SectionTitle title="Department Distribution" action={<button className="text-xs text-slate-500">All Departments</button>} />
+          {departmentCounts.length ? (
+            <div className="space-y-3">
+              {departmentCounts.map((item, index) => {
+                const max = Math.max(1, ...departmentCounts.map((entry) => entry.count));
+                return (
+                  <div key={item.department} className="grid grid-cols-[86px_1fr_30px] items-center gap-3 text-xs">
+                    <span className="truncate text-slate-600">{item.department}</span>
+                    <span className="h-1.5 rounded-full bg-slate-100">
+                      <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(8, (item.count / max) * 100)}%`, background: departmentPalette[index % departmentPalette.length] }} />
+                    </span>
+                    <span className="text-right text-slate-500">{item.count}</span>
+                  </div>
+                );
+              })}
             </div>
-            <SurfaceCard className="p-5 sm:p-6">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Attendance trend</p>
-                  <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{presentEmployees}</p>
-                  <p className="mt-1 text-sm text-slate-500">Employees with attendance in the selected period.</p>
-                </div>
-                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Attention required</p>
-                  <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{attentionEmployees.length}</p>
-                  <p className="mt-1 text-sm text-slate-500">Employees currently leading idle-share risk.</p>
-                </div>
-                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Completed tasks</p>
-                  <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{completedTasks.length}</p>
-                  <p className="mt-1 text-sm text-slate-500">Finished tasks returned by the current task API.</p>
-                </div>
-              </div>
-            </SurfaceCard>
-          </section>
+          ) : <EmptyInline>No departments found</EmptyInline>}
+        </Card>
+      </section>
 
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Insights"
-              title="Top performers, risks, teams, and alerts"
-              description="Only the most useful insight groups stay visible here; detailed records move lower into tabs."
-            />
-            <div className="grid grid-cols-1 items-stretch gap-5 xl:grid-cols-2 2xl:grid-cols-4">
-              <DashboardInsightList
-                title="Top performers"
-                description="Highest working time in the selected range."
-                items={topPerformers.map((row: any) => ({
-                  id: String(row.user?.id || row.user?.email),
-                  title: row.user?.name || 'Unknown',
-                  subtitle: `${formatDuration(row.total_duration || 0)} total tracked`,
-                  value: formatDuration(getWorkingDuration(row)),
-                  tone: 'good',
-                }))}
-                emptyDescription="No performer data is available for the current selection."
-              />
-              <DashboardInsightList
-                title="Employees needing attention"
-                description="Highest idle share in the selected range."
-                items={attentionEmployees.map((row: any) => ({
-                  id: String(row.user?.id || row.user?.email),
-                  title: row.user?.name || 'Unknown',
-                  subtitle: `${formatDuration(row.idle_duration || 0)} idle time`,
-                  value: `${Number(row.idle_percentage || 0).toFixed(1)}% idle`,
-                  tone: Number(row.idle_percentage || 0) > 25 ? 'critical' : 'warning',
-                }))}
-                emptyDescription="No attention list is available for the current selection."
-              />
-              <DashboardInsightList
-                title="Department summary"
-                description="Most efficient groups from the current reporting backend."
-                items={teamRankings.slice(0, 4).map((row: any) => ({
-                  id: String(row.group?.id || row.group_name || row.name),
-                  title: row.group?.name || row.group_name || row.name || 'Unknown group',
-                  subtitle: `${row.members_count || 0} members`,
-                  value: `${Number(row.efficiency || row.productive_share || 0).toFixed(1)}%`,
-                  tone: 'default',
-                }))}
-                emptyDescription="No department-level summary was returned."
-              />
-              <DashboardInsightList
-                title="Operational alerts"
-                description="Approvals and notifications that need an admin eye."
-                items={[
-                  {
-                    id: 'pending-leave',
-                    title: 'Pending leave requests',
-                    subtitle: 'Awaiting approval workflow action',
-                    value: String(pendingLeaves.length),
-                    tone: pendingLeaves.length > 0 ? 'warning' : 'default',
-                  },
-                  {
-                    id: 'pending-time-edits',
-                    title: 'Pending time edits',
-                    subtitle: 'Attendance corrections requiring review',
-                    value: String(pendingTimeEdits.length),
-                    tone: pendingTimeEdits.length > 0 ? 'warning' : 'default',
-                  },
-                  {
-                    id: 'notifications',
-                    title: notifications[0]?.title || 'No new notifications',
-                    subtitle: notifications[0]?.message || 'Admin notifications are clear.',
-                    value: String(notifications.length),
-                    tone: notifications.length > 0 ? 'default' : 'good',
-                  },
-                ]}
-              />
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Detailed records"
-              title="Attendance, approvals, payroll, and updates"
-              description="Lower-priority operational detail is grouped into tabs so the page stays shorter and easier to scan."
-            />
-            <DashboardDetailTabs
-              title="Operations detail"
-              description="View deeper records only when needed."
-              tabs={[
-                {
-                  id: 'attendance',
-                  label: 'Attendance',
-                  content: (
-                    <div className="space-y-4">
-                      <SurfaceCard className="p-5">
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)_auto] lg:items-end">
-                          <div>
-                            <FieldLabel>Search employee</FieldLabel>
-                            <TextInput
-                              value={attendanceSearchQuery}
-                              onChange={(event) => setAttendanceSearchQuery(event.target.value)}
-                              placeholder="Search by employee name or email"
-                            />
-                          </div>
-                          <div>
-                            <FieldLabel>Group filter</FieldLabel>
-                            <SelectInput
-                              value={attendanceGroupFilter}
-                              onChange={(event) => setAttendanceGroupFilter(event.target.value ? Number(event.target.value) : '')}
-                            >
-                              <option value="">All groups</option>
-                              {attendanceGroupOptions.map((group: { id: number; name: string }) => (
-                                <option key={group.id} value={group.id}>
-                                  {group.name}
-                                </option>
-                              ))}
-                            </SelectInput>
-                          </div>
-                          <div className="grid grid-cols-3 gap-3">
-                            <div className="rounded-[20px] border border-slate-200/80 bg-slate-50/80 px-4 py-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Matched</p>
-                              <p className="mt-2 text-lg font-semibold text-slate-950">{filteredAttendanceRows.length}</p>
-                            </div>
-                            <div className="rounded-[20px] border border-emerald-200/80 bg-emerald-50/80 px-4 py-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-emerald-700">Present</p>
-                              <p className="mt-2 text-lg font-semibold text-emerald-900">{presentAttendanceRows.length}</p>
-                            </div>
-                            <div className="rounded-[20px] border border-rose-200/80 bg-rose-50/80 px-4 py-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-rose-700">Absent</p>
-                              <p className="mt-2 text-lg font-semibold text-rose-900">{absentAttendanceRows.length}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </SurfaceCard>
-
-                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                        <DataTable
-                          title="Present employees"
-                          description="Employees with at least one present day in the selected range."
-                          rows={presentAttendanceRows}
-                          emptyMessage="No present employees match the current search or group filter."
-                          bodyClassName={ATTENDANCE_TABLE_SCROLL_CLASS}
-                          stickyHeader
-                          columns={[
-                            {
-                              key: 'employee',
-                              header: 'Employee',
-                              render: (row: any) => {
-                                const userId = Number(row.user?.id || row.user_id || 0);
-                                const assignedGroups = employeeGroupsById[userId] || [];
-
-                                return (
-                                  <div>
-                                    <p className="font-medium text-slate-950">{row.user?.name || 'Unknown'}</p>
-                                    <p className="text-xs text-slate-500">{row.user?.email || 'No email'}</p>
-                                    <p className="mt-1 text-xs text-slate-400">
-                                      {assignedGroups.length ? assignedGroups.map((group) => group.name).join(', ') : 'No group assigned'}
-                                    </p>
-                                  </div>
-                                );
-                              },
-                            },
-                            { key: 'present', header: 'Present', render: (row: any) => `${row.present_days || row.days_present || 0} day(s)` },
-                            { key: 'late', header: 'Late', render: (row: any) => `${row.late_days || 0} day(s)` },
-                            { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.total_worked_seconds || row.worked_seconds || 0) },
-                            { key: 'status', header: 'Working now', render: (row: any) => (row.is_checked_in || row.is_working ? 'Checked in' : 'Offline') },
-                          ]}
-                        />
-
-                        <DataTable
-                          title="Absent employees"
-                          description="Employees with no present day recorded in the selected range."
-                          rows={absentAttendanceRows}
-                          emptyMessage="No absent employees match the current search or group filter."
-                          bodyClassName={ATTENDANCE_TABLE_SCROLL_CLASS}
-                          stickyHeader
-                          columns={[
-                            {
-                              key: 'employee',
-                              header: 'Employee',
-                              render: (row: any) => {
-                                const userId = Number(row.user?.id || row.user_id || 0);
-                                const assignedGroups = employeeGroupsById[userId] || [];
-
-                                return (
-                                  <div>
-                                    <p className="font-medium text-slate-950">{row.user?.name || 'Unknown'}</p>
-                                    <p className="text-xs text-slate-500">{row.user?.email || 'No email'}</p>
-                                    <p className="mt-1 text-xs text-slate-400">
-                                      {assignedGroups.length ? assignedGroups.map((group) => group.name).join(', ') : 'No group assigned'}
-                                    </p>
-                                  </div>
-                                );
-                              },
-                            },
-                            { key: 'present', header: 'Present', render: (row: any) => `${row.present_days || row.days_present || 0} day(s)` },
-                            { key: 'late', header: 'Late', render: (row: any) => `${row.late_days || 0} day(s)` },
-                            { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.total_worked_seconds || row.worked_seconds || 0) },
-                            { key: 'status', header: 'Working now', render: (row: any) => (row.is_checked_in || row.is_working ? 'Checked in' : 'Offline') },
-                          ]}
-                        />
-                      </div>
-                    </div>
-                  ),
-                },
-                {
-                  id: 'timer-checks',
-                  label: 'Check in/out',
-                  content: (
-                    <DataTable
-                      title="Timer check-in / check-out"
-                      description="First timer start and most recent timer stop in the selected range."
-                      rows={attendanceTimerRows}
-                      emptyMessage="No employees match the current search or group filter."
-                      bodyClassName={ATTENDANCE_TABLE_SCROLL_CLASS}
-                      stickyHeader
-                      columns={[
-                        {
-                          key: 'employee',
-                          header: 'Employee',
-                          render: (row: any) => (
-                            <div>
-                              <p className="font-medium text-slate-950">{row.user?.name || 'Unknown'}</p>
-                              <p className="text-xs text-slate-500">{row.user?.email || 'No email'}</p>
-                            </div>
-                          ),
-                        },
-                        {
-                          key: 'check_in',
-                          header: 'Check in',
-                          render: (row: any) => row.first_timer_start ? (
-                            <div>
-                              <p className="font-medium text-slate-950">{new Date(row.first_timer_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                              <p className="text-xs text-slate-500">{new Date(row.first_timer_start).toLocaleDateString()}</p>
-                            </div>
-                          ) : 'No start',
-                        },
-                        {
-                          key: 'check_out',
-                          header: 'Check out',
-                          render: (row: any) => row.last_timer_end ? (
-                            <div>
-                              <p className="font-medium text-slate-950">{new Date(row.last_timer_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                              <p className="text-xs text-slate-500">{new Date(row.last_timer_end).toLocaleDateString()}</p>
-                            </div>
-                          ) : row.is_timer_running ? 'Still running' : 'No stop',
-                        },
-                        {
-                          key: 'status',
-                          header: 'Status',
-                          render: (row: any) => row.is_timer_running ? 'Running' : row.last_timer_end ? 'Stopped' : 'No timer',
-                        },
-                      ]}
-                    />
-                  ),
-                },
-                {
-                  id: 'approvals',
-                  label: 'Approvals',
-                  content: (
-                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      <CompactList
-                        title="Leave approvals"
-                        description="Pending leave requests from the existing leave backend."
-                        rows={pendingLeaves.slice(0, 5).map((item: any) => ({
-                          id: String(item.id),
-                          title: item.user?.name || 'Unknown employee',
-                          subtitle: `${item.start_date} to ${item.end_date}`,
-                          value: item.status || 'pending',
-                        }))}
-                        emptyTitle="No leave approvals pending"
-                        emptyDescription="Leave requests that need action will appear here."
-                      />
-                      <CompactList
-                        title="Time edit approvals"
-                        description="Pending attendance corrections."
-                        rows={pendingTimeEdits.slice(0, 5).map((item: any) => ({
-                          id: String(item.id),
-                          title: item.user?.name || 'Unknown employee',
-                          subtitle: item.message || `Attendance date ${item.attendance_date}`,
-                          value: item.status || 'pending',
-                        }))}
-                        emptyTitle="No time edits pending"
-                        emptyDescription="Attendance corrections that need action will appear here."
-                      />
-                    </div>
-                  ),
-                },
-                {
-                  id: 'payroll',
-                  label: 'Payroll',
-                  content: payrollRecords.length === 0 ? (
-                    <EmptyStateCard
-                      title="No payroll snapshot available"
-                      description="The current payroll query did not return records for the selected period."
-                      icon={CircleDollarSign}
-                    />
-                  ) : (
-                    <div className="space-y-4">
-                      <StatStrip
-                        items={[
-                          { id: 'net-payroll', label: 'Net payroll total', value: formatCurrency(payrollTotal), tone: 'good' },
-                          { id: 'paid-count', label: 'Paid records', value: `${payrollPaidCount}/${payrollRecords.length}` },
-                          { id: 'completed-tasks', label: 'Completed tasks', value: completedTasks.length },
-                          { id: 'groups', label: 'Groups loaded', value: groups.length },
-                        ]}
-                      />
-                      <DataTable
-                        title="Payroll records"
-                        description="Current month payroll records from the existing payroll backend."
-                        rows={payrollRecords.slice(0, 8)}
-                        emptyMessage="No payroll records found."
-                        columns={[
-                          { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || row.employee_name || 'Unknown' },
-                          { key: 'month', header: 'Payroll month', render: (row: any) => row.payroll_month || row.period_month || 'N/A' },
-                          { key: 'net', header: 'Net salary', render: (row: any) => formatCurrency(row.net_salary || 0, row.currency || 'INR') },
-                          { key: 'status', header: 'Status', render: (row: any) => row.payroll_status || row.payment_status || 'pending' },
-                        ]}
-                      />
-                    </div>
-                  ),
-                },
-                {
-                  id: 'notifications',
-                  label: 'Updates',
-                  content: (
-                    <CompactList
-                      title="Admin notifications"
-                      description="Latest admin-facing notifications available to the signed-in user."
-                      rows={notifications.map((item: any) => ({
-                        id: String(item.id),
-                        title: item.title,
-                        subtitle: item.message,
-                        value: formatShortDate(item.created_at),
-                      }))}
-                      emptyTitle="No admin notifications"
-                      emptyDescription="This admin account has no recent notifications."
-                    />
-                  ),
-                },
-                {
-                  id: 'monitoring',
-                  label: 'Monitoring',
-                  content: (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                        <CompactList
-                          title="Live employee activity"
-                          description="Current tool and productivity state from live monitoring."
-                          rows={(liveMonitoring.all_users || []).slice(0, 6).map((row: any) => ({
-                            id: String(row.user?.id || row.user?.email),
-                            title: row.user?.name || 'Unknown employee',
-                            subtitle: `${row.current_tool || 'No active tool'} • ${row.work_status || 'inactive'}`,
-                            value: row.classification || 'neutral',
-                          }))}
-                          emptyTitle="No live monitoring data"
-                          emptyDescription="No employee live activity rows were returned."
-                        />
-                        <SurfaceCard className="p-5">
-                          <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Website usage by employee</h3>
-                          <p className="mt-1 text-sm text-slate-500">When all employees are selected, this shows which websites were used and whether they were productive.</p>
-                          <div className="mt-4">
-                            <DataTable
-                              title="Organization website monitoring"
-                              description="Per-employee website usage with productivity labels."
-                              rows={websiteUsageByEmployee.slice(0, 10)}
-                              emptyMessage="No website activity was returned for the selected range."
-                              columns={[
-                                { key: 'employee', header: 'Employee', render: (row: any) => row.employeeName },
-                                { key: 'website', header: 'Website', render: (row: any) => row.website },
-                                {
-                                  key: 'classification',
-                                  header: 'Productivity',
-                                  render: (row: any) => (
-                                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(row.classification)}`}>
-                                      {row.classification}
-                                    </span>
-                                  ),
-                                },
-                                { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
-                              ]}
-                            />
-                          </div>
-                        </SurfaceCard>
-                      </div>
-                    </div>
-                  ),
-                },
-              ]}
-            />
-          </section>
-        </>
-      ) : (
-        <>
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Employee overview"
-              title="Status first, details second"
-              description="The employee view prioritizes personal status and productivity before attendance, leave, payroll, or monitoring detail."
-            />
-            <SurfaceCard className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#12314a_42%,#155e75_100%)] p-6 text-white shadow-[0_38px_100px_-48px_rgba(2,6,23,0.92)]">
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-[20px] bg-white/10 text-xl font-semibold">
-                      {selectedEmployee?.name?.charAt(0).toUpperCase() || 'E'}
-                    </div>
+      <section className="grid grid-cols-[1fr_1fr_1fr_1.35fr_280px] gap-4">
+        <Card className="p-4">
+          <SectionTitle title="Upcoming Birthdays" action={<Link to="/employees" className="text-xs font-medium text-blue-600">View All</Link>} />
+          {upcomingBirthdays.length ? (
+            <div className="space-y-3">
+              {upcomingBirthdays.map((item) => (
+                <div key={item.id} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">{initials(item.name)}</div>
                     <div>
-                      <p className="text-xs uppercase tracking-[0.24em] text-cyan-100/70">Selected employee</p>
-                      <h3 className="text-2xl font-semibold tracking-[-0.04em] text-white">{selectedEmployee?.name || 'Employee overview'}</h3>
-                      <p className="text-sm text-cyan-50/80">{selectedEmployee?.email || 'No email available'}</p>
+                      <p className="text-xs font-semibold text-slate-900">{item.name}</p>
+                      <p className="text-[11px] text-slate-500">{item.nextBirthday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3">
-                      <p className="text-xs text-cyan-100/70">Today status</p>
-                      <p className="mt-2 text-lg font-semibold">
-                        {employeeStatus.is_working ? 'Working' : latestAttendance?.status || 'Offline'}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3">
-                      <p className="text-xs text-cyan-100/70">Current project</p>
-                      <p className="mt-2 text-lg font-semibold">{employeeStatus.current_project || 'No active project'}</p>
-                    </div>
-                    <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3">
-                      <p className="text-xs text-cyan-100/70">Latest attendance</p>
-                      <p className="mt-2 text-lg font-semibold">{formatShortDate(latestAttendance?.attendance_date)}</p>
-                    </div>
-                  </div>
+                  <Gift className="h-4 w-4 text-rose-400" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-                    <p className="text-xs text-cyan-100/70">Tracked time</p>
-                    <p className="mt-2 text-2xl font-semibold">{formatDuration(employeeTrackedDuration)}</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-                    <p className="text-xs text-cyan-100/70">Working time</p>
-                    <p className="mt-2 text-2xl font-semibold">{formatDuration(employeeWorkingDuration)}</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-                    <p className="text-xs text-cyan-100/70">Productivity</p>
-                    <p className="mt-2 text-2xl font-semibold">{employeeProductivity}%</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
-                    <p className="text-xs text-cyan-100/70">Idle time</p>
-                    <p className="mt-2 text-2xl font-semibold">{formatDuration(employeeIdleDuration)}</p>
-                  </div>
-                </div>
-              </div>
-            </SurfaceCard>
-            <DashboardKPIGrid
-              items={[
-                {
-                  id: 'today-status',
-                  label: 'Today status',
-                  value: employeeStatus.is_working ? 'Working' : latestAttendance?.status || 'Offline',
-                  caption: employeeStatus.current_project || 'No active project',
-                  meta: `Timer started ${formatDateTime(employeeStatus.current_timer_started_at)}`,
-                  icon: Fingerprint,
-                  accent: 'sky',
-                },
-                {
-                  id: 'worked-hours',
-                  label: 'Tracked time',
-                  value: formatDuration(employeeTrackedDuration),
-                  caption: `${employeeSummary.entries_count || 0} tracked sessions`,
-                  meta: `Working ${formatDuration(employeeWorkingDuration)} after idle adjustment`,
-                  icon: Clock3,
-                  accent: 'emerald',
-                },
-                {
-                  id: 'active-vs-idle',
-                  label: 'Working vs idle',
-                  value: `${formatDuration(employeeWorkingDuration)} / ${formatDuration(employeeIdleDuration)}`,
-                  caption: `Inside ${formatDuration(employeeTrackedDuration)} tracked time`,
-                  meta: `${employeeStats.activity_events || 0} activity events`,
-                  icon: Sparkles,
-                  accent: 'violet',
-                },
-                {
-                  id: 'productivity',
-                  label: 'Productivity score',
-                  value: `${employeeProductivity}%`,
-                  caption: 'Working share in the selected range',
-                  meta: `${employeeAttendancePercentage}% attendance in the selected range`,
-                  icon: TrendingUp,
-                  accent: 'amber',
-                },
-              ]}
-              secondaryItems={[
-                { id: 'present-days', label: 'Present days', value: employeePresentDays },
-                { id: 'late-days', label: 'Late days', value: employeeLateDays },
-                { id: 'approved-leaves', label: 'Approved leaves', value: employeeSummary.approved_leave_days || 0 },
-                { id: 'screenshots', label: 'Screenshots', value: employeeScreenshotTotal },
-              ]}
-            />
-          </section>
-
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Assignment snapshot"
-              title="Group, manager, and project workload"
-              description="This makes it easier for admins to inspect who the employee reports to, which group they belong to, and how their tracked work is split across projects."
-            />
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-              <SurfaceCard className="p-5 sm:p-6">
-                <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Employee assignment</h3>
-                <p className="mt-1 text-sm text-slate-500">Current team placement and reporting structure for the selected employee.</p>
-                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Primary group</p>
-                    <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{primaryGroupName}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {employeeGroupNames.length > 1
-                        ? `${employeeGroupNames.length} total groups linked`
-                        : employeeGroupNames.length === 1
-                          ? 'Single active group'
-                          : 'No group assigned yet'}
-                    </p>
-                  </div>
-                  <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Reporting manager</p>
-                    <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{reportingManager?.name || 'Not assigned'}</p>
-                    <p className="mt-1 text-sm text-slate-500">{reportingManager?.email || 'No manager email available'}</p>
-                  </div>
-                </div>
-                <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">All group memberships</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {employeeGroupNames.length > 0 ? (
-                      employeeGroupNames.map((name: string) => (
-                        <span key={name} className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">
-                          {name}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-sm text-slate-500">No group memberships found.</span>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                  {[
-                    { id: 'assigned-projects', label: 'Assigned Projects', value: assignedProjects.length },
-                    { id: 'project-breakdown', label: 'Worked Projects', value: employeeProjectBreakdown.length },
-                    { id: 'tracked-sessions', label: 'Tracked Sessions', value: employeeSummary.entries_count || 0 },
-                    { id: 'tracked-duration', label: 'Tracked Time', value: formatDuration(employeeTrackedDuration) },
-                  ].map((item) => (
-                    <div key={item.id} className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</p>
-                      <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </SurfaceCard>
-
-              <DataTable
-                title="Project-wise work summary"
-                description="Projects connected to this employee and how much tracked work was done on each one in the selected date range."
-                rows={employeeProjectBreakdown}
-                emptyMessage="No project work was found for the selected employee in this range."
-                columns={[
-                  {
-                    key: 'project',
-                    header: 'Project',
-                    render: (row: any) => (
-                      <div>
-                        <p className="font-medium text-slate-950">{row.project?.name || 'Unknown project'}</p>
-                        <p className="text-xs text-slate-500">
-                          {row.project?.status || 'status unknown'}
-                          {row.project?.deadline ? ` • deadline ${formatShortDate(row.project.deadline)}` : ''}
-                        </p>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'tracked_duration',
-                    header: 'Worked',
-                    render: (row: any) => formatDuration(Number(row.tracked_duration || 0)),
-                  },
-                  {
-                    key: 'entries_count',
-                    header: 'Sessions',
-                    render: (row: any) => String(row.entries_count || 0),
-                  },
-                  {
-                    key: 'billable_duration',
-                    header: 'Billable',
-                    render: (row: any) => formatDuration(Number(row.billable_duration || 0)),
-                  },
-                  {
-                    key: 'last_tracked_at',
-                    header: 'Last tracked',
-                    render: (row: any) => formatDateTime(row.last_tracked_at),
-                  },
-                ]}
-              />
+              ))}
             </div>
-            <CompactList
-              title="Project assignment list"
-              description="Projects that are currently connected to the employee through assignments or tracked work."
-              rows={assignedProjects.map((project: any) => ({
-                id: String(project.id),
-                title: project.name,
-                subtitle: `${project.status || 'status unknown'}${project.deadline ? ` • deadline ${formatShortDate(project.deadline)}` : ''}`,
-                value:
-                  employeeProjectBreakdown.find((item: any) => Number(item.project?.id) === Number(project.id))
-                    ? formatDuration(
-                        Number(
-                          employeeProjectBreakdown.find((item: any) => Number(item.project?.id) === Number(project.id))?.tracked_duration || 0
-                        )
-                      )
-                    : 'No work tracked',
-              }))}
-              emptyTitle="No project assignments"
-              emptyDescription="This employee does not have any project assignments or tracked project work yet."
-            />
-          </section>
+          ) : <EmptyInline>No birthdays available</EmptyInline>}
+        </Card>
 
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Trends"
-              title="Attendance and productivity patterns"
-              description="The employee mode keeps trends focused on personal progress instead of repeating company-wide cards."
-            />
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <DashboardTrendCard
-                title="Weekly hours trend"
-                description="Daily worked duration for the selected employee."
-                points={employeeTrend.map((item: any) => ({
-                  id: item.date,
-                  label: item.date,
-                  value: Number(item.total_duration || 0),
-                  formattedValue: formatDuration(item.total_duration || 0),
-                  hint: `${formatDuration(getWorkingDuration(item))} working`,
-                }))}
-                colorClassName="bg-sky-500"
-              />
-              <DashboardTrendCard
-                title="Attendance trend"
-                description="Attendance summary for the selected date range."
-                points={[
-                  {
-                    id: 'present-days',
-                    label: 'Present days',
-                    value: employeePresentDays,
-                    formattedValue: String(employeePresentDays),
-                  },
-                  {
-                    id: 'absent-days',
-                    label: 'Absent days',
-                    value: employeeAbsentDays,
-                    formattedValue: String(employeeAbsentDays),
-                  },
-                  {
-                    id: 'late-days',
-                    label: 'Late days',
-                    value: employeeLateDays,
-                    formattedValue: String(employeeLateDays),
-                  },
-                ]}
-                colorClassName="bg-violet-500"
-                footer="These counts are now taken from the selected range instead of the month-only attendance snapshot."
-              />
-            </div>
-            <SurfaceCard className="p-5 sm:p-6">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Productive usage</p>
-                  <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{formatDuration(toolMix.productive)}</p>
-                  <p className="mt-1 text-sm text-slate-500">Time spent in productive monitored tools.</p>
+        <Card className="p-4">
+          <SectionTitle title="Recent Activities" action={<Link to="/audit-logs" className="text-xs font-medium text-blue-600">View All</Link>} />
+          {activities.length ? (
+            <div className="space-y-3">
+              {activities.map((activity) => (
+                <div key={activity.id} className="grid grid-cols-[24px_1fr_auto] gap-2 text-xs">
+                  <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full ${activity.tone === 'green' ? 'bg-emerald-50 text-emerald-600' : activity.tone === 'blue' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="text-slate-700">{activity.title}</span>
+                  <span className="text-[11px] text-slate-400">{activity.meta}</span>
                 </div>
-                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Unproductive usage</p>
-                  <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{formatDuration(toolMix.unproductive)}</p>
-                  <p className="mt-1 text-sm text-slate-500">Time spent in unproductive monitored tools.</p>
-                </div>
-                <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Neutral usage</p>
-                  <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{formatDuration(toolMix.neutral)}</p>
-                  <p className="mt-1 text-sm text-slate-500">Remaining time that is not categorized either way.</p>
-                </div>
-              </div>
-            </SurfaceCard>
-          </section>
-
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Insights"
-              title="Attendance, performance, activity, and monitoring"
-              description="Only the most useful personal insight groups remain at this level."
-            />
-            <div className="grid grid-cols-1 items-stretch gap-5 xl:grid-cols-2 2xl:grid-cols-4">
-              <DashboardInsightList
-                title="Attendance"
-                description="Current employee attendance context."
-                items={[
-                  {
-                    id: 'attendance-status',
-                    title: latestAttendance?.status || 'No current attendance status',
-                    subtitle: `Check in ${latestAttendance?.check_in_at ? new Date(latestAttendance.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'} / Check out ${latestAttendance?.check_out_at ? new Date(latestAttendance.check_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}`,
-                    value: `${employeeAttendancePercentage}%`,
-                    tone: employeeAttendancePercentage >= 85 ? 'good' : 'warning',
-                  },
-                  {
-                    id: 'late-days',
-                    title: 'Late days in range',
-                    subtitle: `${filters.startDate} to ${filters.endDate}`,
-                    value: String(employeeLateDays),
-                    tone: employeeLateDays > 0 ? 'warning' : 'good',
-                  },
-                ]}
-              />
-              <DashboardInsightList
-                title="Performance"
-                description="Work output and latest context."
-                items={[
-                  {
-                    id: 'current-project',
-                    title: employeeStatus.current_project || 'No active project',
-                    subtitle: `Timer started: ${formatDateTime(employeeStatus.current_timer_started_at)}`,
-                    value: employeeStatus.is_working ? 'Active' : 'Inactive',
-                    tone: employeeStatus.is_working ? 'good' : 'default',
-                  },
-                  {
-                    id: 'entries',
-                    title: `${employeeSummary.entries_count || 0} tracked sessions`,
-                    subtitle: `${formatDuration(employeeTrackedDuration)} total tracked`,
-                    value: `${employeeProductivity}%`,
-                    tone: employeeProductivity >= 70 ? 'good' : 'warning',
-                  },
-                ]}
-              />
-              <DashboardInsightList
-                title="Activity"
-                description="Top productive and unproductive tools."
-                items={[
-                  ...(selectedUserTools.productive || []).slice(0, 2).map((item: any) => ({
-                    id: `productive-${item.label}`,
-                    title: item.label,
-                    subtitle: `Productive ${item.type}`,
-                    value: formatDuration(item.total_duration || 0),
-                    tone: 'good' as const,
-                  })),
-                  ...(selectedUserTools.unproductive || []).slice(0, 2).map((item: any) => ({
-                    id: `unproductive-${item.label}`,
-                    title: item.label,
-                    subtitle: `Unproductive ${item.type}`,
-                    value: formatDuration(item.total_duration || 0),
-                    tone: 'warning' as const,
-                  })),
-                ]}
-                emptyDescription="No tool-level monitoring data exists for the current selection."
-              />
-              <DashboardInsightList
-                title="Leave and payroll"
-                description="Recent approved and pending employee operations."
-                items={[
-                  ...(profile?.leave_requests || []).slice(0, 2).map((item: any) => ({
-                    id: `leave-${item.id}`,
-                    title: `${item.start_date} to ${item.end_date}`,
-                    subtitle: item.reason || 'No leave reason provided',
-                    value: item.status,
-                    tone: item.status === 'approved' ? ('good' as const) : item.status === 'pending' ? ('warning' as const) : ('critical' as const),
-                  })),
-                  ...(profile?.time_edit_requests || []).slice(0, 2).map((item: any) => ({
-                    id: `time-edit-${item.id}`,
-                    title: `Time edit for ${item.attendance_date}`,
-                    subtitle: item.message || 'No message provided',
-                    value: item.status,
-                    tone: item.status === 'approved' ? ('good' as const) : item.status === 'pending' ? ('warning' as const) : ('critical' as const),
-                  })),
-                ]}
-                emptyDescription="No leave or time edit requests were found for this employee."
-              />
+              ))}
             </div>
-          </section>
+          ) : <EmptyInline>No recent activity yet</EmptyInline>}
+        </Card>
 
-          <section className="space-y-4">
-            <SectionHeader
-              eyebrow="Detailed records"
-              title="Activity, leave, payroll, and monitoring"
-              description="Personal records are grouped under meaningful tabs so the employee page does not reveal everything at once."
-            />
-            <DashboardDetailTabs
-              title="Employee detail"
-              description="Open the section you need without carrying the full detail load on screen."
-              tabs={[
-                {
-                  id: 'activity',
-                  label: 'Activity',
-                  content: (
-                    <DataTable
-                      title="Recent activity timeline"
-                      description="Latest tracked sessions for the selected employee."
-                      rows={employeeEntries.slice(0, 8)}
-                      emptyMessage="No recent time entries were found."
-                      columns={[
-                        {
-                          key: 'project',
-                          header: 'Task',
-                          render: (row: any) => (
-                            <div>
-                              <p className="font-medium text-slate-950">{getTimeEntryTitle(row)}</p>
-                              <p className="text-xs text-slate-500">{getTimeEntrySubtitle(row)}</p>
-                            </div>
-                          ),
-                        },
-                        { key: 'start', header: 'Start', render: (row: any) => formatDateTime(row.start_time) },
-                        { key: 'duration', header: 'Worked', render: (row: any) => formatDuration(row.duration || 0) },
-                        { key: 'working', header: 'Working', render: (row: any) => (row.billable ? 'Yes' : 'No') },
-                      ]}
-                    />
-                  ),
-                },
-                {
-                  id: 'leave-payroll',
-                  label: 'Leave & Payroll',
-                  content: (
-                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      <CompactList
-                        title="Leave and approval history"
-                        description="Latest leave and time edit actions returned by profile 360."
-                        rows={[
-                          ...(profile?.leave_requests || []).slice(0, 4).map((item: any) => ({
-                            id: `leave-${item.id}`,
-                            title: `${item.start_date} to ${item.end_date}`,
-                            subtitle: item.reason || 'No leave reason provided',
-                            value: item.status,
-                          })),
-                          ...(profile?.time_edit_requests || []).slice(0, 3).map((item: any) => ({
-                            id: `time-edit-${item.id}`,
-                            title: `Time edit for ${item.attendance_date}`,
-                            subtitle: item.message || 'No message provided',
-                            value: item.status,
-                          })),
-                        ]}
-                        emptyTitle="No leave or time edits"
-                        emptyDescription="The current employee profile response does not include leave or time edit items."
-                      />
-                      {(profile?.payslips || []).length === 0 ? (
-                        <EmptyStateCard
-                          title="No payslip data"
-                          description="No payslips were returned for this employee in the current backend response."
-                          icon={CircleDollarSign}
-                        />
-                      ) : (
-                        <CompactList
-                          title="Payroll snapshot"
-                          description="Latest payslips returned by the employee profile response."
-                          rows={(profile?.payslips || []).slice(0, 4).map((item: any) => ({
-                            id: String(item.id),
-                            title: item.period_month,
-                            subtitle: item.payment_status || 'pending payment status',
-                            value: formatCurrency(item.net_salary || 0, item.currency || 'INR'),
-                          }))}
-                          emptyTitle="No payslips found"
-                          emptyDescription="No payroll records are available for this employee."
-                        />
-                      )}
-                    </div>
-                  ),
-                },
-                {
-                  id: 'monitoring',
-                  label: 'Monitoring',
-                  content: (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                        <CompactList
-                          title="Monitoring pulse"
-                          description="Signals from the employee monitoring analytics endpoint."
-                          rows={[
-                            {
-                              id: 'event-count',
-                              title: 'Recorded activity events',
-                              subtitle: 'App, website, and idle event count in the selected range',
-                              value: String(employeeStats.activity_events || 0),
-                            },
-                            {
-                              id: 'idle-duration',
-                              title: 'Idle duration',
-                              subtitle: 'Measured idle time from monitoring analytics',
-                              value: formatDuration(employeeStats.idle_total_duration || 0),
-                            },
-                            {
-                              id: 'screenshots-count',
-                              title: 'Screenshot captures',
-                              subtitle: 'Counted from the screenshots endpoint in the current date range',
-                              value: String(employeeScreenshotTotal),
-                            },
-                          ]}
-                          emptyTitle="No monitoring data"
-                          emptyDescription="The current monitoring response did not return summary signals."
-                        />
-                        <SurfaceCard className="p-5">
-                          <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Live activity status</h3>
-                          <p className="mt-1 text-sm text-slate-500">What this employee is doing right now and whether it is productive.</p>
-                          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                            <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
-                              <p className="mt-2 font-semibold text-slate-950">{employeeLiveMonitoring?.current_tool || 'No active tool detected'}</p>
-                              <p className="mt-1 text-sm capitalize text-slate-500">{employeeLiveMonitoring?.tool_type || employeeLiveMonitoring?.activity_type || 'No tool type'}</p>
-                            </div>
-                            <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
-                              <p className="mt-2 font-semibold capitalize text-slate-950">{employeeLiveMonitoring?.work_status?.replace('_', ' ') || 'inactive'}</p>
-                              <p className="mt-1 text-sm text-slate-500">{employeeLiveMonitoring?.is_working ? 'Timer active now' : 'No active timer right now'}</p>
-                            </div>
-                            <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Productivity</p>
-                              <div className="mt-2">
-                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(employeeLiveMonitoring?.classification)}`}>
-                                  {employeeLiveMonitoring?.classification || 'neutral'}
-                                </span>
-                              </div>
-                              <p className="mt-2 text-sm text-slate-500">{formatDateTime(employeeLiveMonitoring?.last_activity_at)}</p>
-                            </div>
-                          </div>
-                        </SurfaceCard>
-                      </div>
-                      <SurfaceCard className="p-5">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h3 className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Employee screenshots</h3>
-                            <p className="mt-1 text-sm text-slate-500">
-                              Recent captures for the selected employee with image previews.
-                              {employeeScreenshotTotal > employeeScreenshots.length
-                                ? ` Showing latest ${employeeScreenshots.length} of ${employeeScreenshotTotal}.`
-                                : ` ${employeeScreenshotTotal} capture${employeeScreenshotTotal === 1 ? '' : 's'} in range.`}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              iconLeft={<Eye className="h-4 w-4" />}
-                              onClick={openScreenshotManager}
-                            >
-                              View all screenshots
-                            </Button>
-                            {canDeleteScreenshots ? (
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                iconLeft={<Trash2 className="h-4 w-4" />}
-                                onClick={handleDeleteAllScreenshotsInRange}
-                                disabled={employeeScreenshotTotal === 0 || isDeletingScreenshots}
-                              >
-                                Delete all in range
-                              </Button>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        {employeeScreenshots.length === 0 ? (
-                          <div className="mt-4">
-                            <EmptyStateCard
-                              title="No screenshots found"
-                              description="No screenshot captures were returned for this employee in the current date range."
-                              icon={Camera}
-                            />
-                          </div>
-                        ) : (
-                          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                            {employeeScreenshots.slice(0, 8).map((shot: any) => (
-                              <a
-                                key={shot.id}
-                                href={shot.path}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="overflow-hidden rounded-[22px] border border-slate-200 bg-white transition hover:border-sky-200"
-                              >
-                                <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-40 w-full object-cover" />
-                                <div className="space-y-1 p-4">
-                                  <p className="font-medium text-slate-950">{formatDateTime(shot.recorded_at)}</p>
-                                  <p className="text-xs text-slate-500">{shot.filename || 'Captured screenshot'}</p>
-                                </div>
-                              </a>
-                            ))}
-                          </div>
-                        )}
-                      </SurfaceCard>
-                    </div>
-                  ),
-                },
-              ]}
-            />
-          </section>
-        </>
-      )}
-
-      {isScreenshotManagerOpen ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-          <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-[32px] border border-white/70 bg-white shadow-[0_36px_120px_-48px_rgba(15,23,42,0.55)]">
-            <div className="flex flex-col gap-4 border-b border-slate-200/80 px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-700">Screenshot manager</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
-                  {selectedEmployee ? `${selectedEmployee.name} screenshots` : 'Employee screenshots'}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Browse the full screenshot gallery for the selected employee in the current date range, then delete selected captures or clear the full filtered set.
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                iconLeft={<X className="h-4 w-4" />}
-                onClick={closeScreenshotManager}
-                className="self-start"
-              >
-                Close
-              </Button>
-            </div>
-
-            <div className="border-b border-slate-200/80 px-6 py-4">
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Total in range</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-950">{screenshotGalleryTotal}</p>
-                  </div>
-                  {canDeleteScreenshots ? (
-                    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
-                      <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
-                    </div>
-                  ) : null}
-                  <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Date range</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-950">{filters.startDate} to {filters.endDate}</p>
+        <Card className="p-4">
+          <SectionTitle title="Announcements" action={<Link to="/notifications" className="text-xs font-medium text-blue-600">View All</Link>} />
+          {announcements.length ? (
+            <div className="space-y-3">
+              {announcements.map((item, index) => (
+                <div key={item.id} className="flex gap-2 text-xs">
+                  <Megaphone className={`mt-0.5 h-4 w-4 ${index === 0 ? 'text-amber-500' : 'text-blue-500'}`} />
+                  <div>
+                    <p className="text-slate-700">{item.title}</p>
+                    <p className="mt-1 text-[11px] text-slate-400">{item.date}</p>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2 lg:justify-end">
-                  {canDeleteScreenshots ? (
-                    <>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={toggleVisibleScreenshotSelection}
-                        disabled={screenshotGalleryItems.length === 0}
-                      >
-                        {allVisibleScreenshotsSelected ? 'Unselect visible' : 'Select visible'}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        iconLeft={<Trash2 className="h-4 w-4" />}
-                        onClick={handleDeleteSelectedScreenshots}
-                        disabled={selectedScreenshotIds.length === 0 || isDeletingScreenshots}
-                      >
-                        Delete selected
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        iconLeft={<Trash2 className="h-4 w-4" />}
-                        onClick={handleDeleteAllScreenshotsInRange}
-                        disabled={screenshotGalleryTotal === 0 || isDeletingScreenshots}
-                      >
-                        Delete all in range
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-              {screenshotActionFeedback ? (
-                <div className="mt-4">
-                  <FeedbackBanner tone={screenshotActionFeedback.tone} message={screenshotActionFeedback.message} />
-                </div>
-              ) : null}
+              ))}
             </div>
+          ) : <EmptyInline>No announcements yet</EmptyInline>}
+        </Card>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-              {screenshotManagerQuery.isLoading ? (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  {Array.from({ length: 8 }).map((_, index) => (
-                    <div key={index} className="h-72 animate-pulse rounded-[24px] bg-slate-100" />
-                  ))}
-                </div>
-              ) : screenshotManagerQuery.isError ? (
-                <EmptyStateCard
-                  title="Failed to load screenshots"
-                  description={(screenshotManagerQuery.error as any)?.response?.data?.message || 'The full screenshot gallery could not be loaded.'}
-                  icon={Camera}
-                />
-              ) : screenshotGalleryItems.length === 0 ? (
-                <EmptyStateCard
-                  title="No screenshots in this range"
-                  description="No screenshot captures match the selected employee and date range."
-                  icon={Camera}
-                />
-              ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  {screenshotGalleryItems.map((shot: any) => {
-                    const isSelected = selectedScreenshotIds.includes(Number(shot.id));
-
-                    return (
-                      <div
-                        key={shot.id}
-                        className={`overflow-hidden rounded-[24px] border bg-white transition ${
-                          isSelected ? 'border-sky-300 shadow-[0_18px_40px_-28px_rgba(14,165,233,0.45)]' : 'border-slate-200'
-                        }`}
-                      >
-                        <div className="relative">
-                          <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-48 w-full object-cover" />
-                          {canDeleteScreenshots ? (
-                            <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
-                                checked={isSelected}
-                                onChange={() => toggleScreenshotSelection(Number(shot.id))}
-                              />
-                              Select
-                            </label>
-                          ) : null}
-                          <a
-                            href={shot.path}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-slate-950/80 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-950"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            Open
-                          </a>
-                        </div>
-                        <div className="space-y-2 p-4">
-                          <p className="font-medium text-slate-950">{formatDateTime(shot.recorded_at)}</p>
-                          <p className="truncate text-xs text-slate-500" title={shot.filename || 'Captured screenshot'}>
-                            {shot.filename || 'Captured screenshot'}
-                          </p>
+        <Card className="row-span-2 p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-950">Employees</h2>
+            <Link to="/employees" className="text-xs font-medium text-blue-600">View All</Link>
+          </div>
+          <div className="mb-4 grid grid-cols-[1fr_120px_100px_auto] gap-2">
+            <label className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs text-slate-400">
+              <Search className="h-3.5 w-3.5" />
+              <input value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} className="w-full bg-transparent outline-none" placeholder="Search employees..." />
+            </label>
+            <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600">
+              {departments.map((department) => <option key={department}>{department}</option>)}
+            </select>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600">
+              {['All', 'Active', 'Inactive', 'On Leave'].map((status) => <option key={status}>{status}</option>)}
+            </select>
+            <Link to="/add-user" className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white">
+              <Plus className="h-3.5 w-3.5" />
+              Add Employee
+            </Link>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-slate-100">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Employee</th>
+                  <th className="px-4 py-3 font-medium">Department</th>
+                  <th className="px-4 py-3 font-medium">Position</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredEmployees.slice(0, 8).map((employee) => (
+                  <tr key={employee.id}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700">{initials(employee.name)}</div>
+                        <div>
+                          <p className="font-semibold text-slate-900">{employee.name}</p>
+                          <p className="text-[11px] text-slate-500">{employee.email}</p>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-slate-200/80 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-500">
-                Page {screenshotGalleryCurrentPage} of {screenshotGalleryLastPage}
-                {screenshotGalleryTotal > 0 ? ` • ${screenshotGalleryTotal} total screenshot${screenshotGalleryTotal === 1 ? '' : 's'}` : ''}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  iconLeft={<ChevronLeft className="h-4 w-4" />}
-                  onClick={() => setScreenshotManagerPage((current) => Math.max(1, current - 1))}
-                  disabled={screenshotGalleryCurrentPage <= 1 || screenshotManagerQuery.isFetching}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  iconRight={<ChevronRight className="h-4 w-4" />}
-                  onClick={() => setScreenshotManagerPage((current) => Math.min(screenshotGalleryLastPage, current + 1))}
-                  disabled={screenshotGalleryCurrentPage >= screenshotGalleryLastPage || screenshotManagerQuery.isFetching}
-                >
-                  Next
-                </Button>
-              </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{employee.department}</td>
+                    <td className="px-4 py-3 text-slate-600">{employee.position}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${employee.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : employee.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{employee.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredEmployees.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No employees found</EmptyInline></div> : null}
+          </div>
+          <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+            <span>Showing {filteredEmployees.length ? 1 : 0} to {Math.min(8, filteredEmployees.length)} of {employees.length}</span>
+            <div className="flex items-center gap-1">
+              <button className="rounded border border-slate-200 px-2 py-1"><ChevronLeft className="h-3.5 w-3.5" /></button>
+              <button className="rounded bg-blue-600 px-2.5 py-1 text-white">1</button>
+              <button className="rounded border border-slate-200 px-2 py-1"><ChevronRight className="h-3.5 w-3.5" /></button>
             </div>
           </div>
-        </div>
-      ) : null}
+        </Card>
 
-      {activeQuery.isFetching ? (
-        <div className="rounded-[22px] border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm text-sky-700">
-          Dashboard data is refreshing for the current filter selection.
-        </div>
-      ) : null}
+        <Card className="row-span-3 p-4">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-950">Time Tracker</h2>
+            <Settings className="h-4 w-4 text-slate-400" />
+          </div>
+          <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
+            <p className="text-xs text-slate-500">{activeTimer ? 'You are on the clock' : 'No active timer'}</p>
+            <p className="mt-2 text-3xl font-semibold text-blue-600">{activeTimer ? formatCompactDuration(activeTimerSeconds) : '00:00'}</p>
+          </div>
+          <div className="mt-4 space-y-3 rounded-lg border border-slate-100 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-slate-500"><Briefcase className="h-4 w-4" />Project</span>
+              <span className="truncate font-semibold text-slate-900">{activeTimer?.project?.name || activeTimer?.task?.project?.name || 'Not assigned'}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-slate-500"><FileClock className="h-4 w-4" />Task</span>
+              <span className="truncate font-semibold text-slate-900">{activeTimer?.task?.title || 'Not assigned'}</span>
+            </div>
+            {activeTimer ? <button className="mt-2 h-10 w-full rounded-lg bg-rose-500 text-sm font-semibold text-white">Stop</button> : null}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-100 p-3">
+              <p className="text-xs text-slate-500">Today</p>
+              <p className="mt-2 text-lg font-semibold">{formatDuration(totalDuration)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 p-3">
+              <p className="text-xs text-slate-500">This Week</p>
+              <p className="mt-2 text-lg font-semibold">{formatDuration(weeklyTotal)}</p>
+            </div>
+          </div>
+          <div className="mt-5">
+            <SectionTitle title="Recent Timers" action={<Link to="/reports/hours-tracked" className="text-xs font-medium text-blue-600">View All</Link>} />
+            {recentTimers.length ? (
+              <div className="space-y-3">
+                {recentTimers.map((entry: any) => (
+                  <div key={entry.id} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500"><TimerReset className="h-4 w-4" /></div>
+                      <div>
+                        <p className="font-semibold text-slate-900">{entry.project?.name || entry.task?.project?.name || entry.task?.group?.name || 'Unassigned'}</p>
+                        <p className="text-[11px] text-slate-500">{entry.task?.title || entry.description || 'Time entry'}</p>
+                      </div>
+                    </div>
+                    <span className="text-slate-500">{formatCompactDuration(Number(entry.effective_duration || entry.duration || 0))}</span>
+                  </div>
+                ))}
+              </div>
+            ) : <EmptyInline>No recent timers</EmptyInline>}
+          </div>
+        </Card>
+      </section>
 
+      <section className="grid grid-cols-[1.4fr_0.48fr_0.42fr_0.42fr_0.55fr_280px] gap-4">
+        <Card className="col-span-2 p-4">
+          <div className="mb-5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold">Timesheets</h2>
+              <span className="text-sm text-slate-500">{weekRangeLabel}</span>
+            </div>
+            <Link to="/reports/hours-tracked" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Open Timesheets</Link>
+          </div>
+          {timesheetRows.length ? (
+            <table className="w-full text-left text-xs">
+              <thead className="text-slate-500">
+                <tr>
+                  <th className="pb-3 font-medium">Project / Task</th>
+                  {weekDates.map((day) => <th key={toIsoDate(day)} className="pb-3 text-center font-medium">{day.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}</th>)}
+                  <th className="pb-3 text-center font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {timesheetRows.map((row) => (
+                  <tr key={row.key}>
+                    <td className="py-4"><p className="font-semibold text-slate-900">{row.project}</p><p className="text-[11px] text-slate-500">{row.task}</p></td>
+                    {row.days.map((day, index) => <td key={index} className="py-4 text-center text-slate-600">{day}</td>)}
+                    <td className="py-4 text-center font-semibold text-blue-700">{formatCompactDuration(row.totalSeconds)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <EmptyInline>No time entries this week</EmptyInline>}
+        </Card>
+
+        <Card className="p-4">
+          <SectionTitle title="Calendar" action={<button className="text-xs text-slate-500">Month</button>} />
+          <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-500">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}
+            {Array.from({ length: 35 }).map((_, index) => {
+              const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+              const dayNumber = index - monthStart.getDay() + 1;
+              const isValid = dayNumber > 0 && dayNumber <= new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+              const isToday = isValid && dayNumber === now.getDate();
+              return <span key={index} className={`rounded-md py-1 ${isToday ? 'bg-blue-600 text-white' : 'text-slate-600'}`}>{isValid ? dayNumber : ''}</span>;
+            })}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <SectionTitle title="Leave Balance" action={<Link to="/approval-inbox" className="text-xs font-medium text-blue-600">View All</Link>} />
+          {leaveSummary.length ? (
+            <div className="space-y-4">
+              {leaveSummary.map((item) => (
+                <div key={item.label}>
+                  <div className="mb-1 flex justify-between text-xs"><span>{item.label}</span><span className="text-slate-500">{item.value} used</span></div>
+                  <div className="h-1.5 rounded-full bg-slate-100"><span className={`block h-1.5 rounded-full ${item.bgClass}`} style={{ width: `${Math.min(100, item.value * 10)}%` }} /></div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyInline>No leave balance records</EmptyInline>}
+        </Card>
+
+        <Card className="p-4">
+          <SectionTitle title="Payroll Summary" action={<Link to="/payroll" className="text-xs text-blue-600">{monthIso()}</Link>} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Total Payroll Cost</p><p className="mt-2 font-semibold">{formatCurrency(payrollTotal + payrollDeductions)}</p></div>
+            <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Net Pay</p><p className="mt-2 font-semibold text-emerald-700">{formatCurrency(payrollTotal)}</p></div>
+            <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Deductions</p><p className="mt-2 font-semibold text-rose-600">{formatCurrency(payrollDeductions)}</p></div>
+            <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Employees Paid</p><p className="mt-2 font-semibold">{data.payrollRecords.length}</p></div>
+          </div>
+        </Card>
+
+        <Card className="row-span-2 p-4">
+          <SectionTitle title="Projects" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">View All</Link>} />
+          {projectProgress.length ? (
+            <div className="space-y-3">
+              {projectProgress.map((project: any) => (
+                <div key={project.name} className="rounded-lg border border-slate-100 p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <p className="font-semibold text-slate-900">{project.name}</p>
+                    <span className="text-emerald-600">{project.status}</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+                    <span>{project.hours}</span>
+                    <span>{project.percent}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyInline>No projects yet</EmptyInline>}
+        </Card>
+
+        <Card className="p-4">
+          <SectionTitle title="Reports" action={<Link to="/reports/attendance" className="text-xs font-medium text-blue-600">View All</Link>} />
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              ['Attendance Report', '/reports/attendance'],
+              ['Leave Report', '/approval-inbox'],
+              ['Payroll Report', '/payroll'],
+              ['Timesheet Report', '/reports/hours-tracked'],
+              ['Project Report', '/reports/projects-tasks'],
+              ['Custom Report', '/reports/custom-export'],
+            ].map(([report, to]) => (
+              <Link key={report} to={to} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg border border-slate-100 bg-slate-50 text-center text-[11px] font-medium text-slate-700">
+                <FileBarChart className="h-5 w-5 text-blue-600" />
+                {report}
+              </Link>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="col-span-2 p-4">
+          <SectionTitle title="Attendance Trend" action={<button className="text-xs text-slate-500">This Month</button>} />
+          <MiniLineChart values={attendanceTrend} />
+        </Card>
+      </section>
+
+      {dashboardQuery.isFetching ? (
+        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">Refreshing dashboard data from the database...</div>
+      ) : null}
     </div>
   );
 }

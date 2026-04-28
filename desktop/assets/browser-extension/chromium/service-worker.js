@@ -2,11 +2,7 @@ export const isTrackableBrowserUrl = (url) => {
   const value = String(url || '').trim().toLowerCase();
   if (!value) return false;
 
-  return /^https?:\/\//.test(value)
-    || /^chrome:\/\//.test(value)
-    || /^edge:\/\//.test(value)
-    || /^brave:\/\//.test(value)
-    || /^about:/.test(value);
+  return /^https?:\/\//.test(value);
 };
 
 const HEARTBEAT_ALARM_NAME = 'browser-tracking-heartbeat';
