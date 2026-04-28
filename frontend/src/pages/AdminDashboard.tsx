@@ -66,6 +66,13 @@ type TimesheetRow = {
   totalSeconds: number;
 };
 
+type TrendPoint = {
+  label: string;
+  detail: string;
+  value: number;
+  seconds: number;
+};
+
 type DatePreset = 'today' | 'last_2_days' | 'last_5_days' | 'last_7_days' | 'last_15_days' | 'last_month' | 'custom';
 
 type DateRange = {
@@ -260,27 +267,49 @@ const KpiCard = ({ label, value, hint, icon: Icon, tint }: { label: string; valu
   </Card>
 );
 
-const MiniLineChart = ({ values }: { values: number[] }) => {
-  const chartValues = values.length ? values : [0, 0, 0, 0, 0, 0, 0];
+const MiniLineChart = ({ points, values }: { points?: TrendPoint[]; values?: number[] }) => {
+  const chartPoints = points?.length
+    ? points
+    : (values?.length ? values : [0, 0, 0, 0, 0, 0, 0]).map((value, index) => ({
+      label: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index] || `Day ${index + 1}`,
+      detail: `${value}h`,
+      value,
+      seconds: value * 3600,
+    }));
+  const chartValues = chartPoints.map((point) => point.value);
   const max = Math.max(1, ...chartValues);
-  const points = chartValues.map((value, index) => {
+  const plottedPoints = chartValues.map((value, index) => {
     const x = 16 + index * (268 / Math.max(1, chartValues.length - 1));
     const y = 142 - (value / max) * 112;
-    return `${x},${y}`;
-  }).join(' ');
+    return { x, y, point: chartPoints[index] };
+  });
+  const polyline = plottedPoints.map(({ x, y }) => `${x},${y}`).join(' ');
 
   return (
-    <svg viewBox="0 0 310 160" className="h-44 w-full">
-      {[0, 1, 2, 3].map((line) => (
-        <line key={line} x1="16" x2="294" y1={32 + line * 34} y2={32 + line * 34} stroke="#eef2f7" />
-      ))}
-      <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="2.5" />
-      {points.split(' ').map((point, index) => {
-        const [cx, cy] = point.split(',');
-        return <circle key={index} cx={cx} cy={cy} r="3" fill="#fff" stroke="#2563eb" strokeWidth="2" />;
+    <svg viewBox="0 0 310 172" className="h-48 w-full overflow-visible">
+      {[0, 1, 2, 3].map((line) => {
+        const y = 32 + line * 34;
+        return (
+          <g key={line}>
+            <line x1="16" x2="294" y1={y} y2={y} stroke="#eef2f7" />
+            {line < 3 ? <text x="296" y={y + 3} fill="#cbd5e1" fontSize="8">{Math.round(max - (line * max) / 3)}h</text> : null}
+          </g>
+        );
       })}
-      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
-        <text key={day} x={16 + index * 44} y="156" fill="#94a3b8" fontSize="10">{day}</text>
+      <polyline points={polyline} fill="none" stroke="#2563eb" strokeWidth="2.5" />
+      {plottedPoints.map(({ x, y, point }, index) => (
+        <g key={`${point.label}-${index}`} className="group cursor-pointer">
+          <title>{`${point.label}: ${point.detail}`}</title>
+          <line x1={x} x2={x} y1="30" y2="142" stroke="#dbeafe" strokeWidth="1.5" className="opacity-0 transition-opacity group-hover:opacity-100" />
+          <circle cx={x} cy={y} r="9" fill="#2563eb" opacity="0" className="transition-opacity group-hover:opacity-10" />
+          <circle cx={x} cy={y} r="3.5" fill="#fff" stroke="#2563eb" strokeWidth="2" className="transition-all group-hover:fill-blue-600 group-hover:stroke-blue-600" />
+          <text x={x} y={Math.max(14, y - 10)} textAnchor="middle" fill="#2563eb" fontSize="9" fontWeight="600" className="opacity-0 transition-opacity group-hover:opacity-100">
+            {point.detail}
+          </text>
+        </g>
+      ))}
+      {plottedPoints.map(({ x, point }, index) => (
+        <text key={`${point.label}-label-${index}`} x={x} y="160" textAnchor="middle" fill="#94a3b8" fontSize="10">{point.label}</text>
       ))}
     </svg>
   );
@@ -425,9 +454,30 @@ export default function AdminDashboard() {
   const activeTimer = data.summary?.active_timer;
   const activeTimerSeconds = activeTimer?.start_time ? Math.max(0, Math.floor((Date.now() - new Date(activeTimer.start_time).getTime()) / 1000)) : 0;
 
-  const attendanceTrend = (data.monthlyReport?.by_day?.length ? data.monthlyReport.by_day : data.overall.by_day || [])
-    .slice(-7)
-    .map((item: any) => Math.max(0, Math.round(Number(item.working_duration || item.total_duration || item.total_time || 0) / 3600)));
+  const allRangeDates = enumerateDateRange(selectedRange);
+  const trendSource = (data.monthlyReport?.by_day?.length ? data.monthlyReport.by_day : data.overall.by_day || []).slice(-7);
+  const fallbackTrendDates = allRangeDates.slice(-Math.min(7, Math.max(1, allRangeDates.length)));
+  const attendanceTrendPoints: TrendPoint[] = (trendSource.length ? trendSource : fallbackTrendDates).map((item: any, index: number) => {
+    const rawDate = item instanceof Date ? toIsoDate(item) : String(item?.date || item?.day || item?.attendance_date || item?.report_date || item?.start_date || '');
+    const seconds = item instanceof Date ? 0 : Math.max(0, Number(item?.working_duration || item?.total_duration || item?.total_time || item?.duration || 0));
+    const parsedDate = rawDate ? new Date(`${rawDate.slice(0, 10)}T00:00:00`) : null;
+    const label = parsedDate && !Number.isNaN(parsedDate.getTime())
+      ? parsedDate.toLocaleDateString('en-US', { weekday: 'short' })
+      : `Day ${index + 1}`;
+    const detail = parsedDate && !Number.isNaN(parsedDate.getTime())
+      ? `${parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${formatDuration(seconds)}`
+      : formatDuration(seconds);
+    return {
+      label,
+      detail,
+      value: seconds / 3600,
+      seconds,
+    };
+  });
+  const attendanceTrendTotal = attendanceTrendPoints.reduce((sum, point) => sum + point.seconds, 0);
+  const attendanceTrendAverage = attendanceTrendPoints.length ? attendanceTrendTotal / attendanceTrendPoints.length : 0;
+  const attendanceTrendPeak = attendanceTrendPoints.reduce<TrendPoint | null>((peak, point) => !peak || point.seconds > peak.seconds ? point : peak, null);
+  const attendanceTrendActiveDays = attendanceTrendPoints.filter((point) => point.seconds > 0).length;
 
   const activities: DashboardActivity[] = data.auditLogs.map((item: any, index: number) => ({
     id: Number(item.id || index),
@@ -480,7 +530,6 @@ export default function AdminDashboard() {
     }, {}));
 
   const weeklyEntries = safeArray<any>(weeklyReport.time_entries || weeklyReport.entries);
-  const allRangeDates = enumerateDateRange(selectedRange);
   const timesheetDates = allRangeDates.length > 15 ? allRangeDates.slice(-15) : allRangeDates;
   const timesheetDateCount = timesheetDates.length || 1;
   const timesheetRangeLabel = allRangeDates.length > timesheetDates.length
@@ -691,7 +740,20 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
         <Card className="p-4">
           <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <MiniLineChart values={attendanceTrend} />
+          <MiniLineChart points={attendanceTrendPoints} />
+          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {[
+              ['Total tracked', formatDuration(attendanceTrendTotal)],
+              ['Avg per day', formatDuration(attendanceTrendAverage)],
+              ['Active days', `${attendanceTrendActiveDays}/${attendanceTrendPoints.length}`],
+              ['Best day', attendanceTrendPeak ? `${attendanceTrendPeak.label} ${formatDuration(attendanceTrendPeak.seconds)}` : 'No data'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50 hover:shadow-sm">
+                <p className="text-[11px] text-slate-500">{label}</p>
+                <p className="mt-1 truncate text-xs font-semibold text-slate-900">{value}</p>
+              </div>
+            ))}
+          </div>
         </Card>
         <Card className="p-4">
           <SectionTitle title="Leave Summary" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
@@ -1309,7 +1371,7 @@ export default function AdminDashboard() {
 
         <Card className="p-4">
           <SectionTitle title="Attendance Trend" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <MiniLineChart values={attendanceTrend} />
+          <MiniLineChart points={attendanceTrendPoints} />
         </Card>
       </section>
 
