@@ -901,6 +901,13 @@ export default function AdminDashboard() {
             <Calendar className="h-4 w-4 text-blue-600" />
             {dateLabel}
           </div>
+          <Link
+            aria-label="Add user"
+            to="/add-user"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-blue-100 bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80"
+          >
+            <UserPlus className="h-4 w-4" />
+          </Link>
           <div ref={dashboardNotificationsRef} className="relative">
             <button
               type="button"
