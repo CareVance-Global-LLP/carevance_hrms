@@ -424,13 +424,8 @@ export const addUserService = {
     }
 
     if (lowerName.endsWith('.xlsx')) {
-      const xlsx = await import('xlsx');
-      const workbook = xlsx.read(await file.arrayBuffer(), { type: 'array' });
-      const firstSheetName = workbook.SheetNames?.[0];
-      const firstSheet = firstSheetName ? workbook.Sheets[firstSheetName] : null;
-      const rawRows = firstSheet
-        ? xlsx.utils.sheet_to_json(firstSheet, { header: 1, blankrows: false })
-        : [];
+      const { default: readXlsxFile } = await import('read-excel-file/browser');
+      const rawRows = await readXlsxFile(file);
       const tableRows = extractXlsxRows(rawRows);
 
       if (tableRows.length === 0) {

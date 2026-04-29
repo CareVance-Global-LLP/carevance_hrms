@@ -33,19 +33,11 @@ describe('addUserService import parsing', () => {
   });
 
   it('reads xlsx files without crashing when the library returns workbook sheet objects', async () => {
-    vi.doMock('xlsx', () => ({
-      read: vi.fn(() => ({
-        SheetNames: ['Invitations'],
-        Sheets: {
-          Invitations: {},
-        },
-      })),
-      utils: {
-        sheet_to_json: vi.fn(() => [
-          ['Mail', 'Access Level'],
-          ['mavliirbaz.carevanceglobal@gmail.com', 'Employee'],
-        ]),
-      },
+    vi.doMock('read-excel-file/browser', () => ({
+      default: vi.fn(async () => [
+        ['Mail', 'Access Level'],
+        ['mavliirbaz.carevanceglobal@gmail.com', 'Employee'],
+      ]),
     }));
 
     const file = new File(['placeholder'], 'project_invitation_access.xlsx', {
@@ -61,7 +53,7 @@ describe('addUserService import parsing', () => {
       role: 'employee',
     });
 
-    vi.doUnmock('xlsx');
+    vi.doUnmock('read-excel-file/browser');
   });
 
   it('matches import headers regardless of case spaces underscores or hyphens', () => {
