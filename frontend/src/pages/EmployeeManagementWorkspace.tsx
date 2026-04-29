@@ -185,6 +185,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [settingsDraft, setSettingsDraft] = useState<EmployeeSettingsDraft | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const settingsPanelRef = useRef<HTMLDivElement | null>(null);
+  const pendingSettingsScrollUserIdRef = useRef<number | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
   const employeeRoleOptions = useMemo(() => allowedRoles, [allowedRoles]);
@@ -248,6 +249,31 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       setInviteRole(allowedRoles[0]);
     }
   }, [allowedRoles, inviteRole]);
+
+  useEffect(() => {
+    if (
+      !settingsTargetUser?.id ||
+      !settingsDraft ||
+      pendingSettingsScrollUserIdRef.current !== settingsTargetUser.id
+    ) {
+      return;
+    }
+
+    let nextFrameId: number | null = null;
+    const frameId = window.requestAnimationFrame(() => {
+      nextFrameId = window.requestAnimationFrame(() => {
+        settingsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        pendingSettingsScrollUserIdRef.current = null;
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (nextFrameId !== null) {
+        window.cancelAnimationFrame(nextFrameId);
+      }
+    };
+  }, [settingsDraft, settingsTargetUser?.id]);
 
   const profileQuery = useQuery({
     queryKey: ['employee-workspace-profile', selectedUser?.id],
@@ -379,14 +405,10 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   };
 
   const handleOpenSettings = (targetUser: any) => {
-    setSelectedUserId(targetUser.id);
+    pendingSettingsScrollUserIdRef.current = targetUser.id;
     setSettingsUserId(targetUser.id);
     setSettingsDraft(resolveEmployeeSettings(targetUser));
     setFeedback(null);
-
-    window.requestAnimationFrame(() => {
-      settingsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
   };
 
   const handleSaveSettings = () => {

@@ -221,7 +221,7 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('user-email')).toHaveTextContent('desktop@example.com');
     });
 
-    expect(localStorage.getItem('token')).toBe('desktop-token');
+    expect(localStorage.getItem('token')).toBeNull();
     expect(sessionStorage.getItem('token')).toBeNull();
   });
 

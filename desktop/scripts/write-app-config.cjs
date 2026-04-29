@@ -12,6 +12,12 @@ const updateOwner = (process.env.DESKTOP_UPDATE_OWNER || DEFAULT_UPDATE_OWNER).t
 const updateRepo = (process.env.DESKTOP_UPDATE_REPO || DEFAULT_UPDATE_REPO).trim();
 const browserTrackingChromeStoreUrl = (process.env.BROWSER_TRACKING_CHROME_STORE_URL || '').trim();
 const browserTrackingEdgeStoreUrl = (process.env.BROWSER_TRACKING_EDGE_STORE_URL || '').trim();
+const browserTrackingChromeExtensionOrigin = (process.env.BROWSER_TRACKING_CHROME_EXTENSION_ORIGIN || '').trim();
+const browserTrackingEdgeExtensionOrigin = (process.env.BROWSER_TRACKING_EDGE_EXTENSION_ORIGIN || '').trim();
+const browserTrackingAllowedExtensionOrigins = (process.env.BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 const resolveUpdateConfig = () => {
   if (updateProvider === 'github' || (!updateProvider && updateOwner && updateRepo)) {
@@ -46,6 +52,13 @@ const config = {
   browserTracking: {
     chromeStoreUrl: browserTrackingChromeStoreUrl || null,
     edgeStoreUrl: browserTrackingEdgeStoreUrl || null,
+    chromeExtensionOrigin: browserTrackingChromeExtensionOrigin || null,
+    edgeExtensionOrigin: browserTrackingEdgeExtensionOrigin || null,
+    allowedExtensionOrigins: Array.from(new Set([
+      ...browserTrackingAllowedExtensionOrigins,
+      browserTrackingChromeExtensionOrigin,
+      browserTrackingEdgeExtensionOrigin,
+    ].filter(Boolean))),
   },
 };
 

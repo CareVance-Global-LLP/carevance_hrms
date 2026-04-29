@@ -13,14 +13,8 @@ class AuthenticateApiToken
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $header = (string) $request->header('Authorization', '');
-
-        if (!preg_match('/Bearer\s+(.+)/i', $header, $matches)) {
-            return $this->unauthorizedResponse();
-        }
-
-        $plainToken = trim($matches[1]);
-        if ($plainToken === '') {
+        $plainToken = $this->extractToken($request);
+        if ($plainToken === null) {
             return $this->unauthorizedResponse();
         }
 
@@ -59,6 +53,22 @@ class AuthenticateApiToken
             ]);
 
         return $next($request);
+    }
+
+    private function extractToken(Request $request): ?string
+    {
+        $header = (string) $request->header('Authorization', '');
+        if (preg_match('/Bearer\s+(.+)/i', $header, $matches)) {
+            $plainToken = trim($matches[1]);
+            if ($plainToken !== '') {
+                return $plainToken;
+            }
+        }
+
+        $cookieName = (string) config('carevance.auth.api_auth_cookie.name', 'carevance_api_token');
+        $cookieToken = trim((string) $request->cookie($cookieName, ''));
+
+        return $cookieToken !== '' ? $cookieToken : null;
     }
 
     private function unauthorizedResponse(): Response

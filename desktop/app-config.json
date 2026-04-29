@@ -7,6 +7,9 @@
   },
   "browserTracking": {
     "chromeStoreUrl": null,
-    "edgeStoreUrl": null
+    "edgeStoreUrl": null,
+    "chromeExtensionOrigin": null,
+    "edgeExtensionOrigin": null,
+    "allowedExtensionOrigins": []
   }
 }

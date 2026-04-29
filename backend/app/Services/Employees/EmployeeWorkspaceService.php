@@ -27,6 +27,8 @@ use Illuminate\Support\Facades\Storage;
 
 class EmployeeWorkspaceService
 {
+    private const EMPLOYEE_DOCUMENTS_DISK = 'employee_documents';
+
     public function __construct(
         private readonly PayrollWorkspaceService $payrollWorkspaceService,
     ) {
@@ -205,7 +207,8 @@ class EmployeeWorkspaceService
 
     public function storeDocument(User $employee, User $actor, array $data, UploadedFile $file): EmployeeDocument
     {
-        $path = $file->store("employee-documents/{$employee->organization_id}/{$employee->id}", 'public');
+        $disk = self::EMPLOYEE_DOCUMENTS_DISK;
+        $path = $file->store("employee-documents/{$employee->organization_id}/{$employee->id}", $disk);
 
         return EmployeeDocument::query()->create([
             'organization_id' => $employee->organization_id,
@@ -214,7 +217,7 @@ class EmployeeWorkspaceService
             'category' => (string) ($data['category'] ?? 'other'),
             'file_path' => $path,
             'file_name' => $file->getClientOriginalName(),
-            'file_disk' => 'public',
+            'file_disk' => $disk,
             'mime_type' => $file->getClientMimeType(),
             'file_size' => $file->getSize(),
             'uploaded_by' => $actor->id,
@@ -289,13 +292,31 @@ class EmployeeWorkspaceService
 
     public function documentResponse(EmployeeDocument $document)
     {
-        abort_unless(Storage::disk($document->file_disk)->exists($document->file_path), 404);
+        $disk = $this->resolveDocumentDisk($document);
+        abort_unless(Storage::disk($disk)->exists($document->file_path), 404);
 
         return response()->download(
-            Storage::disk($document->file_disk)->path($document->file_path),
+            Storage::disk($disk)->path($document->file_path),
             $document->file_name,
             ['Content-Type' => $document->mime_type ?: 'application/octet-stream']
         );
+    }
+
+    private function resolveDocumentDisk(EmployeeDocument $document): string
+    {
+        $configuredDisk = trim((string) $document->file_disk);
+
+        if ($configuredDisk !== '' && Storage::disk($configuredDisk)->exists($document->file_path)) {
+            return $configuredDisk;
+        }
+
+        if ($configuredDisk === '' || $configuredDisk === 'public') {
+            if (Storage::disk(self::EMPLOYEE_DOCUMENTS_DISK)->exists($document->file_path)) {
+                return self::EMPLOYEE_DOCUMENTS_DISK;
+            }
+        }
+
+        return $configuredDisk !== '' ? $configuredDisk : self::EMPLOYEE_DOCUMENTS_DISK;
     }
 
     private function attendanceSummary(User $employee, string $payrollMonth): array

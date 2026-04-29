@@ -5,6 +5,7 @@ export const isTrackableBrowserUrl = (url) => {
   return /^https?:\/\//.test(value);
 };
 
+const SESSION_TOKEN_STORAGE_KEY = 'bridgeSessionTokensByBrowserProfile';
 const HEARTBEAT_ALARM_NAME = 'browser-tracking-heartbeat';
 const HEARTBEAT_PERIOD_MINUTES = 0.5;
 let lastFocusedTrackableTab = null;
@@ -43,12 +44,45 @@ export const getBrowserBridgeCredential = async (profileKey) => {
   const { bridgeCredentialsByBrowserProfile = {} } = await chrome.storage.local.get(
     'bridgeCredentialsByBrowserProfile'
   );
-  const credential = bridgeCredentialsByBrowserProfile[String(profileKey || '').trim()];
-  if (!credential?.bearer_token || !credential?.local_url) {
+  const normalizedProfileKey = String(profileKey || '').trim();
+  const credential = bridgeCredentialsByBrowserProfile[normalizedProfileKey];
+  if (!credential?.local_url) {
     return null;
   }
 
-  return credential;
+  const { [SESSION_TOKEN_STORAGE_KEY]: sessionTokensByProfile = {} } = await chrome.storage.session.get(
+    SESSION_TOKEN_STORAGE_KEY
+  );
+  const sessionToken = String(sessionTokensByProfile?.[normalizedProfileKey] || '').trim();
+  const legacyToken = String(credential?.bearer_token || '').trim();
+  const bearerToken = sessionToken || legacyToken;
+  if (!bearerToken) {
+    return null;
+  }
+
+  if (!sessionToken && legacyToken) {
+    await chrome.storage.session.set({
+      [SESSION_TOKEN_STORAGE_KEY]: {
+        ...sessionTokensByProfile,
+        [normalizedProfileKey]: legacyToken,
+      },
+    });
+
+    await chrome.storage.local.set({
+      bridgeCredentialsByBrowserProfile: {
+        ...bridgeCredentialsByBrowserProfile,
+        [normalizedProfileKey]: {
+          ...credential,
+          bearer_token: undefined,
+        },
+      },
+    });
+  }
+
+  return {
+    ...credential,
+    bearer_token: bearerToken,
+  };
 };
 
 export const postBrowserTrackingEvent = async (event, credential) => {

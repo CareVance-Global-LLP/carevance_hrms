@@ -7,10 +7,10 @@ use Illuminate\Support\Facades\DB;
 
 class ApiTokenService
 {
-    public function issue(User $user, string $name = 'auth-token'): string
+    public function issue(User $user, string $name = 'auth-token', ?int $ttlMinutes = null): string
     {
         $plainToken = bin2hex(random_bytes(40));
-        $ttlMinutes = (int) config('auth.api_tokens.ttl_minutes', 10080);
+        $ttlMinutes ??= (int) config('auth.api_tokens.ttl_minutes', 10080);
 
         DB::table('personal_access_tokens')->insert([
             'tokenable_type' => User::class,

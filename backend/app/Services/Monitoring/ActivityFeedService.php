@@ -42,6 +42,71 @@ class ActivityFeedService
             ->values();
     }
 
+    public function pageForUsersInRange(
+        iterable $userIds,
+        ?Carbon $startDate = null,
+        ?Carbon $endDate = null,
+        int $page = 1,
+        int $perPage = 10,
+        ?string $type = null,
+        ?string $classification = null,
+        ?string $toolType = null,
+        bool $includeTotal = true,
+    ): array {
+        $userIdCollection = $this->normalizeIds($userIds);
+        if ($userIdCollection->isEmpty()) {
+            return ['items' => collect(), 'total' => 0];
+        }
+
+        $page = max(1, $page);
+        $perPage = max(1, min($perPage, 10));
+        $offset = ($page - 1) * $perPage;
+        $windowSize = $offset + $perPage + ($includeTotal ? ($perPage * 2) : 1);
+
+        $activitiesQuery = Activity::query()
+            ->whereIn('user_id', $userIdCollection)
+            ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate));
+        $this->applyActivityFilters($activitiesQuery, $type, $classification, $toolType);
+
+        $activityTotal = $includeTotal ? (clone $activitiesQuery)->count() : null;
+        $activities = (clone $activitiesQuery)
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id')
+            ->limit($windowSize)
+            ->get()
+            ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        $sessionsQuery = ActivitySession::query()
+            ->whereIn('user_id', $userIdCollection)
+            ->when($startDate || $endDate, function ($query) use ($startDate, $endDate) {
+                $this->applySessionOverlapFilter($query, $startDate, $endDate);
+            });
+        $this->applySessionFilters($sessionsQuery, $type, $classification, $toolType);
+
+        $sessionTotal = $includeTotal ? (clone $sessionsQuery)->count() : null;
+        $sessionModels = (clone $sessionsQuery)
+            ->orderByRaw('COALESCE(ended_at, started_at) DESC')
+            ->orderByDesc('id')
+            ->limit($windowSize)
+            ->get();
+
+        $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
+
+        $items = $activities
+            ->concat($sessions)
+            ->sortByDesc(fn ($item) => $this->sortTimestamp($item))
+            ->slice($offset, $perPage + ($includeTotal ? 0 : 1))
+            ->values();
+        $hasMore = $items->count() > $perPage;
+
+        return [
+            'items' => $items->take($perPage)->values(),
+            'total' => $includeTotal ? ((int) $activityTotal + (int) $sessionTotal) : null,
+            'has_more' => $hasMore,
+        ];
+    }
+
     public function forTimeEntries(iterable $timeEntryIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
     {
         $timeEntryIdCollection = $this->normalizeIds($timeEntryIds);
@@ -100,6 +165,42 @@ class ActivityFeedService
                 $nestedQuery->whereNull('ended_at')
                     ->orWhere('ended_at', '>=', $startDate);
             });
+        }
+    }
+
+    private function applyActivityFilters($query, ?string $type, ?string $classification, ?string $toolType): void
+    {
+        if ($type) {
+            $query->where('type', $type);
+        }
+
+        if ($classification) {
+            $query->where('classification', $classification);
+        }
+
+        if ($toolType) {
+            $query->where('tool_type', $toolType);
+        }
+    }
+
+    private function applySessionFilters($query, ?string $type, ?string $classification, ?string $toolType): void
+    {
+        $type = strtolower(trim((string) $type));
+
+        if ($type === 'idle') {
+            $query->whereIn('activity_kind', ['desktop_idle', 'idle']);
+        } elseif ($type === 'url') {
+            $query->whereIn('activity_kind', ['website', 'browser', 'browser_tab']);
+        } elseif ($type === 'app') {
+            $query->whereNotIn('activity_kind', ['desktop_idle', 'idle', 'website', 'browser', 'browser_tab']);
+        }
+
+        if ($classification) {
+            $query->where('classification', $classification);
+        }
+
+        if ($toolType) {
+            $query->where('tool_type', $toolType);
         }
     }
 

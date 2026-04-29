@@ -9,11 +9,6 @@ const LOCAL_URL = `http://${LOCAL_HOST}:${DEFAULT_BRIDGE_PORT}`;
 const PAIRING_TTL_MS = 10 * 60 * 1000;
 const CONNECTION_STALE_MS = 70 * 1000;
 const CONNECTION_PRUNE_INTERVAL_MS = 5 * 1000;
-const ALLOWED_EXTENSION_ORIGIN_PREFIXES = [
-  'chrome-extension://',
-  'moz-extension://',
-  'safari-web-extension://',
-];
 const ACCESS_CONTROL_ALLOW_METHODS = 'GET, POST, OPTIONS';
 const ACCESS_CONTROL_ALLOW_HEADERS = 'content-type, authorization';
 
@@ -33,22 +28,52 @@ const cloneConnectionState = (session) => ({
   last_seen_at: session.lastSeenAt,
 });
 
-const isAllowedExtensionOrigin = (origin) => {
-  const value = String(origin || '').trim().toLowerCase();
+const normalizeExtensionOrigin = (origin) => {
+  const value = String(origin || '').trim().toLowerCase().replace(/\/+$/, '');
   if (!value) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(value);
+    if (!['chrome-extension:', 'moz-extension:', 'safari-web-extension:'].includes(parsed.protocol)) {
+      return '';
+    }
+
+    return `${parsed.protocol}//${parsed.hostname}`;
+  } catch {
+    return '';
+  }
+};
+
+const isAllowedExtensionOrigin = (origin, allowedExtensionOrigins = []) => {
+  const normalizedOrigin = normalizeExtensionOrigin(origin);
+  if (!normalizedOrigin) {
     return false;
   }
 
-  return ALLOWED_EXTENSION_ORIGIN_PREFIXES.some((prefix) => value.startsWith(prefix));
+  const allowedOrigins = new Set(
+    (Array.isArray(allowedExtensionOrigins) ? allowedExtensionOrigins : [])
+      .map(normalizeExtensionOrigin)
+      .filter(Boolean)
+  );
+
+  if (allowedOrigins.size === 0) {
+    return normalizedOrigin.startsWith('chrome-extension://')
+      || normalizedOrigin.startsWith('extension://');
+  }
+
+  return allowedOrigins.has(normalizedOrigin);
 };
 
-const buildCorsHeaders = (origin) => {
-  if (!isAllowedExtensionOrigin(origin)) {
+const buildCorsHeaders = (origin, allowedExtensionOrigins = []) => {
+  const normalizedOrigin = normalizeExtensionOrigin(origin);
+  if (!normalizedOrigin || !isAllowedExtensionOrigin(normalizedOrigin, allowedExtensionOrigins)) {
     return {};
   }
 
   return {
-    'access-control-allow-origin': origin,
+    'access-control-allow-origin': normalizedOrigin,
     'access-control-allow-methods': ACCESS_CONTROL_ALLOW_METHODS,
     'access-control-allow-headers': ACCESS_CONTROL_ALLOW_HEADERS,
     'access-control-max-age': '600',
@@ -56,11 +81,11 @@ const buildCorsHeaders = (origin) => {
   };
 };
 
-const withCors = (response, origin) => ({
+const withCors = (response, origin, allowedExtensionOrigins = []) => ({
   ...response,
   headers: {
     ...(response.headers || {}),
-    ...buildCorsHeaders(origin),
+    ...buildCorsHeaders(origin, allowedExtensionOrigins),
   },
 });
 
@@ -72,6 +97,9 @@ function createBrowserTrackingBridge({
   listenHost = LOCAL_HOST,
   listenPort = DEFAULT_BRIDGE_PORT,
   stateFilePath = null,
+  encryptState = null,
+  decryptState = null,
+  allowedExtensionOrigins = [],
 } = {}) {
   if (typeof onBrowserEvent !== 'function') {
     throw new TypeError('onBrowserEvent is required');
@@ -93,6 +121,48 @@ function createBrowserTrackingBridge({
     }
 
     return candidate;
+  };
+
+  const serializeState = (state) => {
+    const json = JSON.stringify(state, null, 2);
+    if (typeof encryptState !== 'function') {
+      return json;
+    }
+
+    const encrypted = encryptState(json);
+    if (!encrypted) {
+      return json;
+    }
+
+    return JSON.stringify({
+      version: 1,
+      encoding: 'base64',
+      encrypted: true,
+      payload: Buffer.from(encrypted).toString('base64'),
+    });
+  };
+
+  const deserializeState = (rawValue) => {
+    const text = String(rawValue || '');
+    if (!text.trim()) {
+      return null;
+    }
+
+    const parsed = JSON.parse(text);
+    if (!parsed || parsed.encrypted !== true || typeof parsed.payload !== 'string') {
+      return parsed;
+    }
+
+    if (typeof decryptState !== 'function') {
+      return null;
+    }
+
+    const decrypted = decryptState(Buffer.from(parsed.payload, 'base64'));
+    if (!decrypted) {
+      return null;
+    }
+
+    return JSON.parse(decrypted);
   };
 
   const persistState = () => {
@@ -125,7 +195,7 @@ function createBrowserTrackingBridge({
 
     try {
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-      fs.writeFileSync(targetPath, JSON.stringify(serialized, null, 2), 'utf8');
+      fs.writeFileSync(targetPath, serializeState(serialized), 'utf8');
     } catch {
       // Best-effort persistence. Runtime behavior continues even if disk writes fail.
     }
@@ -138,7 +208,7 @@ function createBrowserTrackingBridge({
     }
 
     try {
-      const parsed = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+      const parsed = deserializeState(fs.readFileSync(targetPath, 'utf8'));
       const nextActivePairingCode = String(parsed?.activePairingCode || '').trim() || null;
 
       pairings.clear();
@@ -298,7 +368,7 @@ function createBrowserTrackingBridge({
       return null;
     }
 
-    if (!isAllowedExtensionOrigin(origin) || !normalizedProfileKey) {
+    if (!isAllowedExtensionOrigin(origin, allowedExtensionOrigins) || !normalizedProfileKey) {
       return null;
     }
 
@@ -350,7 +420,7 @@ function createBrowserTrackingBridge({
     const origin = String(request.origin || '').trim();
     const headers = request.headers || {};
     const body = request.body || {};
-    const isExtensionOrigin = isAllowedExtensionOrigin(origin);
+    const isExtensionOrigin = isAllowedExtensionOrigin(origin, allowedExtensionOrigins);
     const requiresExtensionOrigin = pathname === '/pair' || pathname === '/events';
 
     if (method === 'OPTIONS') {
@@ -358,7 +428,7 @@ function createBrowserTrackingBridge({
         return jsonResponse(403, { error: 'invalid_origin' });
       }
 
-      return withCors(jsonResponse(204, null), origin);
+      return withCors(jsonResponse(204, null), origin, allowedExtensionOrigins);
     }
 
     if (requiresExtensionOrigin && !isExtensionOrigin) {
@@ -375,7 +445,7 @@ function createBrowserTrackingBridge({
       });
 
       if (!token) {
-        return withCors(jsonResponse(403, { error: 'invalid_pairing' }), origin);
+        return withCors(jsonResponse(403, { error: 'invalid_pairing' }), origin, allowedExtensionOrigins);
       }
 
       return withCors(
@@ -383,7 +453,8 @@ function createBrowserTrackingBridge({
           token,
           local_url: localUrl,
         }),
-        origin
+        origin,
+        allowedExtensionOrigins
       );
     }
 
@@ -392,10 +463,10 @@ function createBrowserTrackingBridge({
       const token = authorization.startsWith('Bearer ')
         ? authorization.slice('Bearer '.length).trim()
         : '';
-      return withCors(await handleBrowserEvent(token, origin, body), origin);
+      return withCors(await handleBrowserEvent(token, origin, body), origin, allowedExtensionOrigins);
     }
 
-    return withCors(jsonResponse(404, { error: 'not_found' }), origin);
+    return withCors(jsonResponse(404, { error: 'not_found' }), origin, allowedExtensionOrigins);
   };
 
   const injectJsonRequest = async (pathname, request) => handleJsonRequest(pathname, request);
@@ -417,7 +488,7 @@ function createBrowserTrackingBridge({
 
       req.on('end', async () => {
         const origin = String(req.headers.origin || '').trim();
-        const corsHeaders = buildCorsHeaders(origin);
+        const corsHeaders = buildCorsHeaders(origin, allowedExtensionOrigins);
         let body = {};
         if (chunks.length) {
           try {

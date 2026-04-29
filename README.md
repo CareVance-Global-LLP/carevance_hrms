@@ -1,176 +1,121 @@
-# TimeTrack Pro
+# CareVance HRMS
 
-TimeTrack Pro is a Laravel 12 API with a React 18 frontend and an optional Electron desktop shell for timer capture, screenshots, and desktop activity context.
+CareVance HRMS is a workforce operations platform with a Laravel API, a React web app, an Electron desktop tracker, and a browser extension for exact browser activity capture.
 
-## Launch Prep Notes
+It covers team onboarding, attendance, time tracking, screenshots, monitoring, chat, payroll, invoicing, and reporting in one repository.
 
-- `/privacy` and `/terms` now exist for pre-launch readiness, but the legal copy is placeholder content only and must be reviewed by qualified legal counsel before production use.
-- Cookie consent is implemented for public pages and non-essential analytics stays disabled until a visitor explicitly accepts it.
-- Email verification, password reset, support email routing, and bug-report submission flows are now wired into the repo in a production-safe additive way.
-- Google OAuth hook points are scaffolded in config and env files, but OAuth is intentionally not surfaced as an active login path by default.
-- Launch docs:
-  - [`LAUNCH_SEO_CHECKLIST.md`](/d:/demo_laravel_2/LAUNCH_SEO_CHECKLIST.md)
-  - [`backend/docs/LAUNCH_SECURITY_CHECKLIST.md`](/d:/demo_laravel_2/backend/docs/LAUNCH_SECURITY_CHECKLIST.md)
+## What Is In This Repo
 
-## Stack
+- `backend/` Laravel 12 API and business logic
+- `frontend/` React 18 + TypeScript web application
+- `desktop/` Electron desktop tracker and browser-tracking bridge
+- `browser-extension/` Chromium-based extension used by the desktop bridge
+- `docs/` supporting product and operational documentation
+
+## Tech Stack
 
 ### Backend
-- Laravel 12
+
 - PHP 8.2+
-- Token auth via the `personal_access_tokens` table and custom API middleware
-- Default queue connection: `database`
-- Private file storage for screenshots and chat attachments
+- Laravel 12
+- PostgreSQL by default
+- Database queue driver by default
+- Token-based API auth with secure HTTP-only cookie support for the SPA
+- Dompdf for PDF generation
 
 ### Frontend
-- React 18 + TypeScript
-- Vite 5
-- Tailwind CSS 3
+
+- React 18
+- TypeScript
+- Vite 7
 - React Router 6
-- Axios
 - TanStack React Query 5
+- Tailwind CSS 3
 
 ### Desktop
-- Electron 33
-- `active-win` for active window context
-## Repository Structure
 
-```text
-demo_laravel_2/
-  backend/                 Laravel API
-  frontend/                React app
-  desktop/                 Electron shell
-  SPEC.md
-  TODO.md
-  README.md
-```
+- Electron 41
+- Electron Builder
+- Electron Updater
+- Local browser-tracking bridge for the Chromium extension
 
-## Backend Setup
+## Core Features
+
+- Owner signup and invitation-based employee onboarding
+- Role-aware user management
+- Attendance and manual time tracking
+- Desktop timer, screenshots, and activity collection
+- Exact browser activity tracking through the desktop bridge + extension
+- Live monitoring dashboards
+- Private chat and team communication
+- Payroll, payslips, and Stripe-oriented payment flows
+- Invoicing and operational reporting
+
+## Architecture
+
+This is a modular monorepo.
+
+- The `backend` folder is the system of record and exposes the API used by the web app and desktop app.
+- The `frontend` folder is the main HRMS client.
+- The `desktop` folder wraps the web experience with tracker capabilities and a localhost browser-tracking service.
+- The `browser-extension` folder contains the extension assets that pair with the desktop bridge.
+
+## Quick Start
+
+### 1. Backend
 
 ```bash
 cd backend
 composer install
 copy .env.example .env
 php artisan key:generate
-```
-
-Update `backend/.env` for your environment. The default example is PostgreSQL-based:
-
-```env
-APP_NAME="TimeTrack Pro"
-APP_URL=http://localhost:8000
-CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-
-DB_CONNECTION=pgsql
-DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_DATABASE=timetrackpro
-DB_USERNAME=postgres
-DB_PASSWORD=your_password
-
-QUEUE_CONNECTION=database
-SESSION_DRIVER=database
-CACHE_STORE=database
-FILESYSTEM_DISK=local
-API_TOKEN_TTL_MINUTES=10080
-```
-
-Run the required bootstrap commands:
-
-```bash
 php artisan migrate
-```
-
-Start the API:
-
-```bash
 php artisan serve
 ```
 
-Queue processing:
+Run the queue worker in a second terminal:
 
 ```bash
+cd backend
 php artisan queue:listen --tries=1 --timeout=0
 ```
 
-Notes:
-- `storage:link` is not required for screenshots or chat attachments.
-- The repo uses the database queue driver by default. The migrations already include the `jobs` table, but Redis is the better production target for queue and cache.
-- No broadcasting server setup is required for the current codebase.
-
-## Workspace Onboarding And Invitations
-
-The app now supports two distinct signup paths:
-
-- Workspace owner signup: `/signup-owner` and `/start-trial`
-- Invite acceptance: `/accept-invite/:token`
-
-Owner signup creates the workspace, first admin, selected plan code, and billing state in one flow. Employees, managers, admins, and clients should join later through invitation links generated by an authorized workspace admin.
-
-Relevant API endpoints:
-
-- `POST /api/auth/signup-owner`
-- `POST /api/invitations`
-- `GET /api/invitations/{token}`
-- `POST /api/invitations/{token}/accept`
-- `GET /api/billing/current`
-- `GET /api/me/company`
-
-## SMTP For Invitation Emails
-
-Invitation emails use Laravel Mail and are queue-ready. For local or production SMTP delivery, set these backend env values:
+Useful backend defaults:
 
 ```env
-MAIL_MAILER=smtp
-MAIL_HOST=smtp.mailprovider.com
-MAIL_PORT=587
-MAIL_SCHEME=tls
-MAIL_USERNAME=your_smtp_user
-MAIL_PASSWORD=your_smtp_password
-MAIL_FROM_ADDRESS=hello@your-domain.com
-MAIL_FROM_NAME="${APP_NAME}"
-FRONTEND_APP_URL=https://your-frontend-domain.com
+APP_URL=http://localhost:8000
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+DB_CONNECTION=pgsql
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_DATABASE=carevance
+DB_USERNAME=postgres
+DB_PASSWORD=your_password
 QUEUE_CONNECTION=database
+SESSION_DRIVER=database
+CACHE_STORE=database
 ```
 
-Then run a worker so queued invitation mail can be delivered:
-
-```bash
-php artisan queue:listen --tries=1 --timeout=0
-```
-
-## Frontend Setup
+### 2. Frontend
 
 ```bash
 cd frontend
 npm install
 copy .env.example .env
+npm run dev
 ```
 
-Recommended `frontend/.env` values for local development:
+Recommended local frontend env:
 
 ```env
 VITE_API_URL=http://localhost:8000/api
 VITE_WEB_APP_URL=http://localhost:5173
-# Optional: overrides the backend-powered installer download endpoint
-# VITE_DESKTOP_DOWNLOAD_URL=http://localhost:8000/api/downloads/desktop/windows
 VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
 VITE_SALES_EMAIL=sales@carevance.example
 VITE_SUPPORT_EMAIL=support@carevance.example
-# Optional analytics providers. Leave blank until you are ready to wire a consent-aware provider.
-VITE_GA_MEASUREMENT_ID=
-VITE_PLAUSIBLE_DOMAIN=
-VITE_POSTHOG_KEY=
-VITE_POSTHOG_HOST=https://app.posthog.com
-VITE_GOOGLE_OAUTH_ENABLED=false
 ```
 
-Start the frontend:
-
-```bash
-npm run dev
-```
-
-## Desktop Setup
+### 3. Desktop Tracker
 
 ```bash
 cd desktop
@@ -178,157 +123,95 @@ npm install
 npm start
 ```
 
-The desktop shell reads the target web app URL from the `APP_URL` process environment variable. If it is not set, it opens:
+The desktop shell opens the URL provided by `APP_URL`.
 
-```text
-http://localhost:5173
-```
+Allowed values are intentionally restricted:
 
-To point the desktop app at another frontend during the current shell session:
+- `https://...` for deployed environments
+- `http://localhost...` for local development
+- `http://127.0.0.1...` for local development
+
+Example:
 
 ```powershell
 $env:APP_URL="http://localhost:5173"
 npm start
 ```
 
-## Shared/Deployed Setup
+## Browser Tracking
 
-Backend example:
+The browser tracking flow uses the desktop app plus the extension together.
 
-```env
-APP_URL=https://your-backend-domain.com
-CORS_ALLOWED_ORIGINS=https://your-frontend-domain.com
-API_TOKEN_TTL_MINUTES=10080
-SESSION_SECURE_COOKIE=true
-QUEUE_CONNECTION=redis
-CACHE_STORE=redis
-DESKTOP_WINDOWS_DOWNLOAD_URL=https://github.com/<owner>/<repo>/releases/latest/download/TimeTrack%20Pro-Setup-1.0.0-x64.exe
-PAYROLL_STRIPE_RETURN_URL=https://your-frontend-domain.com/payroll
-PAYROLL_STRIPE_SUCCESS_URL=https://your-frontend-domain.com/payroll?payment=success
-PAYROLL_STRIPE_CANCEL_URL=https://your-frontend-domain.com/payroll?payment=cancelled
-```
+- The desktop app exposes a localhost bridge
+- The browser extension pairs to that bridge with a short-lived pairing code
+- Trusted extension origins are allowlisted in desktop app config
+- Chrome and Edge origins can both be configured
 
+Important:
 
-Frontend example:
+- do not trust wildcard extension origins
+- keep the desktop app and extension on matching versions
+- use the generated app config for Chrome and Edge origin allowlisting
 
-```env
-VITE_API_URL=https://your-backend-domain.com/api
-VITE_WEB_APP_URL=https://your-frontend-domain.com
-VITE_SALES_EMAIL=sales@your-domain.com
-VITE_SUPPORT_EMAIL=support@your-domain.com
-# Optional analytics provider config
-VITE_GA_MEASUREMENT_ID=
-VITE_PLAUSIBLE_DOMAIN=
-VITE_POSTHOG_KEY=
-VITE_POSTHOG_HOST=https://app.posthog.com
-VITE_GOOGLE_OAUTH_ENABLED=false
-```
-
-The frontend now ships with a production Nginx config and Dockerfile in [`frontend/Dockerfile`](/d:/demo_laravel_2/frontend/Dockerfile). That setup keeps clean React Router URLs working on refresh with:
-
-```nginx
-try_files $uri $uri/ /index.html;
-```
-
-It also injects frontend env vars at runtime through [`env-config.js`](/d:/demo_laravel_2/frontend/public/env-config.js), so the same image can be promoted across environments without rebuilding.
-
-If you deploy the frontend manually on AWS, ECS, EC2, or another container platform, use the same [`frontend/Dockerfile`](/d:/demo_laravel_2/frontend/Dockerfile) and pass the same `VITE_*` env vars at container runtime. The included Nginx config handles `/dashboard`, `/payroll`, and the rest of the app on hard refresh without hash routes or host-specific rewrite hacks.
-
-Desktop example:
-
-```powershell
-$env:APP_URL="https://your-frontend-domain.com"
-npm start
-```
-
-Installer download behavior:
-- Frontend pages default to `VITE_API_URL` without `/api`, then call `/api/downloads/desktop/windows`.
-- Backend serves that endpoint by streaming the file behind `DESKTOP_WINDOWS_DOWNLOAD_URL`.
-- `VITE_DESKTOP_DOWNLOAD_URL` is only an optional frontend override.
-
-## Environment Variables In Use
+## Common Commands
 
 ### Backend
-- `APP_NAME`
-- `APP_URL`
-- `CORS_ALLOWED_ORIGINS`
-- `DB_*`
-- `QUEUE_CONNECTION`
-- `SESSION_DRIVER`
-- `CACHE_STORE`
-- `FILESYSTEM_DISK`
-- `API_TOKEN_TTL_MINUTES`
-- `SCREENSHOT_URL_TTL_MINUTES`
-- `IDLE_TRACK_THRESHOLD_SECONDS`
-- `IDLE_AUTO_STOP_THRESHOLD_SECONDS`
-- `RATE_LIMIT_*`
-- `AUTH_EMAIL_VERIFICATION_EXPIRE_MINUTES`
-- `SALES_CONTACT_EMAIL`
-- `SUPPORT_CONTACT_EMAIL`
-- `GOOGLE_OAUTH_ENABLED`
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_REDIRECT_URI`
-- `DESKTOP_WINDOWS_DOWNLOAD_URL`
-- `ATTENDANCE_LATE_AFTER`
-- `ATTENDANCE_SHIFT_SECONDS`
-- `PAYROLL_*`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-
-### Frontend
-- `VITE_API_URL`
-- `VITE_WEB_APP_URL`
-- `VITE_DESKTOP_DOWNLOAD_URL`
-- `VITE_DESKTOP_DOWNLOAD_LABEL`
-- `VITE_SALES_EMAIL`
-- `VITE_SUPPORT_EMAIL`
-- `VITE_GA_MEASUREMENT_ID`
-- `VITE_PLAUSIBLE_DOMAIN`
-- `VITE_POSTHOG_KEY`
-- `VITE_POSTHOG_HOST`
-- `VITE_GOOGLE_OAUTH_ENABLED`
-- `VITE_IDLE_TRACK_THRESHOLD_SECONDS`
-- `VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS`
-- `VITE_IDLE_GUARD_INTERVAL_MS`
-
-### Desktop
-- `APP_URL`
-
-## Operational Notes
-
-- `backend/.env.example` is aligned to the app's PostgreSQL-first setup and keeps permissive CORS scoped to localhost only.
-- The app uses a custom bearer-token middleware, not Laravel Sanctum middleware.
-- The desktop shell already supports opening web pages externally and desktop-only tracker APIs through `preload.cjs`.
-- The `/team` route redirects to `/user-management`.
-
-## Validation Commands
 
 ```bash
 cd backend
 php artisan test
-php artisan screenshots:health-check
-php artisan idle:health-check
 composer test:coverage
 composer route:test-matrix
 ```
 
-Notes:
-- `composer test:coverage` generates backend coverage only when `Xdebug` or `PCOV` is installed. Without a coverage driver, it runs the full backend test suite and prints a clear warning.
-- `composer route:test-matrix` writes:
-  - [`backend/docs/route-test-matrix.md`](/d:/demo_laravel_2/backend/docs/route-test-matrix.md)
-  - [`backend/docs/route-test-matrix.json`](/d:/demo_laravel_2/backend/docs/route-test-matrix.json)
+### Frontend
 
 ```bash
 cd frontend
+npm test
 npm run build
 npm run test:coverage
 ```
 
+### Desktop
+
 ```bash
 cd desktop
+npm start
 npm run dist:win
+npm run dist:portable
 ```
+
+## Deployment Notes
+
+- Set real secrets through environment variables, not committed files
+- Keep `APP_DEBUG=false` outside local development
+- Use HTTPS in deployed frontend and desktop `APP_URL` targets
+- Run the backend queue worker in production
+- Keep browser-tracking extension origins explicitly allowlisted
+- Store employee documents on private storage only
+
+## Security Notes
+
+Recent hardening in this repository includes:
+
+- secure handling of backend secrets and safer env defaults
+- removal of TLS verification bypasses for Stripe requests
+- stricter Electron sandboxing and remote URL validation
+- allowlisted external URL opening from the desktop app
+- encrypted persistence for desktop browser-tracking state
+- reduced browser token persistence in the extension
+- removal of SPA token storage from browser local/session storage
+- private storage for employee documents
+
+## Repository Status
+
+Current package baselines in this repo:
+
+- Laravel `^12.0`
+- React `^18.2.0`
+- Vite `^7.3.2`
+- Electron `^41.3.0`
 
 ## License
 

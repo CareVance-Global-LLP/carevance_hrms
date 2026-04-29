@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Cookie;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -115,7 +116,12 @@ class AuthController extends Controller
             ], 403);
         }
 
-        $token = $this->apiTokenService->issue($user);
+        $remember = $request->boolean('remember');
+        $token = $this->apiTokenService->issue(
+            $user,
+            'auth-token',
+            $this->getApiAuthTokenMinutes($remember)
+        );
         $user->load(['organization', 'groups']);
 
         $this->auditLogService->log(
@@ -132,7 +138,8 @@ class AuthController extends Controller
             'user' => $user,
             'token' => $token,
             'organization' => $user->organization,
-        ], 'Logged in successfully.');
+        ], 'Logged in successfully.')
+            ->withCookie($this->makeApiAuthCookie($token, $remember));
     }
 
     public function requestVerificationEmail(ResendVerificationEmailRequest $request)
@@ -209,7 +216,12 @@ class AuthController extends Controller
             );
         }
 
-        return $this->successResponse([], 'Logged out successfully');
+        return $this->successResponse([], 'Logged out successfully')
+            ->withoutCookie(
+                $this->getApiAuthCookieName(),
+                $this->getApiAuthCookiePath(),
+                $this->getApiAuthCookieDomain()
+            );
     }
 
     public function handoff(Request $request)
@@ -231,7 +243,8 @@ class AuthController extends Controller
             'user' => $user,
             'token' => $token,
             'organization' => $user->organization,
-        ], 'Handoff token issued.');
+        ], 'Handoff token issued.')
+            ->withCookie($this->makeApiAuthCookie($token));
     }
 
     public function resendVerificationEmail(Request $request)
@@ -289,5 +302,63 @@ class AuthController extends Controller
 
             return false;
         }
+    }
+
+    private function makeApiAuthCookie(string $token, bool $remember = true): Cookie
+    {
+        return cookie(
+            $this->getApiAuthCookieName(),
+            $token,
+            $remember ? $this->getApiAuthCookieMinutes() : 0,
+            $this->getApiAuthCookiePath(),
+            $this->getApiAuthCookieDomain(),
+            $this->shouldUseSecureApiAuthCookie(),
+            true,
+            false,
+            $this->getApiAuthCookieSameSite()
+        );
+    }
+
+    private function getApiAuthCookieName(): string
+    {
+        return (string) config('carevance.auth.api_auth_cookie.name', 'carevance_api_token');
+    }
+
+    private function getApiAuthCookieMinutes(): int
+    {
+        return max(1, (int) config('carevance.auth.api_auth_cookie.minutes', 10080));
+    }
+
+    private function getApiAuthTokenMinutes(bool $remember): int
+    {
+        if ($remember) {
+            return (int) config('auth.api_tokens.ttl_minutes', 10080);
+        }
+
+        return max(1, (int) config('carevance.auth.api_auth_cookie.session_token_minutes', 720));
+    }
+
+    private function getApiAuthCookiePath(): string
+    {
+        return (string) config('carevance.auth.api_auth_cookie.path', '/');
+    }
+
+    private function getApiAuthCookieDomain(): ?string
+    {
+        $domain = config('carevance.auth.api_auth_cookie.domain');
+
+        return is_string($domain) && $domain !== '' ? $domain : null;
+    }
+
+    private function shouldUseSecureApiAuthCookie(): bool
+    {
+        return (bool) config('carevance.auth.api_auth_cookie.secure', true);
+    }
+
+    private function getApiAuthCookieSameSite(): string
+    {
+        $sameSite = strtolower((string) config('carevance.auth.api_auth_cookie.same_site', 'lax'));
+
+        return in_array($sameSite, ['lax', 'strict', 'none'], true) ? $sameSite : 'lax';
     }
 }
