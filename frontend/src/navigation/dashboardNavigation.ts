@@ -99,8 +99,8 @@ export const topNavigation: NavGroup[] = [
     icon: BarChart3,
     adminOnly: true,
     items: [
-      { label: 'Reports', to: '/reports/custom-export', icon: BarChart3, adminOnly: true },
-      { label: 'Analytics', to: '/reports/productivity', icon: LineChart, adminOnly: true },
+      { label: 'Reports', to: '/reports', icon: BarChart3, adminOnly: true },
+      { label: 'Analytics', to: '/analytics', icon: LineChart, adminOnly: true },
       { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true },
       { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true },
     ],

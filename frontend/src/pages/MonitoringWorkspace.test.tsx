@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MonitoringWorkspace from '@/pages/MonitoringWorkspace';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   getAllUsersMock: vi.fn(),
   employeeInsightsMock: vi.fn(),
   activityGetAllMock: vi.fn(),
+  screenshotGetAllMock: vi.fn(),
+  screenshotGetMock: vi.fn(),
   authUser: {
     id: 1,
     name: 'Admin User',
@@ -40,6 +42,11 @@ vi.mock('@/services/api', async () => {
     activityApi: {
       ...actual.activityApi,
       getAll: mocks.activityGetAllMock,
+    },
+    screenshotApi: {
+      ...actual.screenshotApi,
+      getAll: mocks.screenshotGetAllMock,
+      get: mocks.screenshotGetMock,
     },
   };
 });
@@ -162,6 +169,32 @@ describe('MonitoringWorkspace', () => {
         },
       },
     });
+
+    mocks.screenshotGetAllMock.mockResolvedValue({
+      data: {
+        data: [
+          {
+            id: 101,
+            filename: 'capture-101.jpg',
+            path: 'http://localhost:8000/api/screenshots/101/file?signature=old',
+            recorded_at: '2026-04-21T11:30:00.000Z',
+            user_id: 7,
+          },
+        ],
+        total: 1,
+        current_page: 1,
+        last_page: 1,
+      },
+    });
+    mocks.screenshotGetMock.mockResolvedValue({
+      data: {
+        id: 101,
+        filename: 'capture-101.jpg',
+        path: 'http://localhost:8000/api/screenshots/101/file?signature=fresh',
+        recorded_at: '2026-04-21T11:30:00.000Z',
+        user_id: 7,
+      },
+    });
   });
 
   it('shows browser tracking health in the selected employee live monitoring card', async () => {
@@ -207,5 +240,29 @@ describe('MonitoringWorkspace', () => {
     expect(await screen.findByRole('heading', { name: 'App Usage', level: 1 })).toBeInTheDocument();
     expect((await screen.findAllByText('Codex')).length).toBeGreaterThan(0);
     expect(screen.queryByText(/^vscode$/i)).not.toBeInTheDocument();
+  });
+
+  it('renders screenshots and refreshes an expired signed image URL', async () => {
+    renderWithProviders(
+      <MonitoringWorkspace mode="screenshots" />,
+      { route: '/monitoring/screenshots?user=7' },
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Screenshots', level: 1 })).toBeInTheDocument();
+    expect(await screen.findByText('capture-101.jpg')).toBeInTheDocument();
+
+    const image = screen.getByAltText('capture-101.jpg') as HTMLImageElement;
+    expect(image.src).toBe('http://localhost:8000/api/screenshots/101/file?signature=old');
+    expect(screen.getByRole('link', { name: /open/i })).toHaveAttribute(
+      'href',
+      'http://localhost:8000/api/screenshots/101/file?signature=old'
+    );
+
+    fireEvent.error(image);
+
+    await waitFor(() => {
+      expect(mocks.screenshotGetMock).toHaveBeenCalledWith(101);
+      expect(image.src).toBe('http://localhost:8000/api/screenshots/101/file?signature=fresh');
+    });
   });
 });

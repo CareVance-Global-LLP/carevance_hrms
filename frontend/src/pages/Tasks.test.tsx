@@ -147,7 +147,7 @@ describe('Tasks page', () => {
           role: 'employee',
           organization_id: 1,
           is_active: true,
-          groups: [{ id: 8, name: 'IT', is_active: true }],
+          groups: [],
           created_at: '',
           updated_at: '',
         },
@@ -183,11 +183,12 @@ describe('Tasks page', () => {
 
     await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'digital');
 
+    await user.click(screen.getByRole('button', { name: /open add member for digital marketing/i }));
     await user.click(screen.getByRole('checkbox', { name: /jordan miles employee jordan@example.com/i }));
     await user.click(screen.getByRole('button', { name: /add members to digital marketing/i }));
 
     await waitFor(() => {
-      expect(mocks.updateUser).toHaveBeenCalledWith(4, { group_ids: [8, 7] });
+      expect(mocks.updateUser).toHaveBeenCalledWith(4, { group_ids: [7] });
     });
   });
 
@@ -207,7 +208,8 @@ describe('Tasks page', () => {
     expect(screen.queryByRole('heading', { name: 'IT' })).not.toBeInTheDocument();
 
     await user.clear(screen.getByRole('textbox', { name: /search group directory/i }));
-    await user.selectOptions(screen.getByRole('combobox', { name: /filter group directory/i }), '8');
+    await user.click(screen.getByRole('button', { name: /filter group directory/i }));
+    await user.click(screen.getByRole('option', { name: 'IT' }));
 
     expect(screen.queryByRole('heading', { name: 'Digital Marketing' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'IT' })).toBeInTheDocument();
@@ -341,7 +343,7 @@ describe('Tasks page', () => {
     });
   });
 
-  it('moves a member by removing only the current group and keeping other groups', async () => {
+  it('moves a member into the selected group', async () => {
     const user = userEvent.setup();
 
     mocks.getAllGroups.mockResolvedValueOnce({
@@ -396,14 +398,12 @@ describe('Tasks page', () => {
     expect(await screen.findByText(/see every group and manage members from this page/i)).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: /search group directory/i }), 'it services');
 
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: /move irbaz to another group/i }),
-      '4'
-    );
+    await user.click(screen.getByRole('button', { name: /move irbaz to another group/i }));
+    await user.click(screen.getByRole('option', { name: 'Digital Marketing' }));
     await user.click(screen.getByRole('button', { name: /^move irbaz$/i }));
 
     await waitFor(() => {
-      expect(mocks.updateUser).toHaveBeenCalledWith(11, { group_ids: [2, 4] });
+      expect(mocks.updateUser).toHaveBeenCalledWith(11, { group_ids: [4] });
     });
   });
 

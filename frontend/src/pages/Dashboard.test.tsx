@@ -1,5 +1,5 @@
-import { screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Dashboard from '@/pages/Dashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   summaryMock: vi.fn(),
   attendanceTodayMock: vi.fn(),
   overtimeCreateMock: vi.fn(),
+  notificationListMock: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -22,6 +23,7 @@ vi.mock('@/services/api', async () => {
     dashboardApi: { summary: mocks.summaryMock },
     attendanceApi: { today: mocks.attendanceTodayMock },
     attendanceTimeEditApi: { create: mocks.overtimeCreateMock },
+    notificationApi: { list: mocks.notificationListMock },
   };
 });
 
@@ -66,6 +68,26 @@ describe('Dashboard', () => {
         },
       },
     });
+
+    mocks.notificationListMock.mockResolvedValue({
+      data: {
+        unread_count: 1,
+        data: [
+          {
+            id: 1,
+            type: 'announcement',
+            title: 'Shift reminder',
+            message: 'Please submit pending work updates.',
+            is_read: false,
+            created_at: '2026-03-11T08:30:00Z',
+          },
+        ],
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('shows employee progress metrics without timer controls', async () => {
@@ -169,5 +191,93 @@ describe('Dashboard', () => {
     expect(screen.getByText('Repair CSV column order')).toBeInTheDocument();
     expect(screen.getByText('No task selected')).toBeInTheDocument();
     expect(screen.getByText('No description provided')).toBeInTheDocument();
+  });
+
+  it('shows universal search suggestions while typing', async () => {
+    renderWithProviders(<Dashboard />);
+
+    expect(await screen.findByRole('heading', { name: "Today's shift" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Universal dashboard search'), { target: { value: 'att' } });
+
+    expect(screen.getByRole('option', { name: /attendance open attendance and shift records/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /attendance & shift/i })).toBeInTheDocument();
+  });
+
+  it('opens dashboard notifications in a floating panel', async () => {
+    renderWithProviders(<Dashboard />);
+
+    const bellButton = await screen.findByRole('button', { name: /notifications/i });
+    fireEvent.click(bellButton);
+
+    const panel = await screen.findByRole('region', { name: /dashboard notifications/i });
+    expect(within(panel).getByText('Shift reminder')).toBeInTheDocument();
+    expect(within(panel).getByText('Please submit pending work updates.')).toBeInTheDocument();
+    expect(within(panel).getByRole('link', { name: /view all notifications/i })).toHaveAttribute('href', '/notifications');
+  });
+
+  it('shows a live seconds clock for the active employee timer', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-11T09:00:29Z'));
+
+    mocks.summaryMock.mockResolvedValue({
+      data: {
+        active_timer: {
+          id: 9,
+          start_time: '2026-03-11T09:00:00Z',
+          end_time: null,
+          duration: 0,
+          description: '',
+          project: null,
+          task: null,
+        },
+        today_entries: [
+          {
+            id: 9,
+            start_time: '2026-03-11T09:00:00Z',
+            end_time: null,
+            duration: 0,
+            description: '',
+            project: null,
+            task: null,
+          },
+        ],
+        today_total_elapsed_duration: 0,
+        weekly_total_elapsed_duration: 0,
+        productivity_score: 0,
+        active_projects_count: 1,
+        total_projects_count: 1,
+      },
+    });
+
+    mocks.attendanceTodayMock.mockResolvedValue({
+      data: {
+        shift_target_seconds: 28800,
+        record: {
+          worked_seconds: 0,
+          is_checked_in: true,
+          shift_target_seconds: 28800,
+          attendance_date: '2026-03-11',
+          check_in_at: '2026-03-11T09:00:00Z',
+          check_out_at: null,
+          late_minutes: 0,
+        },
+      },
+    });
+
+    renderWithProviders(<Dashboard />);
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Time Tracker')).toBeInTheDocument();
+    expect(screen.getByText('00:00:29')).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByText('00:00:30')).toBeInTheDocument();
   });
 });
