@@ -2,22 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const extensionRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..'
-);
 
 const loadRuntimeModule = async (relativePath) => {
-  const filePath = path.resolve(extensionRoot, relativePath);
+  const filePath = path.resolve(process.cwd(), relativePath);
   const source = fs.readFileSync(filePath, 'utf8');
   const encodedSource = Buffer.from(source, 'utf8').toString('base64');
   return import(`data:text/javascript;base64,${encodedSource}`);
 };
 
-const serviceWorker = await loadRuntimeModule('service-worker.js');
-const optionsPage = await loadRuntimeModule('options.js');
+const serviceWorker = await loadRuntimeModule(
+  'browser-extension/chromium/service-worker.js'
+);
+const optionsPage = await loadRuntimeModule('browser-extension/chromium/options.js');
 
 test('service worker buildBrowserTrackingEvent emits an exact website payload for a focused https tab', () => {
   const event = serviceWorker.buildBrowserTrackingEvent({
@@ -108,6 +104,7 @@ test('options buildBrowserBridgeCredential stores a pairing record per browser p
       pairing_code: 'PAIR-1234',
       paired_at: '2026-04-21T11:30:00.000Z',
       local_url: 'http://127.0.0.1:38947',
+      bearer_token: 'token-123',
       extension_origin: 'chrome-extension://abc123',
       browser_name: 'chrome',
       extension_version: '0.1.0',
@@ -161,7 +158,10 @@ test('service worker postBrowserTrackingEvent sends an authenticated event to th
 });
 
 test('manifest grants loopback bridge access', () => {
-  const manifestPath = path.resolve(extensionRoot, 'manifest.json');
+  const manifestPath = path.resolve(
+    process.cwd(),
+    'browser-extension/chromium/manifest.json'
+  );
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
   assert.deepEqual(manifest.host_permissions, ['http://127.0.0.1/*']);

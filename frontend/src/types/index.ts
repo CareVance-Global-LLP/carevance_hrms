@@ -646,7 +646,7 @@ export interface PayrollRecord {
   tax: number;
   gross_salary?: number;
   net_salary: number;
-  payroll_status: 'draft' | 'validated' | 'manager_approved' | 'finance_approved' | 'processed' | 'paid';
+  payroll_status: 'draft' | 'review' | 'approved' | 'cancelled' | 'validated' | 'manager_approved' | 'finance_approved' | 'processed' | 'paid';
   payout_method: 'mock' | 'stripe' | 'bank_transfer';
   payout_status: 'pending' | 'success' | 'failed';
   attendance_summary?: Record<string, any> | null;

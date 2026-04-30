@@ -7,17 +7,40 @@ import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
-import { employeeWorkspaceApi, payrollWorkspaceApi } from '@/services/api';
+import { employeeWorkspaceApi, payrollSimpleApi } from '@/services/api';
 import EmployeeWorkspaceTabs from '@/features/employees/EmployeeWorkspaceTabs';
 import EmployeeStatCard from '@/features/employees/EmployeeStatCard';
 import EmployeeSectionCard from '@/features/employees/EmployeeSectionCard';
-import PayrollProfileForm, { type PayrollProfileFormValue } from '@/features/payroll/components/PayrollProfileForm';
-import { formatPayrollCurrency, formatPayrollDuration, payrollStatusTone } from '@/features/payroll/utils';
 import { ArrowLeft, Download } from 'lucide-react';
 
 const tabs = ['overview', 'about', 'work', 'payroll', 'government', 'bank', 'documents', 'attendance', 'leave', 'activity'];
 const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const createEmptyBankForm = () => ({ payout_method: 'bank_transfer', verification_status: 'unverified', is_default: true });
+const createEmptyPayrollForm = () => ({
+  salary_type: 'fixed_monthly',
+  monthly_salary: 0,
+  hourly_rate: 0,
+  working_days: 30,
+  payroll_start_date: new Date().toISOString().slice(0, 10),
+  status: 'active',
+  overtime_enabled: true,
+  overtime_hourly_rate: 0,
+  productivity_bonus_enabled: false,
+  productivity_bonus_rate: 0,
+  bank_name: '',
+  bank_account_number: '',
+  bank_ifsc_swift: '',
+  notes: '',
+});
+const formatPayrollCurrency = (value?: number | string | null) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(value || 0));
+const formatPayrollDuration = (seconds?: number) => `${Math.round(Number(seconds || 0) / 3600)}h`;
+const payrollStatusTone = (status?: string | null) => {
+  if (status === 'verified' || status === 'paid' || status === 'approved') return 'success' as const;
+  if (status === 'pending' || status === 'draft') return 'warning' as const;
+  if (status === 'rejected' || status === 'failed') return 'danger' as const;
+  return 'neutral' as const;
+};
 
 export default function EmployeeDetailWorkspace() {
   const { employeeId } = useParams();
@@ -32,18 +55,13 @@ export default function EmployeeDetailWorkspace() {
   const [govForm, setGovForm] = useState<Record<string, any>>({ id_type: 'PAN', status: 'pending' });
   const [bankForm, setBankForm] = useState<Record<string, any>>(createEmptyBankForm());
   const [docForm, setDocForm] = useState<Record<string, any>>({ category: 'other', review_status: 'pending' });
+  const [payrollForm, setPayrollForm] = useState<Record<string, any>>(createEmptyPayrollForm());
 
   const workspaceQuery = useQuery({
     queryKey: ['employee-workspace', id],
     queryFn: async () => (await employeeWorkspaceApi.getWorkspace(id)).data,
     enabled: id > 0,
   });
-  const templatesQuery = useQuery({
-    queryKey: ['employee-workspace-templates'],
-    queryFn: async () => (await payrollWorkspaceApi.getProfiles()).data,
-    enabled: id > 0,
-  });
-
   const data = workspaceQuery.data;
   useEffect(() => {
     if (!data) return;
@@ -74,6 +92,24 @@ export default function EmployeeDetailWorkspace() {
       verification_status: savedBank.verification_status || 'unverified',
       is_default: Boolean(savedBank.is_default),
     } : createEmptyBankForm());
+    const profile = data.payroll.profile;
+    const meta = profile?.meta || {};
+    setPayrollForm({
+      salary_type: meta.salary_type || 'fixed_monthly',
+      monthly_salary: Number(meta.monthly_salary || 0),
+      hourly_rate: Number(meta.hourly_rate || 0),
+      working_days: Number(meta.working_days || 30),
+      payroll_start_date: profile?.payroll_start_date || new Date().toISOString().slice(0, 10),
+      status: profile?.payroll_eligible === false || profile?.is_active === false ? 'on_hold' : 'active',
+      overtime_enabled: Boolean(meta.overtime_enabled ?? true),
+      overtime_hourly_rate: Number(meta.overtime_hourly_rate || 0),
+      productivity_bonus_enabled: Boolean(meta.productivity_bonus_enabled ?? false),
+      productivity_bonus_rate: Number(meta.productivity_bonus_rate || 0),
+      bank_name: profile?.bank_name || '',
+      bank_account_number: profile?.bank_account_number || '',
+      bank_ifsc_swift: profile?.bank_ifsc_swift || '',
+      notes: meta.notes || '',
+    });
   }, [data]);
 
   const refetch = async () => void queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
@@ -86,9 +122,17 @@ export default function EmployeeDetailWorkspace() {
   const saveBank = useMutation({ mutationFn: () => employeeWorkspaceApi.saveBankAccount(id, bankForm), onSuccess: async () => { setBankForm(createEmptyBankForm()); await success('Bank details saved.'); }, onError: (e) => failure('Could not save bank details.', e) });
   const saveDoc = useMutation({ mutationFn: () => employeeWorkspaceApi.uploadDocument(id, docForm as any), onSuccess: async () => { setDocForm({ category: 'other', review_status: 'pending' }); await success('Document uploaded.'); }, onError: (e) => failure('Could not upload document.', e) });
   const savePayroll = useMutation({
-    mutationFn: async (form: PayrollProfileFormValue) => {
-      const payload = { ...form, user_id: Number(form.user_id), salary_template_id: form.salary_template_id ? Number(form.salary_template_id) : undefined, bonus_amount: Number(form.bonus_amount || 0), tax_amount: Number(form.tax_amount || 0) };
-      return data?.payroll.profile?.id ? payrollWorkspaceApi.updateProfile(data.payroll.profile.id, payload) : payrollWorkspaceApi.createProfile(payload);
+    mutationFn: async () => {
+      const payload = {
+        ...payrollForm,
+        user_id: id,
+        monthly_salary: Number(payrollForm.monthly_salary || 0),
+        hourly_rate: Number(payrollForm.hourly_rate || 0),
+        working_days: Number(payrollForm.working_days || 30),
+        overtime_hourly_rate: Number(payrollForm.overtime_hourly_rate || 0),
+        productivity_bonus_rate: Number(payrollForm.productivity_bonus_rate || 0),
+      };
+      return payrollSimpleApi.saveSalaryProfile(id, payload);
     },
     onSuccess: async () => success('Payroll profile saved.'),
     onError: (e) => failure('Could not save payroll profile.', e),
@@ -98,9 +142,6 @@ export default function EmployeeDetailWorkspace() {
   if (workspaceQuery.isLoading) return <PageLoadingState label="Loading employee workspace..." />;
   if (workspaceQuery.isError || !data) return <PageErrorState message={(workspaceQuery.error as any)?.response?.data?.message || 'Failed to load employee workspace.'} onRetry={() => void workspaceQuery.refetch()} />;
 
-  const currentEmployeeLabel = `${data.employee.name} (${data.employee.email})`;
-  const templates = templatesQuery.data?.templates || [];
-  const employees = templatesQuery.data?.employees || [];
   const defaultBank = data.bank_accounts.find((item) => item.is_default) || data.bank_accounts[0];
 
   const grid = (items: Array<{ label: string; value?: string | number | null }>) => (
@@ -127,7 +168,7 @@ export default function EmployeeDetailWorkspace() {
 
       {tab === 'work' ? <EmployeeSectionCard title="Work Info" description="Department, reporting, attendance policy, and employment status."><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"><div><FieldLabel>Employee Code</FieldLabel><TextInput value={workForm.employee_code || ''} onChange={(event) => setWorkForm((current) => ({ ...current, employee_code: event.target.value }))} /></div><div><FieldLabel>Department</FieldLabel><SelectInput value={workForm.report_group_id || ''} onChange={(event) => setWorkForm((current) => ({ ...current, report_group_id: event.target.value ? Number(event.target.value) : '' }))}><option value="">Select department</option>{data.options.departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectInput></div><div><FieldLabel>Designation</FieldLabel><TextInput value={workForm.designation || ''} onChange={(event) => setWorkForm((current) => ({ ...current, designation: event.target.value }))} /></div><div><FieldLabel>Reporting Manager</FieldLabel><SelectInput value={workForm.reporting_manager_id || ''} onChange={(event) => setWorkForm((current) => ({ ...current, reporting_manager_id: event.target.value ? Number(event.target.value) : '' }))}><option value="">Select manager</option>{data.options.managers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectInput></div><div><FieldLabel>Work Location</FieldLabel><TextInput value={workForm.work_location || ''} onChange={(event) => setWorkForm((current) => ({ ...current, work_location: event.target.value }))} /></div><div><FieldLabel>Shift</FieldLabel><TextInput value={workForm.shift_name || ''} onChange={(event) => setWorkForm((current) => ({ ...current, shift_name: event.target.value }))} /></div><div><FieldLabel>Attendance Policy</FieldLabel><TextInput value={workForm.attendance_policy || ''} onChange={(event) => setWorkForm((current) => ({ ...current, attendance_policy: event.target.value }))} /></div><div><FieldLabel>Employment Type</FieldLabel><TextInput value={workForm.employment_type || ''} onChange={(event) => setWorkForm((current) => ({ ...current, employment_type: event.target.value }))} /></div><div><FieldLabel>Joining Date</FieldLabel><TextInput type="date" value={workForm.joining_date || ''} onChange={(event) => setWorkForm((current) => ({ ...current, joining_date: event.target.value }))} /></div><div><FieldLabel>Probation Status</FieldLabel><TextInput value={workForm.probation_status || ''} onChange={(event) => setWorkForm((current) => ({ ...current, probation_status: event.target.value }))} /></div><div><FieldLabel>Status</FieldLabel><SelectInput value={workForm.employment_status || 'active'} onChange={(event) => setWorkForm((current) => ({ ...current, employment_status: event.target.value }))}><option value="active">Active</option><option value="inactive">Inactive</option><option value="notice">Notice</option><option value="exited">Exited</option></SelectInput></div><div><FieldLabel>Exit Date</FieldLabel><TextInput type="date" value={workForm.exit_date || ''} onChange={(event) => setWorkForm((current) => ({ ...current, exit_date: event.target.value }))} /></div><div><FieldLabel>Work Mode</FieldLabel><SelectInput value={workForm.work_mode || ''} onChange={(event) => setWorkForm((current) => ({ ...current, work_mode: event.target.value }))}><option value="">Select mode</option><option value="office">Office</option><option value="remote">Remote</option><option value="hybrid">Hybrid</option></SelectInput></div></div><div className="mt-6"><Button onClick={() => saveWork.mutate()} disabled={saveWork.isPending}>Save Work Info</Button></div></EmployeeSectionCard> : null}
 
-      {tab === 'payroll' ? <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]"><EmployeeSectionCard title="Payroll Profile" description="Uses the same payroll profile source of truth as the payroll workspace."><PayrollProfileForm employees={employees} templates={templates} profile={data.payroll.profile} lockedUserId={id} lockedUserLabel={currentEmployeeLabel} onSave={(form) => savePayroll.mutate(form)} isSaving={savePayroll.isPending} saveLabel={data.payroll.profile ? 'Update Payroll Profile' : 'Create Payroll Profile'} /></EmployeeSectionCard><EmployeeSectionCard title="Payroll Readiness" description="Current setup, bank summary, and salary revision history."><div className="space-y-3"><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-950">Assigned template</p><p className="mt-1 text-sm text-slate-500">{data.overview.salary_template || 'No template assigned yet'}</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-950">Default bank summary</p><p className="mt-1 text-sm text-slate-500">{defaultBank?.bank_name || 'No bank configured'}{defaultBank?.account_number ? ` • ${defaultBank.account_number}` : ''}</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-950">Default bonus / tax</p><p className="mt-1 text-sm text-slate-500">{formatPayrollCurrency(data.payroll.profile?.bonus_amount || 0)} / {formatPayrollCurrency(data.payroll.profile?.tax_amount || 0)}</p></div>{data.payroll.warnings.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{data.payroll.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Payroll profile is currently ready for processing.</div>}{data.payroll.salary_assignments.map((item) => <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"><div className="flex items-center justify-between gap-3"><p className="font-medium text-slate-950">{item.salary_template?.name || 'Template removed'}</p><StatusBadge tone={item.is_active ? 'success' : 'neutral'}>{item.is_active ? 'active' : 'historical'}</StatusBadge></div><p className="mt-1 text-sm text-slate-500">Effective from {item.effective_from}{item.effective_to ? ` to ${item.effective_to}` : ''}</p></div>)}</div></EmployeeSectionCard></div> : null}
+      {tab === 'payroll' ? <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]"><EmployeeSectionCard title="Payroll Profile" description="Simple salary setup used by the new payroll run."><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><div><FieldLabel>Salary Type</FieldLabel><SelectInput value={payrollForm.salary_type} onChange={(event) => setPayrollForm((current) => ({ ...current, salary_type: event.target.value }))}><option value="fixed_monthly">Fixed Monthly</option><option value="hourly">Hourly</option><option value="hybrid">Hybrid</option></SelectInput></div><div><FieldLabel>Status</FieldLabel><SelectInput value={payrollForm.status} onChange={(event) => setPayrollForm((current) => ({ ...current, status: event.target.value }))}><option value="active">Active</option><option value="on_hold">On Hold</option></SelectInput></div><div><FieldLabel>Monthly Salary</FieldLabel><TextInput type="number" value={payrollForm.monthly_salary} onChange={(event) => setPayrollForm((current) => ({ ...current, monthly_salary: event.target.value }))} /></div><div><FieldLabel>Hourly Rate</FieldLabel><TextInput type="number" value={payrollForm.hourly_rate} onChange={(event) => setPayrollForm((current) => ({ ...current, hourly_rate: event.target.value }))} /></div><div><FieldLabel>Working Days</FieldLabel><TextInput type="number" value={payrollForm.working_days} onChange={(event) => setPayrollForm((current) => ({ ...current, working_days: event.target.value }))} /></div><div><FieldLabel>Payroll Start Date</FieldLabel><TextInput type="date" value={payrollForm.payroll_start_date} onChange={(event) => setPayrollForm((current) => ({ ...current, payroll_start_date: event.target.value }))} /></div><div><FieldLabel>Overtime Rate</FieldLabel><TextInput type="number" value={payrollForm.overtime_hourly_rate} onChange={(event) => setPayrollForm((current) => ({ ...current, overtime_hourly_rate: event.target.value }))} /></div><div><FieldLabel>Productivity Bonus Rate</FieldLabel><TextInput type="number" value={payrollForm.productivity_bonus_rate} onChange={(event) => setPayrollForm((current) => ({ ...current, productivity_bonus_rate: event.target.value }))} /></div><div><FieldLabel>Bank Name</FieldLabel><TextInput value={payrollForm.bank_name} onChange={(event) => setPayrollForm((current) => ({ ...current, bank_name: event.target.value }))} /></div><div><FieldLabel>Bank Account</FieldLabel><TextInput value={payrollForm.bank_account_number} onChange={(event) => setPayrollForm((current) => ({ ...current, bank_account_number: event.target.value }))} /></div><div><FieldLabel>IFSC / SWIFT</FieldLabel><TextInput value={payrollForm.bank_ifsc_swift} onChange={(event) => setPayrollForm((current) => ({ ...current, bank_ifsc_swift: event.target.value }))} /></div><div><FieldLabel>Notes</FieldLabel><TextInput value={payrollForm.notes} onChange={(event) => setPayrollForm((current) => ({ ...current, notes: event.target.value }))} /></div><div><FieldLabel>Enable overtime</FieldLabel><ToggleInput checked={Boolean(payrollForm.overtime_enabled)} onChange={(checked) => setPayrollForm((current) => ({ ...current, overtime_enabled: checked }))} /></div><div><FieldLabel>Enable productivity bonus</FieldLabel><ToggleInput checked={Boolean(payrollForm.productivity_bonus_enabled)} onChange={(checked) => setPayrollForm((current) => ({ ...current, productivity_bonus_enabled: checked }))} /></div></div><div className="mt-6"><Button onClick={() => savePayroll.mutate()} disabled={savePayroll.isPending}>{data.payroll.profile ? 'Update Payroll Profile' : 'Create Payroll Profile'}</Button></div></EmployeeSectionCard><EmployeeSectionCard title="Payroll Readiness" description="Current simple setup and bank summary."><div className="space-y-3"><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-950">Salary type</p><p className="mt-1 text-sm text-slate-500">{labelize(data.payroll.current_compensation?.salary_type || 'fixed_monthly')}</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-950">Base rate</p><p className="mt-1 text-sm text-slate-500">{data.payroll.current_compensation?.salary_type === 'hourly' ? formatPayrollCurrency(data.payroll.current_compensation?.hourly_rate) : formatPayrollCurrency(data.payroll.current_compensation?.monthly_salary)}</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-950">Default bank summary</p><p className="mt-1 text-sm text-slate-500">{defaultBank?.bank_name || payrollForm.bank_name || 'No bank configured'}{defaultBank?.account_number ? ` - ${defaultBank.account_number}` : payrollForm.bank_account_number ? ` - ${payrollForm.bank_account_number}` : ''}</p></div>{data.payroll.warnings.length ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{data.payroll.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div> : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">Payroll profile is ready for processing.</div>}</div></EmployeeSectionCard></div> : null}
 
       {tab === 'government' ? <EmployeeSectionCard title="Government IDs" description="Compliance IDs with proof support and verification status."><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"><div><FieldLabel>ID Type</FieldLabel><TextInput value={govForm.id_type || ''} onChange={(event) => setGovForm((current) => ({ ...current, id_type: event.target.value }))} /></div><div><FieldLabel>ID Number</FieldLabel><TextInput value={govForm.id_number || ''} onChange={(event) => setGovForm((current) => ({ ...current, id_number: event.target.value }))} /></div><div><FieldLabel>Status</FieldLabel><SelectInput value={govForm.status || 'pending'} onChange={(event) => setGovForm((current) => ({ ...current, status: event.target.value }))}><option value="pending">Pending</option><option value="verified">Verified</option><option value="rejected">Rejected</option></SelectInput></div><div><FieldLabel>Issue Date</FieldLabel><TextInput type="date" value={govForm.issue_date || ''} onChange={(event) => setGovForm((current) => ({ ...current, issue_date: event.target.value }))} /></div><div><FieldLabel>Expiry Date</FieldLabel><TextInput type="date" value={govForm.expiry_date || ''} onChange={(event) => setGovForm((current) => ({ ...current, expiry_date: event.target.value }))} /></div><div><FieldLabel>Proof File</FieldLabel><input type="file" className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" onChange={(event) => setGovForm((current) => ({ ...current, proof_file: event.target.files?.[0] || null }))} /></div></div><div className="mt-5"><Button onClick={() => saveGov.mutate()} disabled={saveGov.isPending || !govForm.id_type || !govForm.id_number}>Save ID</Button></div><div className="mt-5 space-y-3">{data.government_ids.map((item) => <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-medium text-slate-950">{item.id_type}</p><p className="text-sm text-slate-500">{item.id_number}</p></div><StatusBadge tone={payrollStatusTone(item.status)}>{item.status}</StatusBadge></div><p className="mt-2 text-sm text-slate-500">{item.document ? `Proof: ${item.document.title}` : 'No proof attached yet.'}</p></div>)}</div></EmployeeSectionCard> : null}
 
@@ -259,3 +300,4 @@ export default function EmployeeDetailWorkspace() {
     </div>
   );
 }
+

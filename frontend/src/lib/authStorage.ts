@@ -30,14 +30,16 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
       return inMemoryAuthToken;
     }
 
-    const legacyToken = getPreferredAuthStorage()?.getItem('token')
-      ?? getSecondaryAuthStorage()?.getItem('token')
+    const preferredStorage = getPreferredAuthStorage();
+    const secondaryStorage = getSecondaryAuthStorage();
+    const storedToken = preferredStorage?.getItem('token')
+      ?? secondaryStorage?.getItem('token')
       ?? null;
 
-    if (legacyToken !== null && legacyToken !== undefined) {
-      inMemoryAuthToken = legacyToken;
-      getPreferredAuthStorage()?.removeItem('token');
-      getSecondaryAuthStorage()?.removeItem('token');
+    if (storedToken !== null && storedToken !== undefined) {
+      inMemoryAuthToken = storedToken;
+      preferredStorage?.setItem('token', storedToken);
+      secondaryStorage?.removeItem('token');
     }
 
     return inMemoryAuthToken;
@@ -56,7 +58,7 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
 export const setStoredAuthValue = (key: AuthStorageKey, value: string) => {
   if (key === 'token') {
     inMemoryAuthToken = value;
-    getPreferredAuthStorage()?.removeItem('token');
+    getPreferredAuthStorage()?.setItem('token', value);
     getSecondaryAuthStorage()?.removeItem('token');
     return;
   }
@@ -93,8 +95,8 @@ export const migrateStoredAuth = () => {
   const legacyToken = preferredStorage.getItem('token') ?? secondaryStorage.getItem('token');
   if (legacyToken !== null) {
     inMemoryAuthToken = legacyToken;
+    preferredStorage.setItem('token', legacyToken);
   }
-  preferredStorage.removeItem('token');
   secondaryStorage.removeItem('token');
 
   PERSISTED_AUTH_STORAGE_KEYS.forEach((key: PersistedAuthStorageKey) => {
