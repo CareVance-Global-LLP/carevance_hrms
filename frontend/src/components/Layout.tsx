@@ -406,6 +406,7 @@ export default function Layout() {
   const isRouteActive = (to?: string) => {
     if (!to) return false;
     if (to === '/settings') return location.pathname === to;
+    if (to === '/reports' || to === '/analytics') return location.pathname === to;
     return location.pathname === to || (to !== '/dashboard' && location.pathname.startsWith(`${to}/`));
   };
 
@@ -547,7 +548,7 @@ export default function Layout() {
           onCloseMobileNavigation={() => setMobileNavigationOpen(false)}
           onOpenExternal={openWebDashboard}
           onOpenAddUser={handleOpenAddUser}
-          showAddUserButton={isStrictAdminView && !isDesktopShell}
+          showAddUserButton={isStrictAdminView}
           profileHasUnreadUpdate={hasUnreadDesktopUpdate}
           notificationPanel={
             <div ref={notificationsRef}>

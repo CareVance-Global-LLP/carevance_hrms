@@ -57,7 +57,13 @@ export const useDesktopBrowserTracking = (userId?: number | null) => {
 
   useEffect(() => {
     const desktopApi = window.desktopTracker;
-    setState(DEFAULT_STATE);
+    setState((currentState) => ({
+      ...DEFAULT_STATE,
+      ready: currentState.ready,
+      local_url: currentState.local_url,
+      last_event_at: currentState.last_event_at,
+      last_error: currentState.last_error,
+    }));
     setPairingError('');
     setIsPairingCodePending(false);
     setIsInstallPending(false);

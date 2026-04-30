@@ -32,5 +32,5 @@ return [
 
     'max_age' => (int) env('CORS_MAX_AGE', 3600),
 
-    'supports_credentials' => (bool) env('CORS_SUPPORTS_CREDENTIALS', false),
+    'supports_credentials' => filter_var(env('CORS_SUPPORTS_CREDENTIALS', true), FILTER_VALIDATE_BOOL),
 ];

@@ -582,7 +582,7 @@ class ReportController extends Controller
             'user_ids.*' => 'integer',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
-            'dashboard_lite' => 'nullable|boolean',
+            'dashboard_lite' => 'nullable',
         ]);
 
         $currentUser = $request->user();
@@ -811,20 +811,29 @@ class ReportController extends Controller
         $resolvedNow = now();
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
+        $activities = $this->activityFeedService->forUsersInRange($users->pluck('id'), $startDate, $endDate);
+        $activitiesByUser = $activities->groupBy('user_id');
+        $activitiesByUserAndDay = $activities->groupBy(fn ($activity) => sprintf(
+            '%d|%s',
+            (int) data_get($activity, 'user_id', 0),
+            Carbon::parse((string) data_get($activity, 'recorded_at'))->toDateString()
+        ));
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activeUserIds, $resolvedNow) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow) {
             $userEntries = $entriesByUser->get($user->id, collect());
-            $userAdjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
+            $userActivities = $activitiesByUser->get($user->id, collect());
+            $adjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
+            $idleDuration = $this->usageProcessingService->calculateIdleTime($userActivities);
             $timeBreakdown = $this->timeBreakdownService->build(
-                $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $userAdjustmentDuration,
-                0
+                $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration,
+                $idleDuration
             );
 
             return [
                 'user' => $user,
                 'entries_count' => $userEntries->count(),
-                'last_activity_at' => null,
+                'last_activity_at' => $userActivities->max('recorded_at'),
                 'is_working' => $activeUserIds->contains((int) $user->id),
             ] + $timeBreakdown;
         })->values();
@@ -832,7 +841,17 @@ class ReportController extends Controller
         $dayUserBuckets = [];
         foreach ($entries as $entry) {
             $date = Carbon::parse($entry->start_time)->toDateString();
-            $dayUserBuckets[$date] = ($dayUserBuckets[$date] ?? 0) + $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+            $key = (string) $entry->user_id.'|'.$date;
+
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['total_duration'] += $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
         }
 
         foreach ($attendanceAdjustments as $record) {
@@ -842,17 +861,57 @@ class ReportController extends Controller
             }
 
             $date = Carbon::parse($record->attendance_date)->toDateString();
-            $dayUserBuckets[$date] = ($dayUserBuckets[$date] ?? 0) + $adjustmentSeconds;
+            $key = (string) $record->user_id.'|'.$date;
+
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['total_duration'] += $adjustmentSeconds;
+        }
+
+        foreach ($activitiesByUserAndDay as $key => $dayActivities) {
+            [, $date] = explode('|', (string) $key, 2);
+            if (! isset($dayUserBuckets[$key])) {
+                $dayUserBuckets[$key] = [
+                    'date' => $date,
+                    'total_duration' => 0,
+                    'idle_duration' => 0,
+                ];
+            }
+
+            $dayUserBuckets[$key]['idle_duration'] = $this->usageProcessingService->calculateIdleTime($dayActivities);
         }
 
         $byDay = collect($dayUserBuckets)
-            ->map(fn (int $duration, string $date) => [
-                'date' => $date,
-            ] + $this->timeBreakdownService->build($duration, 0))
+            ->map(function (array $bucket) {
+                return [
+                    'date' => $bucket['date'],
+                ] + $this->timeBreakdownService->build(
+                    (int) ($bucket['total_duration'] ?? 0),
+                    (int) ($bucket['idle_duration'] ?? 0)
+                );
+            })
+            ->groupBy('date')
+            ->map(function ($rows, $date) {
+                return [
+                    'date' => $date,
+                ] + $this->timeBreakdownService->build(
+                    (int) $rows->sum('total_duration'),
+                    (int) $rows->sum('idle_duration')
+                );
+            })
             ->sortBy('date')
             ->values();
 
-        $summaryBreakdown = $this->timeBreakdownService->build((int) $byUser->sum('total_duration'), 0);
+        $summaryBreakdown = $this->timeBreakdownService->build(
+            (int) $byUser->sum('total_duration'),
+            (int) $byUser->sum('idle_duration')
+        );
 
         return [
             'start_date' => $startDate->toDateString(),
@@ -1173,6 +1232,8 @@ class ReportController extends Controller
             'end_date' => 'nullable|date',
             'user_id' => 'nullable|integer',
             'q' => 'nullable|string|max:255',
+            'recent_screenshot_limit' => 'nullable|integer|min:1|max:50',
+            'dashboard_lite' => 'nullable',
         ]);
 
         $currentUser = $request->user();
@@ -1185,6 +1246,7 @@ class ReportController extends Controller
         if ($startDate->greaterThan($endDate)) {
             [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
         }
+        $recentScreenshotLimit = max(1, min((int) $request->integer('recent_screenshot_limit', 10), 50));
 
         $selectedGroupIds = collect($request->input('group_ids', []))
             ->map(fn ($id) => (int) $id)
@@ -1291,6 +1353,18 @@ class ReportController extends Controller
         $entriesCount = $entries->count();
         $resolvedNow = now();
 
+        if ($request->boolean('dashboard_lite')) {
+            return response()->json($this->buildLiteEmployeeInsights(
+                $selectedUser,
+                $matchedUsers,
+                $entries,
+                $entriesCount,
+                $startDate,
+                $endDate,
+                $resolvedNow,
+            ));
+        }
+
         $activities = $this->activityFeedService->forUsersInRange([$selectedUser->id], $startDate, $endDate);
         $selectedUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
             (int) $selectedUser->id,
@@ -1313,7 +1387,7 @@ class ReportController extends Controller
                     ->whereBetween('start_time', [$startDate, $endDate]);
             })
             ->orderByDesc('created_at')
-            ->limit(60)
+            ->limit($recentScreenshotLimit)
             ->get();
 
         $analyticsUserIds = $analyticsUsers->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
@@ -1658,6 +1732,116 @@ class ReportController extends Controller
             ],
             'recent_screenshots' => $recentScreenshots,
         ]);
+    }
+
+    private function buildLiteEmployeeInsights(
+        User $selectedUser,
+        Collection $matchedUsers,
+        Collection $entries,
+        int $entriesCount,
+        Carbon $startDate,
+        Carbon $endDate,
+        Carbon $resolvedNow,
+    ): array {
+        $activities = $this->activityFeedService->forUsersInRange([$selectedUser->id], $startDate, $endDate);
+        $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
+        $timeBreakdown = $this->timeBreakdownService->build(
+            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
+            $idleDuration
+        );
+        $isWorking = TimeEntry::query()
+            ->where('user_id', $selectedUser->id)
+            ->whereNull('end_time')
+            ->exists();
+        $browserTracking = BrowserTrackingConnection::query()
+            ->where('user_id', $selectedUser->id)
+            ->orderByDesc('last_seen_at')
+            ->orderByDesc('last_sync_at')
+            ->get();
+        $selectedUserLive = [
+            'user' => [
+                'id' => (int) $selectedUser->id,
+                'name' => $selectedUser->name,
+                'email' => $selectedUser->email,
+                'role' => $selectedUser->role,
+            ],
+            'is_working' => $isWorking,
+            'current_tool' => null,
+            'tool_type' => null,
+            'activity_type' => null,
+            'classification' => 'neutral',
+            'last_activity_at' => null,
+            'browser_tracking' => $this->summarizeBrowserTrackingConnections($browserTracking),
+            'is_on_leave' => false,
+            'work_status' => $isWorking ? 'active' : 'inactive',
+        ];
+        $isEmployee = strtolower((string) $selectedUser->role) === 'employee';
+
+        return [
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
+            'matched_users' => $matchedUsers,
+            'analytics_users_count' => 1,
+            'selected_user' => $selectedUser,
+            'stats' => [
+                'entries_count' => $entriesCount,
+                'tracked_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
+                'tracked_hours' => round(((int) ($timeBreakdown['total_duration'] ?? 0)) / 3600, 2),
+                'total_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
+                'total_hours' => round(((int) ($timeBreakdown['total_duration'] ?? 0)) / 3600, 2),
+                'working_duration' => (int) ($timeBreakdown['working_duration'] ?? 0),
+                'working_hours' => round(((int) ($timeBreakdown['working_duration'] ?? 0)) / 3600, 2),
+                'billable_duration' => (int) ($timeBreakdown['billable_duration'] ?? 0),
+                'productive_duration' => 0,
+                'unproductive_duration' => 0,
+                'neutral_duration' => 0,
+                'context_dependent_duration' => 0,
+                'activity_total_duration' => 0,
+                'idle_total_duration' => (int) ($timeBreakdown['idle_duration'] ?? 0),
+                'idle_avg_duration' => (int) ($timeBreakdown['idle_duration'] ?? 0),
+                'activity_events' => 0,
+                'is_lite' => true,
+            ],
+            'activity_breakdown' => [],
+            'selected_user_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+            'organization_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+            'organization_summary' => [
+                'tracked_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
+                'total_duration' => (int) ($timeBreakdown['total_duration'] ?? 0),
+                'working_duration' => (int) ($timeBreakdown['working_duration'] ?? 0),
+                'idle_duration' => (int) ($timeBreakdown['idle_duration'] ?? 0),
+                'activity_total_duration' => 0,
+                'productive_duration' => 0,
+                'unproductive_duration' => 0,
+                'neutral_duration' => 0,
+                'context_dependent_duration' => 0,
+                'productive_share' => 0,
+                'unproductive_share' => 0,
+                'neutral_share' => 0,
+                'context_dependent_share' => 0,
+                'is_lite' => true,
+            ],
+            'employee_rankings' => [
+                'most_productive' => null,
+                'most_unproductive' => null,
+                'by_productive_duration' => [],
+                'by_unproductive_duration' => [],
+            ],
+            'team_rankings' => [
+                'by_efficiency' => [],
+                'top_productive' => null,
+                'least_productive' => null,
+            ],
+            'live_monitoring' => [
+                'selected_user' => $selectedUserLive,
+                'working_now' => $isWorking ? [$selectedUserLive] : [],
+                'all_users' => [$selectedUserLive],
+                'employees_active' => $isWorking && $isEmployee ? [$selectedUserLive] : [],
+                'employees_inactive' => ! $isWorking && $isEmployee ? [$selectedUserLive] : [],
+                'employees_on_leave' => [],
+            ],
+            'recent_screenshots' => [],
+        ];
     }
 
     private function csvValue(string $value): string

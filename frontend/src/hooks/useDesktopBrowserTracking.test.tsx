@@ -45,7 +45,7 @@ describe('useDesktopBrowserTracking', () => {
       ],
       pairing_code: {
         value: 'PAIR-OLD',
-        expires_at: '2026-04-21T12:05:00.000Z',
+        expires_at: '2026-05-01T12:05:00.000Z',
         user_id: 7,
       },
       last_event_at: '2026-04-21T12:04:30.000Z',

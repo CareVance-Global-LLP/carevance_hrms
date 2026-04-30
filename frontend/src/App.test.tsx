@@ -38,12 +38,15 @@ vi.mock('@/pages/DesktopTimerDashboard', () => ({ default: () => <div>Desktop Ti
 vi.mock('@/pages/Projects', () => ({ default: () => <div>Projects Page</div> }));
 vi.mock('@/pages/Tasks', () => ({ default: () => <div>Tasks Page</div> }));
 vi.mock('@/pages/Reports', () => ({ default: () => <div>Reports Page</div> }));
+vi.mock('@/pages/ReportsWorkspace', () => ({
+  default: ({ mode }: { mode: string }) => <div>Reports Workspace {mode}</div>,
+}));
 vi.mock('@/pages/Invoices', () => ({ default: () => <div>Invoices Page</div> }));
 vi.mock('@/pages/Settings', () => ({ default: () => <div>Settings Page</div> }));
 vi.mock('@/pages/Monitoring', () => ({ default: () => <div>Monitoring Page</div> }));
 vi.mock('@/pages/Attendance', () => ({ default: () => <div>Attendance Page</div> }));
 vi.mock('@/pages/Chat', () => ({ default: () => <div>Chat Page</div> }));
-vi.mock('@/pages/Payroll', () => ({ default: () => <div>Payroll Page</div> }));
+vi.mock('@/pages/PayrollWorkspace', () => ({ default: () => <div>Payroll Workspace Page</div> }));
 vi.mock('@/pages/UserManagement', () => ({ default: () => <div>User Management Page</div> }));
 vi.mock('@/pages/AuditLogs', () => ({ default: () => <div>Audit Logs Page</div> }));
 
@@ -146,6 +149,86 @@ describe('App routes', () => {
 
     expect(await screen.findByText('Desktop Timer Page')).toBeInTheDocument();
     expect(screen.queryByText('Dashboard Page')).not.toBeInTheDocument();
+  });
+
+  it('keeps projects and tasks routes on separate pages', async () => {
+    authState.value = {
+      isAuthenticated: true,
+      isLoading: false,
+      user: {
+        id: 2,
+        name: 'Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    };
+
+    const { unmount } = render(
+      <MemoryRouter future={routerFuture} initialEntries={['/projects']}>
+        <Routes>
+          <Route path="*" element={<App />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Projects Page')).toBeInTheDocument();
+    expect(screen.queryByText('Tasks Page')).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <MemoryRouter future={routerFuture} initialEntries={['/tasks']}>
+        <Routes>
+          <Route path="*" element={<App />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Tasks Page')).toBeInTheDocument();
+    expect(screen.queryByText('Projects Page')).not.toBeInTheDocument();
+  });
+
+  it('keeps reports and analytics on distinct admin hub routes', async () => {
+    authState.value = {
+      isAuthenticated: true,
+      isLoading: false,
+      user: {
+        id: 1,
+        name: 'Admin',
+        email: 'admin@example.com',
+        role: 'admin',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    };
+
+    const { unmount } = render(
+      <MemoryRouter future={routerFuture} initialEntries={['/reports']}>
+        <Routes>
+          <Route path="*" element={<App />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Reports Workspace reports-hub')).toBeInTheDocument();
+    expect(screen.queryByText('Reports Workspace analytics-hub')).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <MemoryRouter future={routerFuture} initialEntries={['/analytics']}>
+        <Routes>
+          <Route path="*" element={<App />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Reports Workspace analytics-hub')).toBeInTheDocument();
+    expect(screen.queryByText('Reports Workspace reports-hub')).not.toBeInTheDocument();
   });
 
   it('renders the admin dashboard for admins on /dashboard', async () => {

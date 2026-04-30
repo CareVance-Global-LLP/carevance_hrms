@@ -62,6 +62,45 @@ class AuthApiTest extends TestCase
         ])->assertUnauthorized();
     }
 
+    public function test_remember_me_controls_auth_cookie_lifetime(): void
+    {
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $user = User::create([
+            'name' => 'Admin User',
+            'email' => 'admin@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+        $user->forceFill(['email_verified_at' => now()])->save();
+
+        $sessionResponse = $this->postJson('/api/auth/login', [
+            'email' => 'admin@example.com',
+            'password' => 'password123',
+            'remember' => false,
+        ])->assertOk();
+
+        $rememberedResponse = $this->postJson('/api/auth/login', [
+            'email' => 'admin@example.com',
+            'password' => 'password123',
+            'remember' => true,
+        ])->assertOk();
+
+        $sessionCookie = collect($sessionResponse->headers->getCookies())
+            ->first(fn ($cookie) => $cookie->getName() === 'carevance_api_token');
+        $rememberedCookie = collect($rememberedResponse->headers->getCookies())
+            ->first(fn ($cookie) => $cookie->getName() === 'carevance_api_token');
+
+        $this->assertNotNull($sessionCookie);
+        $this->assertNotNull($rememberedCookie);
+        $this->assertSame(0, $sessionCookie->getExpiresTime());
+        $this->assertGreaterThan(time(), $rememberedCookie->getExpiresTime());
+    }
+
     public function test_protected_routes_require_a_valid_bearer_token(): void
     {
         $this->getJson('/api/settings/me')->assertUnauthorized();
@@ -112,7 +151,7 @@ class AuthApiTest extends TestCase
         ])->assertStatus(429);
     }
 
-    public function test_login_allows_unverified_email_after_account_creation(): void
+    public function test_login_rejects_unverified_email_after_account_creation(): void
     {
         $organization = Organization::create([
             'name' => 'CareVance',
@@ -131,8 +170,9 @@ class AuthApiTest extends TestCase
             'email' => 'pending@example.com',
             'password' => 'password123',
         ])
-            ->assertOk()
-            ->assertJsonPath('user.email', 'pending@example.com')
-            ->assertJsonStructure(['token', 'user', 'organization']);
+            ->assertStatus(403)
+            ->assertJsonPath('message', 'Please verify your email before signing in.')
+            ->assertJsonPath('error_code', 'EMAIL_NOT_VERIFIED')
+            ->assertJsonPath('email', 'pending@example.com');
     }
 }

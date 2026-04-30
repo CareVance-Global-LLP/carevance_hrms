@@ -42,6 +42,7 @@ const VerifyEmailPage = lazyWithChunkRetry(() => import('@/pages/VerifyEmailPage
 const Dashboard = lazyWithChunkRetry(() => import('@/pages/Dashboard'));
 const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
+const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
 const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
 const Reports = lazyWithChunkRetry(() => import('@/pages/Reports'));
 const Invoices = lazyWithChunkRetry(() => import('@/pages/Invoices'));
@@ -296,7 +297,7 @@ function App() {
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
             <Route path="time-tracker" element={<DesktopTimerDashboard />} />
-            <Route path="projects" element={<Tasks />} />
+            <Route path="projects" element={<Projects />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />
             <Route path="attendance" element={<Attendance />} />
@@ -309,7 +310,8 @@ function App() {
             <Route path="monitoring/app-usage" element={<AdminRoute><MonitoringWorkspace mode="app-usage" /></AdminRoute>} />
             <Route path="monitoring/website-usage" element={<AdminRoute><MonitoringWorkspace mode="website-usage" /></AdminRoute>} />
             <Route path="approval-inbox" element={<AdminRoute><ApprovalInbox /></AdminRoute>} />
-            <Route path="reports" element={<Navigate to="/reports/attendance" replace />} />
+            <Route path="reports" element={<AdminRoute><ReportsWorkspace key="reports-hub" mode="reports-hub" /></AdminRoute>} />
+            <Route path="analytics" element={<AdminRoute><ReportsWorkspace key="analytics-hub" mode="analytics-hub" /></AdminRoute>} />
             <Route path="reports/attendance" element={<AdminRoute><ReportsWorkspace key="attendance" mode="attendance" /></AdminRoute>} />
             <Route path="reports/hours-tracked" element={<AdminRoute><ReportsWorkspace key="hours-tracked" mode="hours-tracked" /></AdminRoute>} />
             <Route path="reports/projects-tasks" element={<AdminRoute><ReportsWorkspace key="projects-tasks" mode="projects-tasks" /></AdminRoute>} />
@@ -322,12 +324,12 @@ function App() {
             <Route path="payroll/runs" element={<PayrollWorkspace mode="runs" />} />
             <Route path="payroll/employees" element={<PayrollWorkspace mode="employees" />} />
             <Route path="payroll/employees/:employeeId" element={<PayrollWorkspace mode="employee-detail" />} />
-            <Route path="payroll/components" element={<PayrollWorkspace mode="components" />} />
-            <Route path="payroll/structures" element={<PayrollWorkspace mode="structures" />} />
+            <Route path="payroll/components" element={<Navigate to="/payroll/settings" replace />} />
+            <Route path="payroll/structures" element={<Navigate to="/payroll/settings" replace />} />
             <Route path="payroll/adjustments" element={<PayrollWorkspace mode="adjustments" />} />
             <Route path="payroll/reimbursements" element={<Navigate to="/payroll/adjustments" replace />} />
             <Route path="payroll/payslips" element={<PayrollWorkspace mode="payslips" />} />
-            <Route path="payroll/reports" element={<PayrollWorkspace mode="reports" />} />
+            <Route path="payroll/reports" element={<Navigate to="/payroll" replace />} />
             <Route path="payroll/settings" element={<PayrollWorkspace mode="settings" />} />
             <Route path="user-management" element={<Navigate to="/employees" replace />} />
             <Route path="employees" element={<AdminRoute><EmployeeManagementWorkspace mode="employees" /></AdminRoute>} />

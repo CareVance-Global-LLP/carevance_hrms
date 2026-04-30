@@ -2,6 +2,7 @@ import { waitFor, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { isAutoStartArmed } from '@/lib/desktopTimerSession';
+import { clearAuthStorage } from '@/lib/authStorage';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { authApi, timeEntryApi } from '@/services/api';
@@ -46,6 +47,7 @@ describe('AuthProvider', () => {
   beforeEach(() => {
     sessionStorage.clear();
     localStorage.clear();
+    clearAuthStorage();
     delete window.desktopTracker;
     vi.clearAllMocks();
   });
@@ -88,6 +90,9 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
       expect(screen.getByTestId('user-email')).toHaveTextContent('fresh@example.com');
     });
+
+    expect(sessionStorage.getItem('token')).toBe('stored-token');
+    expect(localStorage.getItem('token')).toBeNull();
   });
 
   it('does not arm auto-start on employee login in the browser and stops the timer on logout', async () => {
@@ -124,6 +129,8 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
     });
     expect(isAutoStartArmed(7)).toBe(false);
+    expect(sessionStorage.getItem('token')).toBe('employee-token');
+    expect(localStorage.getItem('token')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /logout/i }));
 

@@ -146,6 +146,30 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(screen.getByText('Visual Studio Code')).toBeInTheDocument();
   });
 
+  it('shows a reports hub with every report entry point', async () => {
+    renderWithProviders(<ReportsWorkspace mode={'reports-hub' as any} />);
+
+    expect(await screen.findByText('Reports Center')).toBeInTheDocument();
+    expect(screen.getByText('Attendance Report')).toBeInTheDocument();
+    expect(screen.getByText('Hours Tracked')).toBeInTheDocument();
+    expect(screen.getByText('Task Overview')).toBeInTheDocument();
+    expect(screen.getByText('Payroll Report')).toBeInTheDocument();
+    expect(screen.getByText('Custom Export')).toBeInTheDocument();
+    expect(screen.queryByText('Analytics Center')).not.toBeInTheDocument();
+  });
+
+  it('shows an analytics hub with every analytics entry point', async () => {
+    renderWithProviders(<ReportsWorkspace mode={'analytics-hub' as any} />);
+
+    expect(await screen.findByText('Analytics Center')).toBeInTheDocument();
+    expect(screen.getByText('Productivity Summary')).toBeInTheDocument();
+    expect(screen.getByText('Web & App Usage')).toBeInTheDocument();
+    expect(screen.getByText('Productive Time')).toBeInTheDocument();
+    expect(screen.getByText('Unproductive Time')).toBeInTheDocument();
+    expect(screen.getByText('Screenshots')).toBeInTheDocument();
+    expect(screen.queryByText('Reports Center')).not.toBeInTheDocument();
+  });
+
   it('renders detailed report-specific attendance analysis', async () => {
     renderWithProviders(<ReportsWorkspace mode="attendance" />);
 

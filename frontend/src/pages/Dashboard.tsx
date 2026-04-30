@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { attendanceApi, attendanceTimeEditApi, dashboardApi } from '@/services/api';
+import { attendanceApi, attendanceTimeEditApi, dashboardApi, notificationApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
+import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import {
   Activity,
   Bell,
@@ -22,10 +23,11 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
-import type { TimeEntry } from '@/types';
+import type { AppNotificationItem, TimeEntry } from '@/types';
+import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 
-const Card = ({ children, className = '' }: { children: ReactNode; className?: string }) => (
-  <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>
+const Card = ({ children, className = '', id }: { children: ReactNode; className?: string; id?: string }) => (
+  <section id={id} className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>
 );
 
 const SectionTitle = ({ title, action }: { title: string; action?: ReactNode }) => (
@@ -56,9 +58,32 @@ const EmptyInline = ({ children }: { children: ReactNode }) => (
   </div>
 );
 
+const getStartTimeMs = (startTime?: string | null) => {
+  if (!startTime) return NaN;
+  const parsed = new Date(startTime).getTime();
+  if (Number.isFinite(parsed)) return parsed;
+  return new Date(startTime.replace(' ', 'T')).getTime();
+};
+
+type DashboardSearchPayload = {
+  type: 'route' | 'section';
+  to?: string;
+  sectionId?: string;
+};
+
+const formatNotificationDate = (value?: string | null) => {
+  if (!value) return 'Just now';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Just now';
+  return parsed.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+};
+
 export default function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
+  const [clockTick, setClockTick] = useState(() => Date.now());
+  const [searchQuery, setSearchQuery] = useState('');
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
   const [weeklyTotal, setWeeklyTotal] = useState(0);
@@ -73,6 +98,10 @@ export default function Dashboard() {
   const [isSubmittingOvertime, setIsSubmittingOvertime] = useState(false);
   const [notice, setNotice] = useState('');
   const [leaveToday, setLeaveToday] = useState<any | null>(null);
+  const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -115,16 +144,66 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - workedSeconds);
-  const overtimeSeconds = Math.max(0, workedSeconds - shiftTargetSeconds);
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const response = await notificationApi.list({ limit: 5 });
+        setNotifications(response.data?.data || []);
+        setUnreadNotifications(Number(response.data?.unread_count || 0));
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
+      }
+    };
+
+    fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    if (!isNotificationsOpen) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && !notificationsRef.current?.contains(target)) {
+        setIsNotificationsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isNotificationsOpen]);
+
+  useEffect(() => {
+    if (!activeTimer) {
+      return;
+    }
+
+    setClockTick(Date.now());
+    const interval = window.setInterval(() => {
+      setClockTick(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [activeTimer?.duration, activeTimer?.id, activeTimer?.start_time]);
+
+  const activeTimerBaseSeconds = Number.isFinite(Number(activeTimer?.duration)) ? Number(activeTimer?.duration) : 0;
+  const activeTimerStartMs = getStartTimeMs(activeTimer?.start_time);
+  const activeTimerElapsedSeconds = activeTimer && Number.isFinite(activeTimerStartMs)
+    ? Math.max(0, Math.floor((clockTick - activeTimerStartMs) / 1000))
+    : 0;
+  const activeTimerSeconds = activeTimer ? Math.max(activeTimerBaseSeconds, activeTimerElapsedSeconds) : 0;
+  const liveActiveDeltaSeconds = activeTimer ? Math.max(0, activeTimerSeconds - activeTimerBaseSeconds) : 0;
+  const effectiveWorkedSeconds = workedSeconds + liveActiveDeltaSeconds;
+  const effectiveTodayTotal = todayTotal + liveActiveDeltaSeconds;
+  const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
+  const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
   const isCheckedIn = Boolean(attendanceToday?.is_checked_in || activeTimer);
   const completionPercent = shiftTargetSeconds > 0
-    ? Math.min(100, Math.round((workedSeconds / shiftTargetSeconds) * 100))
+    ? Math.min(100, Math.round((effectiveWorkedSeconds / shiftTargetSeconds) * 100))
     : 0;
   const hasHalfDayLeaveToday = leaveToday?.leave_type === 'half_day';
   const completedSessions = todayEntries.filter((entry) => Boolean(entry.end_time)).length;
-  const averageEntrySeconds = todayEntries.length > 0 ? Math.round(todayTotal / todayEntries.length) : 0;
-  const trackedTodaySeconds = Math.max(todayTotal, workedSeconds);
+  const averageEntrySeconds = todayEntries.length > 0 ? Math.round(effectiveTodayTotal / todayEntries.length) : 0;
+  const trackedTodaySeconds = Math.max(effectiveTodayTotal, effectiveWorkedSeconds);
 
   const submitOvertimeProof = async () => {
     if (overtimeSeconds <= 0) {
@@ -139,7 +218,7 @@ export default function Dashboard() {
       await attendanceTimeEditApi.create({
         attendance_date: todayDate,
         extra_minutes: Math.ceil(overtimeSeconds / 60),
-        worked_seconds: workedSeconds,
+        worked_seconds: effectiveWorkedSeconds,
         overtime_seconds: overtimeSeconds,
         message: `Dashboard overtime summary submitted. Overtime: ${formatDuration(overtimeSeconds)}.`,
       });
@@ -162,7 +241,8 @@ export default function Dashboard() {
     const safeSeconds = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
     const hours = Math.floor(safeSeconds / 3600);
     const minutes = Math.floor((safeSeconds % 3600) / 60);
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    const secs = Math.floor(safeSeconds % 60);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
   const formatClockTime = (value?: string | null) => {
@@ -188,11 +268,53 @@ export default function Dashboard() {
   const activeWorkSubtitle = activeTimer
     ? getTimeEntrySubtitle(activeTimer)
     : 'Start your timer when you begin a project or task.';
-  const activeTimerSeconds = activeTimer?.start_time
-    ? Math.max(0, Math.floor((Date.now() - new Date(activeTimer.start_time).getTime()) / 1000))
-    : 0;
   const timerProject = activeTimer?.project?.name || activeTimer?.task?.project?.name || 'Not assigned';
   const timerTask = activeTimer?.task?.title || 'Not assigned';
+  const dashboardSearchSuggestions = useMemo<SearchSuggestionOption<DashboardSearchPayload>[]>(() => {
+    const routeSuggestions: SearchSuggestionOption<DashboardSearchPayload>[] = [
+      { id: 'route-dashboard', label: 'Dashboard', description: 'Open the main employee dashboard', keywords: ['home', 'summary'], payload: { type: 'route', to: '/dashboard' } },
+      { id: 'route-attendance', label: 'Attendance', description: 'Open attendance and shift records', keywords: ['check in', 'check out', 'shift'], payload: { type: 'route', to: '/attendance' } },
+      { id: 'route-overtime', label: 'Overtime', description: 'Open overtime requests and proofs', keywords: ['extra time', 'proof'], payload: { type: 'route', to: '/overtime' } },
+      { id: 'route-projects', label: 'Projects', description: 'Open assigned projects', keywords: ['work', 'client'], payload: { type: 'route', to: '/projects' } },
+      { id: 'route-tasks', label: 'Tasks', description: 'Open your task list', keywords: ['todo', 'assigned work'], payload: { type: 'route', to: '/tasks' } },
+      { id: 'route-chat', label: 'Chat', description: 'Open team messages', keywords: ['messages', 'conversation'], payload: { type: 'route', to: '/chat' } },
+      { id: 'route-notifications', label: 'Notifications', description: 'Open the notifications center', keywords: ['alerts', 'announcements'], payload: { type: 'route', to: '/notifications' } },
+      { id: 'route-settings', label: 'Settings', description: 'Open profile and preferences', keywords: ['profile', 'preferences'], payload: { type: 'route', to: '/settings' } },
+    ];
+
+    const sectionSuggestions: SearchSuggestionOption<DashboardSearchPayload>[] = [
+      { id: 'section-shift', label: "Today's shift", description: 'Worked time, remaining time, status, and overtime', keywords: ['worked today', 'remaining'], payload: { type: 'section', sectionId: 'todays-shift' } },
+      { id: 'section-attendance-shift', label: 'Attendance & Shift', description: 'Last check in, check out, late, and overtime', keywords: ['attendance', 'check in', 'check out'], payload: { type: 'section', sectionId: 'attendance-shift' } },
+      { id: 'section-focus', label: 'My Focus', description: 'Current work, tasks, and tracked time', keywords: ['current work', 'task'], payload: { type: 'section', sectionId: 'my-focus' } },
+      { id: 'section-work-log', label: 'My Work Log', description: "Today's time entries and running session", keywords: ['time entries', 'running'], payload: { type: 'section', sectionId: 'work-log' } },
+      { id: 'section-time-tracker', label: 'Time Tracker', description: 'Active timer, project, task, and totals', keywords: ['timer', 'tracked'], payload: { type: 'section', sectionId: 'time-tracker-card' } },
+      { id: 'section-quick-actions', label: 'Quick Actions', description: 'Shortcuts to common employee pages', keywords: ['shortcuts'], payload: { type: 'section', sectionId: 'quick-actions' } },
+    ];
+
+    const entrySuggestions = todayEntries.slice(0, 6).map((entry) => ({
+      id: `entry-${entry.id}`,
+      label: getTimeEntryTitle(entry),
+      description: getTimeEntrySubtitle(entry),
+      keywords: ['work log', 'time entry', entry.project?.name || '', entry.task?.title || ''],
+      payload: { type: 'section' as const, sectionId: 'work-log' },
+    }));
+
+    return [...routeSuggestions, ...sectionSuggestions, ...entrySuggestions];
+  }, [todayEntries]);
+
+  const handleSearchSuggestionSelect = (suggestion: SearchSuggestionOption<DashboardSearchPayload>) => {
+    const payload = suggestion.payload;
+    setSearchQuery('');
+
+    if (payload?.type === 'route' && payload.to) {
+      navigate(payload.to);
+      return;
+    }
+
+    if (payload?.type === 'section' && payload.sectionId) {
+      document.getElementById(payload.sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   if (isLoading) {
     return <PageLoadingState label="Loading dashboard..." />;
@@ -207,16 +329,81 @@ export default function Dashboard() {
           <p className="mt-1 text-xs text-slate-500">Here&apos;s your work summary, attendance, and task progress for today.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex h-10 min-w-64 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400 xl:w-80 xl:flex-none">
-            <Search className="h-4 w-4" />
-            <input className="w-full bg-transparent outline-none placeholder:text-slate-400" placeholder="Search dashboard..." />
-          </label>
+          <SearchSuggestInput
+            aria-label="Universal dashboard search"
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+            suggestions={dashboardSearchSuggestions}
+            onSuggestionSelect={handleSearchSuggestionSelect}
+            onCommit={(value) => {
+              const firstMatch = dashboardSearchSuggestions.find((suggestion) =>
+                [suggestion.label, suggestion.description, ...(suggestion.keywords || [])].some((candidate) =>
+                  String(candidate || '').toLowerCase().includes(value.toLowerCase())
+                )
+              );
+              if (firstMatch) handleSearchSuggestionSelect(firstMatch);
+            }}
+            placeholder="Search dashboard..."
+            icon={<Search className="h-4 w-4" />}
+            wrapperClassName="min-w-64 flex-1 xl:w-80 xl:flex-none"
+            className="h-10 rounded-lg border-slate-200 bg-white text-sm shadow-none"
+            emptyMessage="No matching page, section, or work entry found."
+          />
           <button className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
             {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           </button>
-          <Link aria-label="Notifications" to="/notifications" className="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
-            <Bell className="h-4 w-4" />
-          </Link>
+          <div ref={notificationsRef} className="relative">
+            <button
+              type="button"
+              aria-label="Notifications"
+              aria-haspopup="dialog"
+              aria-expanded={isNotificationsOpen}
+              onClick={() => setIsNotificationsOpen((open) => !open)}
+              className={`relative rounded-lg border p-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300/80 ${isNotificationsOpen ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              <Bell className="h-4 w-4" />
+              {unreadNotifications > 0 ? (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-none text-white">
+                  {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                </span>
+              ) : null}
+            </button>
+
+            {isNotificationsOpen ? (
+              <div
+                role="region"
+                aria-label="Dashboard notifications"
+                className="absolute right-0 top-full z-40 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-950">Notifications</p>
+                  <Link
+                    to="/notifications"
+                    onClick={() => setIsNotificationsOpen(false)}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    View all notifications
+                  </Link>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length ? (
+                    notifications.map((notification) => (
+                      <div key={notification.id} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-950">{notification.title}</p>
+                          {!notification.is_read ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-600" /> : null}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">{notification.message}</p>
+                        <p className="mt-2 text-[11px] font-medium text-slate-400">{formatNotificationDate(notification.created_at)}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="px-4 py-5 text-sm text-slate-500">No notifications</p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <Link aria-label="Settings" to="/settings" className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
             <Settings className="h-4 w-4" />
           </Link>
@@ -224,7 +411,7 @@ export default function Dashboard() {
       </header>
 
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <KpiCard label="Worked Today" value={formatDuration(workedSeconds)} hint={todayDeltaLabel} icon={Clock} tint="bg-blue-50 text-blue-600" />
+        <KpiCard label="Worked Today" value={formatDuration(effectiveWorkedSeconds)} hint={todayDeltaLabel} icon={Clock} tint="bg-blue-50 text-blue-600" />
         <KpiCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} tint="bg-violet-50 text-violet-600" />
         <KpiCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} tint="bg-amber-50 text-amber-600" />
         <KpiCard
@@ -237,12 +424,12 @@ export default function Dashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]">
-        <Card className="p-4">
+        <Card id="todays-shift" className="scroll-mt-24 p-4">
           <SectionTitle title="Today's shift" action={<span className="text-xs text-slate-500">{completionPercent}% done</span>} />
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-slate-500">Worked today</p>
-              <p className="mt-2 text-3xl font-semibold text-slate-950">{formatDuration(workedSeconds)}</p>
+              <p className="mt-2 text-3xl font-semibold text-slate-950">{formatDuration(effectiveWorkedSeconds)}</p>
             </div>
             <div>
               <p className="text-xs text-slate-500">Remaining</p>
@@ -250,7 +437,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="mt-5 h-2 rounded-full bg-slate-100">
-            <span className="block h-2 rounded-full bg-blue-600" style={{ width: `${Math.max(completionPercent, workedSeconds ? 8 : 0)}%` }} />
+            <span className="block h-2 rounded-full bg-blue-600" style={{ width: `${Math.max(completionPercent, effectiveWorkedSeconds ? 8 : 0)}%` }} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
             <span className="rounded-md bg-blue-50 px-2 py-1 font-medium text-blue-700">Status: {attendanceLabel}</span>
@@ -267,7 +454,7 @@ export default function Dashboard() {
           ) : notice ? <p className="mt-3 text-xs text-slate-500">{notice}</p> : null}
         </Card>
 
-        <Card className="p-4">
+        <Card id="attendance-shift" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance & Shift" action={<ClipboardCheck className="h-4 w-4 text-blue-600" />} />
           <div className="space-y-3 text-xs">
             <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
@@ -291,7 +478,7 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card id="my-focus" className="scroll-mt-24 p-4">
           <SectionTitle title="My Focus" action={<Activity className="h-4 w-4 text-emerald-600" />} />
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
             <p className="text-[11px] uppercase tracking-wide text-slate-500">Current work</p>
@@ -312,7 +499,7 @@ export default function Dashboard() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="p-4">
+        <Card id="work-log" className="scroll-mt-24 p-4">
           <SectionTitle title="My Work Log" />
           <div className="overflow-x-auto rounded-lg border border-slate-100">
             {todayEntries.length === 0 ? (
@@ -335,7 +522,7 @@ export default function Dashboard() {
                         <p className="mt-1 text-[11px] text-slate-500">{getTimeEntrySubtitle(entry)}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-600">{new Date(entry.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{formatDuration(entry.duration)}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{formatDuration(entry.id === activeTimer?.id ? activeTimerSeconds : entry.duration)}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${entry.end_time ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
                           {entry.end_time ? 'Completed' : 'Running'}
@@ -349,7 +536,7 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card id="time-tracker-card" className="scroll-mt-24 p-4">
           <SectionTitle title="Time Tracker" action={<Settings className="h-4 w-4 text-slate-400" />} />
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
             <p className="text-xs text-slate-500">{activeTimer ? 'Active timer' : 'No active timer'}</p>
@@ -377,7 +564,7 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card id="quick-actions" className="scroll-mt-24 p-4">
           <SectionTitle title="Quick Actions" />
           <div className="grid grid-cols-1 gap-3 text-xs">
             <Link to="/tasks" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">

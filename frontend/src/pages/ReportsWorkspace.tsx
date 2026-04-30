@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   activityApi,
@@ -27,12 +28,18 @@ import { getWorkingDuration } from '@/lib/timeBreakdown';
 import {
   Activity,
   AlertTriangle,
+  BarChart3,
   Building2,
   CalendarDays,
+  Camera,
   CheckCircle2,
   Download,
+  FileClock,
+  FileSpreadsheet,
+  Gauge,
   LineChart,
   ListFilter,
+  Monitor,
   RefreshCw,
   TimerReset,
   Users,
@@ -40,6 +47,8 @@ import {
 } from 'lucide-react';
 
 type ReportsWorkspaceMode =
+  | 'reports-hub'
+  | 'analytics-hub'
   | 'attendance'
   | 'hours-tracked'
   | 'projects-tasks'
@@ -239,6 +248,16 @@ const fetchTimeEntriesForUsers = async (userIds: number[], startDate: string, en
 };
 
 const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: string; eyebrow: string }> = {
+  'reports-hub': {
+    eyebrow: 'Reports',
+    title: 'Reports Center',
+    description: 'All operational reports in one place: attendance, hours, task, payroll, timeline, and exports.',
+  },
+  'analytics-hub': {
+    eyebrow: 'Analytics',
+    title: 'Analytics Center',
+    description: 'All analytics views in one place: productivity, usage, focus, screenshots, and activity signals.',
+  },
   attendance: {
     eyebrow: 'Reports',
     title: 'Attendance Report',
@@ -256,17 +275,17 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
   },
 
   timeline: {
-    eyebrow: 'Reports',
+    eyebrow: 'Analytics',
     title: 'Timeline',
     description: 'Chronological activity feed across app, website, and idle events in the selected range.',
   },
   'web-app-usage': {
-    eyebrow: 'Reports',
+    eyebrow: 'Analytics',
     title: 'Web & App Usage',
     description: 'Tool usage by employee with productive and unproductive classifications from current monitoring data.',
   },
   productivity: {
-    eyebrow: 'Reports',
+    eyebrow: 'Analytics',
     title: 'Productivity Summary',
     description: 'Productive share, idle trends, and top contributors across the organization.',
   },
@@ -276,6 +295,110 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
     description: 'Generate CSV exports using the current date range and optional user or team filters.',
   },
 };
+
+const reportCatalogItems = [
+  {
+    title: 'Attendance Report',
+    description: 'Presence, leave, absence, attendance rate, and employee attendance exceptions.',
+    to: '/reports/attendance',
+    icon: CalendarDays,
+    accent: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  },
+  {
+    title: 'Hours Tracked',
+    description: 'Tracked time, working time, idle time, daily totals, and employee hour rows.',
+    to: '/reports/hours-tracked',
+    icon: FileClock,
+    accent: 'bg-sky-50 text-sky-700 ring-sky-200',
+  },
+  {
+    title: 'Task Overview',
+    description: 'Task allocation, project coverage, assignee detail, status, priority, and due dates.',
+    to: '/reports/projects-tasks',
+    icon: ListFilter,
+    accent: 'bg-violet-50 text-violet-700 ring-violet-200',
+  },
+  {
+    title: 'Timeline Report',
+    description: 'Chronological activity report for app, website, idle, employee, and duration rows.',
+    to: '/reports/timeline',
+    icon: Waypoints,
+    accent: 'bg-amber-50 text-amber-700 ring-amber-200',
+  },
+  {
+    title: 'Payroll Report',
+    description: 'Payroll report area for runs, payslips, reimbursements, salary structures, and payroll exports.',
+    to: '/payroll/reports',
+    icon: FileSpreadsheet,
+    accent: 'bg-rose-50 text-rose-700 ring-rose-200',
+  },
+  {
+    title: 'Custom Export',
+    description: 'Build and download CSV exports from the selected date, employee, and team scope.',
+    to: '/reports/custom-export',
+    icon: Download,
+    accent: 'bg-slate-100 text-slate-700 ring-slate-200',
+  },
+];
+
+const analyticsCatalogItems = [
+  {
+    title: 'Productivity Summary',
+    description: 'Productive share, idle share, daily productivity trend, and employee contributor analytics.',
+    to: '/reports/productivity',
+    icon: Gauge,
+    accent: 'bg-blue-50 text-blue-700 ring-blue-200',
+  },
+  {
+    title: 'Web & App Usage',
+    description: 'Classified website and application usage with productive, unproductive, and context-dependent tools.',
+    to: '/reports/web-app-usage',
+    icon: Monitor,
+    accent: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
+  },
+  {
+    title: 'Productive Time',
+    description: 'Focused monitoring analytics for productive employees, tools, and work sessions.',
+    to: '/monitoring/productive-time',
+    icon: LineChart,
+    accent: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  },
+  {
+    title: 'Unproductive Time',
+    description: 'Unproductive time analytics, tool patterns, and employee attention signals.',
+    to: '/monitoring/unproductive-time',
+    icon: Activity,
+    accent: 'bg-orange-50 text-orange-700 ring-orange-200',
+  },
+  {
+    title: 'Timeline Analytics',
+    description: 'Activity event analytics across app, website, idle, duration, and productivity classification.',
+    to: '/reports/timeline',
+    icon: Waypoints,
+    accent: 'bg-purple-50 text-purple-700 ring-purple-200',
+  },
+  {
+    title: 'App Usage',
+    description: 'Application analytics grouped by employee, duration, and usage classification.',
+    to: '/monitoring/app-usage',
+    icon: BarChart3,
+    accent: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  },
+  {
+    title: 'Website Usage',
+    description: 'Website analytics grouped by employee, domain, duration, and usage classification.',
+    to: '/monitoring/website-usage',
+    icon: Monitor,
+    accent: 'bg-teal-50 text-teal-700 ring-teal-200',
+  },
+  {
+    title: 'Screenshots',
+    description: 'Screenshot review analytics for tracked work sessions and employee activity proof.',
+    to: '/monitoring/screenshots',
+    icon: Camera,
+    accent: 'bg-slate-100 text-slate-700 ring-slate-200',
+  },
+];
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
   const { user } = useAuth();
@@ -287,6 +410,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedGroupId);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
+  const isHubMode = mode === 'reports-hub' || mode === 'analytics-hub';
 
   useEffect(() => {
     const persisted = readPersistedReportsWorkspaceFilters(mode);
@@ -325,6 +449,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
   const usersQuery = useQuery({
     queryKey: ['report-workspace-users'],
+    enabled: !isHubMode,
     queryFn: async () => {
       const response = await userApi.getAll({ period: 'all' });
       return response.data || [];
@@ -332,6 +457,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   });
   const groupsQuery = useQuery({
     queryKey: ['report-workspace-groups'],
+    enabled: !isHubMode,
     queryFn: async () => {
       const response = await reportGroupApi.list();
       return response.data?.data || [];
@@ -385,7 +511,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
   const dataQuery = useQuery({
     queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId],
-    enabled: usersQuery.isSuccess && groupsQuery.isSuccess,
+    enabled: isHubMode || (usersQuery.isSuccess && groupsQuery.isSuccess),
     placeholderData: (previousData, previousQuery) => (
       shouldReuseReportPlaceholderData(previousQuery?.queryKey, mode)
         ? previousData
@@ -394,6 +520,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 1000 : false,
     refetchIntervalInBackground: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity',
     queryFn: async () => {
+      if (isHubMode) {
+        return null;
+      }
+
       if (mode === 'attendance') {
         const response = await reportApi.attendance({
           start_date: startDate,
@@ -829,6 +959,82 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       setSelectedTaskId('');
     }
   }, [mode, selectedTaskId, taskFilterOptions]);
+
+  const catalogItems = mode === 'analytics-hub' ? analyticsCatalogItems : reportCatalogItems;
+
+  if (isHubMode) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow={pageTitle.eyebrow}
+          title={pageTitle.title}
+          description={pageTitle.description}
+        />
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {catalogItems.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.title}
+                to={item.to}
+                className="group flex min-h-[172px] flex-col justify-between rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+                      {mode === 'analytics-hub' ? 'Analytics' : 'Report'}
+                    </p>
+                    <h2 className="mt-2 text-lg font-semibold text-slate-950">{item.title}</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">{item.description}</p>
+                  </div>
+                  <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ring-1 ${item.accent}`}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                </div>
+                <span className="mt-5 text-sm font-semibold text-blue-600 transition group-hover:text-blue-700">
+                  Open {item.title}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+
+        <SurfaceCard className="p-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Coverage</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">{catalogItems.length}</p>
+              <p className="mt-1 text-sm text-slate-500">
+                {mode === 'analytics-hub' ? 'analytics views' : 'report modules'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Primary Use</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">
+                {mode === 'analytics-hub' ? 'Understand patterns' : 'Prepare records'}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {mode === 'analytics-hub'
+                  ? 'Use these views to inspect trends, focus, and usage behavior.'
+                  : 'Use these views for attendance, hours, tasks, payroll, and export records.'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Data Scope</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">
+                {mode === 'analytics-hub' ? 'Live monitoring signals' : 'Operational reports'}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Each tile opens the focused workspace with its own filters and tables.
+              </p>
+            </div>
+          </div>
+        </SurfaceCard>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return <PageLoadingState label={`Loading ${pageTitle.title.toLowerCase()}...`} />;

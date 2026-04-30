@@ -344,6 +344,25 @@ describe('Layout navigation', () => {
     expect(screen.queryByRole('button', { name: /add user/i })).not.toBeInTheDocument();
   });
 
+  it('shows the add user button for admins in the desktop shell', async () => {
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      getUpdateState: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    expect(await screen.findByRole('button', { name: /add user/i })).toBeInTheDocument();
+  });
+
   it('shows the unread chat badge on the chat navigation item', async () => {
     apiMocks.getUnreadSummary.mockResolvedValue({ data: { unread_messages: 4, unread_conversations: 2, unread_senders: 2 } });
 

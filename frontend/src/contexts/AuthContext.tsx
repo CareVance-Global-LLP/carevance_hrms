@@ -18,7 +18,7 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, options?: { remember?: boolean }) => Promise<void>;
   signupOwner: (payload: OwnerSignupRequest) => Promise<{ requiresVerification: boolean; email: string }>;
   acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string }) => Promise<{ requiresVerification: boolean; email: string }>;
   register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => Promise<void>;
@@ -28,6 +28,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const COOKIE_AUTH_STATE_TOKEN = '__cookie_authenticated__';
 
 // Demo mode - set to true to use mock data without backend
 const DEMO_MODE = false;
@@ -126,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const response = await fetch(`${API_URL}/auth/handoff`, {
             method: 'POST',
+            credentials: 'include',
             headers: {
               Accept: 'application/json',
               Authorization: `Bearer ${desktopToken}`,
@@ -165,31 +167,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedUser = getStoredAuthValue('user');
       const storedOrg = getStoredAuthValue('organization');
 
-      if (storedToken) {
-        if (isActiveRef.current) {
-          setToken(storedToken);
-        }
-        if (storedUser) {
-          try {
-            if (isActiveRef.current) {
-              setUser(JSON.parse(storedUser));
-            }
-          } catch {
-            removeStoredAuthValue('user');
+      if (storedToken && isActiveRef.current) {
+        setToken(storedToken);
+      }
+
+      if (storedUser) {
+        try {
+          if (isActiveRef.current) {
+            setUser(JSON.parse(storedUser));
           }
+        } catch {
+          removeStoredAuthValue('user');
         }
-        if (storedOrg) {
-          try {
-            if (isActiveRef.current) {
-              setOrganization(JSON.parse(storedOrg));
-            }
-          } catch {
-            removeStoredAuthValue('organization');
+      }
+
+      if (storedOrg) {
+        try {
+          if (isActiveRef.current) {
+            setOrganization(JSON.parse(storedOrg));
           }
+        } catch {
+          removeStoredAuthValue('organization');
         }
-        if (!DEMO_MODE) {
-          await fetchUser();
-        }
+      }
+
+      if (!DEMO_MODE && (storedToken || storedUser || storedOrg)) {
+        await fetchUser();
       }
 
       if (isActiveRef.current) {
@@ -287,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      setToken((currentToken) => currentToken || COOKIE_AUTH_STATE_TOKEN);
       setUser(nextUser);
       setStoredAuthValue('user', JSON.stringify(nextUser));
       if (nextOrganization) {
@@ -301,7 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, options?: { remember?: boolean }) => {
     const normalizedEmail = email.trim().toLowerCase();
 
     if (DEMO_MODE) {
@@ -328,7 +332,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const response = await authApi.login({ email: normalizedEmail, password });
+    const response = await authApi.login({
+      email: normalizedEmail,
+      password,
+      remember: Boolean(options?.remember),
+    });
     const { user: userData, token: authToken, organization: org } = response.data;
 
     storeAuthState(authToken, userData, org);

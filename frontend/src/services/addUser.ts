@@ -78,6 +78,10 @@ interface BulkInviteRowPayload {
 }
 
 type TabularRow = unknown[];
+type XlsxSheetResult = {
+  sheet?: string;
+  data?: TabularRow[];
+};
 
 const INVITE_DEFAULTS_KEY = 'carevance-add-user-defaults';
 
@@ -96,8 +100,15 @@ const toSlug = (value: string) =>
   value
     .trim()
     .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+
+const compactHeader = (value: string) => {
+  const words = toSlug(value).split(/\s+/).filter(Boolean);
+  return words.filter((word, index) => index === 0 || word !== words[index - 1]).join('');
+};
 
 const deriveDisplayName = (email: string) => {
   const localPart = email.split('@')[0] || 'User';
@@ -172,6 +183,25 @@ const chunkItems = <T>(items: T[], chunkSize: number): T[][] => {
 };
 
 const normalizeCell = (value: unknown) => String(value ?? '').trim();
+
+const getHeaderIndex = (headers: string[], aliases: string[]) => {
+  const normalizedAliases = new Set(aliases.map((alias) => compactHeader(alias)));
+
+  return headers.findIndex((header) => normalizedAliases.has(compactHeader(header)));
+};
+
+const extractXlsxRows = (value: unknown): TabularRow[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  if (value.every((row) => Array.isArray(row))) {
+    return value as TabularRow[];
+  }
+
+  const firstSheet = (value as XlsxSheetResult[]).find((sheet) => Array.isArray(sheet?.data));
+  return firstSheet?.data || [];
+};
 
 export const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
@@ -321,6 +351,7 @@ export const addUserService = {
 
   parseTableRows(tableRows: TabularRow[], groups: InviteOption[], projects: InviteOption[]): CsvParseResult {
     const normalizedRows = tableRows
+      .filter((row) => Array.isArray(row))
       .map((row) => row.map((cell) => normalizeCell(cell)))
       .filter((row) => row.some((cell) => cell !== ''));
 
@@ -333,11 +364,11 @@ export const addUserService = {
     const rows: CsvParseRow[] = [];
     const errors: string[] = [];
 
-    const emailIndex = headers.indexOf('email');
-    const nameIndex = headers.indexOf('name');
-    const roleIndex = headers.indexOf('role');
-    const groupIndex = headers.findIndex((header) => ['groups', 'group', 'group ids'].includes(header));
-    const projectIndex = headers.findIndex((header) => ['projects', 'project', 'project ids'].includes(header));
+    const emailIndex = getHeaderIndex(headers, ['email', 'email address', 'email id', 'e mail', 'mail', 'user email', 'employee email']);
+    const nameIndex = getHeaderIndex(headers, ['name', 'full name', 'user name', 'employee name']);
+    const roleIndex = getHeaderIndex(headers, ['role', 'access', 'access level', 'permission', 'permissions', 'user role', 'account type']);
+    const groupIndex = getHeaderIndex(headers, ['groups', 'group', 'group ids', 'group id', 'team', 'teams', 'department', 'departments']);
+    const projectIndex = getHeaderIndex(headers, ['projects', 'project', 'project ids', 'project id']);
 
     if (emailIndex < 0) {
       return { rows: [], errors: ['Import file must include an email column.'] };
@@ -393,20 +424,13 @@ export const addUserService = {
     }
 
     if (lowerName.endsWith('.xlsx')) {
-      const XLSX = await import('xlsx');
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const firstSheetName = workbook.SheetNames[0];
+      const { default: readXlsxFile } = await import('read-excel-file/browser');
+      const rawRows = await readXlsxFile(file);
+      const tableRows = extractXlsxRows(rawRows);
 
-      if (!firstSheetName) {
+      if (tableRows.length === 0) {
         return { rows: [], errors: ['XLSX file is empty.'] };
       }
-
-      const worksheet = workbook.Sheets[firstSheetName];
-      const tableRows = XLSX.utils.sheet_to_json<TabularRow>(worksheet, {
-        header: 1,
-        raw: false,
-        defval: '',
-      });
 
       return this.parseTableRows(tableRows, groups, projects);
     }

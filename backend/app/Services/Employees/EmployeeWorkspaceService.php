@@ -19,7 +19,6 @@ use App\Models\PayrollTaxDeclaration;
 use App\Models\Payslip;
 use App\Models\Reimbursement;
 use App\Models\User;
-use App\Services\Payroll\PayrollWorkspaceService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -27,10 +26,7 @@ use Illuminate\Support\Facades\Storage;
 
 class EmployeeWorkspaceService
 {
-    public function __construct(
-        private readonly PayrollWorkspaceService $payrollWorkspaceService,
-    ) {
-    }
+    private const EMPLOYEE_DOCUMENTS_DISK = 'employee_documents';
 
     public function workspace(User $employee, string $payrollMonth): array
     {
@@ -111,8 +107,8 @@ class EmployeeWorkspaceService
             'payroll' => [
                 'profile' => $payrollProfile,
                 'salary_assignments' => $salaryAssignments,
-                'current_compensation' => $this->payrollWorkspaceService->compensationSnapshot((int) $employee->organization_id, (int) $employee->id, $payrollMonth),
-                'warnings' => $this->payrollWorkspaceService->employeeWarningsForUser((int) $employee->organization_id, $employee, $payrollMonth),
+                'current_compensation' => $this->simpleCompensationSnapshot($payrollProfile),
+                'warnings' => $this->simplePayrollWarnings($employee, $payrollProfile),
                 'tax_declarations' => $taxDeclarations->values(),
                 'pending_reimbursements' => $reimbursements->whereIn('status', ['draft', 'pending_approval'])->count(),
                 'recent_reimbursements' => $reimbursements->values(),
@@ -205,7 +201,8 @@ class EmployeeWorkspaceService
 
     public function storeDocument(User $employee, User $actor, array $data, UploadedFile $file): EmployeeDocument
     {
-        $path = $file->store("employee-documents/{$employee->organization_id}/{$employee->id}", 'public');
+        $disk = self::EMPLOYEE_DOCUMENTS_DISK;
+        $path = $file->store("employee-documents/{$employee->organization_id}/{$employee->id}", $disk);
 
         return EmployeeDocument::query()->create([
             'organization_id' => $employee->organization_id,
@@ -214,7 +211,7 @@ class EmployeeWorkspaceService
             'category' => (string) ($data['category'] ?? 'other'),
             'file_path' => $path,
             'file_name' => $file->getClientOriginalName(),
-            'file_disk' => 'public',
+            'file_disk' => $disk,
             'mime_type' => $file->getClientMimeType(),
             'file_size' => $file->getSize(),
             'uploaded_by' => $actor->id,
@@ -289,19 +286,62 @@ class EmployeeWorkspaceService
 
     public function documentResponse(EmployeeDocument $document)
     {
-        abort_unless(Storage::disk($document->file_disk)->exists($document->file_path), 404);
+        $disk = $this->resolveDocumentDisk($document);
+        abort_unless(Storage::disk($disk)->exists($document->file_path), 404);
 
         return response()->download(
-            Storage::disk($document->file_disk)->path($document->file_path),
+            Storage::disk($disk)->path($document->file_path),
             $document->file_name,
             ['Content-Type' => $document->mime_type ?: 'application/octet-stream']
         );
     }
 
+    private function resolveDocumentDisk(EmployeeDocument $document): string
+    {
+        $configuredDisk = trim((string) $document->file_disk);
+
+        if ($configuredDisk !== '' && Storage::disk($configuredDisk)->exists($document->file_path)) {
+            return $configuredDisk;
+        }
+
+        if ($configuredDisk === '' || $configuredDisk === 'public') {
+            if (Storage::disk(self::EMPLOYEE_DOCUMENTS_DISK)->exists($document->file_path)) {
+                return self::EMPLOYEE_DOCUMENTS_DISK;
+            }
+        }
+
+        return $configuredDisk !== '' ? $configuredDisk : self::EMPLOYEE_DOCUMENTS_DISK;
+    }
+
     private function attendanceSummary(User $employee, string $payrollMonth): array
     {
-        $base = $this->payrollWorkspaceService->attendanceSummary((int) $employee->organization_id, (int) $employee->id, $payrollMonth);
-        [$start, $end] = [Carbon::parse($base['period_start'])->startOfDay(), Carbon::parse($base['period_end'])->endOfDay()];
+        $start = Carbon::parse(sprintf('%s-01', $payrollMonth))->startOfMonth();
+        $end = $start->copy()->endOfMonth();
+        $records = \App\Models\AttendanceRecord::query()
+            ->where('organization_id', $employee->organization_id)
+            ->where('user_id', $employee->id)
+            ->whereDate('attendance_date', '>=', $start->toDateString())
+            ->whereDate('attendance_date', '<=', $end->toDateString())
+            ->get();
+        $approvedLeaveDays = LeaveRequest::query()
+            ->where('organization_id', $employee->organization_id)
+            ->where('user_id', $employee->id)
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $end->toDateString())
+            ->whereDate('end_date', '>=', $start->toDateString())
+            ->count();
+        $workedSeconds = (int) $records->sum('worked_seconds');
+
+        $base = [
+            'period_start' => $start->toDateString(),
+            'period_end' => $end->toDateString(),
+            'present_days' => $records->filter(fn ($record) => !empty($record->check_in_at))->count(),
+            'approved_leave_days' => $approvedLeaveDays,
+            'paid_leave_days' => $approvedLeaveDays,
+            'worked_seconds' => $workedSeconds,
+            'approved_worked_hours' => round($workedSeconds / 3600, 2),
+            'payable_days' => $records->filter(fn ($record) => !empty($record->check_in_at))->count() + $approvedLeaveDays,
+        ];
 
         $lateDays = \App\Models\AttendanceRecord::query()
             ->where('organization_id', $employee->organization_id)
@@ -358,7 +398,7 @@ class EmployeeWorkspaceService
         $profile = $employee->employeeProfile;
         $workInfo = $employee->employeeWorkInfo;
         $payrollProfile = $employee->payrollProfile;
-        $payrollWarnings = $this->payrollWorkspaceService->employeeWarningsForUser((int) $employee->organization_id, $employee, $payrollMonth);
+        $payrollWarnings = $this->simplePayrollWarnings($employee, $payrollProfile);
         $defaultBank = $bankAccounts->first(fn (EmployeeBankAccount $account) => $account->is_default) ?: $bankAccounts->first();
 
         $sections = [
@@ -395,6 +435,48 @@ class EmployeeWorkspaceService
             'attendance' => $attendance,
             'leave' => $leave,
         ];
+    }
+
+    private function simpleCompensationSnapshot(?PayrollProfile $profile): array
+    {
+        $meta = $profile?->meta ?: [];
+
+        return [
+            'source' => $profile ? 'simple_payroll_profile' : 'missing',
+            'salary_type' => data_get($meta, 'salary_type', 'fixed_monthly'),
+            'monthly_salary' => (float) data_get($meta, 'monthly_salary', 0),
+            'hourly_rate' => (float) data_get($meta, 'hourly_rate', 0),
+            'working_days' => (float) data_get($meta, 'working_days', 30),
+            'overtime_enabled' => (bool) data_get($meta, 'overtime_enabled', true),
+            'overtime_hourly_rate' => (float) data_get($meta, 'overtime_hourly_rate', 0),
+            'productivity_bonus_enabled' => (bool) data_get($meta, 'productivity_bonus_enabled', false),
+            'productivity_bonus_rate' => (float) data_get($meta, 'productivity_bonus_rate', 0),
+        ];
+    }
+
+    private function simplePayrollWarnings(User $employee, ?PayrollProfile $profile): array
+    {
+        $warnings = [];
+        $meta = $profile?->meta ?: [];
+        $salaryType = data_get($meta, 'salary_type', 'fixed_monthly');
+
+        if (!$profile) {
+            $warnings[] = 'Salary profile missing';
+        }
+        if ($profile && (!$profile->is_active || !$profile->payroll_eligible)) {
+            $warnings[] = 'Salary profile on hold';
+        }
+        if (in_array($salaryType, ['fixed_monthly', 'hybrid'], true) && (float) data_get($meta, 'monthly_salary', 0) <= 0) {
+            $warnings[] = 'Monthly salary missing';
+        }
+        if ($salaryType === 'hourly' && (float) data_get($meta, 'hourly_rate', 0) <= 0) {
+            $warnings[] = 'Hourly rate missing';
+        }
+        if (!$employee->organization_id) {
+            $warnings[] = 'Employee organization missing';
+        }
+
+        return array_values(array_unique($warnings));
     }
 
     private function activityFeed(User $employee): array

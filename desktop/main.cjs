@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
@@ -10,13 +10,8 @@ const {
   getBrowserTrackingOptionsUrl,
   prepareManagedBrowserTrackingExtensionDir,
 } = require('./browser-tracking-install-guide.cjs');
-let activeWin = null;
-
-try {
-  activeWin = require('active-win');
-} catch {
-  activeWin = null;
-}
+let activeWindowGetter = null;
+let activeWindowModulePromise = null;
 
 const DEFAULT_APP_URL = 'http://localhost:5173';
 const readConfiguredAppConfig = () => {
@@ -35,6 +30,78 @@ const readConfiguredAppConfig = () => {
 const APP_CONFIG = readConfiguredAppConfig();
 const APP_URL = process.env.APP_URL || (typeof APP_CONFIG.appUrl === 'string' ? APP_CONFIG.appUrl.trim() : '') || DEFAULT_APP_URL;
 const IS_REMOTE_APP_URL = /^https?:\/\//i.test(APP_URL);
+const isAllowedAppUrl = (value) => {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) {
+    return false;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawValue);
+  } catch {
+    return false;
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return false;
+  }
+
+  if (parsedUrl.protocol === 'https:') {
+    return true;
+  }
+
+  const hostName = parsedUrl.hostname.toLowerCase();
+  return ['localhost', '127.0.0.1'].includes(hostName);
+};
+
+const isAllowedExternalUrl = (value, options = {}) => {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) {
+    return false;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawValue);
+  } catch {
+    return false;
+  }
+
+  const allowedProtocols = new Set(['https:']);
+  if (options.allowLocalHttp) {
+    allowedProtocols.add('http:');
+  }
+  if (options.allowExtensionProtocol) {
+    allowedProtocols.add('chrome-extension:');
+    allowedProtocols.add('moz-extension:');
+    allowedProtocols.add('safari-web-extension:');
+  }
+
+  if (!allowedProtocols.has(parsedUrl.protocol)) {
+    return false;
+  }
+
+  if (parsedUrl.protocol === 'http:') {
+    const hostName = parsedUrl.hostname.toLowerCase();
+    return ['localhost', '127.0.0.1'].includes(hostName);
+  }
+
+  return true;
+};
+
+const openExternalUrl = async (value, options = {}) => {
+  if (!isAllowedExternalUrl(value, options)) {
+    throw new Error(`Refusing to open unsupported external URL: ${String(value || '')}`);
+  }
+
+  await shell.openExternal(String(value).trim());
+};
+
+if (!isAllowedAppUrl(APP_URL)) {
+  throw new Error(`Refusing to load unsupported APP_URL: ${APP_URL}`);
+}
+
 const BROWSER_TRACKING_STORE_URLS = {
   chrome: typeof APP_CONFIG?.browserTracking?.chromeStoreUrl === 'string'
     ? APP_CONFIG.browserTracking.chromeStoreUrl.trim()
@@ -43,6 +110,14 @@ const BROWSER_TRACKING_STORE_URLS = {
     ? APP_CONFIG.browserTracking.edgeStoreUrl.trim()
     : '',
 };
+const BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS = Array.from(new Set(
+  (Array.isArray(APP_CONFIG?.browserTracking?.allowedExtensionOrigins)
+    ? APP_CONFIG.browserTracking.allowedExtensionOrigins
+    : []
+  )
+    .map((origin) => String(origin || '').trim().toLowerCase().replace(/\/+$/, ''))
+    .filter(Boolean)
+));
 const APP_ICON = process.platform === 'win32'
   ? path.join(__dirname, 'assets', 'icon.ico')
   : path.join(__dirname, 'assets', 'icon.png');
@@ -150,6 +225,27 @@ const configureRuntimeStorage = () => {
 };
 
 configureRuntimeStorage();
+
+const loadActiveWindowGetter = async () => {
+  if (activeWindowGetter) {
+    return activeWindowGetter;
+  }
+
+  if (!activeWindowModulePromise) {
+    activeWindowModulePromise = import('get-windows')
+      .then((module) => {
+        const getter = typeof module?.activeWindow === 'function' ? module.activeWindow : null;
+        activeWindowGetter = getter;
+        return getter;
+      })
+      .catch(() => {
+        activeWindowGetter = null;
+        return null;
+      });
+  }
+
+  return activeWindowModulePromise;
+};
 
 const normalizeDeviceLabel = (value) => {
   const normalized = String(value || '').trim();
@@ -419,12 +515,13 @@ const stopForegroundWindowWatcher = () => {
 };
 
 const getForegroundWindowPayload = async () => {
-  if (!activeWin) {
+  const getActiveWindow = await loadActiveWindowGetter();
+  if (!getActiveWindow) {
     return null;
   }
 
   try {
-    const context = await activeWin();
+    const context = await getActiveWindow();
     return {
       app: context?.owner?.name || null,
       title: context?.title || null,
@@ -442,7 +539,7 @@ const getForegroundWindowPayload = async () => {
 };
 
 const emitForegroundWindowChange = async () => {
-  if (!mainWindow || mainWindow.isDestroyed() || !activeWin) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
 
@@ -468,10 +565,6 @@ const emitForegroundWindowChange = async () => {
 const startForegroundWindowWatcher = () => {
   stopForegroundWindowWatcher();
 
-  if (!activeWin) {
-    return;
-  }
-
   foregroundWindowWatcherInterval = setInterval(() => {
     void emitForegroundWindowChange();
   }, FOREGROUND_WINDOW_POLL_INTERVAL_MS);
@@ -484,8 +577,40 @@ const ensureBrowserTrackingBridge = () => {
     return browserTrackingBridge;
   }
 
+  const encryptBrowserTrackingState = (plaintext) => {
+    const value = String(plaintext || '');
+    if (!value) {
+      return null;
+    }
+
+    if (!safeStorage?.isEncryptionAvailable?.()) {
+      return null;
+    }
+
+    try {
+      return safeStorage.encryptString(value);
+    } catch {
+      return null;
+    }
+  };
+
+  const decryptBrowserTrackingState = (payload) => {
+    if (!payload || !safeStorage?.isEncryptionAvailable?.()) {
+      return null;
+    }
+
+    try {
+      return safeStorage.decryptString(Buffer.from(payload));
+    } catch {
+      return null;
+    }
+  };
+
   browserTrackingBridge = createBrowserTrackingBridge({
     stateFilePath: path.join(app.getPath('userData'), BROWSER_TRACKING_STATE_FILENAME),
+    encryptState: encryptBrowserTrackingState,
+    decryptState: decryptBrowserTrackingState,
+    allowedExtensionOrigins: BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS,
     onBrowserEvent: async (event) => {
       if (!mainWindow || mainWindow.isDestroyed()) {
         return;
@@ -513,7 +638,8 @@ const createWindow = async () => {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
+      backgroundThrottling: false,
     },
   });
 
@@ -534,7 +660,11 @@ const createWindow = async () => {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (isAllowedExternalUrl(url, { allowLocalHttp: true })) {
+      void openExternalUrl(url, { allowLocalHttp: true }).catch(() => {
+        // Ignore unsupported or failed external launches initiated by web content.
+      });
+    }
     return { action: 'deny' };
   });
 
@@ -785,12 +915,13 @@ ipcMain.handle('desktop:get-system-idle-seconds', async () => {
 });
 
 ipcMain.handle('desktop:get-active-window-context', async () => {
-  if (!activeWin) {
+  const getActiveWindow = await loadActiveWindowGetter();
+  if (!getActiveWindow) {
     return null;
   }
 
   try {
-    const context = await activeWin();
+    const context = await getActiveWindow();
     if (!context) return null;
 
     return {
@@ -873,11 +1004,11 @@ ipcMain.handle('desktop:open-browser-tracking-install', async (_event, payload) 
     || (browserName !== 'edge' ? BROWSER_TRACKING_STORE_URLS.chrome : '');
 
   if (storeUrl) {
-    await shell.openExternal(storeUrl);
+    await openExternalUrl(storeUrl);
     return true;
   }
 
-  await shell.openExternal(getBrowserTrackingManagerUrl(browserName));
+  await openExternalUrl(getBrowserTrackingManagerUrl(browserName));
   return true;
 });
 
@@ -887,7 +1018,7 @@ ipcMain.handle('desktop:open-browser-tracking-options', async (_event, payload) 
     throw new Error('The browser extension options page is not available yet. Install and pair the extension first.');
   }
 
-  await shell.openExternal(optionsUrl);
+  await openExternalUrl(optionsUrl, { allowExtensionProtocol: true });
   return true;
 });
 

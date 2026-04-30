@@ -11,6 +11,7 @@ use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\Payslip;
+use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
@@ -588,6 +589,146 @@ class ReportWorkingTimeTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_employee_insights_honors_recent_screenshot_limit(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 18:00:00',
+            'duration' => 32400,
+            'billable' => true,
+        ]);
+
+        try {
+            foreach (range(1, 12) as $offset) {
+                Carbon::setTestNow(Carbon::parse(sprintf('2026-04-21 12:%02d:00', $offset)));
+
+                Screenshot::create([
+                    'time_entry_id' => $entry->id,
+                    'filename' => sprintf('capture-%02d.png', $offset),
+                ]);
+            }
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->getJson(
+            "/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}&recent_screenshot_limit=10",
+            $headers
+        )
+            ->assertOk()
+            ->assertJsonCount(10, 'recent_screenshots')
+            ->assertJsonPath('recent_screenshots.0.filename', 'capture-12.png')
+            ->assertJsonPath('recent_screenshots.9.filename', 'capture-03.png');
+    }
+
+    public function test_activity_timeline_caps_pages_to_ten_items(): void
+    {
+        Carbon::setTestNow('2026-04-21 12:00:00');
+
+        try {
+            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+            $entry = TimeEntry::create([
+                'user_id' => $employee->id,
+                'task_id' => null,
+                'start_time' => Carbon::parse('2026-04-21 08:00:00'),
+                'end_time' => Carbon::parse('2026-04-21 09:00:00'),
+                'duration' => 3600,
+                'status' => 'completed',
+            ]);
+
+            foreach (range(1, 15) as $index) {
+                Activity::create([
+                    'user_id' => $employee->id,
+                    'time_entry_id' => $entry->id,
+                    'type' => 'app',
+                    'name' => sprintf('Tool %02d', $index),
+                    'duration' => 60,
+                    'recorded_at' => Carbon::parse('2026-04-21 08:00:00')->addMinutes($index),
+                ]);
+            }
+
+            $this->getJson(
+                "/api/activities?user_id={$employee->id}&start_date=2026-04-21&end_date=2026-04-21&processed=1&per_page=200",
+                $headers
+            )
+                ->assertOk()
+                ->assertJsonPath('per_page', 10)
+                ->assertJsonCount(10, 'data');
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_dashboard_lite_overall_report_returns_selected_employee_summary_without_activity_rollups(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 11:00:00',
+            'duration' => 7200,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'type' => 'idle',
+            'name' => 'Large idle history row',
+            'duration' => 600,
+            'recorded_at' => '2026-04-21 10:00:00',
+        ]);
+
+        $this->getJson(
+            "/api/reports/overall?start_date=2026-04-21&end_date=2026-04-21&user_ids[]={$employee->id}&dashboard_lite=1",
+            $headers
+        )
+            ->assertOk()
+            ->assertJsonPath('summary.is_lite', true)
+            ->assertJsonPath('summary.total_duration', 7200)
+            ->assertJsonPath('summary.idle_duration', 600)
+            ->assertJsonPath('summary.working_duration', 6600)
+            ->assertJsonPath('by_user.0.entries_count', 1);
+    }
+
+    public function test_dashboard_lite_employee_insights_returns_selected_employee_shape_without_tool_rollups(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 11:00:00',
+            'duration' => 7200,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'type' => 'idle',
+            'name' => 'System idle',
+            'duration' => 900,
+            'recorded_at' => '2026-04-21 10:00:00',
+        ]);
+
+        $this->getJson(
+            "/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}&dashboard_lite=1",
+            $headers
+        )
+            ->assertOk()
+            ->assertJsonPath('stats.is_lite', true)
+            ->assertJsonPath('stats.total_duration', 7200)
+            ->assertJsonPath('stats.working_duration', 6300)
+            ->assertJsonPath('stats.idle_total_duration', 900)
+            ->assertJsonPath('organization_summary.idle_duration', 900)
+            ->assertJsonPath('stats.activity_events', 0)
+            ->assertJsonPath('live_monitoring.selected_user.user.id', $employee->id)
+            ->assertJsonCount(0, 'selected_user_tools.productive');
     }
 
     public function test_employee_insights_marks_browser_tracking_as_not_paired_when_no_exact_connection_exists(): void

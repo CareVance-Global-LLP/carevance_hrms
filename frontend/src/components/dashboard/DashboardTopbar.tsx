@@ -118,10 +118,9 @@ export default function DashboardTopbar({
                   type="button"
                   onClick={onOpenAddUser}
                   aria-label="Add user"
-                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3.5 text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80 xl:pr-4"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80"
                 >
                   <UserPlus className="h-5 w-5 shrink-0" />
-                  <span className="hidden whitespace-nowrap text-sm font-semibold xl:inline">Add User</span>
                 </button>
               ) : null}
 

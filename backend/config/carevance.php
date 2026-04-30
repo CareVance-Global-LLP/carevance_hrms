@@ -22,6 +22,21 @@ return [
 
     'auth' => [
         'email_verification_expire_minutes' => (int) env('AUTH_EMAIL_VERIFICATION_EXPIRE_MINUTES', 1440),
+        'api_auth_cookie' => [
+            'name' => (string) env('API_AUTH_COOKIE_NAME', 'carevance_api_token'),
+            'minutes' => (int) env('API_AUTH_COOKIE_MINUTES', (int) env('AUTH_API_TOKEN_TTL_MINUTES', 10080)),
+            'session_token_minutes' => (int) env('API_AUTH_SESSION_TOKEN_TTL_MINUTES', 720),
+            'path' => (string) env('API_AUTH_COOKIE_PATH', '/'),
+            'domain' => env('API_AUTH_COOKIE_DOMAIN'),
+            'secure' => filter_var(
+                env('API_AUTH_COOKIE_SECURE', env('APP_ENV', 'production') === 'production'),
+                FILTER_VALIDATE_BOOL
+            ),
+            'same_site' => (string) env(
+                'API_AUTH_COOKIE_SAME_SITE',
+                env('APP_ENV', 'production') === 'production' ? 'none' : 'lax'
+            ),
+        ],
     ],
 
     'oauth' => [

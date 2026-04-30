@@ -5,7 +5,6 @@ use App\Http\Controllers\Api\DesktopDownloadController;
 use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Auth\VerifyEmailController;
-use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\ScreenshotController;
 use App\Http\Controllers\Api\SupportController;
 use App\Http\Controllers\Api\PasswordResetController;
@@ -30,5 +29,4 @@ Route::get('/downloads/desktop/windows', [DesktopDownloadController::class, 'win
 Route::get('/screenshots/{screenshot}/file', [ScreenshotController::class, 'file'])
     ->middleware('signed:relative')
     ->name('screenshots.file');
-Route::post('/payroll/webhooks/stripe', [PayrollController::class, 'stripeWebhook']);
 Route::post('/support/bug-reports', [SupportController::class, 'storeBugReport'])->middleware('throttle:support.bug-report');

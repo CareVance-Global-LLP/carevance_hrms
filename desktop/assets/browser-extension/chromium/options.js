@@ -1,4 +1,5 @@
 const STORAGE_KEYS = ['browserProfileId', 'bridgeCredentialsByBrowserProfile'];
+const SESSION_TOKEN_STORAGE_KEY = 'bridgeSessionTokensByBrowserProfile';
 const BRIDGE_LOCAL_URL = 'http://127.0.0.1:38947';
 
 export const pairBrowserBridge = async ({
@@ -70,15 +71,62 @@ export const buildBrowserBridgeCredential = ({
   pairing_code: String(pairingCode || '').trim(),
   paired_at: pairedAt,
   local_url: String(localUrl || '').trim(),
-  bearer_token: String(bearerToken || '').trim(),
   extension_origin: String(extensionOrigin || '').trim(),
   browser_name: String(browserName || '').trim().toLowerCase() || 'chrome',
   extension_version: String(extensionVersion || '').trim() || '0.1.0',
   bridge_status: 'paired',
 });
 
+export const persistBridgeSessionToken = async ({
+  sessionStorage = globalThis.chrome?.storage?.session,
+  browserProfileId,
+  bearerToken,
+} = {}) => {
+  if (!sessionStorage) {
+    throw new Error('Chrome session storage is unavailable.');
+  }
+
+  const profileKey = String(browserProfileId || '').trim();
+  const token = String(bearerToken || '').trim();
+  if (!profileKey || !token) {
+    throw new Error('A browser profile id and bearer token are required.');
+  }
+
+  const { [SESSION_TOKEN_STORAGE_KEY]: tokensByProfile = {} } = await sessionStorage.get(
+    SESSION_TOKEN_STORAGE_KEY
+  );
+
+  await sessionStorage.set({
+    [SESSION_TOKEN_STORAGE_KEY]: {
+      ...tokensByProfile,
+      [profileKey]: token,
+    },
+  });
+};
+
+export const loadBridgeSessionToken = async ({
+  sessionStorage = globalThis.chrome?.storage?.session,
+  browserProfileId,
+} = {}) => {
+  if (!sessionStorage) {
+    return '';
+  }
+
+  const profileKey = String(browserProfileId || '').trim();
+  if (!profileKey) {
+    return '';
+  }
+
+  const { [SESSION_TOKEN_STORAGE_KEY]: tokensByProfile = {} } = await sessionStorage.get(
+    SESSION_TOKEN_STORAGE_KEY
+  );
+
+  return String(tokensByProfile?.[profileKey] || '').trim();
+};
+
 export const loadOptions = async ({
   storage = globalThis.chrome?.storage?.local,
+  sessionStorage = globalThis.chrome?.storage?.session,
   elements,
 } = {}) => {
   if (!storage || !elements) {
@@ -91,9 +139,18 @@ export const loadOptions = async ({
       STORAGE_KEYS
     );
     const credential = bridgeCredentialsByBrowserProfile[browserProfileId];
+    const bearerToken = await loadBridgeSessionToken({
+      sessionStorage,
+      browserProfileId,
+    });
 
-    if (credential?.bearer_token && credential?.local_url) {
+    if (credential?.local_url && bearerToken) {
       elements.status.textContent = `Paired to browser profile ${browserProfileId}.`;
+      return;
+    }
+
+    if (credential?.local_url) {
+      elements.status.textContent = `Pairing expired for browser profile ${browserProfileId}. Pair again to continue tracking.`;
       return;
     }
 
@@ -105,6 +162,7 @@ export const loadOptions = async ({
 
 export const saveOptions = async ({
   storage = globalThis.chrome?.storage?.local,
+  sessionStorage = globalThis.chrome?.storage?.session,
   elements,
 } = {}) => {
   if (!storage || !elements) {
@@ -130,10 +188,19 @@ export const saveOptions = async ({
       'bridgeCredentialsByBrowserProfile'
     );
 
+    await persistBridgeSessionToken({
+      sessionStorage,
+      browserProfileId,
+      bearerToken: credential.bearer_token,
+    });
+
     await storage.set({
       bridgeCredentialsByBrowserProfile: {
         ...bridgeCredentialsByBrowserProfile,
-        [browserProfileId]: credential,
+        [browserProfileId]: {
+          ...credential,
+          bearer_token: undefined,
+        },
       },
     });
 
