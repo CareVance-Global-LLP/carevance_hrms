@@ -808,6 +808,7 @@ export default function AdminDashboard() {
   const employeeInsights: any = employeeDetail?.insights || null;
   const employeeScreenshots: any = employeeDetail?.screenshots || null;
   const employeeStats = employeeInsights?.stats || employeeProfile?.summary || {};
+  const selectedEmployeeIdleSeconds = Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0);
   const employeePresentDays = Math.max(
     Number(employeeStats.present_days || 0),
     Number(selectedWorkStatus?.presentDays || 0)
@@ -1286,7 +1287,7 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Tracked</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedWorkStatus?.todaySeconds || 0)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{employeePresentDays} present</p></div>
-                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0))}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Screenshots</p><p className="mt-2 text-lg font-semibold text-blue-700">{employeeScreenshotCount}</p></div>
               </div>
 
@@ -1535,8 +1536,8 @@ export default function AdminDashboard() {
               <p className="mt-2 text-lg font-semibold">{formatDuration(totalDuration)}</p>
             </div>
             <div className="rounded-lg border border-slate-100 p-3">
-              <p className="text-xs text-slate-500">Range Total</p>
-              <p className="mt-2 text-lg font-semibold">{formatDuration(weeklyTotal)}</p>
+              <p className="text-xs text-slate-500">Idle Time</p>
+              <p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p>
             </div>
           </div>
         </Card>

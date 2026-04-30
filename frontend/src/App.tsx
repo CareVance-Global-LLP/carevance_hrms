@@ -329,7 +329,7 @@ function App() {
             <Route path="payroll/adjustments" element={<PayrollWorkspace mode="adjustments" />} />
             <Route path="payroll/reimbursements" element={<Navigate to="/payroll/adjustments" replace />} />
             <Route path="payroll/payslips" element={<PayrollWorkspace mode="payslips" />} />
-            <Route path="payroll/reports" element={<Navigate to="/payroll" replace />} />
+            <Route path="payroll/reports" element={<PayrollWorkspace mode="reports" />} />
             <Route path="payroll/settings" element={<PayrollWorkspace mode="settings" />} />
             <Route path="user-management" element={<Navigate to="/employees" replace />} />
             <Route path="employees" element={<AdminRoute><EmployeeManagementWorkspace mode="employees" /></AdminRoute>} />

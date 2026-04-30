@@ -419,17 +419,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    if (!DEMO_MODE && isTrackedTimerUser(user)) {
-      try {
-        await timeEntryApi.stop({ timer_slot: 'primary' });
-      } catch (error) {
-        const status = getResponseStatus(error);
-        if (status !== 404 && status !== 401 && status !== 403) {
-          console.error('Timer stop on logout error:', error);
-        }
-      }
-    }
-
     if (!DEMO_MODE) {
       try {
         await authApi.logout();

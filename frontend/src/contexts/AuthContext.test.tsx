@@ -95,7 +95,7 @@ describe('AuthProvider', () => {
     expect(localStorage.getItem('token')).toBeNull();
   });
 
-  it('does not arm auto-start on employee login in the browser and stops the timer on logout', async () => {
+  it('does not arm auto-start on employee login in the browser and keeps the timer running on logout', async () => {
     const user = userEvent.setup();
 
     vi.mocked(authApi.login).mockResolvedValue({
@@ -115,7 +115,6 @@ describe('AuthProvider', () => {
       },
     } as any);
     vi.mocked(authApi.logout).mockResolvedValue({ data: { success: true } } as any);
-    vi.mocked(timeEntryApi.stop).mockResolvedValue({ data: null } as any);
 
     renderWithProviders(
       <AuthProvider>
@@ -135,9 +134,9 @@ describe('AuthProvider', () => {
     await user.click(screen.getByRole('button', { name: /logout/i }));
 
     await waitFor(() => {
-      expect(timeEntryApi.stop).toHaveBeenCalledWith({ timer_slot: 'primary' });
       expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
     });
+    expect(timeEntryApi.stop).not.toHaveBeenCalled();
   });
 
   it('arms auto-start on employee login in the desktop shell', async () => {

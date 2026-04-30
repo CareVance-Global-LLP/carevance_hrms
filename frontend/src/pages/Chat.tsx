@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from
 import { useSearchParams } from 'react-router-dom';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { useAuth } from '@/contexts/AuthContext';
-import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue } from '@/lib/searchSuggestions';
+import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import { chatApi } from '@/services/api';
 import type { ChatConversation, ChatGroup, ChatGroupMessage, ChatMessage, ChatTypingUser } from '@/types';
 
@@ -19,7 +19,6 @@ type MessageContextMenuState = {
   y: number;
 };
 
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '🎉', '😮'];
 
 type MessageContextMenuLayout = {
   left: number;
@@ -73,6 +72,12 @@ const calculateContextMenuLayout = (
   };
 };
 
+const getThreadKey = (thread: ThreadSelection) => (thread ? `${thread.type}:${thread.id}` : '');
+
+const isSameThread = (left: ThreadSelection, right: ThreadSelection) => (
+  left?.type === right?.type && left?.id === right?.id
+);
+
 export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
@@ -102,6 +107,13 @@ export default function Chat() {
   const typingTimeoutRef = useRef<number | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const pendingThreadRef = useRef<ThreadSelection>(null);
+  const activeThreadKeyRef = useRef('');
+  const openDirectRequestRef = useRef(0);
+
+  const selectThread = (thread: ThreadSelection) => {
+    activeThreadKeyRef.current = getThreadKey(thread);
+    setSelectedThread(thread);
+  };
 
   const selectedConversation = useMemo(
     () => (selectedThread?.type === 'direct' ? conversations.find((c) => c.id === selectedThread.id) || null : null),
@@ -123,24 +135,6 @@ export default function Chat() {
     [availableUsers]
   );
   const persistedQuickReactions = NORMALIZED_QUICK_REACTIONS;
-  const emojiPickerGroups = [
-    {
-      label: 'Smileys',
-      emojis: ['😀', '😄', '😁', '😂', '🤣', '😊', '😍', '😘', '😎', '🤔', '😭', '😮'],
-    },
-    {
-      label: 'Gestures',
-      emojis: ['👍', '👎', '👏', '🙌', '🙏', '👌', '✌️', '🤝', '💪', '🔥', '✅', '👀'],
-    },
-    {
-      label: 'Hearts',
-      emojis: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🤍', '🖤', '💖', '💯', '✨', '🎉'],
-    },
-    {
-      label: 'Work',
-      emojis: ['📌', '📎', '📣', '📝', '💬', '📅', '⏰', '🚀', '🎯', '🤝', '📈', '🏆'],
-    },
-  ];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -203,10 +197,16 @@ export default function Chat() {
       return;
     }
 
+    const threadKey = getThreadKey(thread);
+
     try {
       const response = thread.type === 'direct'
         ? await chatApi.getMessages(thread.id, sinceId ? { since_id: sinceId } : undefined)
         : await chatApi.getGroupMessages(thread.id, sinceId ? { since_id: sinceId } : undefined);
+
+      if (activeThreadKeyRef.current !== threadKey) {
+        return;
+      }
 
       const incoming = response.data || [];
       if (!sinceId) {
@@ -217,14 +217,18 @@ export default function Chat() {
 
       if (thread.type === 'direct') {
         await chatApi.markRead(thread.id);
-        setConversations((prev) => prev.map((conversation) => (
-          conversation.id === thread.id ? { ...conversation, unread_count: 0 } : conversation
-        )));
+        if (activeThreadKeyRef.current === threadKey) {
+          setConversations((prev) => prev.map((conversation) => (
+            conversation.id === thread.id ? { ...conversation, unread_count: 0 } : conversation
+          )));
+        }
       } else {
         await chatApi.markGroupRead(thread.id);
-        setGroups((prev) => prev.map((group) => (
-          group.id === thread.id ? { ...group, unread_count: 0 } : group
-        )));
+        if (activeThreadKeyRef.current === threadKey) {
+          setGroups((prev) => prev.map((group) => (
+            group.id === thread.id ? { ...group, unread_count: 0 } : group
+          )));
+        }
       }
     } catch (e) {
       console.error(`Failed to load ${thread.type} messages`, e);
@@ -237,13 +241,19 @@ export default function Chat() {
       return;
     }
 
+    const threadKey = getThreadKey(thread);
+
     try {
       const response = thread.type === 'direct'
         ? await chatApi.getTyping(thread.id)
         : await chatApi.getGroupTyping(thread.id);
-      setTypingUsers(response.data || []);
+      if (activeThreadKeyRef.current === threadKey) {
+        setTypingUsers(response.data || []);
+      }
     } catch {
-      setTypingUsers([]);
+      if (activeThreadKeyRef.current === threadKey) {
+        setTypingUsers([]);
+      }
     }
   };
 
@@ -267,66 +277,73 @@ export default function Chat() {
       ? { type: threadType, id: threadId }
       : null;
 
-    if (threadType === 'direct' && threadId > 0 && conversations.some((conversation) => conversation.id === threadId)) {
-      if (selectedThread?.type !== 'direct' || selectedThread.id !== threadId) {
-        setSelectedThread({ type: 'direct', id: threadId });
-      }
-      return;
-    }
-
-    if (threadType === 'group' && threadId > 0 && groups.some((group) => group.id === threadId)) {
-      if (selectedThread?.type !== 'group' || selectedThread.id !== threadId) {
-        setSelectedThread({ type: 'group', id: threadId });
-      }
-      return;
-    }
-
-    if (selectedThread) {
-      const exists = selectedThread.type === 'direct'
-        ? conversations.some((conversation) => conversation.id === selectedThread.id)
-        : groups.some((group) => group.id === selectedThread.id);
-
-      if (exists) {
-        return;
+    setSelectedThread((currentThread) => {
+      if (threadType === 'direct' && threadId > 0 && conversations.some((conversation) => conversation.id === threadId)) {
+        const nextThread = { type: 'direct' as const, id: threadId };
+        activeThreadKeyRef.current = getThreadKey(nextThread);
+        return isSameThread(currentThread, nextThread) ? currentThread : nextThread;
       }
 
-      // Keep the current selection while thread data is catching up instead of
-      // snapping back to the first conversation and causing the UI to flicker.
-      if (
-        requestedThread &&
-        requestedThread.id > 0 &&
-        requestedThread.type === selectedThread.type &&
-        requestedThread.id === selectedThread.id
-      ) {
-        return;
+      if (threadType === 'group' && threadId > 0 && groups.some((group) => group.id === threadId)) {
+        const nextThread = { type: 'group' as const, id: threadId };
+        activeThreadKeyRef.current = getThreadKey(nextThread);
+        return isSameThread(currentThread, nextThread) ? currentThread : nextThread;
       }
 
-      const pendingThread = pendingThreadRef.current;
-      if (
-        pendingThread &&
-        pendingThread.type === selectedThread.type &&
-        pendingThread.id === selectedThread.id
-      ) {
-        return;
+      if (currentThread) {
+        const exists = currentThread.type === 'direct'
+          ? conversations.some((conversation) => conversation.id === currentThread.id)
+          : groups.some((group) => group.id === currentThread.id);
+
+        if (exists) {
+          activeThreadKeyRef.current = getThreadKey(currentThread);
+          return currentThread;
+        }
+
+        // Keep the current selection while thread data is catching up instead of
+        // snapping back to the first conversation and causing the UI to flicker.
+        if (
+          requestedThread &&
+          requestedThread.id > 0 &&
+          requestedThread.type === currentThread.type &&
+          requestedThread.id === currentThread.id
+        ) {
+          activeThreadKeyRef.current = getThreadKey(currentThread);
+          return currentThread;
+        }
+
+        const pendingThread = pendingThreadRef.current;
+        if (
+          pendingThread &&
+          pendingThread.type === currentThread.type &&
+          pendingThread.id === currentThread.id
+        ) {
+          activeThreadKeyRef.current = getThreadKey(currentThread);
+          return currentThread;
+        }
+
+        if (threadId <= 0 || currentThread.id > 0) {
+          activeThreadKeyRef.current = getThreadKey(currentThread);
+          return currentThread;
+        }
       }
 
-      if (threadId <= 0 || selectedThread.id > 0) {
-        return;
+      if (conversations.length > 0) {
+        const nextThread = { type: 'direct' as const, id: conversations[0].id };
+        activeThreadKeyRef.current = getThreadKey(nextThread);
+        return nextThread;
       }
-    }
 
-    if (conversations.length > 0) {
-      setSelectedThread({ type: 'direct', id: conversations[0].id });
-      return;
-    }
+      if (groups.length > 0) {
+        const nextThread = { type: 'group' as const, id: groups[0].id };
+        activeThreadKeyRef.current = getThreadKey(nextThread);
+        return nextThread;
+      }
 
-    if (groups.length > 0) {
-      setSelectedThread({ type: 'group', id: groups[0].id });
-      return;
-    }
-
-    setSelectedThread(null);
-  }, [conversations, groups, searchParams, selectedThread]);
+      activeThreadKeyRef.current = '';
+      return null;
+    });
+  }, [conversations, groups, searchParams]);
 
   useEffect(() => {
     const nextParams = new URLSearchParams(searchParams);
@@ -346,11 +363,13 @@ export default function Chat() {
 
   useEffect(() => {
     if (!selectedThread) {
+      activeThreadKeyRef.current = '';
       setMessages([]);
       setTypingUsers([]);
       return;
     }
 
+    activeThreadKeyRef.current = getThreadKey(selectedThread);
     shouldStickToBottomRef.current = true;
     setAttachmentFile(null);
     setEditingMessageId(null);
@@ -474,36 +493,55 @@ export default function Chat() {
     }
   }, [editingMessageId, messageContextMenu, messages]);
 
-  const startConversationFromDraft = async () => {
+  const openDirectConversation = async (email: string) => {
     setError('');
-    const typedValue = startEmail.trim();
-    if (!typedValue) return;
+    const nextEmail = email.trim();
+    if (!nextEmail) return;
 
-    const normalizedTypedValue = normalizeSearchValue(typedValue);
-    const matchedUser =
-      selectedStartUser ||
-      availableUsers.find((candidate) => (
-        normalizeSearchValue(candidate.name) === normalizedTypedValue ||
-        normalizeSearchValue(candidate.email) === normalizedTypedValue
-      )) ||
-      null;
-
-    const email = matchedUser?.email?.trim() || typedValue;
+    const requestId = openDirectRequestRef.current + 1;
+    openDirectRequestRef.current = requestId;
 
     try {
-      const response = await chatApi.startConversation(email);
+      const response = await chatApi.startConversation(nextEmail);
+      if (requestId !== openDirectRequestRef.current) {
+        return;
+      }
+
       const created = response.data;
       setStartEmail('');
       setSelectedStartUserId(null);
       if (created?.id) {
         const nextThread = { type: 'direct' as const, id: created.id };
         pendingThreadRef.current = nextThread;
-        setSelectedThread(nextThread);
+        selectThread(nextThread);
       }
       await loadThreads();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Could not start conversation');
+      if (requestId === openDirectRequestRef.current) {
+        setError(err?.response?.data?.message || 'Could not start conversation');
+      }
     }
+  };
+
+  const startConversationFromDraft = async () => {
+    const typedValue = startEmail.trim();
+    if (!typedValue) return;
+
+    const normalizedTypedValue = normalizeSearchValue(typedValue);
+    const rankedMatches = rankSearchSuggestions(availableUserSuggestions, typedValue, 2);
+    const singleSuggestedUser = rankedMatches.length === 1
+      ? availableUsers.find((candidate) => Number(candidate.id) === Number(rankedMatches[0].id)) || null
+      : null;
+    const matchedUser =
+      selectedStartUser ||
+      availableUsers.find((candidate) => (
+        normalizeSearchValue(candidate.name) === normalizedTypedValue ||
+        normalizeSearchValue(candidate.email) === normalizedTypedValue
+      )) ||
+      singleSuggestedUser ||
+      null;
+
+    await openDirectConversation(matchedUser?.email?.trim() || typedValue);
   };
 
   const handleStartConversation = async (e: FormEvent) => {
@@ -528,7 +566,7 @@ export default function Chat() {
       setGroupMemberIds([]);
       await loadThreads();
       if (response.data?.id) {
-        setSelectedThread({ type: 'group', id: response.data.id });
+        selectThread({ type: 'group', id: response.data.id });
       }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not create group');
@@ -798,8 +836,12 @@ export default function Chat() {
             }}
             onSuggestionSelect={(suggestion) => {
               const nextUserId = Number((suggestion.payload as { id?: number } | undefined)?.id || suggestion.id || 0);
+              const nextUser = availableUsers.find((candidate) => Number(candidate.id) === nextUserId) || null;
               setStartEmail(getSuggestionDisplayValue(suggestion));
               setSelectedStartUserId(Number.isFinite(nextUserId) && nextUserId > 0 ? nextUserId : null);
+              if (nextUser?.email) {
+                void openDirectConversation(nextUser.email);
+              }
             }}
             onCommit={() => {
               void startConversationFromDraft();
@@ -861,7 +903,7 @@ export default function Chat() {
                 conversations.map((conversation) => (
                   <button
                     key={conversation.id}
-                    onClick={() => setSelectedThread({ type: 'direct', id: conversation.id })}
+                    onClick={() => selectThread({ type: 'direct', id: conversation.id })}
                     className={`w-full rounded-lg border p-3 text-left ${
                       selectedThread?.type === 'direct' && selectedThread.id === conversation.id
                         ? 'border-primary-300 bg-primary-50'
@@ -896,7 +938,7 @@ export default function Chat() {
                 groups.map((group) => (
                   <button
                     key={group.id}
-                    onClick={() => setSelectedThread({ type: 'group', id: group.id })}
+                    onClick={() => selectThread({ type: 'group', id: group.id })}
                     className={`w-full rounded-lg border p-3 text-left ${
                       selectedThread?.type === 'group' && selectedThread.id === group.id
                         ? 'border-primary-300 bg-primary-50'

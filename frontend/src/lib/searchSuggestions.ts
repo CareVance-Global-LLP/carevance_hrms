@@ -186,7 +186,7 @@ export const buildEmployeeSearchSuggestions = <T extends EmployeeSearchSource>(e
       label,
       description: email && email.toLowerCase() !== label.toLowerCase() ? email : undefined,
       value: label,
-      searchValues: [label],
+      searchValues: [label, email],
       payload: employee,
     };
   });

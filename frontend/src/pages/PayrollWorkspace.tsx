@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Banknote, CheckCircle2, Play, Receipt, Settings, SlidersHorizontal, Users, Wallet } from 'lucide-react';
+import { AlertTriangle, Banknote, BarChart3, CheckCircle2, Play, Receipt, Settings, SlidersHorizontal, Users, Wallet } from 'lucide-react';
 import DataTable from '@/components/dashboard/DataTable';
 import MetricCard from '@/components/dashboard/MetricCard';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -14,7 +14,7 @@ import { hasAdminAccess } from '@/lib/permissions';
 import { payrollSimpleApi } from '@/services/api';
 import { cn } from '@/utils/cn';
 
-type PayrollTab = 'overview' | 'run' | 'salary' | 'adjustments' | 'payslips' | 'settings';
+type PayrollTab = 'overview' | 'run' | 'salary' | 'adjustments' | 'payslips' | 'reports' | 'settings';
 type PayrollWorkspaceMode = 'overview' | 'runs' | 'employees' | 'adjustments' | 'payslips' | 'settings' | 'components' | 'structures' | 'reports' | 'employee-detail';
 
 const tabs: Array<{ key: PayrollTab; label: string; icon: typeof Wallet }> = [
@@ -23,6 +23,7 @@ const tabs: Array<{ key: PayrollTab; label: string; icon: typeof Wallet }> = [
   { key: 'salary', label: 'Salary Setup', icon: Users },
   { key: 'adjustments', label: 'Adjustments', icon: SlidersHorizontal },
   { key: 'payslips', label: 'Payslips', icon: Receipt },
+  { key: 'reports', label: 'Payroll Report', icon: BarChart3 },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -32,10 +33,10 @@ const modeToTab: Record<string, PayrollTab> = {
   employees: 'salary',
   adjustments: 'adjustments',
   payslips: 'payslips',
+  reports: 'reports',
   settings: 'settings',
   components: 'settings',
   structures: 'settings',
-  reports: 'settings',
   'employee-detail': 'salary',
 };
 
@@ -109,6 +110,7 @@ export default function PayrollWorkspace({ mode }: { mode: PayrollWorkspaceMode 
       {activeTab === 'salary' && canManage ? <SalarySetup setFeedback={setFeedback} /> : null}
       {activeTab === 'adjustments' && canManage ? <Adjustments month={month} setFeedback={setFeedback} /> : null}
       {activeTab === 'payslips' ? <Payslips month={month} canManage={canManage} /> : null}
+      {activeTab === 'reports' && canManage ? <PayrollReport month={month} /> : null}
       {activeTab === 'settings' && canManage ? <BasicSettings setFeedback={setFeedback} /> : null}
     </div>
   );
@@ -427,6 +429,91 @@ function Payslips({ month, canManage }: { month: string; canManage: boolean }) {
         { key: 'download', header: 'Download', render: (row: any) => <button type="button" className="text-sm font-semibold text-blue-600" onClick={() => downloadPayslip(row.id, row.period_month)}>PDF</button> },
       ]}
     />
+  );
+}
+
+function PayrollReport({ month }: { month: string }) {
+  const query = useQuery({
+    queryKey: ['simple-payroll-report', month],
+    queryFn: async () => {
+      const [overviewResponse, runsResponse, payslipsResponse, adjustmentsResponse] = await Promise.all([
+        payrollSimpleApi.overview(month),
+        payrollSimpleApi.runs(month),
+        payrollSimpleApi.payslips(month),
+        payrollSimpleApi.adjustments(month),
+      ]);
+
+      return {
+        overview: overviewResponse.data,
+        runs: runsResponse.data?.data || [],
+        payslips: payslipsResponse.data?.data || [],
+        adjustments: adjustmentsResponse.data?.data || [],
+      };
+    },
+  });
+
+  if (query.isLoading) return <PageLoadingState label="Loading payroll report..." />;
+  if (query.isError) return <PageErrorState message="Unable to load payroll report." onRetry={() => void query.refetch()} />;
+
+  const data = query.data;
+  const summary = data.overview?.summary || {};
+  const currentRun = data.overview?.current_run || data.runs?.[0] || null;
+  const payslips = Array.isArray(data.payslips) ? data.payslips : [];
+  const adjustments = Array.isArray(data.adjustments) ? data.adjustments : [];
+  const paidPayslips = payslips.filter((row: any) => ['paid', 'published'].includes(String(row.payment_status || row.status || '').toLowerCase())).length;
+  const pendingPayslips = Math.max(0, payslips.length - paidPayslips);
+  const adjustmentTotal = adjustments.reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+
+  return (
+    <div className="space-y-5">
+      <SurfaceCard className="p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">Payroll Report - {monthName(month)}</h2>
+            <p className="mt-1 text-sm text-slate-500">Month-specific payroll totals, run status, payslips, and manual adjustments.</p>
+          </div>
+          <StatusBadge status={currentRun?.status || 'not_run'} />
+        </div>
+      </SurfaceCard>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <MetricCard label="Employees" value={summary.employees || currentRun?.employees || payslips.length || 0} hint="Included in payroll." icon={Users} accent="slate" />
+        <MetricCard label="Gross Pay" value={money(summary.gross_pay || currentRun?.gross_pay || 0)} icon={Wallet} accent="emerald" />
+        <MetricCard label="Deductions" value={money(summary.deductions || currentRun?.deductions || 0)} icon={AlertTriangle} accent="amber" />
+        <MetricCard label="Net Pay" value={money(summary.net_pay || currentRun?.net_pay || 0)} icon={Banknote} accent="violet" />
+        <MetricCard label="Payslips" value={payslips.length} hint={`${paidPayslips} paid / ${pendingPayslips} pending`} icon={Receipt} accent="sky" />
+        <MetricCard label="Adjustments" value={money(adjustmentTotal)} hint={`${adjustments.length} entries`} icon={SlidersHorizontal} accent="rose" />
+      </div>
+
+      <DataTable
+        title="Payroll Report: Payslips"
+        description="Payroll-only payslip summary for the selected month."
+        rows={payslips}
+        emptyMessage="No payslips generated for this payroll month."
+        columns={[
+          { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Employee' },
+          { key: 'month', header: 'Payroll Month', render: (row: any) => monthName(row.period_month || month) },
+          { key: 'gross', header: 'Gross Pay', render: (row: any) => money(Number(row.basic_salary || 0) + Number(row.total_allowances || 0), row.currency) },
+          { key: 'deductions', header: 'Deductions', render: (row: any) => money(row.total_deductions, row.currency) },
+          { key: 'net', header: 'Net Pay', render: (row: any) => <span className="font-semibold text-slate-950">{money(row.net_salary, row.currency)}</span> },
+          { key: 'status', header: 'Payment Status', render: (row: any) => <StatusBadge status={row.payment_status || row.status || 'pending'} /> },
+        ]}
+      />
+
+      <DataTable
+        title="Payroll Report: Adjustments"
+        description="Bonuses, reimbursements, deductions, overtime, and LOP corrections included around this payroll month."
+        rows={adjustments}
+        emptyMessage="No adjustments for this payroll month."
+        columns={[
+          { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Employee' },
+          { key: 'type', header: 'Adjustment Type', render: (row: any) => String(row.meta?.simple_type || row.kind || 'adjustment').replace(/_/g, ' ') },
+          { key: 'amount', header: 'Amount', render: (row: any) => money(row.amount, row.currency || 'INR') },
+          { key: 'reason', header: 'Reason', render: (row: any) => row.description || '-' },
+          { key: 'status', header: 'Status', render: (row: any) => <StatusBadge status={row.status || 'pending'} /> },
+        ]}
+      />
+    </div>
   );
 }
 
