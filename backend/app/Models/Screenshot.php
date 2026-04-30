@@ -33,14 +33,17 @@ class Screenshot extends Model
             absolute: false
         );
 
+        $fallbackBaseUrl = rtrim((string) config('app.url', ''), '/');
+        if ($fallbackBaseUrl !== '') {
+            return $fallbackBaseUrl.$relativeSignedPath;
+        }
+
         $request = request();
         if ($request) {
             return rtrim($request->getSchemeAndHttpHost(), '/').$relativeSignedPath;
         }
 
-        $fallbackBaseUrl = rtrim((string) config('app.url', ''), '/');
-
-        return $fallbackBaseUrl !== '' ? $fallbackBaseUrl.$relativeSignedPath : $relativeSignedPath;
+        return $relativeSignedPath;
     }
 
     public function getRecordedAtAttribute(): string

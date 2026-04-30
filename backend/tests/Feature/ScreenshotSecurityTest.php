@@ -58,10 +58,10 @@ class ScreenshotSecurityTest extends TestCase
         }
     }
 
-    public function test_screenshot_path_uses_current_request_host_even_when_app_url_is_different(): void
+    public function test_screenshot_path_uses_configured_app_url_even_when_request_host_is_different(): void
     {
         Storage::fake('screenshots');
-        config()->set('app.url', 'https://wrong-host.invalid');
+        config()->set('app.url', 'https://api.carevance.example');
 
         $organization = Organization::create([
             'name' => 'CareVance',
@@ -90,8 +90,8 @@ class ScreenshotSecurityTest extends TestCase
         ], $this->apiHeadersFor($user));
 
         $response->assertCreated();
-        $this->assertStringContainsString('http://localhost:8000/api/screenshots/', (string) $response->json('path'));
-        $this->assertStringNotContainsString('wrong-host.invalid', (string) $response->json('path'));
+        $this->assertStringStartsWith('https://api.carevance.example/api/screenshots/', (string) $response->json('path'));
+        $this->assertStringNotContainsString('localhost:8000', (string) $response->json('path'));
     }
 
     public function test_expired_signed_screenshot_url_returns_helpful_forbidden_message(): void
