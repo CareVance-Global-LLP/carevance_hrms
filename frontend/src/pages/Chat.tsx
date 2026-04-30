@@ -101,6 +101,7 @@ export default function Chat() {
   const messageContextMenuRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const shouldStickToBottomRef = useRef(true);
+  const pendingThreadRef = useRef<ThreadSelection>(null);
 
   const selectedConversation = useMemo(
     () => (selectedThread?.type === 'direct' ? conversations.find((c) => c.id === selectedThread.id) || null : null),
@@ -162,10 +163,26 @@ export default function Chat() {
         chatApi.getGroups(),
       ]);
 
-      setConversations(conversationResponse.data || []);
-      setGroups(groupResponse.data || []);
+      const nextConversations = conversationResponse.data || [];
+      const nextGroups = groupResponse.data || [];
+      setConversations(nextConversations);
+      setGroups(nextGroups);
+
+      const pendingThread = pendingThreadRef.current;
+      if (
+        pendingThread &&
+        (
+          (pendingThread.type === 'direct' && nextConversations.some((conversation) => conversation.id === pendingThread.id)) ||
+          (pendingThread.type === 'group' && nextGroups.some((group) => group.id === pendingThread.id))
+        )
+      ) {
+        pendingThreadRef.current = null;
+      }
+
+      return { conversations: nextConversations, groups: nextGroups };
     } catch (e) {
       console.error('Failed to load chat threads', e);
+      return { conversations, groups };
     } finally {
       setIsLoading(false);
     }
@@ -284,7 +301,16 @@ export default function Chat() {
         return;
       }
 
-      if (threadId <= 0) {
+      const pendingThread = pendingThreadRef.current;
+      if (
+        pendingThread &&
+        pendingThread.type === selectedThread.type &&
+        pendingThread.id === selectedThread.id
+      ) {
+        return;
+      }
+
+      if (threadId <= 0 || selectedThread.id > 0) {
         return;
       }
     }
@@ -469,10 +495,12 @@ export default function Chat() {
       const created = response.data;
       setStartEmail('');
       setSelectedStartUserId(null);
-      await loadThreads();
       if (created?.id) {
-        setSelectedThread({ type: 'direct', id: created.id });
+        const nextThread = { type: 'direct' as const, id: created.id };
+        pendingThreadRef.current = nextThread;
+        setSelectedThread(nextThread);
       }
+      await loadThreads();
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not start conversation');
     }
