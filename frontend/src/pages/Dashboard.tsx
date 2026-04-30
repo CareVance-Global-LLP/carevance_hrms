@@ -37,8 +37,8 @@ const SectionTitle = ({ title, action }: { title: string; action?: ReactNode }) 
   </div>
 );
 
-const KpiCard = ({ label, value, hint, icon: Icon, tint }: { label: string; value: string | number; hint: string; icon: any; tint: string }) => (
-  <Card className="p-4">
+const KpiCard = ({ label, value, hint, icon: Icon, tint, to }: { label: string; value: string | number; hint: string; icon: any; tint: string; to?: string }) => {
+  const content = (
     <div className="flex items-start justify-between gap-3">
       <div>
         <p className="text-xs text-slate-500">{label}</p>
@@ -49,8 +49,18 @@ const KpiCard = ({ label, value, hint, icon: Icon, tint }: { label: string; valu
         <Icon className="h-5 w-5" />
       </div>
     </div>
-  </Card>
-);
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className="block rounded-lg transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+        <Card className="p-4">{content}</Card>
+      </Link>
+    );
+  }
+
+  return <Card className="p-4">{content}</Card>;
+};
 
 const EmptyInline = ({ children }: { children: ReactNode }) => (
   <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
@@ -411,10 +421,11 @@ export default function Dashboard() {
       </header>
 
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <KpiCard label="Worked Today" value={formatDuration(effectiveWorkedSeconds)} hint={todayDeltaLabel} icon={Clock} tint="bg-blue-50 text-blue-600" />
-        <KpiCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} tint="bg-violet-50 text-violet-600" />
-        <KpiCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} tint="bg-amber-50 text-amber-600" />
+        <KpiCard to="/attendance" label="Worked Today" value={formatDuration(effectiveWorkedSeconds)} hint={todayDeltaLabel} icon={Clock} tint="bg-blue-50 text-blue-600" />
+        <KpiCard to="/attendance" label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} tint="bg-violet-50 text-violet-600" />
+        <KpiCard to="/time-tracker" label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} tint="bg-amber-50 text-amber-600" />
         <KpiCard
+          to={hasHalfDayLeaveToday ? '/attendance' : '/tasks'}
           label={hasHalfDayLeaveToday ? 'Leave Today' : 'Active Tasks'}
           value={hasHalfDayLeaveToday ? 'Half Day' : activeTasksCount}
           hint={hasHalfDayLeaveToday ? 'Attendance target reduced' : `${totalTasksCount} total tasks`}
@@ -537,7 +548,7 @@ export default function Dashboard() {
         </Card>
 
         <Card id="time-tracker-card" className="scroll-mt-24 p-4">
-          <SectionTitle title="Time Tracker" action={<Settings className="h-4 w-4 text-slate-400" />} />
+          <SectionTitle title="Time Tracker" action={<Link to="/time-tracker" className="text-xs font-medium text-blue-600">Open</Link>} />
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
             <p className="text-xs text-slate-500">{activeTimer ? 'Active timer' : 'No active timer'}</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight text-blue-600">{formatTimerClock(activeTimerSeconds)}</p>

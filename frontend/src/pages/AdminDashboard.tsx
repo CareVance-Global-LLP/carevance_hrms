@@ -82,6 +82,14 @@ type DateRange = {
 
 type DashboardScope = 'overall' | 'employee';
 
+type PersistedDashboardFilters = {
+  dashboardScope?: DashboardScope;
+  selectedEmployeeId?: number | null;
+  scopeDepartmentFilter?: string;
+  datePreset?: DatePreset;
+  customRange?: Partial<DateRange>;
+};
+
 type UniversalSuggestion = {
   id: string;
   label: string;
@@ -140,6 +148,25 @@ const datePresetOptions: Array<{ value: DatePreset; label: string }> = [
   { value: 'custom', label: 'Custom' },
 ];
 
+const dashboardFilterStorageKey = 'admin-dashboard-filters';
+
+const isDatePreset = (value: unknown): value is DatePreset =>
+  datePresetOptions.some((option) => option.value === value);
+
+const isDashboardScope = (value: unknown): value is DashboardScope =>
+  value === 'overall' || value === 'employee';
+
+const readPersistedDashboardFilters = (): PersistedDashboardFilters => {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const raw = window.localStorage.getItem(dashboardFilterStorageKey);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
 const dateInRange = (value: string | null | undefined, range: DateRange) => {
   if (!value) return false;
   const date = String(value).slice(0, 10);
@@ -187,6 +214,21 @@ const formatCompactDuration = (seconds: number) => {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+const formatTimerClock = (seconds: number) => {
+  const safe = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const secs = Math.floor(safe % 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+};
+
+const getStartTimeMs = (startTime?: string | null) => {
+  if (!startTime) return NaN;
+  const parsed = new Date(startTime).getTime();
+  if (Number.isFinite(parsed)) return parsed;
+  return new Date(startTime.replace(' ', 'T')).getTime();
 };
 
 const formatCurrency = (amount: number) =>
@@ -276,8 +318,8 @@ const EmptyInline = ({ children }: { children: ReactNode }) => (
   </div>
 );
 
-const KpiCard = ({ label, value, hint, icon: Icon, tint }: { label: string; value: string | number; hint: string; icon: any; tint: string }) => (
-  <Card className="p-4">
+const KpiCard = ({ label, value, hint, icon: Icon, tint, to }: { label: string; value: string | number; hint: string; icon: any; tint: string; to?: string }) => {
+  const content = (
     <div className="flex items-start justify-between gap-3">
       <div>
         <p className="text-xs text-slate-500">{label}</p>
@@ -288,8 +330,18 @@ const KpiCard = ({ label, value, hint, icon: Icon, tint }: { label: string; valu
         <Icon className="h-5 w-5" />
       </div>
     </div>
-  </Card>
-);
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className="block rounded-lg transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+        <Card className="p-4">{content}</Card>
+      </Link>
+    );
+  }
+
+  return <Card className="p-4">{content}</Card>;
+};
 
 const MiniLineChart = ({ points, values }: { points?: TrendPoint[]; values?: number[] }) => {
   const chartPoints = points?.length
@@ -376,19 +428,33 @@ const DonutChart = ({ items }: { items: Array<{ label: string; value: number; co
 export default function AdminDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const persistedFilters = useMemo(readPersistedDashboardFilters, []);
   const [universalSearch, setUniversalSearch] = useState('');
   const [isUniversalSearchOpen, setIsUniversalSearchOpen] = useState(false);
   const [isDashboardNotificationsOpen, setIsDashboardNotificationsOpen] = useState(false);
+  const [clockTick, setClockTick] = useState(() => Date.now());
   const dashboardNotificationsRef = useRef<HTMLDivElement | null>(null);
   const [workSearch, setWorkSearch] = useState('');
   const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
-  const [dashboardScope, setDashboardScope] = useState<DashboardScope>('overall');
+  const [dashboardScope, setDashboardScope] = useState<DashboardScope>(() =>
+    isDashboardScope(persistedFilters.dashboardScope) ? persistedFilters.dashboardScope : 'overall'
+  );
   const [scopeSearch, setScopeSearch] = useState('');
-  const [scopeDepartmentFilter, setScopeDepartmentFilter] = useState('All');
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
-  const [datePreset, setDatePreset] = useState<DatePreset>('today');
-  const [customRange, setCustomRange] = useState<DateRange>(() => ({ startDate: todayIso(), endDate: todayIso() }));
+  const [scopeDepartmentFilter, setScopeDepartmentFilter] = useState(() => persistedFilters.scopeDepartmentFilter || 'All');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(() => {
+    const persistedEmployeeId = Number(persistedFilters.selectedEmployeeId);
+    return persistedFilters.selectedEmployeeId != null && Number.isFinite(persistedEmployeeId) && persistedEmployeeId > 0
+      ? persistedEmployeeId
+      : null;
+  });
+  const [datePreset, setDatePreset] = useState<DatePreset>(() =>
+    isDatePreset(persistedFilters.datePreset) ? persistedFilters.datePreset : 'today'
+  );
+  const [customRange, setCustomRange] = useState<DateRange>(() => ({
+    startDate: persistedFilters.customRange?.startDate || todayIso(),
+    endDate: persistedFilters.customRange?.endDate || persistedFilters.customRange?.startDate || todayIso(),
+  }));
   const selectedRange = useMemo(() => resolveDateRange(datePreset, customRange), [customRange, datePreset]);
   const selectedStartDate = selectedRange.startDate;
   const selectedEndDate = selectedRange.endDate;
@@ -398,6 +464,19 @@ export default function AdminDashboard() {
   const selectedRangePresetLabel = datePresetOptions.find((option) => option.value === datePreset)?.label || 'Custom';
   const now = new Date();
   const dateLabel = selectedRangeLabel;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const nextFilters: PersistedDashboardFilters = {
+      dashboardScope,
+      selectedEmployeeId,
+      scopeDepartmentFilter,
+      datePreset,
+      customRange,
+    };
+    window.localStorage.setItem(dashboardFilterStorageKey, JSON.stringify(nextFilters));
+  }, [customRange, dashboardScope, datePreset, scopeDepartmentFilter, selectedEmployeeId]);
 
   const dashboardQuery = useQuery({
     queryKey: ['real-admin-dashboard', selectedStartDate, selectedEndDate, dashboardScope, selectedEmployeeId, scopeDepartmentFilter],
@@ -513,7 +592,7 @@ export default function AdminDashboard() {
   const attendanceRows = data.attendanceRows.filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || row.employee_id)));
 
   const totalEmployees = employees.length;
-  const presentToday = attendanceRows.filter((row: any) => Number(row.present_days || 0) > 0 || row.is_checked_in).length;
+  const presentToday = attendanceRows.filter((row: any) => Number(row.present_days || 0) > 0 || hasActiveAttendance(row)).length;
   const lateToday = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.late_days || 0), 0);
   const onLeave = scopedLeavesInRange.length;
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
@@ -521,8 +600,6 @@ export default function AdminDashboard() {
   const totalDuration = Number(data.overall.summary?.total_duration || data.summary?.today_total_elapsed_duration || 0);
   const weeklyReport: any = data.weeklyReport || {};
   const weeklyTotal = Number(weeklyReport.total_duration || data.summary?.weekly_total_elapsed_duration || 0);
-  const activeTimer = data.summary?.active_timer;
-  const activeTimerSeconds = activeTimer?.start_time ? Math.max(0, Math.floor((Date.now() - new Date(activeTimer.start_time).getTime()) / 1000)) : 0;
 
   const allRangeDates = enumerateDateRange(selectedRange);
   const calendarDaysInRange = safeArray<any>(data.attendanceCalendarDays)
@@ -672,10 +749,12 @@ export default function AdminDashboard() {
     const isWorking = employee.status !== 'On Leave' && hasActiveAttendance(attendance);
     const checkInAt = attendance?.check_in_at || attendance?.open_punch_in_at || attendance?.last_check_in_at || null;
     const checkOutAt = attendance?.check_out_at || attendance?.last_check_out_at || null;
+    const presentDays = Math.max(Number(attendance?.present_days || 0), isWorking ? 1 : 0);
     return {
       employee,
       status: employee.status === 'On Leave' ? 'On Leave' : isWorking ? 'Working' : 'Not working',
       todaySeconds: Number(attendance?.total_worked_seconds || attendance?.worked_seconds || 0),
+      presentDays,
       lateMinutes: Number(attendance?.late_minutes || 0),
       checkInAt,
       checkOutAt,
@@ -729,6 +808,10 @@ export default function AdminDashboard() {
   const employeeInsights: any = employeeDetail?.insights || null;
   const employeeScreenshots: any = employeeDetail?.screenshots || null;
   const employeeStats = employeeInsights?.stats || employeeProfile?.summary || {};
+  const employeePresentDays = Math.max(
+    Number(employeeStats.present_days || 0),
+    Number(selectedWorkStatus?.presentDays || 0)
+  );
   const employeeTools = employeeInsights?.selected_user_tools || {};
   const employeeActivityTotal = Math.max(1, Number(employeeStats.activity_total_duration || 0));
   const employeeProductiveShare = (Number(employeeStats.productive_duration || 0) / employeeActivityTotal) * 100;
@@ -742,6 +825,48 @@ export default function AdminDashboard() {
     ...safeArray<any>(employeeTools.neutral),
     ...safeArray<any>(employeeTools.context_dependent),
   ].sort((a, b) => Number(b.total_duration || 0) - Number(a.total_duration || 0)).slice(0, 4);
+  const selectedEmployeeActiveEntry = safeArray<any>(employeeProfile?.recent_time_entries)
+    .find((entry: any) => !entry.end_time);
+  const selectedEmployeeTimerStartedAt =
+    selectedEmployeeActiveEntry?.start_time ||
+    employeeProfile?.status?.current_timer_started_at ||
+    (selectedWorkStatus?.status === 'Working' ? selectedWorkStatus.checkInAt : null);
+  const selectedEmployeeTimer = dashboardScope === 'employee' && selectedEmployee && selectedEmployeeTimerStartedAt
+    ? {
+      id: selectedEmployeeActiveEntry?.id || selectedEmployee.id,
+      duration: selectedEmployeeActiveEntry?.duration,
+      start_time: selectedEmployeeTimerStartedAt,
+      projectName:
+        selectedEmployeeActiveEntry?.project?.name ||
+        selectedEmployeeActiveEntry?.task?.project?.name ||
+        employeeProfile?.status?.current_project ||
+        'Not assigned',
+      taskTitle:
+        selectedEmployeeActiveEntry?.task?.title ||
+        employeeProfile?.status?.current_task ||
+        'Not assigned',
+    }
+    : null;
+
+  useEffect(() => {
+    if (!selectedEmployeeTimer) return;
+
+    setClockTick(Date.now());
+    const interval = window.setInterval(() => {
+      setClockTick(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [selectedEmployeeTimer?.duration, selectedEmployeeTimer?.id, selectedEmployeeTimer?.start_time]);
+
+  const selectedEmployeeTimerBaseSeconds = Number.isFinite(Number(selectedEmployeeTimer?.duration)) ? Number(selectedEmployeeTimer?.duration) : 0;
+  const selectedEmployeeTimerStartMs = getStartTimeMs(selectedEmployeeTimer?.start_time);
+  const selectedEmployeeTimerElapsedSeconds = selectedEmployeeTimer && Number.isFinite(selectedEmployeeTimerStartMs)
+    ? Math.max(0, Math.floor((clockTick - selectedEmployeeTimerStartMs) / 1000))
+    : 0;
+  const selectedEmployeeTimerSeconds = selectedEmployeeTimer
+    ? Math.max(selectedEmployeeTimerBaseSeconds, selectedEmployeeTimerElapsedSeconds)
+    : 0;
 
   const baseUniversalSuggestions: UniversalSuggestion[] = [
     { id: 'date-filter', label: 'Date Filter', description: 'Change today, last days, last month, or custom dates', category: 'Section', sectionId: 'date-filter', keywords: ['date', 'filter', 'today', 'custom', 'month'] },
@@ -1070,12 +1195,12 @@ export default function AdminDashboard() {
       </Card>
 
       <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
-        <KpiCard label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
-        <KpiCard label="Present" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
-        <KpiCard label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
-        <KpiCard label="Late" value={lateToday} hint={`${latePercent}% of total`} icon={Clock3} tint="bg-rose-50 text-rose-600" />
-        <KpiCard label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined in range" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
-        <KpiCard label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited in range" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
+        <KpiCard to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
+        <KpiCard to="/attendance" label="Present" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
+        <KpiCard to="/approval-inbox" label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
+        <KpiCard to="/attendance" label="Late" value={lateToday} hint={`${latePercent}% of total`} icon={Clock3} tint="bg-rose-50 text-rose-600" />
+        <KpiCard to="/add-user" label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined in range" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
+        <KpiCard to="/employees" label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited in range" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
@@ -1101,7 +1226,7 @@ export default function AdminDashboard() {
           <DonutChart items={leaveSummary} />
         </Card>
         <Card id="department-distribution" className="scroll-mt-24 p-4">
-          <SectionTitle title="Department Distribution" action={<button className="text-xs text-slate-500">All Departments</button>} />
+          <SectionTitle title="Department Distribution" action={<Link to="/employees/teams" className="text-xs font-medium text-blue-600">All Departments</Link>} />
           {departmentCounts.length ? (
             <div className="space-y-3">
               {departmentCounts.map((item, index) => {
@@ -1160,7 +1285,7 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Tracked</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedWorkStatus?.todaySeconds || 0)}</p></div>
-                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{Number(employeeStats.present_days || 0)} present</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{employeePresentDays} present</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0))}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Screenshots</p><p className="mt-2 text-lg font-semibold text-blue-700">{employeeScreenshotCount}</p></div>
               </div>
@@ -1168,7 +1293,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="mb-3 flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700">Screenshot Access</span>
-                  <Link to={`/monitoring?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Open Monitoring</Link>
+                  <Link to={`/monitoring/screenshots?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Open Monitoring</Link>
                 </div>
                 {employeeScreenshotRows.length ? (
                   <div className="grid grid-cols-2 gap-2">
@@ -1205,7 +1330,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="mb-3 flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700">Top Tools & Sites</span>
-                  <Link to={`/monitoring?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Details</Link>
+                  <Link to={`/monitoring/productive-time?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Details</Link>
                 </div>
                 {employeeTopTools.length ? (
                   <div className="space-y-3">
@@ -1389,19 +1514,20 @@ export default function AdminDashboard() {
         <Card id="time-tracker-card" className="scroll-mt-24 p-4">
           <SectionTitle title="Time Tracker" action={<Settings className="h-4 w-4 text-slate-400" />} />
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
-            <p className="text-xs text-slate-500">{activeTimer ? 'You are on the clock' : 'No active timer'}</p>
-            <p className="mt-2 text-3xl font-semibold text-blue-600">{activeTimer ? formatCompactDuration(activeTimerSeconds) : '00:00'}</p>
+            <p className="text-xs text-slate-500">
+              {selectedEmployeeTimer ? `${selectedEmployee?.name || 'Selected employee'} active timer` : 'No active timer'}
+            </p>
+            <p className="mt-2 text-3xl font-semibold text-blue-600">{formatTimerClock(selectedEmployeeTimerSeconds)}</p>
           </div>
           <div className="mt-4 space-y-3 rounded-lg border border-slate-100 p-3 text-sm">
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-slate-500"><Briefcase className="h-4 w-4" />Project</span>
-              <span className="truncate font-semibold text-slate-900">{activeTimer?.project?.name || activeTimer?.task?.project?.name || 'Not assigned'}</span>
+              <span className="truncate font-semibold text-slate-900">{selectedEmployeeTimer?.projectName || 'Not assigned'}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-slate-500"><FileClock className="h-4 w-4" />Task</span>
-              <span className="truncate font-semibold text-slate-900">{activeTimer?.task?.title || 'Not assigned'}</span>
+              <span className="truncate font-semibold text-slate-900">{selectedEmployeeTimer?.taskTitle || 'Not assigned'}</span>
             </div>
-            {activeTimer ? <button className="mt-2 h-10 w-full rounded-lg bg-rose-500 text-sm font-semibold text-white">Stop</button> : null}
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-slate-100 p-3">
@@ -1687,7 +1813,7 @@ export default function AdminDashboard() {
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <Card id="projects-section" className="scroll-mt-24 p-4">
-          <SectionTitle title="Projects" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">View All</Link>} />
+          <SectionTitle title="Projects" action={<Link to="/projects" className="text-xs font-medium text-blue-600">View All</Link>} />
           {projectProgress.length ? (
             <div className="space-y-3">
               {projectProgress.map((project: any) => (
