@@ -675,8 +675,8 @@ export default function DesktopTimerDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-7 text-slate-950 animate-fade-in">
-      <div className="mx-auto max-w-[1800px] space-y-5">
+    <main className="min-h-screen bg-slate-50 px-6 py-4 text-slate-950 animate-fade-in">
+      <div className="mx-auto max-w-[1800px] space-y-3">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-normal text-slate-950">
@@ -694,27 +694,27 @@ export default function DesktopTimerDashboard() {
 
         {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
-        <section className="grid grid-cols-1 gap-7 xl:grid-cols-[1.35fr_1fr]">
-          <div className="rounded-lg border border-blue-100 bg-white p-8 shadow-sm">
-            <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold uppercase text-blue-700">
+        <section className="grid grid-cols-1 gap-7 xl:grid-cols-[1.25fr_1fr]">
+          <div className="rounded-lg border border-blue-100 bg-white p-5 shadow-sm">
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3.5 py-1.5 text-xs font-semibold uppercase text-blue-700">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
                 <Play className="h-3 w-3 fill-current" />
               </span>
               {activeTimer ? 'Timer Running' : currentWorkedSeconds > 0 ? 'Timer Paused' : 'Desktop Timer'}
             </div>
 
-            <div className="mt-6 text-center">
-              <p className="text-base font-medium text-slate-500">Current Session</p>
-              <div className="mt-4 text-8xl font-semibold leading-none tracking-normal text-slate-950">
+            <div className="mt-4 text-center">
+              <p className="text-sm font-medium text-slate-500">Current Session</p>
+              <div className="mt-2 text-6xl font-semibold leading-none tracking-normal text-slate-950 2xl:text-7xl">
                 {formatTime(timerDisplaySeconds)}
               </div>
-              <div className="mt-8 flex flex-wrap justify-center gap-5">
+              <div className="mt-6 flex flex-wrap justify-center gap-4">
                 <button
                   type="button"
                   aria-label="Start timer"
                   onClick={() => void handleStartTimer()}
                   disabled={Boolean(activeTimer) || isStarting || isUpdatingTimerContext}
-                  className="inline-flex h-14 min-w-44 items-center justify-center gap-3 rounded-lg bg-blue-600 px-7 text-lg font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-11 min-w-36 items-center justify-center gap-3 rounded-lg bg-blue-600 px-5 text-base font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Play className="h-5 w-5 fill-current" />
                   Start
@@ -724,7 +724,7 @@ export default function DesktopTimerDashboard() {
                   aria-label="Pause timer"
                   onClick={() => void handleStopTimer()}
                   disabled={!activeTimer || isStarting || isUpdatingTimerContext}
-                  className="inline-flex h-14 min-w-44 items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white px-7 text-lg font-semibold text-blue-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-11 min-w-36 items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white px-5 text-base font-semibold text-blue-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Pause className="h-5 w-5 fill-current" />
                   Pause
@@ -732,30 +732,30 @@ export default function DesktopTimerDashboard() {
               </div>
             </div>
 
-            <div className="mx-auto mt-8 h-px max-w-4xl bg-slate-200" />
-            <div className="mx-auto mt-7 grid max-w-3xl grid-cols-1 divide-y divide-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-              <div className="flex items-center justify-center gap-4 py-4 sm:pr-8">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                  <Clock className="h-6 w-6" />
+            <div className="mx-auto mt-6 h-px max-w-4xl bg-slate-200" />
+            <div className="mx-auto mt-4 grid max-w-3xl grid-cols-1 divide-y divide-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+              <div className="flex items-center justify-center gap-3 py-2.5 sm:pr-8">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <Clock className="h-5 w-5" />
                 </span>
                 <div>
                   <p className="text-sm text-slate-500">Shift Remaining</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-950">{formatTime(remainingShiftSeconds)}</p>
+                  <p className="mt-0.5 text-lg font-semibold text-slate-950">{formatTime(remainingShiftSeconds)}</p>
                 </div>
               </div>
-              <div className="flex items-center justify-center gap-4 py-4 sm:pl-8">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-50 text-violet-600">
-                  <Hourglass className="h-6 w-6" />
+              <div className="flex items-center justify-center gap-3 py-2.5 sm:pl-8">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-50 text-violet-600">
+                  <Hourglass className="h-5 w-5" />
                 </span>
                 <div>
                   <p className="text-sm text-slate-500">Overtime Timer</p>
-                  <p className="mt-1 text-2xl font-semibold text-slate-950">{formatTime(overtimeSeconds)}</p>
+                  <p className="mt-0.5 text-lg font-semibold text-slate-950">{formatTime(overtimeSeconds)}</p>
                 </div>
               </div>
             </div>
 
-            <div className="mx-auto mt-7 h-px max-w-4xl bg-slate-200" />
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-6 text-sm text-slate-600">
+            <div className="mx-auto mt-4 h-px max-w-4xl bg-slate-200" />
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-sm text-slate-600">
               <span className="inline-flex items-center gap-2">
                 <Clock className="h-5 w-5 text-slate-500" />
                 Total elapsed (all sessions): {formatDuration(allTimeTotal)}

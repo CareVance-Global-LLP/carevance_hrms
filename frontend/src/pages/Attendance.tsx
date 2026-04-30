@@ -161,10 +161,12 @@ const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
     typeof parsed.startDate === 'string' && parsed.startDate ? parsed.startDate : fallback.startDate,
     typeof parsed.endDate === 'string' && parsed.endDate ? parsed.endDate : fallback.endDate
   );
+  const selectedFilterUserId = coercePositiveNumber(parsed.selectedFilterUserId) ?? '';
+
   return {
-    selectedFilterUserId: coercePositiveNumber(parsed.selectedFilterUserId) ?? '',
+    selectedFilterUserId,
     countryFilter: typeof parsed.countryFilter === 'string' && parsed.countryFilter ? parsed.countryFilter : fallback.countryFilter,
-    calendarScope: parsed.calendarScope === 'overall' ? 'overall' : fallback.calendarScope,
+    calendarScope: selectedFilterUserId ? 'selected' : parsed.calendarScope === 'overall' ? 'overall' : fallback.calendarScope,
     datePreset,
     startDate: resolvedRange.startDate,
     endDate: resolvedRange.endDate,
@@ -300,6 +302,17 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     const nextRange = deriveDateRangeFromPreset(preset);
     setStartDate(nextRange.startDate);
     setEndDate(nextRange.endDate);
+  };
+
+  const handleEmployeeFilterChange = (nextUserId: number | '') => {
+    setSelectedFilterUserId(nextUserId);
+    if (nextUserId) {
+      setSelectedUserId(Number(nextUserId));
+      setCalendarScope('selected');
+      return;
+    }
+
+    setCalendarScope('overall');
   };
 
   const setPunchFeedback = (nextMessage = '', nextError = '') => {
@@ -757,6 +770,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     if (!isAdmin) return;
     if (selectedFilterUserId) {
       setSelectedUserId(Number(selectedFilterUserId));
+      setCalendarScope('selected');
       return;
     }
 
@@ -769,7 +783,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     if (!hasSelectedRow) {
       setSelectedUserId(rows[0].user.id);
     }
-  }, [isAdmin, rows, selectedUserId]);
+  }, [isAdmin, rows, selectedFilterUserId, selectedUserId]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1166,7 +1180,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             <EmployeeSelect
               employees={employeeFilterOptions}
               value={selectedFilterUserId}
-              onChange={setSelectedFilterUserId}
+              onChange={handleEmployeeFilterChange}
               includeAllOption
             />
           </div>
@@ -1453,7 +1467,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               <tr
                 key={row.user.id}
                 className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 ${selectedRow?.user?.id === row.user.id ? 'bg-sky-50' : ''}`}
-                onClick={() => setSelectedUserId(row.user.id)}
+                onClick={() => {
+                  setSelectedUserId(row.user.id);
+                  if (isAdmin) {
+                    setCalendarScope('selected');
+                  }
+                }}
               >
                 <td className="px-4 py-3">
                   <p className="font-medium text-gray-900">{row.user.name}</p>
