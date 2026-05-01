@@ -21,9 +21,17 @@ declare global {
     captured_at?: string;
   }
 
+  interface DesktopSystemLockState {
+    state: 'locked' | 'unlocked' | 'suspended' | 'resumed';
+    locked: boolean;
+    locked_at: string | null;
+    recorded_at: string;
+  }
+
   interface DesktopTrackerBridge {
     captureScreenshot: () => Promise<string | null>;
     getSystemIdleSeconds: () => Promise<number>;
+    getSystemLockState?: () => Promise<DesktopSystemLockState>;
     getActiveWindowContext: () => Promise<{
       app: string | null;
       title: string | null;
@@ -53,6 +61,8 @@ declare global {
     clearNotificationClickListeners?: () => void;
     onForegroundWindowChange?: (callback: (payload: DesktopForegroundWindowPayload) => void | Promise<void>) => (() => void) | void;
     clearForegroundWindowChangeListeners?: () => void;
+    onSystemLockState?: (callback: (payload: DesktopSystemLockState) => void | Promise<void>) => (() => void) | void;
+    clearSystemLockStateListeners?: () => void;
     onBrowserTrackingState?: (callback: (state: BrowserTrackingState) => void | Promise<void>) => (() => void) | void;
     clearBrowserTrackingStateListeners?: () => void;
     onBrowserTrackingEvent?: (callback: (payload: BrowserTrackingEvent) => void | Promise<void>) => (() => void) | void;

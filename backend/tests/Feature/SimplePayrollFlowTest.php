@@ -83,6 +83,20 @@ class SimplePayrollFlowTest extends TestCase
             'publish_status' => 'published',
         ]);
 
+        $payslip = Payslip::query()
+            ->where('organization_id', $org->id)
+            ->where('user_id', $employee->id)
+            ->where('period_month', $month)
+            ->firstOrFail();
+
+        $this->assertSame(2000.0, (float) $payslip->basic_salary);
+        $this->assertSame(200.0, (float) $payslip->total_allowances);
+        $this->assertSame(1000.0, (float) $payslip->total_deductions);
+        $this->assertSame(
+            (float) $payslip->net_salary,
+            round((float) $payslip->basic_salary + (float) $payslip->total_allowances - (float) $payslip->total_deductions, 2)
+        );
+
         $this->actingAs($admin)
             ->postJson('/api/payroll/runs/generate', ['month' => $month])
             ->assertStatus(422);

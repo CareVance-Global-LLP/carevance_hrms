@@ -324,6 +324,15 @@ export const useDesktopTracker = () => {
   const browserTrackingSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const browserTrackingSyncSignatureRef = useRef<string | null>(null);
   const browserTrackingRealtimeSeenRef = useRef(false);
+  const systemLockedAtMsRef = useRef<number | null>(null);
+  const lockAutoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLockAutoStopTimeout = () => {
+    if (lockAutoStopTimeoutRef.current !== null) {
+      clearTimeout(lockAutoStopTimeoutRef.current);
+      lockAutoStopTimeoutRef.current = null;
+    }
+  };
 
   const clearTrackerIntervals = () => {
     if (activityIntervalRef.current !== null) {
@@ -340,6 +349,8 @@ export const useDesktopTracker = () => {
       clearInterval(screenshotIntervalRef.current);
       screenshotIntervalRef.current = null;
     }
+
+    clearLockAutoStopTimeout();
   };
 
   const clearBrowserTrackingSyncTimeout = () => {
@@ -353,6 +364,8 @@ export const useDesktopTracker = () => {
     const markInput = () => {
       lastInputRef.current = Date.now();
       pendingIdleRewindRef.current.clear();
+      systemLockedAtMsRef.current = null;
+      clearLockAutoStopTimeout();
     };
 
     const markVisibleActivity = () => {
@@ -397,6 +410,7 @@ export const useDesktopTracker = () => {
       idleStopBlockedUntilMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
       pendingTrackedSecondsRef.current = 0;
+      systemLockedAtMsRef.current = null;
       return;
     }
 
@@ -419,6 +433,7 @@ export const useDesktopTracker = () => {
     pendingBrowserTrackingSyncStateRef.current = null;
     browserTrackingSyncSignatureRef.current = null;
     browserTrackingRealtimeSeenRef.current = false;
+    systemLockedAtMsRef.current = null;
     clearBrowserTrackingSyncTimeout();
     pendingIdleRewindRef.current.clear();
     lastAutoStoppedEntryIdRef.current = null;
@@ -796,6 +811,16 @@ export const useDesktopTracker = () => {
     };
 
     const getIdleState = async (now: number) => {
+      if (systemLockedAtMsRef.current !== null) {
+        const lockedIdleSeconds = Math.max(0, Math.floor((now - systemLockedAtMsRef.current) / 1000));
+
+        return {
+          idleSeconds: lockedIdleSeconds,
+          lastActivityAtMs: systemLockedAtMsRef.current,
+          contextName: 'Locked Screen',
+        };
+      }
+
       try {
         const idleSecondsSystem = Number(await desktopApi.getSystemIdleSeconds());
 
@@ -805,6 +830,7 @@ export const useDesktopTracker = () => {
           return {
             idleSeconds: safeIdleSecondsSystem,
             lastActivityAtMs: Math.max(0, now - (safeIdleSecondsSystem * 1000)),
+            contextName: null,
           };
         }
       } catch (error) {
@@ -816,6 +842,7 @@ export const useDesktopTracker = () => {
       return {
         idleSeconds: idleSecondsFromInput,
         lastActivityAtMs: lastInputRef.current,
+        contextName: null,
       };
     };
 
@@ -1005,7 +1032,7 @@ export const useDesktopTracker = () => {
         activeEntryRef.current = activeEntry;
         syncScreenshotInterval(activeEntry.id);
 
-        const { idleSeconds, lastActivityAtMs } = await getIdleState(now);
+        const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName } = await getIdleState(now);
         if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
           idleStopBlockedUntilMsRef.current = 0;
         }
@@ -1091,7 +1118,13 @@ export const useDesktopTracker = () => {
           await closeActiveDesktopSession(new Date(lastActivityAtMs).toISOString());
           await closeActiveBrowserSession(new Date(lastActivityAtMs).toISOString());
           pendingTrackedSecondsRef.current = 0;
-          await syncIdleActivitySnapshot(activeEntry, idleSeconds, lastActivityAtMs, recordedAt, contextName);
+          await syncIdleActivitySnapshot(
+            activeEntry,
+            idleSeconds,
+            lastActivityAtMs,
+            recordedAt,
+            idleStateContextName || contextName
+          );
 
           if (await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt)) {
             return;
@@ -1199,16 +1232,51 @@ export const useDesktopTracker = () => {
       }
 
       const now = Date.now();
-      const { idleSeconds, lastActivityAtMs } = await getIdleState(now);
+      const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName } = await getIdleState(now);
       if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
         idleStopBlockedUntilMsRef.current = 0;
         return;
       }
 
       const recordedAt = new Date(now).toISOString();
-      const idleContextName = activeSegmentRef.current?.contextName || 'Active Input';
+      const idleContextName = idleStateContextName || activeSegmentRef.current?.contextName || 'Active Input';
       await syncIdleActivitySnapshot(activeEntry, idleSeconds, lastActivityAtMs, recordedAt, idleContextName);
       await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt);
+    };
+
+    const scheduleLockAutoStopGuard = () => {
+      clearLockAutoStopTimeout();
+      lockAutoStopTimeoutRef.current = setTimeout(() => {
+        lockAutoStopTimeoutRef.current = null;
+        void runIdleGuard();
+      }, IDLE_AUTO_STOP_THRESHOLD_SECONDS * 1000);
+    };
+
+    const applySystemLockState = async (payload?: DesktopSystemLockState | null) => {
+      const lockedAt = payload?.locked_at ? Date.parse(payload.locked_at) : NaN;
+      const recordedAt = payload?.recorded_at ? Date.parse(payload.recorded_at) : NaN;
+      const isLocked = Boolean(payload?.locked || payload?.state === 'locked' || payload?.state === 'suspended');
+
+      if (isLocked) {
+        systemLockedAtMsRef.current = Number.isFinite(lockedAt) ? lockedAt : Date.now();
+        scheduleLockAutoStopGuard();
+        await runIdleGuard();
+        return;
+      }
+
+      if (
+        systemLockedAtMsRef.current !== null
+        && Number.isFinite(recordedAt)
+        && recordedAt <= systemLockedAtMsRef.current
+      ) {
+        return;
+      }
+
+      if (systemLockedAtMsRef.current !== null) {
+        await runIdleGuard();
+      }
+      systemLockedAtMsRef.current = null;
+      clearLockAutoStopTimeout();
     };
 
     const captureScreenshotOnInterval = async () => {
@@ -1285,6 +1353,11 @@ export const useDesktopTracker = () => {
         void handleForegroundWindowChange(payload);
       })
       : undefined;
+    const removeSystemLockStateListener = typeof desktopApi.onSystemLockState === 'function'
+      ? desktopApi.onSystemLockState((payload) => {
+        void applySystemLockState(payload);
+      })
+      : undefined;
     const removeBrowserTrackingStateListener = typeof desktopApi.onBrowserTrackingState === 'function'
       ? desktopApi.onBrowserTrackingState((payload) => {
         browserTrackingRealtimeSeenRef.current = true;
@@ -1324,6 +1397,19 @@ export const useDesktopTracker = () => {
           console.warn('Desktop tracker device identity lookup failed:', error);
         });
     }
+    if (typeof desktopApi.getSystemLockState === 'function') {
+      void desktopApi.getSystemLockState()
+        .then((state) => {
+          if (!isCurrentRun()) {
+            return;
+          }
+
+          void applySystemLockState(state);
+        })
+        .catch((error) => {
+          console.warn('Desktop tracker system lock state lookup failed:', error);
+        });
+    }
     if (typeof desktopApi.getBrowserTrackingState === 'function') {
       void desktopApi.getBrowserTrackingState()
         .then((state) => {
@@ -1355,11 +1441,15 @@ export const useDesktopTracker = () => {
       pendingIdleRewindRef.current.clear();
       pendingTrackedSecondsRef.current = 0;
       activeScreenshotEntryIdRef.current = null;
+      systemLockedAtMsRef.current = null;
       idleStopInFlightRef.current = false;
       idleStopBlockedUntilMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
       if (typeof removeForegroundWindowChangeListener === 'function') {
         removeForegroundWindowChangeListener();
+      }
+      if (typeof removeSystemLockStateListener === 'function') {
+        removeSystemLockStateListener();
       }
       if (typeof removeBrowserTrackingStateListener === 'function') {
         removeBrowserTrackingStateListener();

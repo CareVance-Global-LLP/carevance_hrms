@@ -54,7 +54,6 @@ export function SelectInput({
   name,
   id,
   'aria-label': ariaLabel,
-  ...props
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   const [open, setOpen] = useState(false);
   const [internalValue, setInternalValue] = useState<string>(() => String(value ?? defaultValue ?? ''));

@@ -136,6 +136,7 @@ let autoUpdater = null;
 let updateCheckInterval = null;
 let foregroundWindowWatcherInterval = null;
 let lastForegroundWindowSignature = null;
+let systemLockedAt = null;
 let updateState = {
   enabled: false,
   status: 'disabled',
@@ -480,6 +481,37 @@ const broadcastBrowserTrackingState = () => {
   mainWindow.webContents.send('desktop:browser-tracking-state', browserTrackingBridge.getRendererState());
 };
 
+const currentSystemLockState = (state = null) => ({
+  state: state || (systemLockedAt ? 'locked' : 'unlocked'),
+  locked: Boolean(systemLockedAt),
+  locked_at: systemLockedAt ? systemLockedAt.toISOString() : null,
+  recorded_at: new Date().toISOString(),
+});
+
+const broadcastSystemLockState = (state) => {
+  const payload = currentSystemLockState(state);
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return payload;
+  }
+
+  mainWindow.webContents.send('desktop:system-lock-state', payload);
+  return payload;
+};
+
+const markSystemLocked = (state = 'locked') => {
+  if (!systemLockedAt) {
+    systemLockedAt = new Date();
+  }
+
+  broadcastSystemLockState(state);
+};
+
+const markSystemUnlocked = (state = 'unlocked') => {
+  systemLockedAt = null;
+  broadcastSystemLockState(state);
+};
+
 const setUpdateState = (patch) => {
   updateState = {
     ...updateState,
@@ -690,7 +722,7 @@ const createWindow = async () => {
 
     closePreparationTimeout = setTimeout(() => {
       proceedToCloseWindow();
-    }, 2500);
+    }, 10000);
   });
 
   mainWindow.on('closed', () => {
@@ -914,6 +946,8 @@ ipcMain.handle('desktop:get-system-idle-seconds', async () => {
   return powerMonitor.getSystemIdleTime();
 });
 
+ipcMain.handle('desktop:get-system-lock-state', async () => currentSystemLockState());
+
 ipcMain.handle('desktop:get-active-window-context', async () => {
   const getActiveWindow = await loadActiveWindowGetter();
   if (!getActiveWindow) {
@@ -1068,6 +1102,19 @@ ipcMain.handle('desktop:install-update', async () => {
 });
 
 app.whenReady().then(async () => {
+  powerMonitor.on('lock-screen', () => {
+    markSystemLocked('locked');
+  });
+  powerMonitor.on('unlock-screen', () => {
+    markSystemUnlocked('unlocked');
+  });
+  powerMonitor.on('suspend', () => {
+    markSystemLocked('suspended');
+  });
+  powerMonitor.on('resume', () => {
+    markSystemUnlocked('resumed');
+  });
+
   const browserTrackingState = await ensureBrowserTrackingBridge().start();
   if (!browserTrackingState?.ready) {
     console.warn('[desktop-tracker] browser tracking bridge unavailable', browserTrackingState?.last_error || '');

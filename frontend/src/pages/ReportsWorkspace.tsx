@@ -127,11 +127,15 @@ const formatDuration = (seconds: number) => {
   const minutes = Math.floor((safe % 3600) / 60);
   const remainingSeconds = safe % 60;
 
-  if (hours === 0 && remainingSeconds > 0) {
-    return `${minutes}m ${remainingSeconds}s`;
+  if (hours > 0) {
+    return remainingSeconds > 0 ? `${hours}h ${minutes}m ${remainingSeconds}s` : `${hours}h ${minutes}m`;
   }
 
-  return `${hours}h ${minutes}m`;
+  if (minutes > 0) {
+    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+  }
+
+  return `${remainingSeconds}s`;
 };
 const formatTimelineDuration = (seconds: number) => {
   const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
@@ -408,6 +412,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [selectedTaskId, setSelectedTaskId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedTaskId);
   const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedUserId);
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedGroupId);
+  const [timelinePage, setTimelinePage] = useState(1);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
   const isHubMode = mode === 'reports-hub' || mode === 'analytics-hub';
@@ -477,6 +482,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       ? Number(selectedUserId)
       : '';
   }, [selectedUserId, users]);
+
+  useEffect(() => {
+    setTimelinePage(1);
+  }, [effectiveSelectedUserId, endDate, mode, selectedGroupId, startDate]);
+
   const selectedEmployee = useMemo(
     () => users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId)) || null,
     [effectiveSelectedUserId, users]
@@ -510,7 +520,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   }, [selectedUserId, users, usersQuery.isSuccess]);
 
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId, timelinePage],
     enabled: isHubMode || (usersQuery.isSuccess && groupsQuery.isSuccess),
     placeholderData: (previousData, previousQuery) => (
       shouldReuseReportPlaceholderData(previousQuery?.queryKey, mode)
@@ -556,14 +566,16 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       }
 
       if (mode === 'timeline') {
-        return activityApi.getAllPages({
+        const response = await activityApi.getAll({
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
           processed: true,
-          per_page: 200,
+          page: timelinePage,
+          per_page: 10,
         });
+        return response.data;
       }
 
       if (mode === 'web-app-usage') {
@@ -891,12 +903,23 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     return taskAllocationRows.find((row: any) => Number(row.id) === Number(effectiveSelectedTaskId)) || null;
   }, [effectiveSelectedTaskId, hasSelectedTask, mode, taskAllocationRows]);
 
-  const timelineRows = Array.isArray(dataQuery.data) ? dataQuery.data : [];
+  const timelinePayload = mode === 'timeline' && dataQuery.data && !Array.isArray(dataQuery.data)
+    ? dataQuery.data as any
+    : null;
+  const timelineRows = Array.isArray(dataQuery.data)
+    ? dataQuery.data
+    : (Array.isArray(timelinePayload?.data) ? timelinePayload.data : []);
+  const timelinePagination = {
+    currentPage: Math.max(1, Number(timelinePayload?.current_page || timelinePage || 1)),
+    lastPage: Math.max(1, Number(timelinePayload?.last_page || 1)),
+    total: Number.isFinite(Number(timelinePayload?.total)) ? Number(timelinePayload?.total) : timelineRows.length,
+    hasMore: Boolean(timelinePayload?.has_more) || Number(timelinePayload?.current_page || timelinePage || 1) < Number(timelinePayload?.last_page || 1),
+  };
   const timelineSummary = useMemo(() => {
     if (mode !== 'timeline') return null;
     return {
       apps: timelineRows.filter((item: any) => item.type === 'app').length,
-      urls: timelineRows.filter((item: any) => item.type === 'url').length,
+      urls: timelineRows.filter((item: any) => item.type === 'url' || item.tool_type === 'website').length,
       idle: timelineRows.filter((item: any) => item.type === 'idle').length,
     };
   }, [mode, timelineRows]);
@@ -1479,47 +1502,73 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {mode === 'timeline' && timelineSummary && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Events" value={timelineRows.length} hint="All timeline events" icon={Waypoints} accent="sky" />
-            <MetricCard label="Apps" value={timelineSummary.apps} hint="Desktop/app events" icon={Activity} accent="emerald" />
-            <MetricCard label="Web" value={timelineSummary.urls} hint="Website events" icon={LineChart} accent="violet" />
-            <MetricCard label="Idle" value={timelineSummary.idle} hint="Idle periods" icon={TimerReset} accent="amber" />
+            <MetricCard label="Events" value={timelinePagination.total} hint="All timeline events" icon={Waypoints} accent="sky" />
+            <MetricCard label="Apps" value={timelineSummary.apps} hint="Desktop/app events on this page" icon={Activity} accent="emerald" />
+            <MetricCard label="Web" value={timelineSummary.urls} hint="Website events on this page" icon={LineChart} accent="violet" />
+            <MetricCard label="Idle" value={timelineSummary.idle} hint="Idle periods on this page" icon={TimerReset} accent="amber" />
           </div>
 
-          <DataTable
-            title="Activity Timeline"
-            description="Recent app, website, and idle events in chronological order."
-            rows={timelineRows.slice().sort((a: any, b: any) => +new Date(b.recorded_at) - +new Date(a.recorded_at))}
-            emptyMessage="No timeline events found."
-            headerAction={renderPanelRefreshButton()}
-            bodyClassName={timelineRows.length > 8 ? 'max-h-[420px] overflow-y-auto' : undefined}
-            columns={[
-              { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
-              { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
-              { key: 'type', header: 'Type', render: (row: any) => row.tool_type || row.type },
-              {
-                key: 'name',
-                header: 'Tool',
-                render: (row: any) => (
-                  <div>
-                    <p className="font-medium text-slate-950">{formatTimelineToolLabel(row)}</p>
-                    {row?.name && row?.name !== formatTimelineToolLabel(row) ? (
-                      <p className="text-xs text-slate-500">{row.name}</p>
-                    ) : null}
-                  </div>
-                ),
-              },
-              {
-                key: 'classification',
-                header: 'Productivity',
-                render: (row: any) => (
-                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${timelineProductivityTone(row.classification)}`}>
-                    {row.classification || 'neutral'}
-                  </span>
-                ),
-              },
-              { key: 'duration', header: 'Duration', render: (row: any) => formatTimelineDuration(row.duration || 0) },
-            ]}
-          />
+          <div className="space-y-3">
+            <DataTable
+              title="Activity Timeline"
+              description="Recent app, website, and idle events in chronological order."
+              rows={timelineRows.slice().sort((a: any, b: any) => +new Date(b.recorded_at) - +new Date(a.recorded_at))}
+              emptyMessage="No timeline events found."
+              headerAction={renderPanelRefreshButton()}
+              columns={[
+                { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
+                { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
+                { key: 'type', header: 'Type', render: (row: any) => row.tool_type || row.type },
+                {
+                  key: 'name',
+                  header: 'Tool',
+                  render: (row: any) => (
+                    <div>
+                      <p className="font-medium text-slate-950">{formatTimelineToolLabel(row)}</p>
+                      {row?.name && row?.name !== formatTimelineToolLabel(row) ? (
+                        <p className="text-xs text-slate-500">{row.name}</p>
+                      ) : null}
+                    </div>
+                  ),
+                },
+                {
+                  key: 'classification',
+                  header: 'Productivity',
+                  render: (row: any) => (
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${timelineProductivityTone(row.classification)}`}>
+                      {row.classification || 'neutral'}
+                    </span>
+                  ),
+                },
+                { key: 'duration', header: 'Duration', render: (row: any) => formatTimelineDuration(row.duration || 0) },
+              ]}
+            />
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+              <span>
+                Page {timelinePagination.currentPage} of {timelinePagination.lastPage} - {timelinePagination.total} events
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={timelinePagination.currentPage <= 1 || dataQuery.isFetching}
+                  onClick={() => setTimelinePage((page) => Math.max(1, page - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={!timelinePagination.hasMore || dataQuery.isFetching}
+                  onClick={() => setTimelinePage((page) => page + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </div>
         </>
       )}
 

@@ -104,7 +104,6 @@ test('options buildBrowserBridgeCredential stores a pairing record per browser p
       pairing_code: 'PAIR-1234',
       paired_at: '2026-04-21T11:30:00.000Z',
       local_url: 'http://127.0.0.1:38947',
-      bearer_token: 'token-123',
       extension_origin: 'chrome-extension://abc123',
       browser_name: 'chrome',
       extension_version: '0.1.0',

@@ -78,6 +78,7 @@ let foregroundWindowListeners: Array<(payload: {
   url: string | null;
   captured_at?: string;
 }) => void> = [];
+let systemLockStateListeners: Array<(payload: DesktopSystemLockState) => void> = [];
 let browserTrackingStateListeners: Array<(payload: {
   ready: boolean;
   local_url?: string | null;
@@ -156,6 +157,7 @@ describe('useDesktopTracker', () => {
       device_label: 'DESKTOP-ALPHA',
     });
     foregroundWindowListeners = [];
+    systemLockStateListeners = [];
     browserTrackingStateListeners = [];
     browserTrackingListeners = [];
 
@@ -176,6 +178,18 @@ describe('useDesktopTracker', () => {
         foregroundWindowListeners.push(callback);
         return () => {
           foregroundWindowListeners = foregroundWindowListeners.filter((listener) => listener !== callback);
+        };
+      },
+      getSystemLockState: vi.fn().mockResolvedValue({
+        state: 'unlocked',
+        locked: false,
+        locked_at: null,
+        recorded_at: new Date().toISOString(),
+      }),
+      onSystemLockState: (callback) => {
+        systemLockStateListeners.push(callback);
+        return () => {
+          systemLockStateListeners = systemLockStateListeners.filter((listener) => listener !== callback);
         };
       },
       onBrowserTrackingState: (callback) => {
@@ -273,6 +287,35 @@ describe('useDesktopTracker', () => {
       idle_seconds: 300,
       last_activity_at: '2026-03-18T09:00:00.000Z',
     });
+  });
+
+  it('auto-stops from the lock-screen signal even when system idle seconds are not advancing', async () => {
+    mocks.getSystemIdleSecondsMock.mockResolvedValue(0);
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      systemLockStateListeners[0]?.({
+        state: 'locked',
+        locked: true,
+        locked_at: '2026-03-18T09:00:00.000Z',
+        recorded_at: '2026-03-18T09:00:00.000Z',
+      });
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    });
+
+    expect(mocks.stopMock).toHaveBeenCalledWith({
+      timer_slot: 'primary',
+      auto_stopped_for_idle: true,
+      idle_seconds: 300,
+      last_activity_at: '2026-03-18T09:00:00.000Z',
+    });
+    expect(mocks.createActivityMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'idle',
+      name: 'System Idle - Locked Screen',
+    }));
   });
 
   it('uses the 1 second idle guard so auto-stop does not wait for the next 5 second activity tick', async () => {

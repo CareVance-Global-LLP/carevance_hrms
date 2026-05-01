@@ -228,9 +228,18 @@ class ActivityFeedService
 
     private function mapSessions(Collection $sessions, ?Carbon $rangeStart, ?Carbon $rangeEnd): Collection
     {
+        $orderedSessions = $sessions
+            ->sortBy([
+                ['user_id', 'asc'],
+                ['source', 'asc'],
+                ['started_at', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->values();
+
         $nextSessionStarts = [];
 
-        foreach ($sessions->reverse()->values() as $session) {
+        foreach ($orderedSessions->reverse()->values() as $session) {
             if (! $session instanceof ActivitySession) {
                 continue;
             }
@@ -243,7 +252,7 @@ class ActivityFeedService
             }
         }
 
-        return $sessions
+        return $orderedSessions
             ->map(fn (ActivitySession $session) => $this->mapSession(
                 $session,
                 $rangeStart,

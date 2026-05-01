@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktopTracker', {
   captureScreenshot: () => ipcRenderer.invoke('desktop:capture-screenshot'),
   getSystemIdleSeconds: () => ipcRenderer.invoke('desktop:get-system-idle-seconds'),
+  getSystemLockState: () => ipcRenderer.invoke('desktop:get-system-lock-state'),
   getActiveWindowContext: () => ipcRenderer.invoke('desktop:get-active-window-context'),
   revealWindow: () => ipcRenderer.invoke('desktop:reveal-window'),
   showNotification: (payload) => ipcRenderer.invoke('desktop:show-notification', payload),
@@ -52,6 +53,18 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   },
   clearForegroundWindowChangeListeners: () => {
     ipcRenderer.removeAllListeners('desktop:foreground-window-changed');
+  },
+  onSystemLockState: (callback) => {
+    const listener = (_event, payload) => {
+      callback(payload);
+    };
+    ipcRenderer.on('desktop:system-lock-state', listener);
+    return () => {
+      ipcRenderer.removeListener('desktop:system-lock-state', listener);
+    };
+  },
+  clearSystemLockStateListeners: () => {
+    ipcRenderer.removeAllListeners('desktop:system-lock-state');
   },
   onBrowserTrackingState: (callback) => {
     const listener = (_event, payload) => {

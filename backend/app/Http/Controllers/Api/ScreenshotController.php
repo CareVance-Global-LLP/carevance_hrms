@@ -19,6 +19,9 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ScreenshotController extends Controller
 {
+    private const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    private const MAX_DATA_URL_CHARS = 14 * 1024 * 1024;
+
     public function __construct(private readonly AuditLogService $auditLogService)
     {
     }
@@ -183,7 +186,7 @@ class ScreenshotController extends Controller
                     }
                 },
             ],
-            'image_data_url' => 'nullable|string',
+            'image_data_url' => 'nullable|string|max:'.self::MAX_DATA_URL_CHARS,
             'filename' => 'nullable|string|max:255',
             'thumbnail' => 'nullable|string|max:65535',
             'blurred' => 'nullable|boolean',
@@ -274,13 +277,50 @@ class ScreenshotController extends Controller
 
     private function decodeImageDataUrl(string $dataUrl): ?array
     {
-        if (! preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/', $dataUrl, $matches)) {
+        if (strlen($dataUrl) > self::MAX_DATA_URL_CHARS) {
+            return null;
+        }
+
+        $separatorPosition = strpos($dataUrl, ',');
+        if ($separatorPosition === false) {
+            return null;
+        }
+
+        $metadata = substr($dataUrl, 0, $separatorPosition);
+        if (! preg_match('/^data:(image\/[a-zA-Z0-9.+-]+);base64$/', $metadata, $matches)) {
             return null;
         }
 
         $mimeType = strtolower($matches[1]);
-        $binary = base64_decode($matches[2], true);
+        $rawPayloadLength = strlen($dataUrl) - $separatorPosition - 1;
+        if ($rawPayloadLength <= 0) {
+            return null;
+        }
+
+        $rawPaddingBytes = substr_count(substr($dataUrl, -2), '=');
+        $rawEstimatedBytes = (int) floor(($rawPayloadLength * 3) / 4) - $rawPaddingBytes;
+        if ($rawEstimatedBytes > self::MAX_IMAGE_BYTES) {
+            return null;
+        }
+
+        $rawPayload = substr($dataUrl, $separatorPosition + 1);
+        $encodedPayload = preg_replace('/\s+/', '', $rawPayload);
+        if (! is_string($encodedPayload) || $encodedPayload === '') {
+            return null;
+        }
+
+        $paddingBytes = substr_count(substr($encodedPayload, -2), '=');
+        $estimatedBytes = (int) floor((strlen($encodedPayload) * 3) / 4) - $paddingBytes;
+        if ($estimatedBytes > self::MAX_IMAGE_BYTES) {
+            return null;
+        }
+
+        $binary = base64_decode($encodedPayload, true);
         if ($binary === false || $binary === '') {
+            return null;
+        }
+
+        if (strlen($binary) > self::MAX_IMAGE_BYTES) {
             return null;
         }
 

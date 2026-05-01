@@ -750,6 +750,10 @@ class SimplePayrollController extends Controller
     private function createPayslip(PayRunItem $item, int $actorId): Payslip
     {
         $payroll = $item->payroll;
+        $salaryType = (string) data_get($item->salary_breakdown, 'salary_type', 'fixed_monthly');
+        $basicSalary = in_array($salaryType, ['fixed_monthly', 'hybrid'], true)
+            ? (float) data_get($item->salary_breakdown, 'monthly_salary', 0)
+            : (float) data_get($item->salary_breakdown, 'base_pay', 0);
 
         return Payslip::query()->updateOrCreate(
             ['organization_id' => $item->organization_id, 'user_id' => $item->user_id, 'period_month' => $item->payRun->payroll_month],
@@ -757,7 +761,7 @@ class SimplePayrollController extends Controller
                 'payroll_id' => $payroll?->id,
                 'pay_run_id' => $item->pay_run_id,
                 'currency' => $item->payRun->currency ?: 'INR',
-                'basic_salary' => (float) data_get($item->salary_breakdown, 'base_pay', 0),
+                'basic_salary' => round($basicSalary, 2),
                 'total_allowances' => round((float) data_get($item->salary_breakdown, 'overtime', 0) + (float) data_get($item->salary_breakdown, 'bonus', 0) + (float) data_get($item->salary_breakdown, 'reimbursement', 0) + (float) data_get($item->salary_breakdown, 'productivity_bonus', 0), 2),
                 'total_deductions' => (float) $item->total_deductions,
                 'net_salary' => (float) $item->net_pay,

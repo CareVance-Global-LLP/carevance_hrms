@@ -6,7 +6,9 @@ use App\Models\AppNotification;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ChatApiFlowTest extends TestCase
@@ -347,5 +349,55 @@ class ChatApiFlowTest extends TestCase
         ], $senderHeaders)
             ->assertStatus(422)
             ->assertJsonPath('errors.body.0', 'The body field is required.');
+    }
+
+    public function test_chat_attachments_reject_html_and_download_safe_files_as_attachments(): void
+    {
+        Storage::fake('chat_attachments');
+
+        $organization = Organization::create([
+            'name' => 'Chat Attachments Org',
+            'slug' => 'chat-attachments-org',
+        ]);
+
+        $sender = User::create([
+            'name' => 'Sender',
+            'email' => 'sender.attachments@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $receiver = User::create([
+            'name' => 'Receiver',
+            'email' => 'receiver.attachments@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $senderHeaders = $this->apiHeadersFor($sender);
+        $conversationId = (int) $this->postJson('/api/chat/conversations', [
+            'email' => $receiver->email,
+        ], $senderHeaders)
+            ->assertCreated()
+            ->json('id');
+
+        $this->post("/api/chat/conversations/{$conversationId}/messages", [
+            'attachment' => UploadedFile::fake()->createWithContent('xss.html', '<script>alert(1)</script>'),
+        ], $senderHeaders)
+            ->assertStatus(422)
+            ->assertJsonPath('errors.attachment.0', 'The attachment field must be a file of type: application/pdf, text/plain, text/csv, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, image/jpeg, image/png, image/webp.');
+
+        $messageId = (int) $this->post("/api/chat/conversations/{$conversationId}/messages", [
+            'attachment' => UploadedFile::fake()->createWithContent('Payroll Proof.txt', 'approved'),
+        ], $senderHeaders)
+            ->assertCreated()
+            ->json('id');
+
+        $this->get("/api/chat/messages/{$messageId}/attachment", $this->apiHeadersFor($receiver))
+            ->assertOk()
+            ->assertHeader('Content-Disposition', 'attachment; filename="payroll-proof.txt"')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
     }
 }

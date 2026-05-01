@@ -15,6 +15,7 @@ use App\Models\ChatTypingStatus;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ChatService
 {
@@ -785,9 +786,13 @@ class ChatService
             return ['status' => 404, 'payload' => ['message' => 'Attachment not found']];
         }
 
+        $extension = pathinfo((string) $name, PATHINFO_EXTENSION);
+        $baseName = Str::slug(pathinfo((string) $name, PATHINFO_FILENAME) ?: 'attachment') ?: 'attachment';
+        $downloadName = $baseName.($extension ? '.'.Str::lower($extension) : '');
+
         return response()->file(Storage::disk('chat_attachments')->path($safePath), [
             'Content-Type' => $mime ?: 'application/octet-stream',
-            'Content-Disposition' => 'inline; filename="' . addslashes($name ?: 'attachment') . '"',
+            'Content-Disposition' => 'attachment; filename="' . addslashes($downloadName) . '"',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }
