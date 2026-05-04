@@ -153,6 +153,23 @@ let desktopDeviceIdentity = null;
 
 app.setName('CareVance Tracker');
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    void createWindow();
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.focus();
+});
+
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_ID);
 }
@@ -659,6 +676,16 @@ const ensureBrowserTrackingBridge = () => {
   return browserTrackingBridge;
 };
 
+const ensureBrowserTrackingBridgeReady = async () => {
+  const bridge = ensureBrowserTrackingBridge();
+  const state = bridge.getRendererState();
+  if (state?.ready) {
+    return state;
+  }
+
+  return bridge.start();
+};
+
 const createWindow = async () => {
   mainWindow = new BrowserWindow({
     width: 1366,
@@ -1062,6 +1089,11 @@ ipcMain.handle('desktop:create-browser-tracking-pairing-code', async (_event, pa
     throw new Error('A signed-in user id is required to create a browser tracking pairing code.');
   }
 
+  const bridgeState = await ensureBrowserTrackingBridgeReady();
+  if (!bridgeState?.ready) {
+    throw new Error(`Browser tracking bridge is unavailable: ${bridgeState?.last_error || 'Unable to listen on the local pairing port.'}`);
+  }
+
   const pairing = ensureBrowserTrackingBridge().issuePairingCode({
     browserName: payload?.browser_name || 'chrome',
     userId: requestedUserId,
@@ -1101,6 +1133,7 @@ ipcMain.handle('desktop:install-update', async () => {
   return true;
 });
 
+if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
   powerMonitor.on('lock-screen', () => {
     markSystemLocked('locked');
@@ -1146,3 +1179,4 @@ app.on('before-quit', () => {
     });
   }
 });
+}

@@ -72,8 +72,8 @@ class UsageProcessingServiceTest extends TestCase
         ]);
 
         $this->assertSame(63, $summary['metrics']['total_time']);
-        $this->assertSame(63, $summary['metrics']['neutral_time']);
-        $this->assertSame('linkedin.com', $summary['tools']['neutral'][0]['label']);
+        $this->assertSame(63, $summary['metrics']['productive_time']);
+        $this->assertSame('linkedin.com', $summary['tools']['productive'][0]['label']);
     }
 
     public function test_multiple_linkedin_entries_are_grouped_into_one_tool_row(): void
@@ -85,9 +85,9 @@ class UsageProcessingServiceTest extends TestCase
             $this->log(2, 1, 'url', 'Feed | LinkedIn', 60, '2026-03-16 10:12:00'),
         ]);
 
-        $this->assertCount(1, $summary['tools']['neutral']);
-        $this->assertSame('linkedin.com', $summary['tools']['neutral'][0]['label']);
-        $this->assertSame(180, $summary['tools']['neutral'][0]['total_duration']);
+        $this->assertCount(1, $summary['tools']['productive']);
+        $this->assertSame('linkedin.com', $summary['tools']['productive'][0]['label']);
+        $this->assertSame(180, $summary['tools']['productive'][0]['total_duration']);
     }
 
     public function test_web_app_usage_keeps_full_unproductive_duration_during_idle(): void

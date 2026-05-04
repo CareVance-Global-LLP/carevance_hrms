@@ -10,6 +10,18 @@ const HEARTBEAT_ALARM_NAME = 'browser-tracking-heartbeat';
 const HEARTBEAT_PERIOD_MINUTES = 0.5;
 let lastFocusedTrackableTab = null;
 
+export const shouldEmitUpdatedTab = (changeInfo) => {
+  if (!changeInfo || typeof changeInfo !== 'object') {
+    return false;
+  }
+
+  return Boolean(
+    changeInfo.url
+    || changeInfo.title
+    || changeInfo.status === 'complete'
+  );
+};
+
 export const buildBrowserTrackingEvent = ({
   kind,
   browserName,
@@ -210,7 +222,7 @@ export const registerBrowserEventListeners = () => {
   });
 
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-    if (changeInfo.status !== 'complete') {
+    if (!shouldEmitUpdatedTab(changeInfo)) {
       return;
     }
 
@@ -233,13 +245,31 @@ export const registerBrowserEventListeners = () => {
   });
 
   chrome.windows.onFocusChanged.addListener((windowId) => {
-    if (windowId !== chrome.windows.WINDOW_ID_NONE || !lastFocusedTrackableTab) {
+    if (windowId === chrome.windows.WINDOW_ID_NONE) {
+      if (!lastFocusedTrackableTab) {
+        return;
+      }
+
+      void emitTrackedBrowserClose('window-blurred').catch(() => {
+        // Ignore transient bridge failures.
+      });
       return;
     }
 
-    void emitTrackedBrowserClose('window-blurred').catch(() => {
-      // Ignore transient bridge failures.
-    });
+    void (async () => {
+      try {
+        const [tab] = await chrome.tabs.query({
+          active: true,
+          windowId,
+        });
+
+        if (tab) {
+          await emitTrackedTab('window-focused', tab);
+        }
+      } catch {
+        // Ignore transient tab lookup failures.
+      }
+    })();
   });
 
   chrome.alarms.create(HEARTBEAT_ALARM_NAME, {
@@ -254,6 +284,10 @@ export const registerBrowserEventListeners = () => {
     void emitHeartbeat().catch(() => {
       // Ignore transient bridge failures.
     });
+  });
+
+  void emitHeartbeat().catch(() => {
+    // Ignore transient bridge failures.
   });
 };
 

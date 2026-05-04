@@ -116,6 +116,33 @@ class ActivityController extends Controller
                 ],
             ]);
 
+        if ($request->boolean('processed') || $request->boolean('normalized')) {
+            $processedRows = $this->filterProcessedTimelineRows(
+                $this->buildProcessedTimelineRows(
+                    $this->activityFeedService->forUsersInRange($scopedUserIds, $startDate, $endDate),
+                    $usersById,
+                ),
+                $request,
+            )->values();
+            $total = $processedRows->count();
+            $offset = ($page - 1) * $perPage;
+            $pageRows = $processedRows->slice($offset, $perPage)->values();
+            $hasMore = $processedRows->count() > ($offset + $perPage);
+
+            $paginator = new LengthAwarePaginator(
+                $pageRows,
+                $total,
+                $perPage,
+                $page,
+                [
+                    'path' => $request->url(),
+                    'query' => $request->query(),
+                ]
+            );
+
+            return response()->json($this->withHasMore($paginator, $hasMore));
+        }
+
         $feedPage = $this->activityFeedService->pageForUsersInRange(
             $scopedUserIds,
             $startDate,
@@ -132,23 +159,6 @@ class ActivityController extends Controller
         $total = $feedPage['total'] === null
             ? (($page - 1) * $perPage) + $feed->count() + ($hasMore ? 1 : 0)
             : (int) $feedPage['total'];
-
-        if ($request->boolean('processed') || $request->boolean('normalized')) {
-            $processedRows = $this->buildProcessedTimelineRows($feed, $usersById);
-
-            $paginator = new LengthAwarePaginator(
-                $processedRows->take($perPage)->values(),
-                $total,
-                $perPage,
-                $page,
-                [
-                    'path' => $request->url(),
-                    'query' => $request->query(),
-                ]
-            );
-
-            return response()->json($this->withHasMore($paginator, $hasMore));
-        }
 
         $rows = $feed->map(fn (object $item) => $this->mapFeedItemForResponse($item, $usersById))
             ->values();
@@ -205,6 +215,25 @@ class ActivityController extends Controller
                     'raw_events_count' => (int) ($row['raw_events_count'] ?? 1),
                 ];
             })
+            ->values();
+    }
+
+    private function filterProcessedTimelineRows(Collection $rows, Request $request): Collection
+    {
+        $type = strtolower(trim((string) $request->input('type', '')));
+        $classification = strtolower(trim((string) $request->input('classification', '')));
+        $toolType = strtolower(trim((string) $request->input('tool_type', '')));
+
+        return $rows
+            ->when($type !== '', fn (Collection $items) => $items->filter(
+                fn (array $row) => strtolower((string) ($row['type'] ?? '')) === $type
+            ))
+            ->when($classification !== '', fn (Collection $items) => $items->filter(
+                fn (array $row) => strtolower((string) ($row['classification'] ?? '')) === $classification
+            ))
+            ->when($toolType !== '', fn (Collection $items) => $items->filter(
+                fn (array $row) => strtolower((string) ($row['tool_type'] ?? '')) === $toolType
+            ))
             ->values();
     }
 

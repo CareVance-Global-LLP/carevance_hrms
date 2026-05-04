@@ -2,7 +2,7 @@ import type { BrowserTrackingConnection, BrowserTrackingEvent, BrowserTrackingSt
 
 const SUPPORTED_BROWSER_NAMES = ['chrome', 'edge', 'brave', 'opera', 'vivaldi'] as const;
 
-const DEFAULT_BROWSER_TRACKING_HEALTH_WINDOW_MS = 15 * 1000;
+const DEFAULT_BROWSER_TRACKING_HEALTH_WINDOW_MS = 45 * 1000;
 
 const cleanWebsiteTitle = (title?: string | null) => {
   const value = String(title || '').trim();

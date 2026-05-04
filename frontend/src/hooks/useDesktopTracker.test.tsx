@@ -164,6 +164,12 @@ describe('useDesktopTracker', () => {
     window.desktopTracker = {
       captureScreenshot: mocks.captureScreenshotMock,
       getSystemIdleSeconds: mocks.getSystemIdleSecondsMock,
+      getSystemLockState: vi.fn().mockResolvedValue({
+        state: 'unlocked',
+        locked: false,
+        locked_at: null,
+        recorded_at: new Date().toISOString(),
+      }),
       getActiveWindowContext: mocks.getActiveWindowContextMock,
       revealWindow: mocks.revealWindowMock,
       getDesktopDeviceIdentity: mocks.getDesktopDeviceIdentityMock,
@@ -291,6 +297,7 @@ describe('useDesktopTracker', () => {
 
   it('auto-stops from the lock-screen signal even when system idle seconds are not advancing', async () => {
     mocks.getSystemIdleSecondsMock.mockResolvedValue(0);
+
     render(<TrackerHarness />);
 
     await act(async () => {
@@ -557,6 +564,39 @@ describe('useDesktopTracker', () => {
       window_title: 'Tracking Work',
       started_at: '2026-04-21T09:00:00.000Z',
     }));
+  });
+
+  it('extends an active desktop app session while the same app stays focused', async () => {
+    vi.setSystemTime(new Date('2026-04-21T09:00:00Z'));
+    mocks.createActivitySessionMock.mockResolvedValueOnce({ data: { id: 1601 } });
+    mocks.getActiveWindowContextMock.mockResolvedValue({
+      app: 'Codex',
+      title: 'Codex',
+      url: null,
+    });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1 * 1000);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(59 * 1000);
+    });
+
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'desktop',
+      activity_kind: 'desktop_app',
+      display_name: 'Codex',
+      app_name: 'Codex',
+      window_title: 'Codex',
+    }));
+    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1601, expect.objectContaining({
+      ended_at: '2026-04-21T09:01:00.000Z',
+      duration_seconds: 60,
+    }));
+    expect(mocks.createActivityMock).not.toHaveBeenCalled();
   });
 
   it('switches to a new desktop app during polling recovery even when a desktop session is already active', async () => {
@@ -935,6 +975,45 @@ describe('useDesktopTracker', () => {
       app_name: 'chrome',
       url: 'https://chat.openai.com/',
       started_at: '2026-04-21T11:29:05.000Z',
+    }));
+  });
+
+  it('extends an active exact browser session when the same tab sends a heartbeat', async () => {
+    mocks.createActivitySessionMock.mockResolvedValueOnce({ data: { id: 1151 } });
+    mocks.getActiveWindowContextMock.mockResolvedValue(null);
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      browserTrackingListeners[0]?.({
+        kind: 'tab-focused',
+        browser_name: 'chrome',
+        profile_key: 'profile-a',
+        tab_id: 91,
+        window_id: 5,
+        url: 'https://www.linkedin.com/feed/',
+        title: 'Feed | LinkedIn',
+        recorded_at: '2026-04-21T11:28:54.000Z',
+      });
+    });
+
+    await act(async () => {
+      browserTrackingListeners[0]?.({
+        kind: 'heartbeat',
+        browser_name: 'chrome',
+        profile_key: 'profile-a',
+        tab_id: 91,
+        window_id: 5,
+        url: 'https://www.linkedin.com/feed/',
+        title: 'Feed | LinkedIn',
+        recorded_at: '2026-04-21T11:29:24.000Z',
+      });
+    });
+
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledTimes(1);
+    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1151, expect.objectContaining({
+      ended_at: '2026-04-21T11:29:24.000Z',
+      duration_seconds: 30,
     }));
   });
 

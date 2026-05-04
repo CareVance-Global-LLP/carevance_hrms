@@ -512,8 +512,9 @@ class UsageProcessingService
         $logsCollection = collect($logs)->values();
         $fingerprint = $this->buildFingerprint($logsCollection);
         $cachePrefix = (string) config('usage_processing.cache.prefix', 'usage-processing');
+        $classifierVersion = (string) config('productivity_monitoring.classifier_version', 'unknown');
         $ttl = (int) config('usage_processing.cache.ttl_seconds', 300);
-        $cacheKey = implode(':', [$cachePrefix, $mode, $userId, $day, $fingerprint]);
+        $cacheKey = implode(':', [$cachePrefix, $mode, $classifierVersion, $userId, $day, $fingerprint]);
 
         return Cache::remember($cacheKey, $ttl, function () use ($logsCollection, $activityEvents, $mode) {
             if ($mode === 'web-app-usage') {

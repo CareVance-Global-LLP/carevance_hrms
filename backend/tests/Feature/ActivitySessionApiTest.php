@@ -120,6 +120,50 @@ class ActivitySessionApiTest extends TestCase
             ->assertJsonPath('data.0.source', 'activity_session');
     }
 
+    public function test_desktop_codex_session_is_normalized_for_timeline_and_web_app_usage(): void
+    {
+        [$user, $headers] = $this->createAuthenticatedEmployee();
+        $user->forceFill(['role' => 'admin'])->save();
+
+        $entry = TimeEntry::create([
+            'user_id' => $user->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 09:01:00',
+            'duration' => 60,
+            'billable' => true,
+            'timer_slot' => 'primary',
+        ]);
+
+        $this->postJson('/api/activity-sessions', [
+            'time_entry_id' => $entry->id,
+            'source' => 'desktop',
+            'activity_kind' => 'desktop_app',
+            'tool_type' => 'software',
+            'display_name' => 'Codex',
+            'app_name' => 'Codex',
+            'window_title' => 'Codex',
+            'started_at' => '2026-04-21T09:00:00Z',
+            'ended_at' => '2026-04-21T09:01:00Z',
+            'confidence' => 100,
+        ], $headers)
+            ->assertCreated()
+            ->assertJsonPath('normalized_label', 'codex')
+            ->assertJsonPath('software_name', 'codex')
+            ->assertJsonPath('classification', 'productive');
+
+        $this->getJson('/api/activities?start_date=2026-04-21&end_date=2026-04-21&processed=1', $headers)
+            ->assertOk()
+            ->assertJsonPath('data.0.software_name', 'codex')
+            ->assertJsonPath('data.0.duration', 60)
+            ->assertJsonPath('data.0.classification', 'productive');
+
+        $this->getJson('/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id='.$user->id, $headers)
+            ->assertOk()
+            ->assertJsonPath('selected_user_tools.productive.0.label', 'codex')
+            ->assertJsonPath('selected_user_tools.productive.0.type', 'software')
+            ->assertJsonPath('selected_user_tools.productive.0.total_duration', 60);
+    }
+
     public function test_browser_extension_can_store_an_exact_website_session(): void
     {
         [$user, $headers] = $this->createAuthenticatedEmployee();

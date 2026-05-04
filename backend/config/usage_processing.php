@@ -21,6 +21,9 @@ return [
             'bitbucket',
             'stackoverflow.com',
             'stack overflow',
+            'linkedin.com',
+            'linkedin',
+            'codex',
             'vscode',
             'visual studio code',
             'postman',
@@ -126,10 +129,7 @@ return [
             'reels',
             'shorts',
         ],
-        'neutral' => [
-            'linkedin.com',
-            'linkedin',
-        ],
+        'neutral' => [],
     ],
 
     'canonical_labels' => [
@@ -146,6 +146,7 @@ return [
         'spotify.com' => ['spotify.com', 'spotify'],
         'netflix.com' => ['netflix.com', 'netflix'],
         'localhost' => ['localhost', '127.0.0.1'],
+        'codex' => ['codex'],
         'vscode' => ['visual studio code', 'vs code', 'vscode'],
         'postman' => ['postman'],
         'carevance' => ['carevance'],

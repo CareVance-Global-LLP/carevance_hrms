@@ -36,7 +36,7 @@ const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, 
 const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
 const RELIABLE_CONTEXT_REUSE_WINDOW_MS = ACTIVITY_TRACK_INTERVAL_MS * 2;
 const MAX_PENDING_TRACKED_SECONDS = Math.max(1, Math.round(ACTIVITY_TRACK_INTERVAL_MS / 1000));
-const EXACT_BROWSER_TRACKING_HEALTH_WINDOW_MS = 15 * 1000;
+const EXACT_BROWSER_TRACKING_HEALTH_WINDOW_MS = 45 * 1000;
 const BROWSER_TRACKING_HEALTH_SYNC_DEBOUNCE_MS = 5 * 1000;
 const GENERIC_BROWSER_ACTIVITY_LABEL = 'browser activity';
 const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];
@@ -141,6 +141,7 @@ type ActiveDesktopSession = {
   signature: string;
   startedAt: string;
   startedAtMs: number;
+  lastSeenAtMs: number;
 };
 
 type ActiveBrowserSession = {
@@ -149,6 +150,7 @@ type ActiveBrowserSession = {
   signature: string;
   startedAt: string;
   startedAtMs: number;
+  lastSeenAtMs: number;
 };
 
 const isSelfTrackerContext = (context: { app?: string | null; title?: string | null; url?: string | null }) => {
@@ -363,6 +365,8 @@ export const useDesktopTracker = () => {
   useEffect(() => {
     const markInput = () => {
       lastInputRef.current = Date.now();
+      systemLockedAtMsRef.current = null;
+      clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
       systemLockedAtMsRef.current = null;
       clearLockAutoStopTimeout();
@@ -402,7 +406,9 @@ export const useDesktopTracker = () => {
       pendingBrowserTrackingSyncStateRef.current = null;
       browserTrackingSyncSignatureRef.current = null;
       browserTrackingRealtimeSeenRef.current = false;
+      systemLockedAtMsRef.current = null;
       clearBrowserTrackingSyncTimeout();
+      clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
       lastAutoStoppedEntryIdRef.current = null;
       activeScreenshotEntryIdRef.current = null;
@@ -435,6 +441,7 @@ export const useDesktopTracker = () => {
     browserTrackingRealtimeSeenRef.current = false;
     systemLockedAtMsRef.current = null;
     clearBrowserTrackingSyncTimeout();
+    clearLockAutoStopTimeout();
     pendingIdleRewindRef.current.clear();
     lastAutoStoppedEntryIdRef.current = null;
     activeScreenshotEntryIdRef.current = null;
@@ -528,6 +535,35 @@ export const useDesktopTracker = () => {
       }
     };
 
+    const extendActiveDesktopSession = async (capturedAt: string) => {
+      const activeDesktopSession = activeDesktopSessionRef.current;
+      if (!activeDesktopSession) {
+        return;
+      }
+
+      const parsedSeenAtMs = Date.parse(String(capturedAt || ''));
+      if (!Number.isFinite(parsedSeenAtMs)) {
+        return;
+      }
+
+      const seenAtMs = Math.max(activeDesktopSession.startedAtMs, parsedSeenAtMs);
+      if (seenAtMs <= activeDesktopSession.lastSeenAtMs) {
+        return;
+      }
+
+      activeDesktopSession.lastSeenAtMs = seenAtMs;
+      const durationSeconds = Math.max(0, Math.round((seenAtMs - activeDesktopSession.startedAtMs) / 1000));
+
+      try {
+        await activitySessionApi.update(activeDesktopSession.sessionId, {
+          ended_at: new Date(seenAtMs).toISOString(),
+          duration_seconds: durationSeconds,
+        });
+      } catch (error) {
+        console.error('Desktop tracker failed to extend activity session:', error);
+      }
+    };
+
     const markExactBrowserTrackingHealthy = (recordedAt?: string) => {
       const parsedRecordedAtMs = Date.parse(String(recordedAt || ''));
       const baseMs = Number.isFinite(parsedRecordedAtMs) ? parsedRecordedAtMs : Date.now();
@@ -578,6 +614,7 @@ export const useDesktopTracker = () => {
         && activeDesktopSessionRef.current.signature === signature
         && activeDesktopSessionRef.current.timeEntryId === activeEntry.id
       ) {
+        await extendActiveDesktopSession(capturedAt);
         return;
       }
 
@@ -606,6 +643,7 @@ export const useDesktopTracker = () => {
         signature,
         startedAt: capturedAt,
         startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+        lastSeenAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
       };
     };
 
@@ -631,6 +669,35 @@ export const useDesktopTracker = () => {
         });
       } catch (error) {
         console.error('Desktop tracker failed to close browser activity session:', error);
+      }
+    };
+
+    const extendActiveBrowserSession = async (event: BrowserTrackingEvent) => {
+      const activeBrowserSession = activeBrowserSessionRef.current;
+      if (!activeBrowserSession) {
+        return;
+      }
+
+      const parsedSeenAtMs = Date.parse(String(event.recorded_at || ''));
+      if (!Number.isFinite(parsedSeenAtMs)) {
+        return;
+      }
+
+      const seenAtMs = Math.max(activeBrowserSession.startedAtMs, parsedSeenAtMs);
+      if (seenAtMs <= activeBrowserSession.lastSeenAtMs) {
+        return;
+      }
+
+      activeBrowserSession.lastSeenAtMs = seenAtMs;
+      const durationSeconds = Math.max(0, Math.round((seenAtMs - activeBrowserSession.startedAtMs) / 1000));
+
+      try {
+        await activitySessionApi.update(activeBrowserSession.sessionId, {
+          ended_at: new Date(seenAtMs).toISOString(),
+          duration_seconds: durationSeconds,
+        });
+      } catch (error) {
+        console.error('Desktop tracker failed to extend browser activity session:', error);
       }
     };
 
@@ -729,6 +796,7 @@ export const useDesktopTracker = () => {
         && activeBrowserSessionRef.current.signature === signature
         && activeBrowserSessionRef.current.timeEntryId === activeEntry.id
       ) {
+        await extendActiveBrowserSession(event);
         return;
       }
 
@@ -760,6 +828,7 @@ export const useDesktopTracker = () => {
         signature,
         startedAt: event.recorded_at,
         startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+        lastSeenAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
       };
     };
 
@@ -1423,6 +1492,19 @@ export const useDesktopTracker = () => {
           console.warn('Desktop tracker browser tracking state lookup failed:', error);
         });
     }
+    if (typeof desktopApi.getSystemLockState === 'function') {
+      void desktopApi.getSystemLockState()
+        .then((state) => {
+          if (!isCurrentRun()) {
+            return;
+          }
+
+          void applySystemLockState(state);
+        })
+        .catch((error) => {
+          console.warn('Desktop tracker system lock state lookup failed:', error);
+        });
+    }
     void tick();
 
     return () => {
@@ -1437,7 +1519,9 @@ export const useDesktopTracker = () => {
       pendingBrowserTrackingSyncStateRef.current = null;
       browserTrackingSyncSignatureRef.current = null;
       browserTrackingRealtimeSeenRef.current = false;
+      systemLockedAtMsRef.current = null;
       clearBrowserTrackingSyncTimeout();
+      clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
       pendingTrackedSecondsRef.current = 0;
       activeScreenshotEntryIdRef.current = null;

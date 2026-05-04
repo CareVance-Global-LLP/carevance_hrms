@@ -25,6 +25,22 @@ export const pairBrowserBridge = async ({
   });
 
   if (!response.ok) {
+    let errorCode = '';
+    try {
+      const errorPayload = await response.json();
+      errorCode = String(errorPayload?.error || '').trim();
+    } catch {
+      errorCode = '';
+    }
+
+    if (errorCode === 'invalid_pairing') {
+      throw new Error('That pairing code is expired or no longer active. Generate a fresh code in the desktop app.');
+    }
+
+    if (errorCode === 'invalid_origin') {
+      throw new Error('This extension is not allowed by the desktop app. Reinstall it from the desktop pairing guide.');
+    }
+
     throw new Error(`Browser bridge responded with ${response.status}`);
   }
 
@@ -205,8 +221,13 @@ export const saveOptions = async ({
     });
 
     elements.status.textContent = `Paired browser profile ${browserProfileId}.`;
-  } catch {
-    elements.status.textContent = 'Unable to pair with the desktop app.';
+  } catch (error) {
+    if (error instanceof TypeError) {
+      elements.status.textContent = 'Desktop app is not reachable. Open CareVance Tracker and try again.';
+      return;
+    }
+
+    elements.status.textContent = error?.message || 'Unable to pair with the desktop app.';
   }
 };
 

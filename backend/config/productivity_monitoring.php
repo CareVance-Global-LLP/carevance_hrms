@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'classifier_version' => '2026-04-14.1',
+    'classifier_version' => '2026-05-04.1',
     'fallback_classification' => [
         'unknown' => 'neutral',
         'browser_without_context' => 'context_dependent',
@@ -30,6 +30,7 @@ return [
         '/\s*-\s*vivaldi$/iu',
     ],
     'app_aliases' => [
+        'codex' => ['codex'],
         'vscode' => ['visual studio code', 'vs code', 'code.exe', 'vscode', 'code'],
         'terminal' => ['terminal', 'windows terminal', 'powershell', 'cmd', 'command prompt', 'git bash'],
         'figma' => ['figma'],
@@ -74,9 +75,11 @@ return [
         ['name' => 'Outlook', 'target_type' => 'domain', 'match_mode' => 'contains', 'target_value' => 'outlook', 'classification' => 'productive', 'priority' => 200, 'reason' => 'Work email'],
         ['name' => 'Gmail', 'target_type' => 'domain', 'match_mode' => 'contains', 'target_value' => 'mail.google', 'classification' => 'productive', 'priority' => 200, 'reason' => 'Work email'],
         ['name' => 'Google Calendar', 'target_type' => 'domain', 'match_mode' => 'contains', 'target_value' => 'calendar.google', 'classification' => 'productive', 'priority' => 200, 'reason' => 'Calendar and scheduling'],
+        ['name' => 'LinkedIn', 'target_type' => 'domain', 'match_mode' => 'contains', 'target_value' => 'linkedin.com', 'classification' => 'productive', 'priority' => 220, 'reason' => 'Professional networking and recruiting'],
         ['name' => 'ChatGPT', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'chatgpt', 'classification' => 'productive', 'priority' => 210, 'reason' => 'Work assistant tooling'],
         ['name' => 'Claude', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'claude', 'classification' => 'productive', 'priority' => 210, 'reason' => 'Work assistant tooling'],
         ['name' => 'Gemini', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'gemini', 'classification' => 'productive', 'priority' => 210, 'reason' => 'Work assistant tooling'],
+        ['name' => 'Codex', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'codex', 'classification' => 'productive', 'priority' => 210, 'reason' => 'Engineering assistant tooling'],
         ['name' => 'YouTube', 'target_type' => 'domain', 'match_mode' => 'contains', 'target_value' => 'youtube.com', 'classification' => 'context_dependent', 'priority' => 210, 'reason' => 'Video can be training or entertainment depending on context'],
         ['name' => 'WhatsApp Web', 'target_type' => 'domain', 'match_mode' => 'contains', 'target_value' => 'web.whatsapp.com', 'classification' => 'unproductive', 'priority' => 215, 'reason' => 'Web chat usage is treated as non-work browsing in monitoring summaries'],
         ['name' => 'WhatsApp', 'target_type' => 'app', 'match_mode' => 'contains', 'target_value' => 'whatsapp', 'classification' => 'context_dependent', 'priority' => 210, 'reason' => 'Messaging can be work or personal'],

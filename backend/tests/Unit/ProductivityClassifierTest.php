@@ -160,6 +160,34 @@ class ProductivityClassifierTest extends TestCase
         $this->assertSame('unproductive', $result['classification']);
     }
 
+    public function test_classifier_treats_linkedin_as_productive_consistently(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'type' => 'url',
+            'name' => 'Feed | LinkedIn',
+            'app_name' => 'Google Chrome',
+            'window_title' => 'Feed | LinkedIn - Google Chrome',
+            'url' => 'https://www.linkedin.com/feed/',
+        ]);
+
+        $this->assertSame('linkedin.com', $result['normalized_domain']);
+        $this->assertSame('productive', $result['classification']);
+    }
+
+    public function test_classifier_treats_codex_as_productive_app_usage(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'type' => 'app',
+            'name' => 'Codex',
+            'app_name' => 'Codex',
+            'window_title' => 'Codex',
+            'url' => null,
+        ]);
+
+        $this->assertSame('codex', $result['software_name']);
+        $this->assertSame('productive', $result['classification']);
+    }
+
     public function test_classifier_uses_keyword_fallback_for_browser_internal_pages(): void
     {
         $result = app(ProductivityClassifier::class)->classifyActivity([

@@ -87,6 +87,13 @@ test('service worker preserves tab close events even when the browser already dr
   });
 });
 
+test('service worker emits tab updates as soon as url or title changes', () => {
+  assert.equal(serviceWorker.shouldEmitUpdatedTab({ url: 'https://instagram.com/' }), true);
+  assert.equal(serviceWorker.shouldEmitUpdatedTab({ title: 'Instagram' }), true);
+  assert.equal(serviceWorker.shouldEmitUpdatedTab({ status: 'complete' }), true);
+  assert.equal(serviceWorker.shouldEmitUpdatedTab({ status: 'loading' }), false);
+});
+
 test('options buildBrowserBridgeCredential stores a pairing record per browser profile', () => {
   assert.deepEqual(
     optionsPage.buildBrowserBridgeCredential({
