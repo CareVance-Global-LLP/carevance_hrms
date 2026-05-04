@@ -90,7 +90,7 @@ class UsageProcessingServiceTest extends TestCase
         $this->assertSame(180, $summary['tools']['productive'][0]['total_duration']);
     }
 
-    public function test_web_app_usage_keeps_full_unproductive_duration_during_idle(): void
+    public function test_web_app_usage_matches_timeline_when_idle_overlaps_unproductive_site(): void
     {
         $service = app(UsageProcessingService::class);
 
@@ -98,11 +98,22 @@ class UsageProcessingServiceTest extends TestCase
             $this->log(1, 1, 'url', 'https://instagram.com/reel/1', 135, '2026-03-16 10:02:15'),
             $this->log(2, 1, 'idle', 'System Idle - Chrome', 120, '2026-03-16 10:02:15'),
         ]);
+        $timelineRows = $service->buildTimelineRows([
+            $this->log(1, 1, 'url', 'https://instagram.com/reel/1', 135, '2026-03-16 10:02:15'),
+            $this->log(2, 1, 'idle', 'System Idle - Chrome', 120, '2026-03-16 10:02:15'),
+        ]);
+        $timelineActiveDuration = (int) $timelineRows
+            ->reject(fn (array $row) => ($row['type'] ?? null) === 'idle')
+            ->sum('duration');
 
-        $this->assertSame(135, $summary['metrics']['total_time']);
-        $this->assertSame(135, $summary['metrics']['unproductive_time']);
+        $this->assertSame($timelineActiveDuration, $summary['metrics']['total_time']);
+        $this->assertSame(15, $summary['metrics']['unproductive_time']);
         $this->assertSame(120, $summary['metrics']['idle_time']);
-        $this->assertSame(135, $summary['tools']['unproductive'][0]['total_duration']);
+        $this->assertSame(15, $summary['tools']['unproductive'][0]['total_duration']);
+        $this->assertSame(
+            $timelineRows->pluck('duration')->all(),
+            collect($summary['processed_logs'])->pluck('duration')->all()
+        );
     }
 
     public function test_web_app_usage_stops_counting_unproductive_time_on_focus_switch(): void
@@ -120,7 +131,7 @@ class UsageProcessingServiceTest extends TestCase
         $this->assertSame(120, $summary['tools']['unproductive'][0]['total_duration']);
     }
 
-    public function test_web_app_usage_recovers_full_idle_only_unproductive_interval_from_idle_context(): void
+    public function test_web_app_usage_keeps_idle_only_unproductive_context_out_of_active_tool_totals(): void
     {
         $service = app(UsageProcessingService::class);
 
@@ -129,11 +140,10 @@ class UsageProcessingServiceTest extends TestCase
             $this->log(2, 1, 'idle', 'System Idle - Instagram', 180, '2026-03-16 10:03:00'),
         ]);
 
-        $this->assertSame(180, $summary['metrics']['total_time']);
-        $this->assertSame(180, $summary['metrics']['unproductive_time']);
+        $this->assertSame(0, $summary['metrics']['total_time']);
+        $this->assertSame(0, $summary['metrics']['unproductive_time']);
         $this->assertSame(180, $summary['metrics']['idle_time']);
-        $this->assertSame('instagram.com', $summary['tools']['unproductive'][0]['label']);
-        $this->assertSame(180, $summary['tools']['unproductive'][0]['total_duration']);
+        $this->assertSame([], $summary['tools']['unproductive']);
     }
 
     public function test_unknown_active_tools_default_to_productive_in_web_app_usage(): void

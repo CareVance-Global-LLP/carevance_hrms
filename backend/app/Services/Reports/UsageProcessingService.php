@@ -264,49 +264,9 @@ class UsageProcessingService
 
     public function buildWebAppUsageSummary(iterable $logs, iterable $activityEvents = []): array
     {
-        $normalizedLogs = $this->normalizeUsageLogs($logs);
-        $focusedActiveLogs = $normalizedLogs
-            ->reject(fn (array $row) => $row['type'] === 'idle')
-            ->values();
-        $idleResult = $this->detectAndFilterIdleTime($normalizedLogs, $activityEvents);
-
-        $classifiedActiveLogs = $idleResult['active_logs']->map(function (array $row) {
-            $row['classification'] = $this->classifyUsage(
-                (string) ($row['label'] ?? ''),
-                (string) ($row['raw_name'] ?? ''),
-                (string) ($row['type'] ?? 'app'),
-            );
-
-            if (($row['type'] ?? 'app') === 'app' && ($row['classification'] ?? 'neutral') === 'neutral') {
-                $row['classification'] = 'productive';
-            }
-
-            return $row;
-        })->values();
-
-        $classifiedFocusedLogs = $focusedActiveLogs->map(function (array $row) {
-            $row['classification'] = $this->classifyUsage(
-                (string) ($row['label'] ?? ''),
-                (string) ($row['raw_name'] ?? ''),
-                (string) ($row['type'] ?? 'app'),
-            );
-
-            if (($row['type'] ?? 'app') === 'app' && ($row['classification'] ?? 'neutral') === 'neutral') {
-                $row['classification'] = 'productive';
-            }
-
-            return $row;
-        })->values();
-
-        // Web & App Usage must keep counting the full focused interval for unproductive tools.
-        // The desktop tracker rewinds tracked url/app segments once the session becomes idle,
-        // so we rebuild those unproductive intervals from the idle event context here.
-        $effectiveClassifiedLogs = $classifiedActiveLogs
-            ->reject(fn (array $row) => ($row['classification'] ?? 'neutral') === 'unproductive')
-            ->concat($this->buildWebAppUsageUnproductiveLogs(
-                $classifiedFocusedLogs->filter(fn (array $row) => ($row['classification'] ?? 'neutral') === 'unproductive')->values(),
-                collect($idleResult['idle_logs'] ?? [])->values(),
-            ))
+        $timelineRows = $this->buildTimelineRows($logs, $activityEvents)->values();
+        $effectiveClassifiedLogs = $timelineRows
+            ->reject(fn (array $row) => ($row['tool_type'] ?? null) === 'idle' || ($row['type'] ?? null) === 'idle')
             ->sortBy([
                 ['user_id', 'asc'],
                 ['time_entry_id', 'asc'],
@@ -321,7 +281,8 @@ class UsageProcessingService
         $neutralTime = (int) $effectiveClassifiedLogs->where('classification', 'neutral')->sum('duration');
         $contextDependentTime = (int) $effectiveClassifiedLogs->where('classification', 'context_dependent')->sum('duration');
         $totalTime = $productiveTime + $unproductiveTime + $neutralTime + $contextDependentTime;
-        $idleTime = (int) ($idleResult['idle_time'] ?? 0);
+        $idleRows = $timelineRows->filter(fn (array $row) => ($row['tool_type'] ?? null) === 'idle' || ($row['type'] ?? null) === 'idle')->values();
+        $idleTime = (int) $idleRows->sum('duration');
 
         return [
             'metrics' => [
@@ -336,7 +297,7 @@ class UsageProcessingService
                     : 0.0,
             ],
             'tools' => $this->aggregateToolRows($effectiveClassifiedLogs),
-            'activity_breakdown' => $idleResult['all_logs']
+            'activity_breakdown' => $timelineRows
                 ->groupBy('type')
                 ->map(function (Collection $group, string $type) {
                     return [
@@ -348,8 +309,8 @@ class UsageProcessingService
                 ->sortBy('type')
                 ->values()
                 ->all(),
-            'processed_logs' => $idleResult['all_logs'],
-            'idle_segments_count' => (int) ($idleResult['idle_segments_count'] ?? 0),
+            'processed_logs' => $timelineRows,
+            'idle_segments_count' => $idleRows->count(),
             'last_processed_at' => now()->toIso8601String(),
         ];
     }

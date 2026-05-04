@@ -1009,7 +1009,7 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 125);
     }
 
-    public function test_employee_insights_counts_idle_time_inside_focused_unproductive_tool_duration(): void
+    public function test_employee_insights_reports_unproductive_tool_duration_from_timeline_active_rows(): void
     {
         [$admin, $employee, $headers] = $this->createAdminAndEmployee();
 
@@ -1045,12 +1045,12 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('stats.working_duration', 60)
             ->assertJsonPath('stats.idle_total_duration', 120)
             ->assertJsonPath('selected_user_tools.unproductive.0.label', 'instagram.com')
-            ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 135)
-            ->assertJsonPath('organization_summary.unproductive_duration', 135)
-            ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 135);
+            ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 15)
+            ->assertJsonPath('organization_summary.unproductive_duration', 15)
+            ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 15);
     }
 
-    public function test_employee_insights_recovers_full_unproductive_duration_from_idle_context_when_tracked_segment_is_shorter(): void
+    public function test_employee_insights_keeps_idle_only_unproductive_context_out_of_active_tool_totals(): void
     {
         [$admin, $employee, $headers] = $this->createAdminAndEmployee();
 
@@ -1085,10 +1085,9 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonPath('stats.total_duration', 180)
             ->assertJsonPath('stats.working_duration', 0)
             ->assertJsonPath('stats.idle_total_duration', 180)
-            ->assertJsonPath('selected_user_tools.unproductive.0.label', 'instagram.com')
-            ->assertJsonPath('selected_user_tools.unproductive.0.total_duration', 180)
-            ->assertJsonPath('organization_summary.unproductive_duration', 180)
-            ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 180);
+            ->assertJsonPath('selected_user_tools.unproductive', [])
+            ->assertJsonPath('organization_summary.unproductive_duration', 0)
+            ->assertJsonPath('employee_rankings.by_unproductive_duration.0.unproductive_duration', 0);
     }
 
     public function test_admin_time_entries_index_returns_selected_employee_live_duration(): void
