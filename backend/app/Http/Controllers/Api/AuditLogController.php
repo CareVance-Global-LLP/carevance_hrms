@@ -20,7 +20,7 @@ class AuditLogController extends Controller
             'target_id' => 'nullable|integer',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date',
-            'per_page' => 'nullable|integer|min:1|max:100',
+            'per_page' => 'nullable|integer|min:1|max:10',
         ]);
 
         $currentUser = $request->user();
@@ -41,7 +41,7 @@ class AuditLogController extends Controller
             ->when($request->filled('date_from'), fn ($query) => $query->whereDate('created_at', '>=', $request->date('date_from')))
             ->when($request->filled('date_to'), fn ($query) => $query->whereDate('created_at', '<=', $request->date('date_to')))
             ->orderByDesc('created_at')
-            ->paginate((int) $request->integer('per_page', 25));
+            ->paginate((int) $request->integer('per_page', 10));
 
         return $this->successResponse([
             'data' => $logs->items(),

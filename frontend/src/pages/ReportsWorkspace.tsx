@@ -527,8 +527,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         ? previousData
         : undefined
     ),
-    refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 1000 : false,
-    refetchIntervalInBackground: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity',
+    refetchInterval: mode === 'timeline' || mode === 'web-app-usage' || mode === 'productivity' ? 60_000 : false,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       if (isHubMode) {
         return null;
@@ -571,7 +571,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
-          processed: true,
           page: timelinePage,
           per_page: 10,
         });

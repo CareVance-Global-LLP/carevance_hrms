@@ -855,9 +855,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     const fetchMonitoringPanel = async () => {
       try {
         const [insightsResponse, screenshotsResponse, websiteResponse] = await Promise.all([
-          reportApi.employeeInsights({ start_date: startDate, end_date: endDate, user_id: monitoringUserId }),
-          screenshotApi.getAll({ user_id: monitoringUserId, start_date: startDate, end_date: endDate, page: 1 }),
-          activityApi.getAll({ user_id: monitoringUserId, type: 'url', start_date: startDate, end_date: endDate, page: 1 }),
+          reportApi.employeeInsights({ start_date: startDate, end_date: endDate, user_id: monitoringUserId, dashboard_lite: 1 }),
+          screenshotApi.getAll({ user_id: monitoringUserId, start_date: startDate, end_date: endDate, page: 1, per_page: 10 }),
+          activityApi.getAll({ user_id: monitoringUserId, type: 'url', start_date: startDate, end_date: endDate, page: 1, per_page: 10 }),
         ]);
 
         if (!active) return;

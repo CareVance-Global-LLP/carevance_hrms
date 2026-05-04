@@ -27,6 +27,8 @@ class LeaveRequestController extends Controller
         $request->validate([
             'status' => 'nullable|in:pending,approved,rejected,revoked',
             'user_id' => 'nullable|integer',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
         ]);
 
         $currentUser = $request->user();
@@ -57,8 +59,25 @@ class LeaveRequestController extends Controller
             $query->where('status', $request->status);
         }
 
+        if ($request->filled('start_date') || $request->filled('end_date')) {
+            $startDate = $request->filled('start_date')
+                ? Carbon::parse((string) $request->start_date)->startOfDay()
+                : null;
+            $endDate = $request->filled('end_date')
+                ? Carbon::parse((string) $request->end_date)->endOfDay()
+                : null;
+
+            if ($startDate && $endDate && $startDate->greaterThan($endDate)) {
+                [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
+            }
+
+            $query
+                ->when($startDate, fn ($leaveQuery) => $leaveQuery->whereDate('end_date', '>=', $startDate->toDateString()))
+                ->when($endDate, fn ($leaveQuery) => $leaveQuery->whereDate('start_date', '<=', $endDate->toDateString()));
+        }
+
         return response()->json([
-            'data' => $query->limit(200)->get()->map(fn (LeaveRequest $leave) => $this->withApprovalDestination($leave)),
+            'data' => $query->limit(10)->get()->map(fn (LeaveRequest $leave) => $this->withApprovalDestination($leave)),
         ]);
     }
 

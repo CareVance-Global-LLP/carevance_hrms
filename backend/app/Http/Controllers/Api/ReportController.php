@@ -367,6 +367,16 @@ class ReportController extends Controller
         );
     }
 
+    private function limitToolBreakdown(array $toolBreakdown, int $limit = 10): array
+    {
+        return [
+            'productive' => collect($toolBreakdown['productive'] ?? [])->take($limit)->values()->all(),
+            'unproductive' => collect($toolBreakdown['unproductive'] ?? [])->take($limit)->values()->all(),
+            'neutral' => collect($toolBreakdown['neutral'] ?? [])->take($limit)->values()->all(),
+            'context_dependent' => collect($toolBreakdown['context_dependent'] ?? [])->take($limit)->values()->all(),
+        ];
+    }
+
     public function dashboard(Request $request)
     {
         $user = $request->user();
@@ -583,6 +593,7 @@ class ReportController extends Controller
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
             'dashboard_lite' => 'nullable',
+            'skip_activity' => 'nullable',
         ]);
 
         $currentUser = $request->user();
@@ -676,6 +687,7 @@ class ReportController extends Controller
                 $activeUserIds,
                 $startDate,
                 $endDate,
+                $request->boolean('skip_activity'),
             ));
         }
 
@@ -807,11 +819,14 @@ class ReportController extends Controller
         Collection $activeUserIds,
         Carbon $startDate,
         Carbon $endDate,
+        bool $skipActivity = false,
     ): array {
         $resolvedNow = now();
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
-        $activities = $this->activityFeedService->forUsersInRange($users->pluck('id'), $startDate, $endDate);
+        $activities = $skipActivity
+            ? collect()
+            : $this->activityFeedService->forUsersInRange($users->pluck('id'), $startDate, $endDate);
         $activitiesByUser = $activities->groupBy('user_id');
         $activitiesByUserAndDay = $activities->groupBy(fn ($activity) => sprintf(
             '%d|%s',
@@ -1231,6 +1246,8 @@ class ReportController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'user_id' => 'nullable|integer',
+            'group_ids' => 'nullable|array',
+            'group_ids.*' => 'integer',
             'q' => 'nullable|string|max:255',
             'recent_screenshot_limit' => 'nullable|integer|min:1|max:50',
             'dashboard_lite' => 'nullable',
@@ -1379,7 +1396,9 @@ class ReportController extends Controller
         $idleCount = max(1, (int) ($selectedUsageSummary['idle_segments_count'] ?? 0));
         $avgIdle = (float) round(((int) ($selectedTimeBreakdown['idle_duration'] ?? 0)) / $idleCount, 2);
         $activityBreakdown = collect($selectedUsageSummary['activity_breakdown'] ?? [])->values();
-        $selectedToolBreakdown = (array) ($selectedUsageSummary['tools'] ?? ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []]);
+        $selectedToolBreakdown = $this->limitToolBreakdown(
+            (array) ($selectedUsageSummary['tools'] ?? ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []])
+        );
 
         $recentScreenshots = Screenshot::query()
             ->whereHas('timeEntry', function ($query) use ($selectedUser, $startDate, $endDate) {
@@ -1714,21 +1733,21 @@ class ReportController extends Controller
             'employee_rankings' => [
                 'most_productive' => $mostProductiveEmployee,
                 'most_unproductive' => $mostUnproductiveEmployee,
-                'by_productive_duration' => $employeeScores->sortByDesc('productive_duration')->values(),
-                'by_unproductive_duration' => $employeeScores->sortByDesc('unproductive_duration')->values(),
+                'by_productive_duration' => $employeeScores->sortByDesc('productive_duration')->take(10)->values(),
+                'by_unproductive_duration' => $employeeScores->sortByDesc('unproductive_duration')->take(10)->values(),
             ],
             'team_rankings' => [
-                'by_efficiency' => $teamEfficiencyRanked,
+                'by_efficiency' => $teamEfficiencyRanked->take(10)->values(),
                 'top_productive' => $teamEfficiencyRanked->first(),
                 'least_productive' => $teamEfficiencyRanked->sortBy('efficiency_score')->first(),
             ],
             'live_monitoring' => [
                 'selected_user' => $selectedUserLive,
-                'working_now' => $liveMonitoringRows->where('is_working', true)->values(),
-                'all_users' => $liveMonitoringRows,
-                'employees_active' => $employeeLiveRows->where('work_status', 'active')->values(),
-                'employees_inactive' => $employeeLiveRows->where('work_status', 'inactive')->values(),
-                'employees_on_leave' => $employeeLiveRows->where('work_status', 'on_leave')->values(),
+                'working_now' => $liveMonitoringRows->where('is_working', true)->take(10)->values(),
+                'all_users' => $liveMonitoringRows->take(10)->values(),
+                'employees_active' => $employeeLiveRows->where('work_status', 'active')->take(10)->values(),
+                'employees_inactive' => $employeeLiveRows->where('work_status', 'inactive')->take(10)->values(),
+                'employees_on_leave' => $employeeLiveRows->where('work_status', 'on_leave')->take(10)->values(),
             ],
             'recent_screenshots' => $recentScreenshots,
         ]);

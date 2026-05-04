@@ -541,7 +541,7 @@ export const reportApi = {
   employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; recent_screenshot_limit?: number; dashboard_lite?: boolean | number }) =>
     api.get('/reports/employee-insights', { params }),
 
-  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[]; dashboard_lite?: boolean | number }) =>
+  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[]; dashboard_lite?: boolean | number; skip_activity?: boolean | number }) =>
     api.get('/reports/overall', { params }),
   
   project: (projectId: number, params?: { start_date?: string; end_date?: string }) => 
@@ -688,7 +688,7 @@ export const attendanceHolidayApi = {
 };
 
 export const leaveApi = {
-  list: (params?: { status?: 'pending' | 'approved' | 'rejected' | 'revoked'; user_id?: number }) =>
+  list: (params?: { status?: 'pending' | 'approved' | 'rejected' | 'revoked'; user_id?: number; start_date?: string; end_date?: string }) =>
     api.get<{
       data: Array<{
         id: number;

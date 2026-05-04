@@ -25,7 +25,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   attendanceApi,
   auditApi,
-  dashboardApi,
   leaveApi,
   notificationApi,
   payrollSimpleApi,
@@ -33,6 +32,7 @@ import {
   reportGroupApi,
   screenshotApi,
   taskApi,
+  timeEntryApi,
   userApi,
 } from '@/services/api';
 
@@ -482,58 +482,52 @@ export default function AdminDashboard() {
     queryKey: ['real-admin-dashboard', selectedStartDate, selectedEndDate, dashboardScope, selectedEmployeeId, scopeDepartmentFilter],
     queryFn: async () => {
       const reportScopeParams = dashboardScope === 'employee' && selectedEmployeeId
-        ? { start_date: selectedStartDate, end_date: selectedEndDate, user_ids: [selectedEmployeeId] }
-        : { start_date: selectedStartDate, end_date: selectedEndDate };
+        ? { start_date: selectedStartDate, end_date: selectedEndDate, user_ids: [selectedEmployeeId], dashboard_lite: 1, skip_activity: 1 }
+        : { start_date: selectedStartDate, end_date: selectedEndDate, dashboard_lite: 1, skip_activity: 1 };
       const [
         usersResponse,
         attendanceResponse,
         leaveResponse,
         overallResponse,
-        dashboardResponse,
         tasksResponse,
         payrollResponse,
         notificationsResponse,
         groupsResponse,
         auditResponse,
-        rangeReportResponse,
-        trendResponse,
-        attendanceCalendarResponse,
+        timeEntriesResponse,
       ] = await Promise.allSettled([
         userApi.getAll(),
         attendanceApi.summary({ start_date: selectedStartDate, end_date: selectedEndDate }),
-        leaveApi.list({ status: 'approved' }),
+        leaveApi.list({ status: 'approved', start_date: selectedStartDate, end_date: selectedEndDate }),
         reportApi.overall(reportScopeParams),
-        dashboardApi.summary(),
-        taskApi.getAll(),
+        taskApi.getAll({ timer_only: true }),
         payrollSimpleApi.runs(selectedStartDate.slice(0, 7)),
         notificationApi.list({ limit: 8 }),
         reportGroupApi.list(),
         auditApi.list({ per_page: 8 }),
-        reportApi.weekly({ start_date: selectedStartDate, end_date: selectedEndDate, scope: 'organization' }),
-        reportApi.overall(reportScopeParams),
-        Promise.allSettled(enumerateMonths({ startDate: selectedStartDate, endDate: selectedEndDate }).map((month) => attendanceApi.calendar({
-          month,
-          scope: dashboardScope === 'employee' && selectedEmployeeId ? 'selected' : 'overall',
-          user_id: dashboardScope === 'employee' && selectedEmployeeId ? selectedEmployeeId : undefined,
-        }))),
+        dashboardScope === 'employee' && selectedEmployeeId
+          ? timeEntryApi.getAll({ user_id: selectedEmployeeId, start_date: selectedStartDate, end_date: selectedEndDate, page: 1, per_page: 10 })
+          : Promise.resolve({ data: { data: [] } }),
       ]);
+
+      const overallPayload = overallResponse.status === 'fulfilled' ? overallResponse.value.data : { summary: {}, by_day: [], by_user: [] };
+      const timeEntriesPayload = timeEntriesResponse.status === 'fulfilled' ? timeEntriesResponse.value.data : { data: [] };
+      const timeEntries = safeArray<any>(timeEntriesPayload?.data);
 
       return {
         employees: usersResponse.status === 'fulfilled' ? safeArray<any>(usersResponse.value.data).map(normalizeEmployee).filter((employee) => employee.id > 0) : [],
         attendanceRows: attendanceResponse.status === 'fulfilled' ? safeArray<any>(attendanceResponse.value.data?.data) : [],
         leaves: leaveResponse.status === 'fulfilled' ? safeArray<any>(leaveResponse.value.data?.data) : [],
-        overall: overallResponse.status === 'fulfilled' ? overallResponse.value.data : { summary: {}, by_day: [], by_user: [] },
-        summary: dashboardResponse.status === 'fulfilled' ? dashboardResponse.value.data : {},
+        overall: overallPayload,
+        summary: {},
         tasks: tasksResponse.status === 'fulfilled' ? safeArray<any>(tasksResponse.value.data) : [],
         payrollRecords: payrollResponse.status === 'fulfilled' ? safeArray<any>(payrollResponse.value.data?.data) : [],
         notifications: notificationsResponse.status === 'fulfilled' ? safeArray<any>(notificationsResponse.value.data?.data) : [],
         groups: groupsResponse.status === 'fulfilled' ? safeArray<any>(groupsResponse.value.data?.data) : [],
         auditLogs: auditResponse.status === 'fulfilled' ? safeArray<any>(auditResponse.value.data?.data) : [],
-        weeklyReport: rangeReportResponse.status === 'fulfilled' ? rangeReportResponse.value.data : { time_entries: [], by_project: [], total_duration: 0 },
-        monthlyReport: trendResponse.status === 'fulfilled' ? trendResponse.value.data : { by_day: [] },
-        attendanceCalendarDays: attendanceCalendarResponse.status === 'fulfilled'
-          ? attendanceCalendarResponse.value.flatMap((result) => result.status === 'fulfilled' ? safeArray<any>(result.value.data?.days) : [])
-          : [],
+        weeklyReport: { time_entries: timeEntries, entries: timeEntries, by_project: [], total_duration: Number(overallPayload?.summary?.total_duration || 0) },
+        monthlyReport: { by_day: safeArray<any>(overallPayload?.by_day) },
+        attendanceCalendarDays: [],
       };
     },
   });
@@ -597,9 +591,10 @@ export default function AdminDashboard() {
   const onLeave = scopedLeavesInRange.length;
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
-  const totalDuration = Number(data.overall.summary?.total_duration || data.summary?.today_total_elapsed_duration || 0);
+  const dashboardSummary = data.summary as any;
+  const totalDuration = Number(data.overall.summary?.total_duration || dashboardSummary?.today_total_elapsed_duration || 0);
   const weeklyReport: any = data.weeklyReport || {};
-  const weeklyTotal = Number(weeklyReport.total_duration || data.summary?.weekly_total_elapsed_duration || 0);
+  const weeklyTotal = Number(weeklyReport.total_duration || dashboardSummary?.weekly_total_elapsed_duration || 0);
 
   const allRangeDates = enumerateDateRange(selectedRange);
   const calendarDaysInRange = safeArray<any>(data.attendanceCalendarDays)

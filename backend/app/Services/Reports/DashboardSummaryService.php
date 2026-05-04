@@ -68,10 +68,18 @@ class DashboardSummaryService
         $todayAdjustmentDuration = $this->manualAdjustmentDurationForRange($user->id, $todayStart, $todayEnd);
         $todayDuration = (int) $todayEntries->sum(fn (TimeEntry $entry) => $this->storedDuration($entry)) + $todayAdjustmentDuration;
         $todayElapsedDuration = (int) $todayEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now)) + $todayAdjustmentDuration;
-        $allEntries = TimeEntry::where('user_id', $user->id)->get(['id', 'start_time', 'end_time', 'duration', 'billable']);
         $allAdjustmentDuration = $this->manualAdjustmentDurationForUser($user->id);
-        $allTimeDuration = (int) $allEntries->sum(fn (TimeEntry $entry) => $this->storedDuration($entry)) + $allAdjustmentDuration;
-        $allTimeElapsedDuration = (int) $allEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now)) + $allAdjustmentDuration;
+        $closedAllTimeDuration = (int) TimeEntry::query()
+            ->where('user_id', $user->id)
+            ->whereNotNull('end_time')
+            ->sum('duration');
+        $runningAllTimeDuration = (int) TimeEntry::query()
+            ->where('user_id', $user->id)
+            ->whereNull('end_time')
+            ->get(['id', 'start_time', 'end_time', 'duration'])
+            ->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
+        $allTimeDuration = $closedAllTimeDuration + $runningAllTimeDuration + $allAdjustmentDuration;
+        $allTimeElapsedDuration = $allTimeDuration;
 
         $yesterdayDuration = (int) TimeEntry::where('user_id', $user->id)
             ->whereBetween('start_time', [$yesterdayStart, $yesterdayEnd])
