@@ -41,6 +41,7 @@ class ActivitySessionApiTest extends TestCase
         $startResponse
             ->assertCreated()
             ->assertJsonPath('display_name', 'Visual Studio Code')
+            ->assertJsonPath('started_at', '2026-04-21T09:00:00.000000Z')
             ->assertJsonPath('ended_at', null);
 
         $sessionId = (int) $startResponse->json('id');
@@ -199,6 +200,7 @@ class ActivitySessionApiTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('source', 'browser_extension')
             ->assertJsonPath('tool_type', 'website')
+            ->assertJsonPath('started_at', '2026-04-21T11:28:54.000000Z')
             ->assertJsonPath('normalized_domain', 'gemini.google.com');
     }
 

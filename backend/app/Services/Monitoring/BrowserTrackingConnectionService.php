@@ -4,6 +4,7 @@ namespace App\Services\Monitoring;
 
 use App\Models\BrowserTrackingConnection;
 use App\Models\User;
+use App\Support\ExternalTimestamp;
 use App\Services\AppNotificationService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -160,7 +161,7 @@ class BrowserTrackingConnectionService
             return $fallback->copy();
         }
 
-        return Carbon::parse($rawValue);
+        return ExternalTimestamp::parseToAppTimezone($rawValue);
     }
 
     private function buildConnectionKey(string $browserName, string $profileKey): string

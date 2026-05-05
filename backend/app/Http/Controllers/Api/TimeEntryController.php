@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Support\ExternalTimestamp;
 use App\Services\Authorization\GroupAccessService;
 use App\Services\TimeEntries\IdleAutoStopMailService;
 use App\Services\TimeEntries\TimeEntryDurationService;
@@ -105,8 +106,8 @@ class TimeEntryController extends Controller
             'description' => $request->description,
             'project_id' => $projectId,
             'task_id' => $taskId,
-            'start_time' => $request->start_time,
-            'end_time' => $request->end_time,
+            'start_time' => ExternalTimestamp::parseToAppTimezone($request->start_time),
+            'end_time' => $request->end_time ? ExternalTimestamp::parseToAppTimezone($request->end_time) : null,
             'duration' => $request->duration ?? 0,
             'billable' => $request->billable ?? true,
             'user_id' => $user->id,
@@ -171,6 +172,16 @@ class TimeEntryController extends Controller
         if ($request->exists('project_id') || $request->exists('task_id')) {
             $payload['project_id'] = $projectId;
             $payload['task_id'] = $taskId;
+        }
+
+        if (array_key_exists('start_time', $payload) && $payload['start_time']) {
+            $payload['start_time'] = ExternalTimestamp::parseToAppTimezone($payload['start_time']);
+        }
+
+        if (array_key_exists('end_time', $payload)) {
+            $payload['end_time'] = $payload['end_time']
+                ? ExternalTimestamp::parseToAppTimezone($payload['end_time'])
+                : null;
         }
 
         $timeEntry->update($payload);
@@ -277,7 +288,7 @@ class TimeEntryController extends Controller
                 stoppedAt: $stoppedAt,
                 reportedIdleSeconds: (int) $request->input('idle_seconds', 0),
                 reportedLastActivityAt: $request->input('last_activity_at')
-                    ? Carbon::parse((string) $request->input('last_activity_at'))
+                    ? ExternalTimestamp::parseToAppTimezone($request->input('last_activity_at'))
                     : null,
             );
 

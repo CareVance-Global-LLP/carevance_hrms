@@ -111,15 +111,15 @@ class ActivityTrackingTimelineTest extends TestCase
         $this->assertNotNull($idleRow);
         $this->assertSame('instagram.com', $webRow['normalized_label']);
         $this->assertSame(121, (int) $webRow['duration']);
-        $this->assertSame('2026-03-16T10:54:59+00:00', $webRow['start_at']);
-        $this->assertSame('2026-03-16T10:57:00+00:00', $webRow['end_at']);
+        $this->assertSame('2026-03-16T05:24:59+05:30', $webRow['start_at']);
+        $this->assertSame('2026-03-16T05:27:00+05:30', $webRow['end_at']);
         $this->assertSame('website', $webRow['tool_type']);
         $this->assertSame($user->name, $webRow['user']['name']);
 
         $this->assertSame(180, (int) $idleRow['duration']);
         $this->assertSame('idle', $idleRow['tool_type']);
-        $this->assertSame('2026-03-16T10:57:00+00:00', $idleRow['start_at']);
-        $this->assertSame('2026-03-16T11:00:00+00:00', $idleRow['end_at']);
+        $this->assertSame('2026-03-16T10:57:00+05:30', $idleRow['start_at']);
+        $this->assertSame('2026-03-16T11:00:00+05:30', $idleRow['end_at']);
         $this->assertSame(301, (int) $timelineRows->sum('duration'));
     }
 
@@ -170,9 +170,9 @@ class ActivityTrackingTimelineTest extends TestCase
         ]);
 
         $activity = Activity::query()->firstOrFail();
-        $this->assertSame('2026-03-16T10:55:00+00:00', $activity->started_at?->toIso8601String());
-        $this->assertSame('2026-03-16T10:55:08+00:00', $activity->ended_at?->toIso8601String());
-        $this->assertSame('2026-03-16T10:55:08+00:00', $activity->last_seen_at?->toIso8601String());
+        $this->assertSame('2026-03-16T16:25:00+05:30', $activity->started_at?->toIso8601String());
+        $this->assertSame('2026-03-16T16:25:08+05:30', $activity->ended_at?->toIso8601String());
+        $this->assertSame('2026-03-16T16:25:08+05:30', $activity->last_seen_at?->toIso8601String());
     }
 
     public function test_activity_store_normalizes_millisecond_session_boundaries_to_whole_seconds(): void
@@ -202,8 +202,8 @@ class ActivityTrackingTimelineTest extends TestCase
         $activity = Activity::query()->findOrFail((int) $response->json('id'));
 
         $this->assertSame(3, (int) $activity->duration);
-        $this->assertSame('2026-03-16T10:55:00+00:00', $activity->started_at?->copy()->setMicrosecond(0)->toIso8601String());
-        $this->assertSame('2026-03-16T10:55:03+00:00', $activity->ended_at?->copy()->setMicrosecond(0)->toIso8601String());
+        $this->assertSame('2026-03-16T16:25:00+05:30', $activity->started_at?->copy()->setMicrosecond(0)->toIso8601String());
+        $this->assertSame('2026-03-16T16:25:03+05:30', $activity->ended_at?->copy()->setMicrosecond(0)->toIso8601String());
     }
 
     public function test_normalized_timeline_excludes_carevance_workspace_and_preserves_exact_positive_gap_durations(): void

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ActivitySession;
 use App\Models\TimeEntry;
+use App\Support\ExternalTimestamp;
 use App\Services\Monitoring\ProductivityClassifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -58,9 +59,9 @@ class ActivitySessionController extends Controller
             }
         }
 
-        $startedAt = Carbon::parse((string) $validated['started_at']);
+        $startedAt = ExternalTimestamp::parseToAppTimezone($validated['started_at']);
         $endedAt = array_key_exists('ended_at', $validated) && $validated['ended_at']
-            ? Carbon::parse((string) $validated['ended_at'])
+            ? ExternalTimestamp::parseToAppTimezone($validated['ended_at'])
             : null;
 
         $this->closeConflictingOpenSessions(
@@ -104,7 +105,7 @@ class ActivitySessionController extends Controller
             'metadata' => 'nullable|array',
         ]);
 
-        $endedAt = Carbon::parse((string) $validated['ended_at']);
+        $endedAt = ExternalTimestamp::parseToAppTimezone($validated['ended_at']);
         $activitySession->update([
             'ended_at' => $endedAt,
             'duration_seconds' => $this->resolveWholeSeconds($activitySession->started_at, $endedAt),

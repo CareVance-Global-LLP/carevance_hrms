@@ -5,8 +5,14 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use App\Models\Activity;
+use App\Models\ActivitySession;
+use App\Models\AttendancePunch;
+use App\Models\AttendanceRecord;
+use App\Models\BrowserTrackingConnection;
+use App\Models\TimeEntry;
 use App\Services\Monitoring\ProductivityClassifier;
 use Database\Seeders\ProductivityRuleSeeder;
 
@@ -140,3 +146,130 @@ Artisan::command('monitoring:reclassify-activities {--user_id=} {--from_id=} {--
 
     return 0;
 })->purpose('Backfill normalized productivity classification fields on activity records');
+
+Artisan::command('timestamps:repair-local
+    {--since= : Shift records on or after this timestamp. Defaults to today 00:00 in app timezone.}
+    {--until= : Shift records on or before this timestamp. Defaults to now in app timezone.}
+    {--shift=330 : Number of minutes to add to affected timestamps.}
+    {--include-time-entries : Also shift time entry start/end timestamps in the selected window.}
+    {--include-attendance : Also shift attendance record and punch timestamps in the selected window.}
+    {--dry-run : Preview the number of rows that would be updated without saving changes.}', function () {
+    $timezone = (string) config('app.timezone', 'UTC');
+    $since = $this->option('since')
+        ? Carbon::parse((string) $this->option('since'), $timezone)
+        : Carbon::now($timezone)->startOfDay();
+    $until = $this->option('until')
+        ? Carbon::parse((string) $this->option('until'), $timezone)
+        : Carbon::now($timezone);
+    $shiftMinutes = (int) $this->option('shift');
+    $dryRun = (bool) $this->option('dry-run');
+
+    if ($shiftMinutes === 0) {
+        $this->warn('Shift is 0 minutes. Nothing to do.');
+
+        return 0;
+    }
+
+    if ($since->greaterThan($until)) {
+        [$since, $until] = [$until->copy(), $since->copy()];
+    }
+
+    $targets = [
+        [
+            'label' => 'activities',
+            'model' => Activity::class,
+            'date_field' => 'recorded_at',
+            'columns' => ['recorded_at', 'started_at', 'last_seen_at', 'ended_at'],
+        ],
+        [
+            'label' => 'activity_sessions',
+            'model' => ActivitySession::class,
+            'date_field' => 'started_at',
+            'columns' => ['started_at', 'ended_at'],
+        ],
+        [
+            'label' => 'browser_tracking_connections',
+            'model' => BrowserTrackingConnection::class,
+            'date_field' => 'last_seen_at',
+            'columns' => ['connected_at', 'last_seen_at', 'last_sync_at', 'disconnected_at'],
+        ],
+    ];
+
+    if ($this->option('include-time-entries')) {
+        $targets[] = [
+            'label' => 'time_entries',
+            'model' => TimeEntry::class,
+            'date_field' => 'start_time',
+            'columns' => ['start_time', 'end_time'],
+        ];
+    }
+
+    if ($this->option('include-attendance')) {
+        $targets[] = [
+            'label' => 'attendance_records',
+            'model' => AttendanceRecord::class,
+            'date_field' => 'check_in_at',
+            'columns' => ['check_in_at', 'check_out_at'],
+        ];
+        $targets[] = [
+            'label' => 'attendance_punches',
+            'model' => AttendancePunch::class,
+            'date_field' => 'punch_in_at',
+            'columns' => ['punch_in_at', 'punch_out_at'],
+        ];
+    }
+
+    $this->line('Repairing local timestamps');
+    $this->line('Timezone: '.$timezone);
+    $this->line('Window: '.$since->toDateTimeString().' -> '.$until->toDateTimeString());
+    $this->line('Shift: '.$shiftMinutes.' minutes');
+    $this->line('Mode: '.($dryRun ? 'dry-run' : 'apply'));
+
+    $totalUpdated = 0;
+
+    foreach ($targets as $target) {
+        $modelClass = $target['model'];
+        $dateField = $target['date_field'];
+        $columns = $target['columns'];
+
+        $query = $modelClass::query()
+            ->whereNotNull($dateField)
+            ->whereBetween($dateField, [$since, $until])
+            ->orderBy('id');
+
+        $count = (clone $query)->count();
+        $this->line(sprintf('- %s: %d row(s)', $target['label'], $count));
+
+        if ($dryRun || $count === 0) {
+            continue;
+        }
+
+        $query->chunkById(200, function ($rows) use ($columns, $shiftMinutes, &$totalUpdated) {
+            foreach ($rows as $row) {
+                $updates = [];
+
+                foreach ($columns as $column) {
+                    if (! $row->{$column}) {
+                        continue;
+                    }
+
+                    $updates[$column] = Carbon::parse($row->{$column})->addMinutes($shiftMinutes);
+                }
+
+                if ($updates === []) {
+                    continue;
+                }
+
+                $row->timestamps = false;
+                $row->forceFill($updates)->saveQuietly();
+                $totalUpdated++;
+            }
+        });
+    }
+
+    $this->info($dryRun
+        ? 'Dry run completed.'
+        : sprintf('Timestamp repair completed. Updated %d row(s).', $totalUpdated));
+
+    return 0;
+})->purpose('Shift affected telemetry timestamps into the correct local time window after a bad deployment');

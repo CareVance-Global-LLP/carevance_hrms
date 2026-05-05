@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\ReportGroup;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Support\ExternalTimestamp;
 use App\Services\Monitoring\ActivityFeedService;
 use App\Services\Reports\UsageProcessingService;
 use Illuminate\Http\Request;
@@ -255,7 +256,7 @@ class ActivityController extends Controller
             return null;
         }
 
-        return Carbon::parse((string) $value)->toIso8601String();
+        return ExternalTimestamp::parseToAppTimezone($value)?->toIso8601String();
     }
 
     private function mapFeedItemForResponse(object $item, Collection $usersById): array
@@ -333,16 +334,16 @@ class ActivityController extends Controller
 
         $validated['duration'] = max(0, (int) floor((float) ($validated['duration'] ?? 0)));
         $validated['recorded_at'] = isset($validated['recorded_at'])
-            ? Carbon::parse((string) $validated['recorded_at'])
+            ? ExternalTimestamp::parseToAppTimezone($validated['recorded_at'])
             : now();
         $validated['started_at'] = isset($validated['started_at'])
-            ? Carbon::parse((string) $validated['started_at'])->startOfSecond()
+            ? ExternalTimestamp::parseToAppTimezone($validated['started_at'])?->startOfSecond()
             : null;
         $validated['last_seen_at'] = isset($validated['last_seen_at'])
-            ? Carbon::parse((string) $validated['last_seen_at'])->startOfSecond()
+            ? ExternalTimestamp::parseToAppTimezone($validated['last_seen_at'])?->startOfSecond()
             : null;
         $validated['ended_at'] = isset($validated['ended_at'])
-            ? Carbon::parse((string) $validated['ended_at'])->startOfSecond()
+            ? ExternalTimestamp::parseToAppTimezone($validated['ended_at'])?->startOfSecond()
             : null;
 
         $existingActivity = null;
@@ -461,6 +462,10 @@ class ActivityController extends Controller
             if (!$timeEntryBelongsToUser) {
                 return response()->json(['message' => 'Selected time entry is invalid for this user.'], 422);
             }
+        }
+
+        if (array_key_exists('recorded_at', $validated)) {
+            $validated['recorded_at'] = ExternalTimestamp::parseToAppTimezone($validated['recorded_at']);
         }
 
         $activity->update($validated);
