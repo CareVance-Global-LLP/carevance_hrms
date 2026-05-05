@@ -413,6 +413,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedUserId);
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedGroupId);
   const [timelinePage, setTimelinePage] = useState(1);
+  const [hoursPage, setHoursPage] = useState(1);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
   const isHubMode = mode === 'reports-hub' || mode === 'analytics-hub';
@@ -485,6 +486,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
   useEffect(() => {
     setTimelinePage(1);
+    setHoursPage(1);
   }, [effectiveSelectedUserId, endDate, mode, selectedGroupId, startDate]);
 
   const selectedEmployee = useMemo(
@@ -520,7 +522,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   }, [selectedUserId, users, usersQuery.isSuccess]);
 
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId, timelinePage],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId, timelinePage, hoursPage],
     enabled: isHubMode || (usersQuery.isSuccess && groupsQuery.isSuccess),
     placeholderData: (previousData, previousQuery) => (
       shouldReuseReportPlaceholderData(previousQuery?.queryKey, mode)
@@ -549,6 +551,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           end_date: endDate,
           user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
+          page: mode === 'hours-tracked' ? hoursPage : undefined,
+          per_page: mode === 'hours-tracked' ? 25 : undefined,
         });
         return response.data;
       }
@@ -720,6 +724,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const byDay = overallData?.by_day || [];
   const shouldScrollByUser = byUser.length > 5;
   const shouldScrollByDay = byDay.length > 5;
+  const hoursPagination = overallData?.pagination || null;
+  const hoursCurrentPage = Math.max(1, Number(hoursPagination?.current_page || hoursPage || 1));
+  const hoursLastPage = Math.max(1, Number(hoursPagination?.last_page || 1));
+  const hoursTotal = Number(hoursPagination?.total || byUser.length || 0);
 
   const projectsData = dataQuery.data as any;
   const tasks = projectsData?.tasks || [];
@@ -1315,25 +1323,60 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <MetricCard label="Tracked Time" value={formatDuration(overallSummary.total_duration || 0)} hint="Total duration in range" icon={TimerReset} accent="sky" />
             <MetricCard label="Working Time" value={formatDuration(getWorkingDuration(overallSummary))} hint="Tracked time minus measured idle time" icon={LineChart} accent="emerald" />
             <MetricCard label="Idle Time" value={formatDuration(overallSummary.idle_duration || 0)} hint="Measured idle time inside tracked time" icon={Activity} accent="amber" />
-            <MetricCard label="Active Users" value={overallSummary.active_users || 0} hint={`${overallSummary.users_count || 0} users tracked`} icon={Users} accent="violet" />
+            <MetricCard
+              label="Active Users"
+              value={overallSummary.active_users || 0}
+              hint={mode === 'hours-tracked' && hoursPagination ? `${hoursTotal} users total, ${byUser.length} loaded` : `${overallSummary.users_count || 0} users tracked`}
+              icon={Users}
+              accent="violet"
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <DataTable
-              title={mode === 'productivity' ? 'Employee Productivity' : 'Employee Hours'}
-              description="Per-user totals, idle share, and latest activity."
-              rows={byUser}
-              emptyMessage="No employee rows found."
-              headerAction={renderPanelRefreshButton()}
-              bodyClassName={shouldScrollByUser ? 'max-h-[360px] overflow-y-auto' : undefined}
-              columns={[
-                { key: 'user', header: 'User', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
-                { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
-                { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
-                { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
-                { key: 'idle_pct', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
-              ]}
-            />
+            <div className="space-y-3">
+              <DataTable
+                title={mode === 'productivity' ? 'Employee Productivity' : 'Employee Hours'}
+                description="Per-user totals, idle share, and latest activity."
+                rows={byUser}
+                emptyMessage="No employee rows found."
+                headerAction={renderPanelRefreshButton()}
+                bodyClassName={shouldScrollByUser ? 'max-h-[360px] overflow-y-auto' : undefined}
+                columns={[
+                  { key: 'user', header: 'User', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
+                  { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
+                  { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
+                  { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
+                  { key: 'idle_pct', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
+                ]}
+              />
+              {mode === 'hours-tracked' && hoursTotal > 0 ? (
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                  <span>
+                    Page {hoursCurrentPage} of {hoursLastPage} - {hoursTotal} employee rows
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={hoursCurrentPage <= 1 || dataQuery.isFetching}
+                      onClick={() => setHoursPage((page) => Math.max(1, page - 1))}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={hoursCurrentPage >= hoursLastPage || dataQuery.isFetching}
+                      onClick={() => setHoursPage((page) => Math.min(hoursLastPage, page + 1))}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <SurfaceCard className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>

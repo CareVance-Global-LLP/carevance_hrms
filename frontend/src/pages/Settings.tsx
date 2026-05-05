@@ -55,7 +55,7 @@ export default function SettingsPage() {
   const [notifyWeekly, setNotifyWeekly] = useState(true);
   const [notifyProject, setNotifyProject] = useState(true);
   const [notifyTask, setNotifyTask] = useState(true);
-  const [timezone, setTimezone] = useState('UTC');
+  const [timezone, setTimezone] = useState('Asia/Kolkata');
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -79,7 +79,7 @@ export default function SettingsPage() {
   ];
 
   const timezoneOptions = useMemo(
-    () => ['UTC', 'Asia/Kolkata', 'Asia/Dubai', 'Europe/London', 'America/New_York', 'America/Los_Angeles'],
+    () => ['Asia/Kolkata'],
     []
   );
 
@@ -132,7 +132,7 @@ export default function SettingsPage() {
           setProfileAvatar(fetchedUser?.avatar || '');
           setOrgName(fetchedOrg?.name || '');
           setOrgSlug(fetchedOrg?.slug || '');
-          setTimezone(settings.timezone || 'UTC');
+          setTimezone(settings.timezone || 'Asia/Kolkata');
           setNotifyEmail(notifications.email ?? true);
           setNotifyInApp(notifications.in_app ?? true);
           setNotifyDesktopPush(notifications.desktop_push ?? true);

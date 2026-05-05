@@ -124,17 +124,17 @@ class NotificationApiFlowTest extends TestCase
             'organization_id' => $organization->id,
             'user_id' => $employee->id,
             'sender_id' => $admin->id,
-            'type' => 'chat_direct_message',
+            'type' => 'message',
             'title' => 'New message from Admin',
             'message' => 'Chat belongs in the chat area.',
             'meta' => ['route' => '/chat'],
             'is_read' => false,
         ]);
 
-        $this->getJson('/api/notifications?exclude_types[]=chat_direct_message&exclude_types[]=chat_group_message', $employeeHeaders)
+        $this->getJson('/api/notifications', $employeeHeaders)
             ->assertOk()
             ->assertJsonPath('unread_count', 1)
-            ->assertJsonMissing(['type' => 'chat_direct_message']);
+            ->assertJsonMissing(['title' => 'New message from Admin']);
 
         $this->postJson('/api/notifications/read-all', [
             'exclude_types' => ['chat_direct_message', 'chat_group_message'],
@@ -143,11 +143,11 @@ class NotificationApiFlowTest extends TestCase
         $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,
             'user_id' => $employee->id,
-            'type' => 'chat_direct_message',
+            'type' => 'message',
             'is_read' => false,
         ]);
 
-        $this->getJson('/api/notifications?exclude_types[]=chat_direct_message&exclude_types[]=chat_group_message&unread_only=1', $employeeHeaders)
+        $this->getJson('/api/notifications?unread_only=1', $employeeHeaders)
             ->assertOk()
             ->assertJsonPath('unread_count', 0)
             ->assertJsonCount(0, 'data');

@@ -231,7 +231,7 @@ describe('AuthProvider', () => {
     expect(sessionStorage.getItem('token')).toBeNull();
   });
 
-  it('stops the employee timer before the desktop shell closes', async () => {
+  it('stops the employee timer but keeps the user signed in when the desktop shell closes', async () => {
     let prepareForCloseHandler: (() => void | Promise<void>) | null = null;
     const confirmCloseReady = vi.fn().mockResolvedValue(true);
 
@@ -272,7 +272,6 @@ describe('AuthProvider', () => {
         updated_at: new Date().toISOString(),
       },
     } as any);
-    vi.mocked(authApi.logout).mockResolvedValue({ data: { success: true } } as any);
     vi.mocked(timeEntryApi.stop).mockResolvedValue({ data: null } as any);
 
     renderWithProviders(
@@ -288,11 +287,9 @@ describe('AuthProvider', () => {
     await prepareForCloseHandler?.();
 
     expect(timeEntryApi.stop).toHaveBeenCalledWith({ timer_slot: 'primary' });
-    expect(authApi.logout).toHaveBeenCalledTimes(1);
-    await waitFor(() => {
-      expect(screen.getByTestId('authenticated')).toHaveTextContent('false');
-    });
+    expect(authApi.logout).not.toHaveBeenCalled();
+    expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
     expect(confirmCloseReady).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.getItem('token')).toBe('desktop-token');
   });
 });

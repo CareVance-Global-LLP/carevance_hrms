@@ -17,7 +17,10 @@ class AttendanceController extends Controller
 
     public function today(Request $request)
     {
-        return response()->json($this->attendanceService->todayPayload($request->user()));
+        return response()->json($this->attendanceService->todayPayload(
+            $request->user(),
+            $request->integer('user_id') ?: null,
+        ));
     }
 
     public function checkIn(Request $request)

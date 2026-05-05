@@ -541,7 +541,7 @@ export const reportApi = {
   employeeInsights: (params?: { start_date?: string; end_date?: string; user_id?: number; group_ids?: number[]; q?: string; recent_screenshot_limit?: number; dashboard_lite?: boolean | number }) =>
     api.get('/reports/employee-insights', { params }),
 
-  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[]; dashboard_lite?: boolean | number; skip_activity?: boolean | number }) =>
+  overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[]; dashboard_lite?: boolean | number; skip_activity?: boolean | number; page?: number; per_page?: number }) =>
     api.get('/reports/overall', { params }),
   
   project: (projectId: number, params?: { start_date?: string; end_date?: string }) => 
@@ -559,7 +559,7 @@ export const dashboardApi = {
 };
 
 export const attendanceApi = {
-  today: () =>
+  today: (params?: { user_id?: number }) =>
     api.get<{
       record: {
         id: number;
@@ -585,7 +585,7 @@ export const attendanceApi = {
       late_after: string;
       shift_target_seconds: number;
       has_approved_leave_today: boolean;
-    }>('/attendance/today'),
+    }>('/attendance/today', { params }),
 
   checkIn: () => api.post('/attendance/check-in'),
 

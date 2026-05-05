@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
+import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { webAppUrl } from '@/lib/runtimeConfig';
@@ -26,11 +27,6 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-
-const CHAT_NOTIFICATION_TYPES = ['chat_direct_message', 'chat_group_message'];
-
-const isChatNotificationType = (type: string | null | undefined) =>
-  CHAT_NOTIFICATION_TYPES.includes(String(type || '').trim());
 
 export default function Layout() {
   const { user, logout, token } = useAuth();
@@ -92,7 +88,7 @@ export default function Layout() {
       }
 
       setNotifications((prev) => prev.map((item) => item.id === notification.id ? { ...item, is_read: true } : item));
-      if (isChatNotificationType(notification.type)) {
+      if (isChatNotification(notification)) {
         setUnreadChatMessages((prev) => Math.max(0, prev - 1));
       } else {
         setUnreadNotifications((prev) => Math.max(0, prev - 1));
@@ -343,14 +339,18 @@ export default function Layout() {
 
         const [notificationResponse, desktopNotificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
           notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
-          notificationApi.list({ limit: 20 }),
+          notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
           chatApi.getUnreadSummary(),
           approvalPromise,
         ]);
 
         if (!active) return;
-        const nextNotifications = (notificationResponse.data?.data || []) as AppNotificationItem[];
-        const nextDesktopNotifications = (desktopNotificationResponse.data?.data || []) as AppNotificationItem[];
+        const nextNotifications = ((notificationResponse.data?.data || []) as AppNotificationItem[]).filter(
+          (item) => !isChatNotification(item)
+        );
+        const nextDesktopNotifications = ((desktopNotificationResponse.data?.data || []) as AppNotificationItem[]).filter(
+          (item) => !isChatNotification(item)
+        );
         setNotifications(nextNotifications);
         setUnreadNotifications(Number(notificationResponse.data?.unread_count || 0));
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
@@ -403,6 +403,28 @@ export default function Layout() {
     }
   }, [desktopPushEnabled]);
 
+  useEffect(() => {
+    if (!notificationsOpen || unreadNotifications <= 0) {
+      return;
+    }
+
+    let active = true;
+
+    setUnreadNotifications(0);
+    setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
+
+    notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES }).catch(() => {
+      if (active) {
+        setUnreadNotifications(notifications.filter((item) => !item.is_read).length);
+        setNotifications(notifications);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [notificationsOpen, unreadNotifications, notifications]);
+
   const isRouteActive = (to?: string) => {
     if (!to) return false;
     if (to === '/settings') return location.pathname === to;
@@ -434,7 +456,7 @@ export default function Layout() {
         <Icon className={`h-4 w-4 ${active ? 'text-white' : 'text-slate-500'}`} />
         <span className="truncate">{item.label}</span>
         {item.unreadCount ? (
-          <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'}`}>
+          <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? 'bg-white/20 text-white' : 'bg-rose-600 text-white'}`}>
             {item.unreadCount > 99 ? '99+' : item.unreadCount}
           </span>
         ) : null}

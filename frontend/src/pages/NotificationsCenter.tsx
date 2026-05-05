@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { notificationApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
 import { canOpenNotificationFromCenter, getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { hasAdminAccess } from '@/lib/permissions';
 import type { AppNotificationItem } from '@/types';
@@ -14,9 +15,6 @@ import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/u
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { BellRing, Send } from 'lucide-react';
-
-const CHAT_NOTIFICATION_TYPES = ['chat_direct_message', 'chat_group_message'];
-const HIDDEN_NOTIFICATION_TYPES = new Set(CHAT_NOTIFICATION_TYPES);
 
 export default function NotificationsCenter() {
   const navigate = useNavigate();
@@ -48,9 +46,7 @@ export default function NotificationsCenter() {
         isAdmin ? userApi.getAll({ period: 'all' }) : Promise.resolve({ data: [] }),
       ]);
 
-      let nextNotifications = (notificationResponse.data?.data || []).filter(
-        (item: AppNotificationItem) => !HIDDEN_NOTIFICATION_TYPES.has(String(item.type || '').trim())
-      );
+      let nextNotifications = (notificationResponse.data?.data || []).filter((item: AppNotificationItem) => !isChatNotification(item));
       if (statusFilter === 'read') {
         nextNotifications = nextNotifications.filter((item) => item.is_read);
       }

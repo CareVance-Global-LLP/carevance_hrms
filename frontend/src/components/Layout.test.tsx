@@ -119,6 +119,7 @@ describe('Layout navigation', () => {
   it('shows contextual report links in attendance and payroll sections', async () => {
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
+    expect(await screen.findByRole('link', { name: /^screenshots$/i })).toHaveAttribute('href', '/monitoring/screenshots');
     expect(await screen.findByRole('link', { name: /^attendance report$/i })).toHaveAttribute('href', '/reports/attendance');
     expect(screen.getByRole('link', { name: /^payroll report$/i })).toHaveAttribute('href', '/payroll/reports');
   });
@@ -370,8 +371,71 @@ describe('Layout navigation', () => {
 
     await waitFor(() => {
       const chatLink = screen.getByRole('link', { name: /chat/i });
-      expect(within(chatLink).getByText('4')).toBeInTheDocument();
+      const badge = within(chatLink).getByText('4');
+      expect(badge).toBeInTheDocument();
+      expect(badge.className).toContain('bg-rose-600');
     });
+  });
+
+  it('excludes chat messages from notification center and desktop notification polling', async () => {
+    const user = userEvent.setup();
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      showNotification: vi.fn(),
+      getUpdateState: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+    apiMocks.notificationList.mockResolvedValue({
+      data: {
+        unread_count: 2,
+        data: [
+          {
+            id: 201,
+            title: 'New message from Example',
+            message: 'hello',
+            type: 'message',
+            meta: { route: '/chat?threadType=direct&threadId=1' },
+            is_read: false,
+            created_at: '2026-05-01T05:00:00.000Z',
+          },
+          {
+            id: 202,
+            title: 'Leave request pending',
+            message: 'A leave request needs review.',
+            type: 'leave_request',
+            is_read: false,
+            created_at: '2026-05-01T05:01:00.000Z',
+          },
+        ],
+      },
+    });
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    await waitFor(() => {
+      expect(apiMocks.notificationList).toHaveBeenCalledTimes(2);
+    });
+
+    expect(apiMocks.notificationList).toHaveBeenNthCalledWith(1, {
+      limit: 20,
+      exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
+    });
+    expect(apiMocks.notificationList).toHaveBeenNthCalledWith(2, {
+      limit: 20,
+      exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
+    });
+
+    await user.click(await screen.findByRole('button', { name: /notifications/i }));
+
+    expect(await screen.findByText('Leave request pending')).toBeInTheDocument();
+    expect(screen.queryByText('New message from Example')).not.toBeInTheDocument();
   });
 
   it('toggles the desktop notification menu from the bell button', async () => {
@@ -416,6 +480,51 @@ describe('Layout navigation', () => {
     await waitFor(() => {
       expect(screen.queryByText('Leave request pending')).not.toBeInTheDocument();
     });
+  });
+
+  it('clears the notification badge when the desktop notification panel is viewed', async () => {
+    const user = userEvent.setup();
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      getUpdateState: vi.fn(),
+      checkForUpdates: vi.fn(),
+      downloadUpdate: vi.fn(),
+      installUpdate: vi.fn(),
+      onUpdateState: vi.fn(),
+      clearUpdateStateListeners: vi.fn(),
+    };
+    apiMocks.notificationList.mockResolvedValue({
+      data: {
+        unread_count: 1,
+        data: [
+          {
+            id: 301,
+            title: 'Leave request pending',
+            message: 'A leave request needs review.',
+            type: 'leave_request',
+            is_read: false,
+            created_at: '2026-05-01T05:01:00.000Z',
+          },
+        ],
+      },
+    });
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    expect(await screen.findByText('1')).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: /notifications/i }));
+
+    await waitFor(() => {
+      expect(apiMocks.markAllRead).toHaveBeenCalledWith({
+        exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
+      });
+    });
+    expect(screen.queryByText('1')).not.toBeInTheDocument();
+    expect(await screen.findByText('Leave request pending')).toBeInTheDocument();
   });
 
   it('shows desktop updates inside the profile menu and opens the update panel', async () => {

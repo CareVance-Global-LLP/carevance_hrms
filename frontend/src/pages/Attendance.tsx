@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, screenshotApi, userApi } from '@/services/api';
+import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { canReviewApprovalRequest, hasAdminAccess } from '@/lib/permissions';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
@@ -17,7 +16,7 @@ import { classifyActivityProductivity as classifyProductivity, normalizeActivity
 import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { Briefcase, CalendarDays, Clock, Eye, FolderKanban, Layers3, Users } from 'lucide-react';
+import { Briefcase, CalendarDays, Clock, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
 
 const formatDuration = (seconds: number) => {
@@ -27,6 +26,20 @@ const formatDuration = (seconds: number) => {
   return `${hours}h ${minutes}m`;
 };
 const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'Not available');
+const resolveLiveToolLabel = (liveRow?: any | null) => {
+  const resolved = [
+    liveRow?.current_tool,
+    liveRow?.tool_label,
+    liveRow?.normalized_label,
+    liveRow?.name,
+  ].map((candidate) => String(candidate || '').trim()).find(Boolean);
+
+  return resolved || 'No active tool detected';
+};
+const resolveLiveActivityLabel = (liveRow?: any | null) => {
+  const activityAt = liveRow?.last_activity_at || liveRow?.recorded_at || liveRow?.last_seen_at;
+  return activityAt ? formatDateTime(activityAt) : 'Not available';
+};
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -173,7 +186,6 @@ const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
   };
 };
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
-  const navigate = useNavigate();
   const { user, organization } = useAuth();
   const [selectedFilterUserId, setSelectedFilterUserId] = useState<number | ''>(() => readPersistedAttendanceFilters().selectedFilterUserId);
   const [countryFilter, setCountryFilter] = useState(() => readPersistedAttendanceFilters().countryFilter);
@@ -211,7 +223,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }>;
   }>(null);
   const [hasApprovedLeaveToday, setHasApprovedLeaveToday] = useState(false);
-  const [lateAfter, setLateAfter] = useState('09:30:00');
+  const [lateAfter, setLateAfter] = useState('10:30:00');
   const [isPunchLoading, setIsPunchLoading] = useState(false);
 
   const [calendarMonth, setCalendarMonth] = useState(formatMonth(new Date()));
@@ -246,7 +258,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [timeEditFeedback, setTimeEditFeedbackState] = useState<SectionFeedback>(null);
   const [employeeProfile, setEmployeeProfile] = useState<UserProfile360 | null>(null);
   const [employeeMonitoring, setEmployeeMonitoring] = useState<any | null>(null);
-  const [employeeMonitoringScreenshots, setEmployeeMonitoringScreenshots] = useState<any[]>([]);
   const [employeeWebsiteUsage, setEmployeeWebsiteUsage] = useState<any[]>([]);
   const [employeeGroups, setEmployeeGroups] = useState<Array<{ id: number; name: string }>>([]);
   useEffect(() => {
@@ -393,9 +404,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const fetchToday = async () => {
     try {
-      const res = await attendanceApi.today();
+      const res = await attendanceApi.today({
+        user_id: isAdmin && selectedUserId ? Number(selectedUserId) : undefined,
+      });
       setTodayRecord(res.data.record);
-      setLateAfter(res.data.late_after || '09:30:00');
+      setLateAfter(res.data.late_after || '10:30:00');
       setHasApprovedLeaveToday(Boolean((res.data as any).has_approved_leave_today));
       setHasHalfDayLeaveToday(Boolean((res.data as any).has_half_day_leave_today));
       setLeaveToday((res.data as any).leave_today || null);
@@ -735,6 +748,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   useEffect(() => {
     if (mode !== 'full') return;
+    void fetchToday();
+  }, [isAdmin, mode, selectedUserId]);
+
+  useEffect(() => {
+    if (mode !== 'full') return;
     if (!isAdmin) {
       fetchCalendar();
       return;
@@ -842,7 +860,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     if (mode !== 'full') return;
     if (!canSeeAttendanceMonitoring) {
       setEmployeeMonitoring(null);
-      setEmployeeMonitoringScreenshots([]);
       setEmployeeWebsiteUsage([]);
       return;
     }
@@ -854,9 +871,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
     const fetchMonitoringPanel = async () => {
       try {
-        const [insightsResponse, screenshotsResponse, websiteResponse] = await Promise.all([
-          reportApi.employeeInsights({ start_date: startDate, end_date: endDate, user_id: monitoringUserId, dashboard_lite: 1 }),
-          screenshotApi.getAll({ user_id: monitoringUserId, start_date: startDate, end_date: endDate, page: 1, per_page: 10 }),
+        const [insightsResponse, websiteResponse] = await Promise.all([
+          reportApi.employeeInsights({ start_date: startDate, end_date: endDate, user_id: monitoringUserId }),
           activityApi.getAll({ user_id: monitoringUserId, type: 'url', start_date: startDate, end_date: endDate, page: 1, per_page: 10 }),
         ]);
 
@@ -888,13 +904,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         }, []).sort((a: any, b: any) => Number(b.duration || 0) - Number(a.duration || 0));
 
         setEmployeeMonitoring((insightsResponse.data as any) || null);
-        setEmployeeMonitoringScreenshots(((screenshotsResponse.data as any)?.data || []).slice(0, 8));
         setEmployeeWebsiteUsage(websiteRows);
       } catch (monitoringError) {
         console.error('Attendance monitoring panel fetch failed:', monitoringError);
         if (active) {
           setEmployeeMonitoring(null);
-          setEmployeeMonitoringScreenshots([]);
           setEmployeeWebsiteUsage([]);
         }
       }
@@ -1040,15 +1054,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     ]
   );
   const employeeLiveMonitoring = employeeMonitoring?.live_monitoring?.selected_user || null;
-  const openMonitoringScreenshotGallery = () => {
-    if (!monitoringUserId) return;
-
-    const params = new URLSearchParams();
-    params.set('user', String(monitoringUserId));
-    params.set('start', startDate);
-    params.set('end', endDate);
-    navigate(`/monitoring/screenshots?${params.toString()}`);
-  };
+  const employeeLiveToolLabel = resolveLiveToolLabel(employeeLiveMonitoring);
+  const employeeLiveToolType = employeeLiveMonitoring?.tool_type || employeeLiveMonitoring?.activity_type || 'No tool type';
+  const employeeLiveActivityLabel = resolveLiveActivityLabel(employeeLiveMonitoring);
 
   if (!canAccessAttendance && mode !== 'time-edit') {
     return (
@@ -1279,8 +1287,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
-              <p className="mt-2 text-sm font-semibold text-slate-950">{employeeLiveMonitoring?.current_tool || 'No active tool detected'}</p>
-              <p className="mt-1 text-xs capitalize text-slate-500">{employeeLiveMonitoring?.tool_type || employeeLiveMonitoring?.activity_type || 'No tool type'}</p>
+              <p className="mt-2 whitespace-normal break-words text-sm font-semibold text-slate-950">{employeeLiveToolLabel}</p>
+              <p className="mt-1 text-xs capitalize text-slate-500">{employeeLiveToolType}</p>
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
@@ -1289,80 +1297,45 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
-              <p className="mt-2 text-sm font-semibold text-slate-950">{formatDateTime(employeeLiveMonitoring?.last_activity_at)}</p>
+              <p className="mt-2 whitespace-normal break-words text-sm font-semibold text-slate-950">{employeeLiveActivityLabel}</p>
               <p className="mt-1 text-xs text-slate-500">{employeeMonitoring?.stats?.activity_events || 0} activity events in selected range</p>
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold text-slate-950">Screenshot captures</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500">{employeeMonitoringScreenshots.length} shown</span>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    iconLeft={<Eye className="h-4 w-4" />}
-                    onClick={openMonitoringScreenshotGallery}
-                    disabled={!monitoringUserId || employeeMonitoringScreenshots.length === 0}
-                  >
-                    View all screenshots
-                  </Button>
-                </div>
-              </div>
-              {employeeMonitoringScreenshots.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No screenshots found for the selected employee in this attendance panel.</p>
-              ) : (
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {employeeMonitoringScreenshots.map((shot: any) => (
-                    <a
-                      key={shot.id}
-                      href={shot.path}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-sky-200"
-                    >
-                      <img src={shot.path} alt={shot.filename || `Screenshot ${shot.id}`} className="h-32 w-full object-cover" />
-                      <div className="space-y-2 p-3">
-                        <p className="text-xs font-semibold text-slate-950">{formatDateTime(shot.recorded_at)}</p>
-                        <p className="text-[11px] text-slate-500">{shot.filename || 'Captured screenshot'}</p>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold text-slate-950">Website productivity</h3>
-                <span className="text-xs text-slate-500">Selected range</span>
-              </div>
-              {employeeWebsiteUsage.length === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">No website usage found for this employee.</p>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {employeeWebsiteUsage.slice(0, 6).map((item: any) => (
-                    <div key={`${item.website}-${item.classification}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-slate-950">{item.website}</p>
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${productivityTone(item.classification)}`}>
-                          {item.classification}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                        <span>{formatDuration(item.duration || 0)}</span>
-                        <span>{item.events} events</span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-slate-500">Last used: {formatDateTime(item.lastUsedAt)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
         </SurfaceCard>
+        ) : null}
+
+        {canSeeAttendanceMonitoring ? (
+          <SurfaceCard className="lg:col-span-3 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700">Website Panel</p>
+                <h3 className="mt-2 text-lg font-semibold text-slate-950">Website productivity</h3>
+              </div>
+              <span className="text-xs text-slate-500">Selected range</span>
+            </div>
+            {employeeWebsiteUsage.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">No website usage found for this employee.</p>
+            ) : (
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {employeeWebsiteUsage.slice(0, 6).map((item: any) => (
+                  <div key={`${item.website}-${item.classification}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-950">{item.website}</p>
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${productivityTone(item.classification)}`}>
+                        {item.classification}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                      <span>{formatDuration(item.duration || 0)}</span>
+                      <span>{item.events} events</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">Last used: {formatDateTime(item.lastUsedAt)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SurfaceCard>
         ) : null}
 
         <SurfaceCard className="lg:col-span-3 p-4">

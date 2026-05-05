@@ -2,7 +2,6 @@
 
 namespace App\Services\Chat;
 
-use App\Services\AppNotificationService;
 use App\Models\ChatConversation;
 use App\Models\ChatGroup;
 use App\Models\ChatGroupMember;
@@ -19,11 +18,6 @@ use Illuminate\Support\Str;
 
 class ChatService
 {
-    public function __construct(
-        private readonly AppNotificationService $notificationService,
-    ) {
-    }
-
     public function conversations(?User $user)
     {
         if (!$user || !$user->organization_id) {
@@ -317,26 +311,6 @@ class ChatService
         ]));
 
         $conversation->touch();
-        $recipientId = (int) ($conversation->participant_one_id === $user->id
-            ? $conversation->participant_two_id
-            : $conversation->participant_one_id);
-        if ($recipientId > 0) {
-            $this->notificationService->sendToUsers(
-                organizationId: (int) $conversation->organization_id,
-                userIds: collect([$recipientId]),
-                senderId: (int) $user->id,
-                type: 'chat_direct_message',
-                title: sprintf('New message from %s', (string) $user->name),
-                message: $this->notificationMessagePreview((string) $message->body, (bool) $message->attachment_path),
-                meta: [
-                    'conversation_id' => (int) $conversation->id,
-                    'message_id' => (int) $message->id,
-                    'sender_name' => (string) $user->name,
-                    'route' => sprintf('/chat?threadType=direct&threadId=%d', (int) $conversation->id),
-                ]
-            );
-        }
-
         return ['status' => 201, 'payload' => $message->load(['sender:id,name,email', 'reactionEntries'])];
     }
 
@@ -358,27 +332,6 @@ class ChatService
         ]));
 
         $group->touch();
-        $recipientIds = ChatGroupMember::query()
-            ->where('group_id', $group->id)
-            ->where('user_id', '!=', $user->id)
-            ->pluck('user_id');
-
-        $this->notificationService->sendToUsers(
-            organizationId: (int) $group->organization_id,
-            userIds: $recipientIds,
-            senderId: (int) $user->id,
-            type: 'chat_group_message',
-            title: sprintf('%s sent a message in %s', (string) $user->name, (string) $group->name),
-            message: $this->notificationMessagePreview((string) $message->body, (bool) $message->attachment_path),
-            meta: [
-                'group_id' => (int) $group->id,
-                'message_id' => (int) $message->id,
-                'group_name' => (string) $group->name,
-                'sender_name' => (string) $user->name,
-                'route' => sprintf('/chat?threadType=group&threadId=%d', (int) $group->id),
-            ]
-        );
-
         return ['status' => 201, 'payload' => $message->load(['sender:id,name,email', 'reactionEntries'])];
     }
 
@@ -809,16 +762,6 @@ class ChatService
     private function normalizeParticipants(int $a, int $b): array
     {
         return $a < $b ? [$a, $b] : [$b, $a];
-    }
-
-    private function notificationMessagePreview(string $body, bool $hasAttachment): string
-    {
-        $trimmed = trim($body);
-        if ($trimmed !== '' && strtolower($trimmed) !== 'attachment') {
-            return mb_strimwidth($trimmed, 0, 140, '...');
-        }
-
-        return $hasAttachment ? 'Sent an attachment' : 'Sent you a message';
     }
 
     private function findUserConversation(?int $userId, int $conversationId): ?ChatConversation

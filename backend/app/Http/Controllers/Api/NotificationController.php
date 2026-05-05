@@ -15,6 +15,14 @@ class NotificationController extends Controller
 {
     use InteractsWithApiResponses;
 
+    private const CHAT_NOTIFICATION_TYPES = [
+        'chat_direct_message',
+        'chat_group_message',
+        'chat_message',
+        'direct_message',
+        'group_message',
+    ];
+
     public function __construct(private readonly AppNotificationService $notificationService)
     {
     }
@@ -27,7 +35,8 @@ class NotificationController extends Controller
         }
 
         $limit = (int) ($request->limit ?: 30);
-        $excludeTypes = collect((array) $request->input('exclude_types', []))
+        $excludeTypes = collect(self::CHAT_NOTIFICATION_TYPES)
+            ->merge((array) $request->input('exclude_types', []))
             ->map(fn ($type) => trim((string) $type))
             ->filter()
             ->unique()
@@ -37,6 +46,8 @@ class NotificationController extends Controller
             ->where('user_id', $currentUser->id)
             ->when($request->filled('type'), fn ($builder) => $builder->where('type', (string) $request->type))
             ->when($excludeTypes->isNotEmpty(), fn ($builder) => $builder->whereNotIn('type', $excludeTypes->all()))
+            ->where('title', 'not like', 'New message from %')
+            ->where('title', 'not like', '% sent a message in %')
             ->when($request->boolean('unread_only'), fn ($builder) => $builder->where('is_read', false))
             ->when($request->filled('q'), function ($builder) use ($request) {
                 $term = trim((string) $request->q);
@@ -115,7 +126,8 @@ class NotificationController extends Controller
             return response()->json(['message' => 'Organization is required.'], 422);
         }
 
-        $excludeTypes = collect((array) $request->input('exclude_types', []))
+        $excludeTypes = collect(self::CHAT_NOTIFICATION_TYPES)
+            ->merge((array) $request->input('exclude_types', []))
             ->map(fn ($type) => trim((string) $type))
             ->filter()
             ->unique()
@@ -125,6 +137,8 @@ class NotificationController extends Controller
             ->where('user_id', $currentUser->id)
             ->where('is_read', false)
             ->when($excludeTypes->isNotEmpty(), fn ($builder) => $builder->whereNotIn('type', $excludeTypes->all()))
+            ->where('title', 'not like', 'New message from %')
+            ->where('title', 'not like', '% sent a message in %')
             ->update([
                 'is_read' => true,
                 'read_at' => now(),

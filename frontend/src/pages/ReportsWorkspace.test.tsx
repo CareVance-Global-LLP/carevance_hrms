@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   groupsListMock: vi.fn(),
   overallMock: vi.fn(),
   attendanceMock: vi.fn(),
+  activityGetAllMock: vi.fn(),
   activityGetAllPagesMock: vi.fn(),
   authUser: {
     id: 1,
@@ -46,6 +47,7 @@ vi.mock('@/services/api', async () => {
     },
     activityApi: {
       ...actual.activityApi,
+      getAll: mocks.activityGetAllMock,
       getAllPages: mocks.activityGetAllPagesMock,
     },
   };
@@ -130,6 +132,18 @@ describe('ReportsWorkspace timeline navigation', () => {
         },
       },
     ]);
+    mocks.activityGetAllMock.mockImplementation(async (params) => {
+      const rows = await mocks.activityGetAllPagesMock(params);
+      return {
+        data: {
+          data: rows,
+          current_page: Number(params?.page || 1),
+          last_page: 1,
+          total: rows.length,
+          has_more: false,
+        },
+      };
+    });
   });
 
   it('renders timeline safely when switching from another report mode', async () => {

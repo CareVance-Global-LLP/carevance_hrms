@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminDashboard from '@/pages/AdminDashboard';
@@ -14,6 +14,7 @@ const apiMocks = vi.hoisted(() => ({
   tasks: vi.fn(),
   payrollRecords: vi.fn(),
   notifications: vi.fn(),
+  markAllRead: vi.fn(),
   groups: vi.fn(),
   auditLogs: vi.fn(),
   weeklyReport: vi.fn(),
@@ -40,8 +41,8 @@ vi.mock('@/services/api', async () => {
     screenshotApi: { getAll: apiMocks.screenshots },
     dashboardApi: { summary: apiMocks.dashboardSummary },
     taskApi: { getAll: apiMocks.tasks },
-    payrollApi: { getRecords: apiMocks.payrollRecords },
-    notificationApi: { list: apiMocks.notifications },
+    payrollSimpleApi: { runs: apiMocks.payrollRecords },
+    notificationApi: { list: apiMocks.notifications, markAllRead: apiMocks.markAllRead },
     reportGroupApi: { list: apiMocks.groups },
     auditApi: { list: apiMocks.auditLogs },
   };
@@ -50,6 +51,7 @@ vi.mock('@/services/api', async () => {
 describe('AdminDashboard WorkWise redesign', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
 
     apiMocks.users.mockResolvedValue({
       data: [
@@ -125,7 +127,8 @@ describe('AdminDashboard WorkWise redesign', () => {
       ],
     });
     apiMocks.payrollRecords.mockResolvedValue({ data: { data: [{ id: 1, net_pay: 98750, deductions: 18590 }] } });
-    apiMocks.notifications.mockResolvedValue({ data: { data: [{ id: 1, title: 'Office closed on May 27', message: 'Memorial Day', created_at: '2026-04-27T08:00:00Z' }] } });
+    apiMocks.notifications.mockResolvedValue({ data: { data: [{ id: 1, title: 'Office closed on May 27', message: 'Memorial Day', is_read: false, created_at: '2026-04-27T08:00:00Z' }] } });
+    apiMocks.markAllRead.mockResolvedValue({});
     apiMocks.groups.mockResolvedValue({ data: { data: [{ id: 1, name: 'Design' }, { id: 2, name: 'Marketing' }] } });
     apiMocks.auditLogs.mockResolvedValue({ data: { data: [{ id: 1, action: 'auth.login', actor: { name: 'Akash Admin' }, created_at: '2026-04-27T08:00:00Z' }] } });
     apiMocks.weeklyReport.mockResolvedValue({ data: { time_entries: [], by_project: [], total_duration: 0 } });
@@ -220,8 +223,11 @@ describe('AdminDashboard WorkWise redesign', () => {
     renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
 
     expect(await screen.findByText('Dashboard Scope')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(apiMocks.users).toHaveBeenCalled();
+    });
     fireEvent.change(screen.getByLabelText('Universal dashboard search'), { target: { value: 'leslie' } });
-    fireEvent.click(screen.getByRole('button', { name: /Leslie Alexander/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Leslie Alexander/ }));
 
     expect(screen.getByRole('heading', { name: 'Selected Employee Detail' })).toBeInTheDocument();
     expect(screen.getByLabelText('Search scoped employee')).toHaveValue('Leslie Alexander');
@@ -233,11 +239,34 @@ describe('AdminDashboard WorkWise redesign', () => {
     renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
 
     const bellButton = await screen.findByRole('button', { name: /notifications/i });
+    await waitFor(() => {
+      expect(apiMocks.notifications).toHaveBeenCalled();
+    });
     await user.click(bellButton);
 
     const floatingPanel = await screen.findByRole('region', { name: /dashboard notifications/i });
-    expect(within(floatingPanel).getByText('Office closed on May 27')).toBeInTheDocument();
+    expect(await within(floatingPanel).findByText('Office closed on May 27')).toBeInTheDocument();
     expect(within(floatingPanel).getByRole('link', { name: /view all notifications/i })).toHaveAttribute('href', '/notifications');
+  });
+
+  it('clears the admin dashboard notification dot when notifications are viewed', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    const bellButton = await screen.findByRole('button', { name: /notifications/i });
+    await waitFor(() => {
+      expect(bellButton.querySelector('.bg-rose-500')).toBeTruthy();
+    });
+
+    await user.click(bellButton);
+
+    await waitFor(() => {
+      expect(apiMocks.markAllRead).toHaveBeenCalledWith({
+        exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
+      });
+    });
+    expect(bellButton.querySelector('.bg-rose-500')).toBeFalsy();
   });
 
   it('switches to a specific employee and updates the scoped detail panel', async () => {
@@ -254,6 +283,48 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('Top Tools & Sites')).toBeInTheDocument();
     expect(screen.getByText('Recent Work')).toBeInTheDocument();
     expect(screen.getByText('Attendance History')).toBeInTheDocument();
+  });
+
+  it('counts missing days as absent for a selected employee range', async () => {
+    window.localStorage.setItem('admin-dashboard-filters', JSON.stringify({
+      dashboardScope: 'employee',
+      selectedEmployeeId: 1,
+      scopeDepartmentFilter: 'all',
+      datePreset: 'custom',
+      customRange: { startDate: '2026-04-23', endDate: '2026-04-27' },
+    }));
+    apiMocks.attendanceCalendar.mockResolvedValue({
+      data: {
+        month: '2026-04',
+        scope: 'selected',
+        days: [
+          { date: '2026-04-23', status: 'none', is_weekend: false, is_leave: false, is_holiday: false, late_minutes: 0 },
+          { date: '2026-04-24', status: 'none', is_weekend: false, is_leave: false, is_holiday: false, late_minutes: 0 },
+          { date: '2026-04-25', status: 'none', is_weekend: true, is_leave: false, is_holiday: false, late_minutes: 0 },
+          { date: '2026-04-26', status: 'none', is_weekend: true, is_leave: false, is_holiday: false, late_minutes: 0 },
+          { date: '2026-04-27', status: 'present', is_weekend: false, is_leave: false, is_holiday: false, late_minutes: 0 },
+        ],
+      },
+    });
+
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    await waitFor(() => {
+      expect(apiMocks.attendanceCalendar).toHaveBeenCalledWith({ month: '2026-04', user_id: 1, scope: 'selected' });
+    });
+
+    const presentCard = (await screen.findByText('Present days')).closest('div');
+    const absentCard = screen.getByText('Absent days').closest('div');
+
+    expect(presentCard).not.toBeNull();
+    expect(absentCard).not.toBeNull();
+    await waitFor(() => {
+      expect(within(presentCard as HTMLElement).getByText('1')).toBeInTheDocument();
+      expect(within(absentCard as HTMLElement).getByText('4')).toBeInTheDocument();
+    });
+
+    const absentLegend = await screen.findByText('Absent');
+    expect(within(absentLegend.closest('div') as HTMLElement).getByText('4')).toBeInTheDocument();
   });
 
   it('filters current work status by status and search term', async () => {

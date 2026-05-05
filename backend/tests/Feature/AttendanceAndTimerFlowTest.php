@@ -13,6 +13,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -44,6 +45,45 @@ class AttendanceAndTimerFlowTest extends TestCase
             'user_id' => $user->id,
             'punch_out_at' => null,
         ]);
+    }
+
+    public function test_check_in_at_ten_thirty_is_present_without_late_minutes_but_after_is_late(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $onTimeUser = User::create([
+            'name' => 'On Time Employee',
+            'email' => 'on-time@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+        $lateUser = User::create([
+            'name' => 'Late Employee',
+            'email' => 'late@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-05-05 10:30:00', 'Asia/Kolkata'));
+            $this->postJson('/api/attendance/check-in', [], $this->apiHeadersFor($onTimeUser))->assertOk();
+
+            Carbon::setTestNow(Carbon::parse('2026-05-05 10:31:00', 'Asia/Kolkata'));
+            $this->postJson('/api/attendance/check-in', [], $this->apiHeadersFor($lateUser))->assertOk();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $onTimeRecord = AttendanceRecord::query()->where('user_id', $onTimeUser->id)->firstOrFail();
+        $lateRecord = AttendanceRecord::query()->where('user_id', $lateUser->id)->firstOrFail();
+
+        $this->assertSame('2026-05-05', Carbon::parse($onTimeRecord->attendance_date)->toDateString());
+        $this->assertSame('present', $onTimeRecord->status);
+        $this->assertSame(0, (int) $onTimeRecord->late_minutes);
+        $this->assertSame('2026-05-05', Carbon::parse($lateRecord->attendance_date)->toDateString());
+        $this->assertSame('present', $lateRecord->status);
+        $this->assertSame(1, (int) $lateRecord->late_minutes);
     }
 
     public function test_check_out_closes_an_active_attendance_punch(): void
@@ -121,6 +161,34 @@ class AttendanceAndTimerFlowTest extends TestCase
             'id' => $entry->id,
             'end_time' => null,
         ]);
+    }
+
+    public function test_timer_start_uses_ten_thirty_late_threshold_for_attendance(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Timer Employee',
+            'email' => 'timer-late-threshold@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-05-05 10:30:00', 'Asia/Kolkata'));
+            $this->postJson('/api/time-entries/start', [
+                'description' => 'Primary timer',
+                'timer_slot' => 'primary',
+            ], $this->apiHeadersFor($user))->assertCreated();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $record = AttendanceRecord::query()->where('user_id', $user->id)->firstOrFail();
+
+        $this->assertSame('2026-05-05', Carbon::parse($record->attendance_date)->toDateString());
+        $this->assertSame('present', $record->status);
+        $this->assertSame(0, (int) $record->late_minutes);
     }
 
     public function test_half_day_leave_keeps_check_in_allowed_and_halves_shift_target(): void

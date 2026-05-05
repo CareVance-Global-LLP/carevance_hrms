@@ -118,7 +118,7 @@ class SettingsController extends Controller
 
         $existing = is_array($user->settings) ? $user->settings : [];
         $user->settings = array_merge($existing, [
-            'timezone' => $validated['timezone'] ?? ($existing['timezone'] ?? 'UTC'),
+            'timezone' => $validated['timezone'] ?? ($existing['timezone'] ?? 'Asia/Kolkata'),
             'notifications' => array_merge(
                 [
                     'email' => true,
@@ -140,7 +140,7 @@ class SettingsController extends Controller
             actor: $user,
             target: $user,
             metadata: [
-                'timezone' => $user->settings['timezone'] ?? 'UTC',
+                'timezone' => $user->settings['timezone'] ?? 'Asia/Kolkata',
                 'notification_keys' => array_keys($user->settings['notifications'] ?? []),
             ],
             request: $request

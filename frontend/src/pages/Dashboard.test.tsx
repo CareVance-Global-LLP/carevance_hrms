@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Dashboard from '@/pages/Dashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   attendanceTodayMock: vi.fn(),
   overtimeCreateMock: vi.fn(),
   notificationListMock: vi.fn(),
+  notificationMarkAllReadMock: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -23,7 +24,7 @@ vi.mock('@/services/api', async () => {
     dashboardApi: { summary: mocks.summaryMock },
     attendanceApi: { today: mocks.attendanceTodayMock },
     attendanceTimeEditApi: { create: mocks.overtimeCreateMock },
-    notificationApi: { list: mocks.notificationListMock },
+    notificationApi: { list: mocks.notificationListMock, markAllRead: mocks.notificationMarkAllReadMock },
   };
 });
 
@@ -84,6 +85,7 @@ describe('Dashboard', () => {
         ],
       },
     });
+    mocks.notificationMarkAllReadMock.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -213,6 +215,22 @@ describe('Dashboard', () => {
     expect(within(panel).getByText('Shift reminder')).toBeInTheDocument();
     expect(within(panel).getByText('Please submit pending work updates.')).toBeInTheDocument();
     expect(within(panel).getByRole('link', { name: /view all notifications/i })).toHaveAttribute('href', '/notifications');
+  });
+
+  it('clears the dashboard notification badge when notifications are viewed', async () => {
+    renderWithProviders(<Dashboard />);
+
+    expect(await screen.findByText('1')).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: /notifications/i }));
+
+    expect(await screen.findByRole('region', { name: /dashboard notifications/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mocks.notificationMarkAllReadMock).toHaveBeenCalledWith({
+        exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
+      });
+    });
+    expect(screen.queryByText('1')).not.toBeInTheDocument();
   });
 
   it('shows a live seconds clock for the active employee timer', async () => {

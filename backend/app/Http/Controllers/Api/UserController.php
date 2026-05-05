@@ -56,9 +56,9 @@ class UserController extends Controller
         }
 
         $period = $request->get('period', 'all');
-        $timezone = (string) $request->get('timezone', 'UTC');
+        $timezone = (string) $request->get('timezone', 'Asia/Kolkata');
         if (!in_array($timezone, timezone_identifiers_list(), true)) {
-            $timezone = 'UTC';
+            $timezone = 'Asia/Kolkata';
         }
         $range = $this->resolvePeriodRange(
             $period,

@@ -15,6 +15,8 @@ use Illuminate\Http\Request;
 
 class AttendanceService
 {
+    private const DEFAULT_LATE_AFTER = '10:30:00';
+
     private function managerGroupIds(User $user): array
     {
         return $user->groups()
@@ -47,7 +49,7 @@ class AttendanceService
         return $query->whereKey($user->id);
     }
 
-    public function todayPayload(?User $user): array
+    public function todayPayload(?User $user, ?int $targetUserId = null): array
     {
         if (!$user || !$user->organization_id) {
             return [
@@ -57,17 +59,46 @@ class AttendanceService
             ];
         }
 
+        $targetUser = $user;
+        if ($targetUserId && $targetUserId !== (int) $user->id) {
+            if (! $this->canManage($user)) {
+                return [
+                    'record' => null,
+                    'late_after' => env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER),
+                    'shift_target_seconds' => $this->shiftTargetSeconds(),
+                    'has_approved_leave_today' => false,
+                    'has_half_day_leave_today' => false,
+                    'leave_today' => null,
+                ];
+            }
+
+            $targetUser = $this->visibleUsersQuery($user, $user->role === 'manager')
+                ->whereKey($targetUserId)
+                ->first();
+
+            if (! $targetUser) {
+                return [
+                    'record' => null,
+                    'late_after' => env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER),
+                    'shift_target_seconds' => $this->shiftTargetSeconds(),
+                    'has_approved_leave_today' => false,
+                    'has_half_day_leave_today' => false,
+                    'leave_today' => null,
+                ];
+            }
+        }
+
         $today = now()->toDateString();
-        $record = AttendanceRecord::where('user_id', $user->id)
+        $record = AttendanceRecord::where('user_id', $targetUser->id)
             ->whereDate('attendance_date', $today)
             ->with('punches')
             ->first();
-        $leaveForToday = $this->approvedLeaveForDate($user, $today);
+        $leaveForToday = $this->approvedLeaveForDate($targetUser, $today);
         $shiftTarget = $this->shiftTargetSecondsForLeave($leaveForToday);
 
         return [
             'record' => $this->decorateRecord($record, $leaveForToday),
-            'late_after' => env('ATTENDANCE_LATE_AFTER', '09:30:00'),
+            'late_after' => env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER),
             'shift_target_seconds' => $shiftTarget,
             'has_approved_leave_today' => $leaveForToday && !$leaveForToday->isHalfDay(),
             'has_half_day_leave_today' => (bool) ($leaveForToday?->isHalfDay()),
@@ -107,7 +138,7 @@ class AttendanceService
             return ['status' => 422, 'payload' => ['message' => 'You are already checked in for today']];
         }
 
-        $lateThreshold = Carbon::parse($today.' '.env('ATTENDANCE_LATE_AFTER', '09:30:00'));
+        $lateThreshold = Carbon::parse($today.' '.env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER));
         $lateMinutes = max(0, $lateThreshold->diffInMinutes($checkInAt, false));
 
         $record->organization_id = $user->organization_id;

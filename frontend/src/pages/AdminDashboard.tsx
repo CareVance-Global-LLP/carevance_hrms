@@ -22,6 +22,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { CHAT_NOTIFICATION_TYPES } from '@/lib/chatNotifications';
 import {
   attendanceApi,
   auditApi,
@@ -425,6 +426,80 @@ const DonutChart = ({ items }: { items: Array<{ label: string; value: number; co
   );
 };
 
+const piePoint = (cx: number, cy: number, r: number, angle: number) => {
+  const radians = (angle - 90) * Math.PI / 180;
+  return {
+    x: cx + r * Math.cos(radians),
+    y: cy + r * Math.sin(radians),
+  };
+};
+
+const pieArcPath = (cx: number, cy: number, r: number, startAngle: number, endAngle: number) => {
+  const start = piePoint(cx, cy, r, endAngle);
+  const end = piePoint(cx, cy, r, startAngle);
+  const largeArcFlag = endAngle - startAngle > 180 ? '1' : '0';
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
+};
+
+const AttendancePieChart = ({ items }: { items: Array<{ label: string; value: number; color: string; bgClass: string }> }) => {
+  const total = items.reduce((sum, item) => sum + Math.max(0, Number(item.value || 0)), 0);
+  if (total <= 0) {
+    return <EmptyInline>No attendance data yet</EmptyInline>;
+  }
+
+  let startAngle = 0;
+
+  return (
+    <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
+      <div className="flex justify-center">
+        <svg viewBox="0 0 220 220" className="h-44 w-44" aria-label="Attendance overview pie chart">
+          {items.map((item) => {
+            const value = Math.max(0, Number(item.value || 0));
+            if (value <= 0) return null;
+            const sweep = (value / total) * 360;
+            const pct = Math.round((value / total) * 100);
+
+            if (sweep >= 359.999) {
+              startAngle += sweep;
+              return (
+                <circle key={item.label} cx="110" cy="110" r="92" fill={item.color} className="transition-opacity hover:opacity-80">
+                  <title>{`${item.label}: ${value} (${pct}%)`}</title>
+                </circle>
+              );
+            }
+
+            const path = pieArcPath(110, 110, 92, startAngle, startAngle + sweep);
+            startAngle += sweep;
+
+            return (
+              <path key={item.label} d={path} fill={item.color} className="transition-opacity hover:opacity-80">
+                <title>{`${item.label}: ${value} (${pct}%)`}</title>
+              </path>
+            );
+          })}
+          <circle cx="110" cy="110" r="54" fill="white" />
+          <text x="110" y="106" textAnchor="middle" fill="#0f172a" fontSize="28" fontWeight="700">{total}</text>
+          <text x="110" y="128" textAnchor="middle" fill="#64748b" fontSize="12">Total</text>
+        </svg>
+      </div>
+      <div className="grid grid-cols-1 gap-2 text-xs">
+        {items.map((item) => {
+          const pct = total > 0 ? Math.round((Math.max(0, item.value) / total) * 100) : 0;
+          return (
+            <div key={item.label} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2" title={`${item.label}: ${item.value} (${pct}%)`}>
+              <span className="flex items-center gap-2 font-medium text-slate-700">
+                <span className={`h-2.5 w-2.5 rounded-sm ${item.bgClass}`} />
+                {item.label}
+              </span>
+              <span className="font-semibold text-slate-950">{item.value}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 export default function AdminDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -432,6 +507,7 @@ export default function AdminDashboard() {
   const [universalSearch, setUniversalSearch] = useState('');
   const [isUniversalSearchOpen, setIsUniversalSearchOpen] = useState(false);
   const [isDashboardNotificationsOpen, setIsDashboardNotificationsOpen] = useState(false);
+  const [dashboardNotificationsSeen, setDashboardNotificationsSeen] = useState(false);
   const [clockTick, setClockTick] = useState(() => Date.now());
   const dashboardNotificationsRef = useRef<HTMLDivElement | null>(null);
   const [workSearch, setWorkSearch] = useState('');
@@ -495,6 +571,7 @@ export default function AdminDashboard() {
         groupsResponse,
         auditResponse,
         timeEntriesResponse,
+        attendanceCalendarResponse,
       ] = await Promise.allSettled([
         userApi.getAll(),
         attendanceApi.summary({ start_date: selectedStartDate, end_date: selectedEndDate }),
@@ -508,11 +585,19 @@ export default function AdminDashboard() {
         dashboardScope === 'employee' && selectedEmployeeId
           ? timeEntryApi.getAll({ user_id: selectedEmployeeId, start_date: selectedStartDate, end_date: selectedEndDate, page: 1, per_page: 10 })
           : Promise.resolve({ data: { data: [] } }),
+        dashboardScope === 'employee' && selectedEmployeeId
+          ? Promise.all(enumerateMonths(selectedRange).map((month) =>
+            attendanceApi.calendar({ month, user_id: selectedEmployeeId, scope: 'selected' })
+          ))
+          : Promise.resolve([]),
       ]);
 
       const overallPayload = overallResponse.status === 'fulfilled' ? overallResponse.value.data : { summary: {}, by_day: [], by_user: [] };
       const timeEntriesPayload = timeEntriesResponse.status === 'fulfilled' ? timeEntriesResponse.value.data : { data: [] };
       const timeEntries = safeArray<any>(timeEntriesPayload?.data);
+      const attendanceCalendarDays = attendanceCalendarResponse.status === 'fulfilled'
+        ? safeArray<any>(attendanceCalendarResponse.value).flatMap((response) => safeArray<any>(response?.data?.days))
+        : [];
 
       return {
         employees: usersResponse.status === 'fulfilled' ? safeArray<any>(usersResponse.value.data).map(normalizeEmployee).filter((employee) => employee.id > 0) : [],
@@ -527,7 +612,7 @@ export default function AdminDashboard() {
         auditLogs: auditResponse.status === 'fulfilled' ? safeArray<any>(auditResponse.value.data?.data) : [],
         weeklyReport: { time_entries: timeEntries, entries: timeEntries, by_project: [], total_duration: Number(overallPayload?.summary?.total_duration || 0) },
         monthlyReport: { by_day: safeArray<any>(overallPayload?.by_day) },
-        attendanceCalendarDays: [],
+        attendanceCalendarDays,
       };
     },
   });
@@ -586,8 +671,11 @@ export default function AdminDashboard() {
   const attendanceRows = data.attendanceRows.filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || row.employee_id)));
 
   const totalEmployees = employees.length;
-  const presentToday = attendanceRows.filter((row: any) => Number(row.present_days || 0) > 0 || hasActiveAttendance(row)).length;
-  const lateToday = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.late_days || 0), 0);
+  const lateToday = attendanceRows.filter((row: any) => Number(row.late_days || row.late_minutes || 0) > 0).length;
+  const presentToday = attendanceRows.filter((row: any) => {
+    const isLate = Number(row.late_days || row.late_minutes || 0) > 0;
+    return !isLate && (Number(row.present_days || 0) > 0 || hasActiveAttendance(row));
+  }).length;
   const onLeave = scopedLeavesInRange.length;
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
@@ -626,7 +714,7 @@ export default function AdminDashboard() {
     };
   });
   const attendancePresentDays = calendarDaysInRange.length
-    ? calendarDaysInRange.filter((day) => ['present', 'checked_in'].includes(String(day.status || ''))).length
+    ? calendarDaysInRange.filter((day) => ['present', 'checked_in'].includes(String(day.status || '')) && Number(day.late_minutes || 0) <= 0).length
     : presentToday;
   const attendanceLateDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => Number(day.late_minutes || 0) > 0).length
@@ -637,9 +725,28 @@ export default function AdminDashboard() {
   const attendanceAbsentDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => {
       const dayDate = String(day.date || '').slice(0, 10);
-      return String(day.status || 'none') === 'none' && !day.is_weekend && !day.is_holiday && dayDate <= todayIso();
+      return String(day.status || 'none') === 'none' && !day.is_holiday && dayDate <= todayIso();
     }).length
-    : Math.max(0, totalEmployees - presentToday - onLeave);
+    : Math.max(0, totalEmployees - presentToday - lateToday - onLeave);
+  const selectedEmployeePieStatus = attendanceLateDays > 0
+    ? { label: 'Late', value: 1, color: '#f97316', bgClass: 'bg-orange-500' }
+    : attendancePresentDays > 0
+      ? { label: 'Present', value: 1, color: '#16a34a', bgClass: 'bg-green-600' }
+      : { label: 'Absent', value: 1, color: '#dc2626', bgClass: 'bg-red-600' };
+  const isSingleEmployeeDay = dashboardScope === 'employee' && selectedStartDate === selectedEndDate;
+  const attendancePieItems = dashboardScope === 'employee'
+    ? isSingleEmployeeDay
+      ? [selectedEmployeePieStatus]
+      : [
+        { label: 'Present', value: attendancePresentDays, color: '#16a34a', bgClass: 'bg-green-600' },
+        { label: 'Absent', value: attendanceAbsentDays, color: '#dc2626', bgClass: 'bg-red-600' },
+        { label: 'Late', value: attendanceLateDays, color: '#f97316', bgClass: 'bg-orange-500' },
+      ]
+    : [
+      { label: 'Present', value: presentToday, color: '#16a34a', bgClass: 'bg-green-600' },
+      { label: 'Absent', value: Math.max(0, totalEmployees - presentToday - lateToday - onLeave), color: '#dc2626', bgClass: 'bg-red-600' },
+      { label: 'Late', value: lateToday, color: '#f97316', bgClass: 'bg-orange-500' },
+    ];
 
   const activities: DashboardActivity[] = data.auditLogs.map((item: any, index: number) => ({
     id: Number(item.id || index),
@@ -653,7 +760,9 @@ export default function AdminDashboard() {
     title: item.title || item.message || 'Notification',
     message: item.message || 'Open the notifications center for more details.',
     date: formatDate(item.created_at),
+    isRead: item.is_read !== false,
   }));
+  const hasUnreadDashboardNotifications = dashboardNotifications.some((notification) => !notification.isRead);
   const announcements = dashboardNotifications.slice(0, 4).map((item) => ({
     id: item.id,
     title: item.title,
@@ -804,6 +913,9 @@ export default function AdminDashboard() {
   const employeeScreenshots: any = employeeDetail?.screenshots || null;
   const employeeStats = employeeInsights?.stats || employeeProfile?.summary || {};
   const selectedEmployeeIdleSeconds = Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0);
+  const scopeIdleSeconds = dashboardScope === 'employee'
+    ? selectedEmployeeIdleSeconds
+    : Number(data.overall.summary?.idle_duration || data.overall.summary?.idle_time || 0);
   const employeePresentDays = Math.max(
     Number(employeeStats.present_days || 0),
     Number(selectedWorkStatus?.presentDays || 0)
@@ -959,6 +1071,25 @@ export default function AdminDashboard() {
     };
   }, [isDashboardNotificationsOpen]);
 
+  useEffect(() => {
+    if (!isDashboardNotificationsOpen || !hasUnreadDashboardNotifications || dashboardNotificationsSeen) {
+      return;
+    }
+
+    let active = true;
+    setDashboardNotificationsSeen(true);
+
+    notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES }).catch(() => {
+      if (active) {
+        setDashboardNotificationsSeen(false);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [dashboardNotificationsSeen, hasUnreadDashboardNotifications, isDashboardNotificationsOpen]);
+
   return (
     <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 pt-4 text-slate-900">
       <div className="relative z-20 mx-auto w-full max-w-4xl">
@@ -1039,7 +1170,7 @@ export default function AdminDashboard() {
               className={`relative rounded-lg border p-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 ${isDashboardNotificationsOpen ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
             >
               <Bell className="h-4 w-4" />
-              {announcements.length ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
+              {hasUnreadDashboardNotifications && !dashboardNotificationsSeen ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
             </button>
 
             {isDashboardNotificationsOpen ? (
@@ -1202,7 +1333,7 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
         <Card id="attendance-overview" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <MiniLineChart points={attendanceTrendPoints} />
+          <AttendancePieChart items={attendancePieItems} />
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             {[
               ['Present days', attendancePresentDays],
@@ -1532,7 +1663,7 @@ export default function AdminDashboard() {
             </div>
             <div className="rounded-lg border border-slate-100 p-3">
               <p className="text-xs text-slate-500">Idle Time</p>
-              <p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p>
+              <p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(scopeIdleSeconds)}</p>
             </div>
           </div>
         </Card>

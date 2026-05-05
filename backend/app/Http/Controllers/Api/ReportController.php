@@ -594,6 +594,8 @@ class ReportController extends Controller
             'group_ids.*' => 'integer',
             'dashboard_lite' => 'nullable',
             'skip_activity' => 'nullable',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
         $currentUser = $request->user();
@@ -648,9 +650,16 @@ class ReportController extends Controller
         if ($selectedIds->isNotEmpty()) {
             $usersQuery->whereIn('id', $selectedIds);
         }
-        $users = $usersQuery->orderBy('name')->get(['id', 'name', 'email', 'role']);
+        $allUsers = $usersQuery->orderBy('name')->get(['id', 'name', 'email', 'role']);
+        $shouldPaginateUsers = $request->has('page') || $request->has('per_page');
+        $page = max(1, (int) $request->integer('page', 1));
+        $perPage = min(100, max(1, (int) $request->integer('per_page', 25)));
+        $totalUsers = $allUsers->count();
+        $users = $shouldPaginateUsers
+            ? $allUsers->slice(($page - 1) * $perPage, $perPage)->values()
+            : $allUsers;
         if ($users->isEmpty()) {
-            return response()->json([
+            $emptyResponse = [
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
                 'summary' => [
@@ -659,7 +668,18 @@ class ReportController extends Controller
                 ] + $this->timeBreakdownService->build(0, 0),
                 'by_user' => [],
                 'by_day' => [],
-            ]);
+            ];
+
+            if ($shouldPaginateUsers) {
+                $emptyResponse['pagination'] = [
+                    'current_page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $totalUsers,
+                    'last_page' => max(1, (int) ceil($totalUsers / $perPage)),
+                ];
+            }
+
+            return response()->json($emptyResponse);
         }
 
         $userIds = $users->pluck('id');
@@ -799,17 +819,29 @@ class ReportController extends Controller
             (int) $byUser->sum('idle_duration')
         );
 
-        return response()->json([
+        $response = [
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
             'summary' => [
-                'users_count' => $users->count(),
+                'users_count' => $shouldPaginateUsers ? $totalUsers : $users->count(),
+                'page_users_count' => $users->count(),
                 'active_users' => $activeUserIds->unique()->count(),
             ] + $summaryBreakdown,
             'users' => $users,
             'by_user' => $byUser,
             'by_day' => $byDay,
-        ]);
+        ];
+
+        if ($shouldPaginateUsers) {
+            $response['pagination'] = [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $totalUsers,
+                'last_page' => max(1, (int) ceil($totalUsers / $perPage)),
+            ];
+        }
+
+        return response()->json($response);
     }
 
     private function buildLiteOverallReport(

@@ -425,7 +425,7 @@ class TimeEntryController extends Controller
 
         $now = now();
         if (!$record->check_in_at) {
-            $lateThreshold = Carbon::parse($today.' '.env('ATTENDANCE_LATE_AFTER', '09:30:00'));
+            $lateThreshold = Carbon::parse($today.' '.env('ATTENDANCE_LATE_AFTER', '10:30:00'));
             $record->check_in_at = $now;
             $record->late_minutes = $this->toLateMinutes($lateThreshold->diffInMinutes($now, false));
         }

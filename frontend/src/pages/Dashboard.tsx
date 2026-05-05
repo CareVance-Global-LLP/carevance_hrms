@@ -23,6 +23,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
+import { CHAT_NOTIFICATION_TYPES } from '@/lib/chatNotifications';
 import type { AppNotificationItem, TimeEntry } from '@/types';
 import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 
@@ -181,6 +182,28 @@ export default function Dashboard() {
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [isNotificationsOpen]);
+
+  useEffect(() => {
+    if (!isNotificationsOpen || unreadNotifications <= 0) {
+      return;
+    }
+
+    let active = true;
+
+    setUnreadNotifications(0);
+    setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
+
+    notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES }).catch(() => {
+      if (active) {
+        setUnreadNotifications(notifications.filter((item) => !item.is_read).length);
+        setNotifications(notifications);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isNotificationsOpen, unreadNotifications, notifications]);
 
   useEffect(() => {
     if (!activeTimer) {
