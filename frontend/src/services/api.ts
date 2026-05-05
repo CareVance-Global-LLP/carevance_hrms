@@ -46,6 +46,15 @@ import type {
   BillingSnapshot,
   BugReportRequest,
   BugReportResponse,
+  PayrollAdjustment,
+  PayrollProfile,
+  PayrollRecord,
+  PayrollReportsPayload,
+  PayrollRun,
+  PayrollSettingsPayload,
+  PayrollTransaction,
+  SalaryComponentMaster,
+  SalaryTemplate,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
@@ -886,6 +895,149 @@ export const payrollSimpleApi = {
 
   saveSettings: (data: Record<string, any>) =>
     api.put<any>('/payroll/settings', data),
+};
+
+export const payrollApi = {
+  getEmployees: () =>
+    api.get<{ data: User[] }>('/users', { params: { role: 'employee', is_active: true } }),
+
+  getRecords: (params?: {
+    user_id?: number;
+    payroll_month?: string;
+    payroll_status?: string;
+    payout_status?: string;
+  }) =>
+    api.get<{ data: PayrollRecord[]; mode?: 'mock' | 'stripe_test' | 'stripe_live' }>('/payroll/records', { params }),
+
+  generateRecords: (data: {
+    payroll_month: string;
+    user_id?: number;
+    payout_method?: string;
+    allow_overwrite?: boolean;
+  }) =>
+    payrollSimpleApi.generateRun(data.payroll_month),
+
+  updateRecord: (id: number, data: Partial<PayrollRecord>) =>
+    api.put<PayrollRecord>(`/payroll/records/${id}`, data),
+
+  updateRecordStatus: (id: number, status: PayrollRecord['payroll_status']) =>
+    api.put<PayrollRecord>(`/payroll/records/${id}/status`, { status }),
+
+  payoutRecord: (id: number, data?: Record<string, any>) =>
+    api.post<{
+      payroll: PayrollRecord;
+      transaction: PayrollTransaction;
+      checkout_url?: string;
+      mode: 'mock' | 'stripe_test' | 'stripe_live';
+    }>(`/payroll/records/${id}/payout`, data || {}),
+
+  getRecordTransactions: (id: number) =>
+    api.get<{ data: PayrollTransaction[] }>(`/payroll/records/${id}/transactions`),
+
+  syncStripeCheckout: (id: number, checkoutSessionId: string) =>
+    api.post(`/payroll/records/${id}/sync-stripe-checkout`, { checkout_session_id: checkoutSessionId }),
+
+  getStructures: () =>
+    api.get<{ data: any[]; structures: any[] }>('/payroll/structures'),
+
+  saveStructure: (data: Record<string, any>) =>
+    api.post('/payroll/structures', data),
+
+  updateStructure: (id: number, data: Record<string, any>) =>
+    api.put(`/payroll/structures/${id}`, data),
+
+  deleteStructure: (id: number) =>
+    api.delete(`/payroll/structures/${id}`),
+
+  getPayslips: (params?: { user_id?: number; period_month?: string; payroll_month?: string; status?: string }) =>
+    api.get<{ data: any[] }>('/payroll/payslips', { params }),
+
+  downloadPayslipPdf: payrollSimpleApi.downloadPayslipPdf,
+
+  generatePayslip: (data: { user_id: number; period_month: string }) =>
+    api.post('/payroll/payslips/generate', data),
+
+  payNow: (data: { payslip_ids: number[] }) =>
+    api.post('/payroll/payslips/pay-now', data),
+};
+
+export const payrollWorkspaceApi = {
+  overview: (params: { payroll_month: string }) =>
+    payrollSimpleApi.overview(params.payroll_month),
+
+  getRuns: (params?: { payroll_month?: string }) =>
+    payrollSimpleApi.runs(params?.payroll_month || new Date().toISOString().slice(0, 7)),
+
+  getRun: (id: number) =>
+    payrollSimpleApi.run(id),
+
+  updateRunStatus: (id: number, status: string) => {
+    if (status === 'paid') return payrollSimpleApi.markPaid(id);
+    if (['approved', 'validated', 'manager_approved', 'finance_approved', 'processed'].includes(status)) {
+      return payrollSimpleApi.approveRun(id);
+    }
+    return api.post(`/payroll/runs/${id}/status`, { status });
+  },
+
+  getProfiles: (params?: { payroll_month?: string }) =>
+    api.get<{ profiles: PayrollProfile[]; employees: User[]; templates: SalaryTemplate[] }>('/payroll/salary-profiles', { params }),
+
+  createProfile: (data: Partial<PayrollProfile>) =>
+    api.post<PayrollProfile>('/payroll/salary-profiles', data),
+
+  updateProfile: (id: number, data: Partial<PayrollProfile>) =>
+    api.put<PayrollProfile>(`/payroll/salary-profiles/${id}`, data),
+
+  getComponents: () =>
+    api.get<{ data: SalaryComponentMaster[] }>('/payroll/components'),
+
+  createComponent: (data: Partial<SalaryComponentMaster>) =>
+    api.post<SalaryComponentMaster>('/payroll/components', data),
+
+  updateComponent: (id: number, data: Partial<SalaryComponentMaster>) =>
+    api.put<SalaryComponentMaster>(`/payroll/components/${id}`, data),
+
+  deleteComponent: (id: number) =>
+    api.delete(`/payroll/components/${id}`),
+
+  getTemplates: () =>
+    api.get<{ data: SalaryTemplate[]; components: SalaryComponentMaster[] }>('/payroll/templates'),
+
+  createTemplate: (data: Record<string, any>) =>
+    api.post<SalaryTemplate>('/payroll/templates', data),
+
+  updateTemplate: (id: number, data: Record<string, any>) =>
+    api.put<SalaryTemplate>(`/payroll/templates/${id}`, data),
+
+  deleteTemplate: (id: number) =>
+    api.delete(`/payroll/templates/${id}`),
+
+  getAdjustments: (params?: { effective_month?: string; status?: string; user_id?: number }) =>
+    api.get<{ data: PayrollAdjustment[]; adjustments: PayrollAdjustment[]; employees: User[] }>('/payroll/adjustments', { params }),
+
+  createAdjustment: (data: Partial<PayrollAdjustment>) =>
+    payrollSimpleApi.createAdjustment(data),
+
+  updateAdjustment: (id: number, data: Partial<PayrollAdjustment>) =>
+    api.put<PayrollAdjustment>(`/payroll/adjustments/${id}`, data),
+
+  approveAdjustment: (id: number) =>
+    api.post(`/payroll/adjustments/${id}/approve`),
+
+  rejectAdjustment: (id: number) =>
+    api.post(`/payroll/adjustments/${id}/reject`),
+
+  applyAdjustment: (id: number) =>
+    api.post(`/payroll/adjustments/${id}/apply`),
+
+  reports: (params?: { payroll_month?: string }) =>
+    api.get<PayrollReportsPayload>('/payroll/reports', { params }),
+
+  settings: () =>
+    payrollSimpleApi.settings(),
+
+  updateSettings: (data: Partial<PayrollSettingsPayload>) =>
+    payrollSimpleApi.saveSettings(data),
 };
 
 export const notificationApi = {
