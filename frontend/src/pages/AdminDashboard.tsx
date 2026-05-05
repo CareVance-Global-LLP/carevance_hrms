@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { CHAT_NOTIFICATION_TYPES } from '@/lib/chatNotifications';
+import { formatDate as formatDateForTimezone, formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import {
   attendanceApi,
   auditApi,
@@ -225,38 +227,10 @@ const formatTimerClock = (seconds: number) => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
 
-const getStartTimeMs = (startTime?: string | null) => {
-  if (!startTime) return NaN;
-  const parsed = new Date(startTime).getTime();
-  if (Number.isFinite(parsed)) return parsed;
-  return new Date(startTime.replace(' ', 'T')).getTime();
-};
-
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(amount || 0));
 
 const formatPercent = (value: number) => `${Math.round(Number.isFinite(value) ? value : 0)}%`;
-
-const formatDate = (value?: string | null) => {
-  if (!value) return 'Today';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'Today';
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-};
-
-const formatTime = (value?: string | null) => {
-  if (!value) return 'Not recorded';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'Not recorded';
-  return parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-};
-
-const formatDateTime = (value?: string | null) => {
-  if (!value) return 'Not recorded';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'Not recorded';
-  return `${parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
-};
 
 const initials = (name: string) =>
   name
@@ -502,7 +476,11 @@ const AttendancePieChart = ({ items }: { items: Array<{ label: string; value: nu
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const navigate = useNavigate();
+  const formatDate = (value?: string | null) => formatDateForTimezone(value, displayTimezone);
+  const formatTime = (value?: string | null) => formatTimeForTimezone(value, displayTimezone);
+  const formatDateTime = (value?: string | null) => formatDateTimeForTimezone(value, displayTimezone);
   const persistedFilters = useMemo(readPersistedDashboardFilters, []);
   const [universalSearch, setUniversalSearch] = useState('');
   const [isUniversalSearchOpen, setIsUniversalSearchOpen] = useState(false);

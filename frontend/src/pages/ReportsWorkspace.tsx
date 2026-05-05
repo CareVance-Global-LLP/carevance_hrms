@@ -21,10 +21,12 @@ import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import TaskSelect from '@/components/ui/TaskSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
+import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
 import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
+import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import {
   Activity,
   AlertTriangle,
@@ -406,6 +408,7 @@ const analyticsCatalogItems = [
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
   const { user } = useAuth();
+  const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsWorkspaceFilters(mode).datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).startDate);
   const [endDate, setEndDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).endDate);
@@ -1558,7 +1561,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               emptyMessage="No timeline events found."
               headerAction={renderPanelRefreshButton()}
               columns={[
-                { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
+                { key: 'recorded_at', header: 'When', render: (row: any) => formatDateTimeForTimezone(row.recorded_at, displayTimezone, 'en-US', 'Not recorded') },
                 { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
                 { key: 'type', header: 'Type', render: (row: any) => row.tool_type || row.type },
                 {

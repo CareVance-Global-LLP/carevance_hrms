@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
+import { DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
 import { productivityRuleApi, settingsApi } from '@/services/api';
 import type { ProductivityRule as ProductivityRuleType } from '@/types';
 import { User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet } from 'lucide-react';
@@ -55,7 +56,7 @@ export default function SettingsPage() {
   const [notifyWeekly, setNotifyWeekly] = useState(true);
   const [notifyProject, setNotifyProject] = useState(true);
   const [notifyTask, setNotifyTask] = useState(true);
-  const [timezone, setTimezone] = useState('Asia/Kolkata');
+  const [timezone, setTimezone] = useState(DEFAULT_APP_TIMEZONE);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -78,10 +79,7 @@ export default function SettingsPage() {
     ...(hasStrictAdminAccess(user) ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
   ];
 
-  const timezoneOptions = useMemo(
-    () => ['Asia/Kolkata'],
-    []
-  );
+  const timezoneOptions = useMemo(() => getSupportedTimezones(), []);
 
   useEffect(() => {
     if (location.pathname.endsWith('/integrations')) {
@@ -132,7 +130,7 @@ export default function SettingsPage() {
           setProfileAvatar(fetchedUser?.avatar || '');
           setOrgName(fetchedOrg?.name || '');
           setOrgSlug(fetchedOrg?.slug || '');
-          setTimezone(settings.timezone || 'Asia/Kolkata');
+          setTimezone(resolveTimeZone(settings.timezone || DEFAULT_APP_TIMEZONE));
           setNotifyEmail(notifications.email ?? true);
           setNotifyInApp(notifications.in_app ?? true);
           setNotifyDesktopPush(notifications.desktop_push ?? true);

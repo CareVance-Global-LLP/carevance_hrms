@@ -6,6 +6,7 @@ import { attendanceApi, attendanceTimeEditApi, dashboardApi, notificationApi } f
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
+import { formatDate as formatDateForTimezone, formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
 import {
   Activity,
   Bell,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import { CHAT_NOTIFICATION_TYPES } from '@/lib/chatNotifications';
+import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import type { AppNotificationItem, TimeEntry } from '@/types';
 import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 
@@ -69,28 +71,18 @@ const EmptyInline = ({ children }: { children: ReactNode }) => (
   </div>
 );
 
-const getStartTimeMs = (startTime?: string | null) => {
-  if (!startTime) return NaN;
-  const parsed = new Date(startTime).getTime();
-  if (Number.isFinite(parsed)) return parsed;
-  return new Date(startTime.replace(' ', 'T')).getTime();
-};
-
 type DashboardSearchPayload = {
   type: 'route' | 'section';
   to?: string;
   sectionId?: string;
 };
 
-const formatNotificationDate = (value?: string | null) => {
-  if (!value) return 'Just now';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'Just now';
-  return parsed.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-};
+const formatNotificationDate = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
+  formatDateTimeForTimezone(value, timezone, 'en-US', 'Just now');
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const navigate = useNavigate();
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [clockTick, setClockTick] = useState(() => Date.now());
@@ -279,10 +271,7 @@ export default function Dashboard() {
   };
 
   const formatClockTime = (value?: string | null) => {
-    if (!value) return 'Not recorded';
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return 'Not recorded';
-    return parsed.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    return formatTimeForTimezone(value, displayTimezone);
   };
 
   const punches = Array.isArray(attendanceToday?.punches) ? attendanceToday.punches : [];
@@ -383,7 +372,7 @@ export default function Dashboard() {
             emptyMessage="No matching page, section, or work entry found."
           />
           <button className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700">
-            {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            {formatDateForTimezone(new Date(), displayTimezone)}
           </button>
           <div ref={notificationsRef} className="relative">
             <button
@@ -427,7 +416,7 @@ export default function Dashboard() {
                           {!notification.is_read ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-600" /> : null}
                         </div>
                         <p className="mt-1 text-xs leading-5 text-slate-600">{notification.message}</p>
-                        <p className="mt-2 text-[11px] font-medium text-slate-400">{formatNotificationDate(notification.created_at)}</p>
+                        <p className="mt-2 text-[11px] font-medium text-slate-400">{formatNotificationDate(notification.created_at, displayTimezone)}</p>
                       </div>
                     ))
                   ) : (
@@ -555,7 +544,7 @@ export default function Dashboard() {
                         <p className="font-semibold text-slate-900">{getTimeEntryTitle(entry)}</p>
                         <p className="mt-1 text-[11px] text-slate-500">{getTimeEntrySubtitle(entry)}</p>
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{new Date(entry.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatTimeForTimezone(entry.start_time, displayTimezone)}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">{formatDuration(entry.id === activeTimer?.id ? activeTimerSeconds : entry.duration)}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${entry.end_time ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>

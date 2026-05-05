@@ -15,6 +15,8 @@ import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/
 import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
 import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Briefcase, CalendarDays, Clock, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
@@ -25,7 +27,8 @@ const formatDuration = (seconds: number) => {
   const minutes = Math.floor((safe % 3600) / 60);
   return `${hours}h ${minutes}m`;
 };
-const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'Not available');
+const formatDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
+  formatDateTimeForTimezone(value, timezone, 'en-US', 'Not available');
 const resolveLiveToolLabel = (liveRow?: any | null) => {
   const resolved = [
     liveRow?.current_tool,
@@ -187,6 +190,7 @@ const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
 };
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const { user, organization } = useAuth();
+  const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const [selectedFilterUserId, setSelectedFilterUserId] = useState<number | ''>(() => readPersistedAttendanceFilters().selectedFilterUserId);
   const [countryFilter, setCountryFilter] = useState(() => readPersistedAttendanceFilters().countryFilter);
   const [calendarScope, setCalendarScope] = useState<'selected' | 'overall'>(() => readPersistedAttendanceFilters().calendarScope);
@@ -998,7 +1002,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     || todayRecord?.is_checked_in
   );
   const employeeWorkspaceLastSeenLabel = employeeProfile?.status?.last_seen_at
-    ? new Date(employeeProfile.status.last_seen_at).toLocaleString()
+    ? formatDateTime(employeeProfile.status.last_seen_at, displayTimezone)
     : employeeWorkspaceIsWorking
       ? 'Active now'
       : 'Unavailable';
@@ -1365,11 +1369,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
                   <p className="text-[11px] text-gray-500">First Punch In</p>
-                  <p className="text-sm font-semibold text-gray-900">{todayRecord?.check_in_at ? new Date(todayRecord.check_in_at).toLocaleTimeString() : '--'}</p>
+                  <p className="text-sm font-semibold text-gray-900">{todayRecord?.check_in_at ? formatTimeForTimezone(todayRecord.check_in_at, displayTimezone) : '--'}</p>
                 </div>
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
                   <p className="text-[11px] text-gray-500">Last Punch Out</p>
-                  <p className="text-sm font-semibold text-gray-900">{todayRecord?.check_out_at ? new Date(todayRecord.check_out_at).toLocaleTimeString() : '--'}</p>
+                  <p className="text-sm font-semibold text-gray-900">{todayRecord?.check_out_at ? formatTimeForTimezone(todayRecord.check_out_at, displayTimezone) : '--'}</p>
                 </div>
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
                   <p className="text-[11px] text-gray-500">Working Hours</p>
@@ -1410,7 +1414,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             <div className="mt-2 flex flex-wrap gap-2">
               {todayRecord.punches.map((punch) => (
                 <span key={punch.id} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
-                  {new Date(punch.punch_in_at).toLocaleTimeString()} - {punch.punch_out_at ? new Date(punch.punch_out_at).toLocaleTimeString() : 'Active'}
+                  {formatTimeForTimezone(punch.punch_in_at, displayTimezone)} - {punch.punch_out_at ? formatTimeForTimezone(punch.punch_out_at, displayTimezone) : 'Active'}
                 </span>
               ))}
             </div>

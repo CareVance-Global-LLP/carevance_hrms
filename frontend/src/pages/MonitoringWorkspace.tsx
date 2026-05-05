@@ -14,8 +14,10 @@ import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
 import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
+import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
 import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
+import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 import type { BrowserTrackingHealthSummary } from '@/types';
 
@@ -97,7 +99,8 @@ const formatDuration = (seconds: number) => {
 
   return `${hours}h ${minutes}m`;
 };
-const formatDateTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : 'No recent activity');
+const formatDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
+  formatDateTimeForTimezone(value, timezone, 'en-US', 'No recent activity');
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
@@ -224,6 +227,7 @@ const SCREENSHOT_REFRESH_INTERVAL_MS = 60_000;
 
 export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspaceMode }) {
   const { user } = useAuth();
+  const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const canDeleteScreenshots = user?.role === 'admin';
   const navigate = useNavigate();
   const location = useLocation();
@@ -815,7 +819,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
+                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at, displayTimezone)}</p>
                     <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
                   </div>
                   {renderBrowserTrackingCard(selectedUserBrowserTracking)}
@@ -898,7 +902,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                             }}
                           />
                           <div className="space-y-2 p-3">
-                            <p className="text-sm font-medium text-slate-950">{formatDateTime(shot.recorded_at || shot.created_at)}</p>
+                            <p className="text-sm font-medium text-slate-950">{formatDateTime(shot.recorded_at || shot.created_at, displayTimezone)}</p>
                             <p className="text-xs text-slate-500">{shot.filename || 'Captured screenshot'}</p>
                           </div>
                         </a>
@@ -1009,7 +1013,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
+                  <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at, displayTimezone)}</p>
                   <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
                 </div>
                 {renderBrowserTrackingCard(selectedUserBrowserTracking)}
@@ -1127,7 +1131,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                       </div>
                       <div className="space-y-2 p-4">
                         <p className="font-medium text-slate-950">{screenshotUser?.name || 'Unknown employee'}</p>
-                        <p className="text-xs text-slate-500">{formatDateTime(shot.recorded_at)}</p>
+                        <p className="text-xs text-slate-500">{formatDateTime(shot.recorded_at, displayTimezone)}</p>
                         <p className="truncate text-xs text-slate-500" title={shot.filename || 'Captured screenshot'}>
                           {shot.filename || 'Captured screenshot'}
                         </p>
@@ -1203,7 +1207,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last seen</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at)}</p>
+                  <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at, displayTimezone)}</p>
                   <p className="mt-1 text-sm text-slate-500">Most recent monitoring signal</p>
                 </div>
                 {renderBrowserTrackingCard(selectedUserBrowserTracking)}
@@ -1248,7 +1252,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(row.classification)}`}>{row.classification}</span> },
                   { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
                   { key: 'events', header: 'Events', render: (row: any) => row.events },
-                  { key: 'last_used_at', header: 'Last Used', render: (row: any) => formatDateTime(row.last_used_at) },
+                  { key: 'last_used_at', header: 'Last Used', render: (row: any) => formatDateTime(row.last_used_at, displayTimezone) },
                 ]}
               />
             ) : null}
@@ -1263,7 +1267,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             bodyClassName="max-h-[34rem] overflow-y-auto"
             stickyHeader
             columns={[
-              { key: 'recorded_at', header: 'When', render: (row: any) => new Date(row.recorded_at).toLocaleString() },
+              { key: 'recorded_at', header: 'When', render: (row: any) => formatDateTime(row.recorded_at, displayTimezone) },
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
               { key: 'name', header: 'Name', render: (row: any) => row.name },
               { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(classifyProductivity(normalizeToolLabel(row.name || '', row.type || 'app'), row.type || 'app'))}`}>{classifyProductivity(normalizeToolLabel(row.name || '', row.type || 'app'), row.type || 'app')}</span> },
