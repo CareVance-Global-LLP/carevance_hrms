@@ -16,9 +16,9 @@ return [
         FILTER_VALIDATE_BOOL
     ),
 
-    'sales_email' => (string) env('SALES_CONTACT_EMAIL', 'sales@carevance.example'),
+    'sales_email' => (string) env('SALES_CONTACT_EMAIL', 'aayushborwal.carevanceglobal@gmail.com'),
 
-    'support_email' => (string) env('SUPPORT_CONTACT_EMAIL', 'support@carevance.example'),
+    'support_email' => (string) env('SUPPORT_CONTACT_EMAIL', 'mavliribaz.carevanceglobal@gmail.com'),
 
     'auth' => [
         'email_verification_expire_minutes' => (int) env('AUTH_EMAIL_VERIFICATION_EXPIRE_MINUTES', 1440),
