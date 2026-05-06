@@ -898,7 +898,7 @@ class UsageProcessingService
 
     private function inferIdleFromActivityEvents(Collection $activeLogs, Collection $activityEvents): Collection
     {
-        $threshold = (int) config('usage_processing.normalization.idle_threshold_seconds', 60);
+        $threshold = $this->resolveIdleThresholdSeconds();
         $rows = [];
 
         foreach ($activeLogs as $activeLog) {
@@ -932,9 +932,17 @@ class UsageProcessingService
         return collect($rows)->filter()->values();
     }
 
+    private function resolveIdleThresholdSeconds(): int
+    {
+        $legacyThreshold = (int) config('usage_processing.normalization.idle_threshold_seconds', 180);
+        $trackingThreshold = (int) config('time_tracking.idle_track_threshold_seconds', $legacyThreshold);
+
+        return max(30, $trackingThreshold);
+    }
+
     private function inferIdleFromSourceSilence(Collection $activeLogs): Collection
     {
-        $threshold = (int) config('usage_processing.normalization.idle_threshold_seconds', 60);
+        $threshold = $this->resolveIdleThresholdSeconds();
         $rows = [];
 
         foreach ($activeLogs as $activeLog) {

@@ -121,15 +121,23 @@ class SettingsApiFlowTest extends TestCase
         $this->putJson('/api/settings/organization', [
             'name' => 'Renamed Settings Workspace',
             'slug' => 'shared-slug',
+            'office_start_time' => '09:00',
+            'late_after_time' => '09:15',
         ], $headers)
             ->assertOk()
             ->assertJsonPath('organization.name', 'Renamed Settings Workspace')
-            ->assertJsonPath('organization.slug', 'shared-slug-1');
+            ->assertJsonPath('organization.slug', 'shared-slug-1')
+            ->assertJsonPath('organization.settings.attendance.office_start_time', '09:00:00')
+            ->assertJsonPath('organization.settings.attendance.late_after_time', '09:15:00');
 
         $this->assertDatabaseHas('organizations', [
             'id' => $organization->id,
             'slug' => 'shared-slug-1',
         ]);
+
+        $organization->refresh();
+        $this->assertSame('09:00:00', data_get($organization->settings, 'attendance.office_start_time'));
+        $this->assertSame('09:15:00', data_get($organization->settings, 'attendance.late_after_time'));
 
         $this->assertDatabaseHas('organizations', [
             'id' => $collisionOrg->id,

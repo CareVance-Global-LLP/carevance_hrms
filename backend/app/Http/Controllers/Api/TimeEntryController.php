@@ -24,6 +24,8 @@ use Illuminate\Support\Facades\Log;
 
 class TimeEntryController extends Controller
 {
+    private const DEFAULT_LATE_AFTER = '10:30:00';
+
     public function __construct(
         private readonly GroupAccessService $groupAccessService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
@@ -436,7 +438,7 @@ class TimeEntryController extends Controller
 
         $now = now();
         if (!$record->check_in_at) {
-            $lateThreshold = Carbon::parse($today.' '.env('ATTENDANCE_LATE_AFTER', '10:30:00'));
+            $lateThreshold = Carbon::parse($today.' '.$this->lateAfterTimeForUser($user));
             $record->check_in_at = $now;
             $record->late_minutes = $this->toLateMinutes($lateThreshold->diffInMinutes($now, false));
         }
@@ -508,6 +510,23 @@ class TimeEntryController extends Controller
     private function toLateMinutes(int|float $rawMinutes): int
     {
         return (int) max(0, floor($rawMinutes));
+    }
+
+    private function lateAfterTimeForUser(User $user): string
+    {
+        $settings = is_array($user->organization?->settings) ? $user->organization->settings : [];
+        $attendanceSettings = is_array($settings['attendance'] ?? null) ? $settings['attendance'] : [];
+        $configured = $attendanceSettings['late_after_time'] ?? null;
+
+        if (!is_string($configured) || trim($configured) === '') {
+            return Carbon::parse(env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER))->format('H:i:s');
+        }
+
+        try {
+            return Carbon::parse($configured)->format('H:i:s');
+        } catch (\Throwable) {
+            return Carbon::parse(env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER))->format('H:i:s');
+        }
     }
 
     private function runningEntriesQuery(int $userId, string $slot): Builder

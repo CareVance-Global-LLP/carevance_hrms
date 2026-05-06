@@ -362,9 +362,41 @@ class ReportController extends Controller
 
         return (int) max(
             0,
-            max((int) ($record->worked_seconds ?? 0), $closedWorkedSeconds + $openWorkedSeconds)
-            + (int) ($record->manual_adjustment_seconds ?? 0)
+            $closedWorkedSeconds + $openWorkedSeconds + (int) ($record->manual_adjustment_seconds ?? 0)
         );
+    }
+
+    private function buildOverallAttendanceSummary(Collection $attendanceRecords, int $calendarDaysCount): array
+    {
+        $safeCalendarDaysCount = max(1, $calendarDaysCount);
+        $presentDates = $attendanceRecords
+            ->filter(fn (AttendanceRecord $record) => (bool) $record->check_in_at)
+            ->map(fn (AttendanceRecord $record) => Carbon::parse((string) $record->attendance_date)->toDateString())
+            ->filter()
+            ->unique()
+            ->values();
+        $firstCheckInTimestamp = $attendanceRecords
+            ->filter(fn (AttendanceRecord $record) => (bool) $record->check_in_at)
+            ->map(fn (AttendanceRecord $record) => Carbon::parse((string) $record->check_in_at)->getTimestamp())
+            ->filter(fn ($timestamp) => is_int($timestamp) && $timestamp > 0)
+            ->min();
+        $lastCheckOutTimestamp = $attendanceRecords
+            ->filter(fn (AttendanceRecord $record) => (bool) $record->check_out_at)
+            ->map(fn (AttendanceRecord $record) => Carbon::parse((string) $record->check_out_at)->getTimestamp())
+            ->filter(fn ($timestamp) => is_int($timestamp) && $timestamp > 0)
+            ->max();
+
+        return [
+            'attendance_days_present' => $presentDates->count(),
+            'attendance_days_in_range' => $safeCalendarDaysCount,
+            'attendance_rate' => (float) round(($presentDates->count() / $safeCalendarDaysCount) * 100, 2),
+            'first_check_in_at' => $firstCheckInTimestamp
+                ? Carbon::createFromTimestamp($firstCheckInTimestamp)->toIso8601String()
+                : null,
+            'last_check_out_at' => $lastCheckOutTimestamp
+                ? Carbon::createFromTimestamp($lastCheckOutTimestamp)->toIso8601String()
+                : null,
+        ];
     }
 
     private function limitToolBreakdown(array $toolBreakdown, int $limit = 10): array
@@ -658,6 +690,7 @@ class ReportController extends Controller
         $users = $shouldPaginateUsers
             ? $allUsers->slice(($page - 1) * $perPage, $perPage)->values()
             : $allUsers;
+        $calendarDaysCount = max(1, CarbonPeriod::create($startDate->toDateString(), $endDate->toDateString())->count());
         if ($users->isEmpty()) {
             $emptyResponse = [
                 'start_date' => $startDate->toDateString(),
@@ -691,7 +724,7 @@ class ReportController extends Controller
             ->whereIn('user_id', $userIds)
             ->whereDate('attendance_date', '>=', $startDate->toDateString())
             ->whereDate('attendance_date', '<=', $endDate->toDateString())
-            ->get(['id', 'user_id', 'attendance_date', 'manual_adjustment_seconds']);
+            ->get(['id', 'user_id', 'attendance_date', 'check_in_at', 'check_out_at', 'manual_adjustment_seconds']);
 
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
@@ -705,6 +738,7 @@ class ReportController extends Controller
                 $entries,
                 $attendanceAdjustments,
                 $activeUserIds,
+                $calendarDaysCount,
                 $startDate,
                 $endDate,
                 $request->boolean('skip_activity'),
@@ -725,23 +759,25 @@ class ReportController extends Controller
 
         $resolvedNow = now();
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userActivities = $activitiesByUser->get($user->id, collect());
-            $userAdjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
+            $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
+            $userAdjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
             $idleDuration = $this->usageProcessingService->calculateIdleTime($userActivities);
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $userAdjustmentDuration,
                 $idleDuration
             );
+            $attendanceSummary = $this->buildOverallAttendanceSummary($userAttendanceRecords, $calendarDaysCount);
 
             return [
                 'user' => $user,
                 'entries_count' => $userEntries->count(),
                 'last_activity_at' => $userActivities->max('recorded_at'),
                 'is_working' => $activeUserIds->contains((int) $user->id),
-            ] + $timeBreakdown;
+            ] + $timeBreakdown + $attendanceSummary;
         })->values();
 
         $dayUserBuckets = [];
@@ -849,6 +885,7 @@ class ReportController extends Controller
         Collection $entries,
         Collection $attendanceAdjustments,
         Collection $activeUserIds,
+        int $calendarDaysCount,
         Carbon $startDate,
         Carbon $endDate,
         bool $skipActivity = false,
@@ -866,23 +903,25 @@ class ReportController extends Controller
             Carbon::parse((string) data_get($activity, 'recorded_at'))->toDateString()
         ));
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userActivities = $activitiesByUser->get($user->id, collect());
-            $adjustmentDuration = (int) $adjustmentsByUser->get($user->id, collect())
+            $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
+            $adjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
             $idleDuration = $this->usageProcessingService->calculateIdleTime($userActivities);
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration,
                 $idleDuration
             );
+            $attendanceSummary = $this->buildOverallAttendanceSummary($userAttendanceRecords, $calendarDaysCount);
 
             return [
                 'user' => $user,
                 'entries_count' => $userEntries->count(),
                 'last_activity_at' => $userActivities->max('recorded_at'),
                 'is_working' => $activeUserIds->contains((int) $user->id),
-            ] + $timeBreakdown;
+            ] + $timeBreakdown + $attendanceSummary;
         })->values();
 
         $dayUserBuckets = [];

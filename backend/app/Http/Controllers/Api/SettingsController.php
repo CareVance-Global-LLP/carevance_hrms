@@ -10,6 +10,7 @@ use App\Http\Requests\Api\Settings\UpdatePreferencesRequest;
 use App\Http\Requests\Api\Settings\UpdateProfileRequest;
 use App\Services\Audit\AuditLogService;
 use App\Services\Billing\WorkspaceBillingService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -185,9 +186,31 @@ class SettingsController extends Controller
             $suffix++;
         }
 
+        $existingSettings = is_array($organization->settings) ? $organization->settings : [];
+        $attendanceSettings = is_array($existingSettings['attendance'] ?? null)
+            ? $existingSettings['attendance']
+            : [];
+
+        if (array_key_exists('office_start_time', $validated)) {
+            $attendanceSettings['office_start_time'] = $validated['office_start_time']
+                ? Carbon::parse($validated['office_start_time'])->format('H:i:s')
+                : null;
+        }
+
+        if (array_key_exists('late_after_time', $validated)) {
+            $attendanceSettings['late_after_time'] = $validated['late_after_time']
+                ? Carbon::parse($validated['late_after_time'])->format('H:i:s')
+                : null;
+        }
+
+        $updatedSettings = array_merge($existingSettings, [
+            'attendance' => $attendanceSettings,
+        ]);
+
         $organization->update([
             'name' => $validated['name'],
             'slug' => $slug,
+            'settings' => $updatedSettings,
         ]);
 
         $this->auditLogService->log(
@@ -197,6 +220,8 @@ class SettingsController extends Controller
             metadata: [
                 'name' => $organization->name,
                 'slug' => $organization->slug,
+                'office_start_time' => $attendanceSettings['office_start_time'] ?? null,
+                'late_after_time' => $attendanceSettings['late_after_time'] ?? null,
             ],
             request: $request
         );

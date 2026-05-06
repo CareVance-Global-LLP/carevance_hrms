@@ -14,6 +14,24 @@ import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 
+const toTimeInputValue = (value: unknown): string => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (/^\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed.slice(0, 5);
+  }
+  const parsed = new Date(`1970-01-01T${trimmed}`);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toTimeString().slice(0, 5);
+  }
+  return '';
+};
+
 export default function SettingsPage() {
   const { user, organization, updateUser, updateOrganization } = useAuth();
   const location = useLocation();
@@ -48,6 +66,8 @@ export default function SettingsPage() {
 
   const [orgName, setOrgName] = useState(organization?.name || '');
   const [orgSlug, setOrgSlug] = useState(organization?.slug || '');
+  const [officeStartTime, setOfficeStartTime] = useState('');
+  const [lateAfterTime, setLateAfterTime] = useState('');
 
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyInApp, setNotifyInApp] = useState(true);
@@ -104,6 +124,8 @@ export default function SettingsPage() {
   useEffect(() => {
     setOrgName(organization?.name || '');
     setOrgSlug(organization?.slug || '');
+    setOfficeStartTime(toTimeInputValue((organization?.settings as any)?.attendance?.office_start_time));
+    setLateAfterTime(toTimeInputValue((organization?.settings as any)?.attendance?.late_after_time));
   }, [organization]);
 
   useEffect(() => {
@@ -130,6 +152,8 @@ export default function SettingsPage() {
           setProfileAvatar(fetchedUser?.avatar || '');
           setOrgName(fetchedOrg?.name || '');
           setOrgSlug(fetchedOrg?.slug || '');
+          setOfficeStartTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.office_start_time));
+          setLateAfterTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.late_after_time));
           setTimezone(resolveTimeZone(settings.timezone || DEFAULT_APP_TIMEZONE));
           setNotifyEmail(notifications.email ?? true);
           setNotifyInApp(notifications.in_app ?? true);
@@ -199,7 +223,10 @@ export default function SettingsPage() {
       const res = await settingsApi.updateOrganization({
         name: orgName.trim(),
         slug: orgSlug.trim(),
+        office_start_time: officeStartTime || null,
+        late_after_time: lateAfterTime || null,
       });
+
       const updatedOrg = (res.data as any)?.organization || null;
       updateOrganization(updatedOrg);
       setMessage((res.data as any)?.message || 'Organization updated');
@@ -408,6 +435,30 @@ export default function SettingsPage() {
                 <div>
                   <FieldLabel>Slug</FieldLabel>
                   <TextInput type="text" value={orgSlug} onChange={(e) => setOrgSlug(e.target.value)} disabled={!isOrgEditable} className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel>Office Start Time</FieldLabel>
+                  <TextInput
+                    type="time"
+                    value={officeStartTime}
+                    onChange={(e) => setOfficeStartTime(e.target.value)}
+                    disabled={!isOrgEditable}
+                    className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''}
+                  />
+                  <p className="mt-2 text-sm text-gray-500">Employees can check in earlier; this is the expected office start time.</p>
+                </div>
+                <div>
+                  <FieldLabel>Late After</FieldLabel>
+                  <TextInput
+                    type="time"
+                    value={lateAfterTime}
+                    onChange={(e) => setLateAfterTime(e.target.value)}
+                    disabled={!isOrgEditable}
+                    className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''}
+                  />
+                  <p className="mt-2 text-sm text-gray-500">Check-ins after this time are marked late (for example 09:15).</p>
                 </div>
               </div>
               {isOrgEditable ? (

@@ -592,6 +592,7 @@ export const attendanceApi = {
         }>;
       } | null;
       late_after: string;
+      office_start?: string;
       shift_target_seconds: number;
       has_approved_leave_today: boolean;
     }>('/attendance/today', { params }),
@@ -1105,7 +1106,7 @@ export const settingsApi = {
     };
   }) => api.put<{ message: string; settings: Record<string, any> }>('/settings/preferences', data),
 
-  updateOrganization: (data: { name: string; slug: string }) =>
+  updateOrganization: (data: { name: string; slug: string; office_start_time?: string | null; late_after_time?: string | null }) =>
     api.put<{ message: string; organization: Organization }>('/settings/organization', data),
 
   billing: () =>

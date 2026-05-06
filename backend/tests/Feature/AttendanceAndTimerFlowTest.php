@@ -47,9 +47,17 @@ class AttendanceAndTimerFlowTest extends TestCase
         ]);
     }
 
-    public function test_check_in_at_ten_thirty_is_present_without_late_minutes_but_after_is_late(): void
+    public function test_check_in_uses_organization_late_threshold(): void
     {
-        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $organization = Organization::create([
+            'name' => 'Org',
+            'slug' => 'org',
+            'settings' => [
+                'attendance' => [
+                    'late_after_time' => '09:15:00',
+                ],
+            ],
+        ]);
         $onTimeUser = User::create([
             'name' => 'On Time Employee',
             'email' => 'on-time@example.com',
@@ -66,10 +74,10 @@ class AttendanceAndTimerFlowTest extends TestCase
         ]);
 
         try {
-            Carbon::setTestNow(Carbon::parse('2026-05-05 10:30:00', 'Asia/Kolkata'));
+            Carbon::setTestNow(Carbon::parse('2026-05-05 09:15:00', 'Asia/Kolkata'));
             $this->postJson('/api/attendance/check-in', [], $this->apiHeadersFor($onTimeUser))->assertOk();
 
-            Carbon::setTestNow(Carbon::parse('2026-05-05 10:31:00', 'Asia/Kolkata'));
+            Carbon::setTestNow(Carbon::parse('2026-05-05 09:16:00', 'Asia/Kolkata'));
             $this->postJson('/api/attendance/check-in', [], $this->apiHeadersFor($lateUser))->assertOk();
         } finally {
             Carbon::setTestNow();
@@ -163,9 +171,17 @@ class AttendanceAndTimerFlowTest extends TestCase
         ]);
     }
 
-    public function test_timer_start_uses_ten_thirty_late_threshold_for_attendance(): void
+    public function test_timer_start_uses_organization_late_threshold_for_attendance(): void
     {
-        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $organization = Organization::create([
+            'name' => 'Org',
+            'slug' => 'org',
+            'settings' => [
+                'attendance' => [
+                    'late_after_time' => '09:15:00',
+                ],
+            ],
+        ]);
         $user = User::create([
             'name' => 'Timer Employee',
             'email' => 'timer-late-threshold@example.com',
@@ -175,7 +191,7 @@ class AttendanceAndTimerFlowTest extends TestCase
         ]);
 
         try {
-            Carbon::setTestNow(Carbon::parse('2026-05-05 10:30:00', 'Asia/Kolkata'));
+            Carbon::setTestNow(Carbon::parse('2026-05-05 09:16:00', 'Asia/Kolkata'));
             $this->postJson('/api/time-entries/start', [
                 'description' => 'Primary timer',
                 'timer_slot' => 'primary',
@@ -188,7 +204,7 @@ class AttendanceAndTimerFlowTest extends TestCase
 
         $this->assertSame('2026-05-05', Carbon::parse($record->attendance_date)->toDateString());
         $this->assertSame('present', $record->status);
-        $this->assertSame(0, (int) $record->late_minutes);
+        $this->assertSame(1, (int) $record->late_minutes);
     }
 
     public function test_half_day_leave_keeps_check_in_allowed_and_halves_shift_target(): void

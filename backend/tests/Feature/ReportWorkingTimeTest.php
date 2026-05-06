@@ -338,18 +338,18 @@ class ReportWorkingTimeTest extends TestCase
         $overallResponse = $this->getJson('/api/reports/overall?start_date=2026-03-16&end_date=2026-03-16&user_ids[]='.$employee->id, $headers)
             ->assertOk()
             ->assertJsonPath('summary.total_duration', 180)
-            ->assertJsonPath('summary.idle_duration', 60)
-            ->assertJsonPath('summary.working_duration', 120)
-            ->assertJsonPath('by_user.0.idle_duration', 60)
-            ->assertJsonPath('by_day.0.idle_duration', 60);
+            ->assertJsonPath('summary.idle_duration', 0)
+            ->assertJsonPath('summary.working_duration', 180)
+            ->assertJsonPath('by_user.0.idle_duration', 0)
+            ->assertJsonPath('by_day.0.idle_duration', 0);
 
         $this->getJson("/api/reports/employee-insights?start_date=2026-03-16&end_date=2026-03-16&user_id={$employee->id}", $headers)
             ->assertOk()
             ->assertJsonPath('stats.total_duration', 180)
-            ->assertJsonPath('stats.idle_total_duration', 60)
-            ->assertJsonPath('stats.working_duration', 120);
+            ->assertJsonPath('stats.idle_total_duration', 0)
+            ->assertJsonPath('stats.working_duration', 180);
 
-        $this->assertSame(60, (int) $overallResponse->json('summary.idle_duration'));
+        $this->assertSame(0, (int) $overallResponse->json('summary.idle_duration'));
     }
 
     public function test_admin_overall_report_counts_live_duration_for_open_time_entries(): void

@@ -155,6 +155,8 @@ const formatTimelineDuration = (seconds: number) => {
 
   return `${remainingSeconds}s`;
 };
+const formatAttendanceDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
+  formatDateTimeForTimezone(value, timezone, 'en-US', '--');
 const shouldPreferWindowTitleForSoftwareRow = (row: any) => {
   const appName = String(row?.app_name || '').trim().toLowerCase();
   const windowTitle = String(row?.window_title || '').trim();
@@ -578,6 +580,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
+          processed: true,
           page: timelinePage,
           per_page: 10,
         });
@@ -1210,7 +1213,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                     <p className="text-sm text-slate-500">No attendance risk rows in this scope.</p>
                   ) : attendanceRiskRows.map((row: any) => (
                     <div key={row.user?.id || row.user?.email || row.user?.name} className="group rounded-lg border border-white/80 bg-white/85 p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
-                      <div className="flex items-center justify-between gap-3 text-sm">
+                      <div className="flex items-center justify-between text-sm">
                         <div className="min-w-0">
                           <p className="truncate font-semibold text-slate-950">{row.user?.name || 'Unknown employee'}</p>
                           <p className="text-xs text-slate-500">{resolveAttendanceDepartment(row)} | {row.absentDays} absent days</p>
@@ -1346,6 +1349,25 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                 bodyClassName={shouldScrollByUser ? 'max-h-[360px] overflow-y-auto' : undefined}
                 columns={[
                   { key: 'user', header: 'User', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
+                  {
+                    key: 'first_check_in_at',
+                    header: 'Check In',
+                    render: (row: any) => formatAttendanceDateTime(row.first_check_in_at, displayTimezone),
+                  },
+                  {
+                    key: 'last_check_out_at',
+                    header: 'Last Check Out',
+                    render: (row: any) => formatAttendanceDateTime(row.last_check_out_at, displayTimezone),
+                  },
+                  {
+                    key: 'attendance_rate',
+                    header: 'Attendance',
+                    render: (row: any) => {
+                      const presentDays = Number(row.attendance_days_present || 0);
+                      const totalDays = Math.max(1, Number(row.attendance_days_in_range || 0));
+                      return `${Number(row.attendance_rate || 0).toFixed(1)}% (${presentDays}/${totalDays})`;
+                    },
+                  },
                   { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
                   { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
                   { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },

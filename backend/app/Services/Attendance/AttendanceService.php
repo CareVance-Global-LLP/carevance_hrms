@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 
 class AttendanceService
 {
+    private const DEFAULT_OFFICE_START = '09:00:00';
     private const DEFAULT_LATE_AFTER = '10:30:00';
 
     private function managerGroupIds(User $user): array
@@ -64,7 +65,8 @@ class AttendanceService
             if (! $this->canManage($user)) {
                 return [
                     'record' => null,
-                    'late_after' => env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER),
+                    'late_after' => $this->lateAfterTimeForUser($user),
+                    'office_start' => $this->officeStartTimeForUser($user),
                     'shift_target_seconds' => $this->shiftTargetSeconds(),
                     'has_approved_leave_today' => false,
                     'has_half_day_leave_today' => false,
@@ -79,7 +81,8 @@ class AttendanceService
             if (! $targetUser) {
                 return [
                     'record' => null,
-                    'late_after' => env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER),
+                    'late_after' => $this->lateAfterTimeForUser($user),
+                    'office_start' => $this->officeStartTimeForUser($user),
                     'shift_target_seconds' => $this->shiftTargetSeconds(),
                     'has_approved_leave_today' => false,
                     'has_half_day_leave_today' => false,
@@ -98,7 +101,8 @@ class AttendanceService
 
         return [
             'record' => $this->decorateRecord($record, $leaveForToday),
-            'late_after' => env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER),
+            'late_after' => $this->lateAfterTimeForUser($targetUser),
+            'office_start' => $this->officeStartTimeForUser($targetUser),
             'shift_target_seconds' => $shiftTarget,
             'has_approved_leave_today' => $leaveForToday && !$leaveForToday->isHalfDay(),
             'has_half_day_leave_today' => (bool) ($leaveForToday?->isHalfDay()),
@@ -138,7 +142,7 @@ class AttendanceService
             return ['status' => 422, 'payload' => ['message' => 'You are already checked in for today']];
         }
 
-        $lateThreshold = Carbon::parse($today.' '.env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER));
+        $lateThreshold = Carbon::parse($today.' '.$this->lateAfterTimeForUser($user));
         $lateMinutes = max(0, $lateThreshold->diffInMinutes($checkInAt, false));
 
         $record->organization_id = $user->organization_id;
@@ -750,6 +754,47 @@ class AttendanceService
     private function shiftTargetSeconds(): int
     {
         return max(1, (int) env('ATTENDANCE_SHIFT_SECONDS', 8 * 3600));
+    }
+
+    private function officeStartTimeForUser(User $user): string
+    {
+        $attendanceSettings = $this->attendanceSettingsForUser($user);
+
+        return $this->normalizeTimeString(
+            $attendanceSettings['office_start_time'] ?? null,
+            self::DEFAULT_OFFICE_START
+        );
+    }
+
+    private function lateAfterTimeForUser(User $user): string
+    {
+        $attendanceSettings = $this->attendanceSettingsForUser($user);
+
+        return $this->normalizeTimeString(
+            $attendanceSettings['late_after_time'] ?? null,
+            env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER)
+        );
+    }
+
+    private function attendanceSettingsForUser(User $user): array
+    {
+        $settings = is_array($user->organization?->settings) ? $user->organization->settings : [];
+        $attendance = $settings['attendance'] ?? null;
+
+        return is_array($attendance) ? $attendance : [];
+    }
+
+    private function normalizeTimeString(mixed $value, string $fallback): string
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return Carbon::parse($fallback)->format('H:i:s');
+        }
+
+        try {
+            return Carbon::parse($value)->format('H:i:s');
+        } catch (\Throwable) {
+            return Carbon::parse($fallback)->format('H:i:s');
+        }
     }
 
     private function shiftTargetSecondsForLeave(?LeaveRequest $leave): int
