@@ -12,7 +12,6 @@ import {
   FileClock,
   Gift,
   Megaphone,
-  Plus,
   Search,
   Settings,
   TimerReset,
@@ -1134,13 +1133,6 @@ export default function AdminDashboard() {
             <Calendar className="h-4 w-4 text-blue-600" />
             {dateLabel}
           </div>
-          <Link
-            aria-label="Add user"
-            to="/add-user"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-blue-100 bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80"
-          >
-            <UserPlus className="h-4 w-4" />
-          </Link>
           <div ref={dashboardNotificationsRef} className="relative">
             <button
               type="button"
@@ -1308,7 +1300,7 @@ export default function AdminDashboard() {
         <KpiCard to="/approval-inbox?leave_window=today" label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
         <KpiCard to="/attendance" label="Absent" value={attendanceAbsentDays} hint={`${absentPercent}% of total`} icon={Calendar} tint="bg-red-50 text-red-600" />
         <KpiCard to="/attendance" label="Late" value={lateToday} hint={`${latePercent}% of total`} icon={Clock3} tint="bg-rose-50 text-rose-600" />
-        <KpiCard to="/add-user" label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined in range" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
+        <KpiCard to="/employees" label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined in range" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
         <KpiCard to="/employees" label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited in range" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
       </section>
 
@@ -1828,10 +1820,6 @@ export default function AdminDashboard() {
             ) : <EmptyInline>No employees found</EmptyInline>}
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link to="/add-user" className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white">
-              <Plus className="h-3.5 w-3.5" />
-              Add Employee
-            </Link>
             <Link to="/employees" className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
               Open Directory
             </Link>

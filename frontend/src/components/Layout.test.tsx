@@ -345,7 +345,7 @@ describe('Layout navigation', () => {
     expect(screen.queryByRole('button', { name: /add user/i })).not.toBeInTheDocument();
   });
 
-  it('shows the add user button for admins in the desktop shell', async () => {
+  it('hides the add user button for admins in the desktop shell', async () => {
     window.desktopTracker = {
       captureScreenshot: vi.fn(),
       getSystemIdleSeconds: vi.fn(),
@@ -361,7 +361,8 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    expect(await screen.findByRole('button', { name: /add user/i })).toBeInTheDocument();
+    await screen.findByRole('button', { name: /notifications/i });
+    expect(screen.queryByRole('button', { name: /add user/i })).not.toBeInTheDocument();
   });
 
   it('shows the unread chat badge on the chat navigation item', async () => {

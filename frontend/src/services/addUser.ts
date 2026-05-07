@@ -63,6 +63,7 @@ export interface CsvParseRow {
   role: InviteUserRole;
   groupIds: number[];
   projectIds: number[];
+  skippedRoleLabel?: string;
 }
 
 export interface CsvParseResult {
@@ -366,7 +367,8 @@ export const addUserService = {
 
     const emailIndex = getHeaderIndex(headers, ['email', 'email address', 'email id', 'e mail', 'mail', 'user email', 'employee email']);
     const nameIndex = getHeaderIndex(headers, ['name', 'full name', 'user name', 'employee name']);
-    const roleIndex = getHeaderIndex(headers, ['role', 'access', 'access level', 'permission', 'permissions', 'user role', 'account type']);
+    const accessRoleIndex = getHeaderIndex(headers, ['access role', 'access_role', 'access', 'access level', 'permission', 'permissions', 'user role', 'account type']);
+    const roleIndex = accessRoleIndex >= 0 ? accessRoleIndex : getHeaderIndex(headers, ['role']);
     const groupIndex = getHeaderIndex(headers, ['groups', 'group', 'group ids', 'group id', 'team', 'teams', 'department', 'departments']);
     const projectIndex = getHeaderIndex(headers, ['projects', 'project', 'project ids', 'project id']);
 
@@ -385,8 +387,8 @@ export const addUserService = {
         return;
       }
 
-      if (rawRole && !role) {
-        errors.push(`Row ${index + 2}: unsupported role "${rawRole}". Use employee, manager, or admin.`);
+      if (accessRoleIndex >= 0 && rawRole && !role) {
+        errors.push(`Row ${index + 2}: unsupported access role "${rawRole}". Use employee, manager, or admin.`);
         return;
       }
 
@@ -396,6 +398,7 @@ export const addUserService = {
         role: role || 'employee',
         groupIds: mapOptionNamesToIds(parseMultiValueField(columns[groupIndex] || ''), groups),
         projectIds: mapOptionNamesToIds(parseMultiValueField(columns[projectIndex] || ''), projects),
+        skippedRoleLabel: rawRole && !role ? rawRole : undefined,
       });
     });
 
@@ -467,6 +470,11 @@ export const addUserService = {
 
     let invitedCount = 0;
     const failed = parsed.errors.map((message) => ({ email: 'csv', message }));
+    const ignoredRoleLabels = Array.from(new Set(
+      parsed.rows
+        .map((row) => row.skippedRoleLabel)
+        .filter((value): value is string => Boolean(value))
+    ));
     const deferredAssignments = new Set<string>();
     const rows: BulkInviteRowPayload[] = parsed.rows.map((row) => ({
       email: row.email,
@@ -512,6 +520,10 @@ export const addUserService = {
       deferredAssignments.add('CSV project IDs are stored for future provisioning, but project-access automation is not wired yet.');
     }
 
+    if (ignoredRoleLabels.length > 0) {
+      deferredAssignments.add(`Role values such as "${ignoredRoleLabels.slice(0, 3).join('", "')}" were treated as job titles, so those rows were imported with employee access.`);
+    }
+
 
     return {
       parsed,
@@ -525,9 +537,9 @@ export const addUserService = {
   
   downloadCsvTemplate() {
     const template = [
-      'email,name,role,groups,projects',
-      'alex@example.com,Alex Johnson,employee,"Operations|Night Shift","CareVance HRMS"',
-      'jordan@example.com,Jordan Lee,manager,"Operations","Implementation"',
+      'email,name,role,access_role,groups,projects',
+      'alex@example.com,Alex Johnson,Software Engineer,employee,"Operations|Night Shift","CareVance HRMS"',
+      'jordan@example.com,Jordan Lee,Team Lead,manager,"Operations","Implementation"',
     ].join('\n');
 
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });

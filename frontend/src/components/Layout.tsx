@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
-import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { webAppUrl } from '@/lib/runtimeConfig';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi } from '@/services/api';
@@ -50,9 +50,10 @@ export default function Layout() {
   const hasLoadedNotificationsRef = useRef(false);
   const isAdminView = hasAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
+  const isSuperAdminView = hasSuperAdminAccess(user);
   const canAccessAttendance = isAdminView || user?.settings?.attendance_monitoring !== false;
   const canAccessEditTime = isAdminView || user?.settings?.can_edit_time !== false;
-  const isDesktopShell = Boolean(window.desktopTracker);
+  const isDesktopShell = Boolean(window.desktopTracker) && !isSuperAdminView;
   const webAppBaseUrl = webAppUrl.replace(/\/+$/, '');
   const notificationSettings = (user?.settings?.notifications || {}) as Record<string, boolean | undefined>;
   const desktopPushEnabled = notificationSettings.desktop_push ?? true;
@@ -141,7 +142,9 @@ export default function Layout() {
 
   const primaryNavigation = useMemo(
     () => {
-      const navigationGroups = isDesktopShell
+      const navigationGroups = isSuperAdminView
+        ? topNavigation.filter((group) => group.superAdminOnly)
+        : isDesktopShell
         ? [
             {
               label: 'Timer',
@@ -182,6 +185,7 @@ export default function Layout() {
       return navigationGroups
         .filter((group) => {
           if (group.strictAdminOnly) return isStrictAdminView;
+          if (group.superAdminOnly) return isSuperAdminView;
           if (group.adminOnly) return isAdminView;
           return true;
         })
@@ -190,6 +194,7 @@ export default function Layout() {
             if (item.to === '/attendance' && !canAccessAttendance) return false;
             if (item.to === '/edit-time' && !canAccessEditTime) return false;
             if (item.strictAdminOnly) return isStrictAdminView;
+            if (item.superAdminOnly) return isSuperAdminView;
             if (item.adminOnly) return isAdminView;
             return true;
           });
@@ -243,15 +248,11 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, pendingApprovals, unreadChatMessages]
+    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, pendingApprovals, unreadChatMessages]
   );
 
   const handleLogout = async () => {
     await logout();
-  };
-
-  const handleOpenAddUser = () => {
-    navigate('/add-user');
   };
 
   const markDesktopUpdateSeen = () => {
@@ -574,8 +575,6 @@ export default function Layout() {
           }}
           onCloseMobileNavigation={() => setMobileNavigationOpen(false)}
           onOpenExternal={openWebDashboard}
-          onOpenAddUser={handleOpenAddUser}
-          showAddUserButton={isStrictAdminView}
           profileHasUnreadUpdate={hasUnreadDesktopUpdate}
           notificationPanel={
             <div ref={notificationsRef}>
