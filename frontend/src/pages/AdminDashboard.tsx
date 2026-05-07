@@ -295,9 +295,9 @@ const EmptyInline = ({ children }: { children: ReactNode }) => (
 
 const KpiCard = ({ label, value, hint, icon: Icon, tint, to }: { label: string; value: string | number; hint: string; icon: any; tint: string; to?: string }) => {
   const content = (
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <p className="text-xs text-slate-500">{label}</p>
+    <div className="flex h-full items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="min-h-8 text-xs leading-4 text-slate-500">{label}</p>
         <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
         <p className="mt-2 text-[11px] text-slate-500">{hint}</p>
       </div>
@@ -309,13 +309,13 @@ const KpiCard = ({ label, value, hint, icon: Icon, tint, to }: { label: string; 
 
   if (to) {
     return (
-      <Link to={to} className="block rounded-lg transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-        <Card className="p-4">{content}</Card>
+      <Link to={to} className="block h-full rounded-lg transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+        <Card className="h-full p-4">{content}</Card>
       </Link>
     );
   }
 
-  return <Card className="p-4">{content}</Card>;
+  return <Card className="h-full p-4">{content}</Card>;
 };
 
 const MiniLineChart = ({ points, values }: { points?: TrendPoint[]; values?: number[] }) => {
@@ -654,7 +654,7 @@ export default function AdminDashboard() {
     const isLate = Number(row.late_days || row.late_minutes || 0) > 0;
     return !isLate && (Number(row.present_days || 0) > 0 || hasActiveAttendance(row));
   }).length;
-  const onLeave = scopedLeavesInRange.length;
+  const onLeave = leaveUserIdsInRange.size;
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
   const dashboardSummary = data.summary as any;
@@ -767,21 +767,22 @@ export default function AdminDashboard() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 7);
 
-  const leaveSummary: Array<{ label: string; value: number; color: string; bgClass: string }> = Object.values(scopedLeavesInRange
-    .reduce((acc: Record<string, { label: string; value: number; color: string; bgClass: string }>, leave: any, index: number) => {
-      const key = String(leave.leave_type || 'full_day');
-      const label = key.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
-      const leaveStart = new Date(`${String(leave.start_date || selectedStartDate).slice(0, 10)}T00:00:00`);
-      const leaveEnd = new Date(`${String(leave.end_date || leave.start_date || selectedEndDate).slice(0, 10)}T00:00:00`);
-      const rangeStart = new Date(`${selectedStartDate}T00:00:00`);
-      const rangeEnd = new Date(`${selectedEndDate}T00:00:00`);
-      const clampedStart = new Date(Math.max(leaveStart.getTime(), rangeStart.getTime()));
-      const clampedEnd = new Date(Math.min(leaveEnd.getTime(), rangeEnd.getTime()));
-      const units = key === 'half_day' ? 0.5 : Math.max(1, Math.ceil((clampedEnd.getTime() - clampedStart.getTime()) / 86400000) + 1);
-      acc[key] = acc[key] || { label, value: 0, color: departmentPalette[index % departmentPalette.length], bgClass: ['bg-blue-600', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500'][index % 4] };
-      acc[key].value += units;
-      return acc;
-    }, {}));
+  const leaveSummaryRows: Array<{ label: string; value: number; helper: string; tone: string; bgClass: string }> = [
+    {
+      label: 'On Leave',
+      value: onLeave,
+      helper: `${totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0}% of total`,
+      tone: 'text-amber-600 bg-amber-50 border-amber-100',
+      bgClass: 'bg-amber-500',
+    },
+    {
+      label: 'Absent',
+      value: attendanceAbsentDays,
+      helper: `${totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0}% of total`,
+      tone: 'text-red-600 bg-red-50 border-red-100',
+      bgClass: 'bg-red-600',
+    },
+  ];
 
   const weeklyEntries = safeArray<any>(weeklyReport.time_entries || weeklyReport.entries)
     .filter((entry: any) => {
@@ -824,6 +825,7 @@ export default function AdminDashboard() {
   const payrollDeductions = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.deductions || record.tax || 0), 0);
   const presentPercent = totalEmployees ? Math.round((presentToday / totalEmployees) * 100) : 0;
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
+  const absentPercent = totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0;
   const latePercent = totalEmployees ? Math.round((lateToday / totalEmployees) * 100) : 0;
   const attendanceByEmployeeId = new Map(attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
   const workStatusRows = employees.map((employee) => {
@@ -858,6 +860,7 @@ export default function AdminDashboard() {
     { label: 'Not started', value: notWorkingCount, color: 'bg-slate-400' },
     { label: 'Late', value: lateToday, color: 'bg-rose-500' },
     { label: 'On leave', value: onLeave, color: 'bg-amber-500' },
+    { label: 'Absent', value: attendanceAbsentDays, color: 'bg-red-500' },
   ];
   const taskStatusCounts: Record<string, number> = data.tasks.reduce((acc: Record<string, number>, task: any) => {
     const status = String(task.status || 'todo').toLowerCase();
@@ -1299,10 +1302,11 @@ export default function AdminDashboard() {
         ) : null}
       </Card>
 
-      <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
+      <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-7">
         <KpiCard to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
         <KpiCard to="/attendance" label="Present" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
-        <KpiCard to="/approval-inbox" label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
+        <KpiCard to="/approval-inbox?leave_window=today" label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
+        <KpiCard to="/attendance" label="Absent" value={attendanceAbsentDays} hint={`${absentPercent}% of total`} icon={Calendar} tint="bg-red-50 text-red-600" />
         <KpiCard to="/attendance" label="Late" value={lateToday} hint={`${latePercent}% of total`} icon={Clock3} tint="bg-rose-50 text-rose-600" />
         <KpiCard to="/add-user" label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined in range" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
         <KpiCard to="/employees" label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited in range" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
@@ -1327,8 +1331,16 @@ export default function AdminDashboard() {
           </div>
         </Card>
         <Card id="leave-summary" className="scroll-mt-24 p-4">
-          <SectionTitle title="Leave Summary" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <DonutChart items={leaveSummary} />
+          <SectionTitle title="Leave & Absence Summary" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {leaveSummaryRows.map((item) => (
+              <div key={item.label} className={`rounded-xl border px-4 py-3 ${item.tone}`}>
+                <p className="text-xs font-medium text-slate-500">{item.label}</p>
+                <p className="mt-1 text-2xl font-semibold text-slate-900">{item.value}</p>
+                <p className="mt-1 text-xs text-slate-500">{item.helper}</p>
+              </div>
+            ))}
+          </div>
         </Card>
         <Card id="department-distribution" className="scroll-mt-24 p-4">
           <SectionTitle title="Department Distribution" action={<Link to="/employees/teams" className="text-xs font-medium text-blue-600">All Departments</Link>} />
@@ -1883,9 +1895,9 @@ export default function AdminDashboard() {
           </Card>
           <Card id="leave-balance" className="scroll-mt-24 p-4">
             <SectionTitle title="Leave Balance" action={<Link to="/approval-inbox" className="text-xs font-medium text-blue-600">View All</Link>} />
-            {leaveSummary.length ? (
+            {leaveSummaryRows.length ? (
               <div className="space-y-4">
-                {leaveSummary.map((item) => (
+                {leaveSummaryRows.map((item) => (
                   <div key={item.label}>
                     <div className="mb-1 flex justify-between text-xs"><span>{item.label}</span><span className="text-slate-500">{item.value} used</span></div>
                     <div className="h-1.5 rounded-full bg-slate-100"><span className={`block h-1.5 rounded-full ${item.bgClass}`} style={{ width: `${Math.min(100, item.value * 10)}%` }} /></div>

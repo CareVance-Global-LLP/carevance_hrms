@@ -1,18 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
-import { productivityRuleApi, settingsApi } from '@/services/api';
+import { productivityRuleApi, settingsApi, supportApi } from '@/services/api';
 import type { ProductivityRule as ProductivityRuleType } from '@/types';
-import { User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet } from 'lucide-react';
+import { User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
 import DesktopBrowserTrackingPanel from '@/components/desktop/DesktopBrowserTrackingPanel';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
-import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
+import { FieldLabel, SelectInput, TextInput, TextareaInput, ToggleInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
+
+const helpIssueCategories = [
+  { value: 'bug', label: 'Bug' },
+  { value: 'ui', label: 'UI issue' },
+  { value: 'performance', label: 'Performance' },
+  { value: 'billing', label: 'Billing' },
+  { value: 'account', label: 'Account access' },
+  { value: 'other', label: 'Other' },
+] as const;
 
 const toTimeInputValue = (value: unknown): string => {
   if (typeof value !== 'string' || !value.trim()) {
@@ -35,6 +44,7 @@ const toTimeInputValue = (value: unknown): string => {
 export default function SettingsPage() {
   const { user, organization, updateUser, updateOrganization } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -81,6 +91,12 @@ export default function SettingsPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [helpName, setHelpName] = useState(user?.name || '');
+  const [helpEmail, setHelpEmail] = useState(user?.email || '');
+  const [helpIssueCategory, setHelpIssueCategory] = useState<(typeof helpIssueCategories)[number]['value']>('bug');
+  const [helpSummary, setHelpSummary] = useState('');
+  const [helpDescription, setHelpDescription] = useState('');
+  const [isSubmittingHelp, setIsSubmittingHelp] = useState(false);
 
   const isEmployee = isEmployeeUser(user);
   const isOrgEditable = canManageOrg && hasAdminAccess(user) && !isEmployee;
@@ -92,6 +108,7 @@ export default function SettingsPage() {
     { id: 'organization', name: 'Organization', icon: Building },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
+    { id: 'help', name: 'Help', icon: LifeBuoy },
     ...(hasAdminAccess(user) ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
     ...(hasAdminAccess(user) ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
     { id: 'billing', name: 'Billing', icon: CreditCard },
@@ -102,6 +119,8 @@ export default function SettingsPage() {
   const timezoneOptions = useMemo(() => getSupportedTimezones(), []);
 
   useEffect(() => {
+    const tabFromQuery = new URLSearchParams(location.search).get('tab');
+
     if (location.pathname.endsWith('/integrations')) {
       setActiveTab('integrations');
       return;
@@ -110,15 +129,23 @@ export default function SettingsPage() {
       setActiveTab('custom-fields');
       return;
     }
+
+    if (tabFromQuery === 'help') {
+      setActiveTab('help');
+      return;
+    }
+
     if (activeTab === 'integrations' || activeTab === 'custom-fields') {
       setActiveTab('profile');
     }
-  }, [location.pathname]);
+  }, [activeTab, location.pathname, location.search]);
 
   useEffect(() => {
     setProfileName(user?.name || '');
     setProfileEmail(user?.email || '');
     setProfileAvatar(user?.avatar || '');
+    setHelpName(user?.name || '');
+    setHelpEmail(user?.email || '');
   }, [user]);
 
   useEffect(() => {
@@ -193,6 +220,51 @@ export default function SettingsPage() {
 
     load();
   }, [isEmployee, user]);
+
+  const handleTabChange = (nextTab: string) => {
+    setActiveTab(nextTab);
+    if (location.search) {
+      navigate(location.pathname, { replace: true });
+    }
+  };
+
+  const submitHelpTicket = async () => {
+    setError('');
+    setMessage('');
+
+    const summary = helpSummary.trim();
+    const description = helpDescription.trim();
+    const email = helpEmail.trim();
+
+    if (!email || !summary || !description) {
+      setError('Email, summary, and description are required to raise a support ticket.');
+      return;
+    }
+
+    setIsSubmittingHelp(true);
+    try {
+      const currentPath = `${location.pathname}${location.search}`;
+      const response = await supportApi.submitBugReport({
+        name: helpName.trim() || undefined,
+        email,
+        issue_category: helpIssueCategory,
+        summary,
+        description,
+        current_path: currentPath,
+      });
+
+      setHelpSummary('');
+      setHelpDescription('');
+      if (!user) {
+        setHelpName('');
+      }
+      setMessage(response.data.message || 'Support ticket raised successfully.');
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Unable to raise support ticket right now.');
+    } finally {
+      setIsSubmittingHelp(false);
+    }
+  };
 
   const saveProfile = async () => {
     setError('');
@@ -364,7 +436,7 @@ export default function SettingsPage() {
             {tabs.map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`w-full flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition ${activeTab === tab.id ? 'bg-sky-50 text-sky-700 shadow-sm' : 'text-gray-600 hover:bg-slate-50'}`}
               >
                 <tab.icon className="h-5 w-5" />
@@ -505,6 +577,58 @@ export default function SettingsPage() {
               <div><FieldLabel>New Password</FieldLabel><TextInput type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></div>
               <div><FieldLabel>Confirm Password</FieldLabel><TextInput type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></div>
               <Button onClick={updatePassword}>Update Password</Button>
+            </div>
+          )}
+
+          {activeTab === 'help' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Help & Support</h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Raise a support ticket and our team will receive it directly on the support inbox.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <FieldLabel>Name</FieldLabel>
+                  <TextInput type="text" value={helpName} onChange={(event) => setHelpName(event.target.value)} placeholder="Your name" />
+                </div>
+                <div>
+                  <FieldLabel>Email</FieldLabel>
+                  <TextInput type="email" value={helpEmail} onChange={(event) => setHelpEmail(event.target.value)} placeholder="you@company.com" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <FieldLabel>Issue Category</FieldLabel>
+                  <SelectInput value={helpIssueCategory} onChange={(event) => setHelpIssueCategory(event.target.value as (typeof helpIssueCategories)[number]['value'])}>
+                    {helpIssueCategories.map((category) => (
+                      <option key={category.value} value={category.value}>{category.label}</option>
+                    ))}
+                  </SelectInput>
+                </div>
+                <div>
+                  <FieldLabel>Summary</FieldLabel>
+                  <TextInput type="text" value={helpSummary} onChange={(event) => setHelpSummary(event.target.value)} placeholder="Short summary of your issue" maxLength={255} />
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>Description</FieldLabel>
+                <TextareaInput
+                  value={helpDescription}
+                  onChange={(event) => setHelpDescription(event.target.value)}
+                  placeholder="Describe the issue in detail so we can assist faster."
+                  rows={5}
+                  maxLength={4000}
+                />
+              </div>
+
+              <Button onClick={submitHelpTicket} disabled={isSubmittingHelp}>
+                {isSubmittingHelp ? 'Raising Ticket...' : 'Raise Ticket'}
+              </Button>
             </div>
           )}
 

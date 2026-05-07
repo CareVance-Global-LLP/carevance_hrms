@@ -111,8 +111,8 @@ Recommended local frontend env:
 VITE_API_URL=http://localhost:8000/api
 VITE_WEB_APP_URL=http://localhost:5173
 VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
-VITE_SALES_EMAIL=sales@carevance.example
-VITE_SUPPORT_EMAIL=support@carevance.example
+VITE_SALES_EMAIL=aayushborwal.carevanceglobal@gmail.com
+VITE_SUPPORT_EMAIL=mavliribaz.carevanceglobal@gmail.com
 ```
 
 ### 3. Desktop Tracker

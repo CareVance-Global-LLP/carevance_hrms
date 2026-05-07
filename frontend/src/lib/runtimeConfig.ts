@@ -103,11 +103,11 @@ export const desktopDownloadLabel =
 
 export const salesContactEmail =
   resolveConfigValue(runtimeConfig.VITE_SALES_EMAIL, import.meta.env.VITE_SALES_EMAIL) ||
-  'sales@carevance.example';
+  'aayushborwal.carevanceglobal@gmail.com';
 
 export const supportContactEmail =
   resolveConfigValue(runtimeConfig.VITE_SUPPORT_EMAIL, import.meta.env.VITE_SUPPORT_EMAIL) ||
-  'support@carevance.example';
+  'mavliribaz.carevanceglobal@gmail.com';
 
 export const gaMeasurementId = resolveConfigValue(
   runtimeConfig.VITE_GA_MEASUREMENT_ID,

@@ -698,7 +698,13 @@ export const attendanceHolidayApi = {
 };
 
 export const leaveApi = {
-  list: (params?: { status?: 'pending' | 'approved' | 'rejected' | 'revoked'; user_id?: number; start_date?: string; end_date?: string }) =>
+  list: (params?: {
+    status?: 'pending' | 'approved' | 'rejected' | 'revoked';
+    user_id?: number;
+    start_date?: string;
+    end_date?: string;
+    limit?: number;
+  }) =>
     api.get<{
       data: Array<{
         id: number;

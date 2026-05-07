@@ -29,6 +29,7 @@ class LeaveRequestController extends Controller
             'user_id' => 'nullable|integer',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
+            'limit' => 'nullable|integer|min:1|max:500',
         ]);
 
         $currentUser = $request->user();
@@ -76,8 +77,10 @@ class LeaveRequestController extends Controller
                 ->when($endDate, fn ($leaveQuery) => $leaveQuery->whereDate('start_date', '<=', $endDate->toDateString()));
         }
 
+        $limit = (int) $request->input('limit', 10);
+
         return response()->json([
-            'data' => $query->limit(10)->get()->map(fn (LeaveRequest $leave) => $this->withApprovalDestination($leave)),
+            'data' => $query->limit($limit)->get()->map(fn (LeaveRequest $leave) => $this->withApprovalDestination($leave)),
         ]);
     }
 

@@ -17,6 +17,7 @@ import { topNavigation } from '@/navigation/dashboardNavigation';
 import {
   CalendarClock,
   Clock,
+  LifeBuoy,
   LayoutDashboard,
   LogOut,
   MessageSquare,
@@ -427,9 +428,10 @@ export default function Layout() {
 
   const isRouteActive = (to?: string) => {
     if (!to) return false;
-    if (to === '/settings') return location.pathname === to;
-    if (to === '/reports' || to === '/analytics') return location.pathname === to;
-    return location.pathname === to || (to !== '/dashboard' && location.pathname.startsWith(`${to}/`));
+    const normalizedTo = String(to).split('?')[0] || to;
+    if (normalizedTo === '/settings') return location.pathname === normalizedTo;
+    if (normalizedTo === '/reports' || normalizedTo === '/analytics') return location.pathname === normalizedTo;
+    return location.pathname === normalizedTo || (normalizedTo !== '/dashboard' && location.pathname.startsWith(`${normalizedTo}/`));
   };
 
   const getBestMatchedItemTo = (items: any[] = []) =>
@@ -524,6 +526,9 @@ export default function Layout() {
               <div className="mt-2 rounded-lg border border-slate-100 bg-white p-1 shadow-sm">
                 <Link to="/settings" onClick={() => setProfileOpen(false)} className="block rounded-md px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
                   Settings
+                </Link>
+                <Link to="/settings?tab=help" onClick={() => setProfileOpen(false)} className="block rounded-md px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+                  Help
                 </Link>
                 <button type="button" onClick={handleLogout} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">
                   Sign Out
@@ -656,6 +661,14 @@ export default function Layout() {
                     >
                       <Settings className="h-4 w-4 text-slate-400" />
                       Settings
+                    </Link>
+                    <Link
+                      to="/settings?tab=help"
+                      onClick={() => setProfileOpen(false)}
+                      className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+                    >
+                      <LifeBuoy className="h-4 w-4 text-slate-400" />
+                      Help
                     </Link>
                     {isDesktopShell ? (
                       <button
