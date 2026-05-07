@@ -580,7 +580,7 @@ export default function ApprovalInbox() {
             <h2 className="text-lg font-semibold text-slate-950">Leave Intelligence</h2>
             <p className="text-sm text-slate-500">Today and recent trend analytics to help admins plan capacity by team.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {[
               { id: 'today', label: 'Today' },
               { id: '2d', label: 'Last 2 days' },
@@ -592,8 +592,10 @@ export default function ApprovalInbox() {
                 key={preset.id}
                 type="button"
                 onClick={() => setAnalyticsPreset(preset.id as AnalyticsPreset)}
-                className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
-                  analyticsPreset === preset.id ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${
+                  analyticsPreset === preset.id
+                    ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
                 }`}
               >
                 {preset.label}
@@ -614,7 +616,7 @@ export default function ApprovalInbox() {
                     setAnalyticsPreset('custom');
                     setCustomStartDate(event.target.value);
                   }}
-                  className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                  className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
                 />
               </label>
               <label className="text-xs font-medium text-slate-600">
@@ -626,19 +628,19 @@ export default function ApprovalInbox() {
                     setAnalyticsPreset('custom');
                     setCustomEndDate(event.target.value);
                   }}
-                  className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                  className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
                 />
               </label>
             </>
           ) : null}
 
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex flex-wrap items-end gap-2">
             <label className="text-xs font-medium text-slate-600">
               Department
               <select
                 value={analyticsDepartment}
                 onChange={(event) => setAnalyticsDepartment(event.target.value)}
-                className="mt-1 block min-w-[170px] rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                className="mt-1 h-9 min-w-[190px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none"
               >
                 {departmentOptions.map((department) => (
                   <option key={department} value={department}>{department}</option>
@@ -648,14 +650,22 @@ export default function ApprovalInbox() {
             <button
               type="button"
               onClick={() => setAnalyticsSource('approved_pending')}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${analyticsSource === 'approved_pending' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}
+              className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${
+                analyticsSource === 'approved_pending'
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+              }`}
             >
               Approved + Pending
             </button>
             <button
               type="button"
               onClick={() => setAnalyticsSource('approved')}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold ${analyticsSource === 'approved' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}
+              className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${
+                analyticsSource === 'approved'
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+              }`}
             >
               Approved only
             </button>
