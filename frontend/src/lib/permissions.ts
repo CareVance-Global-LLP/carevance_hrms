@@ -12,6 +12,9 @@ type ApprovalActor = Pick<User, 'id'> & {
 export const hasStrictAdminAccess = (user: User | null | undefined): boolean =>
   user?.role === 'admin';
 
+export const hasSuperAdminAccess = (_user: User | null | undefined): boolean =>
+  false;
+
 export const canReviewApprovalRequest = (
   reviewer: ApprovalActor | null | undefined,
   requester: ApprovalActor | null | undefined

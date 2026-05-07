@@ -32,6 +32,7 @@ export type NavLinkItem = {
   unreadCount?: number;
   adminOnly?: boolean;
   strictAdminOnly?: boolean;
+  superAdminOnly?: boolean;
   external?: boolean;
   externalPath?: string;
 };
@@ -43,6 +44,7 @@ export type NavGroup = {
   unreadCount?: number;
   adminOnly?: boolean;
   strictAdminOnly?: boolean;
+  superAdminOnly?: boolean;
   items?: NavLinkItem[];
   external?: boolean;
   externalPath?: string;
