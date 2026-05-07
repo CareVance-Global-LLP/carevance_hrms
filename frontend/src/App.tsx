@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
 
 const lazyWithChunkRetry = <T extends { default: React.ComponentType<any> }>(
   importer: () => Promise<T>
@@ -61,6 +61,8 @@ const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/Emp
 const EmployeeDetailWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeDetailWorkspace'));
 const AddUserPage = lazyWithChunkRetry(() => import('@/pages/AddUserPage'));
 const BillingSettingsPage = lazyWithChunkRetry(() => import('@/pages/BillingSettingsPage'));
+const SuperAdminCompanies = lazyWithChunkRetry(() => import('@/pages/super-admin/Companies'));
+const SuperAdminCompanyDetail = lazyWithChunkRetry(() => import('@/pages/super-admin/CompanyDetail'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
 const isChunkLoadFailure = (error: unknown) => {
@@ -146,7 +148,7 @@ function PayrollReturnBridge() {
 }
 
 function HomeRoute() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   if (window.desktopTracker) {
     if (isLoading) {
@@ -157,7 +159,11 @@ function HomeRoute() {
       );
     }
 
-    return <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />;
+    if (!isAuthenticated) {
+      return <Navigate to="/login" replace />;
+    }
+
+    return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin/companies' : '/dashboard'} replace />;
   }
 
   return <LandingPage />;
@@ -182,7 +188,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -193,7 +199,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin/companies' : '/dashboard'} replace />;
   }
 
   return <>{children}</>;
@@ -217,14 +223,53 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function StrictAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!hasStrictAdminAccess(user)) {
+    return <Navigate to="/employees" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function SuperAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!hasSuperAdminAccess(user)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function App() {
   const { user } = useAuth();
-  const dashboardElement = window.desktopTracker ? <DesktopTimerDashboard /> : <Dashboard />;
-  const effectiveDashboardElement = window.desktopTracker
-    ? dashboardElement
-    : hasAdminAccess(user)
-      ? <AdminDashboard />
-      : <Dashboard />;
+  const isSuperAdmin = hasSuperAdminAccess(user);
+  const dashboardElement = window.desktopTracker && !isSuperAdmin ? <DesktopTimerDashboard /> : <Dashboard />;
+  const effectiveDashboardElement = isSuperAdmin
+    ? <SuperAdminCompanies />
+    : window.desktopTracker
+      ? dashboardElement
+      : hasAdminAccess(user)
+        ? <AdminDashboard />
+        : <Dashboard />;
 
   return (
     <Suspense fallback={
@@ -296,7 +341,7 @@ function App() {
             }
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
-            <Route path="time-tracker" element={<DesktopTimerDashboard />} />
+            <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin/companies" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<Projects />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />
@@ -338,13 +383,16 @@ function App() {
             <Route path="employees/invitations" element={<AdminRoute><EmployeeManagementWorkspace mode="invitations" /></AdminRoute>} />
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />
             <Route path="audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
-            <Route path="add-user" element={<AdminRoute><AddUserPage /></AdminRoute>} />
-            <Route path="users/add-user" element={<AdminRoute><AddUserPage /></AdminRoute>} />
+            <Route path="add-user" element={<StrictAdminRoute><AddUserPage /></StrictAdminRoute>} />
+            <Route path="users/add-user" element={<StrictAdminRoute><AddUserPage /></StrictAdminRoute>} />
             <Route path="notifications" element={<NotificationsCenter />} />
             <Route path="settings" element={<Settings />} />
             <Route path="settings/integrations" element={<Settings />} />
             <Route path="settings/custom-fields" element={<Settings />} />
             <Route path="settings/billing" element={<AdminRoute><BillingSettingsPage /></AdminRoute>} />
+            <Route path="super-admin" element={<SuperAdminRoute><SuperAdminCompanies /></SuperAdminRoute>} />
+            <Route path="super-admin/companies" element={<SuperAdminRoute><SuperAdminCompanies /></SuperAdminRoute>} />
+            <Route path="super-admin/companies/:companyId" element={<SuperAdminRoute><SuperAdminCompanyDetail /></SuperAdminRoute>} />
             <Route path="legacy/reports" element={<AdminRoute><Reports /></AdminRoute>} />
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
             <Route path="legacy/user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />

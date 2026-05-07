@@ -8,7 +8,7 @@ import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
-import { KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, Users } from 'lucide-react';
+import { KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 
@@ -451,10 +451,18 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
   return (
     <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 text-slate-900">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{pageTitle.title}</h1>
-        <p className="mt-3 text-sm font-medium text-slate-900">{pageTitle.eyebrow}</p>
-        <p className="mt-1 max-w-4xl text-xs text-slate-500">{pageTitle.description}</p>
+      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{pageTitle.title}</h1>
+          <p className="mt-3 text-sm font-medium text-slate-900">{pageTitle.eyebrow}</p>
+          <p className="mt-1 max-w-4xl text-xs text-slate-500">{pageTitle.description}</p>
+        </div>
+        {mode === 'employees' && isStrictAdmin ? (
+          <Link to="/add-user" className="inline-flex h-10 shrink-0 items-center gap-2 self-start rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 md:mr-6 md:mt-3">
+            <UserPlus className="h-4 w-4" />
+            Add Employee
+          </Link>
+        ) : null}
       </header>
 
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}

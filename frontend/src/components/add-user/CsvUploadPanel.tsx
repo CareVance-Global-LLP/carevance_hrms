@@ -29,7 +29,7 @@ export default function CsvUploadPanel({
             {file ? 'Replace import file' : 'Upload CSV or XLSX'}
           </p>
           <p className="mt-2 text-sm text-slate-500">
-            Expected columns: email, name, role, groups, projects. Role is read directly from the file.
+            Expected columns: email, name, role, groups, projects. Job titles in role are imported as employees; use access_role only when you need employee, manager, or admin.
           </p>
           <p className="mt-2 text-xs font-medium uppercase tracking-[0.18em] text-sky-700">
             Supported formats: .csv, .xlsx
@@ -63,7 +63,7 @@ export default function CsvUploadPanel({
           Parsed {summary.parsedCount} row{summary.parsedCount === 1 ? '' : 's'}, added {summary.successCount}, errors {summary.errorCount}.
         </div>
       ) : (
-        <p className="text-xs text-slate-500">Large CSV and XLSX uploads are sent in batches. Group names or IDs in the `groups` column apply per row, and groups selected above are added as defaults.</p>
+        <p className="text-xs text-slate-500">Large CSV and XLSX uploads are sent in batches. Group names or IDs in the groups column apply per row. Separate multiple groups or projects with | or ;.</p>
       )}
     </div>
   );

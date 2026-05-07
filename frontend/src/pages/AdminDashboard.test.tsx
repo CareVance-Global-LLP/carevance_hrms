@@ -179,7 +179,7 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect((await screen.findAllByText('Alex Johnson')).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Universal dashboard search')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /add user/i })).toHaveAttribute('href', '/add-user');
+    expect(screen.queryByRole('link', { name: /add user/i })).not.toBeInTheDocument();
     expect(screen.getByText('Date Filter')).toBeInTheDocument();
     expect(screen.getByText('Dashboard Scope')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Overall' })).toBeInTheDocument();

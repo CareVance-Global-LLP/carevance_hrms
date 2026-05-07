@@ -297,7 +297,9 @@ export default function AddUserDrawer({
         message:
           result.failed.length > 0
             ? `Imported ${result.invitedCount} row(s) with ${result.failed.length} issue(s).`
-            : `Imported ${result.invitedCount} row(s) successfully.`,
+            : result.deferredAssignments.length > 0
+              ? `Imported ${result.invitedCount} row(s) successfully. ${result.deferredAssignments.join(' ')}`
+              : `Imported ${result.invitedCount} row(s) successfully.`,
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['admin-dashboard-users'] }),
@@ -500,6 +502,7 @@ export default function AddUserDrawer({
               </div>
             </div>
 
+            {activeTab !== 'csv' ? (
             <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
               <input
                 type="checkbox"
@@ -512,6 +515,7 @@ export default function AddUserDrawer({
                 <span className="mt-1 block text-slate-500">Saved locally in this browser so repeated onboarding stays faster.</span>
               </span>
             </label>
+            ) : null}
 
             {activeTab === 'link' ? (
               <InviteLinkPanel
