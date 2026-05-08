@@ -11,6 +11,7 @@ use App\Models\Group;
 use App\Models\User;
 use App\Services\Authorization\GroupAccessService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -30,10 +31,9 @@ class ReportGroupController extends Controller
             return response()->json(['data' => []]);
         }
 
-        $groups = $this->groupAccessService
-            ->visibleGroupsQuery($currentUser)
-            ->with(['users:id,name,email,role'])
-            ->withCount('tasks')
+        $groups = $this->decorateGroupQuery(
+            $this->groupAccessService->visibleGroupsQuery($currentUser)
+        )
             ->orderBy('name')
             ->get();
 
@@ -68,7 +68,7 @@ class ReportGroupController extends Controller
         $group->users()->sync($userIds);
         $this->syncEmployeesForGroup((int) $currentUser->organization_id, (int) $group->id);
 
-        return $this->createdResponse($group->load(['users:id,name,email,role'])->loadCount('tasks')->toArray(), 'Group created.');
+        return $this->createdResponse($this->serializeGroup($group), 'Group created.');
     }
 
     public function show(Request $request, int $id)
@@ -78,9 +78,9 @@ class ReportGroupController extends Controller
             return response()->json(['message' => 'Organization is required'], 422);
         }
 
-        $group = Group::query()
-            ->with(['users:id,name,email,role'])
-            ->withCount('tasks')
+        $group = $this->decorateGroupQuery(
+            Group::query()
+        )
             ->where('organization_id', $currentUser->organization_id)
             ->find($id);
 
@@ -139,7 +139,7 @@ class ReportGroupController extends Controller
             $this->syncEmployeesForGroup((int) $currentUser->organization_id, (int) $group->id);
         }
 
-        return $this->updatedResponse($group->fresh()->load(['users:id,name,email,role'])->loadCount('tasks')->toArray(), 'Group updated.');
+        return $this->updatedResponse($this->serializeGroup($group->fresh()), 'Group updated.');
     }
 
     public function destroy(Request $request, int $id)
@@ -277,5 +277,32 @@ class ReportGroupController extends Controller
                 ]
             );
         }
+    }
+
+    private function decorateGroupQuery($query)
+    {
+        $query->with(['users:id,name,email,role']);
+
+        if ($this->supportsTaskCounts()) {
+            $query->withCount('tasks');
+        }
+
+        return $query;
+    }
+
+    private function serializeGroup(Group $group): array
+    {
+        $loaded = $group->load(['users:id,name,email,role']);
+
+        if ($this->supportsTaskCounts()) {
+            $loaded->loadCount('tasks');
+        }
+
+        return $loaded->toArray();
+    }
+
+    private function supportsTaskCounts(): bool
+    {
+        return Schema::hasTable('tasks') && Schema::hasColumn('tasks', 'group_id');
     }
 }

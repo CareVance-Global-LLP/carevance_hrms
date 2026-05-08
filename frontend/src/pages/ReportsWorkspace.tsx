@@ -508,6 +508,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     [user?.role, usersQuery.data]
   );
   const groups = groupsQuery.data || [];
+  const canUseGroupFilters = groupsQuery.isSuccess;
   const effectiveSelectedUserId = useMemo<number | ''>(() => {
     if (selectedUserId === '') {
       return '';
@@ -517,18 +518,27 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       ? Number(selectedUserId)
       : '';
   }, [selectedUserId, users]);
+  const effectiveSelectedGroupId = useMemo<number | ''>(() => {
+    if (!canUseGroupFilters || selectedGroupId === '') {
+      return '';
+    }
+
+    return groups.some((group: any) => Number(group.id) === Number(selectedGroupId))
+      ? Number(selectedGroupId)
+      : '';
+  }, [canUseGroupFilters, groups, selectedGroupId]);
 
   useEffect(() => {
     setTimelinePage(1);
     setHoursPage(1);
-  }, [effectiveSelectedUserId, endDate, mode, selectedGroupId, startDate]);
+  }, [effectiveSelectedGroupId, effectiveSelectedUserId, endDate, mode, startDate]);
 
   const selectedEmployee = useMemo(
     () => users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId)) || null,
     [effectiveSelectedUserId, users]
   );
   const projectsEmployeeNameSearch = mode === 'projects-tasks' && selectedEmployee ? String(selectedEmployee.name || '').trim() : '';
-  const selectedGroup = selectedGroupId ? groups.find((group: any) => Number(group.id) === Number(selectedGroupId)) : null;
+  const selectedGroup = effectiveSelectedGroupId ? groups.find((group: any) => Number(group.id) === Number(effectiveSelectedGroupId)) : null;
   const scopedUserIds = useMemo(() => {
     let ids = users.map((user: any) => Number(user.id));
 
@@ -555,9 +565,20 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     }
   }, [selectedUserId, users, usersQuery.isSuccess]);
 
+  useEffect(() => {
+    if (!canUseGroupFilters || selectedGroupId === '') {
+      return;
+    }
+
+    const hasSelectedGroup = groups.some((group: any) => Number(group.id) === Number(selectedGroupId));
+    if (!hasSelectedGroup) {
+      setSelectedGroupId('');
+    }
+  }, [canUseGroupFilters, groups, selectedGroupId]);
+
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, selectedGroupId, timelinePage, hoursPage],
-    enabled: isHubMode || (usersQuery.isSuccess && groupsQuery.isSuccess),
+    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, effectiveSelectedGroupId, timelinePage, hoursPage],
+    enabled: isHubMode || (usersQuery.isSuccess && (groupsQuery.isSuccess || groupsQuery.isError)),
     placeholderData: (previousData, previousQuery) => (
       shouldReuseReportPlaceholderData(previousQuery?.queryKey, mode)
         ? previousData
@@ -584,7 +605,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           start_date: startDate,
           end_date: endDate,
           user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
-          group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
+          group_ids: effectiveSelectedGroupId ? [Number(effectiveSelectedGroupId)] : undefined,
           page: mode === 'hours-tracked' ? hoursPage : undefined,
           per_page: mode === 'hours-tracked' ? 25 : undefined,
         });
@@ -606,7 +627,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       if (mode === 'timeline') {
         const response = await activityApi.getAll({
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
-          group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
+          group_ids: effectiveSelectedGroupId ? [Number(effectiveSelectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
           processed: true,
@@ -621,7 +642,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           start_date: startDate,
           end_date: endDate,
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
-          group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
+          group_ids: effectiveSelectedGroupId ? [Number(effectiveSelectedGroupId)] : undefined,
         });
         return response.data;
       }
@@ -630,8 +651,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     },
   });
 
-  const isLoading = usersQuery.isLoading || groupsQuery.isLoading || (dataQuery.isLoading && !dataQuery.data);
-  const isError = usersQuery.isError || groupsQuery.isError || dataQuery.isError;
+  const isLoading = usersQuery.isLoading || (groupsQuery.isLoading && !groupsQuery.isError) || (dataQuery.isLoading && !dataQuery.data);
+  const isError = usersQuery.isError || dataQuery.isError;
   const pageTitle = modeCopy[mode];
 
   const attendanceRows = (dataQuery.data as any)?.data || [];
@@ -1109,11 +1130,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     return (
       <PageErrorState
         message={
-          (dataQuery.error as any)?.response?.data?.message ||
-          (usersQuery.error as any)?.response?.data?.message ||
-          (groupsQuery.error as any)?.response?.data?.message ||
-          'Failed to load report data.'
-        }
+            (dataQuery.error as any)?.response?.data?.message ||
+            (usersQuery.error as any)?.response?.data?.message ||
+            'Failed to load report data.'
+          }
         onRetry={() => {
           void usersQuery.refetch();
           void groupsQuery.refetch();

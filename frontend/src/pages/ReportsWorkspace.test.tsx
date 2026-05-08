@@ -196,6 +196,22 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(screen.getByText('Attendance Exceptions')).toBeInTheDocument();
   });
 
+  it('keeps hours tracked available when the optional group filter request fails', async () => {
+    mocks.groupsListMock.mockRejectedValueOnce({
+      response: {
+        data: {
+          message: 'Server error',
+        },
+      },
+    });
+
+    renderWithProviders(<ReportsWorkspace mode="hours-tracked" />);
+
+    expect(await screen.findByText('Employee Hours')).toBeInTheDocument();
+    expect(screen.getByText('Tracked Time')).toBeInTheDocument();
+    expect(mocks.overallMock).toHaveBeenCalled();
+  });
+
   it('renders canonical website and software labels from backend activity fields', async () => {
     mocks.activityGetAllPagesMock.mockResolvedValue([
       {
