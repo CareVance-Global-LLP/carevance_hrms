@@ -31,8 +31,11 @@ class ReportGroupController extends Controller
             return response()->json(['data' => []]);
         }
 
+        $simple = $request->boolean('simple');
+
         $groups = $this->decorateGroupQuery(
-            $this->groupAccessService->visibleGroupsQuery($currentUser)
+            $this->groupAccessService->visibleGroupsQuery($currentUser),
+            $simple
         )
             ->orderBy('name')
             ->get();
@@ -79,7 +82,8 @@ class ReportGroupController extends Controller
         }
 
         $group = $this->decorateGroupQuery(
-            Group::query()
+            Group::query(),
+            $request->boolean('simple')
         )
             ->where('organization_id', $currentUser->organization_id)
             ->find($id);
@@ -279,11 +283,15 @@ class ReportGroupController extends Controller
         }
     }
 
-    private function decorateGroupQuery($query)
+    private function decorateGroupQuery($query, bool $simple = false)
     {
-        $query->with(['users:id,name,email,role']);
+        $query->with([
+            'users' => function ($userQuery) use ($simple) {
+                $userQuery->select($simple ? ['users.id'] : ['users.id', 'users.name', 'users.email', 'users.role']);
+            },
+        ]);
 
-        if ($this->supportsTaskCounts()) {
+        if (! $simple && $this->supportsTaskCounts()) {
             $query->withCount('tasks');
         }
 

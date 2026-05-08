@@ -196,13 +196,14 @@ export const inviteApi = {
 // User API
 export const userApi = {
   getAll: (params?: { 
-    role?: string; 
-    is_active?: boolean; 
-    period?: 'today' | 'week' | 'all';
-    country?: string;
-    timezone?: string;
-    start_date?: string;
-    end_date?: string;
+      role?: string; 
+      is_active?: boolean; 
+      period?: 'today' | 'week' | 'all';
+      simple?: boolean | number;
+      country?: string;
+      timezone?: string;
+      start_date?: string;
+      end_date?: string;
   }) => 
     api.get<User[]>('/users', { params }),
   
@@ -1065,15 +1066,15 @@ export const notificationApi = {
 };
 
 export const reportGroupApi = {
-  list: () =>
+  list: (params?: { simple?: boolean | number }) =>
     api.get<{
       data: Array<{
         id: number;
         organization_id: number;
         name: string;
-        users: Array<{ id: number; name: string; email: string; role: string }>;
+        users: Array<{ id: number; name?: string; email?: string; role?: string }>;
       }>;
-    }>('/report-groups'),
+    }>('/report-groups', { params }),
 
   create: (data: { name: string; user_ids?: number[] }) =>
     api.post('/report-groups', data),

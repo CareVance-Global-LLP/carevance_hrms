@@ -491,7 +491,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     queryKey: ['report-workspace-users'],
     enabled: !isHubMode,
     queryFn: async () => {
-      const response = await userApi.getAll({ period: 'all' });
+      const response = await userApi.getAll({ simple: 1 });
       return response.data || [];
     },
   });
@@ -499,7 +499,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     queryKey: ['report-workspace-groups'],
     enabled: !isHubMode,
     queryFn: async () => {
-      const response = await reportGroupApi.list();
+      const response = await reportGroupApi.list({ simple: 1 });
       return response.data?.data || [];
     },
   });

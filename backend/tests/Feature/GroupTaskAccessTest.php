@@ -375,6 +375,44 @@ class GroupTaskAccessTest extends TestCase
         $this->assertSame([$sameGroupEmployee->id], $returnedIds);
     }
 
+    public function test_users_index_supports_lightweight_simple_payload(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-simple-users']);
+
+        $admin = $this->createUser($organization, 'Admin', 'admin-simple@carevance.test', 'admin');
+        $employee = $this->createUser($organization, 'Simple Employee', 'employee-simple@carevance.test', 'employee');
+        $group = $this->createGroup($organization, 'Operations');
+        $employee->groups()->sync([$group->id]);
+
+        $response = $this->getJson('/api/users?simple=1', $this->apiHeadersFor($admin))
+            ->assertOk();
+
+        $employeeRow = collect($response->json())->firstWhere('id', $employee->id);
+        $this->assertSame('Simple Employee', $employeeRow['name']);
+        $this->assertSame('employee-simple@carevance.test', $employeeRow['email']);
+        $this->assertSame('employee', $employeeRow['role']);
+        $this->assertArrayNotHasKey('total_duration', $employeeRow);
+        $this->assertSame([$group->id], collect($employeeRow['groups'] ?? [])->pluck('id')->all());
+    }
+
+    public function test_report_groups_index_supports_lightweight_simple_payload(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-simple-groups']);
+
+        $admin = $this->createUser($organization, 'Admin', 'admin-simple-group@carevance.test', 'admin');
+        $employee = $this->createUser($organization, 'Simple Employee', 'employee-simple-group@carevance.test', 'employee');
+        $group = $this->createGroup($organization, 'Operations');
+        $employee->groups()->sync([$group->id]);
+
+        $response = $this->getJson('/api/report-groups?simple=1', $this->apiHeadersFor($admin))
+            ->assertOk();
+
+        $groupRow = collect($response->json('data'))->firstWhere('id', $group->id);
+        $this->assertSame('Operations', $groupRow['name']);
+        $this->assertArrayNotHasKey('tasks_count', $groupRow);
+        $this->assertSame([$employee->id], collect($groupRow['users'] ?? [])->pluck('id')->all());
+    }
+
     private function createUser(Organization $organization, string $name, string $email, string $role): User
     {
         return User::create([

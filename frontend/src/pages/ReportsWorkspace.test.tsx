@@ -210,6 +210,8 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(await screen.findByText('Employee Hours')).toBeInTheDocument();
     expect(screen.getByText('Tracked Time')).toBeInTheDocument();
     expect(mocks.overallMock).toHaveBeenCalled();
+    expect(mocks.getAllUsersMock).toHaveBeenCalledWith({ simple: 1 });
+    expect(mocks.groupsListMock).toHaveBeenCalledWith({ simple: 1 });
   });
 
   it('renders canonical website and software labels from backend activity fields', async () => {

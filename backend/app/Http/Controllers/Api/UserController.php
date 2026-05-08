@@ -48,6 +48,7 @@ class UserController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'country' => 'nullable|string|max:64',
+            'simple' => 'nullable',
         ]);
 
         $currentUser = $request->user();
@@ -55,17 +56,7 @@ class UserController extends Controller
             return response()->json([]);
         }
 
-        $period = $request->get('period', 'all');
-        $timezone = (string) $request->get('timezone', 'Asia/Kolkata');
-        if (!in_array($timezone, timezone_identifiers_list(), true)) {
-            $timezone = 'Asia/Kolkata';
-        }
-        $range = $this->resolvePeriodRange(
-            $period,
-            $timezone,
-            $request->get('start_date'),
-            $request->get('end_date')
-        );
+        $simple = $request->boolean('simple');
 
         $users = User::where('organization_id', $currentUser->organization_id)
             ->with([
@@ -87,6 +78,34 @@ class UserController extends Controller
             ->when(!in_array($currentUser->role, ['admin', 'manager'], true), fn ($query) => $query->where('id', $currentUser->id))
             ->orderBy('created_at', 'desc')
             ->get();
+
+        if ($simple) {
+            return response()->json($users->map(function (User $user) {
+                return [
+                    'id' => (int) $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'groups' => collect($user->groups)->map(fn ($group) => [
+                        'id' => (int) $group->id,
+                        'name' => $group->name,
+                        'slug' => $group->slug,
+                    ])->values(),
+                ];
+            })->values());
+        }
+
+        $period = $request->get('period', 'all');
+        $timezone = (string) $request->get('timezone', 'Asia/Kolkata');
+        if (!in_array($timezone, timezone_identifiers_list(), true)) {
+            $timezone = 'Asia/Kolkata';
+        }
+        $range = $this->resolvePeriodRange(
+            $period,
+            $timezone,
+            $request->get('start_date'),
+            $request->get('end_date')
+        );
 
         $activeEntries = TimeEntry::with(['project:id,name', 'task:id,title,project_id', 'task.project:id,name'])
             ->whereIn('user_id', $users->pluck('id'))
