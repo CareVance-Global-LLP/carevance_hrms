@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MonitoringWorkspace from '@/pages/MonitoringWorkspace';
+import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 const mocks = vi.hoisted(() => ({
@@ -264,5 +265,77 @@ describe('MonitoringWorkspace', () => {
       expect(mocks.screenshotGetMock).toHaveBeenCalledWith(101);
       expect(image.src).toBe('http://localhost:8000/api/screenshots/101/file?signature=fresh');
     });
+  });
+
+  it('uses the same live activity fallbacks in screenshots mode as monitoring mode', async () => {
+    mocks.employeeInsightsMock.mockResolvedValue({
+      data: {
+        organization_summary: {},
+        selected_user_tools: {
+          productive: [],
+          unproductive: [],
+          neutral: [],
+          context_dependent: [],
+        },
+        organization_tools: {
+          productive: [],
+          unproductive: [],
+          neutral: [],
+          context_dependent: [],
+        },
+        employee_rankings: {
+          by_productive_duration: [],
+          by_unproductive_duration: [],
+        },
+        recent_screenshots: [],
+        live_monitoring: {
+          employees_active: [],
+          employees_inactive: [],
+          employees_on_leave: [],
+          selected_user: {
+            user: {
+              id: 7,
+              name: 'Example Employee',
+              email: 'employee@example.com',
+              role: 'employee',
+            },
+            is_working: false,
+            current_tool: '',
+            tool_label: 'LinkedIn Feed',
+            normalized_label: 'linkedin.com',
+            tool_type: '',
+            activity_type: 'url',
+            classification: 'context_dependent',
+            last_activity_at: null,
+            recorded_at: '2026-04-21T11:29:40.000Z',
+            work_status: 'inactive',
+            browser_tracking: {
+              status: 'connected',
+              device_label: 'DESKTOP-ALPHA',
+              connection_count: 1,
+              connected_connections: 1,
+              browsers: ['chrome'],
+              last_seen_at: '2026-04-21T11:29:40.000Z',
+              last_sync_at: '2026-04-21T11:29:40.000Z',
+              needs_attention: false,
+              is_exact_tracking_active: true,
+            },
+          },
+          all_users: [],
+        },
+      },
+    });
+
+    renderWithProviders(
+      <MonitoringWorkspace mode="screenshots" />,
+      { route: '/monitoring/screenshots?user=7' },
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Screenshots', level: 1 })).toBeInTheDocument();
+    expect(await screen.findByText('LinkedIn Feed')).toBeInTheDocument();
+    expect(screen.getByText('url')).toBeInTheDocument();
+    expect(screen.getByText(formatDateTimeForTimezone('2026-04-21T11:29:40.000Z'))).toBeInTheDocument();
+    expect(screen.queryByText('No active tool detected')).not.toBeInTheDocument();
+    expect(screen.queryByText('No recent activity')).not.toBeInTheDocument();
   });
 });

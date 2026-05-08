@@ -101,6 +101,39 @@ const formatDuration = (seconds: number) => {
 };
 const formatDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
   formatDateTimeForTimezone(value, timezone, 'en-US', 'No recent activity');
+const resolveLiveToolLabel = (liveRow?: any | null) => {
+  const resolved = [
+    liveRow?.current_tool,
+    liveRow?.tool_label,
+    liveRow?.normalized_label,
+    liveRow?.name,
+  ]
+    .map((candidate) => String(candidate || '').trim())
+    .find(Boolean);
+
+  return resolved || 'No active tool detected';
+};
+const resolveLiveToolTypeLabel = (liveRow?: any | null) => {
+  const resolved = [
+    liveRow?.tool_type,
+    liveRow?.activity_type,
+    liveRow?.type,
+  ]
+    .map((candidate) => String(candidate || '').trim())
+    .find(Boolean);
+
+  return resolved || 'No tool type';
+};
+const resolveLiveActivityLabel = (liveRow?: any | null, timezone = DEFAULT_APP_TIMEZONE) => {
+  const activityAt =
+    liveRow?.last_activity_at
+    || liveRow?.recorded_at
+    || liveRow?.last_seen_at
+    || liveRow?.browser_tracking?.last_seen_at
+    || liveRow?.browser_tracking?.last_sync_at;
+
+  return formatDateTime(activityAt, timezone);
+};
 const productivityTone = (classification?: string | null) =>
   classification === 'productive'
     ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
@@ -809,8 +842,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.current_tool || 'No active tool detected'}</p>
-                    <p className="mt-1 text-sm capitalize text-slate-500">{selectedUserLive.tool_type || selectedUserLive.activity_type || 'No tool type'}</p>
+                    <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveToolLabel(selectedUserLive)}</p>
+                    <p className="mt-1 text-sm capitalize text-slate-500">{resolveLiveToolTypeLabel(selectedUserLive)}</p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
@@ -819,7 +852,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at, displayTimezone)}</p>
+                    <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveActivityLabel(selectedUserLive, displayTimezone)}</p>
                     <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
                   </div>
                   {renderBrowserTrackingCard(selectedUserBrowserTracking)}
@@ -1003,8 +1036,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
               <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current activity</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.current_tool || 'No active tool detected'}</p>
-                  <p className="mt-1 text-sm capitalize text-slate-500">{selectedUserLive.tool_type || selectedUserLive.activity_type || 'No tool type'}</p>
+                  <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveToolLabel(selectedUserLive)}</p>
+                  <p className="mt-1 text-sm capitalize text-slate-500">{resolveLiveToolTypeLabel(selectedUserLive)}</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
@@ -1013,7 +1046,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at, displayTimezone)}</p>
+                  <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveActivityLabel(selectedUserLive, displayTimezone)}</p>
                   <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
                 </div>
                 {renderBrowserTrackingCard(selectedUserBrowserTracking)}
@@ -1202,12 +1235,12 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.current_tool || 'No active tool detected'}</p>
+                  <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveToolLabel(selectedUserLive)}</p>
                   <p className="mt-1 text-sm capitalize text-slate-500">{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last seen</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{formatDateTime(selectedUserLive.last_activity_at, displayTimezone)}</p>
+                  <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveActivityLabel(selectedUserLive, displayTimezone)}</p>
                   <p className="mt-1 text-sm text-slate-500">Most recent monitoring signal</p>
                 </div>
                 {renderBrowserTrackingCard(selectedUserBrowserTracking)}
