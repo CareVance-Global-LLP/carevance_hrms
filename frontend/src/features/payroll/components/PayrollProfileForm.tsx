@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import type { PayrollProfile, SalaryTemplate } from '@/types';
 
@@ -138,10 +139,12 @@ export default function PayrollProfileForm({
               {lockedUserLabel || `Employee #${lockedUserId}`}
             </div>
           ) : (
-            <SelectInput value={form.user_id} onChange={(event) => setForm((current) => ({ ...current, user_id: event.target.value ? Number(event.target.value) : '' }))}>
-              <option value="">Select employee</option>
-              {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-            </SelectInput>
+            <EmployeeSelect
+              employees={employees}
+              value={form.user_id}
+              onChange={(value) => setForm((current) => ({ ...current, user_id: value }))}
+              allOptionLabel="Select employee"
+            />
           )}
         </div>
         <div>

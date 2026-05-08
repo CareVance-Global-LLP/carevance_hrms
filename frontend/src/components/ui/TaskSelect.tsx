@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { buildSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import { cn } from '@/utils/cn';
+import useFloatingDropdown from '@/components/ui/useFloatingDropdown';
 
 type TaskOption = {
   id: number;
@@ -53,6 +55,8 @@ export default function TaskSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const { panelRef, panelStyle } = useFloatingDropdown(buttonRef, open);
 
   const normalizedValue = typeof value === 'number' && Number.isFinite(value) ? value : '';
   const selectedTask = tasks.find((task) => task.id === normalizedValue) || null;
@@ -91,7 +95,14 @@ export default function TaskSelect({
         return;
       }
 
-      if (containerRef.current && !containerRef.current.contains(target)) {
+      if (
+        containerRef.current
+        && !containerRef.current.contains(target)
+        && panelRef.current
+        && !panelRef.current.contains(target)
+      ) {
+        setOpen(false);
+      } else if (containerRef.current && !containerRef.current.contains(target) && !panelRef.current) {
         setOpen(false);
       }
     };
@@ -116,6 +127,7 @@ export default function TaskSelect({
     <div className="relative" ref={containerRef}>
       <button
         type="button"
+        ref={buttonRef}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -131,8 +143,12 @@ export default function TaskSelect({
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-500 transition', open && 'rotate-180')} />
       </button>
 
-      {open ? (
-        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      {open && panelStyle ? createPortal(
+        <div
+          ref={panelRef}
+          style={panelStyle}
+          className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+        >
           <div className="border-b border-slate-100 p-3">
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <Search className="h-4 w-4 text-slate-400" />
@@ -188,7 +204,8 @@ export default function TaskSelect({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       ) : null}
     </div>
   );

@@ -6,6 +6,7 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import EmptyStateCard from '@/components/dashboard/EmptyStateCard';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { payrollWorkspaceApi } from '@/services/api';
@@ -170,10 +171,12 @@ export default function PayrollAdjustmentsView() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <FieldLabel>Employee</FieldLabel>
-              <SelectInput value={form.user_id} onChange={(event) => setForm((current: any) => ({ ...current, user_id: event.target.value }))}>
-                <option value="">Select employee</option>
-                {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-              </SelectInput>
+              <EmployeeSelect
+                employees={employees}
+                value={form.user_id === '' ? '' : Number(form.user_id)}
+                onChange={(value) => setForm((current: any) => ({ ...current, user_id: value === '' ? '' : String(value) }))}
+                allOptionLabel="Select employee"
+              />
             </div>
             <div>
               <FieldLabel>Kind</FieldLabel>

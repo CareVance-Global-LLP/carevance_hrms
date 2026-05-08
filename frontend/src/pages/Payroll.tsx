@@ -7,6 +7,7 @@ import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -274,10 +275,7 @@ export default function Payroll() {
         </div>
         <div>
           <FieldLabel>Employee</FieldLabel>
-          <SelectInput value={generateEmployeeId} onChange={(e) => setGenerateEmployeeId(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">All Employees</option>
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </SelectInput>
+          <EmployeeSelect employees={employees} value={generateEmployeeId} onChange={setGenerateEmployeeId} includeAllOption />
         </div>
         <div>
           <FieldLabel>Payout Method</FieldLabel>
@@ -302,10 +300,7 @@ export default function Payroll() {
       <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-6">
         <div>
           <FieldLabel>Filter Employee</FieldLabel>
-          <SelectInput value={filterEmployeeId} onChange={(e) => setFilterEmployeeId(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">All</option>
-            {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </SelectInput>
+          <EmployeeSelect employees={employees} value={filterEmployeeId} onChange={setFilterEmployeeId} includeAllOption />
         </div>
         <div>
           <FieldLabel>Filter Month</FieldLabel>

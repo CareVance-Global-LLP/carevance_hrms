@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +12,7 @@ import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
 import { KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
+type EmployeeDirectorySort = 'default' | 'name_asc' | 'tracked_desc' | 'working_first';
 
 type TableColumn<T> = {
   key: string;
@@ -114,6 +116,15 @@ const formatDuration = (seconds: number) => {
   return `${hours}h ${minutes}m`;
 };
 
+const resolveEmployeeDepartment = (user: any) =>
+  String(
+    user?.department
+    || user?.employee_work_info?.department?.name
+    || user?.employeeWorkInfo?.department?.name
+    || user?.groups?.[0]?.name
+    || 'Unassigned'
+  ).trim() || 'Unassigned';
+
 const monitoringIntervalOptions = [
   { value: 1, label: 'Every 1 minute' },
   { value: 3, label: 'Every 3 minutes' },
@@ -177,6 +188,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const { organization, user } = useAuth();
   const queryClient = useQueryClient();
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [directoryFilterUserId, setDirectoryFilterUserId] = useState<number | ''>('');
+  const [directoryDepartmentFilter, setDirectoryDepartmentFilter] = useState('All departments');
+  const [directorySort, setDirectorySort] = useState<EmployeeDirectorySort>('default');
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -390,6 +404,41 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
   const invitations = invitationsQuery.data || [];
+  const departmentOptions = useMemo(
+    () => ['All departments', ...Array.from(new Set(users.map((item: any) => resolveEmployeeDepartment(item)).filter(Boolean)))],
+    [users]
+  );
+  const employeeDirectoryRows = useMemo(() => {
+    const filteredRows = directoryFilterUserId === ''
+      ? [...users]
+      : users.filter((item: any) => Number(item.id) === Number(directoryFilterUserId));
+
+    const departmentFilteredRows = directoryDepartmentFilter === 'All departments'
+      ? filteredRows
+      : filteredRows.filter((item: any) => resolveEmployeeDepartment(item) === directoryDepartmentFilter);
+
+    switch (directorySort) {
+      case 'name_asc':
+        return departmentFilteredRows.sort((left: any, right: any) =>
+          String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })
+        );
+      case 'tracked_desc':
+        return departmentFilteredRows.sort((left: any, right: any) =>
+          Number(right.total_elapsed_duration || right.total_duration || 0) - Number(left.total_elapsed_duration || left.total_duration || 0)
+        );
+      case 'working_first':
+        return departmentFilteredRows.sort((left: any, right: any) => {
+          const workingDifference = Number(Boolean(right.is_working)) - Number(Boolean(left.is_working));
+          if (workingDifference !== 0) {
+            return workingDifference;
+          }
+
+          return String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
+        });
+      default:
+        return departmentFilteredRows;
+    }
+  }, [directoryDepartmentFilter, directoryFilterUserId, directorySort, users]);
 
   const handleDeleteUser = (targetUser: any) => {
     if (!isStrictAdmin || !targetUser?.id) {
@@ -479,9 +528,57 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <DataTable
             title="Employee Directory"
             description={isStrictAdmin ? 'Role, work state, tracked hours, and admin-only promotion controls from the existing users endpoint.' : 'Role, work state, and tracked hours from the existing users endpoint.'}
-            rows={users}
+            rows={employeeDirectoryRows}
             emptyMessage="No employees found."
             bodyClassName="max-h-[34rem] overflow-auto"
+            headerAction={(
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+                <div className="min-w-[13rem]">
+                  <FieldLabel>Specific employee</FieldLabel>
+                  <EmployeeSelect
+                    employees={users}
+                    ariaLabel="Specific employee filter"
+                    value={directoryFilterUserId}
+                    onChange={(nextValue) => {
+                      setDirectoryFilterUserId(nextValue);
+                      if (typeof nextValue === 'number') {
+                        setSelectedUserId(nextValue);
+                      }
+                    }}
+                    includeAllOption
+                    allOptionLabel="All employees"
+                    searchPlaceholder="Search employee name"
+                  />
+                </div>
+                <div className="min-w-[13rem]">
+                  <FieldLabel>Department</FieldLabel>
+                  <SelectInput
+                    aria-label="Employee department filter"
+                    value={directoryDepartmentFilter}
+                    onChange={(event) => setDirectoryDepartmentFilter(event.target.value)}
+                  >
+                    {departmentOptions.map((department) => (
+                      <option key={department} value={department}>
+                        {department}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </div>
+                <div className="min-w-[13rem]">
+                  <FieldLabel>Sort list</FieldLabel>
+                  <SelectInput
+                    aria-label="Employee directory sort"
+                    value={directorySort}
+                    onChange={(event) => setDirectorySort(event.target.value as EmployeeDirectorySort)}
+                  >
+                    <option value="default">Default order</option>
+                    <option value="name_asc">Name A-Z</option>
+                    <option value="tracked_desc">Tracked time high to low</option>
+                    <option value="working_first">Working first</option>
+                  </SelectInput>
+                </div>
+              </div>
+            )}
             columns={[
               { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
               { key: 'role', header: 'Role', render: (row: any) => row.role },

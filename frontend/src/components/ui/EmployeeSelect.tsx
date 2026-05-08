@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { buildEmployeeSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import { cn } from '@/utils/cn';
+import useFloatingDropdown from '@/components/ui/useFloatingDropdown';
 
 type EmployeeOption = {
   id: number;
@@ -15,6 +17,7 @@ interface EmployeeSelectProps {
   value: number | '' | null | undefined;
   onChange: (value: number | '') => void;
   disabled?: boolean;
+  ariaLabel?: string;
   includeAllOption?: boolean;
   allOptionLabel?: string;
   placeholder?: string;
@@ -27,6 +30,7 @@ export default function EmployeeSelect({
   value,
   onChange,
   disabled = false,
+  ariaLabel,
   includeAllOption = false,
   allOptionLabel = 'All employees',
   placeholder = 'Choose employee',
@@ -36,6 +40,8 @@ export default function EmployeeSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const { panelRef, panelStyle } = useFloatingDropdown(buttonRef, open);
 
   const normalizedValue = typeof value === 'number' && Number.isFinite(value) ? value : '';
   const selectedEmployee = employees.find((employee) => employee.id === normalizedValue) || null;
@@ -56,7 +62,14 @@ export default function EmployeeSelect({
         return;
       }
 
-      if (containerRef.current && !containerRef.current.contains(target)) {
+      if (
+        containerRef.current
+        && !containerRef.current.contains(target)
+        && panelRef.current
+        && !panelRef.current.contains(target)
+      ) {
+        setOpen(false);
+      } else if (containerRef.current && !containerRef.current.contains(target) && !panelRef.current) {
         setOpen(false);
       }
     };
@@ -81,7 +94,9 @@ export default function EmployeeSelect({
     <div className="relative" ref={containerRef}>
       <button
         type="button"
+        ref={buttonRef}
         disabled={disabled}
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
@@ -96,8 +111,12 @@ export default function EmployeeSelect({
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-500 transition', open && 'rotate-180')} />
       </button>
 
-      {open ? (
-        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      {open && panelStyle ? createPortal(
+        <div
+          ref={panelRef}
+          style={panelStyle}
+          className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+        >
           <div className="border-b border-slate-100 p-3">
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <Search className="h-4 w-4 text-slate-400" />
@@ -153,7 +172,8 @@ export default function EmployeeSelect({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       ) : null}
     </div>
   );

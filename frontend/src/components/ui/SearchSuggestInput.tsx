@@ -1,7 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { TextInput } from '@/components/ui/FormField';
 import { rankSearchSuggestions, type SearchSuggestionOption } from '@/lib/searchSuggestions';
 import { cn } from '@/utils/cn';
+import useFloatingDropdown from '@/components/ui/useFloatingDropdown';
 
 interface SearchSuggestInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> {
   value: string;
@@ -32,6 +34,7 @@ export default function SearchSuggestInput({
   ...props
 }: SearchSuggestInputProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const listboxId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -42,6 +45,7 @@ export default function SearchSuggestInput({
     [maxSuggestions, suggestions, value]
   );
   const shouldShowSuggestions = isOpen && hasTypedQuery;
+  const { panelRef, panelStyle } = useFloatingDropdown(inputRef, shouldShowSuggestions);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -50,7 +54,15 @@ export default function SearchSuggestInput({
         return;
       }
 
-      if (containerRef.current && !containerRef.current.contains(target)) {
+      if (
+        containerRef.current
+        && !containerRef.current.contains(target)
+        && panelRef.current
+        && !panelRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+        setActiveIndex(-1);
+      } else if (containerRef.current && !containerRef.current.contains(target) && !panelRef.current) {
         setIsOpen(false);
         setActiveIndex(-1);
       }
@@ -81,6 +93,7 @@ export default function SearchSuggestInput({
       {icon ? <div className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-400">{icon}</div> : null}
       <TextInput
         {...props}
+        ref={inputRef}
         value={value}
         onChange={(event) => {
           onValueChange(event.target.value);
@@ -92,7 +105,15 @@ export default function SearchSuggestInput({
         }}
         onBlur={(event) => {
           window.setTimeout(() => {
-            if (containerRef.current && !containerRef.current.contains(document.activeElement)) {
+            if (
+              containerRef.current
+              && !containerRef.current.contains(document.activeElement)
+              && panelRef.current
+              && !panelRef.current.contains(document.activeElement)
+            ) {
+              setIsOpen(false);
+              setActiveIndex(-1);
+            } else if (containerRef.current && !containerRef.current.contains(document.activeElement) && !panelRef.current) {
               setIsOpen(false);
               setActiveIndex(-1);
             }
@@ -136,11 +157,13 @@ export default function SearchSuggestInput({
         className={cn(icon && 'pl-9', className)}
       />
 
-      {shouldShowSuggestions ? (
+      {shouldShowSuggestions && panelStyle ? createPortal(
         <div
+          ref={panelRef}
+          style={panelStyle}
           id={listboxId}
           role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+          className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
         >
           {rankedSuggestions.length === 0 ? (
             <div className="px-4 py-3 text-sm text-slate-500">{emptyMessage}</div>
@@ -168,7 +191,8 @@ export default function SearchSuggestInput({
               ))}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       ) : null}
     </div>
   );

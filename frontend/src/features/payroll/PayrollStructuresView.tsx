@@ -506,10 +506,12 @@ export default function PayrollStructuresView() {
             </div>
             <div>
               <FieldLabel>Employee</FieldLabel>
-              <SelectInput value={assignmentEmployeeId} onChange={(event) => setAssignmentEmployeeId(event.target.value ? Number(event.target.value) : '')}>
-                <option value="">Select employee</option>
-                {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-              </SelectInput>
+              <EmployeeSelect
+                employees={employees}
+                value={assignmentEmployeeId}
+                onChange={setAssignmentEmployeeId}
+                allOptionLabel="Select employee"
+              />
             </div>
             <div>
               <FieldLabel>Effective From</FieldLabel>
@@ -712,10 +714,12 @@ export default function PayrollStructuresView() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <FieldLabel>Employee</FieldLabel>
-            <SelectInput value={legacyForm.user_id} onChange={(event) => setLegacyForm((current) => ({ ...current, user_id: event.target.value ? Number(event.target.value) : '' }))}>
-              <option value="">Select employee</option>
-              {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-            </SelectInput>
+            <EmployeeSelect
+              employees={employees}
+              value={legacyForm.user_id}
+              onChange={(value) => setLegacyForm((current) => ({ ...current, user_id: value }))}
+              allOptionLabel="Select employee"
+            />
           </div>
           <div>
             <FieldLabel>Currency</FieldLabel>

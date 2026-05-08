@@ -1,5 +1,6 @@
 import {
   Children,
+  forwardRef,
   isValidElement,
   useEffect,
   useMemo,
@@ -10,8 +11,10 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import useFloatingDropdown from '@/components/ui/useFloatingDropdown';
 
 const baseControlClassName =
   'w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
@@ -37,12 +40,15 @@ export function FieldLabel({
   );
 }
 
-export function TextInput({
-  className,
-  ...props
-}: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn(baseControlClassName, className)} {...props} />;
-}
+export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function TextInput(
+  {
+    className,
+    ...props
+  },
+  ref
+) {
+  return <input ref={ref} className={cn(baseControlClassName, className)} {...props} />;
+});
 
 export function SelectInput({
   children,
@@ -58,7 +64,9 @@ export function SelectInput({
   const [open, setOpen] = useState(false);
   const [internalValue, setInternalValue] = useState<string>(() => String(value ?? defaultValue ?? ''));
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const controlledValue = value !== undefined ? String(value) : internalValue;
+  const { panelRef, panelStyle } = useFloatingDropdown(buttonRef, open);
   const options = useMemo(() => (
     Children.toArray(children)
       .filter(isValidElement)
@@ -87,7 +95,15 @@ export function SelectInput({
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (target && containerRef.current && !containerRef.current.contains(target)) {
+      if (
+        target
+        && containerRef.current
+        && !containerRef.current.contains(target)
+        && panelRef.current
+        && !panelRef.current.contains(target)
+      ) {
+        setOpen(false);
+      } else if (target && containerRef.current && !containerRef.current.contains(target) && !panelRef.current) {
         setOpen(false);
       }
     };
@@ -110,6 +126,7 @@ export function SelectInput({
       <button
         type="button"
         id={id}
+        ref={buttonRef}
         disabled={disabled}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
@@ -126,11 +143,13 @@ export function SelectInput({
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-500 transition', open && 'rotate-180')} />
       </button>
 
-      {open ? (
+      {open && panelStyle ? createPortal(
         <div
+          ref={panelRef}
+          style={panelStyle}
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute left-0 right-0 top-full z-50 mt-2 max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-sm"
+          className="max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-sm"
         >
           {options.map((option) => {
             const isSelected = option.value === controlledValue;
@@ -158,7 +177,8 @@ export function SelectInput({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body
       ) : null}
     </div>
   );

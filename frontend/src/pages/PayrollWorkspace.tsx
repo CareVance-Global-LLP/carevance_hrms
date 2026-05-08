@@ -7,6 +7,7 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
+import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
@@ -374,7 +375,7 @@ function Adjustments({ month, setFeedback }: { month: string; setFeedback: (valu
     <div className="space-y-5">
       <SurfaceCard className="p-4">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_0.8fr_0.6fr_1.4fr_auto] md:items-end">
-          <div><FieldLabel>Employee</FieldLabel><SelectInput value={form.user_id} onChange={(event) => setForm((current) => ({ ...current, user_id: event.target.value }))}><option value="">Select</option>{query.data.employees.map((employee: any) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</SelectInput></div>
+          <div><FieldLabel>Employee</FieldLabel><EmployeeSelect employees={query.data.employees} value={form.user_id === '' ? '' : Number(form.user_id)} onChange={(value) => setForm((current) => ({ ...current, user_id: value === '' ? '' : String(value) }))} allOptionLabel="Select employee" /></div>
           <div><FieldLabel>Type</FieldLabel><SelectInput value={form.type} onChange={(event) => setForm((current) => ({ ...current, type: event.target.value }))}><option value="bonus">Bonus</option><option value="reimbursement">Reimbursement</option><option value="overtime">Overtime</option><option value="manual_deduction">Manual Deduction</option><option value="lop_correction">LOP Correction</option></SelectInput></div>
           <NumberField label="Amount" value={form.amount} onChange={(value) => setForm((current) => ({ ...current, amount: value }))} />
           <div><FieldLabel>Reason</FieldLabel><TextInput value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} /></div>
