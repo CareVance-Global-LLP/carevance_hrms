@@ -11,4 +11,12 @@ describe('Attendance monitoring panel source', () => {
     expect(source).not.toContain('Screenshot Panel');
     expect(source).not.toContain('screenshotApi.getAll');
   });
+
+  it('hydrates admin attendance filters from scoped dashboard links', () => {
+    const source = readFileSync(resolve(__dirname, 'Attendance.tsx'), 'utf8');
+
+    expect(source).toContain("const nextUserId = params.get('user') || params.get('user_id');");
+    expect(source).toContain('setSelectedFilterUserId(resolvedUserId);');
+    expect(source).toContain("setCalendarScope(resolvedUserId === '' ? 'overall' : 'selected');");
+  });
 });

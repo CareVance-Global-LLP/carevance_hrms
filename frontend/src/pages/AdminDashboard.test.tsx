@@ -21,6 +21,8 @@ const apiMocks = vi.hoisted(() => ({
   monthlyReport: vi.fn(),
   profile360: vi.fn(),
   employeeInsights: vi.fn(),
+  activitiesAllPages: vi.fn(),
+  timeEntries: vi.fn(),
   screenshots: vi.fn(),
 }));
 
@@ -38,7 +40,9 @@ vi.mock('@/services/api', async () => {
     attendanceApi: { summary: apiMocks.attendanceSummary, calendar: apiMocks.attendanceCalendar },
     leaveApi: { list: apiMocks.leaveList },
     reportApi: { overall: apiMocks.overall, weekly: apiMocks.weeklyReport, monthly: apiMocks.monthlyReport, employeeInsights: apiMocks.employeeInsights },
+    activityApi: { ...actual.activityApi, getAllPages: apiMocks.activitiesAllPages },
     screenshotApi: { getAll: apiMocks.screenshots },
+    timeEntryApi: { getAll: apiMocks.timeEntries },
     dashboardApi: { summary: apiMocks.dashboardSummary },
     taskApi: { getAll: apiMocks.tasks },
     payrollSimpleApi: { runs: apiMocks.payrollRecords },
@@ -162,6 +166,8 @@ describe('AdminDashboard WorkWise redesign', () => {
         recent_screenshots: [],
       },
     });
+    apiMocks.activitiesAllPages.mockResolvedValue([]);
+    apiMocks.timeEntries.mockResolvedValue({ data: { data: [] } });
     apiMocks.screenshots.mockResolvedValue({
       data: {
         total: 2,
@@ -188,7 +194,7 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('Total Employees')).toBeInTheDocument();
     expect(screen.getAllByText('Present').length).toBeGreaterThan(0);
     expect(screen.getByText('Attendance Overview')).toBeInTheDocument();
-    expect(screen.getByText('Leave Summary')).toBeInTheDocument();
+    expect(screen.getByText('Leave & Absence Summary')).toBeInTheDocument();
     expect(screen.getByText('Department Distribution')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Communication Hub' })).toBeInTheDocument();
     expect(screen.getByText('Birthdays')).toBeInTheDocument();
@@ -285,6 +291,101 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('Attendance History')).toBeInTheDocument();
   });
 
+  it('passes the selected employee and date range into scoped panel links', async () => {
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Specific Employee' }));
+    fireEvent.change(screen.getByLabelText('Search scoped employee'), { target: { value: 'leslie' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Open Monitoring' })).toHaveAttribute(
+        'href',
+        expect.stringContaining('/monitoring/screenshots?user=2&start=')
+      );
+    });
+
+    expect(screen.getByRole('link', { name: 'Details' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/monitoring/productive-time?user=2&start=')
+    );
+    expect(screen.getByRole('link', { name: 'Timesheets' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/reports/hours-tracked?user=2&start=')
+    );
+    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/attendance?user=2&start=')
+    );
+  });
+
+  it('falls back to processed activities for ranged employee tool rollups when insights return empty buckets', async () => {
+    apiMocks.employeeInsights.mockResolvedValue({
+      data: {
+        stats: {
+          tracked_duration: 0,
+          working_duration: 0,
+          idle_total_duration: 0,
+          productive_duration: 0,
+          unproductive_duration: 0,
+          neutral_duration: 0,
+          context_dependent_duration: 0,
+          activity_total_duration: 0,
+        },
+        selected_user_tools: {
+          productive: [],
+          unproductive: [],
+          neutral: [],
+          context_dependent: [],
+        },
+        recent_screenshots: [],
+      },
+    });
+    apiMocks.activitiesAllPages.mockResolvedValue([
+      {
+        id: 51,
+        type: 'app',
+        duration: 3600,
+        classification: 'productive',
+        tool_type: 'software',
+        normalized_label: 'figma',
+        name: 'Figma',
+      },
+      {
+        id: 52,
+        type: 'url',
+        duration: 1800,
+        classification: 'unproductive',
+        tool_type: 'website',
+        normalized_domain: 'youtube.com',
+        name: 'YouTube',
+      },
+    ]);
+
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Specific Employee' }));
+    fireEvent.change(screen.getByLabelText('Search scoped employee'), { target: { value: 'leslie' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Last 15 days' }));
+
+    await waitFor(() => {
+      expect(apiMocks.activitiesAllPages).toHaveBeenCalledWith({
+        user_id: 2,
+        start_date: expect.any(String),
+        end_date: expect.any(String),
+        processed: true,
+        per_page: 200,
+      });
+    });
+
+    const topToolsCard = screen.getByText('Top Tools & Sites').closest('div')?.parentElement;
+    expect(topToolsCard).not.toBeNull();
+    expect(await within(topToolsCard as HTMLElement).findByText('figma')).toBeInTheDocument();
+    expect(within(topToolsCard as HTMLElement).getByText('youtube.com')).toBeInTheDocument();
+    expect(within(topToolsCard as HTMLElement).getByText('1h 0m')).toBeInTheDocument();
+    expect(within(topToolsCard as HTMLElement).getByText('0h 30m')).toBeInTheDocument();
+  });
+
   it('counts missing days as absent for a selected employee range', async () => {
     window.localStorage.setItem('admin-dashboard-filters', JSON.stringify({
       dashboardScope: 'employee',
@@ -323,8 +424,8 @@ describe('AdminDashboard WorkWise redesign', () => {
       expect(within(absentCard as HTMLElement).getByText('4')).toBeInTheDocument();
     });
 
-    const absentLegend = await screen.findByText('Absent');
-    expect(within(absentLegend.closest('div') as HTMLElement).getByText('4')).toBeInTheDocument();
+    const absentLegends = await screen.findAllByText('Absent');
+    expect(within(absentLegends[1].closest('div') as HTMLElement).getByText('4')).toBeInTheDocument();
   });
 
   it('filters current work status by status and search term', async () => {

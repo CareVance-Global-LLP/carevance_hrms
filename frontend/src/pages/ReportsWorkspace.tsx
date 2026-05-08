@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   activityApi,
@@ -22,7 +22,7 @@ import TaskSelect from '@/components/ui/TaskSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
 import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
-import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
@@ -410,6 +410,7 @@ const analyticsCatalogItems = [
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
   const { user } = useAuth();
+  const location = useLocation();
   const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsWorkspaceFilters(mode).datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedReportsWorkspaceFilters(mode).startDate);
@@ -446,6 +447,34 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       } satisfies PersistedReportsWorkspaceFilters
     );
   }, [datePreset, endDate, mode, selectedGroupId, selectedTaskId, selectedUserId, startDate]);
+
+  useEffect(() => {
+    if (!location.search) return;
+
+    const params = new URLSearchParams(location.search);
+    const nextStartDate = params.get('start');
+    const nextEndDate = params.get('end');
+    const nextUserId = params.get('user') || params.get('user_id');
+
+    if (nextStartDate && nextEndDate) {
+      setStartDate(nextStartDate);
+      setEndDate(nextEndDate);
+      setDatePreset(detectDateRangePreset(nextStartDate, nextEndDate));
+    } else if (nextStartDate || nextEndDate) {
+      if (nextStartDate) {
+        setStartDate(nextStartDate);
+      }
+      if (nextEndDate) {
+        setEndDate(nextEndDate);
+      }
+      setDatePreset('custom');
+    }
+
+    if (nextUserId !== null) {
+      const parsedUserId = Number(nextUserId);
+      setSelectedUserId(Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : '');
+    }
+  }, [location.search]);
 
   const handleDatePresetChange = (preset: DateRangePreset) => {
     setDatePreset(preset);

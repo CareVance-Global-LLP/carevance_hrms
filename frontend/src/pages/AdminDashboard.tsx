@@ -25,6 +25,7 @@ import { CHAT_NOTIFICATION_TYPES } from '@/lib/chatNotifications';
 import { formatDate as formatDateForTimezone, formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import {
+  activityApi,
   attendanceApi,
   auditApi,
   leaveApi,
@@ -261,6 +262,94 @@ const humanizeAction = (action?: string | null) =>
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const safeArray = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+
+const buildScopedEmployeeLink = (
+  basePath: string,
+  selectedEmployeeId: number,
+  startDate: string,
+  endDate: string
+) => {
+  const params = new URLSearchParams();
+  params.set('user', String(selectedEmployeeId));
+  params.set('start', startDate);
+  params.set('end', endDate);
+  return `${basePath}?${params.toString()}`;
+};
+
+const hasToolBuckets = (tools: any) =>
+  ['productive', 'unproductive', 'neutral', 'context_dependent'].some((classification) =>
+    safeArray<any>(tools?.[classification]).length > 0
+  );
+
+const buildFallbackEmployeeInsightsFromActivities = (activities: any[]) => {
+  const durationByClassification = {
+    productive_duration: 0,
+    unproductive_duration: 0,
+    neutral_duration: 0,
+    context_dependent_duration: 0,
+  };
+  const toolBuckets: Record<'productive' | 'unproductive' | 'neutral' | 'context_dependent', Map<string, any>> = {
+    productive: new Map(),
+    unproductive: new Map(),
+    neutral: new Map(),
+    context_dependent: new Map(),
+  };
+
+  activities.forEach((activity) => {
+    const classification = String(activity?.classification || 'neutral').toLowerCase();
+    const normalizedClassification = (
+      classification === 'productive'
+      || classification === 'unproductive'
+      || classification === 'neutral'
+      || classification === 'context_dependent'
+    ) ? classification : 'neutral';
+    const duration = Math.max(0, Number(activity?.duration || 0));
+    const label = String(
+      activity?.normalized_domain
+      || activity?.normalized_label
+      || activity?.software_name
+      || activity?.name
+      || 'Unknown tool'
+    ).trim() || 'Unknown tool';
+    const type = String(activity?.tool_type || (activity?.type === 'url' ? 'website' : 'software')).trim() || 'software';
+    const bucket = toolBuckets[normalizedClassification as keyof typeof toolBuckets];
+    const key = `${type}:${label}`;
+    const existing = bucket.get(key) || {
+      label,
+      type,
+      classification: normalizedClassification,
+      total_duration: 0,
+      total_events: 0,
+    };
+
+    existing.total_duration += duration;
+    existing.total_events += 1;
+    bucket.set(key, existing);
+    durationByClassification[`${normalizedClassification}_duration` as keyof typeof durationByClassification] += duration;
+  });
+
+  const activityTotalDuration =
+    durationByClassification.productive_duration
+    + durationByClassification.unproductive_duration
+    + durationByClassification.neutral_duration
+    + durationByClassification.context_dependent_duration;
+
+  return {
+    stats: {
+      activity_total_duration: activityTotalDuration,
+      productive_duration: durationByClassification.productive_duration,
+      unproductive_duration: durationByClassification.unproductive_duration,
+      neutral_duration: durationByClassification.neutral_duration,
+      context_dependent_duration: durationByClassification.context_dependent_duration,
+    },
+    selected_user_tools: {
+      productive: Array.from(toolBuckets.productive.values()).sort((left, right) => Number(right.total_duration || 0) - Number(left.total_duration || 0)),
+      unproductive: Array.from(toolBuckets.unproductive.values()).sort((left, right) => Number(right.total_duration || 0) - Number(left.total_duration || 0)),
+      neutral: Array.from(toolBuckets.neutral.values()).sort((left, right) => Number(right.total_duration || 0) - Number(left.total_duration || 0)),
+      context_dependent: Array.from(toolBuckets.context_dependent.values()).sort((left, right) => Number(right.total_duration || 0) - Number(left.total_duration || 0)),
+    },
+  };
+};
 
 const hasActiveAttendance = (attendance: any) =>
   Boolean(
@@ -908,10 +997,35 @@ export default function AdminDashboard() {
         reportApi.employeeInsights({ start_date: selectedStartDate, end_date: selectedEndDate, user_id: selectedEmployee.id }),
         screenshotApi.getAll({ user_id: selectedEmployee.id, start_date: selectedStartDate, end_date: selectedEndDate, page: 1, per_page: 4 }),
       ]);
+      const insights = insightsResponse.status === 'fulfilled' ? insightsResponse.value.data : null;
+      const shouldHydrateFromActivities =
+        !insights
+        || !hasToolBuckets(insights?.selected_user_tools)
+        || Number(insights?.stats?.activity_total_duration || 0) <= 0;
+      const fallbackInsights = shouldHydrateFromActivities
+        ? buildFallbackEmployeeInsightsFromActivities(
+            await activityApi.getAllPages({
+              user_id: selectedEmployee.id,
+              start_date: selectedStartDate,
+              end_date: selectedEndDate,
+              processed: true,
+              per_page: 200,
+            })
+          )
+        : null;
 
       return {
         profile: profileResponse.status === 'fulfilled' ? profileResponse.value.data : null,
-        insights: insightsResponse.status === 'fulfilled' ? insightsResponse.value.data : null,
+        insights: fallbackInsights
+          ? {
+              ...(insights || {}),
+              stats: {
+                ...(insights?.stats || {}),
+                ...fallbackInsights.stats,
+              },
+              selected_user_tools: fallbackInsights.selected_user_tools,
+            }
+          : insights,
         screenshots: screenshotsResponse.status === 'fulfilled' ? screenshotsResponse.value.data : null,
       };
     },
@@ -936,6 +1050,18 @@ export default function AdminDashboard() {
   const employeeScreenshotCount = Number(employeeScreenshots?.total || employeeScreenshots?.meta?.total || employeeScreenshotRows.length || 0);
   const employeeRecentEntries = safeArray<any>(employeeProfile?.recent_time_entries).slice(0, 4);
   const employeeAttendanceRecords = safeArray<any>(employeeProfile?.attendance_records).slice(0, 4);
+  const selectedEmployeeMonitoringLink = selectedEmployee
+    ? buildScopedEmployeeLink('/monitoring/screenshots', selectedEmployee.id, selectedStartDate, selectedEndDate)
+    : '/monitoring/screenshots';
+  const selectedEmployeeProductivityLink = selectedEmployee
+    ? buildScopedEmployeeLink('/monitoring/productive-time', selectedEmployee.id, selectedStartDate, selectedEndDate)
+    : '/monitoring/productive-time';
+  const selectedEmployeeTimesheetLink = selectedEmployee
+    ? buildScopedEmployeeLink('/reports/hours-tracked', selectedEmployee.id, selectedStartDate, selectedEndDate)
+    : '/reports/hours-tracked';
+  const selectedEmployeeAttendanceLink = selectedEmployee
+    ? buildScopedEmployeeLink('/attendance', selectedEmployee.id, selectedStartDate, selectedEndDate)
+    : '/attendance';
   const employeeTopTools = [
     ...safeArray<any>(employeeTools.productive),
     ...safeArray<any>(employeeTools.unproductive),
@@ -1443,7 +1569,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="mb-3 flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700">Screenshot Access</span>
-                  <Link to={`/monitoring/screenshots?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Open Monitoring</Link>
+                  <Link to={selectedEmployeeMonitoringLink} className="font-medium text-blue-600">Open Monitoring</Link>
                 </div>
                 {employeeScreenshotRows.length ? (
                   <div className="grid grid-cols-2 gap-2">
@@ -1480,7 +1606,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="mb-3 flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700">Top Tools & Sites</span>
-                  <Link to={`/monitoring/productive-time?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Details</Link>
+                  <Link to={selectedEmployeeProductivityLink} className="font-medium text-blue-600">Details</Link>
                 </div>
                 {employeeTopTools.length ? (
                   <div className="space-y-3">
@@ -1500,7 +1626,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="mb-3 flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700">Recent Work</span>
-                  <Link to={`/reports/hours-tracked?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Timesheets</Link>
+                  <Link to={selectedEmployeeTimesheetLink} className="font-medium text-blue-600">Timesheets</Link>
                 </div>
                 {employeeRecentEntries.length ? (
                   <div className="space-y-3">
@@ -1520,7 +1646,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="mb-3 flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700">Attendance History</span>
-                  <Link to={`/attendance?user_id=${selectedEmployee.id}`} className="font-medium text-blue-600">Open</Link>
+                  <Link to={selectedEmployeeAttendanceLink} className="font-medium text-blue-600">Open</Link>
                 </div>
                 {employeeAttendanceRecords.length ? (
                   <div className="space-y-3">

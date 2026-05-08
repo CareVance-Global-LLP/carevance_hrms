@@ -304,7 +304,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     const nextStartDate = params.get('start');
     const nextEndDate = params.get('end');
     const nextQuery = params.get('q');
-    const nextUserId = params.get('user');
+    const nextUserId = params.get('user') || params.get('user_id');
 
     if (nextStartDate && nextEndDate) {
       setStartDate(nextStartDate);
@@ -467,11 +467,12 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     setSelectedUserId('');
 
     const params = new URLSearchParams(location.search);
-    if (!params.has('user')) {
+    if (!params.has('user') && !params.has('user_id')) {
       return;
     }
 
     params.delete('user');
+    params.delete('user_id');
     navigate(
       {
         pathname: location.pathname,

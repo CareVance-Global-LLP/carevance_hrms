@@ -288,4 +288,20 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(await screen.findByText('This PC')).toBeInTheDocument();
     expect(screen.queryByText(/^Windows Explorer$/i)).not.toBeInTheDocument();
   });
+
+  it('hydrates the employee and date range filters from scoped dashboard links', async () => {
+    renderWithProviders(<ReportsWorkspace mode="hours-tracked" />, {
+      route: '/reports/hours-tracked?user=1&start=2026-04-10&end=2026-04-14',
+    });
+
+    await screen.findByText('Hours Tracked');
+
+    expect(mocks.overallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start_date: '2026-04-10',
+        end_date: '2026-04-14',
+        user_ids: [1],
+      })
+    );
+  });
 });

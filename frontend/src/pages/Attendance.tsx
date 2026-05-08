@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { canReviewApprovalRequest, hasAdminAccess } from '@/lib/permissions';
@@ -13,7 +14,7 @@ import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
-import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
+import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
@@ -190,6 +191,7 @@ const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
 };
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const { user, organization } = useAuth();
+  const location = useLocation();
   const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const [selectedFilterUserId, setSelectedFilterUserId] = useState<number | ''>(() => readPersistedAttendanceFilters().selectedFilterUserId);
   const [countryFilter, setCountryFilter] = useState(() => readPersistedAttendanceFilters().countryFilter);
@@ -283,6 +285,37 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const canSeeAttendanceMonitoring = isAdmin;
   const canAccessAttendance = isAdmin || user?.settings?.attendance_monitoring !== false;
   const canRequestTimeEdit = user?.settings?.can_edit_time !== false;
+
+  useEffect(() => {
+    if (!location.search || !isAdmin) return;
+
+    const params = new URLSearchParams(location.search);
+    const nextStartDate = params.get('start');
+    const nextEndDate = params.get('end');
+    const nextUserId = params.get('user') || params.get('user_id');
+
+    if (nextStartDate && nextEndDate) {
+      setStartDate(nextStartDate);
+      setEndDate(nextEndDate);
+      setDatePreset(detectDateRangePreset(nextStartDate, nextEndDate));
+    } else if (nextStartDate || nextEndDate) {
+      if (nextStartDate) {
+        setStartDate(nextStartDate);
+      }
+      if (nextEndDate) {
+        setEndDate(nextEndDate);
+      }
+      setDatePreset('custom');
+    }
+
+    if (nextUserId !== null) {
+      const parsedUserId = Number(nextUserId);
+      const resolvedUserId = Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : '';
+      setSelectedFilterUserId(resolvedUserId);
+      setSelectedUserId(resolvedUserId === '' ? null : Number(resolvedUserId));
+      setCalendarScope(resolvedUserId === '' ? 'overall' : 'selected');
+    }
+  }, [isAdmin, location.search]);
   const adminUsersQuery = useQuery({
     queryKey: ['attendance-admin-users'],
     queryFn: async () => {
