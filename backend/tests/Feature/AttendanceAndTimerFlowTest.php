@@ -249,6 +249,62 @@ class AttendanceAndTimerFlowTest extends TestCase
             ->assertJsonPath('record.leave_type', 'half_day');
     }
 
+    public function test_attendance_summary_marks_approved_leave_day_as_leave_not_absent(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $admin = User::create([
+            'name' => 'Admin',
+            'email' => 'attendance-summary-admin@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'attendance-summary-employee@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-05-08 10:00:00', 'Asia/Kolkata'));
+
+            LeaveRequest::create([
+                'organization_id' => $organization->id,
+                'user_id' => $employee->id,
+                'start_date' => '2026-05-08',
+                'end_date' => '2026-05-08',
+                'leave_type' => 'full_day',
+                'status' => 'approved',
+            ]);
+
+            AttendanceRecord::create([
+                'organization_id' => $organization->id,
+                'user_id' => $employee->id,
+                'attendance_date' => '2026-05-08',
+                'status' => 'absent',
+                'check_in_at' => null,
+                'check_out_at' => null,
+                'worked_seconds' => 0,
+                'late_minutes' => 0,
+            ]);
+
+            $response = $this->getJson('/api/attendance/summary?start_date=2026-05-08&end_date=2026-05-08', $this->apiHeadersFor($admin))
+                ->assertOk();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $employeeSummary = collect($response->json('data'))
+            ->firstWhere('user.id', $employee->id);
+
+        $this->assertNotNull($employeeSummary);
+        $this->assertTrue((bool) ($employeeSummary['has_approved_leave_today'] ?? false));
+        $this->assertTrue((bool) ($employeeSummary['is_leave'] ?? false));
+        $this->assertSame('leave', $employeeSummary['attendance_status'] ?? null);
+    }
+
     public function test_timer_start_with_task_moves_task_to_in_progress(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);

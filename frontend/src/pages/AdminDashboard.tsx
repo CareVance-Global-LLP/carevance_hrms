@@ -112,14 +112,27 @@ const toIsoDate = (date: Date) => {
 };
 const todayIso = () => toIsoDate(new Date());
 
+const clampIsoDateToToday = (value: string | null | undefined) => {
+  const normalized = String(value || '').slice(0, 10);
+  const today = todayIso();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return today;
+  return normalized > today ? today : normalized;
+};
+
+const normalizeCustomRange = (customRange: DateRange): DateRange => {
+  const safeStart = clampIsoDateToToday(customRange.startDate || todayIso());
+  const safeEnd = clampIsoDateToToday(customRange.endDate || safeStart);
+  return safeStart <= safeEnd
+    ? { startDate: safeStart, endDate: safeEnd }
+    : { startDate: safeEnd, endDate: safeStart };
+};
+
 const resolveDateRange = (preset: DatePreset, customRange: DateRange): DateRange => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   if (preset === 'custom') {
-    const start = customRange.startDate || todayIso();
-    const end = customRange.endDate || start;
-    return start <= end ? { startDate: start, endDate: end } : { startDate: end, endDate: start };
+    return normalizeCustomRange(customRange);
   }
 
   if (preset === 'last_month') {
@@ -181,6 +194,9 @@ const rangesOverlap = (startValue: string | null | undefined, endValue: string |
   const end = String(endValue || startValue).slice(0, 10);
   return start <= range.endDate && end >= range.startDate;
 };
+
+const resolveLeaveUserId = (leave: any) =>
+  Number(leave?.user_id || leave?.user?.id || leave?.employee_id || 0);
 
 const enumerateDateRange = (range: DateRange) => {
   const dates: Date[] = [];
@@ -505,8 +521,10 @@ export default function AdminDashboard() {
     isDatePreset(persistedFilters.datePreset) ? persistedFilters.datePreset : 'today'
   );
   const [customRange, setCustomRange] = useState<DateRange>(() => ({
-    startDate: persistedFilters.customRange?.startDate || todayIso(),
-    endDate: persistedFilters.customRange?.endDate || persistedFilters.customRange?.startDate || todayIso(),
+    ...normalizeCustomRange({
+      startDate: persistedFilters.customRange?.startDate || todayIso(),
+      endDate: persistedFilters.customRange?.endDate || persistedFilters.customRange?.startDate || todayIso(),
+    }),
   }));
   const selectedRange = useMemo(() => resolveDateRange(datePreset, customRange), [customRange, datePreset]);
   const selectedStartDate = selectedRange.startDate;
@@ -552,7 +570,7 @@ export default function AdminDashboard() {
       ] = await Promise.allSettled([
         userApi.getAll(),
         attendanceApi.summary({ start_date: selectedStartDate, end_date: selectedEndDate }),
-        leaveApi.list({ status: 'approved', start_date: selectedStartDate, end_date: selectedEndDate }),
+        leaveApi.list({ status: 'approved', limit: 500 }),
         reportApi.overall(reportScopeParams),
         taskApi.getAll({ timer_only: true }),
         payrollSimpleApi.runs(selectedStartDate.slice(0, 7)),
@@ -611,7 +629,7 @@ export default function AdminDashboard() {
   };
 
   const leavesInRange = data.leaves.filter((leave: any) =>
-    leave.status === 'approved' && rangesOverlap(leave.start_date, leave.end_date, selectedRange)
+    String(leave?.status || '').toLowerCase() === 'approved' && rangesOverlap(leave.start_date, leave.end_date, selectedRange)
   );
   const allEmployees = data.employees;
 
@@ -640,12 +658,23 @@ export default function AdminDashboard() {
         .filter((employee) => scopeDepartmentFilter === 'All' || employee.department === scopeDepartmentFilter)
         .map((employee) => employee.id)
   );
-  const scopedLeavesInRange = leavesInRange.filter((leave: any) => scopedEmployeeIds.has(Number(leave.user_id)));
-  const leaveUserIdsInRange = new Set(scopedLeavesInRange.map((leave: any) => Number(leave.user_id)));
+  const scopedLeavesInRange = leavesInRange.filter((leave: any) => {
+    const leaveUserId = resolveLeaveUserId(leave);
+    return leaveUserId > 0 && scopedEmployeeIds.has(leaveUserId);
+  });
+  const leaveUserIdsInRange = new Set(scopedLeavesInRange.map((leave: any) => resolveLeaveUserId(leave)).filter((id: number) => id > 0));
+  const attendanceRows = data.attendanceRows.filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || row.employee_id)));
+  const attendanceLeaveUserIds = new Set(attendanceRows
+    .filter((row: any) => {
+      const attendanceStatus = String(row.attendance_status || row.status || '').toLowerCase();
+      return attendanceStatus.includes('leave') || Boolean(row.has_approved_leave_today) || Boolean(row.is_leave);
+    })
+    .map((row: any) => Number(row.user?.id || row.user_id || row.employee_id))
+    .filter((id: number) => id > 0));
+  const effectiveLeaveUserIds = new Set<number>([...leaveUserIdsInRange, ...attendanceLeaveUserIds]);
   const employees = allEmployees
     .filter((employee) => scopedEmployeeIds.has(employee.id))
-    .map((employee) => leaveUserIdsInRange.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
-  const attendanceRows = data.attendanceRows.filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || row.employee_id)));
+    .map((employee) => effectiveLeaveUserIds.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
 
   const totalEmployees = employees.length;
   const lateToday = attendanceRows.filter((row: any) => Number(row.late_days || row.late_minutes || 0) > 0).length;
@@ -653,7 +682,7 @@ export default function AdminDashboard() {
     const isLate = Number(row.late_days || row.late_minutes || 0) > 0;
     return !isLate && (Number(row.present_days || 0) > 0 || hasActiveAttendance(row));
   }).length;
-  const onLeave = leaveUserIdsInRange.size;
+  const onLeave = effectiveLeaveUserIds.size;
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
   const dashboardSummary = data.summary as any;
@@ -1210,7 +1239,12 @@ export default function AdminDashboard() {
               <input
                 type="date"
                 value={customRange.startDate}
-                onChange={(event) => setCustomRange((current) => ({ ...current, startDate: event.target.value }))}
+                max={todayIso()}
+                onChange={(event) => setCustomRange((current) => {
+                  const nextStart = clampIsoDateToToday(event.target.value);
+                  const nextEnd = current.endDate < nextStart ? nextStart : clampIsoDateToToday(current.endDate);
+                  return { startDate: nextStart, endDate: nextEnd };
+                })}
                 className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
               />
             </label>
@@ -1219,7 +1253,14 @@ export default function AdminDashboard() {
               <input
                 type="date"
                 value={customRange.endDate}
-                onChange={(event) => setCustomRange((current) => ({ ...current, endDate: event.target.value }))}
+                max={todayIso()}
+                onChange={(event) => setCustomRange((current) => {
+                  const nextEnd = clampIsoDateToToday(event.target.value);
+                  return {
+                    startDate: current.startDate > nextEnd ? nextEnd : current.startDate,
+                    endDate: nextEnd,
+                  };
+                })}
                 className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
               />
             </label>

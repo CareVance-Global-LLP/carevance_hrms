@@ -630,7 +630,17 @@ class AttendanceService
         }
 
         $users = $usersQuery->orderBy('name')->get(['id', 'name', 'email', 'role']);
-        $rows = $users->map(function (User $user) use ($currentUser, $start, $end) {
+        $today = now()->toDateString();
+        $approvedLeaveTodayByUserId = LeaveRequest::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->whereIn('user_id', $users->pluck('id'))
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $today)
+            ->whereDate('end_date', '>=', $today)
+            ->get(['user_id', 'leave_type'])
+            ->keyBy(fn (LeaveRequest $leave) => (int) $leave->user_id);
+
+        $rows = $users->map(function (User $user) use ($approvedLeaveTodayByUserId, $currentUser, $start, $end) {
             $records = AttendanceRecord::where('organization_id', $currentUser->organization_id)
                 ->where('user_id', $user->id)
                 ->whereDate('attendance_date', '>=', $start->toDateString())
@@ -646,6 +656,16 @@ class AttendanceService
             $openPunch = $todayRecord?->punches?->first(fn (AttendancePunch $punch) => !$punch->punch_out_at);
             $latestPunch = $latestRecord?->punches?->sortByDesc(fn (AttendancePunch $punch) => Carbon::parse($punch->punch_in_at)->timestamp)->first();
             $checkedInToday = $todayRecord && $this->hasOpenPunch($todayRecord);
+            $leaveToday = $approvedLeaveTodayByUserId->get((int) $user->id);
+            $hasHalfDayLeaveToday = (bool) $leaveToday && $leaveToday->isHalfDay();
+            $hasApprovedLeaveToday = (bool) $leaveToday && !$hasHalfDayLeaveToday;
+            $attendanceStatus = (string) ($todayRecord?->status ?? '');
+
+            if ($hasApprovedLeaveToday && !$checkedInToday && !$todayRecord?->check_in_at) {
+                $attendanceStatus = 'leave';
+            } elseif ($hasHalfDayLeaveToday && $attendanceStatus === '') {
+                $attendanceStatus = 'half_leave';
+            }
 
             return [
                 'user' => $user,
@@ -660,7 +680,10 @@ class AttendanceService
                 'last_check_in_at' => $latestPunch?->punch_in_at ?? $latestRecord?->check_in_at,
                 'last_check_out_at' => $latestPunch?->punch_out_at ?? $latestRecord?->check_out_at,
                 'last_attendance_date' => $latestRecord ? Carbon::parse($latestRecord->attendance_date)->toDateString() : null,
-                'attendance_status' => $todayRecord?->status,
+                'attendance_status' => $attendanceStatus,
+                'has_approved_leave_today' => $hasApprovedLeaveToday,
+                'has_half_day_leave_today' => $hasHalfDayLeaveToday,
+                'is_leave' => $hasApprovedLeaveToday || $hasHalfDayLeaveToday || str_contains(strtolower($attendanceStatus), 'leave'),
             ];
         })->values();
 
