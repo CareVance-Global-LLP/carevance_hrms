@@ -1,0 +1,41 @@
+# Ignore Git metadata
+.git
+.gitignore
+
+# Node and build artifacts
+node_modules
+**/node_modules
+dist
+build
+.cache
+.vite
+
+# Logs and temp files
+*.log
+logs
+tmp
+*.pid
+
+# Environment and local settings
+.env
+.env.*
+.vscode/
+.idea/
+.DS_Store
+
+# Composer / PHP vendor (we build inside Docker multi-stage)
+vendor
+
+# Laravel / framework generated
+storage
+
+# Misc
+coverage
+*.zip
+*.tar.gz
+
+# Ignore docker files created by local tooling
+docker-compose.override.yml
+
+# Keep package-lock/package.json unless intentionally included
+# (leave package-lock.json if you want reproducible builds)

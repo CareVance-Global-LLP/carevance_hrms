@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - carevance
+
+  backend:
+    image: ghcr.io/${GITHUB_OWNER:-your-org}/carevance-backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 10000
+      DB_HOST: db
+      DB_PORT: 5432
+    depends_on:
+      - db
+    ports:
+      - "${BACKEND_PORT:-8000}:10000"
+    volumes:
+      - backend_storage:/var/www/html/storage
+    networks:
+      - carevance
+
+  queue:
+    image: ghcr.io/${GITHUB_OWNER:-your-org}/carevance-backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+    command: ["sh", "-lc", "php artisan queue:work --tries=1 --timeout=0"]
+    depends_on:
+      - db
+      - backend
+    volumes:
+      - backend_storage:/var/www/html/storage
+    networks:
+      - carevance
+
+  frontend:
+    image: ghcr.io/${GITHUB_OWNER:-your-org}/carevance-frontend:latest
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL}
+      VITE_WEB_APP_URL: ${VITE_WEB_APP_URL}
+      VITE_DESKTOP_DOWNLOAD_URL: ${VITE_DESKTOP_DOWNLOAD_URL}
+      VITE_DESKTOP_DOWNLOAD_LABEL: ${VITE_DESKTOP_DOWNLOAD_LABEL}
+      VITE_IDLE_TRACK_THRESHOLD_SECONDS: ${VITE_IDLE_TRACK_THRESHOLD_SECONDS}
+      VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS: ${VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS}
+      VITE_IDLE_GUARD_INTERVAL_MS: ${VITE_IDLE_GUARD_INTERVAL_MS}
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - carevance
+
+volumes:
+  postgres_data:
+  backend_storage:
+
+networks:
+  carevance:
+    driver: bridge
+
+# NOTE: Set GITHUB_OWNER environment variable or replace 'your-org' with your GitHub org/user.
+# After images are pushed by CI, deploy on Lightsail by pulling images (docker-compose -f docker-compose.production.yml pull) and then docker-compose up -d
