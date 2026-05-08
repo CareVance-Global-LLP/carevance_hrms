@@ -267,6 +267,21 @@ describe('MonitoringWorkspace', () => {
     });
   });
 
+  it('requests full employee insights in screenshots mode so current activity is available', async () => {
+    renderWithProviders(
+      <MonitoringWorkspace mode="screenshots" />,
+      { route: '/monitoring/screenshots?user=7' },
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Screenshots', level: 1 })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(mocks.employeeInsightsMock).toHaveBeenCalledWith(
+        expect.not.objectContaining({ dashboard_lite: 1 })
+      );
+    });
+  });
+
   it('uses the same live activity fallbacks in screenshots mode as monitoring mode', async () => {
     mocks.employeeInsightsMock.mockResolvedValue({
       data: {

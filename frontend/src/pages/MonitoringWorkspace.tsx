@@ -396,7 +396,6 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
             q: query || undefined,
             user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
             recent_screenshot_limit: RECENT_SCREENSHOT_PREVIEW_LIMIT,
-            dashboard_lite: 1,
           }),
         ]);
 
