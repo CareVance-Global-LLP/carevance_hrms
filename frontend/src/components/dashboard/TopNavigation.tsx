@@ -402,7 +402,7 @@ export default function TopNavigation({
         className={
           mobile
             ? 'flex w-full flex-col gap-2'
-            : 'rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm'
+            : 'p-0'
         }
       >
         {mobile ? (

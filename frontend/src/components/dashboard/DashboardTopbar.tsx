@@ -80,7 +80,7 @@ export default function DashboardTopbar({
         isVisible || mobileNavigationOpen || notificationsOpen || profileOpen ? 'translate-y-0' : '-translate-y-[115%]'
       }`}
     >
-      <div className="mx-auto max-w-[1400px] px-4 pt-3 md:px-6 lg:pt-4 xl:px-8">
+      <div className="w-full px-0 pt-3 lg:pt-4">
         <AdaptiveSurface
           className="relative w-full overflow-visible rounded-lg border border-slate-200 bg-white px-3.5 py-2 shadow-sm md:px-4 xl:px-5"
           tone="light"
@@ -104,21 +104,20 @@ export default function DashboardTopbar({
               </div>
 
               <div className="hidden min-w-0 items-center lg:flex">
-                <div className="flex min-w-0 items-center gap-3 xl:gap-4">
+                <div className="flex min-w-0 items-center gap-4 xl:gap-5">
                   <BrandLogo variant="full" size="sm" className="max-w-[10.75rem] xl:max-w-[11.75rem]" />
                   {organizationName ? (
-                    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">
+                    <div className="ml-0.5 flex min-w-0 flex-col items-center justify-center">
                       {organizationLogoUrl ? (
-                        <img src={organizationLogoUrl} alt={`${organizationName} logo`} className="h-8 w-8 rounded-md object-cover" />
+                        <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white">
+                          <img src={organizationLogoUrl} alt={`${organizationName} logo`} className="h-full w-full object-contain" />
+                        </span>
                       ) : (
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-[10px] font-semibold text-slate-600">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-md bg-slate-200 text-lg font-semibold text-slate-600">
                           {organizationName.charAt(0).toUpperCase()}
                         </div>
                       )}
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Company</p>
-                        <p className="max-w-[10rem] truncate text-sm font-semibold text-slate-800">{organizationName}</p>
-                      </div>
+                      <p className="mt-1.5 max-w-[9.5rem] truncate text-center text-xs font-medium leading-tight text-slate-700">{organizationName}</p>
                     </div>
                   ) : null}
                 </div>
