@@ -319,7 +319,7 @@ export default function Layout() {
   const hasGlobalSearchQuery = globalSearch.trim().length > 0;
 
   const globalPanelHeader = (
-    <div className="relative z-[60] flex w-full flex-col gap-2.5 lg:flex-row lg:items-center">
+    <div className="relative z-[60] flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-start lg:gap-5 xl:gap-6">
       {organizationName ? (
         <div className="inline-flex w-full min-w-0 max-w-[12rem] flex-col items-center lg:shrink-0">
           {organizationLogoUrl ? (
@@ -340,8 +340,8 @@ export default function Layout() {
         </div>
       ) : null}
 
-      <div ref={globalSearchRef} className="relative z-[70] min-w-0 w-full lg:flex-1 lg:min-w-[14rem] lg:max-w-[44rem]">
-        <label className="flex h-10 min-w-0 items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-400 shadow-sm">
+      <div ref={globalSearchRef} className="relative z-[70] min-w-0 w-full lg:mx-auto lg:w-[32rem] lg:max-w-[32rem] xl:w-[36rem] xl:max-w-[36rem]">
+        <label className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-400 shadow-sm">
           <Search className="h-3.5 w-3.5 shrink-0 text-blue-600" />
           <input
             aria-label="Universal search"
@@ -361,7 +361,7 @@ export default function Layout() {
                 setIsGlobalSearchOpen(false);
               }
             }}
-            className="w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
             placeholder="Search panels, employees, reports, settings, attendance..."
           />
           <span className="hidden rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 sm:inline">Enter</span>
