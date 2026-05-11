@@ -25,7 +25,7 @@ class LeaveRequestController extends Controller
     public function index(Request $request)
     {
         $request->validate([
-            'status' => 'nullable|in:pending,approved,rejected,revoked',
+            'status' => 'nullable|in:pending,approved,rejected,revoked,auto_cancelled',
             'user_id' => 'nullable|integer',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
@@ -36,6 +36,8 @@ class LeaveRequestController extends Controller
         if (!$currentUser || !$currentUser->organization_id) {
             return response()->json(['data' => []]);
         }
+
+        LeaveRequest::expirePendingRequestsForOrganization((int) $currentUser->organization_id);
 
         $query = LeaveRequest::with(['user:id,name,email,role,organization_id', 'reviewer:id,name,email', 'revokeReviewer:id,name,email'])
             ->where('organization_id', $currentUser->organization_id)
@@ -97,6 +99,8 @@ class LeaveRequestController extends Controller
         if (!$currentUser || !$currentUser->organization_id) {
             return response()->json(['message' => 'Organization is required.'], 422);
         }
+
+        LeaveRequest::expirePendingRequestsForOrganization((int) $currentUser->organization_id);
 
         $startDate = Carbon::parse($request->start_date)->startOfDay();
         $endDate = Carbon::parse($request->end_date)->startOfDay();
@@ -164,6 +168,8 @@ class LeaveRequestController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        LeaveRequest::expirePendingRequestsForOrganization((int) $currentUser->organization_id);
+
         $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$leave) {
             return response()->json(['message' => 'Leave request not found'], 404);
@@ -172,6 +178,11 @@ class LeaveRequestController extends Controller
         if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+        if ($leave->hasExpiredPendingWindow()) {
+            LeaveRequest::expirePendingRequestsForOrganization((int) $currentUser->organization_id);
+            $leave->refresh();
+        }
+
         if ($leave->status !== 'pending') {
             return response()->json(['message' => 'Only pending requests can be approved.'], 422);
         }
@@ -217,6 +228,8 @@ class LeaveRequestController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        LeaveRequest::expirePendingRequestsForOrganization((int) $currentUser->organization_id);
+
         $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$leave) {
             return response()->json(['message' => 'Leave request not found'], 404);
@@ -225,6 +238,11 @@ class LeaveRequestController extends Controller
         if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+        if ($leave->hasExpiredPendingWindow()) {
+            LeaveRequest::expirePendingRequestsForOrganization((int) $currentUser->organization_id);
+            $leave->refresh();
+        }
+
         if ($leave->status !== 'pending') {
             return response()->json(['message' => 'Only pending requests can be rejected.'], 422);
         }

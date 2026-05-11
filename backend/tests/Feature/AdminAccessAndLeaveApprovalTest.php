@@ -299,6 +299,60 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
         $this->assertSame('half_leave', $attendance->status);
     }
 
+    public function test_expired_pending_leave_request_is_auto_cancelled_and_removed_from_pending_results(): void
+    {
+        Carbon::setTestNow('2026-04-10 10:00:00');
+
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-expired-leave@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-expired-leave@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Support',
+            'slug' => 'support-expired-leave',
+            'is_active' => true,
+        ]);
+        $manager->groups()->attach($group->id);
+        $employee->groups()->attach($group->id);
+
+        $leave = LeaveRequest::create([
+            'organization_id' => $organization->id,
+            'user_id' => $employee->id,
+            'start_date' => '2026-04-09',
+            'end_date' => '2026-04-09',
+            'leave_type' => 'full_day',
+            'reason' => 'Old pending leave',
+            'status' => 'pending',
+        ]);
+
+        $this->getJson('/api/leave-requests?status=pending', $this->apiHeadersFor($manager))
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $leave->refresh();
+
+        $this->assertSame('auto_cancelled', $leave->status);
+
+        $this->patchJson("/api/leave-requests/{$leave->id}/approve", [], $this->apiHeadersFor($manager))
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Only pending requests can be approved.');
+
+        Carbon::setTestNow();
+    }
+
     public function test_employee_is_forbidden_from_admin_reports_and_org_settings_but_admin_is_allowed(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);

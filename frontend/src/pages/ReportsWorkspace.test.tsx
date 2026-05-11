@@ -170,6 +170,8 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(screen.getByText('Payroll Report')).toBeInTheDocument();
     expect(screen.getByText('Custom Export')).toBeInTheDocument();
     expect(screen.queryByText('Analytics Center')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /attendance report/i })).toHaveAttribute('href', '/reports/attendance');
+    expect(screen.getByRole('link', { name: /hours tracked/i })).toHaveAttribute('href', '/reports/hours-tracked');
   });
 
   it('shows an analytics hub with every analytics entry point', async () => {
@@ -182,6 +184,8 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(screen.getByText('Unproductive Time')).toBeInTheDocument();
     expect(screen.getByText('Screenshots')).toBeInTheDocument();
     expect(screen.queryByText('Reports Center')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open productive time/i })).toHaveAttribute('href', '/monitoring/productive-time');
+    expect(screen.getByRole('link', { name: /open website usage/i })).toHaveAttribute('href', '/monitoring/website-usage');
   });
 
   it('renders detailed report-specific attendance analysis', async () => {
@@ -191,6 +195,8 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(screen.getByText('Report Specific Analysis')).toBeInTheDocument();
     expect(screen.getByText('Attendance Risk Radar')).toBeInTheDocument();
     expect(screen.getByText('Employee Day Matrix')).toBeInTheDocument();
+    expect(screen.getByText('Absent Days')).toBeInTheDocument();
+    expect(screen.getByText('Avg Attendance')).toBeInTheDocument();
     expect(screen.queryByText('Payroll Cost Waterfall')).not.toBeInTheDocument();
     expect(screen.getByText('Department Attendance Detail')).toBeInTheDocument();
     expect(screen.getByText('Attendance Exceptions')).toBeInTheDocument();

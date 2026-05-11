@@ -195,6 +195,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [groupMembers, setGroupMembers] = useState<number[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee'>('employee');
+  const [roleSearchQuery, setRoleSearchQuery] = useState('');
   const [settingsUserId, setSettingsUserId] = useState<number | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<EmployeeSettingsDraft | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
@@ -439,6 +440,17 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         return departmentFilteredRows;
     }
   }, [directoryDepartmentFilter, directoryFilterUserId, directorySort, users]);
+  const filteredRoleUsers = useMemo(() => {
+    const normalizedQuery = roleSearchQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return users;
+    }
+
+    return users.filter((item: any) =>
+      [item.name, item.email, item.role, resolveEmployeeDepartment(item)]
+        .some((value) => String(value || '').toLowerCase().includes(normalizedQuery))
+    );
+  }, [roleSearchQuery, users]);
 
   const handleDeleteUser = (targetUser: any) => {
     if (!isStrictAdmin || !targetUser?.id) {
@@ -896,16 +908,46 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           </div>
 
           <SurfaceCard className="p-5">
-            <h2 className="text-lg font-semibold text-slate-950">Role Assignment</h2>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">Role Assignment</h2>
+                <p className="mt-1 text-sm text-slate-500">Search by person, email, role, or department to update access without scanning the full list.</p>
+              </div>
+              <div className="w-full lg:max-w-sm">
+                <FieldLabel>Search people</FieldLabel>
+                <TextInput
+                  value={roleSearchQuery}
+                  onChange={(event) => setRoleSearchQuery(event.target.value)}
+                  placeholder="Search name, email, role, or department"
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span className="rounded-full bg-slate-100 px-3 py-1">
+                Showing <span className="font-semibold text-slate-700">{filteredRoleUsers.length}</span> of {users.length} users
+              </span>
+              {roleSearchQuery.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setRoleSearchQuery('')}
+                  className="rounded-full border border-slate-200 px-3 py-1 font-medium text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                >
+                  Clear search
+                </button>
+              ) : null}
+            </div>
             <div className="mt-4 space-y-3">
               {users.length === 0 ? (
                 <PageEmptyState title="No users found" description="Users must exist before roles can be updated." />
+              ) : filteredRoleUsers.length === 0 ? (
+                <PageEmptyState title="No matching users" description="Try a different search term to find the role assignment you need." />
               ) : (
-                users.map((user: any) => (
+                filteredRoleUsers.map((user: any) => (
                   <div key={user.id} className="flex flex-col gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
                     <div>
                       <p className="font-medium text-slate-950">{user.name}</p>
                       <p className="text-sm text-slate-500">{user.email}</p>
+                      <p className="mt-1 text-xs text-slate-500">{resolveEmployeeDepartment(user)} department</p>
                     </div>
                     <div className="flex items-center gap-3">
                       <SelectInput

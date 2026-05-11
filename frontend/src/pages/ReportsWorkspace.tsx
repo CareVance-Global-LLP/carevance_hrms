@@ -30,6 +30,7 @@ import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   Building2,
   CalendarDays,
@@ -309,6 +310,8 @@ const reportCatalogItems = [
     title: 'Attendance Report',
     description: 'Presence, leave, absence, attendance rate, and employee attendance exceptions.',
     to: '/reports/attendance',
+    category: 'Workforce health',
+    highlights: ['Attendance %', 'Leave detail', 'Exceptions'],
     icon: CalendarDays,
     accent: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   },
@@ -316,6 +319,8 @@ const reportCatalogItems = [
     title: 'Hours Tracked',
     description: 'Tracked time, working time, idle time, daily totals, and employee hour rows.',
     to: '/reports/hours-tracked',
+    category: 'Time tracking',
+    highlights: ['Tracked hours', 'Idle share', 'Daily trend'],
     icon: FileClock,
     accent: 'bg-sky-50 text-sky-700 ring-sky-200',
   },
@@ -323,6 +328,8 @@ const reportCatalogItems = [
     title: 'Task Overview',
     description: 'Task allocation, project coverage, assignee detail, status, priority, and due dates.',
     to: '/reports/projects-tasks',
+    category: 'Delivery status',
+    highlights: ['Task load', 'Assignee detail', 'Tracked effort'],
     icon: ListFilter,
     accent: 'bg-violet-50 text-violet-700 ring-violet-200',
   },
@@ -330,6 +337,8 @@ const reportCatalogItems = [
     title: 'Timeline Report',
     description: 'Chronological activity report for app, website, idle, employee, and duration rows.',
     to: '/reports/timeline',
+    category: 'Activity audit',
+    highlights: ['Raw timeline', 'App and site events', 'Idle periods'],
     icon: Waypoints,
     accent: 'bg-amber-50 text-amber-700 ring-amber-200',
   },
@@ -337,6 +346,8 @@ const reportCatalogItems = [
     title: 'Payroll Report',
     description: 'Payroll report area for runs, payslips, reimbursements, salary structures, and payroll exports.',
     to: '/payroll/reports',
+    category: 'Compensation ops',
+    highlights: ['Runs', 'Payslips', 'Structures'],
     icon: FileSpreadsheet,
     accent: 'bg-rose-50 text-rose-700 ring-rose-200',
   },
@@ -344,6 +355,8 @@ const reportCatalogItems = [
     title: 'Custom Export',
     description: 'Build and download CSV exports from the selected date, employee, and team scope.',
     to: '/reports/custom-export',
+    category: 'Data export',
+    highlights: ['CSV output', 'Date range', 'Team filters'],
     icon: Download,
     accent: 'bg-slate-100 text-slate-700 ring-slate-200',
   },
@@ -354,6 +367,8 @@ const analyticsCatalogItems = [
     title: 'Productivity Summary',
     description: 'Productive share, idle share, daily productivity trend, and employee contributor analytics.',
     to: '/reports/productivity',
+    category: 'Focus trends',
+    highlights: ['Productive share', 'Idle trend', 'Top contributors'],
     icon: Gauge,
     accent: 'bg-blue-50 text-blue-700 ring-blue-200',
   },
@@ -361,6 +376,8 @@ const analyticsCatalogItems = [
     title: 'Web & App Usage',
     description: 'Classified website and application usage with productive, unproductive, and context-dependent tools.',
     to: '/reports/web-app-usage',
+    category: 'Tool usage',
+    highlights: ['Apps', 'Websites', 'Classification'],
     icon: Monitor,
     accent: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
   },
@@ -368,6 +385,8 @@ const analyticsCatalogItems = [
     title: 'Productive Time',
     description: 'Focused monitoring analytics for productive employees, tools, and work sessions.',
     to: '/monitoring/productive-time',
+    category: 'High-output work',
+    highlights: ['Focused employees', 'Tools', 'Sessions'],
     icon: LineChart,
     accent: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   },
@@ -375,6 +394,8 @@ const analyticsCatalogItems = [
     title: 'Unproductive Time',
     description: 'Unproductive time analytics, tool patterns, and employee attention signals.',
     to: '/monitoring/unproductive-time',
+    category: 'Attention drift',
+    highlights: ['Time loss', 'Tool patterns', 'Attention signals'],
     icon: Activity,
     accent: 'bg-orange-50 text-orange-700 ring-orange-200',
   },
@@ -382,6 +403,8 @@ const analyticsCatalogItems = [
     title: 'Timeline Analytics',
     description: 'Activity event analytics across app, website, idle, duration, and productivity classification.',
     to: '/reports/timeline',
+    category: 'Behavior sequence',
+    highlights: ['Event flow', 'Duration', 'Productivity class'],
     icon: Waypoints,
     accent: 'bg-purple-50 text-purple-700 ring-purple-200',
   },
@@ -389,6 +412,8 @@ const analyticsCatalogItems = [
     title: 'App Usage',
     description: 'Application analytics grouped by employee, duration, and usage classification.',
     to: '/monitoring/app-usage',
+    category: 'Desktop apps',
+    highlights: ['Apps by employee', 'Duration', 'Usage class'],
     icon: BarChart3,
     accent: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
   },
@@ -396,6 +421,8 @@ const analyticsCatalogItems = [
     title: 'Website Usage',
     description: 'Website analytics grouped by employee, domain, duration, and usage classification.',
     to: '/monitoring/website-usage',
+    category: 'Web domains',
+    highlights: ['Domains', 'Duration', 'Usage class'],
     icon: Monitor,
     accent: 'bg-teal-50 text-teal-700 ring-teal-200',
   },
@@ -403,6 +430,8 @@ const analyticsCatalogItems = [
     title: 'Screenshots',
     description: 'Screenshot review analytics for tracked work sessions and employee activity proof.',
     to: '/monitoring/screenshots',
+    category: 'Visual verification',
+    highlights: ['Proof of work', 'Session review', 'Captured activity'],
     icon: Camera,
     accent: 'bg-slate-100 text-slate-700 ring-slate-200',
   },
@@ -1072,15 +1101,24 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
                       {mode === 'analytics-hub' ? 'Analytics' : 'Report'}
                     </p>
+                    <p className="mt-2 text-xs font-medium text-slate-500">{item.category}</p>
                     <h2 className="mt-2 text-lg font-semibold text-slate-950">{item.title}</h2>
                     <p className="mt-2 text-sm leading-6 text-slate-500">{item.description}</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {item.highlights.map((highlight) => (
+                        <span key={highlight} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                          {highlight}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ring-1 ${item.accent}`}>
                     <Icon className="h-5 w-5" />
                   </span>
                 </div>
-                <span className="mt-5 text-sm font-semibold text-blue-600 transition group-hover:text-blue-700">
+                <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-blue-600 transition group-hover:text-blue-700">
                   Open {item.title}
+                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
                 </span>
               </Link>
             );
@@ -1225,12 +1263,34 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
       {mode === 'attendance' && attendanceTotals ? (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
             <MetricCard label="Employees" value={attendanceTotals.employees} hint="Employees in range" icon={Users} accent="sky" />
             <MetricCard label="Present Days" value={attendanceTotals.presentDays} hint="Total present days" icon={CalendarDays} accent="emerald" />
             <MetricCard label="Leave Days" value={attendanceTotals.leaveDays} hint="Approved leave in range" icon={ListFilter} accent="amber" />
+            <MetricCard label="Absent Days" value={attendanceTotals.absentDays} hint="Expected days not covered by presence or leave" icon={AlertTriangle} accent="rose" />
             <MetricCard label="Worked Time" value={formatDuration(attendanceTotals.workedSeconds)} hint="Tracked attendance time" icon={TimerReset} accent="violet" />
+            <MetricCard label="Avg Attendance" value={formatPercent(attendanceTotals.averageAttendanceRate)} hint="Average attendance rate in this scope" icon={Gauge} accent="slate" />
           </div>
+
+          <SurfaceCard className="p-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Coverage Window</p>
+                <p className="mt-2 text-sm font-semibold text-slate-950">{startDate} to {endDate}</p>
+                <p className="mt-1 text-xs text-slate-500">Current filters are applied to every table and summary on this page.</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Attendance Health</p>
+                <p className="mt-2 text-sm font-semibold text-slate-950">{attendanceExceptionRows.length} exception rows need review</p>
+                <p className="mt-1 text-xs text-slate-500">{attendanceTotals.currentWorking} employees are working right now in the selected scope.</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Department Spread</p>
+                <p className="mt-2 text-sm font-semibold text-slate-950">{attendanceDepartmentRows.length} departments represented</p>
+                <p className="mt-1 text-xs text-slate-500">{attendanceRiskRows[0]?.user?.name ? `${attendanceRiskRows[0].user.name} currently has the highest attendance risk.` : 'No significant attendance risk detected in this scope.'}</p>
+              </div>
+            </div>
+          </SurfaceCard>
 
           <SurfaceCard className="p-5">
             <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">

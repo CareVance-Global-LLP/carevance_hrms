@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import NotificationsCenter from '@/pages/NotificationsCenter';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -87,5 +87,37 @@ describe('NotificationsCenter', () => {
       exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
       unread_only: undefined,
     });
+  });
+
+  it('filters announcement recipients by search text for admins', async () => {
+    authState.value = {
+      user: {
+        id: 1,
+        name: 'Admin',
+        email: 'admin@example.com',
+        role: 'admin',
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+      },
+    };
+    apiMocks.userGetAll.mockResolvedValue({
+      data: [
+        { id: 11, name: 'Dhwani Patel', email: 'dhwani@example.com' },
+        { id: 12, name: 'Mit Gujarati', email: 'mit@example.com' },
+      ],
+    });
+
+    renderWithProviders(<NotificationsCenter />, { route: '/notifications' });
+
+    expect(await screen.findByText('Publish update')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Search recipient by name or email'), {
+      target: { value: 'mit' },
+    });
+
+    expect(screen.getByLabelText('Mit Gujarati (mit@example.com)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Dhwani Patel (dhwani@example.com)')).not.toBeInTheDocument();
   });
 });

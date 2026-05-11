@@ -109,4 +109,20 @@ describe('EmployeeManagementWorkspace', () => {
       expect(within(directoryTable).queryByRole('link', { name: 'Zara Khan' })).not.toBeInTheDocument();
     });
   });
+
+  it('filters role assignments with the roles search box', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="roles" />, { route: '/employees/roles' });
+
+    expect(await screen.findByRole('heading', { name: 'Roles / Permissions' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Search name, email, role, or department'), {
+      target: { value: 'engineering' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Ayush Temp')).toBeInTheDocument();
+      expect(screen.getByText('Mit Gujarati')).toBeInTheDocument();
+      expect(screen.queryByText('Zara Khan')).not.toBeInTheDocument();
+    });
+  });
 });

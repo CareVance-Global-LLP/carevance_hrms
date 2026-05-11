@@ -371,7 +371,14 @@ export default function ApprovalInbox() {
 
   const selectedWindowRange = useMemo(() => {
     if (analyticsPreset === 'today') {
-      return { start: new Date(today), end: new Date(today), days: 1 };
+      return {
+        start: new Date(today),
+        end: new Date(today),
+        days: 1,
+        label: 'Today',
+        startLabel: formatDateLabel(today),
+        endLabel: formatDateLabel(today),
+      };
     }
 
     if (analyticsPreset === 'custom') {
@@ -379,7 +386,14 @@ export default function ApprovalInbox() {
       const parsedEnd = parseDateOnly(customEndDate);
 
       if (!parsedStart && !parsedEnd) {
-        return { start: new Date(today), end: new Date(today), days: 1 };
+        return {
+          start: new Date(today),
+          end: new Date(today),
+          days: 1,
+          label: 'Today',
+          startLabel: formatDateLabel(today),
+          endLabel: formatDateLabel(today),
+        };
       }
 
       const safeStart = parsedStart || parsedEnd || new Date(today);
@@ -390,13 +404,23 @@ export default function ApprovalInbox() {
         start: startOfDay(start),
         end: startOfDay(end),
         days: Math.max(1, inclusiveDayDiff(start, end)),
+        label: 'Custom range',
+        startLabel: formatDateLabel(start),
+        endLabel: formatDateLabel(end),
       };
     }
 
     const days = analyticsPreset === '2d' ? 2 : analyticsPreset === '5d' ? 5 : 7;
     const start = new Date(today);
     start.setDate(start.getDate() - (days - 1));
-    return { start: startOfDay(start), end: new Date(today), days };
+    return {
+      start: startOfDay(start),
+      end: new Date(today),
+      days,
+      label: `Last ${days} days`,
+      startLabel: formatDateLabel(start),
+      endLabel: formatDateLabel(today),
+    };
   }, [analyticsPreset, customEndDate, customStartDate, today]);
 
   const todayOnLeaveEmployees = useMemo(() => {
@@ -556,6 +580,26 @@ export default function ApprovalInbox() {
 
   const topDepartment = windowLeaveStats.topDepartments[0];
   const topEmployee = windowLeaveStats.topEmployees[0];
+  const windowCoverageRate = windowLeaveStats.uniqueEmployees > 0
+    ? Math.min(100, (windowLeaveStats.totalUnits / windowLeaveStats.uniqueEmployees) * 100)
+    : 0;
+  const leavePressureNotes = [
+    {
+      label: 'Coverage pressure',
+      value: `${windowCoverageRate.toFixed(1)}%`,
+      description: 'Leave units relative to unique employees in the current window.',
+    },
+    {
+      label: 'Busiest department',
+      value: topDepartment ? topDepartment.department : 'No hotspot',
+      description: topDepartment ? `${topDepartment.units.toFixed(1)} leave units tracked.` : 'No department pressure in the selected scope.',
+    },
+    {
+      label: 'Highest leave load',
+      value: topEmployee ? topEmployee.name : 'No employee hotspot',
+      description: topEmployee ? `${topEmployee.units.toFixed(1)} leave units in this window.` : 'No employee leave concentration right now.',
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -575,10 +619,10 @@ export default function ApprovalInbox() {
       </div>
 
       <SurfaceCard className="p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Leave Intelligence</h2>
-            <p className="text-sm text-slate-500">Today and recent trend analytics to help admins plan capacity by team.</p>
+            <p className="text-sm text-slate-500">Simple leave planning with the same filters, analytics, and approval workflow.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {[
@@ -604,94 +648,100 @@ export default function ApprovalInbox() {
           </div>
         </div>
 
-        <div className="mb-4 flex flex-wrap items-end gap-3">
-          {analyticsPreset === 'custom' ? (
-            <>
-              <label className="text-xs font-medium text-slate-600">
-                Start date
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(event) => {
-                    setAnalyticsPreset('custom');
-                    setCustomStartDate(event.target.value);
-                  }}
-                  className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
-                />
-              </label>
-              <label className="text-xs font-medium text-slate-600">
-                End date
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(event) => {
-                    setAnalyticsPreset('custom');
-                    setCustomEndDate(event.target.value);
-                  }}
-                  className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
-                />
-              </label>
-            </>
-          ) : null}
+        <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {analyticsPreset === 'custom' ? (
+              <>
+                <label className="text-xs font-medium text-slate-600">
+                  Start date
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(event) => {
+                      setAnalyticsPreset('custom');
+                      setCustomStartDate(event.target.value);
+                    }}
+                    className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+                  />
+                </label>
+                <label className="text-xs font-medium text-slate-600">
+                  End date
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(event) => {
+                      setAnalyticsPreset('custom');
+                      setCustomEndDate(event.target.value);
+                    }}
+                    className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+                  />
+                </label>
+              </>
+            ) : (
+              <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 sm:col-span-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Window</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">{selectedWindowRange.label}</p>
+                <p className="mt-1 text-xs text-slate-500">{selectedWindowRange.startLabel} to {selectedWindowRange.endLabel}</p>
+              </div>
+            )}
+          </div>
 
-          <div className="ml-auto flex flex-wrap items-end gap-2">
-            <label className="text-xs font-medium text-slate-600">
-              Department
-              <select
-                value={analyticsDepartment}
-                onChange={(event) => setAnalyticsDepartment(event.target.value)}
-                className="mt-1 h-9 min-w-[190px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none"
+          <label className="text-xs font-medium text-slate-600">
+            Department
+            <select
+              value={analyticsDepartment}
+              onChange={(event) => setAnalyticsDepartment(event.target.value)}
+              className="mt-1 h-10 min-w-[220px] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+            >
+              {departmentOptions.map((department) => (
+                <option key={department} value={department}>{department}</option>
+              ))}
+            </select>
+          </label>
+
+          <div>
+            <p className="text-xs font-medium text-slate-600">Source</p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setAnalyticsSource('approved_pending')}
+                className={`h-10 rounded-lg border px-3 text-xs font-medium transition ${
+                  analyticsSource === 'approved_pending'
+                    ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                }`}
               >
-                {departmentOptions.map((department) => (
-                  <option key={department} value={department}>{department}</option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={() => setAnalyticsSource('approved_pending')}
-              className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${
-                analyticsSource === 'approved_pending'
-                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
-              }`}
-            >
-              Approved + Pending
-            </button>
-            <button
-              type="button"
-              onClick={() => setAnalyticsSource('approved')}
-              className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${
-                analyticsSource === 'approved'
-                  ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
-              }`}
-            >
-              Approved only
-            </button>
+                Approved + Pending
+              </button>
+              <button
+                type="button"
+                onClick={() => setAnalyticsSource('approved')}
+                className={`h-10 rounded-lg border px-3 text-xs font-medium transition ${
+                  analyticsSource === 'approved'
+                    ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                }`}
+              >
+                Approved only
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Employees On Leave Today" value={todayOnLeaveEmployees.length} icon={Users} accent="amber" />
           <MetricCard label="Absent Today" value={absentTodayCount} icon={XCircle} accent="rose" />
           <MetricCard label={`Leave Units (${selectedWindowRange.days}d)`} value={windowLeaveStats.totalUnits.toFixed(1)} icon={BarChart3} accent="sky" />
           <MetricCard
-            label="Most Affected Department"
-            value={topDepartment ? topDepartment.department : 'N/A'}
-            icon={Building2}
-            accent="emerald"
-          />
-          <MetricCard
-            label="Most On-Leave Employee"
+            label="Highest Leave Load"
             value={topEmployee ? topEmployee.name : 'N/A'}
             icon={UserRound}
-            accent="rose"
+            accent="emerald"
           />
         </div>
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 p-4">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900">Daily Leave Trend</h3>
               <span className="text-xs text-slate-500">{selectedWindowRange.days}-day employee count</span>
@@ -699,23 +749,25 @@ export default function ApprovalInbox() {
             <LeaveTrendChart points={leaveTrendPoints} />
           </div>
 
-          <div className="rounded-xl border border-slate-200 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900">Department Leave Distribution</h3>
-              <span className="text-xs text-slate-500">By leave units</span>
+              <h3 className="text-sm font-semibold text-slate-900">Quick Summary</h3>
+              <span className="text-xs text-slate-500">Current filter scope</span>
             </div>
-            <LeaveDepartmentPie
-              items={windowLeaveStats.topDepartments.map((department) => ({
-                label: department.department,
-                value: Number(department.units.toFixed(1)),
-                color: department.color,
-              }))}
-            />
+            <div className="space-y-3">
+              {leavePressureNotes.map((note) => (
+                <div key={note.label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{note.label}</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-950">{note.value}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{note.description}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 p-4">
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900">Departments on Leave Today ({todayIso})</h3>
               <span className="text-xs text-slate-500">Employees currently on leave</span>
@@ -744,7 +796,7 @@ export default function ApprovalInbox() {
             )}
           </div>
 
-          <div className="rounded-xl border border-slate-200 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900">Top Employees on Leave ({selectedWindowRange.days}d)</h3>
               <span className="text-xs text-slate-500">By leave units in selected window</span>
@@ -792,6 +844,10 @@ export default function ApprovalInbox() {
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1">
             <Building2 className="h-3.5 w-3.5 text-emerald-600" />
             Department: <strong>{analyticsDepartment}</strong>
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1">
+            <UserRound className="h-3.5 w-3.5 text-rose-500" />
+            Busiest department: <strong>{topDepartment ? topDepartment.department : 'No hotspot'}</strong>
           </span>
         </div>
       </SurfaceCard>

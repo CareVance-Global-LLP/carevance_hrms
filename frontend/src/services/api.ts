@@ -700,7 +700,7 @@ export const attendanceHolidayApi = {
 
 export const leaveApi = {
   list: (params?: {
-    status?: 'pending' | 'approved' | 'rejected' | 'revoked';
+    status?: 'pending' | 'approved' | 'rejected' | 'revoked' | 'auto_cancelled';
     user_id?: number;
     start_date?: string;
     end_date?: string;
@@ -714,7 +714,7 @@ export const leaveApi = {
         start_date: string;
         end_date: string;
         reason?: string | null;
-        status: 'pending' | 'approved' | 'rejected' | 'revoked';
+        status: 'pending' | 'approved' | 'rejected' | 'revoked' | 'auto_cancelled';
         revoke_status?: 'pending' | 'approved' | 'rejected' | null;
         revoke_requested_at?: string | null;
         revoke_reviewed_by?: number | null;

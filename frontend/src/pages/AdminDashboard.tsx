@@ -398,7 +398,7 @@ const EmptyInline = ({ children }: { children: ReactNode }) => (
   </div>
 );
 
-const KpiCard = ({ label, value, hint, icon: Icon, tint, to }: { label: string; value: string | number; hint: string; icon: any; tint: string; to?: string }) => {
+const KpiCard = ({ label, value, hint, icon: Icon, tint, to, onClick }: { label: string; value: string | number; hint: string; icon: any; tint: string; to?: string; onClick?: () => void }) => {
   const content = (
     <div className="flex h-full items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
@@ -417,6 +417,18 @@ const KpiCard = ({ label, value, hint, icon: Icon, tint, to }: { label: string; 
       <Link to={to} className="block h-full rounded-lg transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
         <Card className="h-full p-4">{content}</Card>
       </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="block h-full w-full rounded-lg text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      >
+        <Card className="h-full p-4">{content}</Card>
+      </button>
     );
   }
 
@@ -602,6 +614,10 @@ export default function AdminDashboard() {
   );
   const [scopeSearch, setScopeSearch] = useState('');
   const [scopeDepartmentFilter, setScopeDepartmentFilter] = useState(() => persistedFilters.scopeDepartmentFilter || 'All');
+  const scrollToDashboardSection = (sectionId: string) => {
+    if (typeof document === 'undefined') return;
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(() => {
     const persistedEmployeeId = Number(persistedFilters.selectedEmployeeId);
     return persistedFilters.selectedEmployeeId != null && Number.isFinite(persistedEmployeeId) && persistedEmployeeId > 0
@@ -768,11 +784,12 @@ export default function AdminDashboard() {
     .map((employee) => effectiveLeaveUserIds.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
 
   const totalEmployees = employees.length;
-  const lateToday = attendanceRows.filter((row: any) => Number(row.late_days || row.late_minutes || 0) > 0).length;
-  const presentToday = attendanceRows.filter((row: any) => {
+  const presentLateToday = attendanceRows.filter((row: any) => Number(row.late_days || row.late_minutes || 0) > 0).length;
+  const presentOnTimeToday = attendanceRows.filter((row: any) => {
     const isLate = Number(row.late_days || row.late_minutes || 0) > 0;
     return !isLate && (Number(row.present_days || 0) > 0 || hasActiveAttendance(row));
   }).length;
+  const totalPresentToday = presentOnTimeToday + presentLateToday;
   const onLeave = effectiveLeaveUserIds.size;
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
@@ -810,12 +827,13 @@ export default function AdminDashboard() {
       count: isPresentDay ? 1 : 0,
     };
   });
-  const attendancePresentDays = calendarDaysInRange.length
+  const attendanceOnTimeDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => ['present', 'checked_in'].includes(String(day.status || '')) && Number(day.late_minutes || 0) <= 0).length
-    : presentToday;
-  const attendanceLateDays = calendarDaysInRange.length
+    : presentOnTimeToday;
+  const attendanceLatePresentDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => Number(day.late_minutes || 0) > 0).length
-    : lateToday;
+    : presentLateToday;
+  const attendancePresentDays = attendanceOnTimeDays + attendanceLatePresentDays;
   const attendanceLeaveDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => String(day.status || '').includes('leave') || day.is_leave).length
     : onLeave;
@@ -824,9 +842,9 @@ export default function AdminDashboard() {
       const dayDate = String(day.date || '').slice(0, 10);
       return String(day.status || 'none') === 'none' && !day.is_holiday && dayDate <= todayIso();
     }).length
-    : Math.max(0, totalEmployees - presentToday - lateToday - onLeave);
-  const selectedEmployeePieStatus = attendanceLateDays > 0
-    ? { label: 'Late', value: 1, color: '#f97316', bgClass: 'bg-orange-500' }
+    : Math.max(0, totalEmployees - presentOnTimeToday - presentLateToday - onLeave);
+  const selectedEmployeePieStatus = attendanceLatePresentDays > 0
+    ? { label: 'Present Late', value: 1, color: '#f97316', bgClass: 'bg-orange-500' }
     : attendancePresentDays > 0
       ? { label: 'Present', value: 1, color: '#16a34a', bgClass: 'bg-green-600' }
       : { label: 'Absent', value: 1, color: '#dc2626', bgClass: 'bg-red-600' };
@@ -837,12 +855,12 @@ export default function AdminDashboard() {
       : [
         { label: 'Present', value: attendancePresentDays, color: '#16a34a', bgClass: 'bg-green-600' },
         { label: 'Absent', value: attendanceAbsentDays, color: '#dc2626', bgClass: 'bg-red-600' },
-        { label: 'Late', value: attendanceLateDays, color: '#f97316', bgClass: 'bg-orange-500' },
+        { label: 'Present Late', value: attendanceLatePresentDays, color: '#f97316', bgClass: 'bg-orange-500' },
       ]
     : [
-      { label: 'Present', value: presentToday, color: '#16a34a', bgClass: 'bg-green-600' },
-      { label: 'Absent', value: Math.max(0, totalEmployees - presentToday - lateToday - onLeave), color: '#dc2626', bgClass: 'bg-red-600' },
-      { label: 'Late', value: lateToday, color: '#f97316', bgClass: 'bg-orange-500' },
+      { label: 'Present', value: totalPresentToday, color: '#16a34a', bgClass: 'bg-green-600' },
+      { label: 'Absent', value: Math.max(0, totalEmployees - presentOnTimeToday - presentLateToday - onLeave), color: '#dc2626', bgClass: 'bg-red-600' },
+      { label: 'Present Late', value: presentLateToday, color: '#f97316', bgClass: 'bg-orange-500' },
     ];
 
   const activities: DashboardActivity[] = data.auditLogs.map((item: any, index: number) => ({
@@ -942,10 +960,10 @@ export default function AdminDashboard() {
 
   const payrollTotal = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.net_pay || record.gross_pay || 0), 0);
   const payrollDeductions = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.deductions || record.tax || 0), 0);
-  const presentPercent = totalEmployees ? Math.round((presentToday / totalEmployees) * 100) : 0;
+  const presentPercent = totalEmployees ? Math.round((totalPresentToday / totalEmployees) * 100) : 0;
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
   const absentPercent = totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0;
-  const latePercent = totalEmployees ? Math.round((lateToday / totalEmployees) * 100) : 0;
+  const presentLatePercent = totalEmployees ? Math.round((presentLateToday / totalEmployees) * 100) : 0;
   const attendanceByEmployeeId = new Map(attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
   const workStatusRows = employees.map((employee) => {
     const attendance = attendanceByEmployeeId.get(employee.id);
@@ -969,7 +987,15 @@ export default function AdminDashboard() {
     const matchesSearch = !search || [row.employee.name, row.employee.email, row.employee.position, row.employee.department]
       .some((value) => String(value || '').toLowerCase().includes(search));
     const matchesDepartment = workDepartmentFilter === 'All' || row.employee.department === workDepartmentFilter;
-    const matchesStatus = workStatusFilter === 'All' || row.status === workStatusFilter;
+    const isPresentLate = row.status !== 'On Leave' && row.lateMinutes > 0;
+    const isPresent = row.status !== 'On Leave' && row.presentDays > 0;
+    const isAbsent = row.status !== 'On Leave' && row.presentDays <= 0 && !hasActiveAttendance(attendanceByEmployeeId.get(row.employee.id));
+    const matchesStatus =
+      workStatusFilter === 'All'
+      || row.status === workStatusFilter
+      || (workStatusFilter === 'Present' && isPresent)
+      || (workStatusFilter === 'Present Late' && isPresentLate)
+      || (workStatusFilter === 'Absent' && isAbsent);
     return matchesSearch && matchesDepartment && matchesStatus;
   });
   const workingCount = workStatusRows.filter((row) => row.status === 'Working').length;
@@ -977,7 +1003,7 @@ export default function AdminDashboard() {
   const attendanceHealth = [
     { label: 'Working now', value: workingCount, color: 'bg-emerald-500' },
     { label: 'Not started', value: notWorkingCount, color: 'bg-slate-400' },
-    { label: 'Late', value: lateToday, color: 'bg-rose-500' },
+    { label: 'Present late', value: presentLateToday, color: 'bg-rose-500' },
     { label: 'On leave', value: onLeave, color: 'bg-amber-500' },
     { label: 'Absent', value: attendanceAbsentDays, color: 'bg-red-500' },
   ];
@@ -1415,10 +1441,40 @@ export default function AdminDashboard() {
 
       <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-7">
         <KpiCard to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
-        <KpiCard to="/attendance" label="Present" value={presentToday} hint={`${presentPercent}% of total`} icon={UserPlus} tint="bg-emerald-50 text-emerald-600" />
+        <KpiCard
+          label="Present"
+          value={totalPresentToday}
+          hint={`${presentPercent}% of total`}
+          icon={UserPlus}
+          tint="bg-emerald-50 text-emerald-600"
+          onClick={() => {
+            setWorkStatusFilter('Present');
+            scrollToDashboardSection('current-work-status');
+          }}
+        />
         <KpiCard to="/approval-inbox?leave_window=today" label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
-        <KpiCard to="/attendance" label="Absent" value={attendanceAbsentDays} hint={`${absentPercent}% of total`} icon={Calendar} tint="bg-red-50 text-red-600" />
-        <KpiCard to="/attendance" label="Late" value={lateToday} hint={`${latePercent}% of total`} icon={Clock3} tint="bg-rose-50 text-rose-600" />
+        <KpiCard
+          label="Absent"
+          value={attendanceAbsentDays}
+          hint={`${absentPercent}% of total`}
+          icon={Calendar}
+          tint="bg-red-50 text-red-600"
+          onClick={() => {
+            setWorkStatusFilter('Absent');
+            scrollToDashboardSection('current-work-status');
+          }}
+        />
+        <KpiCard
+          label="Present Late"
+          value={presentLateToday}
+          hint={`${presentLatePercent}% of total`}
+          icon={Clock3}
+          tint="bg-rose-50 text-rose-600"
+          onClick={() => {
+            setWorkStatusFilter('Present Late');
+            scrollToDashboardSection('current-work-status');
+          }}
+        />
         <KpiCard to="/employees" label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined in range" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
         <KpiCard to="/employees" label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited in range" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
       </section>
@@ -1429,8 +1485,8 @@ export default function AdminDashboard() {
           <AttendancePieChart items={attendancePieItems} />
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             {[
-              ['Present days', attendancePresentDays],
-              ['Late days', attendanceLateDays],
+              ['Present on time', attendanceOnTimeDays],
+              ['Present late', attendanceLatePresentDays],
               ['On leave', attendanceLeaveDays],
               ['Absent days', attendanceAbsentDays],
             ].map(([label, value]) => (
@@ -1628,12 +1684,12 @@ export default function AdminDashboard() {
                 <p className="mt-2 text-xl font-semibold text-emerald-700">{workingCount}</p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                <p className="text-[11px] text-slate-500">Present</p>
-                <p className="mt-2 text-xl font-semibold text-blue-700">{presentToday}</p>
+                <p className="text-[11px] text-slate-500">Present on time</p>
+                <p className="mt-2 text-xl font-semibold text-blue-700">{presentOnTimeToday}</p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                <p className="text-[11px] text-slate-500">Late</p>
-                <p className="mt-2 text-xl font-semibold text-rose-600">{lateToday}</p>
+                <p className="text-[11px] text-slate-500">Present late</p>
+                <p className="mt-2 text-xl font-semibold text-rose-600">{presentLateToday}</p>
               </div>
             </div>
             <div className="rounded-lg border border-slate-100 p-4">
@@ -1698,7 +1754,7 @@ export default function AdminDashboard() {
               onChange={(event) => setWorkStatusFilter(event.target.value)}
               className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 outline-none"
             >
-              {['All', 'Working', 'Not working', 'On Leave'].map((status) => <option key={status} value={status}>{status}</option>)}
+              {['All', 'Present', 'Present Late', 'Absent', 'Working', 'Not working', 'On Leave'].map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
           </div>
           <div className="overflow-x-auto rounded-lg border border-slate-100">

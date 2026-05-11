@@ -7,6 +7,7 @@ use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class LeaveRequest extends Model
 {
@@ -63,6 +64,31 @@ class LeaveRequest extends Model
     public function isHalfDay(): bool
     {
         return $this->leave_type === 'half_day';
+    }
+
+    public function hasExpiredPendingWindow(?Carbon $reference = null): bool
+    {
+        $referenceDate = ($reference ?: now())->copy()->startOfDay();
+
+        return $this->status === 'pending'
+            && $this->end_date instanceof Carbon
+            && $this->end_date->copy()->startOfDay()->lt($referenceDate);
+    }
+
+    public static function expirePendingRequestsForOrganization(int $organizationId, ?Carbon $reference = null): int
+    {
+        $referenceDate = ($reference ?: now())->copy()->startOfDay()->toDateString();
+
+        return DB::table('leave_requests')
+            ->where('organization_id', $organizationId)
+            ->where('status', 'pending')
+            ->whereDate('end_date', '<', $referenceDate)
+            ->update([
+                'status' => 'auto_cancelled',
+                'review_note' => DB::raw("COALESCE(review_note, 'Auto-cancelled because the leave date passed without approval.')"),
+                'reviewed_at' => now(),
+                'updated_at' => now(),
+            ]);
     }
 
     public function unitsForDate(Carbon|string $date): float

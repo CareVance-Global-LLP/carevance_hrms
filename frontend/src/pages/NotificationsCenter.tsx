@@ -32,6 +32,7 @@ export default function NotificationsCenter() {
   const [publishTitle, setPublishTitle] = useState('');
   const [publishMessage, setPublishMessage] = useState('');
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<number[]>([]);
+  const [recipientSearchQuery, setRecipientSearchQuery] = useState('');
 
   const load = async () => {
     setIsLoading(true);
@@ -87,6 +88,15 @@ export default function NotificationsCenter() {
       })),
     [notifications]
   );
+  const filteredRecipients = useMemo(() => {
+    const normalizedQuery = recipientSearchQuery.trim();
+    if (!normalizedQuery) {
+      return users;
+    }
+
+    return users.filter((recipient) => matchesSearchFilter(normalizedQuery, [recipient.name, recipient.email]));
+  }, [recipientSearchQuery, users]);
+  const selectedRecipientCount = selectedRecipientIds.length;
 
   const markRead = async (id: number) => {
     try {
@@ -256,11 +266,47 @@ export default function NotificationsCenter() {
 
           <div className="mt-4">
             <FieldLabel>Recipients</FieldLabel>
-            <div className="max-h-44 overflow-auto rounded-lg border border-slate-200 p-3">
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <TextInput
+                value={recipientSearchQuery}
+                onChange={(event) => setRecipientSearchQuery(event.target.value)}
+                placeholder="Search recipient by name or email"
+              />
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="rounded-full bg-slate-100 px-3 py-1">
+                  Showing <span className="font-semibold text-slate-700">{filteredRecipients.length}</span> of {users.length}
+                </span>
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
+                  Selected <span className="font-semibold">{selectedRecipientCount}</span>
+                </span>
+                {filteredRecipients.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRecipientIds((prev) => Array.from(new Set([...prev, ...filteredRecipients.map((recipient) => recipient.id)])));
+                    }}
+                    className="rounded-full border border-slate-200 px-3 py-1 font-medium text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                  >
+                    Select shown
+                  </button>
+                ) : null}
+                {selectedRecipientCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRecipientIds([])}
+                    className="rounded-full border border-slate-200 px-3 py-1 font-medium text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                  >
+                    Clear selected
+                  </button>
+                ) : null}
+              </div>
+              <div className="max-h-44 overflow-auto">
               {users.length === 0 ? (
                 <p className="text-sm text-slate-500">All users in your organization will receive this update.</p>
+              ) : filteredRecipients.length === 0 ? (
+                <p className="text-sm text-slate-500">No recipients match this search. Leave the list empty to publish to everyone.</p>
               ) : (
-                users.map((recipient) => (
+                filteredRecipients.map((recipient) => (
                   <label key={recipient.id} className="flex items-center gap-2 py-1 text-sm text-slate-700">
                     <input
                       type="checkbox"
@@ -275,6 +321,7 @@ export default function NotificationsCenter() {
                   </label>
                 ))
               )}
+              </div>
             </div>
             <p className="mt-2 text-xs text-slate-500">Leave recipients empty to publish to the full organization.</p>
           </div>
