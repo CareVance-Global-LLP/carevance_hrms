@@ -1094,8 +1094,16 @@ export const settingsApi = {
       can_manage_org: boolean;
     }>('/settings/me'),
 
-  updateProfile: (data: { name: string; email?: string; avatar?: string | null }) =>
-    api.put<{ message: string; user: User }>('/settings/profile', data),
+  updateProfile: (data: FormData | { name: string; email?: string; avatar?: string | null }) => {
+    if (data instanceof FormData) {
+      data.append('_method', 'PUT');
+      return api.post<{ message: string; user: User }>('/settings/profile', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    }
+
+    return api.put<{ message: string; user: User }>('/settings/profile', data);
+  },
 
   updatePassword: (data: { current_password: string; new_password: string; new_password_confirmation: string }) =>
     api.put<{ message: string }>('/settings/password', data),
@@ -1113,8 +1121,16 @@ export const settingsApi = {
     };
   }) => api.put<{ message: string; settings: Record<string, any> }>('/settings/preferences', data),
 
-  updateOrganization: (data: { name: string; slug: string; office_start_time?: string | null; late_after_time?: string | null }) =>
-    api.put<{ message: string; organization: Organization }>('/settings/organization', data),
+  updateOrganization: (data: FormData | { name: string; slug: string; office_start_time?: string | null; late_after_time?: string | null }) => {
+    if (data instanceof FormData) {
+      data.append('_method', 'PUT');
+      return api.post<{ message: string; organization: Organization }>('/settings/organization', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    }
+
+    return api.put<{ message: string; organization: Organization }>('/settings/organization', data);
+  },
 
   billing: () =>
     api.get<BillingSnapshot>('/settings/billing'),

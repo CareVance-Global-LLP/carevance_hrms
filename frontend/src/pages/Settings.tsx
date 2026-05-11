@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
 import { productivityRuleApi, settingsApi, supportApi } from '@/services/api';
 import type { ProductivityRule as ProductivityRuleType } from '@/types';
@@ -41,6 +42,11 @@ const toTimeInputValue = (value: unknown): string => {
   return '';
 };
 
+const extractOrganizationLogoUrl = (org: any): string => {
+  const logoValue = org?.settings?.branding?.logo_url;
+  return resolveMediaUrl(logoValue);
+};
+
 export default function SettingsPage() {
   const { user, organization, updateUser, updateOrganization } = useAuth();
   const location = useLocation();
@@ -73,9 +79,14 @@ export default function SettingsPage() {
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileEmail, setProfileEmail] = useState(user?.email || '');
   const [profileAvatar, setProfileAvatar] = useState(user?.avatar || '');
+  const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
+  const [profileAvatarPreview, setProfileAvatarPreview] = useState(user?.avatar || '');
 
   const [orgName, setOrgName] = useState(organization?.name || '');
   const [orgSlug, setOrgSlug] = useState(organization?.slug || '');
+  const [orgLogo, setOrgLogo] = useState(extractOrganizationLogoUrl(organization));
+  const [orgLogoFile, setOrgLogoFile] = useState<File | null>(null);
+  const [orgLogoPreview, setOrgLogoPreview] = useState(extractOrganizationLogoUrl(organization));
   const [officeStartTime, setOfficeStartTime] = useState('');
   const [lateAfterTime, setLateAfterTime] = useState('');
 
@@ -143,7 +154,9 @@ export default function SettingsPage() {
   useEffect(() => {
     setProfileName(user?.name || '');
     setProfileEmail(user?.email || '');
-    setProfileAvatar(user?.avatar || '');
+    setProfileAvatar(resolveMediaUrl(user?.avatar || ''));
+    setProfileAvatarFile(null);
+    setProfileAvatarPreview(resolveMediaUrl(user?.avatar || ''));
     setHelpName(user?.name || '');
     setHelpEmail(user?.email || '');
   }, [user]);
@@ -151,6 +164,10 @@ export default function SettingsPage() {
   useEffect(() => {
     setOrgName(organization?.name || '');
     setOrgSlug(organization?.slug || '');
+    const logoUrl = extractOrganizationLogoUrl(organization);
+    setOrgLogo(logoUrl);
+    setOrgLogoFile(null);
+    setOrgLogoPreview(logoUrl);
     setOfficeStartTime(toTimeInputValue((organization?.settings as any)?.attendance?.office_start_time));
     setLateAfterTime(toTimeInputValue((organization?.settings as any)?.attendance?.late_after_time));
   }, [organization]);
@@ -176,9 +193,15 @@ export default function SettingsPage() {
           setCanManageOrg(Boolean(payload.can_manage_org));
           setProfileName(fetchedUser?.name || '');
           setProfileEmail(fetchedUser?.email || '');
-          setProfileAvatar(fetchedUser?.avatar || '');
+          setProfileAvatar(resolveMediaUrl(fetchedUser?.avatar || ''));
+          setProfileAvatarFile(null);
+          setProfileAvatarPreview(resolveMediaUrl(fetchedUser?.avatar || ''));
           setOrgName(fetchedOrg?.name || '');
           setOrgSlug(fetchedOrg?.slug || '');
+          const fetchedOrgLogo = extractOrganizationLogoUrl(fetchedOrg);
+          setOrgLogo(fetchedOrgLogo);
+          setOrgLogoFile(null);
+          setOrgLogoPreview(fetchedOrgLogo);
           setOfficeStartTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.office_start_time));
           setLateAfterTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.late_after_time));
           setTimezone(resolveTimeZone(settings.timezone || DEFAULT_APP_TIMEZONE));
@@ -270,18 +293,33 @@ export default function SettingsPage() {
     setError('');
     setMessage('');
     try {
-      const payload: { name: string; avatar: string | null; email?: string } = {
-        name: profileName.trim(),
-        avatar: profileAvatar.trim() || null,
-      };
-
-      if (canEditEmail) {
-        payload.email = profileEmail.trim();
-      }
+      const name = profileName.trim();
+      const email = profileEmail.trim();
+      const avatar = profileAvatar.trim() || null;
+      const payload = profileAvatarFile
+        ? (() => {
+            const formData = new FormData();
+            formData.append('name', name);
+            if (canEditEmail) {
+              formData.append('email', email);
+            }
+            formData.append('avatar_file', profileAvatarFile);
+            return formData;
+          })()
+        : {
+            name,
+            avatar,
+            ...(canEditEmail ? { email } : {}),
+          };
 
       const res = await settingsApi.updateProfile(payload);
       const updated = (res.data as any)?.user;
-      if (updated) updateUser(updated);
+      if (updated) {
+        updateUser(updated);
+        setProfileAvatar(resolveMediaUrl(updated.avatar || ''));
+        setProfileAvatarPreview(resolveMediaUrl(updated.avatar || ''));
+      }
+      setProfileAvatarFile(null);
       setMessage((res.data as any)?.message || 'Profile updated');
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to update profile');
@@ -292,19 +330,79 @@ export default function SettingsPage() {
     setError('');
     setMessage('');
     try {
-      const res = await settingsApi.updateOrganization({
-        name: orgName.trim(),
-        slug: orgSlug.trim(),
-        office_start_time: officeStartTime || null,
-        late_after_time: lateAfterTime || null,
-      });
+      const name = orgName.trim();
+      const slug = orgSlug.trim();
+      const payload = orgLogoFile
+        ? (() => {
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('slug', slug);
+            if (officeStartTime) {
+              formData.append('office_start_time', officeStartTime);
+            }
+            if (lateAfterTime) {
+              formData.append('late_after_time', lateAfterTime);
+            }
+            formData.append('logo_file', orgLogoFile);
+            return formData;
+          })()
+        : {
+            name,
+            slug,
+            office_start_time: officeStartTime || null,
+            late_after_time: lateAfterTime || null,
+          };
+
+      const res = await settingsApi.updateOrganization(payload);
 
       const updatedOrg = (res.data as any)?.organization || null;
       updateOrganization(updatedOrg);
+      const nextLogo = extractOrganizationLogoUrl(updatedOrg);
+      setOrgLogo(nextLogo);
+      setOrgLogoPreview(nextLogo);
+      setOrgLogoFile(null);
       setMessage((res.data as any)?.message || 'Organization updated');
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to update organization');
     }
+  };
+
+  const onProfileAvatarFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setProfileAvatarFile(null);
+      setProfileAvatarPreview(profileAvatar);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload a valid image file for profile photo.');
+      event.target.value = '';
+      return;
+    }
+
+    setError('');
+    setProfileAvatarFile(file);
+    setProfileAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const onOrganizationLogoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setOrgLogoFile(null);
+      setOrgLogoPreview(orgLogo);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload a valid image file for organization logo.');
+      event.target.value = '';
+      return;
+    }
+
+    setError('');
+    setOrgLogoFile(file);
+    setOrgLogoPreview(URL.createObjectURL(file));
   };
 
   const savePreferences = async () => {
@@ -451,18 +549,17 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Profile Settings</h2>
               <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-                <div className="h-20 w-20 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 text-2xl font-bold">
-                  {user?.name?.charAt(0)}
-                </div>
+                {profileAvatarPreview ? (
+                  <img src={profileAvatarPreview} alt={profileName || user?.name || 'Profile'} className="h-20 w-20 rounded-full object-cover border border-slate-200" />
+                ) : (
+                  <div className="h-20 w-20 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 text-2xl font-bold">
+                    {(profileName || user?.name)?.charAt(0)}
+                  </div>
+                )}
                 <div className="flex-1">
-                  <FieldLabel>Avatar URL</FieldLabel>
-                  <TextInput
-                    type="text"
-                    value={profileAvatar}
-                    onChange={(e) => setProfileAvatar(e.target.value)}
-                    placeholder="Avatar URL (optional)"
-                  />
-                  <p className="text-sm text-gray-500 mt-2">Paste image URL for avatar</p>
+                  <FieldLabel>Profile Photo</FieldLabel>
+                  <TextInput type="file" accept="image/*" onChange={onProfileAvatarFileChange} />
+                  <p className="text-sm text-gray-500 mt-2">Upload your profile photo directly (max 2MB).</p>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -499,6 +596,20 @@ export default function SettingsPage() {
           {activeTab === 'organization' && (
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Organization Settings</h2>
+              <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+                {orgLogoPreview ? (
+                  <img src={orgLogoPreview} alt={orgName || 'Organization Logo'} className="h-20 w-20 rounded-2xl object-cover border border-slate-200" />
+                ) : (
+                  <div className="h-20 w-20 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-semibold text-center px-2">
+                    No Logo
+                  </div>
+                )}
+                <div className="flex-1">
+                  <FieldLabel>Company Logo</FieldLabel>
+                  <TextInput type="file" accept="image/*" onChange={onOrganizationLogoFileChange} disabled={!isOrgEditable} className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''} />
+                  <p className="text-sm text-gray-500 mt-2">Upload your company logo (max 2MB).</p>
+                </div>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <FieldLabel>Organization Name</FieldLabel>

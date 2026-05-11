@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DesktopDownloadController;
 use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\InvitationController;
+use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\ScreenshotController;
 use App\Http\Controllers\Api\SupportController;
@@ -26,6 +27,7 @@ Route::post('/invitations/{token}/accept', [InvitationController::class, 'accept
 Route::get('/invites/validate', [InviteController::class, 'validateInvite'])->middleware('throttle:invitations.validate');
 Route::post('/invites/accept', [InviteController::class, 'acceptInvite'])->middleware('throttle:invitations.accept');
 Route::get('/downloads/desktop/windows', [DesktopDownloadController::class, 'windows'])->middleware('throttle:desktop.download');
+Route::get('/media/public/{path}', [SettingsController::class, 'publicMedia'])->where('path', '.*');
 Route::get('/screenshots/{screenshot}/file', [ScreenshotController::class, 'file'])
     ->middleware('signed:relative')
     ->name('screenshots.file');

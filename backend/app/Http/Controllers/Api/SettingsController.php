@@ -13,6 +13,7 @@ use App\Services\Billing\WorkspaceBillingService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class SettingsController extends Controller
@@ -24,6 +25,30 @@ class SettingsController extends Controller
         private readonly WorkspaceBillingService $workspaceBillingService,
     )
     {
+    }
+
+    public function publicMedia(string $path)
+    {
+        $normalizedPath = trim($path, '/');
+
+        if ($normalizedPath === '' || str_contains($normalizedPath, '..')) {
+            abort(404);
+        }
+
+        if (! Str::startsWith($normalizedPath, ['avatars/', 'organizations/'])) {
+            abort(404);
+        }
+
+        if (! Storage::disk('public')->exists($normalizedPath)) {
+            abort(404);
+        }
+
+        $mime = Storage::disk('public')->mimeType($normalizedPath) ?: 'application/octet-stream';
+
+        return response()->file(Storage::disk('public')->path($normalizedPath), [
+            'Content-Type' => $mime,
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
     }
 
     public function me(Request $request)
@@ -50,12 +75,20 @@ class SettingsController extends Controller
         }
 
         $validated = $request->validated();
+        $existingAvatarUrl = $user->avatar;
 
         $profileUpdates = [
             'name' => $validated['name'],
             'avatar' => $validated['avatar'] ?? null,
         ];
         $changedFields = ['name', 'avatar'];
+
+        if ($request->hasFile('avatar_file')) {
+            $avatarPath = $request->file('avatar_file')->store("avatars/{$user->id}", 'public');
+            $profileUpdates['avatar'] = '/api/media/public/'.$avatarPath;
+            $changedFields[] = 'avatar_file';
+            $this->deleteManagedPublicFile($existingAvatarUrl, "avatars/{$user->id}/");
+        }
 
         if ($user->role === 'admin' && array_key_exists('email', $validated)) {
             $profileUpdates['email'] = $validated['email'];
@@ -190,6 +223,9 @@ class SettingsController extends Controller
         $attendanceSettings = is_array($existingSettings['attendance'] ?? null)
             ? $existingSettings['attendance']
             : [];
+        $brandingSettings = is_array($existingSettings['branding'] ?? null)
+            ? $existingSettings['branding']
+            : [];
 
         if (array_key_exists('office_start_time', $validated)) {
             $attendanceSettings['office_start_time'] = $validated['office_start_time']
@@ -203,8 +239,16 @@ class SettingsController extends Controller
                 : null;
         }
 
+        if ($request->hasFile('logo_file')) {
+            $existingLogoUrl = isset($brandingSettings['logo_url']) ? (string) $brandingSettings['logo_url'] : null;
+            $logoPath = $request->file('logo_file')->store("organizations/{$organization->id}/branding", 'public');
+            $brandingSettings['logo_url'] = '/api/media/public/'.$logoPath;
+            $this->deleteManagedPublicFile($existingLogoUrl, "organizations/{$organization->id}/branding/");
+        }
+
         $updatedSettings = array_merge($existingSettings, [
             'attendance' => $attendanceSettings,
+            'branding' => $brandingSettings,
         ]);
 
         $organization->update([
@@ -222,6 +266,7 @@ class SettingsController extends Controller
                 'slug' => $organization->slug,
                 'office_start_time' => $attendanceSettings['office_start_time'] ?? null,
                 'late_after_time' => $attendanceSettings['late_after_time'] ?? null,
+                'logo_url' => $brandingSettings['logo_url'] ?? null,
             ],
             request: $request
         );
@@ -240,6 +285,46 @@ class SettingsController extends Controller
         return response()->json(
             $this->workspaceBillingService->snapshot($user?->organization) ?? ['plan' => null, 'workspace' => null]
         );
+    }
+
+    private function deleteManagedPublicFile(?string $publicUrl, string $expectedPrefix): void
+    {
+        if (! $publicUrl) {
+            return;
+        }
+
+        $relativePath = $this->extractManagedPublicRelativePath($publicUrl);
+        if (! $relativePath || ! str_starts_with($relativePath, $expectedPrefix)) {
+            return;
+        }
+
+        if (Storage::disk('public')->exists($relativePath)) {
+            Storage::disk('public')->delete($relativePath);
+        }
+    }
+
+    private function extractManagedPublicRelativePath(string $publicUrl): ?string
+    {
+        $path = (string) parse_url($publicUrl, PHP_URL_PATH);
+        if ($path === '' && str_starts_with($publicUrl, '/')) {
+            $path = $publicUrl;
+        }
+
+        if ($path === '') {
+            return null;
+        }
+
+        $normalizedPath = ltrim($path, '/');
+        if (str_starts_with($normalizedPath, 'storage/')) {
+            return substr($normalizedPath, strlen('storage/'));
+        }
+
+        $mediaPrefix = 'api/media/public/';
+        if (str_starts_with($normalizedPath, $mediaPrefix)) {
+            return substr($normalizedPath, strlen($mediaPrefix));
+        }
+
+        return null;
     }
 
     private function canManageOrg($user): bool

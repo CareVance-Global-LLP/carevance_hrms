@@ -13,6 +13,7 @@ class UpdateOrganizationRequest extends ApiFormRequest
             'slug' => 'required|string|max:255',
             'office_start_time' => ['nullable', 'string', 'regex:/^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$/'],
             'late_after_time' => ['nullable', 'string', 'regex:/^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$/'],
+            'logo_file' => 'nullable|file|image|max:2048',
         ];
     }
 }

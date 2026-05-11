@@ -22,6 +22,7 @@ class UpdateProfileRequest extends ApiFormRequest
             'name' => 'required|string|max:255',
             'email' => $emailRules,
             'avatar' => 'nullable|string|max:500',
+            'avatar_file' => 'nullable|file|image|max:2048',
         ];
     }
 

@@ -10,6 +10,8 @@ import { cn } from '@/utils/cn';
 
 interface DashboardTopbarProps {
   user?: User | null;
+  organizationName?: string;
+  organizationLogoUrl?: string;
   groups: NavGroup[];
   unreadNotifications: number;
   notificationsOpen: boolean;
@@ -27,6 +29,8 @@ interface DashboardTopbarProps {
 
 export default function DashboardTopbar({
   user,
+  organizationName,
+  organizationLogoUrl,
   groups,
   unreadNotifications,
   notificationsOpen,
@@ -100,7 +104,24 @@ export default function DashboardTopbar({
               </div>
 
               <div className="hidden min-w-0 items-center lg:flex">
-                <BrandLogo variant="full" size="sm" className="max-w-[10.75rem] xl:max-w-[11.75rem]" />
+                <div className="flex min-w-0 items-center gap-3 xl:gap-4">
+                  <BrandLogo variant="full" size="sm" className="max-w-[10.75rem] xl:max-w-[11.75rem]" />
+                  {organizationName ? (
+                    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2.5 py-1.5">
+                      {organizationLogoUrl ? (
+                        <img src={organizationLogoUrl} alt={`${organizationName} logo`} className="h-8 w-8 rounded-md object-cover" />
+                      ) : (
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-[10px] font-semibold text-slate-600">
+                          {organizationName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Company</p>
+                        <p className="max-w-[10rem] truncate text-sm font-semibold text-slate-800">{organizationName}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 

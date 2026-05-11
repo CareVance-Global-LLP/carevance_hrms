@@ -23,6 +23,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { CHAT_NOTIFICATION_TYPES } from '@/lib/chatNotifications';
 import { formatDate as formatDateForTimezone, formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import {
   activityApi,
@@ -579,7 +580,8 @@ const AttendancePieChart = ({ items }: { items: Array<{ label: string; value: nu
 };
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
+
   const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const navigate = useNavigate();
   const formatDate = (value?: string | null) => formatDateForTimezone(value, displayTimezone);
@@ -1227,56 +1229,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 pt-4 text-slate-900">
-      <div className="relative z-20 mx-auto w-full max-w-4xl">
-        <label className="flex h-12 items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 text-sm text-slate-400 shadow-sm">
-          <Search className="h-4 w-4 shrink-0 text-blue-600" />
-          <input
-            aria-label="Universal dashboard search"
-            value={universalSearch}
-            onFocus={() => setIsUniversalSearchOpen(true)}
-            onChange={(event) => {
-              setUniversalSearch(event.target.value);
-              setIsUniversalSearchOpen(true);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                openUniversalSuggestion(filteredUniversalSuggestions[0]);
-              }
-              if (event.key === 'Escape') setIsUniversalSearchOpen(false);
-            }}
-            className="w-full bg-transparent outline-none placeholder:text-slate-400"
-            placeholder="Search panels, employees, reports, settings, attendance..."
-          />
-          <span className="hidden rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500 sm:inline">Enter</span>
-        </label>
-        {isUniversalSearchOpen ? (
-          <div className="absolute left-0 right-0 top-14 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-            {filteredUniversalSuggestions.length ? (
-              <div className="max-h-80 overflow-y-auto p-2">
-                {filteredUniversalSuggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.id}
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => openUniversalSuggestion(suggestion)}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-blue-50"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-slate-900">{suggestion.label}</span>
-                      <span className="block truncate text-xs text-slate-500">{suggestion.description}</span>
-                    </span>
-                    <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">{suggestion.category}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="p-4 text-sm text-slate-500">No matching panel, section, or employee found.</div>
-            )}
-          </div>
-        ) : null}
-      </div>
-
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>

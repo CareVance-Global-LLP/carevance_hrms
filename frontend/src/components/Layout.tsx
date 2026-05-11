@@ -6,6 +6,7 @@ import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotificat
 import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { webAppUrl } from '@/lib/runtimeConfig';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
@@ -22,6 +23,7 @@ import {
   LogOut,
   MessageSquare,
   MoreHorizontal,
+  Search,
   Settings,
   Sparkles,
   Wallet,
@@ -30,7 +32,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function Layout() {
-  const { user, logout, token } = useAuth();
+  const { user, organization, logout, token } = useAuth();
   useDesktopTracker();
   const navigate = useNavigate();
   const location = useLocation();
@@ -39,10 +41,13 @@ export default function Layout() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadChatMessages, setUnreadChatMessages] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [updatePanelOpen, setUpdatePanelOpen] = useState(false);
   const [seenDesktopUpdateKey, setSeenDesktopUpdateKey] = useState<string | null>(null);
+  const globalSearchRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const seenNotificationIdsRef = useRef<Set<number>>(new Set());
@@ -55,6 +60,8 @@ export default function Layout() {
   const canAccessEditTime = isAdminView || user?.settings?.can_edit_time !== false;
   const isDesktopShell = Boolean(window.desktopTracker) && !isSuperAdminView;
   const webAppBaseUrl = webAppUrl.replace(/\/+$/, '');
+  const organizationName = organization?.name || '';
+  const organizationLogoUrl = resolveMediaUrl((organization?.settings as any)?.branding?.logo_url);
   const notificationSettings = (user?.settings?.notifications || {}) as Record<string, boolean | undefined>;
   const desktopPushEnabled = notificationSettings.desktop_push ?? true;
   const { state: desktopUpdateState } = useDesktopUpdater();
@@ -251,6 +258,140 @@ export default function Layout() {
     [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, pendingApprovals, unreadChatMessages]
   );
 
+  const globalSuggestions = useMemo(
+    () => primaryNavigation.flatMap((group) => {
+      if (group.to) {
+        return [{
+          id: `group:${group.label}:${group.to}`,
+          label: group.label,
+          description: group.externalPath || group.to,
+          category: 'Panel',
+          to: group.to,
+          externalPath: group.externalPath,
+        }];
+      }
+
+      return (group.items || []).map((item) => ({
+        id: `item:${group.label}:${item.label}:${item.to}`,
+        label: item.label,
+        description: `${group.label} • ${item.to}`,
+        category: group.label,
+        to: item.to,
+        externalPath: item.externalPath,
+      }));
+    }),
+    [primaryNavigation]
+  );
+
+  const filteredGlobalSuggestions = useMemo(() => {
+    const query = globalSearch.trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+
+    return globalSuggestions
+      .filter((item) => `${item.label} ${item.description} ${item.category}`.toLowerCase().includes(query))
+      .slice(0, 10);
+  }, [globalSearch, globalSuggestions]);
+
+  const openGlobalSuggestion = (suggestion?: {
+    to: string;
+    externalPath?: string;
+    label: string;
+  }) => {
+    if (!suggestion) {
+      return;
+    }
+
+    if (suggestion.externalPath) {
+      openWebDashboard(suggestion.externalPath);
+    } else {
+      navigate(suggestion.to);
+    }
+
+    setGlobalSearch(suggestion.label);
+    setIsGlobalSearchOpen(false);
+    setMobileNavigationOpen(false);
+    setNotificationsOpen(false);
+    setProfileOpen(false);
+  };
+
+  const hasGlobalSearchQuery = globalSearch.trim().length > 0;
+
+  const globalPanelHeader = (
+    <div className="relative z-[60] flex w-full flex-col gap-3 lg:flex-row lg:items-center">
+      {organizationName ? (
+        <div className="inline-flex h-12 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3.5 shadow-sm lg:shrink-0">
+          {organizationLogoUrl ? (
+            <img src={organizationLogoUrl} alt={`${organizationName} logo`} className="h-8 w-8 rounded-md object-cover" />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold text-slate-600">
+              {organizationName.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Company</p>
+            <p className="max-w-[12rem] truncate text-sm font-semibold text-slate-900">{organizationName}</p>
+          </div>
+        </div>
+      ) : null}
+
+      <div ref={globalSearchRef} className="relative z-[70] min-w-0 flex-1">
+        <label className="flex h-12 min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 text-sm text-slate-400 shadow-sm">
+          <Search className="h-4 w-4 shrink-0 text-blue-600" />
+          <input
+            aria-label="Universal search"
+            value={globalSearch}
+            onFocus={() => setIsGlobalSearchOpen(hasGlobalSearchQuery)}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setGlobalSearch(nextValue);
+              setIsGlobalSearchOpen(nextValue.trim().length > 0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                openGlobalSuggestion(filteredGlobalSuggestions[0]);
+              }
+              if (event.key === 'Escape') {
+                setIsGlobalSearchOpen(false);
+              }
+            }}
+            className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400"
+            placeholder="Search panels, employees, reports, settings, attendance..."
+          />
+          <span className="hidden rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500 sm:inline">Enter</span>
+        </label>
+
+        {isGlobalSearchOpen ? (
+          <div className="absolute left-0 right-0 top-14 z-[80] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+            {filteredGlobalSuggestions.length ? (
+              <div className="max-h-80 overflow-y-auto p-2">
+                {filteredGlobalSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => openGlobalSuggestion(suggestion)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-blue-50"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-slate-900">{suggestion.label}</span>
+                      <span className="block truncate text-xs text-slate-500">{suggestion.description}</span>
+                    </span>
+                    <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">{suggestion.category}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 text-sm text-slate-500">No matching panel found.</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+
   const handleLogout = async () => {
     await logout();
   };
@@ -316,6 +457,10 @@ export default function Layout() {
       if (profileOpen && profileRef.current && !profileRef.current.contains(target)) {
         setProfileOpen(false);
       }
+
+      if (isGlobalSearchOpen && globalSearchRef.current && !globalSearchRef.current.contains(target)) {
+        setIsGlobalSearchOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleOutside);
@@ -325,7 +470,11 @@ export default function Layout() {
       document.removeEventListener('mousedown', handleOutside);
       document.removeEventListener('touchstart', handleOutside);
     };
-  }, [notificationsOpen, profileOpen]);
+  }, [isGlobalSearchOpen, notificationsOpen, profileOpen]);
+
+  useEffect(() => {
+    setIsGlobalSearchOpen(false);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     let active = true;
@@ -540,7 +689,10 @@ export default function Layout() {
         </aside>
 
         <main className="min-w-0 px-4 py-4 lg:px-5 lg:py-4 xl:px-6">
-          <Outlet />
+          <div className="space-y-5">
+            {globalPanelHeader}
+            <Outlet />
+          </div>
         </main>
       </div>
     );
@@ -552,6 +704,8 @@ export default function Layout() {
       <div className="relative">
         <DashboardTopbar
           user={user}
+          organizationName={organizationName}
+          organizationLogoUrl={organizationLogoUrl}
           groups={primaryNavigation}
           unreadNotifications={unreadNotifications}
           notificationsOpen={notificationsOpen}
@@ -705,7 +859,10 @@ export default function Layout() {
         />
 
         <main className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-12 animate-fade-in">
-          <Outlet />
+          <div className="space-y-5">
+            {globalPanelHeader}
+            <Outlet />
+          </div>
         </main>
 
         {isDesktopShell && updatePanelOpen ? (
