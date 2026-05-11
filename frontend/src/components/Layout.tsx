@@ -321,22 +321,21 @@ export default function Layout() {
   const globalPanelHeader = (
     <div className="relative z-[60] flex w-full flex-col gap-3 lg:flex-row lg:items-center">
       {organizationName ? (
-        <div className="inline-flex h-12 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3.5 shadow-sm lg:shrink-0">
+        <div className="inline-flex min-w-0 max-w-full flex-col items-start lg:max-w-[min(44vw,23rem)] lg:shrink-0">
           {organizationLogoUrl ? (
-            <img src={organizationLogoUrl} alt={`${organizationName} logo`} className="h-8 w-8 rounded-md object-cover" />
+            <span className="mb-1.5 flex h-12 w-full max-w-[9.5rem] shrink-0 items-center justify-center overflow-hidden">
+              <img src={organizationLogoUrl} alt={`${organizationName} logo`} className="h-full w-full object-contain" />
+            </span>
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-200 text-xs font-semibold text-slate-600">
+            <div className="mb-1.5 flex h-12 w-full max-w-[9.5rem] items-center justify-center rounded-md bg-slate-100 text-xs font-semibold text-slate-600">
               {organizationName.charAt(0).toUpperCase()}
             </div>
           )}
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Company</p>
-            <p className="max-w-[12rem] truncate text-sm font-semibold text-slate-900">{organizationName}</p>
-          </div>
+          <p className="w-full max-w-[9.5rem] truncate text-center text-xs font-medium leading-tight text-slate-700">{organizationName}</p>
         </div>
       ) : null}
 
-      <div ref={globalSearchRef} className="relative z-[70] min-w-0 flex-1">
+      <div ref={globalSearchRef} className="relative z-[70] min-w-0 flex-1 lg:min-w-[16rem]">
         <label className="flex h-12 min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 text-sm text-slate-400 shadow-sm">
           <Search className="h-4 w-4 shrink-0 text-blue-600" />
           <input

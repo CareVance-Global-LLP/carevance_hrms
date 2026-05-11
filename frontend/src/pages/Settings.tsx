@@ -126,30 +126,32 @@ export default function SettingsPage() {
     ...(hasDesktopBrowserTracking ? [{ id: 'browser-tracking', name: 'Browser Tracking', icon: Link2 }] : []),
     ...(hasStrictAdminAccess(user) ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
   ];
+  const allowedTabIds = useMemo(() => new Set(tabs.map((tab) => tab.id)), [tabs]);
 
   const timezoneOptions = useMemo(() => getSupportedTimezones(), []);
 
   useEffect(() => {
     const tabFromQuery = new URLSearchParams(location.search).get('tab');
+    let tabFromPath = '';
 
     if (location.pathname.endsWith('/integrations')) {
-      setActiveTab('integrations');
-      return;
+      tabFromPath = 'integrations';
+    } else if (location.pathname.endsWith('/custom-fields')) {
+      tabFromPath = 'custom-fields';
     }
-    if (location.pathname.endsWith('/custom-fields')) {
-      setActiveTab('custom-fields');
+
+    const requestedTab = tabFromPath || tabFromQuery || '';
+    if (requestedTab && allowedTabIds.has(requestedTab)) {
+      if (activeTab !== requestedTab) {
+        setActiveTab(requestedTab);
+      }
       return;
     }
 
-    if (tabFromQuery === 'help') {
-      setActiveTab('help');
-      return;
-    }
-
-    if (activeTab === 'integrations' || activeTab === 'custom-fields') {
+    if (!allowedTabIds.has(activeTab)) {
       setActiveTab('profile');
     }
-  }, [activeTab, location.pathname, location.search]);
+  }, [activeTab, allowedTabIds, location.pathname, location.search]);
 
   useEffect(() => {
     setProfileName(user?.name || '');
