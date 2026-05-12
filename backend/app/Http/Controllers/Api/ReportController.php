@@ -657,6 +657,8 @@ class ReportController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        try {
+
         $startDate = Carbon::parse($request->get('start_date', Carbon::now()->startOfMonth()->toDateString()))->startOfDay();
         $endDate = Carbon::parse($request->get('end_date', Carbon::now()->toDateString()))->endOfDay();
         if ($startDate->greaterThan($endDate)) {
@@ -906,6 +908,38 @@ class ReportController extends Controller
         }
 
         return response()->json($response);
+        } catch (Throwable $exception) {
+            Log::error('Overall report generation failed; returning safe fallback payload.', [
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+                'user_id' => $currentUser->id,
+                'organization_id' => $currentUser->organization_id,
+            ]);
+
+            $fallback = [
+                'start_date' => (string) $request->get('start_date', Carbon::now()->startOfMonth()->toDateString()),
+                'end_date' => (string) $request->get('end_date', Carbon::now()->toDateString()),
+                'summary' => [
+                    'users_count' => 0,
+                    'page_users_count' => 0,
+                    'active_users' => 0,
+                ] + $this->timeBreakdownService->build(0, 0),
+                'users' => [],
+                'by_user' => [],
+                'by_day' => [],
+            ];
+
+            if ($request->has('page') || $request->has('per_page')) {
+                $fallback['pagination'] = [
+                    'current_page' => max(1, (int) $request->integer('page', 1)),
+                    'per_page' => min(100, max(1, (int) $request->integer('per_page', 25))),
+                    'total' => 0,
+                    'last_page' => 1,
+                ];
+            }
+
+            return response()->json($fallback);
+        }
     }
 
     private function buildLiteOverallReport(
