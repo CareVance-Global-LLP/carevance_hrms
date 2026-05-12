@@ -7,6 +7,7 @@ use App\Models\EmployeeWorkInfo;
 use App\Models\Group;
 use App\Models\Invitation;
 use App\Models\Organization;
+use App\Models\Project;
 use App\Models\User;
 use App\Services\Authorization\OrganizationRoleService;
 use Illuminate\Support\Facades\DB;
@@ -133,6 +134,7 @@ class InvitationService
                     $defaults['settings'] ?? null,
                     $row['settings'] ?? null
                 ),
+                'job_title' => isset($row['job_title']) ? trim((string) $row['job_title']) : null,
             ]);
             $created[] = $invitation;
 
@@ -227,6 +229,13 @@ class InvitationService
                 ->filter()
                 ->values()
                 ->all();
+            $projectIds = collect($invitation->metadata['project_ids'] ?? [])
+                ->map(fn ($value) => (int) $value)
+                ->filter()
+                ->values()
+                ->all();
+            $jobTitle = trim((string) ($invitation->metadata['job_title'] ?? ''));
+            $allowedGroupIds = [];
 
             if (!empty($groupIds)) {
                 $allowedGroupIds = Group::query()
@@ -237,6 +246,20 @@ class InvitationService
 
                 $user->groups()->sync($allowedGroupIds);
 
+            }
+            $allowedProjectIds = [];
+            if (!empty($projectIds)) {
+                $allowedProjectIds = Project::query()
+                    ->where('organization_id', $invitation->organization_id)
+                    ->whereIn('id', $projectIds)
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+            }
+
+            $user->assignedProjects()->sync($allowedProjectIds);
+
+            if (!empty($groupIds) || $jobTitle !== '') {
                 EmployeeWorkInfo::query()->updateOrCreate(
                     [
                         'organization_id' => $invitation->organization_id,
@@ -244,6 +267,7 @@ class InvitationService
                     ],
                     [
                         'report_group_id' => $allowedGroupIds[0] ?? null,
+                        'designation' => $jobTitle !== '' ? $jobTitle : null,
                     ]
                 );
             }
@@ -268,8 +292,14 @@ class InvitationService
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
+        $allowedProjectIds = Project::query()
+            ->where('organization_id', $organization->id)
+            ->whereIn('id', collect($payload['project_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->all())
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
 
-        $invitation = DB::transaction(function () use ($actor, $organization, $email, $payload, $token, $expiresAt, $allowedGroupIds) {
+        $invitation = DB::transaction(function () use ($actor, $organization, $email, $payload, $token, $expiresAt, $allowedGroupIds, $allowedProjectIds) {
             Invitation::query()
                 ->where('organization_id', $organization->id)
                 ->whereRaw('LOWER(email) = ?', [$email])
@@ -286,7 +316,8 @@ class InvitationService
                 'settings' => $this->normalizeSettings($payload['settings'] ?? null, (string) $payload['role']),
                 'metadata' => [
                     'group_ids' => $allowedGroupIds,
-                    'project_ids' => $payload['project_ids'] ?? [],
+                    'project_ids' => $allowedProjectIds,
+                    'job_title' => isset($payload['job_title']) ? trim((string) $payload['job_title']) : null,
                 ],
                 'delivery_method' => $payload['delivery'] ?? 'email',
                 'expires_at' => $expiresAt,

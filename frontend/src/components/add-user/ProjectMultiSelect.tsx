@@ -78,7 +78,7 @@ export default function ProjectMultiSelect({
           <div className="mt-4">
             <PageEmptyState
               title={query.trim() ? 'No projects match this search' : 'No projects available'}
-              description={query.trim() ? 'Try another project name or clear the search to view all projects.' : 'Project data is connected; assignment remains mock-ready until backend access control is added.'}
+              description={query.trim() ? 'Try another project name or clear the search to view all projects.' : 'Create a project first, then assign it here for user access.'}
             />
           </div>
         ) : (
@@ -123,7 +123,7 @@ export default function ProjectMultiSelect({
           </div>
         )}
       </div>
-      <p className="mt-2 text-xs text-slate-500">Projects are loaded from the existing backend. Assignment permissions are staged for future API support.</p>
+      <p className="mt-2 text-xs text-slate-500">Only assigned projects will be available in the employee timer and project-based workflows.</p>
     </div>
   );
 }

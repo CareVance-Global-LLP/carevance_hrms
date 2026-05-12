@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, taskApi } from '@/services/api';
+import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi } from '@/services/api';
 import {
   ACTIVE_TIMER_KEY,
   canUseDesktopAutoStart,
@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import type { TimeEntry } from '@/types';
-import type { Task } from '@/types';
+import type { Project, Task } from '@/types';
 
 const getStartTimeMs = (startTime?: string) => {
   if (!startTime) return NaN;
@@ -127,6 +127,8 @@ export default function DesktopTimerDashboard() {
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
   const [allTimeTotal, setAllTimeTotal] = useState(0);
+  const [allowedProjects, setAllowedProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [allowedTasks, setAllowedTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [teamMembersCount, setTeamMembersCount] = useState(0);
@@ -161,6 +163,7 @@ export default function DesktopTimerDashboard() {
         start_time: activeTimer.start_time,
         duration: activeTimer.duration ?? 0,
         description: activeTimer.description ?? '',
+        project_id: activeTimer.project_id ?? null,
         task_id: activeTimer.task_id ?? null,
         timer_slot: activeTimer.timer_slot ?? 'primary',
       })
@@ -205,12 +208,14 @@ export default function DesktopTimerDashboard() {
     let requestFailed = false;
 
     try {
-      const [dashboardResult, tasksResult, attendanceResult] = await Promise.allSettled([
+      const [dashboardResult, projectsResult, tasksResult, attendanceResult] = await Promise.allSettled([
         dashboardApi.summary(),
-        taskApi.getAll({ timer_only: true }),
+        projectApi.getAll(),
+        taskApi.getAll({ timer_only: true, project_id: selectedProjectId ?? undefined }),
         attendanceApi.today(),
       ]);
 
+      const projectsSucceeded = projectsResult.status === 'fulfilled';
       const dashboardSucceeded = dashboardResult.status === 'fulfilled';
       const tasksSucceeded = tasksResult.status === 'fulfilled';
       const attendanceSucceeded = attendanceResult.status === 'fulfilled';
@@ -218,6 +223,11 @@ export default function DesktopTimerDashboard() {
       if (!dashboardSucceeded) {
         requestFailed = true;
         console.error('Failed to fetch dashboard summary:', dashboardResult.reason);
+      }
+
+      if (!projectsSucceeded) {
+        requestFailed = true;
+        console.error('Failed to fetch project options for timer:', projectsResult.reason);
       }
 
       if (!tasksSucceeded) {
@@ -258,6 +268,7 @@ export default function DesktopTimerDashboard() {
         setTodayEntries(data?.today_entries || []);
         setAllTimeTotal(Number(data?.all_time_total_elapsed_duration ?? data?.all_time_total_duration ?? 0) || 0);
         setSelectedTaskId(activeFromApi?.task_id || null);
+        setSelectedProjectId((current) => activeFromApi?.project_id ?? current);
         setTeamMembersCount(Number(data?.team_members_count) || 0);
         setNewMembersThisWeek(Number(data?.new_members_this_week) || 0);
         setProductivityScore(Number(data?.productivity_score) || 0);
@@ -280,6 +291,11 @@ export default function DesktopTimerDashboard() {
         } catch (fallbackError) {
           console.error('Failed to fetch today entries fallback:', fallbackError);
         }
+      }
+
+      if (projectsSucceeded) {
+        const fetchedProjects = projectsResult.value.data || [];
+        setAllowedProjects(fetchedProjects);
       }
 
       if (tasksSucceeded) {
@@ -339,6 +355,8 @@ export default function DesktopTimerDashboard() {
     setTodayEntries([]);
     setTodayTotal(0);
     setAllTimeTotal(0);
+    setAllowedProjects([]);
+    setSelectedProjectId(null);
     setAllowedTasks([]);
     setSelectedTaskId(null);
 
@@ -427,6 +445,14 @@ export default function DesktopTimerDashboard() {
   }, [user, userId]);
 
   useEffect(() => {
+    if (!userId || activeTimer) {
+      return;
+    }
+
+    void fetchData();
+  }, [selectedProjectId]);
+
+  useEffect(() => {
     if (isLoading || !isTrackedTimerUser(user) || !canUseDesktopAutoStart()) {
       return;
     }
@@ -458,6 +484,7 @@ export default function DesktopTimerDashboard() {
     try {
       const startedAtIso = new Date().toISOString();
       const response = await timeEntryApi.start({
+        project_id: isAutoStart ? null : selectedProjectId,
         task_id: isAutoStart ? null : selectedTaskId,
         timer_slot: 'primary',
       });
@@ -481,6 +508,8 @@ export default function DesktopTimerDashboard() {
           start_time: response.data.start_time,
           duration: response.data.duration ?? 0,
           description: response.data.description ?? '',
+          project_id: response.data.project_id ?? null,
+          task_id: response.data.task_id ?? null,
         })
       );
       if (userId) {
@@ -565,6 +594,35 @@ export default function DesktopTimerDashboard() {
         return;
       }
       console.error('Error stopping timer:', error);
+    }
+  };
+
+  const handleProjectSelection = async (projectId: number | null) => {
+    setSelectedProjectId(projectId);
+
+    if (!activeTimer) {
+      setSelectedTaskId(null);
+      return;
+    }
+
+    setIsUpdatingTimerContext(true);
+    setNotice('');
+
+    try {
+      const response = await timeEntryApi.update(activeTimer.id, {
+        project_id: projectId,
+        task_id: null,
+      });
+
+      setSelectedTaskId(null);
+      syncTimerEntryLocally(response.data);
+      setNotice(projectId ? 'Project updated for the running timer.' : 'Project cleared from the running timer.');
+    } catch (error: any) {
+      console.error('Error updating timer project:', error);
+      setSelectedProjectId(activeTimer.project_id || null);
+      setNotice(error?.response?.data?.message || 'Failed to update the running timer project.');
+    } finally {
+      setIsUpdatingTimerContext(false);
     }
   };
 
@@ -784,14 +842,30 @@ export default function DesktopTimerDashboard() {
 
             <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-center gap-3 text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
-                <span>{activeTimer ? 'Running Timer Task' : 'Select Task'}</span>
+                <span>{activeTimer ? 'Running Timer Context' : 'Select Work Context'}</span>
               </div>
+              <SelectInput
+                aria-label="Active timer project"
+                value={selectedProjectId ?? ''}
+                onChange={(e) => void handleProjectSelection(e.target.value ? Number(e.target.value) : null)}
+                disabled={allowedProjects.length === 0 || isUpdatingTimerContext || isStarting}
+                className="mt-4 h-12 border-slate-300 bg-white text-slate-700 shadow-none disabled:bg-slate-50 disabled:text-slate-500"
+              >
+                <option value="" className="text-gray-900">
+                  {allowedProjects.length === 0 ? 'No projects available' : 'Choose project'}
+                </option>
+                {allowedProjects.map((project) => (
+                  <option key={project.id} value={project.id} className="text-gray-900">
+                    {project.name}
+                  </option>
+                ))}
+              </SelectInput>
               <SelectInput
                 aria-label="Active timer task"
                 value={selectedTaskId ?? ''}
                 onChange={(e) => void handleTaskSelection(e.target.value ? Number(e.target.value) : null)}
                 disabled={availableTasks.length === 0 || isUpdatingTimerContext || isStarting}
-                className="mt-4 h-12 border-slate-300 bg-white text-slate-700 shadow-none disabled:bg-slate-50 disabled:text-slate-500"
+                className="mt-3 h-12 border-slate-300 bg-white text-slate-700 shadow-none disabled:bg-slate-50 disabled:text-slate-500"
               >
                 <option value="" className="text-gray-900">
                   {availableTasks.length === 0 ? 'No tasks available for your group' : 'Choose task'}
@@ -804,9 +878,9 @@ export default function DesktopTimerDashboard() {
               </SelectInput>
               <p className="mt-3 text-sm text-slate-500">
                 {availableTasks.length === 0
-                  ? 'No tasks are currently available for your assigned groups.'
+                  ? 'No tasks are available for the selected project and your assigned access.'
                   : activeTimer
-                    ? 'Only tasks you are allowed to work on are listed here.'
+                    ? 'Only tasks allowed for your assigned groups and projects are listed here.'
                   : 'Pick a task before starting, or attach one after the timer is already running.'}
               </p>
             </div>

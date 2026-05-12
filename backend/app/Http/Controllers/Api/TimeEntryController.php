@@ -583,6 +583,12 @@ class TimeEntryController extends Controller
         $taskId = $request->exists('task_id')
             ? ($request->task_id ? (int) $request->task_id : null)
             : ($existingEntry?->task_id ? (int) $existingEntry->task_id : null);
+        $assignedProjectIds = $user->role === 'employee'
+            ? $user->assignedProjects()
+                ->pluck('projects.id')
+                ->map(fn ($id) => (int) $id)
+                ->all()
+            : [];
 
         if ($projectId) {
             $project = Project::query()
@@ -591,6 +597,10 @@ class TimeEntryController extends Controller
 
             if (!$project) {
                 return response()->json(['message' => 'Invalid project for your organization.'], 422);
+            }
+
+            if (!empty($assignedProjectIds) && !in_array($projectId, $assignedProjectIds, true)) {
+                return response()->json(['message' => 'Selected project is not available for your account.'], 422);
             }
         }
 
@@ -608,6 +618,14 @@ class TimeEntryController extends Controller
                         ? 'Selected task is not available in the chosen project.'
                         : 'Selected task is not available for your assigned group.',
                 ], 422);
+            }
+
+            if (!empty($assignedProjectIds)) {
+                if (!$task->project_id || !in_array((int) $task->project_id, $assignedProjectIds, true)) {
+                    return response()->json([
+                        'message' => 'Selected task is not available for your assigned projects.',
+                    ], 422);
+                }
             }
 
             if ($projectId && $task->project_id && (int) $task->project_id !== $projectId) {

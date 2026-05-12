@@ -76,6 +76,7 @@ interface BulkInviteRowPayload {
   role: InviteUserRole;
   group_ids?: number[];
   project_ids?: number[];
+  job_title?: string;
 }
 
 type TabularRow = unknown[];
@@ -292,14 +293,10 @@ export const addUserService = {
     });
 
     const failed = response.data.failed || [];
-    const deferredAssignments = payload.projectIds.length > 0
-      ? ['Project IDs are stored with the invitation for future provisioning, but project-access automation is not wired yet.']
-      : [];
-
     return {
       invitedCount: response.data.invited_count || 0,
       failed,
-      deferredAssignments,
+      deferredAssignments: [],
     };
   },
 
@@ -481,6 +478,7 @@ export const addUserService = {
       role: row.role,
       group_ids: row.groupIds,
       project_ids: row.projectIds,
+      job_title: row.skippedRoleLabel || undefined,
     }));
     const rowChunks = chunkItems<BulkInviteRowPayload>(rows, 250);
 
@@ -514,10 +512,6 @@ export const addUserService = {
           message: error?.response?.data?.message || 'Unable to import this CSV batch.',
         });
       }
-    }
-
-    if (parsed.rows.some((row) => row.projectIds.length > 0) || basePayload.defaultProjectIds.length > 0) {
-      deferredAssignments.add('CSV project IDs are stored for future provisioning, but project-access automation is not wired yet.');
     }
 
     if (ignoredRoleLabels.length > 0) {

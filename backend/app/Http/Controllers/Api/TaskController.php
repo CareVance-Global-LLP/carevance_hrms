@@ -30,6 +30,7 @@ class TaskController extends Controller
 
         $request->validate([
             'group_id' => 'nullable|integer',
+            'project_id' => 'nullable|integer',
             'status' => 'nullable|in:todo,in_progress,done',
             'assignee_id' => 'nullable|integer',
             'timer_only' => 'nullable|boolean',
@@ -54,6 +55,7 @@ class TaskController extends Controller
 
                 $query->where('group_id', $groupId);
             })
+            ->when($request->filled('project_id'), fn (Builder $query) => $query->where('project_id', (int) $request->project_id))
             ->when($request->filled('status'), fn (Builder $query) => $query->where('status', $request->status))
             ->when($request->filled('assignee_id'), fn (Builder $query) => $query->where('assignee_id', (int) $request->assignee_id))
             ->when($request->boolean('timer_only'), fn (Builder $query) => $query->where('status', '!=', 'done'))
@@ -268,6 +270,16 @@ class TaskController extends Controller
     {
         $query = Task::query();
         $this->groupAccessService->applyTaskVisibilityScope($query, $user);
+        if ($user->role === 'employee') {
+            $assignedProjectIds = $user->assignedProjects()
+                ->pluck('projects.id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            if (!empty($assignedProjectIds)) {
+                $query->whereIn('project_id', $assignedProjectIds);
+            }
+        }
 
         return $query;
     }

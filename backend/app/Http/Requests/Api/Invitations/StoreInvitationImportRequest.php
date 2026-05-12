@@ -17,6 +17,7 @@ class StoreInvitationImportRequest extends ApiFormRequest
             'rows.*.group_ids.*' => 'integer',
             'rows.*.project_ids' => 'nullable|array',
             'rows.*.project_ids.*' => 'integer',
+            'rows.*.job_title' => 'nullable|string|max:255',
             'rows.*.settings' => 'nullable|array',
             'rows.*.settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in([1, 3, 5, 10, 15, 30])],
             'rows.*.settings.can_edit_time' => 'nullable|boolean',

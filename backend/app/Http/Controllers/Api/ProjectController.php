@@ -28,6 +28,9 @@ class ProjectController extends Controller
 
         $projects = Project::with('tasks')
             ->where('organization_id', $user->organization_id)
+            ->when($this->hasRestrictedAssignedProjects($user), function (Builder $query) use ($user) {
+                $query->whereIn('id', $this->assignedProjectIds($user));
+            })
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -182,7 +185,15 @@ class ProjectController extends Controller
     private function canAccessProject(Project $project): bool
     {
         $user = request()->user();
-        return $user && $user->organization_id === $project->organization_id;
+        if (!$user || $user->organization_id !== $project->organization_id) {
+            return false;
+        }
+
+        if (!$this->hasRestrictedAssignedProjects($user)) {
+            return true;
+        }
+
+        return in_array((int) $project->id, $this->assignedProjectIds($user), true);
     }
 
     private function findScopedProject(int $id): ?Project
@@ -193,7 +204,23 @@ class ProjectController extends Controller
         }
 
         return Project::where('organization_id', $user->organization_id)
+            ->when($this->hasRestrictedAssignedProjects($user), function (Builder $query) use ($user) {
+                $query->whereIn('id', $this->assignedProjectIds($user));
+            })
             ->where('id', $id)
             ->first();
+    }
+
+    private function assignedProjectIds(User $user): array
+    {
+        return $user->assignedProjects()
+            ->pluck('projects.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    private function hasRestrictedAssignedProjects(User $user): bool
+    {
+        return $user->role === 'employee' && !empty($this->assignedProjectIds($user));
     }
 }

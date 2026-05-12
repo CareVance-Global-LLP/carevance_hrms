@@ -10,6 +10,7 @@ import { FieldLabel, SelectInput, ToggleInput } from '@/components/ui/FormField'
 import EmailTagInput from '@/components/add-user/EmailTagInput';
 import RoleSelector from '@/components/add-user/RoleSelector';
 import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
+import ProjectMultiSelect from '@/components/add-user/ProjectMultiSelect';
 import InviteLinkPanel from '@/components/add-user/InviteLinkPanel';
 import CsvUploadPanel from '@/components/add-user/CsvUploadPanel';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
@@ -73,6 +74,7 @@ export default function AddUserDrawer({
   const [invalidEmails, setInvalidEmails] = useState<string[]>([]);
   const [role, setRole] = useState<InviteUserRole>('employee');
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>(storedDefaults.groupIds);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>(storedDefaults.projectIds);
   const [rememberDefaults, setRememberDefaults] = useState(storedDefaults.remember);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [settings, setSettings] = useState<AdditionalInviteSettings>(defaultSettings);
@@ -87,6 +89,11 @@ export default function AddUserDrawer({
   const groupsQuery = useQuery({
     queryKey: ['add-user-groups'],
     queryFn: addUserService.fetchGroups,
+    enabled: open,
+  });
+  const projectsQuery = useQuery({
+    queryKey: ['add-user-projects'],
+    queryFn: addUserService.fetchProjects,
     enabled: open,
   });
 
@@ -187,7 +194,7 @@ export default function AddUserDrawer({
     addUserService.saveDefaults({
       remember: true,
       groupIds: selectedGroupIds,
-      projectIds: [],
+      projectIds: selectedProjectIds,
     });
   };
 
@@ -202,7 +209,7 @@ export default function AddUserDrawer({
         emails,
         role,
         groupIds: selectedGroupIds,
-        projectIds: [],
+        projectIds: selectedProjectIds,
         settings,
       });
     },
@@ -241,7 +248,7 @@ export default function AddUserDrawer({
         email: linkEmail.trim(),
         role,
         groupIds: selectedGroupIds,
-        projectIds: [],
+        projectIds: selectedProjectIds,
         settings,
       }),
     onSuccess: (result) => {
@@ -277,11 +284,11 @@ export default function AddUserDrawer({
         {
           organizationId: organization.id,
           defaultGroupIds: [],
-          defaultProjectIds: [],
+          defaultProjectIds: selectedProjectIds,
           settings,
         },
         groupsQuery.data || [],
-        []
+        projectsQuery.data || []
       );
     },
     onSuccess: async ({ parsed, result }) => {
@@ -423,6 +430,19 @@ export default function AddUserDrawer({
               </>
             ) : null}
 
+            {activeTab !== 'csv' ? (
+              <>
+                <ProjectMultiSelect
+                  options={projectsQuery.data || []}
+                  selectedIds={selectedProjectIds}
+                  onChange={setSelectedProjectIds}
+                  isLoading={projectsQuery.isLoading}
+                  errorMessage={projectsQuery.isError ? 'Failed to load projects.' : undefined}
+                />
+                <div className="h-px bg-slate-200" />
+              </>
+            ) : null}
+
             <div className="rounded-lg border border-slate-200 bg-slate-50">
               <div className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left">
                 <div>
@@ -532,7 +552,7 @@ export default function AddUserDrawer({
               />
             ) : null}
 
-            {groupsQuery.isLoading ? (
+            {groupsQuery.isLoading || projectsQuery.isLoading ? (
               <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Preparing invite configuration data...
