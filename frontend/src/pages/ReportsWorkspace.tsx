@@ -651,7 +651,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         const effectiveEndDate = shouldScopeWideHours && rangeDays > 14
           ? formatLocalDate(Math.max(startMs, endMs))
           : endDate;
-        const shouldSkipActivity = mode === 'hours-tracked';
+        const shouldSkipActivity = false;
         const response = await reportApi.overall({
           start_date: effectiveStartDate,
           end_date: effectiveEndDate,
