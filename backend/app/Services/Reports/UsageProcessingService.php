@@ -6,6 +6,7 @@ use App\Services\Monitoring\ProductivityClassifier;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Throwable;
 
 class UsageProcessingService
 {
@@ -1227,7 +1228,11 @@ class UsageProcessingService
         }
 
         if (is_string($value) && trim($value) !== '') {
-            return Carbon::parse($value);
+            try {
+                return Carbon::parse($value);
+            } catch (Throwable) {
+                return null;
+            }
         }
 
         return null;
