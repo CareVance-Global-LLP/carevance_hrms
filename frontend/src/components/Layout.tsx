@@ -797,7 +797,7 @@ export default function Layout() {
           </div>
         </aside>
 
-        <main className="min-w-0 pl-0 pr-4 py-4 lg:pl-0 lg:pr-5 lg:py-4 xl:pr-6">
+        <main className="min-w-0 px-4 py-4  lg:pr-5 lg:py-4  xl:pr-6">
           <div className="space-y-5">
             {globalPanelHeader}
             <Outlet />
