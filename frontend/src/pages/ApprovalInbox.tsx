@@ -1,55 +1,37 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { attendanceApi, attendanceTimeEditApi, leaveApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { canReviewApprovalRequest } from '@/lib/permissions';
-import { useLocation } from 'react-router-dom';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
-import { BarChart3, Building2, CheckCircle2, Clock3, Inbox, TrendingUp, UserRound, Users, XCircle } from 'lucide-react';
-
-const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  return `${hours}h ${minutes}m`;
-};
-
-const hasActiveAttendance = (row: any) =>
-  Boolean(row?.is_checked_in || row?.check_in_at || row?.open_punch_in_at || row?.last_check_in_at);
-
-type InboxItem =
-  | {
-      kind: 'leave';
-      id: number;
-      submitted_at: string;
-      title: string;
-      description: string;
-      employee_name: string;
-      employee_email: string;
-      status: string;
-      onApprove: () => Promise<void>;
-      onReject: () => Promise<void>;
-    }
-  | {
-      kind: 'time_edit';
-      id: number;
-      submitted_at: string;
-      title: string;
-      description: string;
-      employee_name: string;
-      employee_email: string;
-      status: string;
-      onApprove: () => Promise<void>;
-      onReject: () => Promise<void>;
-    };
+import { BarChart3, Building2, CheckCircle2, Clock3, History, Inbox, TrendingUp, UserRound, Users, XCircle } from 'lucide-react';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LEAVE_COLORS = ['#2563eb', '#0ea5e9', '#14b8a6', '#f59e0b', '#f97316', '#8b5cf6', '#ef4444'];
+
+type ApprovalSection = 'leave' | 'time-edit';
+type ApprovalView = 'pending' | 'history';
 type AnalyticsPreset = 'today' | '2d' | '5d' | '7d' | 'custom';
 type AnalyticsSource = 'approved' | 'approved_pending';
+
+type ApprovalCardItem = {
+  id: number;
+  kind: ApprovalSection;
+  submittedAt: string;
+  title: string;
+  description: string;
+  employeeName: string;
+  employeeEmail: string;
+  status: string;
+  reviewerName?: string;
+  reviewedAt?: string | null;
+  onApprove?: () => Promise<void>;
+  onReject?: () => Promise<void>;
+};
 
 const startOfDay = (value = new Date()) => new Date(value.getFullYear(), value.getMonth(), value.getDate());
 const toDateInputValue = (value: Date) =>
@@ -67,6 +49,16 @@ const formatDateLabel = (value: Date) =>
 
 const inclusiveDayDiff = (startDate: Date, endDate: Date) =>
   Math.floor((startOfDay(endDate).getTime() - startOfDay(startDate).getTime()) / DAY_MS) + 1;
+
+const formatDuration = (seconds: number) => {
+  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  return `${hours}h ${minutes}m`;
+};
+
+const hasActiveAttendance = (row: any) =>
+  Boolean(row?.is_checked_in || row?.check_in_at || row?.open_punch_in_at || row?.last_check_in_at);
 
 const normalizeDepartment = (item: any) =>
   item?.employee_work_info?.department?.name
@@ -87,6 +79,45 @@ const buildArcPath = (cx: number, cy: number, radius: number, startAngle: number
   const largeArc = endAngle - startAngle > 180 ? 1 : 0;
   return `M ${cx} ${cy} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY} Z`;
 };
+
+function LeaveTrendChart({ points }: { points: Array<{ label: string; value: number }> }) {
+  if (!points.length) {
+    return <p className="text-sm text-slate-500">No trend data in this window.</p>;
+  }
+
+  const max = Math.max(1, ...points.map((point) => point.value));
+  const plotted = points.map((point, index) => {
+    const x = 18 + index * (264 / Math.max(1, points.length - 1));
+    const y = 138 - (point.value / max) * 108;
+    return { x, y, ...point };
+  });
+
+  return (
+    <svg viewBox="0 0 300 172" className="h-44 w-full">
+      {[0, 1, 2, 3].map((line) => {
+        const y = 30 + line * 36;
+        return <line key={line} x1="18" x2="282" y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="2 3" />;
+      })}
+      <polyline
+        points={plotted.map((point) => `${point.x},${point.y}`).join(' ')}
+        fill="none"
+        stroke="#2563eb"
+        strokeWidth="2.5"
+      />
+      {plotted.map((point) => (
+        <g key={`${point.label}-${point.x}`}>
+          <circle cx={point.x} cy={point.y} r="3.5" fill="#2563eb" />
+          <title>{`${point.label}: ${point.value} employees`}</title>
+        </g>
+      ))}
+      {plotted.map((point) => (
+        <text key={`${point.label}-label`} x={point.x} y="164" textAnchor="middle" fill="#64748b" fontSize="9">
+          {point.label}
+        </text>
+      ))}
+    </svg>
+  );
+}
 
 function LeaveDepartmentPie({
   items,
@@ -131,79 +162,93 @@ function LeaveDepartmentPie({
   );
 }
 
-function LeaveTrendChart({
-  points,
-}: {
-  points: Array<{ label: string; value: number }>;
-}) {
-  if (!points.length) {
-    return <p className="text-sm text-slate-500">No trend data in this window.</p>;
+const statusTone = (status: string) => {
+  switch (String(status || '').toLowerCase()) {
+    case 'approved':
+      return 'bg-emerald-100 text-emerald-700';
+    case 'rejected':
+      return 'bg-rose-100 text-rose-700';
+    case 'auto_cancelled':
+      return 'bg-slate-200 text-slate-700';
+    default:
+      return 'bg-amber-100 text-amber-700';
   }
-
-  const max = Math.max(1, ...points.map((point) => point.value));
-  const plotted = points.map((point, index) => {
-    const x = 18 + index * (264 / Math.max(1, points.length - 1));
-    const y = 138 - (point.value / max) * 108;
-    return { x, y, ...point };
-  });
-
-  return (
-    <svg viewBox="0 0 300 172" className="h-44 w-full">
-      {[0, 1, 2, 3].map((line) => {
-        const y = 30 + line * 36;
-        return <line key={line} x1="18" x2="282" y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="2 3" />;
-      })}
-      <polyline
-        points={plotted.map((point) => `${point.x},${point.y}`).join(' ')}
-        fill="none"
-        stroke="#2563eb"
-        strokeWidth="2.5"
-      />
-      {plotted.map((point) => (
-        <g key={`${point.label}-${point.x}`}>
-          <circle cx={point.x} cy={point.y} r="3.5" fill="#2563eb" />
-          <title>{`${point.label}: ${point.value} employees`}</title>
-        </g>
-      ))}
-      {plotted.map((point) => (
-        <text key={`${point.label}-label`} x={point.x} y="164" textAnchor="middle" fill="#64748b" fontSize="9">
-          {point.label}
-        </text>
-      ))}
-    </svg>
-  );
-}
+};
 
 export default function ApprovalInbox() {
   const { user } = useAuth();
   const location = useLocation();
-  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
-  const [approvedLeaves, setApprovedLeaves] = useState<any[]>([]);
+  const navigate = useNavigate();
+
+  const [pendingLeaveRequests, setPendingLeaveRequests] = useState<any[]>([]);
+  const [leaveHistory, setLeaveHistory] = useState<any[]>([]);
   const [todayAttendanceRows, setTodayAttendanceRows] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
-  const [timeEditRequests, setTimeEditRequests] = useState<any[]>([]);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'leave' | 'time_edit'>('all');
+  const [pendingTimeEditRequests, setPendingTimeEditRequests] = useState<any[]>([]);
+  const [timeEditHistory, setTimeEditHistory] = useState<any[]>([]);
   const [analyticsPreset, setAnalyticsPreset] = useState<AnalyticsPreset>('7d');
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('approved_pending');
   const [analyticsDepartment, setAnalyticsDepartment] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
 
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const todayIso = useMemo(() => today.toISOString().slice(0, 10), [today]);
+  const defaultCustomStart = useMemo(() => {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 6);
+    return toDateInputValue(start);
+  }, [today]);
+  const [customStartDate, setCustomStartDate] = useState(defaultCustomStart);
+  const [customEndDate, setCustomEndDate] = useState(todayIso);
+
+  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const activeSection = useMemo<ApprovalSection>(() => {
+    const section = String(params.get('section') || '').trim().toLowerCase();
+    return section === 'time-edit' || section === 'time_edit' ? 'time-edit' : 'leave';
+  }, [params]);
+  const activeView = useMemo<ApprovalView>(() => {
+    const view = String(params.get('view') || '').trim().toLowerCase();
+    return view === 'history' ? 'history' : 'pending';
+  }, [params]);
+
+  const setRouteState = (next: Partial<{ section: ApprovalSection; view: ApprovalView; leaveWindow: string | null }>) => {
+    const nextParams = new URLSearchParams(location.search);
+    if (next.section) nextParams.set('section', next.section);
+    if (next.view) nextParams.set('view', next.view);
+    if (next.leaveWindow === null) {
+      nextParams.delete('leave_window');
+    } else if (typeof next.leaveWindow === 'string') {
+      nextParams.set('leave_window', next.leaveWindow);
+    }
+    navigate(`/approval-inbox?${nextParams.toString()}`, { replace: true });
+  };
+
   const load = async () => {
     setIsLoading(true);
     try {
-      const todayDate = new Date().toISOString().slice(0, 10);
-      const [leaveResponse, approvedLeaveResponse, timeEditResponse, employeesResponse, attendanceResponse] = await Promise.all([
+      const [pendingLeaveResponse, approvedLeaveResponse, rejectedLeaveResponse, autoCancelledLeaveResponse, pendingTimeEditResponse, approvedTimeEditResponse, rejectedTimeEditResponse, employeesResponse, attendanceResponse] = await Promise.all([
         leaveApi.list({ status: 'pending', limit: 500 }),
         leaveApi.list({ status: 'approved', limit: 500 }),
+        leaveApi.list({ status: 'rejected', limit: 500 }),
+        leaveApi.list({ status: 'auto_cancelled', limit: 500 }),
         attendanceTimeEditApi.list({ status: 'pending' }),
-        userApi.getAll(),
-        attendanceApi.summary({ start_date: todayDate, end_date: todayDate }),
+        attendanceTimeEditApi.list({ status: 'approved' }),
+        attendanceTimeEditApi.list({ status: 'rejected' }),
+        userApi.getAll({ period: 'all' }),
+        attendanceApi.summary({ start_date: todayIso, end_date: todayIso }),
       ]);
 
-      setLeaveRequests(leaveResponse.data?.data || []);
-      setApprovedLeaves(approvedLeaveResponse.data?.data || []);
-      setTimeEditRequests(timeEditResponse.data?.data || []);
+      setPendingLeaveRequests(pendingLeaveResponse.data?.data || []);
+      setLeaveHistory(
+        [...(approvedLeaveResponse.data?.data || []), ...(rejectedLeaveResponse.data?.data || []), ...(autoCancelledLeaveResponse.data?.data || [])]
+          .sort((left, right) => +new Date(right.reviewed_at || right.created_at) - +new Date(left.reviewed_at || left.created_at))
+      );
+      setPendingTimeEditRequests(pendingTimeEditResponse.data?.data || []);
+      setTimeEditHistory(
+        [...(approvedTimeEditResponse.data?.data || []), ...(rejectedTimeEditResponse.data?.data || [])]
+          .sort((left, right) => +new Date(right.reviewed_at || right.created_at) - +new Date(left.reviewed_at || left.created_at))
+      );
       setEmployees(Array.isArray(employeesResponse.data) ? employeesResponse.data : []);
       setTodayAttendanceRows(Array.isArray(attendanceResponse.data?.data) ? attendanceResponse.data.data : []);
     } catch (error: any) {
@@ -214,8 +259,15 @@ export default function ApprovalInbox() {
   };
 
   useEffect(() => {
-    load();
+    void load();
   }, []);
+
+  useEffect(() => {
+    const leaveWindow = String(params.get('leave_window') || '').trim().toLowerCase();
+    if (leaveWindow === 'today') {
+      setAnalyticsPreset('today');
+    }
+  }, [params]);
 
   const handleAction = async (action: () => Promise<void>, successMessage: string) => {
     setFeedback(null);
@@ -228,57 +280,22 @@ export default function ApprovalInbox() {
     }
   };
 
-  const items = useMemo<InboxItem[]>(() => {
-    const reviewableLeaveRequests = leaveRequests.filter((item) => canReviewApprovalRequest(user, item.user));
-    const reviewableTimeEditRequests = timeEditRequests.filter((item) => canReviewApprovalRequest(user, item.user));
-
-    const leaveItems = reviewableLeaveRequests.map((item) => ({
-      kind: 'leave' as const,
-      id: item.id,
-      submitted_at: item.created_at,
-      title: `Leave request: ${item.start_date} to ${item.end_date}`,
-      description: item.reason || 'No reason provided.',
-      employee_name: item.user?.name || 'Unknown',
-      employee_email: item.user?.email || '',
-      status: item.status,
-      onApprove: async () => {
-        await leaveApi.approve(item.id);
-      },
-      onReject: async () => {
-        await leaveApi.reject(item.id);
-      },
-    }));
-
-    const timeEditItems = reviewableTimeEditRequests.map((item) => ({
-      kind: 'time_edit' as const,
-      id: item.id,
-      submitted_at: item.created_at,
-      title: `Time edit request: ${item.attendance_date}`,
-      description: `${formatDuration(Number(item.extra_seconds || 0))} requested${item.message ? ` - ${item.message}` : ''}`,
-      employee_name: item.user?.name || 'Unknown',
-      employee_email: item.user?.email || '',
-      status: item.status,
-      onApprove: async () => {
-        await attendanceTimeEditApi.approve(item.id);
-      },
-      onReject: async () => {
-        await attendanceTimeEditApi.reject(item.id);
-      },
-    }));
-
-    return [...leaveItems, ...timeEditItems].sort((a, b) => +new Date(b.submitted_at) - +new Date(a.submitted_at));
-  }, [leaveRequests, timeEditRequests, user]);
-
-  const reviewableLeaveCount = useMemo(
-    () => leaveRequests.filter((item) => canReviewApprovalRequest(user, item.user)).length,
-    [leaveRequests, user]
+  const reviewablePendingLeaves = useMemo(
+    () => pendingLeaveRequests.filter((item) => canReviewApprovalRequest(user, item.user)),
+    [pendingLeaveRequests, user]
   );
-  const reviewableTimeEditCount = useMemo(
-    () => timeEditRequests.filter((item) => canReviewApprovalRequest(user, item.user)).length,
-    [timeEditRequests, user]
+  const reviewableLeaveHistory = useMemo(
+    () => leaveHistory.filter((item) => canReviewApprovalRequest(user, item.user)),
+    [leaveHistory, user]
   );
-
-  const filteredItems = items.filter((item) => activeFilter === 'all' || item.kind === activeFilter);
+  const reviewablePendingTimeEdits = useMemo(
+    () => pendingTimeEditRequests.filter((item) => canReviewApprovalRequest(user, item.user)),
+    [pendingTimeEditRequests, user]
+  );
+  const reviewableTimeEditHistory = useMemo(
+    () => timeEditHistory.filter((item) => canReviewApprovalRequest(user, item.user)),
+    [timeEditHistory, user]
+  );
 
   const employeeDirectory = useMemo(() => {
     const directory = new Map<number, { id: number; name: string; email: string; department: string }>();
@@ -294,7 +311,7 @@ export default function ApprovalInbox() {
       });
     });
 
-    approvedLeaves.forEach((leave) => {
+    [...reviewablePendingLeaves, ...reviewableLeaveHistory].forEach((leave) => {
       const id = Number(leave?.user_id || leave?.user?.id || 0);
       if (!id || directory.has(id)) return;
       directory.set(id, {
@@ -306,48 +323,27 @@ export default function ApprovalInbox() {
     });
 
     return directory;
-  }, [approvedLeaves, employees]);
+  }, [employees, reviewableLeaveHistory, reviewablePendingLeaves]);
 
   const departmentOptions = useMemo(() => {
     const values = Array.from(new Set(Array.from(employeeDirectory.values()).map((employee) => employee.department))).sort((a, b) => a.localeCompare(b));
     return ['All', ...values];
   }, [employeeDirectory]);
 
-  const reviewableApprovedLeaves = useMemo(
-    () => approvedLeaves.filter((leave) => canReviewApprovalRequest(user, leave?.user)),
-    [approvedLeaves, user]
-  );
-
-  const today = useMemo(() => startOfDay(new Date()), []);
-  const todayIso = useMemo(() => today.toISOString().slice(0, 10), [today]);
-  const defaultCustomStart = useMemo(() => {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 6);
-    return toDateInputValue(start);
-  }, [today]);
-  const [customStartDate, setCustomStartDate] = useState(defaultCustomStart);
-  const [customEndDate, setCustomEndDate] = useState(todayIso);
-
-  const reviewablePendingLeaves = useMemo(
-    () => leaveRequests.filter((leave) => canReviewApprovalRequest(user, leave?.user)),
-    [leaveRequests, user]
-  );
-
   const analyticsLeaves = useMemo(() => {
     if (analyticsSource === 'approved') {
-      return reviewableApprovedLeaves;
+      return reviewableLeaveHistory.filter((leave) => String(leave.status || '').toLowerCase() === 'approved');
     }
 
     const byId = new Map<number, any>();
-    [...reviewableApprovedLeaves, ...reviewablePendingLeaves].forEach((leave) => {
+    [...reviewableLeaveHistory.filter((leave) => String(leave.status || '').toLowerCase() === 'approved'), ...reviewablePendingLeaves].forEach((leave) => {
       const id = Number(leave?.id || 0);
-      if (!id) return;
-      if (!byId.has(id)) {
+      if (id && !byId.has(id)) {
         byId.set(id, leave);
       }
     });
     return Array.from(byId.values());
-  }, [analyticsSource, reviewableApprovedLeaves, reviewablePendingLeaves]);
+  }, [analyticsSource, reviewableLeaveHistory, reviewablePendingLeaves]);
 
   const scopedAnalyticsLeaves = useMemo(() => {
     if (analyticsDepartment === 'All') {
@@ -360,14 +356,6 @@ export default function ApprovalInbox() {
       return department === analyticsDepartment;
     });
   }, [analyticsDepartment, analyticsLeaves, employeeDirectory]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const leaveWindow = String(params.get('leave_window') || '').trim().toLowerCase();
-    if (leaveWindow === 'today') {
-      setAnalyticsPreset('today');
-    }
-  }, [location.search]);
 
   const selectedWindowRange = useMemo(() => {
     if (analyticsPreset === 'today') {
@@ -384,18 +372,6 @@ export default function ApprovalInbox() {
     if (analyticsPreset === 'custom') {
       const parsedStart = parseDateOnly(customStartDate);
       const parsedEnd = parseDateOnly(customEndDate);
-
-      if (!parsedStart && !parsedEnd) {
-        return {
-          start: new Date(today),
-          end: new Date(today),
-          days: 1,
-          label: 'Today',
-          startLabel: formatDateLabel(today),
-          endLabel: formatDateLabel(today),
-        };
-      }
-
       const safeStart = parsedStart || parsedEnd || new Date(today);
       const safeEnd = parsedEnd || parsedStart || new Date(today);
       const start = safeStart <= safeEnd ? safeStart : safeEnd;
@@ -458,7 +434,11 @@ export default function ApprovalInbox() {
     });
 
     return Array.from(counts.entries())
-      .map(([department, count]) => ({ department, count }))
+      .map(([department, count], index) => ({
+        department,
+        count,
+        color: LEAVE_COLORS[index % LEAVE_COLORS.length],
+      }))
       .sort((left, right) => right.count - left.count || left.department.localeCompare(right.department));
   }, [todayOnLeaveEmployees]);
 
@@ -468,9 +448,7 @@ export default function ApprovalInbox() {
       .map((employee) => employee.id),
     [analyticsDepartment, employeeDirectory]
   );
-
   const scopedEmployeeIdSet = useMemo(() => new Set(scopedEmployeeIds), [scopedEmployeeIds]);
-
   const scopedTodayAttendanceRows = useMemo(
     () => todayAttendanceRows.filter((row) => {
       const userId = Number(row?.user?.id || row?.user_id || row?.employee_id || 0);
@@ -486,12 +464,10 @@ export default function ApprovalInbox() {
     }).length,
     [scopedTodayAttendanceRows]
   );
-
   const lateTodayCount = useMemo(
     () => scopedTodayAttendanceRows.filter((row) => Number(row?.late_days || row?.late_minutes || 0) > 0).length,
     [scopedTodayAttendanceRows]
   );
-
   const absentTodayCount = useMemo(
     () => Math.max(0, scopedEmployeeIds.length - presentTodayCount - lateTodayCount - todayOnLeaveEmployees.length),
     [lateTodayCount, presentTodayCount, scopedEmployeeIds.length, todayOnLeaveEmployees.length]
@@ -503,10 +479,10 @@ export default function ApprovalInbox() {
     let totalUnits = 0;
     let overlappingRequests = 0;
 
-    analyticsLeaves.forEach((leave) => {
+    scopedAnalyticsLeaves.forEach((leave) => {
       const start = parseDateOnly(leave?.start_date);
       const end = parseDateOnly(leave?.end_date);
-      if (!start || !end) return;
+      if (!start || !end || end < selectedWindowRange.start || start > selectedWindowRange.end) return;
 
       const overlapStart = start > selectedWindowRange.start ? start : selectedWindowRange.start;
       const overlapEnd = end < selectedWindowRange.end ? end : selectedWindowRange.end;
@@ -525,31 +501,27 @@ export default function ApprovalInbox() {
       }
     });
 
-    const topDepartments = Array.from(departmentUnits.entries())
-      .map(([department, units], index) => ({
-        department,
-        units,
-        color: LEAVE_COLORS[index % LEAVE_COLORS.length],
-      }))
-      .sort((left, right) => right.units - left.units)
-      .slice(0, 6);
-
-    const topEmployees = Array.from(employeeUnits.entries())
-      .map(([id, units]) => ({
-        id,
-        units,
-        name: employeeDirectory.get(id)?.name || 'Unknown employee',
-        department: employeeDirectory.get(id)?.department || 'Unassigned',
-      }))
-      .sort((left, right) => right.units - left.units)
-      .slice(0, 8);
-
     return {
       totalUnits,
       overlappingRequests,
       uniqueEmployees: employeeUnits.size,
-      topDepartments,
-      topEmployees,
+      topDepartments: Array.from(departmentUnits.entries())
+        .map(([department, units], index) => ({
+          department,
+          units,
+          color: LEAVE_COLORS[index % LEAVE_COLORS.length],
+        }))
+        .sort((left, right) => right.units - left.units)
+        .slice(0, 6),
+      topEmployees: Array.from(employeeUnits.entries())
+        .map(([id, units]) => ({
+          id,
+          units,
+          name: employeeDirectory.get(id)?.name || 'Unknown employee',
+          department: employeeDirectory.get(id)?.department || 'Unassigned',
+        }))
+        .sort((left, right) => right.units - left.units)
+        .slice(0, 8),
     };
   }, [employeeDirectory, scopedAnalyticsLeaves, selectedWindowRange.end, selectedWindowRange.start]);
 
@@ -569,10 +541,7 @@ export default function ApprovalInbox() {
         if (userId) activeEmployeeIds.add(userId);
       });
 
-      points.push({
-        label: formatDateLabel(day),
-        value: activeEmployeeIds.size,
-      });
+      points.push({ label: formatDateLabel(day), value: activeEmployeeIds.size });
     }
 
     return points;
@@ -583,6 +552,7 @@ export default function ApprovalInbox() {
   const windowCoverageRate = windowLeaveStats.uniqueEmployees > 0
     ? Math.min(100, (windowLeaveStats.totalUnits / windowLeaveStats.uniqueEmployees) * 100)
     : 0;
+
   const leavePressureNotes = [
     {
       label: 'Coverage pressure',
@@ -601,28 +571,155 @@ export default function ApprovalInbox() {
     },
   ];
 
+  const pendingLeaveCards = useMemo<ApprovalCardItem[]>(() => reviewablePendingLeaves.map((item) => ({
+    id: item.id,
+    kind: 'leave',
+    submittedAt: item.created_at,
+    title: `Leave request: ${item.start_date} to ${item.end_date}`,
+    description: item.reason || 'No reason provided.',
+    employeeName: item.user?.name || 'Unknown',
+    employeeEmail: item.user?.email || '',
+    status: item.status,
+    onApprove: async () => { await leaveApi.approve(item.id); },
+    onReject: async () => { await leaveApi.reject(item.id); },
+  })), [reviewablePendingLeaves]);
+
+  const leaveHistoryCards = useMemo<ApprovalCardItem[]>(() => reviewableLeaveHistory.map((item) => ({
+    id: item.id,
+    kind: 'leave',
+    submittedAt: item.created_at,
+    title: `Leave request: ${item.start_date} to ${item.end_date}`,
+    description: item.reason || 'No reason provided.',
+    employeeName: item.user?.name || 'Unknown',
+    employeeEmail: item.user?.email || '',
+    status: item.status,
+    reviewerName: item.reviewer?.name || undefined,
+    reviewedAt: item.reviewed_at,
+  })), [reviewableLeaveHistory]);
+
+  const pendingTimeEditCards = useMemo<ApprovalCardItem[]>(() => reviewablePendingTimeEdits.map((item) => ({
+    id: item.id,
+    kind: 'time-edit',
+    submittedAt: item.created_at,
+    title: `Time edit request: ${item.attendance_date}`,
+    description: `${formatDuration(Number(item.extra_seconds || 0))} requested${item.message ? ` | ${item.message}` : ''}`,
+    employeeName: item.user?.name || 'Unknown',
+    employeeEmail: item.user?.email || '',
+    status: item.status,
+    onApprove: async () => { await attendanceTimeEditApi.approve(item.id); },
+    onReject: async () => { await attendanceTimeEditApi.reject(item.id); },
+  })), [reviewablePendingTimeEdits]);
+
+  const timeEditHistoryCards = useMemo<ApprovalCardItem[]>(() => reviewableTimeEditHistory.map((item) => ({
+    id: item.id,
+    kind: 'time-edit',
+    submittedAt: item.created_at,
+    title: `Time edit request: ${item.attendance_date}`,
+    description: `${formatDuration(Number(item.extra_seconds || 0))} requested${item.message ? ` | ${item.message}` : ''}`,
+    employeeName: item.user?.name || 'Unknown',
+    employeeEmail: item.user?.email || '',
+    status: item.status,
+    reviewerName: item.reviewer?.name || undefined,
+    reviewedAt: item.reviewed_at,
+  })), [reviewableTimeEditHistory]);
+
+  const currentCards = activeSection === 'leave'
+    ? (activeView === 'pending' ? pendingLeaveCards : leaveHistoryCards)
+    : (activeView === 'pending' ? pendingTimeEditCards : timeEditHistoryCards);
+
+  const sectionTitle = activeSection === 'leave' ? 'Leave Approval' : 'Edit Time Approval';
+  const sectionDescription = activeSection === 'leave'
+    ? (activeView === 'pending' ? 'Review pending leave requests for your organization.' : 'Track approved, rejected, and auto-cancelled leave decisions.')
+    : (activeView === 'pending' ? 'Review pending time edit and overtime correction requests.' : 'Track approved and rejected time edit decisions.');
+
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Operations workflow"
         title="Approval Inbox"
-        description="Review pending approvals and use leave intelligence to spot staffing pressure early."
-        actions={<Button onClick={load} variant="secondary">Refresh Inbox</Button>}
+        description="Review leave approvals, time edit approvals, and recent approval history from one place."
+        actions={<Button onClick={() => void load()} variant="secondary">Refresh Inbox</Button>}
       />
 
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <MetricCard label="Pending Total" value={items.length} icon={Inbox} accent="sky" />
-        <MetricCard label="Leave Requests" value={reviewableLeaveCount} icon={Clock3} accent="amber" />
-        <MetricCard label="Time Edits" value={reviewableTimeEditCount} icon={CheckCircle2} accent="emerald" />
+        <MetricCard label="Pending Total" value={pendingLeaveCards.length + pendingTimeEditCards.length} icon={Inbox} accent="sky" />
+        <MetricCard label="Leave Requests" value={pendingLeaveCards.length} icon={Clock3} accent="amber" />
+        <MetricCard label="Time Edits" value={pendingTimeEditCards.length} icon={CheckCircle2} accent="emerald" />
       </div>
+
+      <SurfaceCard className="p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">Approval Sections</h2>
+            <p className="mt-1 text-sm text-slate-500">Switch between leave approvals and time edit approvals without leaving the inbox.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'leave', label: 'Leave Approval', count: pendingLeaveCards.length },
+              { id: 'time-edit', label: 'Edit Time Approval', count: pendingTimeEditCards.length },
+            ].map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => setRouteState({ section: section.id as ApprovalSection })}
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
+                  activeSection === section.id
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+                }`}
+              >
+                {section.label}
+                <span className={`rounded-full px-2 py-0.5 text-xs ${activeSection === section.id ? 'bg-white/20 text-white' : 'bg-white text-slate-600'}`}>
+                  {section.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <button
+            type="button"
+            onClick={() => setRouteState({ section: activeSection, view: 'pending' })}
+            className={`rounded-xl border px-4 py-4 text-left transition ${
+              activeView === 'pending' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-100'
+            }`}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pending</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">{activeSection === 'leave' ? pendingLeaveCards.length : pendingTimeEditCards.length}</p>
+            <p className="mt-1 text-sm text-slate-500">Requests waiting for approval</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRouteState({ section: activeSection, view: 'history' })}
+            className={`rounded-xl border px-4 py-4 text-left transition ${
+              activeView === 'history' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-100'
+            }`}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">History</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">{activeSection === 'leave' ? leaveHistoryCards.length : timeEditHistoryCards.length}</p>
+            <p className="mt-1 text-sm text-slate-500">Approved and completed decisions</p>
+          </button>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Section</p>
+            <p className="mt-2 text-lg font-semibold text-slate-950">{sectionTitle}</p>
+            <p className="mt-1 text-sm text-slate-500">{activeView === 'pending' ? 'Action queue' : 'Decision archive'}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current view</p>
+            <p className="mt-2 text-lg font-semibold text-slate-950">{activeView === 'pending' ? 'Pending approvals' : 'History'}</p>
+            <p className="mt-1 text-sm text-slate-500">{activeSection === 'leave' ? 'Leave workflow' : 'Time edit workflow'}</p>
+          </div>
+        </div>
+      </SurfaceCard>
 
       <SurfaceCard className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Leave Intelligence</h2>
-            <p className="text-sm text-slate-500">Simple leave planning with the same filters, analytics, and approval workflow.</p>
+            <p className="text-sm text-slate-500">Keep leave analytics in the same inbox so approval decisions have context.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {[
@@ -732,12 +829,7 @@ export default function ApprovalInbox() {
           <MetricCard label="Employees On Leave Today" value={todayOnLeaveEmployees.length} icon={Users} accent="amber" />
           <MetricCard label="Absent Today" value={absentTodayCount} icon={XCircle} accent="rose" />
           <MetricCard label={`Leave Units (${selectedWindowRange.days}d)`} value={windowLeaveStats.totalUnits.toFixed(1)} icon={BarChart3} accent="sky" />
-          <MetricCard
-            label="Highest Leave Load"
-            value={topEmployee ? topEmployee.name : 'N/A'}
-            icon={UserRound}
-            accent="emerald"
-          />
+          <MetricCard label="Highest Leave Load" value={topEmployee ? topEmployee.name : 'N/A'} icon={UserRound} accent="emerald" />
         </div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
@@ -773,24 +865,7 @@ export default function ApprovalInbox() {
               <span className="text-xs text-slate-500">Employees currently on leave</span>
             </div>
             {todayDepartmentRows.length ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-2 py-2">Department</th>
-                      <th className="px-2 py-2 text-right">Employees</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {todayDepartmentRows.map((row) => (
-                      <tr key={row.department} className="border-b border-slate-50">
-                        <td className="px-2 py-2.5 text-slate-700">{row.department}</td>
-                        <td className="px-2 py-2.5 text-right font-semibold text-slate-900">{row.count}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <LeaveDepartmentPie items={todayDepartmentRows.map((row) => ({ label: row.department, value: row.count, color: row.color }))} />
             ) : (
               <p className="text-sm text-slate-500">No employees are on leave today.</p>
             )}
@@ -852,72 +927,85 @@ export default function ApprovalInbox() {
         </div>
       </SurfaceCard>
 
-      <SurfaceCard className="p-4">
-        <div className="flex flex-wrap gap-2">
-          {[
-            { id: 'all', label: 'All requests' },
-            { id: 'leave', label: 'Leave only' },
-            { id: 'time_edit', label: 'Time edits only' },
-          ].map((filter) => (
-            <button
-              key={filter.id}
-              onClick={() => setActiveFilter(filter.id as 'all' | 'leave' | 'time_edit')}
-              className={`rounded-full px-3.5 py-1.5 text-sm font-medium ${
-                activeFilter === filter.id ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
+      <SurfaceCard className="p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold text-slate-950">{sectionTitle}</h2>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeView === 'pending' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>
+                {activeView === 'pending' ? 'Pending' : 'History'}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">{sectionDescription}</p>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <History className="h-4 w-4" />
+            {activeView === 'pending'
+              ? `${currentCards.length} requests need review`
+              : `${currentCards.length} requests in history`}
+          </div>
         </div>
       </SurfaceCard>
 
       {isLoading ? (
         <PageLoadingState label="Loading approval inbox..." />
-      ) : filteredItems.length === 0 ? (
+      ) : currentCards.length === 0 ? (
         <PageEmptyState
-          title="Inbox is clear"
-          description="No pending approvals match the current filter."
+          title={activeView === 'pending' ? 'Inbox is clear' : 'No history yet'}
+          description={activeView === 'pending'
+            ? `No ${activeSection === 'leave' ? 'leave' : 'time edit'} approvals are waiting right now.`
+            : `No ${activeSection === 'leave' ? 'leave' : 'time edit'} approval history matches this view.`}
         />
       ) : (
         <div className="space-y-3">
-          {filteredItems.map((item) => (
+          {currentCards.map((item) => (
             <SurfaceCard key={`${item.kind}-${item.id}`} className="p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      item.kind === 'leave' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                    }`}>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.kind === 'leave' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                       {item.kind === 'leave' ? 'Leave' : 'Time Edit'}
                     </span>
-                    <span className="text-xs text-slate-500">
-                      Submitted {new Date(item.submitted_at).toLocaleString()}
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>
+                      {String(item.status || '').replace(/_/g, ' ')}
                     </span>
+                    <span className="text-xs text-slate-500">
+                      Submitted {new Date(item.submittedAt).toLocaleString()}
+                    </span>
+                    {item.reviewedAt ? (
+                      <span className="text-xs text-slate-500">
+                        Reviewed {new Date(item.reviewedAt).toLocaleString()}
+                      </span>
+                    ) : null}
                   </div>
-                  <h2 className="text-lg font-semibold text-slate-950">{item.title}</h2>
-                  <p className="text-sm text-slate-600">{item.employee_name} - {item.employee_email}</p>
+                  <h3 className="text-lg font-semibold text-slate-950">{item.title}</h3>
+                  <p className="text-sm text-slate-600">{item.employeeName} | {item.employeeEmail}</p>
                   <p className="text-sm text-slate-600">{item.description}</p>
+                  {item.reviewerName ? (
+                    <p className="text-xs text-slate-500">Reviewed by {item.reviewerName}</p>
+                  ) : null}
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    className="bg-emerald-600 shadow-sm hover:bg-emerald-700"
-                    onClick={() => handleAction(item.onApprove, `${item.employee_name}'s request approved.`)}
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    onClick={() => handleAction(item.onReject, `${item.employee_name}'s request rejected.`)}
-                  >
-                    <XCircle className="h-4 w-4" />
-                    Reject
-                  </Button>
-                </div>
+                {activeView === 'pending' ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 shadow-sm hover:bg-emerald-700"
+                      onClick={() => item.onApprove && handleAction(item.onApprove, `${item.employeeName}'s request approved.`)}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => item.onReject && handleAction(item.onReject, `${item.employeeName}'s request rejected.`)}
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Reject
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </SurfaceCard>
           ))}

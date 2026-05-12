@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
 import Button from '@/components/ui/Button';
@@ -186,6 +186,7 @@ const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: stri
 
 export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWorkspaceMode }) {
   const { organization, user } = useAuth();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [directoryFilterUserId, setDirectoryFilterUserId] = useState<number | ''>('');
@@ -254,6 +255,20 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       setSelectedUserId(usersQuery.data![0].id);
     }
   }, [selectedUserId, usersQuery.data]);
+
+  useEffect(() => {
+    if (mode !== 'employees') {
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    const nextDepartment = String(params.get('department') || '').trim();
+    if (!nextDepartment) {
+      return;
+    }
+
+    setDirectoryDepartmentFilter(nextDepartment);
+  }, [location.search, mode]);
 
   useEffect(() => {
     if (allowedRoles.length === 0) {

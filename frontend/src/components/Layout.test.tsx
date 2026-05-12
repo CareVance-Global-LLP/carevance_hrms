@@ -16,6 +16,7 @@ const apiMocks = vi.hoisted(() => ({
   getUnreadSummary: vi.fn().mockResolvedValue({ data: { unread_messages: 0, unread_conversations: 0, unread_senders: 0 } }),
   leaveList: vi.fn().mockResolvedValue({ data: { data: [] } }),
   attendanceTimeEditList: vi.fn().mockResolvedValue({ data: { data: [] } }),
+  userGetAll: vi.fn().mockResolvedValue({ data: [] }),
   notificationList: vi.fn().mockResolvedValue({ data: { data: [], unread_count: 0 } }),
   markAllRead: vi.fn().mockResolvedValue({}),
   markRead: vi.fn().mockResolvedValue({}),
@@ -36,6 +37,7 @@ vi.mock('@/services/api', async () => {
     chatApi: { getUnreadSummary: apiMocks.getUnreadSummary },
     leaveApi: { list: apiMocks.leaveList },
     attendanceTimeEditApi: { list: apiMocks.attendanceTimeEditList },
+    userApi: { getAll: apiMocks.userGetAll },
     notificationApi: {
       list: apiMocks.notificationList,
       markAllRead: apiMocks.markAllRead,
@@ -52,6 +54,7 @@ describe('Layout navigation', () => {
     apiMocks.getUnreadSummary.mockResolvedValue({ data: { unread_messages: 0, unread_conversations: 0, unread_senders: 0 } });
     apiMocks.leaveList.mockResolvedValue({ data: { data: [] } });
     apiMocks.attendanceTimeEditList.mockResolvedValue({ data: { data: [] } });
+    apiMocks.userGetAll.mockResolvedValue({ data: [] });
     apiMocks.notificationList.mockResolvedValue({ data: { data: [], unread_count: 0 } });
     apiMocks.markAllRead.mockResolvedValue({});
     apiMocks.markRead.mockResolvedValue({});
@@ -80,8 +83,37 @@ describe('Layout navigation', () => {
     expect(screen.queryByText('Add Employee')).not.toBeInTheDocument();
 
     expect(await screen.findByText('Employees')).toBeInTheDocument();
-    expect(screen.getByText('Leave')).toBeInTheDocument();
+    expect(screen.getByText('Approval Inbox')).toBeInTheDocument();
     expect(screen.getByText('Audit Logs')).toBeInTheDocument();
+  });
+
+  it('shows employee and department suggestions in the global search', async () => {
+    const user = userEvent.setup();
+    apiMocks.userGetAll.mockResolvedValue({
+      data: [
+        {
+          id: 17,
+          name: 'Zeel',
+          email: 'zeel@test.com',
+          role: 'employee',
+          groups: [{ name: 'Quality Assurance' }],
+        },
+      ],
+    });
+
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    const searchInput = await screen.findByLabelText(/universal search/i);
+    await user.type(searchInput, 'zee');
+
+    expect(await screen.findByText('Zeel')).toBeInTheDocument();
+    expect(screen.getByText('zeel@test.com | Quality Assurance')).toBeInTheDocument();
+
+    await user.clear(searchInput);
+    await user.type(searchInput, 'quality');
+
+    expect(await screen.findByText('Quality Assurance')).toBeInTheDocument();
+    expect(screen.getByText('Department')).toBeInTheDocument();
   });
 
   it('highlights only the selected settings subpage', async () => {

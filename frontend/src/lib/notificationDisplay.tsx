@@ -73,7 +73,7 @@ export const isApprovalNotification = (notification: AppNotificationItem | null 
     return true;
   }
 
-  return String(notification?.meta?.route || '').trim() === '/approval-inbox';
+  return String(notification?.meta?.route || '').trim().startsWith('/approval-inbox');
 };
 
 export const resolveNotificationRoute = (
@@ -81,7 +81,14 @@ export const resolveNotificationRoute = (
   user: Pick<User, 'role'> | null | undefined
 ): string => {
   if ((user?.role === 'admin' || user?.role === 'manager') && isApprovalNotification(notification)) {
-    return '/approval-inbox';
+    const type = String(notification?.type || '').trim().toLowerCase();
+    const title = String(notification?.title || '').trim().toLowerCase();
+
+    if (type === 'time_edit' || title.startsWith('time edit request submitted')) {
+      return '/approval-inbox?section=time-edit&view=pending';
+    }
+
+    return '/approval-inbox?section=leave&view=pending&leave_window=today';
   }
 
   return String(notification.meta?.route || '/notifications').trim() || '/notifications';

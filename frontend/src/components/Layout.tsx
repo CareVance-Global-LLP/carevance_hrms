@@ -3,11 +3,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
+import { buildSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
+import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { webAppUrl } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
-import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi } from '@/services/api';
+import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, userApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
@@ -31,6 +33,21 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+const resolveEmployeeDepartment = (employee: any) =>
+  String(
+    employee?.department
+    || employee?.employee_work_info?.department?.name
+    || employee?.employeeWorkInfo?.department?.name
+    || employee?.groups?.[0]?.name
+    || 'Unassigned'
+  ).trim() || 'Unassigned';
+
+type GlobalSuggestion = SearchSuggestionOption<any> & {
+  to: string;
+  externalPath?: string;
+  category: string;
+};
+
 export default function Layout() {
   const { user, organization, logout, token } = useAuth();
   useDesktopTracker();
@@ -42,6 +59,7 @@ export default function Layout() {
   const [unreadChatMessages, setUnreadChatMessages] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [globalSearch, setGlobalSearch] = useState('');
+  const [searchDirectoryUsers, setSearchDirectoryUsers] = useState<any[]>([]);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -237,7 +255,7 @@ export default function Layout() {
 
           if (group.label === 'Settings') {
             const itemsWithCounts = filteredItems?.map((item) =>
-              item.to === '/approval-inbox'
+              String(item.to || '').startsWith('/approval-inbox')
                 ? { ...item, unreadCount: pendingApprovals }
                 : item
             );
@@ -258,47 +276,107 @@ export default function Layout() {
     [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, pendingApprovals, unreadChatMessages]
   );
 
-  const globalSuggestions = useMemo(
-    () => primaryNavigation.flatMap((group) => {
-      if (group.to) {
-        return [{
-          id: `group:${group.label}:${group.to}`,
-          label: group.label,
-          description: group.externalPath || group.to,
-          category: 'Panel',
-          to: group.to,
-          externalPath: group.externalPath,
-        }];
-      }
+  const globalSuggestions = useMemo<GlobalSuggestion[]>(
+    () => {
+      const panelSuggestions: GlobalSuggestion[] = primaryNavigation.flatMap((group) => {
+        if (group.to) {
+          return [{
+            id: `group:${group.label}:${group.to}`,
+            label: group.label,
+            description: group.externalPath || group.to,
+            category: 'Module',
+            to: group.to,
+            externalPath: group.externalPath,
+            searchValues: [group.label, group.externalPath || group.to, 'module panel navigation'],
+          }];
+        }
 
-      return (group.items || []).map((item) => ({
-        id: `item:${group.label}:${item.label}:${item.to}`,
-        label: item.label,
-        description: `${group.label} • ${item.to}`,
-        category: group.label,
-        to: item.to,
-        externalPath: item.externalPath,
-      }));
-    }),
-    [primaryNavigation]
+        return (group.items || []).flatMap((item) => {
+          const baseSuggestion = {
+            id: `item:${group.label}:${item.label}:${item.to}`,
+            label: item.label,
+            description: `${group.label} | ${item.to}`,
+            category: 'Module',
+            to: item.to,
+            externalPath: item.externalPath,
+            searchValues: [item.label, group.label, item.to, item.externalPath, 'module panel navigation'],
+          };
+
+          if (item.to === '/approval-inbox?section=leave&view=pending&leave_window=today') {
+            return [
+              baseSuggestion,
+              {
+                id: 'approval-inbox:leave',
+                label: 'Leave Approval',
+                description: 'Approval Inbox | pending leave requests',
+                category: 'Module',
+                to: '/approval-inbox?section=leave&view=pending&leave_window=today',
+                searchValues: ['leave approval', 'approval inbox', 'leave request', 'pending leave'],
+              },
+              {
+                id: 'approval-inbox:time-edit',
+                label: 'Edit Time Approval',
+                description: 'Approval Inbox | pending time edit requests',
+                category: 'Module',
+                to: '/approval-inbox?section=time-edit&view=pending',
+                searchValues: ['edit time approval', 'approval inbox', 'time edit', 'overtime approval'],
+              },
+            ];
+          }
+
+          return [baseSuggestion];
+        });
+      });
+
+      const employeeSuggestions: GlobalSuggestion[] = isAdminView
+        ? buildSearchSuggestions(searchDirectoryUsers, (employee) => {
+            const employeeId = Number(employee?.id || 0);
+            if (!employeeId) {
+              return null;
+            }
+
+            const department = resolveEmployeeDepartment(employee);
+
+            return {
+              id: `employee:${employeeId}`,
+              label: String(employee?.name || employee?.email || 'Employee'),
+              description: [employee?.email, department].filter(Boolean).join(' | '),
+              category: 'Employee',
+              to: `/employees/${employeeId}`,
+              searchValues: [employee?.name, employee?.email, department, employee?.role, 'employee people person'],
+            };
+          }) as GlobalSuggestion[]
+        : [];
+
+      const departmentSuggestions: GlobalSuggestion[] = isAdminView
+        ? buildSearchSuggestions(
+            Array.from(new Set(searchDirectoryUsers.map((employee) => resolveEmployeeDepartment(employee)).filter(Boolean))),
+            (department) => ({
+              id: `department:${department}`,
+              label: String(department),
+              description: 'Department directory',
+              category: 'Department',
+              to: `/employees?department=${encodeURIComponent(String(department))}`,
+              searchValues: [department, 'department team employee group'],
+            })
+          ) as GlobalSuggestion[]
+        : [];
+
+      return [...panelSuggestions, ...employeeSuggestions, ...departmentSuggestions];
+    },
+    [isAdminView, primaryNavigation, searchDirectoryUsers]
   );
 
   const filteredGlobalSuggestions = useMemo(() => {
     const query = globalSearch.trim().toLowerCase();
     if (!query) {
-      return [];
+      return [] as GlobalSuggestion[];
     }
 
-    return globalSuggestions
-      .filter((item) => `${item.label} ${item.description} ${item.category}`.toLowerCase().includes(query))
-      .slice(0, 10);
+    return rankSearchSuggestions<any>(globalSuggestions, query, 10) as GlobalSuggestion[];
   }, [globalSearch, globalSuggestions]);
 
-  const openGlobalSuggestion = (suggestion?: {
-    to: string;
-    externalPath?: string;
-    label: string;
-  }) => {
+  const openGlobalSuggestion = (suggestion?: GlobalSuggestion) => {
     if (!suggestion) {
       return;
     }
@@ -549,6 +627,33 @@ export default function Layout() {
   }, [isAdminView]);
 
   useEffect(() => {
+    let active = true;
+
+    const loadSearchDirectory = async () => {
+      if (!isAdminView) {
+        setSearchDirectoryUsers([]);
+        return;
+      }
+
+      try {
+        const response = await userApi.getAll({ period: 'all' });
+        if (!active) return;
+        setSearchDirectoryUsers(Array.isArray(response.data) ? response.data : []);
+      } catch {
+        if (active) {
+          setSearchDirectoryUsers([]);
+        }
+      }
+    };
+
+    void loadSearchDirectory();
+
+    return () => {
+      active = false;
+    };
+  }, [isAdminView]);
+
+  useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window) || !desktopPushEnabled) {
       return;
     }
@@ -648,7 +753,7 @@ export default function Layout() {
                   </p>
                   <div className="space-y-1">
                     {group.items?.map((item) => renderSidebarLink(
-                      item.to === '/approval-inbox'
+                      String(item.to || '').startsWith('/approval-inbox')
                         ? { ...item, unreadCount: pendingApprovals }
                         : item,
                       true,

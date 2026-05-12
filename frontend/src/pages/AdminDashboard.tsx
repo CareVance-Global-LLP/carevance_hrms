@@ -1158,7 +1158,7 @@ export default function AdminDashboard() {
     { id: 'reports-section', label: 'Reports', description: 'Quick report shortcuts', category: 'Section', sectionId: 'reports-section', keywords: ['reports', 'export', 'attendance report', 'payroll report'] },
     { id: 'employees-page', label: 'Employees Panel', description: 'Open employee management', category: 'Panel', route: '/employees', keywords: ['employee', 'employees', 'directory', 'management'] },
     { id: 'attendance-page', label: 'Attendance Panel', description: 'Open attendance records', category: 'Panel', route: '/attendance', keywords: ['attendance', 'calendar', 'punch'] },
-    { id: 'leave-page', label: 'Leave Panel', description: 'Open leave approvals', category: 'Panel', route: '/approval-inbox', keywords: ['leave', 'approval', 'inbox'] },
+    { id: 'leave-page', label: 'Approval Inbox', description: 'Open leave approvals', category: 'Panel', route: '/approval-inbox?section=leave&view=pending&leave_window=today', keywords: ['leave', 'approval', 'approval inbox'] },
     { id: 'monitoring-page', label: 'Monitoring Panel', description: 'Open screenshots, timeline, web and app usage', category: 'Panel', route: '/monitoring', keywords: ['monitoring', 'screenshots', 'timeline', 'web usage', 'app usage'] },
     { id: 'payroll-page', label: 'Payroll Panel', description: 'Open payroll workspace', category: 'Panel', route: '/payroll', keywords: ['payroll', 'salary', 'pay'] },
     { id: 'tasks-page', label: 'Tasks Panel', description: 'Open task management', category: 'Panel', route: '/tasks', keywords: ['tasks', 'task', 'work'] },
@@ -1452,7 +1452,7 @@ export default function AdminDashboard() {
             scrollToDashboardSection('current-work-status');
           }}
         />
-        <KpiCard to="/approval-inbox?leave_window=today" label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
+          <KpiCard to="/approval-inbox?section=leave&view=pending&leave_window=today" label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
         <KpiCard
           label="Absent"
           value={attendanceAbsentDays}
@@ -2057,7 +2057,7 @@ export default function AdminDashboard() {
             </div>
           </Card>
           <Card id="leave-balance" className="scroll-mt-24 p-4">
-            <SectionTitle title="Leave Balance" action={<Link to="/approval-inbox" className="text-xs font-medium text-blue-600">View All</Link>} />
+            <SectionTitle title="Leave Balance" action={<Link to="/approval-inbox?section=leave&view=pending&leave_window=today" className="text-xs font-medium text-blue-600">View All</Link>} />
             {leaveSummaryRows.length ? (
               <div className="space-y-4">
                 {leaveSummaryRows.map((item) => (
@@ -2117,7 +2117,7 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-3 gap-3">
             {[
               ['Attendance Report', '/reports/attendance'],
-              ['Leave Report', '/approval-inbox'],
+              ['Leave Report', '/approval-inbox?section=leave&view=pending&leave_window=today'],
               ['Payroll Report', '/payroll'],
               ['Timesheet Report', '/reports/hours-tracked'],
               ['Project Report', '/reports/projects-tasks'],
