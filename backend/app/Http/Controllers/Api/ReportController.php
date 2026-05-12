@@ -25,6 +25,8 @@ use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ReportController extends Controller
 {
@@ -409,6 +411,21 @@ class ReportController extends Controller
         ];
     }
 
+    private function safeCalculateIdleTime(iterable $activities, array $context = []): int
+    {
+        try {
+            return $this->usageProcessingService->calculateIdleTime($activities);
+        } catch (Throwable $exception) {
+            Log::warning('Idle time calculation failed for report request; falling back to 0.', [
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+                'context' => $context,
+            ]);
+
+            return 0;
+        }
+    }
+
     public function dashboard(Request $request)
     {
         $user = $request->user();
@@ -566,7 +583,12 @@ class ReportController extends Controller
                 ->whereDate('attendance_date', '<=', $endDate->toDateString())
                 ->sum('manual_adjustment_seconds');
         $activities = $this->activityFeedService->forUsersInRange([$user->id], $startDate, $endDate);
-        $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
+        $idleDuration = $this->safeCalculateIdleTime($activities, [
+            'report' => 'productivity',
+            'user_id' => $user->id,
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
+        ]);
         $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration);
         $score = $this->timeBreakdownService->productivityScore($trackedDuration, $idleDuration);
 
@@ -763,7 +785,11 @@ class ReportController extends Controller
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $userAdjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
-            $idleDuration = $this->usageProcessingService->calculateIdleTime($userActivities);
+            $idleDuration = $this->safeCalculateIdleTime($userActivities, [
+                'report' => 'overall',
+                'user_id' => $user->id,
+                'scope' => 'by_user',
+            ]);
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $userAdjustmentDuration,
                 $idleDuration
@@ -824,7 +850,11 @@ class ReportController extends Controller
                 ];
             }
 
-            $dayUserBuckets[$key]['idle_duration'] = $this->usageProcessingService->calculateIdleTime($dayActivities);
+            $dayUserBuckets[$key]['idle_duration'] = $this->safeCalculateIdleTime($dayActivities, [
+                'report' => 'overall',
+                'scope' => 'by_day',
+                'bucket' => $key,
+            ]);
         }
 
         $byDay = collect($dayUserBuckets)
@@ -903,7 +933,11 @@ class ReportController extends Controller
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $adjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
-            $idleDuration = $this->usageProcessingService->calculateIdleTime($userActivities);
+            $idleDuration = $this->safeCalculateIdleTime($userActivities, [
+                'report' => 'overall_lite',
+                'user_id' => $user->id,
+                'scope' => 'by_user',
+            ]);
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration,
                 $idleDuration
@@ -964,7 +998,11 @@ class ReportController extends Controller
                 ];
             }
 
-            $dayUserBuckets[$key]['idle_duration'] = $this->usageProcessingService->calculateIdleTime($dayActivities);
+            $dayUserBuckets[$key]['idle_duration'] = $this->safeCalculateIdleTime($dayActivities, [
+                'report' => 'overall_lite',
+                'scope' => 'by_day',
+                'bucket' => $key,
+            ]);
         }
 
         $byDay = collect($dayUserBuckets)
@@ -1071,7 +1109,11 @@ class ReportController extends Controller
         $idleDuration = 0;
         if ($entries->isNotEmpty()) {
             $activities = $this->activityFeedService->forTimeEntries($entries->pluck('id'), $startDate, $endDate);
-            $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
+            $idleDuration = $this->safeCalculateIdleTime($activities, [
+                'report' => 'project',
+                'project_id' => $project->id,
+                'scope' => 'summary',
+            ]);
         }
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries),
@@ -1857,17 +1899,20 @@ class ReportController extends Controller
         ]);
     }
 
-    private function buildLiteEmployeeInsights(
+    private function buildSelectedEmployeeSummary(
         User $selectedUser,
-        Collection $matchedUsers,
         Collection $entries,
-        int $entriesCount,
         Carbon $startDate,
         Carbon $endDate,
         Carbon $resolvedNow,
     ): array {
         $activities = $this->activityFeedService->forUsersInRange([$selectedUser->id], $startDate, $endDate);
-        $idleDuration = $this->usageProcessingService->calculateIdleTime($activities);
+        $idleDuration = $this->safeCalculateIdleTime($activities, [
+            'report' => 'dashboard_selected_employee',
+            'user_id' => $selectedUser->id,
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
+        ]);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
             $idleDuration
