@@ -630,11 +630,34 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       }
 
       if (mode === 'hours-tracked' || mode === 'productivity' || mode === 'custom-export') {
+        const startMs = new Date(`${startDate}T00:00:00`).getTime();
+        const endMs = new Date(`${endDate}T00:00:00`).getTime();
+        const rangeDays = Number.isFinite(startMs) && Number.isFinite(endMs)
+          ? Math.max(1, Math.floor((Math.max(startMs, endMs) - Math.min(startMs, endMs)) / 86_400_000) + 1)
+          : 1;
+        const shouldScopeWideHours = mode === 'hours-tracked'
+          && !effectiveSelectedUserId
+          && !effectiveSelectedGroupId;
+        const formatLocalDate = (timestampMs: number) => {
+          const date = new Date(timestampMs);
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+        const effectiveStartDate = shouldScopeWideHours && rangeDays > 14
+          ? formatLocalDate(Math.max(startMs, endMs) - (13 * 86_400_000))
+          : startDate;
+        const effectiveEndDate = shouldScopeWideHours && rangeDays > 14
+          ? formatLocalDate(Math.max(startMs, endMs))
+          : endDate;
+        const shouldSkipActivity = mode === 'hours-tracked';
         const response = await reportApi.overall({
-          start_date: startDate,
-          end_date: endDate,
+          start_date: effectiveStartDate,
+          end_date: effectiveEndDate,
           user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
           group_ids: effectiveSelectedGroupId ? [Number(effectiveSelectedGroupId)] : undefined,
+          skip_activity: shouldSkipActivity ? 1 : undefined,
           page: mode === 'hours-tracked' ? hoursPage : undefined,
           per_page: mode === 'hours-tracked' ? 25 : undefined,
         });

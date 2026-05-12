@@ -194,22 +194,15 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('Total Employees')).toBeInTheDocument();
     expect(screen.getAllByText('Present').length).toBeGreaterThan(0);
     expect(screen.getByText('Attendance Overview')).toBeInTheDocument();
-    expect(screen.getByText('Leave & Absence Summary')).toBeInTheDocument();
     expect(screen.getByText('Department Distribution')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Communication Hub' })).toBeInTheDocument();
+
     expect(screen.getByText('Birthdays')).toBeInTheDocument();
     expect(screen.getByText('Activity')).toBeInTheDocument();
     expect(screen.getByText('Announcements')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Current Work Status' })).toBeInTheDocument();
+
     expect(screen.getAllByText('Working').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Not working').length).toBeGreaterThan(0);
-    expect(screen.getByLabelText('Search work status')).toBeInTheDocument();
-    expect(screen.getByLabelText('Filter work status by department')).toBeInTheDocument();
-    expect(screen.getByLabelText('Filter work status')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Check-In / Check-Out Log' })).toBeInTheDocument();
-    expect(screen.getAllByText('Last check in').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Last check out').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Still checked in').length).toBeGreaterThan(0);
     expect(screen.getAllByText('On time').length).toBeGreaterThan(0);
     expect(screen.getByText('12 min late')).toBeInTheDocument();
     expect(screen.getByText('No punch')).toBeInTheDocument();
@@ -218,8 +211,12 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.queryByRole('heading', { name: 'Employees' })).not.toBeInTheDocument();
     expect(screen.getByText('Manage Employees')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Time Tracker' })).toBeInTheDocument();
-    expect(screen.getAllByText('Timesheets').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('heading', { name: 'Timesheets' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Attendance Trend' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Admin Watchlist' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Leave Balance' })).not.toBeInTheDocument();
     expect(screen.getByText('Payroll Snapshot')).toBeInTheDocument();
+
     expect(screen.getByText('Task Pipeline')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();
     expect(screen.getByText('Projects')).toBeInTheDocument();
@@ -308,10 +305,6 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByRole('link', { name: 'Details' })).toHaveAttribute(
       'href',
       expect.stringContaining('/monitoring/productive-time?user=2&start=')
-    );
-    expect(screen.getByRole('link', { name: 'Timesheets' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('/reports/hours-tracked?user=2&start=')
     );
     expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute(
       'href',
@@ -465,8 +458,8 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('No birthdays available')).toBeInTheDocument();
     expect(screen.getByText('No recent activity yet')).toBeInTheDocument();
     expect(screen.getByText('No announcements yet')).toBeInTheDocument();
-    expect(screen.getByText('No time entries in this range')).toBeInTheDocument();
     expect(screen.getByText('No projects yet')).toBeInTheDocument();
+
     expect(screen.queryByText('Website Redesign')).not.toBeInTheDocument();
     expect(screen.queryByText('Mobile App')).not.toBeInTheDocument();
     expect(screen.queryByText('Leslie Alexander')).not.toBeInTheDocument();

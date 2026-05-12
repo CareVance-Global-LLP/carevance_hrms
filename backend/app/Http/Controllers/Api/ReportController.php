@@ -745,17 +745,15 @@ class ReportController extends Controller
             ));
         }
 
-        $activities = $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
+        $skipActivity = $request->boolean('skip_activity');
+        $activities = $skipActivity
+            ? collect()
+            : $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
 
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
         $activitiesByUser = $activities->groupBy('user_id');
-        $activitiesByUserAndDay = collect($activities)
-            ->groupBy(fn ($activity) => sprintf(
-                '%d|%s',
-                (int) data_get($activity, 'user_id', 0),
-                Carbon::parse((string) data_get($activity, 'recorded_at'))->toDateString()
-            ));
+        $activitiesByUserAndDay = $this->groupActivitiesByUserAndDay($activities);
 
         $resolvedNow = now();
 
@@ -897,11 +895,7 @@ class ReportController extends Controller
             ? collect()
             : $this->activityFeedService->forUsersInRange($users->pluck('id'), $startDate, $endDate);
         $activitiesByUser = $activities->groupBy('user_id');
-        $activitiesByUserAndDay = $activities->groupBy(fn ($activity) => sprintf(
-            '%d|%s',
-            (int) data_get($activity, 'user_id', 0),
-            Carbon::parse((string) data_get($activity, 'recorded_at'))->toDateString()
-        ));
+        $activitiesByUserAndDay = $this->groupActivitiesByUserAndDay($activities);
 
         $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
@@ -1011,6 +1005,45 @@ class ReportController extends Controller
             'by_user' => $byUser,
             'by_day' => $byDay,
         ];
+    }
+
+    private function groupActivitiesByUserAndDay(Collection $activities): Collection
+    {
+        return $activities
+            ->map(function ($activity) {
+                $userId = (int) data_get($activity, 'user_id', 0);
+                $recordedAt = data_get($activity, 'recorded_at');
+                $date = $this->resolveActivityDateString($recordedAt);
+
+                if ($userId <= 0 || !$date) {
+                    return null;
+                }
+
+                return [
+                    'key' => sprintf('%d|%s', $userId, $date),
+                    'activity' => $activity,
+                ];
+            })
+            ->filter()
+            ->groupBy('key')
+            ->map(fn (Collection $rows) => $rows->pluck('activity')->values());
+    }
+
+    private function resolveActivityDateString(mixed $recordedAt): ?string
+    {
+        if ($recordedAt instanceof Carbon) {
+            return $recordedAt->toDateString();
+        }
+
+        if ($recordedAt === null || $recordedAt === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $recordedAt)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function project(Request $request, int $projectId)

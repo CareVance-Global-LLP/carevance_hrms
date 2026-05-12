@@ -14,7 +14,6 @@ import {
   Megaphone,
   Search,
   Settings,
-  TimerReset,
   Umbrella,
   UserMinus,
   UserPlus,
@@ -32,11 +31,11 @@ import {
   leaveApi,
   notificationApi,
   payrollSimpleApi,
+  projectApi,
   reportApi,
   reportGroupApi,
   screenshotApi,
   taskApi,
-  timeEntryApi,
   userApi,
 } from '@/services/api';
 
@@ -59,22 +58,6 @@ type DashboardActivity = {
   title: string;
   meta: string;
   tone: 'green' | 'blue' | 'amber';
-};
-
-type TimesheetRow = {
-  key: string;
-  project: string;
-  task: string;
-  days: string[];
-  daySeconds: number[];
-  totalSeconds: number;
-};
-
-type TrendPoint = {
-  label: string;
-  detail: string;
-  value: number;
-  count: number;
 };
 
 type DatePreset = 'today' | 'last_2_days' | 'last_5_days' | 'last_7_days' | 'last_15_days' | 'last_month' | 'custom';
@@ -227,13 +210,6 @@ const formatDuration = (seconds: number) => {
   const hours = Math.floor(safe / 3600);
   const minutes = Math.floor((safe % 3600) / 60);
   return `${hours}h ${minutes}m`;
-};
-
-const formatCompactDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 };
 
 const formatTimerClock = (seconds: number) => {
@@ -435,54 +411,6 @@ const KpiCard = ({ label, value, hint, icon: Icon, tint, to, onClick }: { label:
   return <Card className="h-full p-4">{content}</Card>;
 };
 
-const MiniLineChart = ({ points, values }: { points?: TrendPoint[]; values?: number[] }) => {
-  const chartPoints = points?.length
-    ? points
-    : (values?.length ? values : [0, 0, 0, 0, 0, 0, 0]).map((value, index) => ({
-      label: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index] || `Day ${index + 1}`,
-      detail: `${value}`,
-      value,
-      count: value,
-    }));
-  const chartValues = chartPoints.map((point) => point.value);
-  const max = Math.max(1, ...chartValues);
-  const plottedPoints = chartValues.map((value, index) => {
-    const x = 16 + index * (268 / Math.max(1, chartValues.length - 1));
-    const y = 142 - (value / max) * 112;
-    return { x, y, point: chartPoints[index] };
-  });
-  const polyline = plottedPoints.map(({ x, y }) => `${x},${y}`).join(' ');
-
-  return (
-    <svg viewBox="0 0 310 172" className="h-48 w-full overflow-visible">
-      {[0, 1, 2, 3].map((line) => {
-        const y = 32 + line * 34;
-        return (
-          <g key={line}>
-            <line x1="16" x2="294" y1={y} y2={y} stroke="#eef2f7" />
-            {line < 3 ? <text x="296" y={y + 3} fill="#cbd5e1" fontSize="8">{Math.round(max - (line * max) / 3)}</text> : null}
-          </g>
-        );
-      })}
-      <polyline points={polyline} fill="none" stroke="#2563eb" strokeWidth="2.5" />
-      {plottedPoints.map(({ x, y, point }, index) => (
-        <g key={`${point.label}-${index}`} className="group cursor-pointer">
-          <title>{`${point.label}: ${point.detail}`}</title>
-          <line x1={x} x2={x} y1="30" y2="142" stroke="#dbeafe" strokeWidth="1.5" className="opacity-0 transition-opacity group-hover:opacity-100" />
-          <circle cx={x} cy={y} r="9" fill="#2563eb" opacity="0" className="transition-opacity group-hover:opacity-10" />
-          <circle cx={x} cy={y} r="3.5" fill="#fff" stroke="#2563eb" strokeWidth="2" className="transition-all group-hover:fill-blue-600 group-hover:stroke-blue-600" />
-          <text x={x} y={Math.max(14, y - 10)} textAnchor="middle" fill="#2563eb" fontSize="9" fontWeight="600" className="opacity-0 transition-opacity group-hover:opacity-100">
-            {point.detail}
-          </text>
-        </g>
-      ))}
-      {plottedPoints.map(({ x, point }, index) => (
-        <text key={`${point.label}-label-${index}`} x={x} y="160" textAnchor="middle" fill="#94a3b8" fontSize="10">{point.label}</text>
-      ))}
-    </svg>
-  );
-};
-
 const DonutChart = ({ items }: { items: Array<{ label: string; value: number; color: string; bgClass: string }> }) => {
   const total = items.reduce((sum, item) => sum + item.value, 0);
   if (total <= 0) {
@@ -668,11 +596,11 @@ export default function AdminDashboard() {
         leaveResponse,
         overallResponse,
         tasksResponse,
+        projectsResponse,
         payrollResponse,
         notificationsResponse,
         groupsResponse,
         auditResponse,
-        timeEntriesResponse,
         attendanceCalendarResponse,
       ] = await Promise.allSettled([
         userApi.getAll(),
@@ -680,13 +608,11 @@ export default function AdminDashboard() {
         leaveApi.list({ status: 'approved', limit: 500 }),
         reportApi.overall(reportScopeParams),
         taskApi.getAll({ timer_only: true }),
+        projectApi.getAll(),
         payrollSimpleApi.runs(selectedStartDate.slice(0, 7)),
         notificationApi.list({ limit: 8 }),
         reportGroupApi.list(),
         auditApi.list({ per_page: 8 }),
-        dashboardScope === 'employee' && selectedEmployeeId
-          ? timeEntryApi.getAll({ user_id: selectedEmployeeId, start_date: selectedStartDate, end_date: selectedEndDate, page: 1, per_page: 10 })
-          : Promise.resolve({ data: { data: [] } }),
         dashboardScope === 'employee' && selectedEmployeeId
           ? Promise.all(enumerateMonths(selectedRange).map((month) =>
             attendanceApi.calendar({ month, user_id: selectedEmployeeId, scope: 'selected' })
@@ -695,8 +621,6 @@ export default function AdminDashboard() {
       ]);
 
       const overallPayload = overallResponse.status === 'fulfilled' ? overallResponse.value.data : { summary: {}, by_day: [], by_user: [] };
-      const timeEntriesPayload = timeEntriesResponse.status === 'fulfilled' ? timeEntriesResponse.value.data : { data: [] };
-      const timeEntries = safeArray<any>(timeEntriesPayload?.data);
       const attendanceCalendarDays = attendanceCalendarResponse.status === 'fulfilled'
         ? safeArray<any>(attendanceCalendarResponse.value).flatMap((response) => safeArray<any>(response?.data?.days))
         : [];
@@ -708,11 +632,12 @@ export default function AdminDashboard() {
         overall: overallPayload,
         summary: {},
         tasks: tasksResponse.status === 'fulfilled' ? safeArray<any>(tasksResponse.value.data) : [],
+        projects: projectsResponse.status === 'fulfilled' ? safeArray<any>(projectsResponse.value.data) : [],
         payrollRecords: payrollResponse.status === 'fulfilled' ? safeArray<any>(payrollResponse.value.data?.data) : [],
         notifications: notificationsResponse.status === 'fulfilled' ? safeArray<any>(notificationsResponse.value.data?.data) : [],
         groups: groupsResponse.status === 'fulfilled' ? safeArray<any>(groupsResponse.value.data?.data) : [],
         auditLogs: auditResponse.status === 'fulfilled' ? safeArray<any>(auditResponse.value.data?.data) : [],
-        weeklyReport: { time_entries: timeEntries, entries: timeEntries, by_project: [], total_duration: Number(overallPayload?.summary?.total_duration || 0) },
+        weeklyReport: { time_entries: [], entries: [], by_project: [], total_duration: Number(overallPayload?.summary?.total_duration || 0) },
         monthlyReport: { by_day: safeArray<any>(overallPayload?.by_day) },
         attendanceCalendarDays,
       };
@@ -726,6 +651,7 @@ export default function AdminDashboard() {
     overall: { summary: {}, by_day: [], by_user: [] },
     summary: {},
     tasks: [],
+    projects: [],
     payrollRecords: [],
     notifications: [],
     groups: [],
@@ -790,6 +716,7 @@ export default function AdminDashboard() {
     return !isLate && (Number(row.present_days || 0) > 0 || hasActiveAttendance(row));
   }).length;
   const totalPresentToday = presentOnTimeToday + presentLateToday;
+  const presentPercent = totalEmployees ? Math.round((totalPresentToday / totalEmployees) * 100) : 0;
   const onLeave = effectiveLeaveUserIds.size;
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
@@ -798,35 +725,9 @@ export default function AdminDashboard() {
   const weeklyReport: any = data.weeklyReport || {};
   const weeklyTotal = Number(weeklyReport.total_duration || dashboardSummary?.weekly_total_elapsed_duration || 0);
 
-  const allRangeDates = enumerateDateRange(selectedRange);
   const calendarDaysInRange = safeArray<any>(data.attendanceCalendarDays)
     .filter((day) => dateInRange(day?.date, selectedRange))
     .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-  const trendSource = calendarDaysInRange.slice(-7);
-  const fallbackTrendDates = allRangeDates.slice(-Math.min(7, Math.max(1, allRangeDates.length)));
-  const attendanceTrendPoints: TrendPoint[] = (trendSource.length ? trendSource : fallbackTrendDates).map((item: any, index: number) => {
-    const rawDate = item instanceof Date ? toIsoDate(item) : String(item?.date || '');
-    const parsedDate = rawDate ? new Date(`${rawDate.slice(0, 10)}T00:00:00`) : null;
-    const label = parsedDate && !Number.isNaN(parsedDate.getTime())
-      ? parsedDate.toLocaleDateString('en-US', { weekday: 'short' })
-      : `Day ${index + 1}`;
-    const status = item instanceof Date ? 'none' : String(item?.status || 'none');
-    const lateMinutes = item instanceof Date ? 0 : Number(item?.late_minutes || 0);
-    const isPresentDay = status === 'present' || status === 'checked_in';
-    const isLeaveDay = status.includes('leave') || Boolean(item?.is_leave);
-    const isHoliday = Boolean(item?.is_holiday);
-    const isWeekend = Boolean(item?.is_weekend);
-    const statusLabel = isPresentDay ? 'Present' : isLeaveDay ? 'On leave' : isHoliday ? 'Holiday' : isWeekend ? 'Weekend' : 'Absent';
-    const detail = parsedDate && !Number.isNaN(parsedDate.getTime())
-      ? `${parsedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${statusLabel}${lateMinutes > 0 ? `, ${lateMinutes} min late` : ''}`
-      : statusLabel;
-    return {
-      label,
-      detail,
-      value: isPresentDay ? 1 : isLeaveDay ? 0.5 : 0,
-      count: isPresentDay ? 1 : 0,
-    };
-  });
   const attendanceOnTimeDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => ['present', 'checked_in'].includes(String(day.status || '')) && Number(day.late_minutes || 0) <= 0).length
     : presentOnTimeToday;
@@ -904,67 +805,135 @@ export default function AdminDashboard() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 7);
 
-  const leaveSummaryRows: Array<{ label: string; value: number; helper: string; tone: string; bgClass: string }> = [
-    {
-      label: 'On Leave',
-      value: onLeave,
-      helper: `${totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0}% of total`,
-      tone: 'text-amber-600 bg-amber-50 border-amber-100',
-      bgClass: 'bg-amber-500',
-    },
-    {
-      label: 'Absent',
-      value: attendanceAbsentDays,
-      helper: `${totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0}% of total`,
-      tone: 'text-red-600 bg-red-50 border-red-100',
-      bgClass: 'bg-red-600',
-    },
-  ];
-
   const weeklyEntries = safeArray<any>(weeklyReport.time_entries || weeklyReport.entries)
     .filter((entry: any) => {
       const entryUserId = Number(entry.user_id || entry.user?.id || entry.employee_id || entry.employee?.id || entry.task?.user_id || 0);
       return !entryUserId || scopedEmployeeIds.has(entryUserId);
     });
-  const timesheetDates = allRangeDates.length > 15 ? allRangeDates.slice(-15) : allRangeDates;
-  const timesheetDateCount = timesheetDates.length || 1;
-  const timesheetRangeLabel = allRangeDates.length > timesheetDates.length
-    ? `Latest ${timesheetDates.length} days from ${selectedRangeLabel}`
-    : selectedRangeLabel;
-  const timesheetRows: TimesheetRow[] = Object.values(weeklyEntries.reduce((acc: Record<string, TimesheetRow>, entry: any) => {
-    const project = entry.project?.name || entry.task?.project?.name || entry.task?.group?.name || 'Unassigned';
-    const task = entry.task?.title || entry.description || 'Time entry';
-    const key = `${project}-${task}`;
-    const duration = Number(entry.effective_duration || entry.duration || 0);
-    const entryDate = String(entry.start_time || '').slice(0, 10);
-    const dayIndex = timesheetDates.findIndex((day) => toIsoDate(day) === entryDate);
-    acc[key] = acc[key] || { key, project, task, days: Array.from({ length: timesheetDateCount }).map(() => '-'), daySeconds: Array.from({ length: timesheetDateCount }).map(() => 0), totalSeconds: 0 };
-    if (dayIndex >= 0) {
-      acc[key].daySeconds[dayIndex] += duration;
-      acc[key].days[dayIndex] = formatCompactDuration(acc[key].daySeconds[dayIndex]);
-    }
-    acc[key].totalSeconds += duration;
-    return acc;
-  }, {}));
 
-  const recentTimers = weeklyEntries.slice(0, 4);
-  const projectProgress = (weeklyReport.by_project?.length ? weeklyReport.by_project : [])
-    .filter((item: any) => item.project?.name || item.total_time)
+  const projectDurations = (Object.values(weeklyEntries.reduce((acc: Record<string, { name: string; total_time: number; entry_count: number }>, entry: any) => {
+    const projectName = entry.project?.name || entry.task?.project?.name || entry.task?.group?.name || 'Unassigned project';
+    const duration = Number(entry.effective_duration || entry.duration || 0);
+    acc[projectName] = acc[projectName] || { name: projectName, total_time: 0, entry_count: 0 };
+    acc[projectName].total_time += duration;
+    acc[projectName].entry_count += 1;
+    return acc;
+  }, {})) as Array<{ name: string; total_time: number; entry_count: number }>)
+    .sort((left, right) => Number(right.total_time || 0) - Number(left.total_time || 0));
+  const projectDurationByName = new Map(projectDurations.map((item) => [String(item.name || '').trim().toLowerCase(), Number(item.total_time || 0)]));
+  const projectCatalog = safeArray<any>(data.projects)
+    .filter((project) => String(project?.name || '').trim())
+    .map((project) => {
+      const projectName = String(project.name || '').trim();
+      const totalTime = Number(projectDurationByName.get(projectName.toLowerCase()) || 0);
+      const completionCandidate = Number(project.progress || project.completion || project.completion_percentage || project.percent_complete || 0);
+      const progressPercent = completionCandidate > 0
+        ? Math.min(100, Math.round(completionCandidate))
+        : Math.min(100, Math.round((totalTime / Math.max(1, weeklyTotal)) * 100));
+      const statusLabel = String(project.status || '').trim() || (totalTime > 0 ? 'Active' : 'Planned');
+
+      return {
+        name: projectName,
+        hours: formatDuration(totalTime),
+        status: statusLabel,
+        percent: progressPercent,
+      };
+    });
+  const projectProgressSource = (projectCatalog.length ? projectCatalog : (weeklyReport.by_project?.length ? weeklyReport.by_project : projectDurations))
+    .filter((item: any) => item.project?.name || item.name || item.total_time)
     .slice(0, 5)
     .map((item: any) => ({
-      name: item.project?.name || 'Unassigned project',
-      hours: formatDuration(Number(item.total_time || 0)),
-      status: 'Active',
-      percent: Math.min(100, Math.round((Number(item.total_time || 0) / Math.max(1, weeklyTotal)) * 100)),
+      name: item.project?.name || item.name || 'Unassigned project',
+      hours: item.hours || formatDuration(Number(item.total_time || 0)),
+      status: item.status || (Number(item.total_time || 0) > 0 ? 'Active' : 'No logs'),
+      percent: Number.isFinite(Number(item.percent))
+        ? Math.min(100, Math.max(0, Math.round(Number(item.percent))))
+        : Math.min(100, Math.round((Number(item.total_time || 0) / Math.max(1, weeklyTotal)) * 100)),
     }));
 
   const payrollTotal = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.net_pay || record.gross_pay || 0), 0);
   const payrollDeductions = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.deductions || record.tax || 0), 0);
-  const presentPercent = totalEmployees ? Math.round((totalPresentToday / totalEmployees) * 100) : 0;
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
   const absentPercent = totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0;
   const presentLatePercent = totalEmployees ? Math.round((presentLateToday / totalEmployees) * 100) : 0;
   const attendanceByEmployeeId = new Map(attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
+  const overallByUserRows = safeArray<any>(data.overall.by_user)
+    .filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || 0)));
+  const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
+  const productivityLeaders = overallByUserRows
+    .map((row: any) => {
+      const userId = Number(row.user?.id || row.user_id || 0);
+      const employee = employeeById.get(userId);
+      const trackedSeconds = Number(row.total_duration || 0);
+      const idleSeconds = Number(row.idle_duration || row.idle_time || 0);
+      const workingSeconds = Math.max(0, trackedSeconds - idleSeconds);
+      const productivityPercent = trackedSeconds > 0 ? Math.round((workingSeconds / trackedSeconds) * 100) : 0;
+
+      return {
+        userId,
+        name: row.user?.name || employee?.name || 'Unknown employee',
+        department: employee?.department || 'Unassigned',
+        trackedSeconds,
+        workingSeconds,
+        idleSeconds,
+        productivityPercent,
+      };
+    })
+    .sort((left, right) => right.workingSeconds - left.workingSeconds)
+    .slice(0, 5);
+  const departmentPerformanceRows = (Object.values(overallByUserRows.reduce((acc: Record<string, {
+    department: string;
+    members: number;
+    trackedSeconds: number;
+    idleSeconds: number;
+    presentMembers: number;
+    lateMembers: number;
+  }>, row: any) => {
+    const userId = Number(row.user?.id || row.user_id || 0);
+    const employee = employeeById.get(userId);
+    const department = employee?.department || 'Unassigned';
+    const attendance = attendanceByEmployeeId.get(userId);
+    const trackedSeconds = Number(row.total_duration || 0);
+    const idleSeconds = Number(row.idle_duration || row.idle_time || 0);
+    const isPresent = Number(attendance?.present_days || 0) > 0 || hasActiveAttendance(attendance);
+    const isLate = Number(attendance?.late_minutes || 0) > 0;
+    acc[department] = acc[department] || {
+      department,
+      members: 0,
+      trackedSeconds: 0,
+      idleSeconds: 0,
+      presentMembers: 0,
+      lateMembers: 0,
+    };
+    acc[department].members += 1;
+    acc[department].trackedSeconds += trackedSeconds;
+    acc[department].idleSeconds += idleSeconds;
+    acc[department].presentMembers += isPresent ? 1 : 0;
+    acc[department].lateMembers += isLate ? 1 : 0;
+    return acc;
+  }, {})) as Array<{
+    department: string;
+    members: number;
+    trackedSeconds: number;
+    idleSeconds: number;
+    presentMembers: number;
+    lateMembers: number;
+  }>).map((row) => {
+    const averageTrackedPerMember = row.members > 0 ? row.trackedSeconds / row.members : 0;
+    const idlePercent = row.trackedSeconds > 0 ? Math.round((row.idleSeconds / row.trackedSeconds) * 100) : 0;
+    const attendanceCoverage = row.members > 0 ? Math.round((row.presentMembers / row.members) * 100) : 0;
+    const needsAttention = averageTrackedPerMember < 2 * 3600 || idlePercent >= 40 || attendanceCoverage < 50;
+
+    return {
+      ...row,
+      averageTrackedPerMember,
+      idlePercent,
+      attendanceCoverage,
+      healthLabel: needsAttention ? 'Needs attention' : 'Healthy',
+    };
+  }).sort((left, right) => right.trackedSeconds - left.trackedSeconds).slice(0, 6);
+  const departmentsNeedingAttention = departmentPerformanceRows.filter((row) => row.healthLabel === 'Needs attention').length;
+  const employeesWithoutTrackedTime = overallByUserRows.filter((row: any) => Number(row.total_duration || 0) <= 0).length;
   const workStatusRows = employees.map((employee) => {
     const attendance = attendanceByEmployeeId.get(employee.id);
     const isWorking = employee.status !== 'On Leave' && hasActiveAttendance(attendance);
@@ -1084,9 +1053,6 @@ export default function AdminDashboard() {
   const selectedEmployeeProductivityLink = selectedEmployee
     ? buildScopedEmployeeLink('/monitoring/productive-time', selectedEmployee.id, selectedStartDate, selectedEndDate)
     : '/monitoring/productive-time';
-  const selectedEmployeeTimesheetLink = selectedEmployee
-    ? buildScopedEmployeeLink('/reports/hours-tracked', selectedEmployee.id, selectedStartDate, selectedEndDate)
-    : '/reports/hours-tracked';
   const selectedEmployeeAttendanceLink = selectedEmployee
     ? buildScopedEmployeeLink('/attendance', selectedEmployee.id, selectedStartDate, selectedEndDate)
     : '/attendance';
@@ -1144,7 +1110,6 @@ export default function AdminDashboard() {
     { id: 'dashboard-scope', label: 'Dashboard Scope', description: 'Switch between overall, department, and specific employee views', category: 'Section', sectionId: 'dashboard-scope', keywords: ['scope', 'overall', 'specific employee', 'department'] },
     { id: 'kpis', label: 'Dashboard Statistics', description: 'Total employees, present, leave, late, hires, and resignations', category: 'Section', sectionId: 'dashboard-kpis', keywords: ['statistics', 'stats', 'cards', 'employees', 'present', 'late', 'leave'] },
     { id: 'attendance-overview', label: 'Attendance Overview', description: 'Present, late, leave, absent chart for the selected scope', category: 'Section', sectionId: 'attendance-overview', keywords: ['attendance', 'present', 'late', 'absent', 'overview', 'chart'] },
-    { id: 'leave-summary', label: 'Leave Summary', description: 'Approved leave usage in the selected range', category: 'Section', sectionId: 'leave-summary', keywords: ['leave', 'summary', 'approval'] },
     { id: 'department-distribution', label: 'Department Distribution', description: 'People count by department', category: 'Section', sectionId: 'department-distribution', keywords: ['department', 'distribution', 'team'] },
     { id: 'scope-summary', label: 'Scope Summary', description: 'Overall or selected employee detail area', category: 'Section', sectionId: 'scope-summary', keywords: ['scope', 'employee detail', 'summary', 'screenshots', 'productivity'] },
     { id: 'work-status', label: 'Current Work Status', description: 'Working, not working, and leave status table', category: 'Section', sectionId: 'current-work-status', keywords: ['working', 'status', 'not working', 'current'] },
@@ -1153,7 +1118,6 @@ export default function AdminDashboard() {
     { id: 'attendance-health', label: 'Attendance Health', description: 'Working now, not started, late, and leave bars', category: 'Section', sectionId: 'attendance-health', keywords: ['attendance health', 'health', 'working now'] },
     { id: 'communication-hub', label: 'Communication Hub', description: 'Birthdays, activity, and announcements', category: 'Section', sectionId: 'communication-hub', keywords: ['communication', 'birthdays', 'activity', 'announcements'] },
     { id: 'people-summary', label: 'People Summary', description: 'Active accounts, departments, hires, and leave', category: 'Section', sectionId: 'people-summary', keywords: ['people', 'employees', 'summary'] },
-    { id: 'timesheets', label: 'Timesheets', description: 'Range-based project and task time table', category: 'Section', sectionId: 'timesheets', keywords: ['timesheet', 'hours', 'tracked'] },
     { id: 'projects-section', label: 'Projects', description: 'Project progress and time distribution', category: 'Section', sectionId: 'projects-section', keywords: ['projects', 'project progress'] },
     { id: 'reports-section', label: 'Reports', description: 'Quick report shortcuts', category: 'Section', sectionId: 'reports-section', keywords: ['reports', 'export', 'attendance report', 'payroll report'] },
     { id: 'employees-page', label: 'Employees Panel', description: 'Open employee management', category: 'Panel', route: '/employees', keywords: ['employee', 'employees', 'directory', 'management'] },
@@ -1254,7 +1218,7 @@ export default function AdminDashboard() {
   }, [dashboardNotificationsSeen, hasUnreadDashboardNotifications, isDashboardNotificationsOpen]);
 
   return (
-    <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 pt-4 text-slate-900">
+    <div className="w-full space-y-5 bg-[#f5f7fb] pt-4 text-slate-900">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
@@ -1479,7 +1443,7 @@ export default function AdminDashboard() {
         <KpiCard to="/employees" label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited in range" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
       </section>
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)]">
         <Card id="attendance-overview" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <AttendancePieChart items={attendancePieItems} />
@@ -1493,18 +1457,6 @@ export default function AdminDashboard() {
               <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50 hover:shadow-sm">
                 <p className="text-[11px] text-slate-500">{label}</p>
                 <p className="mt-1 truncate text-xs font-semibold text-slate-900">{value}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card id="leave-summary" className="scroll-mt-24 p-4">
-          <SectionTitle title="Leave & Absence Summary" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {leaveSummaryRows.map((item) => (
-              <div key={item.label} className={`rounded-xl border px-4 py-3 ${item.tone}`}>
-                <p className="text-xs font-medium text-slate-500">{item.label}</p>
-                <p className="mt-1 text-2xl font-semibold text-slate-900">{item.value}</p>
-                <p className="mt-1 text-xs text-slate-500">{item.helper}</p>
               </div>
             ))}
           </div>
@@ -1634,7 +1586,6 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3">
                 <div className="mb-3 flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700">Recent Work</span>
-                  <Link to={selectedEmployeeTimesheetLink} className="font-medium text-blue-600">Timesheets</Link>
                 </div>
                 {employeeRecentEntries.length ? (
                   <div className="space-y-3">
@@ -2002,39 +1953,8 @@ export default function AdminDashboard() {
         </Card>
       </section>
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card id="timesheets" className="scroll-mt-24 p-4">
-          <div className="mb-5 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold">Timesheets</h2>
-              <span className="text-sm text-slate-500">{timesheetRangeLabel}</span>
-            </div>
-            <Link to="/reports/hours-tracked" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Open Timesheets</Link>
-          </div>
-          {timesheetRows.length ? (
-            <table className="w-full text-left text-xs">
-              <thead className="text-slate-500">
-                <tr>
-                  <th className="pb-3 font-medium">Project / Task</th>
-                  {timesheetDates.map((day) => <th key={toIsoDate(day)} className="pb-3 text-center font-medium">{day.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}</th>)}
-                  <th className="pb-3 text-center font-medium">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {timesheetRows.map((row) => (
-                  <tr key={row.key}>
-                    <td className="py-4"><p className="font-semibold text-slate-900">{row.project}</p><p className="text-[11px] text-slate-500">{row.task}</p></td>
-                    {row.days.map((day, index) => <td key={index} className="py-4 text-center text-slate-600">{day}</td>)}
-                    <td className="py-4 text-center font-semibold text-blue-700">{formatCompactDuration(row.totalSeconds)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <EmptyInline>No time entries in this range</EmptyInline>}
-        </Card>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Card id="task-pipeline" className="scroll-mt-24 p-4">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card id="task-pipeline" className="scroll-mt-24 p-4">
             <SectionTitle title="Task Pipeline" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">Manage</Link>} />
             <div className="space-y-4">
               {Object.entries(taskStatusCounts).map(([label, count]) => (
@@ -2046,8 +1966,8 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
-          </Card>
-          <Card id="payroll-snapshot" className="scroll-mt-24 p-4">
+        </Card>
+        <Card id="payroll-snapshot" className="scroll-mt-24 p-4">
             <SectionTitle title="Payroll Snapshot" action={<Link to="/payroll" className="text-xs text-blue-600">{selectedStartDate.slice(0, 7)}</Link>} />
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Payroll Cost</p><p className="mt-2 font-semibold">{formatCurrency(payrollTotal + payrollDeductions)}</p></div>
@@ -2055,48 +1975,15 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Deductions</p><p className="mt-2 font-semibold text-rose-600">{formatCurrency(payrollDeductions)}</p></div>
               <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Employees Paid</p><p className="mt-2 font-semibold">{data.payrollRecords.length}</p></div>
             </div>
-          </Card>
-          <Card id="leave-balance" className="scroll-mt-24 p-4">
-            <SectionTitle title="Leave Balance" action={<Link to="/approval-inbox?section=leave&view=pending&leave_window=today" className="text-xs font-medium text-blue-600">View All</Link>} />
-            {leaveSummaryRows.length ? (
-              <div className="space-y-4">
-                {leaveSummaryRows.map((item) => (
-                  <div key={item.label}>
-                    <div className="mb-1 flex justify-between text-xs"><span>{item.label}</span><span className="text-slate-500">{item.value} used</span></div>
-                    <div className="h-1.5 rounded-full bg-slate-100"><span className={`block h-1.5 rounded-full ${item.bgClass}`} style={{ width: `${Math.min(100, item.value * 10)}%` }} /></div>
-                  </div>
-                ))}
-              </div>
-            ) : <EmptyInline>No leave balance records</EmptyInline>}
-          </Card>
-          <Card id="recent-timers" className="scroll-mt-24 p-4">
-            <SectionTitle title="Recent Timers" action={<Link to="/reports/hours-tracked" className="text-xs font-medium text-blue-600">View All</Link>} />
-            {recentTimers.length ? (
-              <div className="space-y-3">
-                {recentTimers.map((entry: any) => (
-                  <div key={entry.id} className="flex items-center justify-between gap-3 text-xs">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500"><TimerReset className="h-4 w-4" /></div>
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-slate-900">{entry.project?.name || entry.task?.project?.name || entry.task?.group?.name || 'Unassigned'}</p>
-                        <p className="truncate text-[11px] text-slate-500">{entry.task?.title || entry.description || 'Time entry'}</p>
-                      </div>
-                    </div>
-                    <span className="text-slate-500">{formatCompactDuration(Number(entry.effective_duration || entry.duration || 0))}</span>
-                  </div>
-                ))}
-              </div>
-            ) : <EmptyInline>No recent timers</EmptyInline>}
-          </Card>
-        </div>
+        </Card>
       </section>
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,0.9fr)]">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card id="projects-section" className="scroll-mt-24 p-4">
           <SectionTitle title="Projects" action={<Link to="/projects" className="text-xs font-medium text-blue-600">View All</Link>} />
-          {projectProgress.length ? (
+          {projectProgressSource.length ? (
             <div className="space-y-3">
-              {projectProgress.map((project: any) => (
+              {projectProgressSource.map((project: any) => (
                 <div key={project.name} className="rounded-lg border border-slate-100 p-3">
                   <div className="flex items-center justify-between text-xs">
                     <p className="font-semibold text-slate-900">{project.name}</p>
@@ -2112,28 +1999,79 @@ export default function AdminDashboard() {
           ) : <EmptyInline>No projects yet</EmptyInline>}
         </Card>
 
-        <Card id="reports-section" className="scroll-mt-24 p-4">
-          <SectionTitle title="Reports" action={<Link to="/reports/attendance" className="text-xs font-medium text-blue-600">View All</Link>} />
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              ['Attendance Report', '/reports/attendance'],
-              ['Leave Report', '/approval-inbox?section=leave&view=pending&leave_window=today'],
-              ['Payroll Report', '/payroll'],
-              ['Timesheet Report', '/reports/hours-tracked'],
-              ['Project Report', '/reports/projects-tasks'],
-              ['Custom Report', '/reports/custom-export'],
-            ].map(([report, to]) => (
-              <Link key={report} to={to} className="flex min-h-20 flex-col items-center justify-center gap-2 rounded-lg border border-slate-100 bg-slate-50 text-center text-[11px] font-medium text-slate-700">
-                <FileBarChart className="h-5 w-5 text-blue-600" />
-                {report}
-              </Link>
-            ))}
-          </div>
+        <Card id="productivity-leaders" className="scroll-mt-24 p-4">
+          <SectionTitle title="Productivity Leaders" action={<Link to="/reports/hours-tracked" className="text-xs font-medium text-blue-600">Open Hours</Link>} />
+          {productivityLeaders.length ? (
+            <div className="space-y-3">
+              {productivityLeaders.map((row) => (
+                <div key={row.userId} className="rounded-lg border border-slate-100 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-slate-900">{row.name}</p>
+                      <p className="truncate text-[11px] text-slate-500">{row.department}</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">{row.productivityPercent}% productive</span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-slate-600">
+                    <span>Tracked: <strong>{formatDuration(row.trackedSeconds)}</strong></span>
+                    <span>Working: <strong>{formatDuration(row.workingSeconds)}</strong></span>
+                    <span>Idle: <strong>{formatDuration(row.idleSeconds)}</strong></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyInline>No productivity rows in this scope</EmptyInline>}
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card id="department-performance" className="scroll-mt-24 p-4">
+          <SectionTitle title="Department Performance" action={<Link to="/employees" className="text-xs font-medium text-blue-600">Open Directory</Link>} />
+          {departmentPerformanceRows.length ? (
+            <div className="space-y-3">
+              {departmentPerformanceRows.map((row) => (
+                <div key={row.department} className="rounded-lg border border-slate-100 p-3">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <p className="font-semibold text-slate-900">{row.department}</p>
+                    <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${row.healthLabel === 'Needs attention' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{row.healthLabel}</span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                    <span>Members: <strong>{row.members}</strong></span>
+                    <span>Tracked: <strong>{formatDuration(row.trackedSeconds)}</strong></span>
+                    <span>Avg / member: <strong>{formatDuration(row.averageTrackedPerMember)}</strong></span>
+                    <span>Attendance: <strong>{row.attendanceCoverage}%</strong></span>
+                    <span>Idle share: <strong>{row.idlePercent}%</strong></span>
+                    <span>Late today: <strong>{row.lateMembers}</strong></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyInline>No department performance data</EmptyInline>}
         </Card>
 
-        <Card id="attendance-trend" className="scroll-mt-24 p-4">
-          <SectionTitle title="Attendance Trend" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <MiniLineChart points={attendanceTrendPoints} />
+        <Card id="admin-focus-board" className="scroll-mt-24 p-4">
+          <SectionTitle title="Admin Focus Board" action={<Link to="/analytics" className="text-xs font-medium text-blue-600">Open Analytics</Link>} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">Departments Need Attention</p>
+              <p className="mt-1 text-xl font-semibold text-rose-700">{departmentsNeedingAttention}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">No Tracked Time</p>
+              <p className="mt-1 text-xl font-semibold text-slate-900">{employeesWithoutTrackedTime}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">Open Tasks</p>
+              <p className="mt-1 text-xl font-semibold text-amber-700">{taskStatusCounts['To Do'] + taskStatusCounts['In Progress']}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">Late Today</p>
+              <p className="mt-1 text-xl font-semibold text-orange-700">{presentLateToday}</p>
+            </div>
+          </div>
+          <div className="mt-3 rounded-lg border border-slate-100 bg-white p-3 text-xs text-slate-600">
+            Focus first on departments marked <span className="font-semibold text-rose-700">Needs attention</span>, then review employees with zero tracked time.
+          </div>
         </Card>
       </section>
 
