@@ -11,18 +11,21 @@ import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { queryKeys } from '@/lib/queryKeys';
 import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
-import { groupApi, taskApi, userApi } from '@/services/api';
-import type { Group, Task, User } from '@/types';
+import { groupApi, projectApi, taskApi, userApi } from '@/services/api';
+import type { Group, Project, Task, User } from '@/types';
 import { cn } from '@/utils/cn';
 
 type SavedTaskStatus = Exclude<Task['status'], 'in_review'>;
 type TaskPriority = Task['priority'];
+type TaskMutationPayload = Partial<Task> & { assignee_ids?: number[] };
 
 type TaskFormState = {
   title: string;
   description: string;
   group_id: string;
+  project_id: string;
   assignee_id: string;
+  assignee_ids: string[];
   status: SavedTaskStatus;
   priority: TaskPriority;
   due_date: string;
@@ -41,7 +44,9 @@ const createTaskFormState = (groupId = '', status: SavedTaskStatus = 'todo'): Ta
   title: '',
   description: '',
   group_id: groupId,
+  project_id: '',
   assignee_id: '',
+  assignee_ids: [],
   status,
   priority: 'medium',
   due_date: '',
@@ -63,11 +68,30 @@ const formatMinutes = (value?: number | null) => {
   if (hours) return `${hours}h`;
   return `${remainder}m`;
 };
+const formatTrackedTime = (value?: number | null) => {
+  const seconds = Number(value || 0);
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0m';
+  return formatMinutes(Math.round(seconds / 60));
+};
+const getTaskCompletionPercent = (task: Task) => {
+  if (task.status === 'done') {
+    return 100;
+  }
+
+  const estimateMinutes = Number(task.estimated_time || 0);
+  const trackedSeconds = Number(task.time_entries_sum_duration || 0);
+  const trackedMinutes = trackedSeconds > 0 ? trackedSeconds / 60 : 0;
+  if (estimateMinutes > 0) {
+    return Math.max(0, Math.min(99, Math.round((trackedMinutes / estimateMinutes) * 100)));
+  }
+  return 0;
+};
 
 export default function Tasks() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const canManageTasks = user?.role === 'admin';
+  const canManageTasks = user?.role === 'admin' || user?.role === 'manager';
+  const canCreateGroups = user?.role === 'admin';
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -85,11 +109,13 @@ export default function Tasks() {
   const [memberSearchSelectionDrafts, setMemberSearchSelectionDrafts] = useState<Record<number, number | null>>({});
   const [memberMoveDrafts, setMemberMoveDrafts] = useState<Record<string, string>>({});
   const [deletingGroupId, setDeletingGroupId] = useState<number | null>(null);
+  const [assigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false);
   const [taskForm, setTaskForm] = useState<TaskFormState>(createTaskFormState());
 
   const tasksQuery = useQuery({
     queryKey: queryKeys.tasks,
     queryFn: async () => (await taskApi.getAll()).data || [],
+    refetchInterval: 5000,
   });
 
   const groupsQuery = useQuery({
@@ -101,10 +127,15 @@ export default function Tasks() {
     queryKey: queryKeys.users({ period: 'all' }),
     queryFn: async () => (await userApi.getAll({ period: 'all' })).data || [],
   });
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: async () => (await projectApi.getAll()).data || [],
+  });
 
   const tasks = tasksQuery.data || [];
   const groups = groupsQuery.data || [];
   const users = usersQuery.data || [];
+  const projects = projectsQuery.data || [];
   const internalUsers = useMemo(
     () => users.filter((member) => member.role !== 'client'),
     [users]
@@ -116,9 +147,13 @@ export default function Tasks() {
     () => users.filter((member) => !selectedGroupId || member.groups?.some((group) => group.id === selectedGroupId)),
     [selectedGroupId, users]
   );
+  const availableProjects = useMemo(
+    () => projects.filter((project) => !selectedGroupId || Number(project.group_id) === Number(selectedGroupId)),
+    [projects, selectedGroupId]
+  );
 
   const saveTaskMutation = useMutation({
-    mutationFn: async (payload: Partial<Task>) => {
+    mutationFn: async (payload: TaskMutationPayload) => {
       if (editingTask) {
         await taskApi.update(editingTask.id, payload);
         return 'Task updated successfully.';
@@ -220,7 +255,7 @@ export default function Tasks() {
       setGroupFilter((current) => (current === String(group.id) ? 'all' : current));
       setTaskForm((current) => (
         current.group_id === String(group.id)
-          ? { ...current, group_id: '', assignee_id: '' }
+          ? { ...current, group_id: '', project_id: '', assignee_id: '', assignee_ids: [] }
           : current
       ));
 
@@ -239,8 +274,8 @@ export default function Tasks() {
     },
   });
 
-  const isLoading = tasksQuery.isLoading || groupsQuery.isLoading || usersQuery.isLoading;
-  const isError = tasksQuery.isError || groupsQuery.isError || usersQuery.isError;
+  const isLoading = tasksQuery.isLoading || groupsQuery.isLoading || usersQuery.isLoading || projectsQuery.isLoading;
+  const isError = tasksQuery.isError || groupsQuery.isError || usersQuery.isError || projectsQuery.isError;
 
   const filteredTasks = tasks.filter((task) => {
     const haystack = [task.title, task.description, task.group?.name, task.assignee?.name, task.assignee?.email]
@@ -253,6 +288,31 @@ export default function Tasks() {
     const matchesAssignee = assigneeFilter === 'all' || String(task.assignee_id || '') === assigneeFilter;
     return matchesSearch && matchesStatus && matchesGroup && matchesAssignee;
   });
+  const projectProgressRows = useMemo(() => {
+    const byProject = new Map<number, { projectName: string; estimateMinutes: number; trackedMinutes: number; tasksCount: number }>();
+    filteredTasks.forEach((task) => {
+      const projectId = Number(task.project_id || 0);
+      if (!projectId) return;
+      const existing = byProject.get(projectId) || {
+        projectName: task.project?.name || `Project ${projectId}`,
+        estimateMinutes: 0,
+        trackedMinutes: 0,
+        tasksCount: 0,
+      };
+      existing.estimateMinutes += Number(task.estimated_time || 0);
+      existing.trackedMinutes += Number(task.time_entries_sum_duration || 0) / 60;
+      existing.tasksCount += 1;
+      byProject.set(projectId, existing);
+    });
+    return Array.from(byProject.values())
+      .map((row) => ({
+        ...row,
+        completionPercent: row.estimateMinutes > 0
+          ? Math.max(0, Math.min(100, Math.round((row.trackedMinutes / row.estimateMinutes) * 100)))
+          : 0,
+      }))
+      .sort((a, b) => b.completionPercent - a.completionPercent);
+  }, [filteredTasks]);
 
   const hasDirectorySearch = groupDirectoryQuery.trim().length > 0;
   const hasDirectorySelection = groupDirectoryFilter !== 'all';
@@ -359,11 +419,12 @@ export default function Tasks() {
   if (isError) {
     return (
       <PageErrorState
-        message={(tasksQuery.error as any)?.response?.data?.message || (groupsQuery.error as any)?.response?.data?.message || (usersQuery.error as any)?.response?.data?.message || 'Failed to load tasks.'}
+        message={(tasksQuery.error as any)?.response?.data?.message || (groupsQuery.error as any)?.response?.data?.message || (usersQuery.error as any)?.response?.data?.message || (projectsQuery.error as any)?.response?.data?.message || 'Failed to load tasks.'}
         onRetry={() => {
           void tasksQuery.refetch();
           void groupsQuery.refetch();
           void usersQuery.refetch();
+          void projectsQuery.refetch();
         }}
       />
     );
@@ -382,16 +443,18 @@ export default function Tasks() {
           </div>
           {canManageTasks ? (
             <div className="flex flex-wrap gap-3">
-              <Button
-                variant="secondary"
-                iconLeft={<Building2 className="h-4 w-4" />}
-                onClick={() => {
-                  setGroupModalSource('workspace');
-                  setShowGroupModal(true);
-                }}
-              >
-                New Group
-              </Button>
+              {canCreateGroups ? (
+                <Button
+                  variant="secondary"
+                  iconLeft={<Building2 className="h-4 w-4" />}
+                  onClick={() => {
+                    setGroupModalSource('workspace');
+                    setShowGroupModal(true);
+                  }}
+                >
+                  New Group
+                </Button>
+              ) : null}
               <Button iconLeft={<Plus className="h-4 w-4" />} onClick={() => {
                 setEditingTask(null);
                 setTaskForm(createTaskFormState(groupFilter === 'all' ? '' : groupFilter));
@@ -768,7 +831,9 @@ export default function Tasks() {
                             title: task.title,
                             description: task.description || '',
                             group_id: task.group_id ? String(task.group_id) : '',
+                            project_id: task.project_id ? String(task.project_id) : '',
                             assignee_id: task.assignee_id ? String(task.assignee_id) : '',
+                            assignee_ids: (task.assignees?.map((member) => String(member.id)) || (task.assignee_id ? [String(task.assignee_id)] : [])),
                             status: (task.status === 'in_review' ? 'todo' : task.status) as SavedTaskStatus,
                             priority: task.priority || 'medium',
                             due_date: task.due_date?.split('T')[0] || '',
@@ -790,10 +855,17 @@ export default function Tasks() {
                     </button>
                   </div>
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <TaskDetail icon={UserRound} label="Assignee" value={task.assignee?.name || 'Unassigned'} />
+                    <TaskDetail icon={UserRound} label="Assignee" value={task.assignees?.length ? task.assignees.map((member) => member.name).join(', ') : task.assignee?.name || 'Unassigned'} />
                     <TaskDetail icon={CalendarDays} label="Due Date" value={formatDate(task.due_date)} />
                     <TaskDetail icon={TimerReset} label="Estimate" value={formatMinutes(task.estimated_time)} />
+                    <TaskDetail icon={Clock3} label="Tracked" value={formatTrackedTime(task.time_entries_sum_duration)} />
+                    <TaskDetail icon={CheckCircle2} label="Completion" value={`${getTaskCompletionPercent(task)}%`} />
                     <TaskDetail icon={Clock3} label="Updated" value={formatDate(task.updated_at)} />
+                  </div>
+                  <div className="mt-3">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${getTaskCompletionPercent(task)}%` }} />
+                    </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
                     {task.status !== 'todo' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'todo' })}>Move To Do</Button> : null}
@@ -828,7 +900,9 @@ export default function Tasks() {
                 title: taskForm.title.trim(),
                 description: taskForm.description.trim() || undefined,
                 group_id: Number(taskForm.group_id),
+                project_id: taskForm.project_id ? Number(taskForm.project_id) : null,
                 assignee_id: taskForm.assignee_id ? Number(taskForm.assignee_id) : null,
+                assignee_ids: taskForm.assignee_ids.map((id) => Number(id)),
                 status: taskForm.status,
                 priority: taskForm.priority,
                 due_date: taskForm.due_date || undefined,
@@ -843,28 +917,84 @@ export default function Tasks() {
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-3">
                     <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Group</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGroupModalSource('task-form');
-                        setShowGroupModal(true);
-                      }}
-                      className="text-xs font-semibold text-sky-600 transition hover:text-sky-700"
-                    >
-                      + Create new group
-                    </button>
+                    {canCreateGroups ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGroupModalSource('task-form');
+                          setShowGroupModal(true);
+                        }}
+                        className="text-xs font-semibold text-sky-600 transition hover:text-sky-700"
+                      >
+                        + Create new group
+                      </button>
+                    ) : null}
                   </div>
-                  <SelectInput required value={taskForm.group_id} onChange={(event) => setTaskForm((current) => ({ ...current, group_id: event.target.value, assignee_id: '' }))}>
+                  <SelectInput required value={taskForm.group_id} onChange={(event) => setTaskForm((current) => ({ ...current, group_id: event.target.value, project_id: '', assignee_id: '', assignee_ids: [] }))}>
                     <option value="">Select group</option>
                     {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
                   </SelectInput>
                 </div>
                 <div>
-                  <FieldLabel>Assign To</FieldLabel>
-                  <SelectInput value={taskForm.assignee_id} onChange={(event) => setTaskForm((current) => ({ ...current, assignee_id: event.target.value }))} disabled={!taskForm.group_id}>
-                    <option value="">{!taskForm.group_id ? 'Select group first' : 'Unassigned'}</option>
-                    {availableAssignees.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                  <FieldLabel>Project</FieldLabel>
+                  <SelectInput value={taskForm.project_id} onChange={(event) => setTaskForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!taskForm.group_id}>
+                    <option value="">{!taskForm.group_id ? 'Select group first' : 'No project'}</option>
+                    {availableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                   </SelectInput>
+                </div>
+                <div>
+                  <FieldLabel>Assign To</FieldLabel>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      className="flex min-h-11 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800 shadow-sm transition hover:border-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                      disabled={!taskForm.group_id}
+                      onClick={() => setAssigneeDropdownOpen((current) => !current)}
+                    >
+                      <span className="truncate">
+                        {!taskForm.group_id
+                          ? 'Select group first'
+                          : taskForm.assignee_ids.length === 0
+                            ? 'Unassigned'
+                            : `${taskForm.assignee_ids.length} employee${taskForm.assignee_ids.length === 1 ? '' : 's'} selected`}
+                      </span>
+                      <span className="text-slate-500">{assigneeDropdownOpen ? '▴' : '▾'}</span>
+                    </button>
+                    {assigneeDropdownOpen && taskForm.group_id ? (
+                      <div className="absolute z-30 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                        {availableAssignees.length === 0 ? (
+                          <p className="px-2 py-2 text-xs text-slate-500">No employees available for this group.</p>
+                        ) : availableAssignees.map((member) => {
+                          const checked = taskForm.assignee_ids.includes(String(member.id));
+                          return (
+                            <label key={member.id} className={`mb-1 flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm ${checked ? 'bg-sky-50 text-sky-900' : 'text-slate-700 hover:bg-slate-50'}`}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => {
+                                  setTaskForm((current) => {
+                                    const nextIds = new Set(current.assignee_ids);
+                                    if (event.target.checked) nextIds.add(String(member.id));
+                                    else nextIds.delete(String(member.id));
+                                    const ordered = availableAssignees
+                                      .map((item) => String(item.id))
+                                      .filter((id) => nextIds.has(id));
+                                    return {
+                                      ...current,
+                                      assignee_ids: ordered,
+                                      assignee_id: ordered[0] || '',
+                                    };
+                                  });
+                                }}
+                              />
+                              <span className="truncate">{member.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">{!taskForm.group_id ? 'Select group first' : 'Click employees in dropdown to select multiple assignees.'}</p>
                 </div>
                 <div>
                   <FieldLabel>Status</FieldLabel>
@@ -911,6 +1041,33 @@ export default function Tasks() {
         title="Create a group without leaving tasks"
         description="Add the new department here and it will be available immediately in the task form."
       />
+
+      {projectProgressRows.length > 0 ? (
+        <SurfaceCard className="mt-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Project Progress</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">Task-wise completion from estimated vs tracked time</h3>
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {projectProgressRows.map((row) => (
+              <div key={row.projectName} className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <p className="font-semibold text-slate-900">{row.projectName}</p>
+                  <p className="text-slate-600">{row.completionPercent}% complete</p>
+                </div>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${row.completionPercent}%` }} />
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {formatMinutes(row.estimateMinutes)} estimated, {formatMinutes(Math.round(row.trackedMinutes))} tracked, {row.tasksCount} task{row.tasksCount === 1 ? '' : 's'}
+                </p>
+              </div>
+            ))}
+          </div>
+        </SurfaceCard>
+      ) : null}
     </div>
   );
 }

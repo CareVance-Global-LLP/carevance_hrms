@@ -8,6 +8,8 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\Authorization\GroupAccessService;
+use App\Services\TimeEntries\TimeEntryDurationService;
+use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +19,7 @@ class TaskController extends Controller
 {
     public function __construct(
         private readonly GroupAccessService $groupAccessService,
+        private readonly TimeEntryDurationService $timeEntryDurationService,
     ) {
     }
 
@@ -42,7 +45,8 @@ class TaskController extends Controller
         }
 
         $tasks = $this->scopedTasksQuery($user)
-            ->with(['group', 'project', 'assignee'])
+            ->with(['group', 'project', 'assignee', 'assignees', 'timeEntries:id,task_id,start_time,end_time,duration'])
+            ->withSum('timeEntries', 'duration')
             ->when($request->filled('group_id'), function (Builder $query) use ($request, $user) {
                 $groupId = (int) $request->group_id;
                 $visibleGroupIds = $this->groupAccessService->visibleGroupIds($user);
@@ -62,6 +66,17 @@ class TaskController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $resolvedNow = now();
+        $tasks->each(function (Task $task) use ($resolvedNow) {
+            $effectiveTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration(
+                $task->timeEntries ?? collect(),
+                $resolvedNow
+            );
+
+            $task->setAttribute('time_entries_sum_duration', $effectiveTrackedDuration);
+            $task->unsetRelation('timeEntries');
+        });
+
         return response()->json($tasks);
     }
 
@@ -75,6 +90,8 @@ class TaskController extends Controller
             'status' => 'nullable|in:todo,in_progress,done',
             'priority' => 'nullable|in:low,medium,high,urgent',
             'assignee_id' => 'nullable|exists:users,id',
+            'assignee_ids' => 'nullable|array',
+            'assignee_ids.*' => 'integer|exists:users,id',
             'due_date' => 'nullable|date',
             'estimated_time' => 'nullable|integer|min:0',
         ]);
@@ -93,7 +110,11 @@ class TaskController extends Controller
             return $group;
         }
 
-        $project = $this->resolveProjectForOrganization($user, $request->project_id ? (int) $request->project_id : null);
+        $project = $this->resolveProjectForOrganization(
+            $user,
+            $request->project_id ? (int) $request->project_id : null,
+            $group
+        );
         if ($project instanceof JsonResponse) {
             return $project;
         }
@@ -103,6 +124,14 @@ class TaskController extends Controller
             $group,
             $request->assignee_id ? (int) $request->assignee_id : null
         );
+        $assignees = $this->resolveAssigneesForGroup(
+            $user,
+            $group,
+            $request->input('assignee_ids', [])
+        );
+        if ($assignee && !$assignees->contains('id', $assignee->id)) {
+            $assignees->push($assignee);
+        }
 
         $task = Task::create([
             'title' => $request->title,
@@ -115,8 +144,9 @@ class TaskController extends Controller
             'due_date' => $request->due_date,
             'estimated_time' => $request->estimated_time,
         ]);
+        $task->assignees()->sync($assignees->pluck('id')->all());
 
-        return response()->json($task->load(['group', 'project', 'assignee']), 201);
+        return response()->json($task->load(['group', 'project', 'assignee', 'assignees']), 201);
     }
 
     public function show(Task $task)
@@ -125,7 +155,7 @@ class TaskController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $task->load(['group', 'project', 'timeEntries', 'assignee']);
+        $task->load(['group', 'project', 'timeEntries', 'assignee', 'assignees']);
         return response()->json($task);
     }
 
@@ -148,6 +178,8 @@ class TaskController extends Controller
             'status' => 'nullable|in:todo,in_progress,done',
             'priority' => 'nullable|in:low,medium,high,urgent',
             'assignee_id' => 'nullable|exists:users,id',
+            'assignee_ids' => 'nullable|array',
+            'assignee_ids.*' => 'integer|exists:users,id',
             'due_date' => 'nullable|date',
             'estimated_time' => 'nullable|integer|min:0',
         ]);
@@ -165,11 +197,6 @@ class TaskController extends Controller
             ? ($request->project_id ? (int) $request->project_id : null)
             : ($task->project_id ? (int) $task->project_id : null);
 
-        $project = $this->resolveProjectForOrganization($user, $projectId);
-        if ($project instanceof JsonResponse) {
-            return $project;
-        }
-
         $assigneeId = $request->exists('assignee_id')
             ? ($request->assignee_id ? (int) $request->assignee_id : null)
             : ($task->assignee_id ? (int) $task->assignee_id : null);
@@ -181,7 +208,18 @@ class TaskController extends Controller
             ]);
         }
 
+        $project = $this->resolveProjectForOrganization($user, $projectId, $resolvedGroup);
+        if ($project instanceof JsonResponse) {
+            return $project;
+        }
+
         $assignee = $this->resolveAssigneeForGroup($user, $resolvedGroup, $assigneeId);
+        $assignees = $request->exists('assignee_ids')
+            ? $this->resolveAssigneesForGroup($user, $resolvedGroup, $request->input('assignee_ids', []))
+            : $task->assignees()->get();
+        if ($assignee && !$assignees->contains('id', $assignee->id)) {
+            $assignees->push($assignee);
+        }
 
         $payload = $request->only(['title', 'description', 'status', 'priority', 'due_date', 'estimated_time']);
 
@@ -198,8 +236,11 @@ class TaskController extends Controller
         }
 
         $task->update($payload);
+        if ($request->exists('assignee_ids') || $request->exists('assignee_id') || $request->exists('group_id')) {
+            $task->assignees()->sync($assignees->pluck('id')->all());
+        }
 
-        return response()->json($task->fresh()->load(['group', 'project', 'assignee']));
+        return response()->json($task->fresh()->load(['group', 'project', 'assignee', 'assignees']));
     }
 
     public function updateStatus(Request $request, Task $task)
@@ -214,7 +255,7 @@ class TaskController extends Controller
 
         $task->update(['status' => $request->status]);
 
-        return response()->json($task->fresh()->load(['group', 'project', 'assignee']));
+        return response()->json($task->fresh()->load(['group', 'project', 'assignee', 'assignees']));
     }
 
     public function destroy(Task $task)
@@ -261,7 +302,7 @@ class TaskController extends Controller
         }
 
         return $this->scopedTasksQuery($user)
-            ->with(['group', 'project', 'assignee'])
+            ->with(['group', 'project', 'assignee', 'assignees'])
             ->where('id', $id)
             ->first();
     }
@@ -305,7 +346,7 @@ class TaskController extends Controller
         return $group;
     }
 
-    private function resolveProjectForOrganization(User $user, ?int $projectId): Project|JsonResponse|null
+    private function resolveProjectForOrganization(User $user, ?int $projectId, ?Group $group = null): Project|JsonResponse|null
     {
         if (!$projectId) {
             return null;
@@ -317,6 +358,22 @@ class TaskController extends Controller
 
         if (!$project) {
             return response()->json(['message' => 'Invalid project for your organization.'], 422);
+        }
+
+        if (!$project->group_id) {
+            return response()->json(['message' => 'Selected project is not linked to any group.'], 422);
+        }
+
+        if ($group && (int) $project->group_id !== (int) $group->id) {
+            return response()->json(['message' => 'Selected project does not belong to the selected group.'], 422);
+        }
+
+        $projectGroup = Group::query()
+            ->where('organization_id', $user->organization_id)
+            ->find((int) $project->group_id);
+
+        if (!$projectGroup || !$this->groupAccessService->canManageGroup($user, $projectGroup)) {
+            return response()->json(['message' => 'You cannot use this project with your current role.'], 403);
         }
 
         return $project;
@@ -349,5 +406,32 @@ class TaskController extends Controller
         }
 
         return $assignee;
+    }
+
+    private function resolveAssigneesForGroup(User $user, Group $group, array $assigneeIds): Collection
+    {
+        $cleanIds = collect($assigneeIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($cleanIds->isEmpty()) {
+            return collect();
+        }
+
+        $assignees = User::query()
+            ->where('organization_id', $user->organization_id)
+            ->whereIn('id', $cleanIds)
+            ->whereHas('groups', fn (Builder $builder) => $builder->where('groups.id', $group->id))
+            ->get();
+
+        if ($assignees->count() !== $cleanIds->count()) {
+            throw ValidationException::withMessages([
+                'assignee_ids' => ['Each assigned user must belong to the selected group.'],
+            ]);
+        }
+
+        return $assignees;
     }
 }

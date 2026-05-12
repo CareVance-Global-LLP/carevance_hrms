@@ -56,6 +56,7 @@ export interface Group {
 export interface Project {
   id: number;
   organization_id: number;
+  group_id?: number | null;
   name: string;
   description?: string;
   color: string;
@@ -68,6 +69,7 @@ export interface Project {
   client_email?: string;
   created_at: string;
   updated_at: string;
+  group?: Group | null;
 }
 
 // Task Types
@@ -87,6 +89,8 @@ export interface Task {
   group?: Group | null;
   project?: Project | null;
   assignee?: User | null;
+  assignees?: User[];
+  time_entries_sum_duration?: number;
 }
 
 // Time Entry Types
