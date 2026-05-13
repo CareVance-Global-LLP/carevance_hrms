@@ -38,6 +38,7 @@ import {
   taskApi,
   userApi,
 } from '@/services/api';
+import { SelectInput } from '@/components/ui/FormField';
 
 type DashboardEmployee = {
   id: number;
@@ -1361,17 +1362,17 @@ export default function AdminDashboard() {
                 {scope === 'employee' ? 'Specific Employee' : 'Overall'}
               </button>
             ))}
-            <select
+            <SelectInput
               aria-label="Filter dashboard by department"
               value={scopeDepartmentFilter}
               onChange={(event) => {
                 setScopeDepartmentFilter(event.target.value);
                 setSelectedEmployeeId(null);
               }}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none"
+              className="h-9 px-3 text-xs font-medium text-slate-600"
             >
               {departments.map((department) => <option key={department} value={department}>{department === 'All' ? 'All departments' : department}</option>)}
-            </select>
+            </SelectInput>
           </div>
         </div>
         {dashboardScope === 'employee' ? (
@@ -1389,16 +1390,16 @@ export default function AdminDashboard() {
                 placeholder="Search employee name, email, role, department..."
               />
             </label>
-            <select
+            <SelectInput
               aria-label="Select dashboard employee"
               value={selectedEmployee?.id || ''}
               onChange={(event) => setSelectedEmployeeId(Number(event.target.value) || null)}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none focus:border-blue-400"
+              className="h-9 px-3 text-xs font-medium text-slate-600"
             >
               {scopeEmployeeMatches.length ? scopeEmployeeMatches.map((employee) => (
                 <option key={employee.id} value={employee.id}>{employee.name} - {employee.department}</option>
-              )) : <option value="">No employee found</option>}
-            </select>
+              )) : <option value="" disabled>No employee found</option>}
+            </SelectInput>
           </div>
         ) : null}
       </Card>
