@@ -101,6 +101,17 @@ const formatCountryLabel = (value?: string | null) => {
   return normalized;
 };
 
+const formatLeaveCategoryLabel = (value?: string | null) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return 'Paid Leave';
+  return normalized
+    .replace(/[_\-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
 const buildMonthGrid = (month: string) => {
   // month: YYYY-MM
   const [y, m] = month.split('-').map((v) => Number(v));
@@ -127,7 +138,7 @@ const buildMonthGrid = (month: string) => {
 };
 
 type AttendanceProps = {
-  mode?: 'full' | 'time-edit';
+  mode?: 'full' | 'time-edit' | 'leave';
 };
 
 type SectionFeedback = {
@@ -251,7 +262,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [leaveStartDate, setLeaveStartDate] = useState(formatLocalDate(new Date()));
   const [leaveEndDate, setLeaveEndDate] = useState(formatLocalDate(new Date()));
   const [leaveType, setLeaveType] = useState<'full_day' | 'half_day'>('full_day');
+  const [leaveCategory, setLeaveCategory] = useState('paid');
   const [leaveReason, setLeaveReason] = useState('');
+  const [leaveBalances, setLeaveBalances] = useState<any | null>(null);
+  const [isLeaveBalanceLoading, setIsLeaveBalanceLoading] = useState(false);
   const [timeEditRequests, setTimeEditRequests] = useState<any[]>([]);
   const [isTimeEditLoading, setIsTimeEditLoading] = useState(false);
   const [isTimeEditSubmitting, setIsTimeEditSubmitting] = useState(false);
@@ -602,6 +616,24 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
+  const fetchLeaveBalances = async () => {
+    setIsLeaveBalanceLoading(true);
+    try {
+      const response = await leaveApi.balances();
+      setLeaveBalances(response.data || null);
+      const policyCategories = (response.data as any)?.policy?.categories || [];
+      if (!policyCategories.some((item: any) => String(item?.code || '').trim().toLowerCase() === leaveCategory)) {
+        const nextCategory = String(policyCategories[0]?.code || 'paid').trim().toLowerCase() || 'paid';
+        setLeaveCategory(nextCategory);
+      }
+    } catch (error) {
+      console.error('Leave balances fetch failed:', error);
+      setLeaveBalances(null);
+    } finally {
+      setIsLeaveBalanceLoading(false);
+    }
+  };
+
   const submitLeaveRequest = async () => {
     if (!leaveStartDate || !leaveEndDate) {
       setLeaveFeedback('', 'Please select start and end date');
@@ -620,11 +652,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         start_date: leaveStartDate,
         end_date: leaveEndDate,
         leave_type: leaveType,
+        leave_category: leaveCategory,
         reason: leaveReason || undefined,
       });
       setLeaveReason('');
       setLeaveType('full_day');
-      await fetchLeaveRequests();
+      await Promise.all([fetchLeaveRequests(), fetchLeaveBalances()]);
       await Promise.all([fetchCalendar(), fetchToday(), fetchAttendance()]);
       setLeaveFeedback('Leave request submitted');
     } catch (e) {
@@ -639,7 +672,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     setLeaveFeedback();
     try {
       await leaveApi.approve(id);
-      await Promise.all([fetchLeaveRequests(), fetchAttendance(), fetchCalendar(), fetchToday()]);
+      await Promise.all([fetchLeaveRequests(), fetchLeaveBalances(), fetchAttendance(), fetchCalendar(), fetchToday()]);
       setLeaveFeedback('Leave request approved');
     } catch (e) {
       console.error('Approve leave failed:', e);
@@ -651,7 +684,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     setLeaveFeedback();
     try {
       await leaveApi.reject(id);
-      await fetchLeaveRequests();
+      await Promise.all([fetchLeaveRequests(), fetchLeaveBalances()]);
       setLeaveFeedback('Leave request rejected');
     } catch (e) {
       console.error('Reject leave failed:', e);
@@ -663,7 +696,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     setLeaveFeedback();
     try {
       await leaveApi.requestRevoke(id);
-      await fetchLeaveRequests();
+      await Promise.all([fetchLeaveRequests(), fetchLeaveBalances()]);
       setLeaveFeedback('Leave revoke request submitted');
     } catch (e) {
       console.error('Leave revoke request failed:', e);
@@ -675,7 +708,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     setLeaveFeedback();
     try {
       await leaveApi.approveRevoke(id);
-      await Promise.all([fetchLeaveRequests(), fetchCalendar(), fetchAttendance(), fetchToday()]);
+      await Promise.all([fetchLeaveRequests(), fetchLeaveBalances(), fetchCalendar(), fetchAttendance(), fetchToday()]);
       setLeaveFeedback('Leave revoke approved');
     } catch (e) {
       console.error('Approve leave revoke failed:', e);
@@ -687,7 +720,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     setLeaveFeedback();
     try {
       await leaveApi.rejectRevoke(id);
-      await fetchLeaveRequests();
+      await Promise.all([fetchLeaveRequests(), fetchLeaveBalances()]);
       setLeaveFeedback('Leave revoke rejected');
     } catch (e) {
       console.error('Reject leave revoke failed:', e);
@@ -777,10 +810,16 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   }, [countryFilter, endDate, isAdmin, mode, selectedFilterUserId, startDate]);
 
   useEffect(() => {
-    fetchTimeEditRequests();
-    if (mode !== 'full') return;
-    fetchToday();
-    fetchLeaveRequests();
+    if (mode === 'full' || mode === 'time-edit') {
+      fetchTimeEditRequests();
+    }
+    if (mode === 'full') {
+      fetchToday();
+    }
+    if (mode === 'full' || mode === 'leave') {
+      fetchLeaveRequests();
+      fetchLeaveBalances();
+    }
   }, [mode]);
 
   useEffect(() => {
@@ -806,16 +845,20 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   }, [calendarMonth, isAdmin, mode]);
 
   useEffect(() => {
-    if (mode !== 'full') return;
+    if (mode !== 'full' && mode !== 'leave') return;
 
     const interval = window.setInterval(() => {
       if (document.visibilityState !== 'visible') {
         return;
       }
 
-      void fetchAttendance();
-      void fetchCalendar();
-      void fetchToday();
+      if (mode === 'full') {
+        void fetchAttendance();
+        void fetchCalendar();
+        void fetchToday();
+      }
+      void fetchLeaveRequests();
+      void fetchLeaveBalances();
     }, 30000);
 
     return () => window.clearInterval(interval);
@@ -968,6 +1011,27 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     () => leaveRequests.filter((item) => item.status === 'pending' && canReviewApprovalRequest(user, item?.user)),
     [leaveRequests, user]
   );
+  const leavePolicyCategories = useMemo(
+    () => ((leaveBalances?.policy?.categories || []) as any[]),
+    [leaveBalances?.policy?.categories]
+  );
+  const selfLeaveCategories = useMemo(
+    () => ((leaveBalances?.self?.categories || []) as any[]),
+    [leaveBalances?.self?.categories]
+  );
+  const leaveTeamBalances = useMemo(
+    () => ((leaveBalances?.team || []) as any[]),
+    [leaveBalances?.team]
+  );
+  const leaveTeamRows = useMemo(
+    () => leaveTeamBalances
+      .filter((row: any) => {
+        const role = String(row?.user?.role || '').toLowerCase();
+        return role === 'employee' || role === 'manager';
+      })
+      .sort((left: any, right: any) => String(left?.user?.name || '').localeCompare(String(right?.user?.name || ''))),
+    [leaveTeamBalances]
+  );
   const pendingTimeEditRequests = useMemo(
     () => timeEditRequests.filter((item) => item.status === 'pending' && canReviewApprovalRequest(user, item?.user)),
     [timeEditRequests, user]
@@ -1095,12 +1159,248 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const employeeLiveToolType = employeeLiveMonitoring?.tool_type || employeeLiveMonitoring?.activity_type || 'No tool type';
   const employeeLiveActivityLabel = resolveLiveActivityLabel(employeeLiveMonitoring);
 
-  if (!canAccessAttendance && mode !== 'time-edit') {
+  if (!canAccessAttendance && mode === 'full') {
     return (
       <PageEmptyState
         title="Attendance monitoring disabled"
         description="Attendance monitoring is not enabled for your account."
       />
+    );
+  }
+
+  if (mode === 'leave') {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <PageHeader
+          eyebrow="Leave operations"
+          title="Leave"
+          description="View leave balances, submit leave requests, and track approvals."
+        />
+
+        {leaveBalances?.approval_scope?.can_manage ? (
+          <SurfaceCard className="p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Team Leave Balance</h2>
+              <Button onClick={fetchLeaveBalances} variant="ghost" size="sm" disabled={isLeaveBalanceLoading}>
+                {isLeaveBalanceLoading ? 'Refreshing...' : 'Refresh'}
+              </Button>
+            </div>
+            {leaveTeamRows.length === 0 ? (
+              <PageEmptyState title="No team balances" description="No employees are mapped to your leave approval scope yet." />
+            ) : (
+              <div className="max-h-80 overflow-auto rounded-lg border border-slate-200">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Employee</th>
+                      <th className="px-3 py-2 font-medium">Role</th>
+                      <th className="px-3 py-2 font-medium">Department</th>
+                      <th className="px-3 py-2 font-medium">Manager</th>
+                      <th className="px-3 py-2 font-medium">Left Leave</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {leaveTeamRows.map((row: any) => {
+                      const categorySummary = (row.balance?.categories || [])
+                        .map((category: any) => `${category.name}: ${Number(category.remaining || 0).toFixed(1)}`)
+                        .join(' | ');
+                      const managerName = row.user?.reporting_manager?.name || 'Unassigned';
+                      const role = String(row.user?.role || 'employee');
+
+                      return (
+                        <tr key={row.user?.id}>
+                          <td className="px-3 py-2 text-slate-900">
+                            <p className="font-medium">{row.user?.name || 'Unknown'}</p>
+                            <p className="text-[11px] text-slate-500">{row.user?.email || '--'}</p>
+                          </td>
+                          <td className="px-3 py-2 capitalize text-slate-700">{role}</td>
+                          <td className="px-3 py-2 text-slate-700">{row.user?.department || 'Unassigned'}</td>
+                          <td className="px-3 py-2 text-slate-700">{managerName}</td>
+                          <td className="px-3 py-2 text-slate-700">
+                            <p>{categorySummary || 'No policy'}</p>
+                            <p className="text-[11px] text-rose-700">Unpaid used: {Number(row.balance?.unpaid?.used || 0).toFixed(1)}</p>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SurfaceCard>
+        ) : null}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {leaveFeedback ? (
+            <div className="lg:col-span-2">
+              <FeedbackBanner tone={leaveFeedback.tone} message={leaveFeedback.message} />
+            </div>
+          ) : null}
+          <SurfaceCard className="p-4">
+            <h2 className="font-semibold text-gray-900 mb-3">Request Leave</h2>
+            <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Leave Balance</p>
+                <Button onClick={fetchLeaveBalances} variant="ghost" size="sm" disabled={isLeaveBalanceLoading}>
+                  {isLeaveBalanceLoading ? 'Refreshing...' : 'Refresh'}
+                </Button>
+              </div>
+              {isLeaveBalanceLoading ? (
+                <p className="text-xs text-slate-500">Loading leave balances...</p>
+              ) : selfLeaveCategories.length === 0 ? (
+                <p className="text-xs text-slate-500">No leave policy configured yet.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {selfLeaveCategories.map((category: any) => (
+                    <div key={category.code} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs">
+                      <p className="font-semibold text-slate-900">{category.name}</p>
+                      <p className="text-slate-600">Remaining: <span className="font-medium text-slate-900">{Number(category.remaining || 0).toFixed(1)}</span> / {Number(category.annual_quota || 0).toFixed(1)}</p>
+                      <p className="text-slate-500">Used: {Number(category.used || 0).toFixed(1)}</p>
+                    </div>
+                  ))}
+                  <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs">
+                    <p className="font-semibold text-rose-800">Unpaid Leave</p>
+                    <p className="text-rose-700">Used: {Number(leaveBalances?.self?.unpaid?.used || 0).toFixed(1)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="mb-3">
+              <FieldLabel>Leave Type</FieldLabel>
+              <SelectInput
+                value={leaveType}
+                onChange={(e) => {
+                  const nextType = e.target.value === 'half_day' ? 'half_day' : 'full_day';
+                  setLeaveType(nextType);
+                  if (nextType === 'half_day') {
+                    setLeaveEndDate(leaveStartDate);
+                  }
+                }}
+              >
+                <option value="full_day">Full Day</option>
+                <option value="half_day">Half Day</option>
+              </SelectInput>
+            </div>
+            <div className="mb-3">
+              <FieldLabel>Leave Category</FieldLabel>
+              <SelectInput value={leaveCategory} onChange={(e) => setLeaveCategory(String(e.target.value || 'paid'))}>
+                {leavePolicyCategories.map((category: any) => (
+                  <option key={category.code} value={String(category.code || '').toLowerCase()}>
+                    {category.name}
+                  </option>
+                ))}
+                <option value="unpaid">Unpaid Leave</option>
+              </SelectInput>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <FieldLabel>Start Date</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={leaveStartDate}
+                  onChange={(e) => {
+                    setLeaveStartDate(e.target.value);
+                    if (leaveType === 'half_day') {
+                      setLeaveEndDate(e.target.value);
+                    }
+                  }}
+                />
+              </div>
+              <div>
+                <FieldLabel>End Date</FieldLabel>
+                <TextInput
+                  type="date"
+                  value={leaveEndDate}
+                  onChange={(e) => setLeaveEndDate(e.target.value)}
+                  disabled={leaveType === 'half_day'}
+                />
+              </div>
+            </div>
+            {leaveType === 'half_day' ? (
+              <p className="mt-2 text-xs text-amber-700">
+                Half day leave reduces the day target to half of normal working hours.
+              </p>
+            ) : null}
+            <div className="mt-3">
+              <FieldLabel>Reason (Optional)</FieldLabel>
+              <TextareaInput
+                value={leaveReason}
+                onChange={(e) => setLeaveReason(e.target.value)}
+                rows={3}
+                placeholder="Leave reason..."
+              />
+            </div>
+            <div className="mt-3">
+              <Button onClick={submitLeaveRequest} disabled={isLeaveSubmitting}>
+                {isLeaveSubmitting ? 'Submitting...' : 'Submit Leave Request'}
+              </Button>
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard className="p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Leave Requests</h2>
+              <Button onClick={fetchLeaveRequests} variant="ghost" size="sm">Refresh</Button>
+            </div>
+            {isLeaveLoading ? (
+              <PageLoadingState label="Loading leave requests..." />
+            ) : leaveRequests.length === 0 ? (
+              <PageEmptyState title="No leave requests found" description="Submitted leave requests will appear here." />
+            ) : (
+              <div className="mt-3 space-y-2 max-h-72 overflow-auto">
+                {leaveRequests.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-gray-900">
+                        {item.user?.name || 'You'}: {item.start_date} to {item.end_date}
+                      </p>
+                      <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : item.status === 'revoked' ? 'neutral' : 'warning'}>{item.status}</StatusBadge>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {item.leave_type === 'half_day' ? 'Half day leave' : 'Full day leave'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">Category: {formatLeaveCategoryLabel(item.leave_category)}</p>
+                    {Array.isArray(item.consumed_breakdown) && item.consumed_breakdown.length > 0 ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Consumption: {item.consumed_breakdown.map((part: any) => `${Number(part?.units || 0).toFixed(1)} ${formatLeaveCategoryLabel(part?.category)}`).join(', ')}
+                      </p>
+                    ) : null}
+                    {item.approval_destination ? (
+                      <p className="mt-1 text-xs font-medium text-sky-700">{item.approval_destination}</p>
+                    ) : null}
+                    {item.reason ? <p className="text-xs text-gray-600 mt-1">{item.reason}</p> : null}
+                    {item.revoke_status ? (
+                      <p className="text-xs mt-1 text-gray-600">
+                        Revoke Request: <span className={`font-medium ${item.revoke_status === 'pending' ? 'text-amber-700' : item.revoke_status === 'approved' ? 'text-green-700' : 'text-red-700'}`}>{item.revoke_status}</span>
+                      </p>
+                    ) : null}
+                    {canReviewLeaveRequest(item) && item.status === 'pending' ? (
+                      <div className="mt-2 flex gap-2">
+                        <Button onClick={() => approveLeave(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
+                        <Button onClick={() => rejectLeave(item.id)} variant="danger" size="sm">Reject</Button>
+                      </div>
+                    ) : null}
+                    {!isAdmin && canRequestRevoke(item) ? (
+                      <div className="mt-2">
+                        <Button onClick={() => requestLeaveRevoke(item.id)} variant="danger" size="sm">Request Revoke</Button>
+                      </div>
+                    ) : null}
+                    {canReviewLeaveRequest(item) && item.status === 'approved' && item.revoke_status === 'pending' ? (
+                      <div className="mt-2 flex gap-2">
+                        <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve Revoke</Button>
+                        <Button onClick={() => rejectLeaveRevoke(item.id)} variant="danger" size="sm">Reject Revoke</Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+            {pendingLeaveRequests.length > 0 ? (
+              <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingLeaveRequests.length}</p>
+            ) : null}
+          </SurfaceCard>
+        </div>
+      </div>
     );
   }
 
@@ -1202,7 +1502,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader eyebrow="Attendance operations" title="Attendance" description={isAdmin ? 'Track attendance, punches, leave, and overtime requests across the team.' : 'Review your attendance, punches, leave requests, and overtime history.'} />
+      <PageHeader eyebrow="Attendance operations" title="Attendance" description={isAdmin ? 'Track attendance, punches, and overtime requests across the team.' : 'Review your attendance, punches, and overtime history.'} />
 
       <FilterPanel className={`grid grid-cols-1 gap-3 ${isAdmin ? 'md:grid-cols-6' : 'md:grid-cols-3'}`}>
         <DateRangeFields
@@ -1785,133 +2085,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 )}
               </div>
             </div>
-          ) : null}
-        </SurfaceCard>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {leaveFeedback ? (
-          <div className="lg:col-span-2">
-            <FeedbackBanner tone={leaveFeedback.tone} message={leaveFeedback.message} />
-          </div>
-        ) : null}
-        <SurfaceCard className="p-4">
-          <h2 className="font-semibold text-gray-900 mb-3">Request Leave</h2>
-          <div className="mb-3">
-            <FieldLabel>Leave Type</FieldLabel>
-            <SelectInput
-              value={leaveType}
-              onChange={(e) => {
-                const nextType = e.target.value === 'half_day' ? 'half_day' : 'full_day';
-                setLeaveType(nextType);
-                if (nextType === 'half_day') {
-                  setLeaveEndDate(leaveStartDate);
-                }
-              }}
-            >
-              <option value="full_day">Full Day</option>
-              <option value="half_day">Half Day</option>
-            </SelectInput>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <FieldLabel>Start Date</FieldLabel>
-              <TextInput
-                type="date"
-                value={leaveStartDate}
-                onChange={(e) => {
-                  setLeaveStartDate(e.target.value);
-                  if (leaveType === 'half_day') {
-                    setLeaveEndDate(e.target.value);
-                  }
-                }}
-              />
-            </div>
-            <div>
-              <FieldLabel>End Date</FieldLabel>
-              <TextInput
-                type="date"
-                value={leaveEndDate}
-                onChange={(e) => setLeaveEndDate(e.target.value)}
-                disabled={leaveType === 'half_day'}
-              />
-            </div>
-          </div>
-          {leaveType === 'half_day' ? (
-            <p className="mt-2 text-xs text-amber-700">
-              Half day leave reduces the day target to half of normal working hours.
-            </p>
-          ) : null}
-          <div className="mt-3">
-            <FieldLabel>Reason (Optional)</FieldLabel>
-            <TextareaInput
-              value={leaveReason}
-              onChange={(e) => setLeaveReason(e.target.value)}
-              rows={3}
-              placeholder="Leave reason..."
-            />
-          </div>
-          <div className="mt-3">
-            <Button onClick={submitLeaveRequest} disabled={isLeaveSubmitting}>
-              {isLeaveSubmitting ? 'Submitting...' : 'Submit Leave Request'}
-            </Button>
-          </div>
-        </SurfaceCard>
-
-        <SurfaceCard className="p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Leave Requests</h2>
-            <Button onClick={fetchLeaveRequests} variant="ghost" size="sm">Refresh</Button>
-          </div>
-          {isLeaveLoading ? (
-            <PageLoadingState label="Loading leave requests..." />
-          ) : leaveRequests.length === 0 ? (
-            <PageEmptyState title="No leave requests found" description="Submitted leave requests will appear here." />
-          ) : (
-            <div className="mt-3 space-y-2 max-h-72 overflow-auto">
-              {leaveRequests.map((item) => (
-                <div key={item.id} className="rounded-lg border border-slate-200 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900">
-                      {item.user?.name || 'You'}: {item.start_date} to {item.end_date}
-                    </p>
-                    <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : item.status === 'revoked' ? 'neutral' : 'warning'}>{item.status}</StatusBadge>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {item.leave_type === 'half_day' ? 'Half day leave' : 'Full day leave'}
-                  </p>
-                  {item.approval_destination ? (
-                    <p className="mt-1 text-xs font-medium text-sky-700">{item.approval_destination}</p>
-                  ) : null}
-                  {item.reason ? <p className="text-xs text-gray-600 mt-1">{item.reason}</p> : null}
-                  {item.revoke_status ? (
-                    <p className="text-xs mt-1 text-gray-600">
-                      Revoke Request: <span className={`font-medium ${item.revoke_status === 'pending' ? 'text-amber-700' : item.revoke_status === 'approved' ? 'text-green-700' : 'text-red-700'}`}>{item.revoke_status}</span>
-                    </p>
-                  ) : null}
-                  {canReviewLeaveRequest(item) && item.status === 'pending' ? (
-                    <div className="mt-2 flex gap-2">
-                      <Button onClick={() => approveLeave(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
-                      <Button onClick={() => rejectLeave(item.id)} variant="danger" size="sm">Reject</Button>
-                    </div>
-                  ) : null}
-                  {!isAdmin && canRequestRevoke(item) ? (
-                    <div className="mt-2">
-                      <Button onClick={() => requestLeaveRevoke(item.id)} variant="danger" size="sm">Request Revoke</Button>
-                    </div>
-                  ) : null}
-                  {canReviewLeaveRequest(item) && item.status === 'approved' && item.revoke_status === 'pending' ? (
-                    <div className="mt-2 flex gap-2">
-                      <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve Revoke</Button>
-                      <Button onClick={() => rejectLeaveRevoke(item.id)} variant="danger" size="sm">Reject Revoke</Button>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-          {pendingLeaveRequests.length > 0 ? (
-            <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingLeaveRequests.length}</p>
           ) : null}
         </SurfaceCard>
       </div>

@@ -713,6 +713,8 @@ export const leaveApi = {
         organization_id: number;
         start_date: string;
         end_date: string;
+        leave_category?: string;
+        consumed_breakdown?: Array<{ category: string; units: number }> | null;
         reason?: string | null;
         status: 'pending' | 'approved' | 'rejected' | 'revoked' | 'auto_cancelled';
         revoke_status?: 'pending' | 'approved' | 'rejected' | null;
@@ -731,11 +733,39 @@ export const leaveApi = {
       }>;
     }>('/leave-requests', { params }),
 
+  balances: () =>
+    api.get<{
+      policy: {
+        categories: Array<{ code: string; name: string; annual_quota: number }>;
+        unpaid: { code: 'unpaid'; name: string };
+      };
+      self: {
+        cycle: { start_date: string; end_date: string };
+        categories: Array<{ code: string; name: string; annual_quota: number; used: number; remaining: number }>;
+        unpaid: { used: number };
+        totals: { quota: number; used: number; remaining: number };
+      };
+      team: Array<{
+        user: { id: number; name: string; email: string; role: string };
+        balance: {
+          cycle: { start_date: string; end_date: string };
+          categories: Array<{ code: string; name: string; annual_quota: number; used: number; remaining: number }>;
+          unpaid: { used: number };
+          totals: { quota: number; used: number; remaining: number };
+        };
+      }>;
+      approval_scope: {
+        can_manage: boolean;
+        can_approve_roles: string[];
+      };
+    }>('/leave-requests/balances'),
+
   create: (data: {
     start_date: string;
     end_date: string;
     reason?: string;
     leave_type?: 'full_day' | 'half_day';
+    leave_category?: string;
   }) =>
     api.post('/leave-requests', data),
 
@@ -1121,7 +1151,13 @@ export const settingsApi = {
     };
   }) => api.put<{ message: string; settings: Record<string, any> }>('/settings/preferences', data),
 
-  updateOrganization: (data: FormData | { name: string; slug: string; office_start_time?: string | null; late_after_time?: string | null }) => {
+  updateOrganization: (data: FormData | {
+    name: string;
+    slug: string;
+    office_start_time?: string | null;
+    late_after_time?: string | null;
+    leave_categories?: Array<{ code: string; name: string; annual_quota: number }>;
+  }) => {
     if (data instanceof FormData) {
       data.append('_method', 'PUT');
       return api.post<{ message: string; organization: Organization }>('/settings/organization', data, {

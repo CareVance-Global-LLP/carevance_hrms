@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\AppNotificationService;
 use App\Services\Approvals\ApprovalRoutingService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Leave\LeavePolicyService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class LeaveRequestController extends Controller
         private readonly AppNotificationService $notificationService,
         private readonly ApprovalRoutingService $approvalRoutingService,
         private readonly AuditLogService $auditLogService,
+        private readonly LeavePolicyService $leavePolicyService,
     ) {
     }
 
@@ -86,12 +88,90 @@ class LeaveRequestController extends Controller
         ]);
     }
 
+    public function balances(Request $request)
+    {
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['message' => 'Organization is required.'], 422);
+        }
+
+        $currentUser->loadMissing('organization');
+        $policyCategories = $this->leavePolicyService->resolvePolicyCategories($currentUser->organization);
+        $selfBalance = $this->leavePolicyService->buildBalanceSnapshotForUser($currentUser, $policyCategories);
+
+        $teamBalances = collect();
+        if ($this->canManage($currentUser)) {
+            $teamUsersQuery = User::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->whereIn('role', ['employee', 'manager'])
+                ->with(['groups:id,name', 'employeeWorkInfo.department:id,name', 'employeeWorkInfo.reportingManager:id,name,email'])
+                ->orderBy('name');
+
+            if ($currentUser->role === 'manager') {
+                $reviewableUserIds = $this->approvalRoutingService
+                    ->reviewableRequesterIds($currentUser)
+                    ->unique()
+                    ->values();
+
+                $teamUsersQuery->whereIn('id', $reviewableUserIds);
+            }
+
+            $teamUsers = $teamUsersQuery->get(['id', 'name', 'email', 'role', 'organization_id']);
+
+            $teamBalances = $teamUsers->map(function (User $teamUser) use ($policyCategories) {
+                $departmentName = (string) (
+                    $teamUser->employeeWorkInfo?->department?->name
+                    ?: $teamUser->groups->first()?->name
+                    ?: 'Unassigned'
+                );
+                $reportingManager = $teamUser->employeeWorkInfo?->reportingManager;
+
+                return [
+                    'user' => [
+                        'id' => (int) $teamUser->id,
+                        'name' => (string) $teamUser->name,
+                        'email' => (string) $teamUser->email,
+                        'role' => (string) $teamUser->role,
+                        'department' => $departmentName,
+                        'reporting_manager' => $reportingManager
+                            ? [
+                                'id' => (int) $reportingManager->id,
+                                'name' => (string) $reportingManager->name,
+                                'email' => (string) $reportingManager->email,
+                            ]
+                            : null,
+                    ],
+                    'balance' => $this->leavePolicyService->buildBalanceSnapshotForUser($teamUser, $policyCategories),
+                ];
+            })->values();
+        }
+
+        return response()->json([
+            'policy' => [
+                'categories' => $policyCategories,
+                'unpaid' => [
+                    'code' => 'unpaid',
+                    'name' => 'Unpaid Leave',
+                ],
+            ],
+            'self' => $selfBalance,
+            'team' => $teamBalances,
+            'approval_scope' => [
+                'can_manage' => $this->canManage($currentUser),
+                'can_approve_roles' => $currentUser->role === 'manager'
+                    ? ['employee']
+                    : ($currentUser->role === 'admin' ? ['manager'] : []),
+            ],
+        ]);
+    }
+
     public function store(Request $request)
     {
         $request->validate([
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'leave_type' => 'nullable|in:full_day,half_day',
+            'leave_category' => 'nullable|string|max:50',
             'reason' => 'nullable|string|max:2000',
         ]);
 
@@ -99,6 +179,13 @@ class LeaveRequestController extends Controller
         if (!$currentUser || !$currentUser->organization_id) {
             return response()->json(['message' => 'Organization is required.'], 422);
         }
+
+        $currentUser->loadMissing('organization');
+        $policyCategories = $this->leavePolicyService->resolvePolicyCategories($currentUser->organization);
+        $leaveCategory = $this->leavePolicyService->normalizeRequestedCategory(
+            (string) $request->input('leave_category', 'paid'),
+            $policyCategories
+        );
 
         LeaveRequest::expirePendingRequestsForOrganization((int) $currentUser->organization_id);
 
@@ -133,6 +220,7 @@ class LeaveRequestController extends Controller
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
             'leave_type' => $leaveType,
+            'leave_category' => $leaveCategory,
             'reason' => $request->reason,
             'status' => 'pending',
         ]);
@@ -145,6 +233,7 @@ class LeaveRequestController extends Controller
                 'start_date' => $leave->start_date,
                 'end_date' => $leave->end_date,
                 'leave_type' => $leave->leave_type,
+                'leave_category' => $leave->leave_category,
             ],
             request: $request
         );
@@ -187,11 +276,31 @@ class LeaveRequestController extends Controller
             return response()->json(['message' => 'Only pending requests can be approved.'], 422);
         }
 
+        $currentUser->loadMissing('organization');
+        $policyCategories = $this->leavePolicyService->resolvePolicyCategories($currentUser->organization);
+        $cycleStart = $this->leavePolicyService->currentCycleStart();
+        $cycleEnd = $this->leavePolicyService->currentCycleEnd();
+        $approvedLeavesInCycle = LeaveRequest::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->where('user_id', $leave->user_id)
+            ->where('status', 'approved')
+            ->whereDate('end_date', '>=', $cycleStart->toDateString())
+            ->whereDate('start_date', '<=', $cycleEnd->toDateString())
+            ->orderBy('reviewed_at')
+            ->orderBy('id')
+            ->get();
+        $consumedBreakdown = $this->leavePolicyService->buildConsumptionBreakdown(
+            $leave,
+            $policyCategories,
+            $approvedLeavesInCycle
+        );
+
         $leave->update([
             'status' => 'approved',
             'reviewed_by' => $currentUser->id,
             'reviewed_at' => now(),
             'review_note' => $request->review_note,
+            'consumed_breakdown' => $consumedBreakdown,
         ]);
 
         $this->applyApprovedLeaveToAttendance($leave);
@@ -205,6 +314,8 @@ class LeaveRequestController extends Controller
                 'start_date' => $leave->start_date,
                 'end_date' => $leave->end_date,
                 'leave_type' => $leave->leave_type,
+                'leave_category' => $leave->leave_category,
+                'consumed_breakdown' => $leave->consumed_breakdown,
             ],
             request: $request
         );
@@ -507,6 +618,7 @@ class LeaveRequestController extends Controller
                 'employee_id' => (int) $leave->user_id,
                 'employee_name' => (string) $requester->name,
                 'leave_type' => $leave->leave_type,
+                'leave_category' => $leave->leave_category,
                 'start_date' => Carbon::parse($leave->start_date)->toDateString(),
                 'end_date' => Carbon::parse($leave->end_date)->toDateString(),
             ]
@@ -579,6 +691,8 @@ class LeaveRequestController extends Controller
             meta: [
                 'request_id' => (int) $leave->id,
                 'leave_type' => $leave->leave_type,
+                'leave_category' => $leave->leave_category,
+                'consumed_breakdown' => $leave->consumed_breakdown,
                 'status' => $status,
                 'start_date' => Carbon::parse($leave->start_date)->toDateString(),
                 'end_date' => Carbon::parse($leave->end_date)->toDateString(),

@@ -47,6 +47,45 @@ const extractOrganizationLogoUrl = (org: any): string => {
   return resolveMediaUrl(logoValue);
 };
 
+type LeaveCategorySetting = {
+  code: string;
+  name: string;
+  annual_quota: string;
+};
+
+const DEFAULT_LEAVE_CATEGORIES: LeaveCategorySetting[] = [
+  { code: 'paid', name: 'Paid Leave', annual_quota: '21' },
+  { code: 'sick', name: 'Sick Leave', annual_quota: '12' },
+  { code: 'birthday', name: 'Birthday Leave', annual_quota: '1' },
+];
+
+const readLeaveCategories = (org?: any): LeaveCategorySetting[] => {
+  const rawCategories = (org?.settings as any)?.leave_policy?.categories;
+  if (!Array.isArray(rawCategories) || rawCategories.length === 0) {
+    return DEFAULT_LEAVE_CATEGORIES;
+  }
+
+  const normalized = rawCategories
+    .map((item: any) => {
+      const code = String(item?.code || '').trim().toLowerCase().replace(/\s+/g, '_');
+      const name = String(item?.name || '').trim();
+      const quota = Number(item?.annual_quota);
+
+      if (!code || !name || code === 'unpaid' || !Number.isFinite(quota) || quota < 0) {
+        return null;
+      }
+
+      return {
+        code,
+        name,
+        annual_quota: String(quota),
+      };
+    })
+    .filter(Boolean) as LeaveCategorySetting[];
+
+  return normalized.length ? normalized : DEFAULT_LEAVE_CATEGORIES;
+};
+
 export default function SettingsPage() {
   const { user, organization, updateUser, updateOrganization } = useAuth();
   const location = useLocation();
@@ -89,6 +128,7 @@ export default function SettingsPage() {
   const [orgLogoPreview, setOrgLogoPreview] = useState(extractOrganizationLogoUrl(organization));
   const [officeStartTime, setOfficeStartTime] = useState('');
   const [lateAfterTime, setLateAfterTime] = useState('');
+  const [leaveCategories, setLeaveCategories] = useState<LeaveCategorySetting[]>(() => readLeaveCategories(organization));
 
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyInApp, setNotifyInApp] = useState(true);
@@ -111,6 +151,7 @@ export default function SettingsPage() {
 
   const isEmployee = isEmployeeUser(user);
   const isOrgEditable = canManageOrg && hasAdminAccess(user) && !isEmployee;
+  const isStrictAdminUser = hasStrictAdminAccess(user);
   const canEditEmail = hasStrictAdminAccess(user);
   const hasDesktopBrowserTracking = Boolean(window.desktopTracker);
 
@@ -172,6 +213,7 @@ export default function SettingsPage() {
     setOrgLogoPreview(logoUrl);
     setOfficeStartTime(toTimeInputValue((organization?.settings as any)?.attendance?.office_start_time));
     setLateAfterTime(toTimeInputValue((organization?.settings as any)?.attendance?.late_after_time));
+    setLeaveCategories(readLeaveCategories(organization));
   }, [organization]);
 
   useEffect(() => {
@@ -206,6 +248,7 @@ export default function SettingsPage() {
           setOrgLogoPreview(fetchedOrgLogo);
           setOfficeStartTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.office_start_time));
           setLateAfterTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.late_after_time));
+          setLeaveCategories(readLeaveCategories(fetchedOrg));
           setTimezone(resolveTimeZone(settings.timezone || DEFAULT_APP_TIMEZONE));
           setNotifyEmail(notifications.email ?? true);
           setNotifyInApp(notifications.in_app ?? true);
@@ -334,6 +377,20 @@ export default function SettingsPage() {
     try {
       const name = orgName.trim();
       const slug = orgSlug.trim();
+      const normalizedLeaveCategories = leaveCategories
+        .map((category) => ({
+          code: category.code.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_\-]/g, ''),
+          name: category.name.trim(),
+          annual_quota: Number(category.annual_quota || 0),
+        }))
+        .filter((category) => category.code && category.name && Number.isFinite(category.annual_quota) && category.annual_quota >= 0)
+        .slice(0, 15);
+
+      if (isStrictAdminUser && normalizedLeaveCategories.length === 0) {
+        setError('Please configure at least one paid leave category.');
+        return;
+      }
+
       const payload = orgLogoFile
         ? (() => {
             const formData = new FormData();
@@ -345,6 +402,9 @@ export default function SettingsPage() {
             if (lateAfterTime) {
               formData.append('late_after_time', lateAfterTime);
             }
+            if (isStrictAdminUser) {
+              formData.append('leave_categories_json', JSON.stringify(normalizedLeaveCategories));
+            }
             formData.append('logo_file', orgLogoFile);
             return formData;
           })()
@@ -353,6 +413,7 @@ export default function SettingsPage() {
             slug,
             office_start_time: officeStartTime || null,
             late_after_time: lateAfterTime || null,
+            ...(isStrictAdminUser ? { leave_categories: normalizedLeaveCategories } : {}),
           };
 
       const res = await settingsApi.updateOrganization(payload);
@@ -405,6 +466,26 @@ export default function SettingsPage() {
     setError('');
     setOrgLogoFile(file);
     setOrgLogoPreview(URL.createObjectURL(file));
+  };
+
+  const updateLeaveCategory = (index: number, updates: Partial<LeaveCategorySetting>) => {
+    setLeaveCategories((current) => current.map((row, rowIndex) => (
+      rowIndex === index ? { ...row, ...updates } : row
+    )));
+  };
+
+  const addLeaveCategory = () => {
+    setLeaveCategories((current) => {
+      const fallbackCode = `other_${current.length + 1}`;
+      return [...current, { code: fallbackCode, name: 'Other Leave', annual_quota: '0' }];
+    });
+  };
+
+  const removeLeaveCategory = (index: number) => {
+    setLeaveCategories((current) => {
+      const next = current.filter((_, rowIndex) => rowIndex !== index);
+      return next.length ? next : DEFAULT_LEAVE_CATEGORIES;
+    });
   };
 
   const savePreferences = async () => {
@@ -645,6 +726,71 @@ export default function SettingsPage() {
                   />
                   <p className="mt-2 text-sm text-gray-500">Check-ins after this time are marked late (for example 09:15).</p>
                 </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <FieldLabel>Leave Policy (Annual)</FieldLabel>
+                    <p className="mt-1 text-sm text-gray-500">Set yearly leave quotas per category. Unpaid leave is tracked automatically when quota is exhausted.</p>
+                  </div>
+                  {isStrictAdminUser ? (
+                    <Button type="button" size="sm" variant="secondary" onClick={addLeaveCategory}>
+                      Add Leave Type
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="mt-4 space-y-3">
+                  {leaveCategories.map((category, index) => (
+                    <div key={`${category.code || 'leave'}-${index}`} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[1fr_2fr_1fr_auto]">
+                      <div>
+                        <FieldLabel>Code</FieldLabel>
+                        <TextInput
+                          value={category.code}
+                          onChange={(event) => updateLeaveCategory(index, { code: event.target.value })}
+                          disabled={!isOrgEditable || !isStrictAdminUser}
+                          className={!isOrgEditable || !isStrictAdminUser ? 'bg-slate-50 text-slate-500' : ''}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Name</FieldLabel>
+                        <TextInput
+                          value={category.name}
+                          onChange={(event) => updateLeaveCategory(index, { name: event.target.value })}
+                          disabled={!isOrgEditable || !isStrictAdminUser}
+                          className={!isOrgEditable || !isStrictAdminUser ? 'bg-slate-50 text-slate-500' : ''}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Quota</FieldLabel>
+                        <TextInput
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={category.annual_quota}
+                          onChange={(event) => updateLeaveCategory(index, { annual_quota: event.target.value })}
+                          disabled={!isOrgEditable || !isStrictAdminUser}
+                          className={!isOrgEditable || !isStrictAdminUser ? 'bg-slate-50 text-slate-500' : ''}
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        {isStrictAdminUser ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="danger"
+                            onClick={() => removeLeaveCategory(index)}
+                            disabled={!isOrgEditable}
+                          >
+                            Remove
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {!isStrictAdminUser ? (
+                  <p className="mt-3 text-xs text-slate-500">Only admin can edit leave policy categories.</p>
+                ) : null}
               </div>
               {isOrgEditable ? (
                 <Button onClick={saveOrganization}>Save Changes</Button>

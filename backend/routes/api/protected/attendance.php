@@ -14,6 +14,7 @@ Route::get('/attendance/holidays', [AttendanceHolidayController::class, 'index']
 Route::get('/attendance/summary', [AttendanceController::class, 'summary'])->middleware('role:admin,manager');
 
 Route::get('/leave-requests', [LeaveRequestController::class, 'index']);
+Route::get('/leave-requests/balances', [LeaveRequestController::class, 'balances']);
 Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
 Route::post('/leave-requests/{id}/revoke-request', [LeaveRequestController::class, 'requestRevoke']);
 Route::get('/attendance-time-edit-requests', [AttendanceTimeEditRequestController::class, 'index']);

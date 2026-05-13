@@ -346,6 +346,7 @@ function App() {
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />
             <Route path="attendance" element={<Attendance />} />
+            <Route path="leave" element={<Attendance mode="leave" />} />
             <Route path="edit-time" element={<Attendance mode="time-edit" />} />
             <Route path="team" element={<Navigate to="/user-management" replace />} />
             <Route path="monitoring" element={<Navigate to="/monitoring/productive-time" replace />} />

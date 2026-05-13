@@ -246,9 +246,22 @@ class SettingsController extends Controller
             $this->deleteManagedPublicFile($existingLogoUrl, "organizations/{$organization->id}/branding/");
         }
 
+        $leavePolicySettings = is_array($existingSettings['leave_policy'] ?? null)
+            ? $existingSettings['leave_policy']
+            : [];
+        $leaveCategoriesInput = $this->resolveLeaveCategoriesInput($validated);
+        if ($leaveCategoriesInput !== null) {
+            if ($user->role !== 'admin') {
+                return response()->json(['message' => 'Only admins can update leave policy settings.'], 403);
+            }
+
+            $leavePolicySettings['categories'] = $this->normalizeLeaveCategories($leaveCategoriesInput);
+        }
+
         $updatedSettings = array_merge($existingSettings, [
             'attendance' => $attendanceSettings,
             'branding' => $brandingSettings,
+            'leave_policy' => $leavePolicySettings,
         ]);
 
         $organization->update([
@@ -267,6 +280,7 @@ class SettingsController extends Controller
                 'office_start_time' => $attendanceSettings['office_start_time'] ?? null,
                 'late_after_time' => $attendanceSettings['late_after_time'] ?? null,
                 'logo_url' => $brandingSettings['logo_url'] ?? null,
+                'leave_categories' => $leavePolicySettings['categories'] ?? [],
             ],
             request: $request
         );
@@ -301,6 +315,57 @@ class SettingsController extends Controller
         if (Storage::disk('public')->exists($relativePath)) {
             Storage::disk('public')->delete($relativePath);
         }
+    }
+
+    private function resolveLeaveCategoriesInput(array $validated): ?array
+    {
+        if (array_key_exists('leave_categories', $validated) && is_array($validated['leave_categories'])) {
+            return $validated['leave_categories'];
+        }
+
+        $rawJson = trim((string) ($validated['leave_categories_json'] ?? ''));
+        if ($rawJson === '') {
+            return null;
+        }
+
+        $decoded = json_decode($rawJson, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function normalizeLeaveCategories(array $categories): array
+    {
+        $fallback = [
+            ['code' => 'paid', 'name' => 'Paid Leave', 'annual_quota' => 21],
+            ['code' => 'sick', 'name' => 'Sick Leave', 'annual_quota' => 12],
+            ['code' => 'birthday', 'name' => 'Birthday Leave', 'annual_quota' => 1],
+        ];
+
+        $normalized = collect($categories)
+            ->map(function ($item) {
+                $code = strtolower(trim((string) data_get($item, 'code', '')));
+                $name = trim((string) data_get($item, 'name', ''));
+                $annualQuota = max(0.0, (float) data_get($item, 'annual_quota', 0));
+
+                if ($code === '' || $name === '' || $code === 'unpaid') {
+                    return null;
+                }
+
+                $normalizedCode = preg_replace('/[^a-z0-9_\-]/', '', str_replace(' ', '_', $code));
+                if (!$normalizedCode) {
+                    return null;
+                }
+
+                return [
+                    'code' => $normalizedCode,
+                    'name' => $name,
+                    'annual_quota' => round($annualQuota, 2),
+                ];
+            })
+            ->filter()
+            ->unique('code')
+            ->values();
+
+        return $normalized->isEmpty() ? $fallback : $normalized->all();
     }
 
     private function extractManagedPublicRelativePath(string $publicUrl): ?string
