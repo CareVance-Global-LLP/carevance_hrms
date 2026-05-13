@@ -1517,7 +1517,6 @@ class ReportController extends Controller
         }
 
         $matchedUsers = (clone $usersQuery)->orderBy('name')->limit(20)->get(['id', 'name', 'email', 'role']);
-        $analyticsUsers = (clone $usersQuery)->orderBy('name')->get(['id', 'name', 'email', 'role']);
         $selectedUserId = $request->filled('user_id')
             ? (int) $request->user_id
             : (int) ($matchedUsers->first()->id ?? 0);
@@ -1543,6 +1542,10 @@ class ReportController extends Controller
         if (!$this->canViewAll($currentUser) && $selectedUser->id !== $currentUser->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+
+        $analyticsUsers = $request->filled('user_id')
+            ? collect([$selectedUser])
+            : (clone $usersQuery)->orderBy('name')->limit(50)->get(['id', 'name', 'email', 'role']);
 
         try {
             $entries = TimeEntry::where('user_id', $selectedUser->id)
