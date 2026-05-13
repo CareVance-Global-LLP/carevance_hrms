@@ -1441,6 +1441,7 @@ class ReportController extends Controller
         Carbon $startDate,
         Carbon $endDate,
     ): string {
+        $exportTimezone = $this->resolveExportTimezone($currentUser);
         $allDatesInRange = collect(CarbonPeriod::create($startDate->copy()->startOfDay(), $endDate->copy()->startOfDay()))
             ->map(fn (Carbon $date) => $date->toDateString())
             ->values();
@@ -1667,7 +1668,7 @@ class ReportController extends Controller
                 }
 
                 if (in_array($fieldKey, ['first_check_in_at', 'last_check_out_at'], true)) {
-                    $cells[] = $this->csvValue($this->formatClockForExport($value));
+                    $cells[] = $this->csvValue($this->formatClockForExport($value, $exportTimezone));
                     continue;
                 }
 
@@ -1685,7 +1686,7 @@ class ReportController extends Controller
         return implode("\n", $lines);
     }
 
-    private function formatClockForExport(mixed $value): string
+    private function formatClockForExport(mixed $value, string $timezone): string
     {
         if ($value === null || $value === '') {
             return '';
@@ -1694,15 +1695,38 @@ class ReportController extends Controller
         if (is_numeric($value)) {
             $timestamp = (int) $value;
             if ($timestamp > 0) {
-                return Carbon::createFromTimestamp($timestamp)->format('g:i A');
+                return Carbon::createFromTimestamp($timestamp, 'UTC')
+                    ->setTimezone($timezone)
+                    ->format('g:i A');
             }
         }
 
         try {
-            return Carbon::parse((string) $value)->format('g:i A');
+            return Carbon::parse((string) $value)
+                ->setTimezone($timezone)
+                ->format('g:i A');
         } catch (\Throwable) {
             return '';
         }
+    }
+
+    private function resolveExportTimezone(User $currentUser): string
+    {
+        $userTimezone = is_array($currentUser->settings)
+            ? (string) ($currentUser->settings['timezone'] ?? '')
+            : '';
+        if ($userTimezone !== '' && in_array($userTimezone, timezone_identifiers_list(), true)) {
+            return $userTimezone;
+        }
+
+        $organizationTimezone = is_array($currentUser->organization?->settings)
+            ? (string) ($currentUser->organization->settings['timezone'] ?? '')
+            : '';
+        if ($organizationTimezone !== '' && in_array($organizationTimezone, timezone_identifiers_list(), true)) {
+            return $organizationTimezone;
+        }
+
+        return 'Asia/Kolkata';
     }
 
     private function resolveExportDepartment(User $user): string
