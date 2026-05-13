@@ -31,6 +31,80 @@ use Throwable;
 
 class ReportController extends Controller
 {
+    private const CUSTOM_EXPORT_ALLOWED_FIELDS = [
+        'start_date',
+        'end_date',
+        'employee_name',
+        'employee_email',
+        'employee_region',
+        'department',
+        'working_days',
+        'present_days',
+        'leave_days',
+        'late_days',
+        'absent_days',
+        'attendance_rate',
+        'tracked_time',
+        'worked_time',
+        'idle_time',
+        'working_time',
+        'overtime_time',
+        'first_check_in_at',
+        'last_check_out_at',
+    ];
+
+    private const CUSTOM_EXPORT_DEFAULT_FIELDS = [
+        'start_date',
+        'end_date',
+        'employee_name',
+        'employee_email',
+        'employee_region',
+        'department',
+        'working_days',
+        'present_days',
+        'leave_days',
+        'late_days',
+        'absent_days',
+        'attendance_rate',
+        'tracked_time',
+        'worked_time',
+        'idle_time',
+        'working_time',
+        'overtime_time',
+        'first_check_in_at',
+        'last_check_out_at',
+    ];
+
+    private const CUSTOM_EXPORT_DURATION_FIELDS = [
+        'tracked_time',
+        'worked_time',
+        'idle_time',
+        'working_time',
+        'overtime_time',
+    ];
+
+    private const CUSTOM_EXPORT_FIELD_LABELS = [
+        'start_date' => 'Start Date',
+        'end_date' => 'End Date',
+        'employee_name' => 'Employee Name',
+        'employee_email' => 'Employee Email',
+        'employee_region' => 'Employee Region',
+        'department' => 'Department',
+        'working_days' => 'Working Days',
+        'present_days' => 'Present Days',
+        'leave_days' => 'Leave Days',
+        'late_days' => 'Late Days',
+        'absent_days' => 'Absent Days',
+        'attendance_rate' => 'Attendance Rate (%)',
+        'tracked_time' => 'Tracked Time',
+        'worked_time' => 'Worked Time',
+        'idle_time' => 'Idle Time',
+        'working_time' => 'Working Time',
+        'overtime_time' => 'Overtime Time',
+        'first_check_in_at' => 'First Check-In',
+        'last_check_out_at' => 'Last Check-Out',
+    ];
+
     private const LIVE_MONITORING_UTILITY_TOOL_LABELS = [
         'snippingtool.exe',
         'snipping tool',
@@ -1198,6 +1272,9 @@ class ReportController extends Controller
             'user_ids.*' => 'integer',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
+            'export_scope' => 'nullable|string|in:employee,department',
+            'fields' => 'nullable|array',
+            'fields.*' => 'string',
         ]);
 
         $user = $request->user();
@@ -1211,45 +1288,64 @@ class ReportController extends Controller
             [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
         }
 
+        $scopedUsers = $this->resolveScopedExportUsers($request, $user);
+        $scopedUserIds = $scopedUsers
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $requestedScope = strtolower(trim((string) $request->input('export_scope', '')));
+        $requestedFields = collect((array) $request->input('fields', []))
+            ->map(fn ($field) => strtolower(trim((string) $field)))
+            ->filter(fn ($field) => in_array($field, self::CUSTOM_EXPORT_ALLOWED_FIELDS, true))
+            ->values();
+        $isCustomExport = $request->filled('export_scope') || $request->has('fields');
+
+        if ($isCustomExport) {
+            $selectedFields = $requestedFields;
+            if ($selectedFields->isEmpty()) {
+                $selectedFields = collect(self::CUSTOM_EXPORT_DEFAULT_FIELDS);
+            }
+
+            $selectedFieldSet = $selectedFields
+                ->map(fn ($field) => (string) $field)
+                ->flip();
+            $selectedFields = collect(self::CUSTOM_EXPORT_DEFAULT_FIELDS)
+                ->filter(fn ($field) => $selectedFieldSet->has((string) $field))
+                ->values();
+
+            $exportScope = in_array($requestedScope, ['employee', 'department'], true)
+                ? $requestedScope
+                : 'employee';
+
+            $csv = $this->buildCustomExportCsv(
+                $user,
+                $scopedUsers,
+                $selectedFields,
+                $exportScope,
+                $startDate,
+                $endDate
+            );
+            $fileName = sprintf(
+                'custom-export-%s-%s-to-%s.csv',
+                $exportScope,
+                $startDate->toDateString(),
+                $endDate->toDateString()
+            );
+
+            return response($csv, 200, [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+            ]);
+        }
+
         $entriesQuery = TimeEntry::with(['project', 'task', 'user'])
             ->whereBetween('start_time', [$startDate, $endDate]);
 
         if ($this->canViewAll($user) && $user->organization_id) {
-            $organizationUserIds = $this->visibleUserIds($user);
-
-            $selectedUserIds = collect($request->input('user_ids', []))
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn ($id) => $id > 0)
-                ->unique()
-                ->values();
-            $selectedGroupIds = collect($request->input('group_ids', []))
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn ($id) => $id > 0)
-                ->unique()
-                ->values();
-
-            if ($selectedGroupIds->isNotEmpty()) {
-                $groupUserIds = ReportGroup::query()
-                    ->where('organization_id', $user->organization_id)
-                    ->whereIn('id', $selectedGroupIds)
-                    ->with('users:id')
-                    ->get()
-                    ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
-                    ->map(fn ($id) => (int) $id)
-                    ->unique()
-                    ->values();
-
-                if ($selectedUserIds->isEmpty()) {
-                    $selectedUserIds = $groupUserIds;
-                } else {
-                    $selectedUserIds = $selectedUserIds->intersect($groupUserIds)->values();
-                }
-            }
-
-            $entriesQuery->whereIn(
-                'user_id',
-                $selectedUserIds->isNotEmpty() ? $selectedUserIds : $organizationUserIds
-            );
+            $entriesQuery->whereIn('user_id', $scopedUserIds->all());
         } else {
             $entriesQuery->where('user_id', $user->id);
         }
@@ -1281,6 +1377,316 @@ class ReportController extends Controller
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
         ]);
+    }
+
+    private function resolveScopedExportUsers(Request $request, User $currentUser): Collection
+    {
+        if (! $this->canViewAll($currentUser) || ! $currentUser->organization_id) {
+            return User::query()
+                ->whereKey($currentUser->id)
+                ->with('reportGroups:id,name')
+                ->get(['id', 'name', 'email', 'settings']);
+        }
+
+        $organizationUserIds = $this->visibleUserIds($currentUser)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $selectedUserIds = collect($request->input('user_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+        $selectedGroupIds = collect($request->input('group_ids', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($selectedGroupIds->isNotEmpty()) {
+            $groupUserIds = ReportGroup::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->whereIn('id', $selectedGroupIds)
+                ->with('users:id')
+                ->get()
+                ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            if ($selectedUserIds->isEmpty()) {
+                $selectedUserIds = $groupUserIds;
+            } else {
+                $selectedUserIds = $selectedUserIds->intersect($groupUserIds)->values();
+            }
+        }
+
+        $scopedUserIds = $selectedUserIds->isNotEmpty()
+            ? $selectedUserIds
+            : $organizationUserIds;
+
+        return User::query()
+            ->whereIn('id', $scopedUserIds->all())
+            ->with('reportGroups:id,name')
+            ->get(['id', 'name', 'email', 'settings']);
+    }
+
+    private function buildCustomExportCsv(
+        User $currentUser,
+        Collection $scopedUsers,
+        Collection $selectedFields,
+        string $exportScope,
+        Carbon $startDate,
+        Carbon $endDate,
+    ): string {
+        $allDatesInRange = collect(CarbonPeriod::create($startDate->copy()->startOfDay(), $endDate->copy()->startOfDay()))
+            ->map(fn (Carbon $date) => $date->toDateString())
+            ->values();
+        $workingDates = $allDatesInRange
+            ->reject(fn (string $date) => Carbon::parse($date)->isWeekend())
+            ->values();
+        $workingDateSet = $workingDates->flip();
+        $workingDaysCount = max(1, $workingDates->count());
+
+        $userIds = $scopedUsers
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $resolvedNow = now();
+        $entries = $userIds->isEmpty()
+            ? collect()
+            : TimeEntry::query()
+                ->whereIn('user_id', $userIds->all())
+                ->whereBetween('start_time', [$startDate, $endDate])
+                ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
+        $entriesByUser = $entries->groupBy(fn (TimeEntry $entry) => (int) $entry->user_id);
+
+        $idleSummary = $userIds->isEmpty()
+            ? ['by_user' => []]
+            : $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds->all(), $startDate, $endDate);
+        $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
+            ->mapWithKeys(fn ($duration, $userId) => [(int) $userId => (int) $duration])
+            ->all();
+
+        $attendanceRecords = $userIds->isEmpty() || ! $currentUser->organization_id
+            ? collect()
+            : AttendanceRecord::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->whereIn('user_id', $userIds->all())
+                ->whereDate('attendance_date', '>=', $startDate->toDateString())
+                ->whereDate('attendance_date', '<=', $endDate->toDateString())
+                ->with('punches')
+                ->get(['id', 'user_id', 'attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds', 'late_minutes']);
+        $attendanceByUser = $attendanceRecords->groupBy(fn (AttendanceRecord $record) => (int) $record->user_id);
+
+        $approvedLeavesByUser = $userIds->isEmpty() || ! $currentUser->organization_id
+            ? collect()
+            : LeaveRequest::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->whereIn('user_id', $userIds->all())
+                ->where('status', 'approved')
+                ->whereDate('start_date', '<=', $endDate->toDateString())
+                ->whereDate('end_date', '>=', $startDate->toDateString())
+                ->get(['user_id', 'start_date', 'end_date'])
+                ->groupBy(fn (LeaveRequest $leave) => (int) $leave->user_id);
+
+        $employeeRows = $scopedUsers->map(function (User $scopedUser) use (
+            $entriesByUser,
+            $resolvedNow,
+            $idleDurationByUser,
+            $attendanceByUser,
+            $approvedLeavesByUser,
+            $startDate,
+            $endDate,
+            $workingDateSet,
+            $workingDaysCount,
+        ) {
+            $userId = (int) $scopedUser->id;
+            $department = $this->resolveExportDepartment($scopedUser);
+            $records = $attendanceByUser->get($userId, collect());
+            $recordByDate = $records
+                ->keyBy(fn (AttendanceRecord $record) => Carbon::parse((string) $record->attendance_date)->toDateString());
+
+            $presentDates = $workingDateSet
+                ->keys()
+                ->filter(fn (string $date) => (bool) $recordByDate->get($date)?->check_in_at)
+                ->values();
+
+            $leaveDates = collect($approvedLeavesByUser->get($userId, collect()))
+                ->flatMap(function (LeaveRequest $leave) use ($startDate, $endDate) {
+                    $effectiveStart = Carbon::parse((string) $leave->start_date)->startOfDay();
+                    $effectiveEnd = Carbon::parse((string) $leave->end_date)->endOfDay();
+
+                    if ($effectiveStart->lessThan($startDate)) {
+                        $effectiveStart = $startDate->copy();
+                    }
+                    if ($effectiveEnd->greaterThan($endDate)) {
+                        $effectiveEnd = $endDate->copy();
+                    }
+
+                    if ($effectiveStart->greaterThan($effectiveEnd)) {
+                        return collect();
+                    }
+
+                    return collect(CarbonPeriod::create($effectiveStart->toDateString(), $effectiveEnd->toDateString()))
+                        ->filter(fn (Carbon $date) => ! $date->isWeekend())
+                        ->map(fn (Carbon $date) => $date->toDateString())
+                        ->values();
+                })
+                ->unique()
+                ->values();
+
+            $daysPresent = $presentDates->count();
+            $leaveDays = $leaveDates->count();
+            $absentDays = max(0, $workingDaysCount - $daysPresent - $leaveDays);
+            $lateDays = $records
+                ->filter(fn (AttendanceRecord $record) => (int) ($record->late_minutes ?? 0) > 0 && (bool) $record->check_in_at)
+                ->count();
+
+            $workedSeconds = (int) $records->sum(
+                fn (AttendanceRecord $record) => $this->calculateAttendanceWorkedSeconds($record)
+            );
+            $trackedSeconds = $this->timeEntryDurationService->sumEffectiveDuration(
+                $entriesByUser->get($userId, collect()),
+                $resolvedNow
+            );
+            $idleSeconds = (int) ($idleDurationByUser[$userId] ?? 0);
+            $workingSeconds = max(0, $trackedSeconds - $idleSeconds);
+            $overtimeSeconds = max(0, $workedSeconds - ($daysPresent * 8 * 3600));
+
+            $firstCheckInTimestamp = $records
+                ->filter(fn (AttendanceRecord $record) => (bool) $record->check_in_at)
+                ->map(fn (AttendanceRecord $record) => Carbon::parse((string) $record->check_in_at)->getTimestamp())
+                ->filter(fn ($timestamp) => is_int($timestamp) && $timestamp > 0)
+                ->min();
+            $lastCheckOutTimestamp = $records
+                ->filter(fn (AttendanceRecord $record) => (bool) $record->check_out_at)
+                ->map(fn (AttendanceRecord $record) => Carbon::parse((string) $record->check_out_at)->getTimestamp())
+                ->filter(fn ($timestamp) => is_int($timestamp) && $timestamp > 0)
+                ->max();
+
+            return [
+                'start_date' => "'".$startDate->toDateString(),
+                'end_date' => "'".$endDate->toDateString(),
+                'employee_name' => (string) $scopedUser->name,
+                'employee_email' => (string) $scopedUser->email,
+                'employee_region' => AttendanceHoliday::countryForSettings((array) $scopedUser->settings),
+                'department' => $department,
+                'working_days' => $workingDaysCount,
+                'present_days' => $daysPresent,
+                'leave_days' => $leaveDays,
+                'late_days' => $lateDays,
+                'absent_days' => $absentDays,
+                'attendance_rate' => round(($daysPresent / max(1, $workingDaysCount)) * 100, 2),
+                'tracked_time' => $trackedSeconds,
+                'worked_time' => $workedSeconds,
+                'idle_time' => $idleSeconds,
+                'working_time' => $workingSeconds,
+                'overtime_time' => $overtimeSeconds,
+                'first_check_in_at' => $firstCheckInTimestamp
+                    ? Carbon::createFromTimestamp($firstCheckInTimestamp)->toIso8601String()
+                    : null,
+                'last_check_out_at' => $lastCheckOutTimestamp
+                    ? Carbon::createFromTimestamp($lastCheckOutTimestamp)->toIso8601String()
+                    : null,
+            ];
+        })->values();
+
+        $rows = $exportScope === 'department'
+            ? $employeeRows
+                ->groupBy(fn (array $row) => (string) ($row['department'] ?? 'Unassigned'))
+                ->map(function (Collection $departmentRows, string $department) use ($workingDaysCount, $startDate, $endDate) {
+                    $employeeCount = max(1, $departmentRows->count());
+                    $expectedDays = max(1, $workingDaysCount * $employeeCount);
+
+                    return [
+                        'start_date' => "'".$startDate->toDateString(),
+                        'end_date' => "'".$endDate->toDateString(),
+                        'employee_name' => $department,
+                        'employee_email' => '',
+                        'employee_region' => '',
+                        'department' => $department,
+                        'working_days' => $workingDaysCount,
+                        'present_days' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['present_days'] ?? 0)),
+                        'leave_days' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['leave_days'] ?? 0)),
+                        'late_days' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['late_days'] ?? 0)),
+                        'absent_days' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['absent_days'] ?? 0)),
+                        'attendance_rate' => round(((int) $departmentRows->sum(fn (array $row) => (int) ($row['present_days'] ?? 0)) / $expectedDays) * 100, 2),
+                        'tracked_time' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['tracked_time'] ?? 0)),
+                        'worked_time' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['worked_time'] ?? 0)),
+                        'idle_time' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['idle_time'] ?? 0)),
+                        'working_time' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['working_time'] ?? 0)),
+                        'overtime_time' => (int) $departmentRows->sum(fn (array $row) => (int) ($row['overtime_time'] ?? 0)),
+                        'first_check_in_at' => $departmentRows
+                            ->pluck('first_check_in_at')
+                            ->filter()
+                            ->sort()
+                            ->first(),
+                        'last_check_out_at' => $departmentRows
+                            ->pluck('last_check_out_at')
+                            ->filter()
+                            ->sortDesc()
+                            ->first(),
+                    ];
+                })
+                ->values()
+            : $employeeRows;
+
+        $headers = [];
+        foreach ($selectedFields as $field) {
+            $label = self::CUSTOM_EXPORT_FIELD_LABELS[(string) $field] ?? (string) $field;
+            if (in_array((string) $field, self::CUSTOM_EXPORT_DURATION_FIELDS, true)) {
+                $headers[] = $label.' (Minutes)';
+                $headers[] = $label.' (Hours)';
+                continue;
+            }
+
+            $headers[] = $label;
+        }
+
+        $lines = [implode(',', array_map(fn ($header) => $this->csvValue((string) $header), $headers))];
+
+        foreach ($rows as $row) {
+            $cells = [];
+            foreach ($selectedFields as $field) {
+                $fieldKey = (string) $field;
+                $value = $row[$fieldKey] ?? null;
+
+                if (in_array($fieldKey, self::CUSTOM_EXPORT_DURATION_FIELDS, true)) {
+                    $seconds = max(0, (int) $value);
+                    $cells[] = (string) round($seconds / 60, 2);
+                    $cells[] = (string) round($seconds / 3600, 2);
+                    continue;
+                }
+
+                if (is_numeric($value) && ! is_string($value)) {
+                    $cells[] = (string) $value;
+                    continue;
+                }
+
+                $cells[] = $this->csvValue((string) ($value ?? ''));
+            }
+
+            $lines[] = implode(',', $cells);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function resolveExportDepartment(User $user): string
+    {
+        $departments = collect($user->reportGroups)
+            ->pluck('name')
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->values();
+
+        return (string) ($departments->first() ?? 'Unassigned');
     }
 
     public function attendance(Request $request)
