@@ -1393,7 +1393,7 @@ export default function AdminDashboard() {
               aria-label="Select dashboard employee"
               value={selectedEmployee?.id || ''}
               onChange={(event) => setSelectedEmployeeId(Number(event.target.value) || null)}
-              className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 outline-none focus:border-blue-400"
             >
               {scopeEmployeeMatches.length ? scopeEmployeeMatches.map((employee) => (
                 <option key={employee.id} value={employee.id}>{employee.name} - {employee.department}</option>
