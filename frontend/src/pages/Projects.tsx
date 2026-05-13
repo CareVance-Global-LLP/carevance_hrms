@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { groupApi, projectApi } from '@/services/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
+import { FieldLabel, SelectInput } from '@/components/ui/FormField';
 import { Plus, Edit2, Trash2, Clock, DollarSign } from 'lucide-react';
 import type { Project } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 const defaultColors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6'];
 
 export default function Projects() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -47,6 +50,14 @@ export default function Projects() {
     queryKey: queryKeys.groups,
     queryFn: async () => (await groupApi.getAll()).data?.data || [],
   });
+  const groups = groupsQuery.data || [];
+  const isManagerWithSingleGroup = user?.role === 'manager' && groups.length === 1;
+  const managerGroupId = isManagerWithSingleGroup ? String(groups[0].id) : '';
+
+  useEffect(() => {
+    if (!isManagerWithSingleGroup) return;
+    setFormData((current) => (current.group_id === managerGroupId ? current : { ...current, group_id: managerGroupId }));
+  }, [isManagerWithSingleGroup, managerGroupId]);
 
   const saveProjectMutation = useMutation({
     mutationFn: async (data: Partial<Project>) => {
@@ -224,18 +235,23 @@ export default function Projects() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
-                <select
-                  required
-                  value={formData.group_id}
-                  onChange={(e) => setFormData({ ...formData, group_id: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">Select group</option>
-                  {(groupsQuery.data || []).map((group) => (
-                    <option key={group.id} value={group.id}>{group.name}</option>
-                  ))}
-                </select>
+                <FieldLabel>Group</FieldLabel>
+                {isManagerWithSingleGroup ? (
+                  <div className="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700">
+                    {groups[0]?.name || 'Assigned group'}
+                  </div>
+                ) : (
+                  <SelectInput
+                    required
+                    value={formData.group_id}
+                    onChange={(e) => setFormData({ ...formData, group_id: e.target.value })}
+                  >
+                    <option value="">Select group</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>{group.name}</option>
+                    ))}
+                  </SelectInput>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>

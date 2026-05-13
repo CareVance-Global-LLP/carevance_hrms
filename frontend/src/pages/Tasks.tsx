@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, Clock3, Edit2, Plus, Search, TimerReset, Trash2, UserPlus2, UserRound, Users, Users2, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -136,13 +136,24 @@ export default function Tasks() {
   const groups = groupsQuery.data || [];
   const users = usersQuery.data || [];
   const projects = projectsQuery.data || [];
+  const isManagerWithSingleGroup = user?.role === 'manager' && groups.length === 1;
+  const managerGroupId = isManagerWithSingleGroup ? String(groups[0].id) : '';
+  const resolvedGroupId = taskForm.group_id || managerGroupId;
+
+  useEffect(() => {
+    if (!isManagerWithSingleGroup) return;
+    setTaskForm((current) => {
+      if (current.group_id === managerGroupId) return current;
+      return { ...current, group_id: managerGroupId, project_id: '', assignee_id: '', assignee_ids: [] };
+    });
+  }, [isManagerWithSingleGroup, managerGroupId]);
   const internalUsers = useMemo(
     () => users.filter((member) => member.role !== 'client'),
     [users]
   );
   const canManageGroupMember = (member: User) => member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
   const isEligibleForDirectGroupAdd = (member: User) => canManageGroupMember(member) && (member.groups || []).length === 0;
-  const selectedGroupId = taskForm.group_id ? Number(taskForm.group_id) : null;
+  const selectedGroupId = resolvedGroupId ? Number(resolvedGroupId) : null;
   const availableAssignees = useMemo(
     () => users.filter((member) => !selectedGroupId || member.groups?.some((group) => group.id === selectedGroupId)),
     [selectedGroupId, users]
@@ -892,14 +903,14 @@ export default function Tasks() {
             </div>
             <form className="mt-6 space-y-4" onSubmit={(event) => {
               event.preventDefault();
-              if (!taskForm.group_id) {
+              if (!resolvedGroupId) {
                 setFeedback({ tone: 'error', message: 'Select a group before saving this task.' });
                 return;
               }
               void saveTaskMutation.mutate({
                 title: taskForm.title.trim(),
                 description: taskForm.description.trim() || undefined,
-                group_id: Number(taskForm.group_id),
+                group_id: Number(resolvedGroupId),
                 project_id: taskForm.project_id ? Number(taskForm.project_id) : null,
                 assignee_id: taskForm.assignee_id ? Number(taskForm.assignee_id) : null,
                 assignee_ids: taskForm.assignee_ids.map((id) => Number(id)),
@@ -930,15 +941,21 @@ export default function Tasks() {
                       </button>
                     ) : null}
                   </div>
-                  <SelectInput required value={taskForm.group_id} onChange={(event) => setTaskForm((current) => ({ ...current, group_id: event.target.value, project_id: '', assignee_id: '', assignee_ids: [] }))}>
-                    <option value="">Select group</option>
-                    {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-                  </SelectInput>
+                  {isManagerWithSingleGroup ? (
+                    <div className="min-h-11 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700">
+                      {groups[0]?.name || 'Assigned group'}
+                    </div>
+                  ) : (
+                    <SelectInput required value={taskForm.group_id} onChange={(event) => setTaskForm((current) => ({ ...current, group_id: event.target.value, project_id: '', assignee_id: '', assignee_ids: [] }))}>
+                      <option value="">Select group</option>
+                      {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                    </SelectInput>
+                  )}
                 </div>
                 <div>
                   <FieldLabel>Project</FieldLabel>
-                  <SelectInput value={taskForm.project_id} onChange={(event) => setTaskForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!taskForm.group_id}>
-                    <option value="">{!taskForm.group_id ? 'Select group first' : 'No project'}</option>
+                  <SelectInput value={taskForm.project_id} onChange={(event) => setTaskForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!resolvedGroupId}>
+                    <option value="">{!resolvedGroupId ? 'Select group first' : 'No project'}</option>
                     {availableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                   </SelectInput>
                 </div>
@@ -948,11 +965,11 @@ export default function Tasks() {
                     <button
                       type="button"
                       className="flex min-h-11 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800 shadow-sm transition hover:border-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                      disabled={!taskForm.group_id}
+                      disabled={!resolvedGroupId}
                       onClick={() => setAssigneeDropdownOpen((current) => !current)}
                     >
                       <span className="truncate">
-                        {!taskForm.group_id
+                        {!resolvedGroupId
                           ? 'Select group first'
                           : taskForm.assignee_ids.length === 0
                             ? 'Unassigned'
@@ -960,7 +977,7 @@ export default function Tasks() {
                       </span>
                       <span className="text-slate-500">{assigneeDropdownOpen ? '▴' : '▾'}</span>
                     </button>
-                    {assigneeDropdownOpen && taskForm.group_id ? (
+                    {assigneeDropdownOpen && resolvedGroupId ? (
                       <div className="absolute z-30 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
                         {availableAssignees.length === 0 ? (
                           <p className="px-2 py-2 text-xs text-slate-500">No employees available for this group.</p>
@@ -994,7 +1011,7 @@ export default function Tasks() {
                       </div>
                     ) : null}
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">{!taskForm.group_id ? 'Select group first' : 'Click employees in dropdown to select multiple assignees.'}</p>
+                  <p className="mt-2 text-xs text-slate-500">{!resolvedGroupId ? 'Select group first' : 'Click employees in dropdown to select multiple assignees.'}</p>
                 </div>
                 <div>
                   <FieldLabel>Status</FieldLabel>
