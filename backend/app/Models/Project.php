@@ -11,6 +11,7 @@ class Project extends Model
 {
     protected $fillable = [
         'organization_id',
+        'group_id',
         'name',
         'description',
         'budget',
@@ -33,6 +34,11 @@ class Project extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class);
+    }
+
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(Group::class);
     }
 
     public function timeEntries(): HasMany

@@ -343,10 +343,10 @@ export const taskApi = {
   get: (id: number) => 
     api.get<Task>(`/tasks/${id}`),
   
-  create: (data: Partial<Task>) => 
+  create: (data: Partial<Task> & { assignee_ids?: number[] }) => 
     api.post<Task>('/tasks', data),
   
-  update: (id: number, data: Partial<Task>) => 
+  update: (id: number, data: Partial<Task> & { assignee_ids?: number[] }) => 
     api.put<Task>(`/tasks/${id}`, data),
   
   delete: (id: number) => 

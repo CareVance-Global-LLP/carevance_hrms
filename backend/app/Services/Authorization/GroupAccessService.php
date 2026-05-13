@@ -2,6 +2,7 @@
 
 namespace App\Services\Authorization;
 
+use App\Models\EmployeeWorkInfo;
 use App\Models\Group;
 use App\Models\Task;
 use App\Models\User;
@@ -16,7 +17,7 @@ class GroupAccessService
 
     public function canManageTasks(?User $user): bool
     {
-        return $this->canManageGroups($user);
+        return in_array($user?->role, ['admin', 'manager'], true);
     }
 
     public function visibleGroupsQuery(?User $user): Builder
@@ -35,7 +36,16 @@ class GroupAccessService
             return $query;
         }
 
-        if (in_array($user->role, ['manager', 'employee'], true)) {
+        if ($user->role === 'manager') {
+            $managedGroupIds = $this->managedGroupIds($user);
+            if (!empty($managedGroupIds)) {
+                return $query->whereIn('id', $managedGroupIds);
+            }
+
+            return $query->whereHas('users', fn (Builder $builder) => $builder->whereKey($user->id));
+        }
+
+        if ($user->role === 'employee') {
             return $query->whereHas('users', fn (Builder $builder) => $builder->whereKey($user->id));
         }
 
@@ -44,7 +54,7 @@ class GroupAccessService
 
     public function manageableGroupsQuery(?User $user): Builder
     {
-        if (!$user || !$user->organization_id || !$this->canManageGroups($user)) {
+        if (!$user || !$user->organization_id || !$this->canManageTasks($user)) {
             return Group::query()->whereRaw('1 = 0');
         }
 
@@ -54,7 +64,27 @@ class GroupAccessService
                 ->where('is_active', true);
         }
 
-        return $this->visibleGroupsQuery($user);
+        if ($user->role === 'manager') {
+            $managedGroupIds = $this->managedGroupIds($user);
+            if (!empty($managedGroupIds)) {
+                return Group::query()
+                    ->where('organization_id', $user->organization_id)
+                    ->where('is_active', true)
+                    ->whereIn('id', $managedGroupIds);
+            }
+        }
+
+        if ($user->role === 'manager') {
+            $managedGroupIds = $this->managedGroupIds($user);
+            if (!empty($managedGroupIds)) {
+                return Group::query()
+                    ->where('organization_id', $user->organization_id)
+                    ->where('is_active', true)
+                    ->whereIn('id', $managedGroupIds);
+            }
+        }
+
+        return Group::query()->whereRaw('1 = 0');
     }
 
     public function visibleGroupIds(?User $user): ?array
@@ -103,6 +133,32 @@ class GroupAccessService
             ->exists();
     }
 
+    private function managedGroupIds(User $user): array
+    {
+        $fromReporting = EmployeeWorkInfo::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('reporting_manager_id', $user->id)
+            ->whereNotNull('report_group_id')
+            ->pluck('report_group_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $fromMembership = $user->groups()
+            ->where('groups.organization_id', $user->organization_id)
+            ->pluck('groups.id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        return collect([...$fromReporting, ...$fromMembership])
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     public function applyTaskVisibilityScope(Builder $query, ?User $user): Builder
     {
         if (!$user || !$user->organization_id) {
@@ -132,7 +188,8 @@ class GroupAccessService
         if ($user->role === 'employee') {
             $query->where(function (Builder $builder) use ($user) {
                 $builder->whereNull('assignee_id')
-                    ->orWhere('assignee_id', $user->id);
+                    ->orWhere('assignee_id', $user->id)
+                    ->orWhereHas('assignees', fn (Builder $assigneeQuery) => $assigneeQuery->where('users.id', $user->id));
             });
         }
 
@@ -160,7 +217,9 @@ class GroupAccessService
         }
 
         if ($user->role === 'employee') {
-            return $task->assignee_id === null || (int) $task->assignee_id === (int) $user->id;
+            return $task->assignee_id === null
+                || (int) $task->assignee_id === (int) $user->id
+                || $task->assignees()->where('users.id', $user->id)->exists();
         }
 
         return true;

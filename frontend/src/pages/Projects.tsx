@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { projectApi } from '@/services/api';
+import { groupApi, projectApi } from '@/services/api';
 import { queryKeys } from '@/lib/queryKeys';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { Plus, Edit2, Trash2, Clock, DollarSign } from 'lucide-react';
@@ -15,12 +15,14 @@ export default function Projects() {
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [formData, setFormData] = useState<{
     name: string;
+    group_id: string;
     description: string;
     color: string;
     budget: string;
     status: string;
   }>({
     name: '',
+    group_id: '',
     description: '',
     color: defaultColors[0],
     budget: '',
@@ -39,6 +41,11 @@ export default function Projects() {
       const response = await projectApi.getAll();
       return response.data;
     },
+  });
+
+  const groupsQuery = useQuery({
+    queryKey: queryKeys.groups,
+    queryFn: async () => (await groupApi.getAll()).data?.data || [],
   });
 
   const saveProjectMutation = useMutation({
@@ -86,6 +93,7 @@ export default function Projects() {
     setFeedback(null);
     const data: Partial<Project> = {
       ...formData,
+      group_id: formData.group_id ? Number(formData.group_id) : undefined,
       status: formData.status as Project['status'],
       budget: formData.budget ? parseFloat(formData.budget) : undefined,
     };
@@ -99,7 +107,7 @@ export default function Projects() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', description: '', color: defaultColors[0], budget: '', status: 'active' });
+    setFormData({ name: '', group_id: '', description: '', color: defaultColors[0], budget: '', status: 'active' });
     setEditingProject(null);
   };
 
@@ -107,6 +115,7 @@ export default function Projects() {
     setEditingProject(project);
     setFormData({
       name: project.name,
+      group_id: project.group_id ? String(project.group_id) : '',
       description: project.description || '',
       color: project.color,
       budget: project.budget?.toString() || '',
@@ -115,14 +124,14 @@ export default function Projects() {
     setShowModal(true);
   };
 
-  if (isLoading) {
+  if (isLoading || groupsQuery.isLoading) {
     return <PageLoadingState label="Loading projects..." />;
   }
 
-  if (isError) {
+  if (isError || groupsQuery.isError) {
     return (
       <PageErrorState
-        message={(error as any)?.response?.data?.message || 'Failed to load projects.'}
+        message={(error as any)?.response?.data?.message || (groupsQuery.error as any)?.response?.data?.message || 'Failed to load projects.'}
         onRetry={() => refetch()}
       />
     );
@@ -164,7 +173,9 @@ export default function Projects() {
                   <div className="h-10 w-10 rounded-lg" style={{ backgroundColor: project.color }} />
                   <div>
                     <h3 className="font-semibold text-gray-900">{project.name}</h3>
-                    <p className="text-sm text-gray-500 capitalize">{project.status.replace('_', ' ')}</p>
+                    <p className="text-sm text-gray-500 capitalize">
+                      {project.group?.name ? `${project.group.name} - ` : ''}{project.status.replace('_', ' ')}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -211,6 +222,20 @@ export default function Projects() {
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Group</label>
+                <select
+                  required
+                  value={formData.group_id}
+                  onChange={(e) => setFormData({ ...formData, group_id: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Select group</option>
+                  {(groupsQuery.data || []).map((group) => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>

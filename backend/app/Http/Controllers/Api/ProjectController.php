@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\Group;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Authorization\GroupAccessService;
@@ -26,8 +27,11 @@ class ProjectController extends Controller
             return response()->json([]);
         }
 
-        $projects = Project::with('tasks')
+        $projects = Project::with(['tasks', 'group'])
             ->where('organization_id', $user->organization_id)
+            ->when(($visibleGroupIds = $this->groupAccessService->visibleGroupIds($user)) !== null, function (Builder $query) use ($visibleGroupIds) {
+                $query->whereIn('group_id', $visibleGroupIds);
+            })
             ->when($this->hasRestrictedAssignedProjects($user), function (Builder $query) use ($user) {
                 $query->whereIn('id', $this->assignedProjectIds($user));
             })
@@ -41,6 +45,7 @@ class ProjectController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
+            'group_id' => 'required|integer|exists:groups,id',
             'description' => 'nullable|string',
             'budget' => 'nullable|numeric',
             'deadline' => 'nullable|date',
@@ -52,8 +57,18 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Organization is required.'], 422);
         }
 
+        if (!$this->groupAccessService->canManageTasks($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $group = $this->resolveManageableGroup($user, (int) $request->group_id);
+        if (!$group) {
+            return response()->json(['message' => 'Invalid group for your role.'], 422);
+        }
+
         $project = Project::create([
             'name' => $request->name,
+            'group_id' => $group->id,
             'description' => $request->description,
             'budget' => $request->budget,
             'deadline' => $request->deadline,
@@ -61,7 +76,7 @@ class ProjectController extends Controller
             'organization_id' => $user->organization_id,
         ]);
 
-        return response()->json($project, 201);
+        return response()->json($project->load('group'), 201);
     }
 
     public function show(Project $project)
@@ -76,7 +91,7 @@ class ProjectController extends Controller
             $this->groupAccessService->applyTaskVisibilityScope($taskQuery, $user);
         }
 
-        $project->load('timeEntries');
+        $project->load(['timeEntries', 'group']);
         $project->setRelation('tasks', $taskQuery->get());
 
         return response()->json($project);
@@ -90,15 +105,30 @@ class ProjectController extends Controller
 
         $request->validate([
             'name' => 'sometimes|string|max:255',
+            'group_id' => 'sometimes|integer|exists:groups,id',
             'description' => 'nullable|string',
             'budget' => 'nullable|numeric',
             'deadline' => 'nullable|date',
             'status' => 'nullable|in:active,completed,archived',
         ]);
 
-        $project->update($request->only(['name', 'description', 'budget', 'deadline', 'status']));
+        $user = $request->user();
+        if (!$user || !$this->groupAccessService->canManageTasks($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
-        return response()->json($project);
+        $payload = $request->only(['name', 'description', 'budget', 'deadline', 'status']);
+        if ($request->exists('group_id')) {
+            $group = $this->resolveManageableGroup($user, (int) $request->group_id);
+            if (!$group) {
+                return response()->json(['message' => 'Invalid group for your role.'], 422);
+            }
+            $payload['group_id'] = $group->id;
+        }
+
+        $project->update($payload);
+
+        return response()->json($project->fresh()->load('group'));
     }
 
     public function destroy(Project $project)
@@ -189,6 +219,11 @@ class ProjectController extends Controller
             return false;
         }
 
+        $visibleGroupIds = $this->groupAccessService->visibleGroupIds($user);
+        if (is_array($visibleGroupIds) && !in_array((int) $project->group_id, $visibleGroupIds, true)) {
+            return false;
+        }
+
         if (!$this->hasRestrictedAssignedProjects($user)) {
             return true;
         }
@@ -204,6 +239,9 @@ class ProjectController extends Controller
         }
 
         return Project::where('organization_id', $user->organization_id)
+            ->when(($visibleGroupIds = $this->groupAccessService->visibleGroupIds($user)) !== null, function (Builder $query) use ($visibleGroupIds) {
+                $query->whereIn('group_id', $visibleGroupIds);
+            })
             ->when($this->hasRestrictedAssignedProjects($user), function (Builder $query) use ($user) {
                 $query->whereIn('id', $this->assignedProjectIds($user));
             })
@@ -222,5 +260,18 @@ class ProjectController extends Controller
     private function hasRestrictedAssignedProjects(User $user): bool
     {
         return $user->role === 'employee' && !empty($this->assignedProjectIds($user));
+    }
+
+    private function resolveManageableGroup(User $user, int $groupId): ?Group
+    {
+        $group = Group::query()
+            ->where('organization_id', $user->organization_id)
+            ->find($groupId);
+
+        if (!$group) {
+            return null;
+        }
+
+        return $this->groupAccessService->canManageGroup($user, $group) ? $group : null;
     }
 }
