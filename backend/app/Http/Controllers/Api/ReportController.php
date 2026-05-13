@@ -1589,10 +1589,10 @@ class ReportController extends Controller
                 'working_time' => $workingSeconds,
                 'overtime_time' => $overtimeSeconds,
                 'first_check_in_at' => $firstCheckInTimestamp
-                    ? Carbon::createFromTimestamp($firstCheckInTimestamp)->toIso8601String()
+                    ? (int) $firstCheckInTimestamp
                     : null,
                 'last_check_out_at' => $lastCheckOutTimestamp
-                    ? Carbon::createFromTimestamp($lastCheckOutTimestamp)->toIso8601String()
+                    ? (int) $lastCheckOutTimestamp
                     : null,
             ];
         })->values();
@@ -1625,13 +1625,15 @@ class ReportController extends Controller
                         'first_check_in_at' => $departmentRows
                             ->pluck('first_check_in_at')
                             ->filter()
-                            ->sort()
-                            ->first(),
+                            ->map(fn ($value) => (int) $value)
+                            ->filter(fn ($value) => $value > 0)
+                            ->min(),
                         'last_check_out_at' => $departmentRows
                             ->pluck('last_check_out_at')
                             ->filter()
-                            ->sortDesc()
-                            ->first(),
+                            ->map(fn ($value) => (int) $value)
+                            ->filter(fn ($value) => $value > 0)
+                            ->max(),
                     ];
                 })
                 ->values()
@@ -1664,6 +1666,11 @@ class ReportController extends Controller
                     continue;
                 }
 
+                if (in_array($fieldKey, ['first_check_in_at', 'last_check_out_at'], true)) {
+                    $cells[] = $this->csvValue($this->formatClockForExport($value));
+                    continue;
+                }
+
                 if (is_numeric($value) && ! is_string($value)) {
                     $cells[] = (string) $value;
                     continue;
@@ -1676,6 +1683,26 @@ class ReportController extends Controller
         }
 
         return implode("\n", $lines);
+    }
+
+    private function formatClockForExport(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        if (is_numeric($value)) {
+            $timestamp = (int) $value;
+            if ($timestamp > 0) {
+                return Carbon::createFromTimestamp($timestamp)->format('g:i A');
+            }
+        }
+
+        try {
+            return Carbon::parse((string) $value)->format('g:i A');
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     private function resolveExportDepartment(User $user): string
