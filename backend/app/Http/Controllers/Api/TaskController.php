@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Group;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Authorization\GroupAccessService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Illuminate\Support\Collection;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -45,7 +47,7 @@ class TaskController extends Controller
         }
 
         $tasks = $this->scopedTasksQuery($user)
-            ->with(['group', 'project', 'assignee', 'assignees', 'timeEntries:id,task_id,start_time,end_time,duration'])
+            ->with(['group', 'project', 'assignee', 'assignees'])
             ->withSum('timeEntries', 'duration')
             ->when($request->filled('group_id'), function (Builder $query) use ($request, $user) {
                 $groupId = (int) $request->group_id;
@@ -67,14 +69,29 @@ class TaskController extends Controller
             ->get();
 
         $resolvedNow = now();
-        $tasks->each(function (Task $task) use ($resolvedNow) {
-            $effectiveTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration(
-                $task->timeEntries ?? collect(),
-                $resolvedNow
-            );
+        $taskIds = $tasks->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->all();
+        $runningEntriesByTaskId = empty($taskIds)
+            ? collect()
+            : TimeEntry::query()
+                ->whereIn('task_id', $taskIds)
+                ->whereNull('end_time')
+                ->get(['task_id', 'start_time', 'end_time', 'duration'])
+                ->groupBy('task_id');
 
-            $task->setAttribute('time_entries_sum_duration', $effectiveTrackedDuration);
-            $task->unsetRelation('timeEntries');
+        $tasks->each(function (Task $task) use ($resolvedNow, $runningEntriesByTaskId) {
+            $baseTrackedDuration = max(0, (int) ($task->time_entries_sum_duration ?? 0));
+            $runningEntries = $runningEntriesByTaskId->get((int) $task->id, collect());
+            $runningDurationAdjustment = collect($runningEntries)->sum(function ($entry) use ($resolvedNow) {
+                $effective = $this->timeEntryDurationService->effectiveDuration($entry, $resolvedNow);
+                $stored = max(0, (int) data_get($entry, 'duration', 0));
+
+                return max(0, $effective - $stored);
+            });
+
+            $task->setAttribute('time_entries_sum_duration', (int) ($baseTrackedDuration + $runningDurationAdjustment));
         });
 
         return response()->json($tasks);
@@ -312,10 +329,7 @@ class TaskController extends Controller
         $query = Task::query();
         $this->groupAccessService->applyTaskVisibilityScope($query, $user);
         if ($user->role === 'employee') {
-            $assignedProjectIds = $user->assignedProjects()
-                ->pluck('projects.id')
-                ->map(fn ($id) => (int) $id)
-                ->all();
+            $assignedProjectIds = $this->assignedProjectIds($user);
 
             if (!empty($assignedProjectIds)) {
                 $query->whereIn('project_id', $assignedProjectIds);
@@ -323,6 +337,22 @@ class TaskController extends Controller
         }
 
         return $query;
+    }
+
+    private function assignedProjectIds(User $user): array
+    {
+        try {
+            return $user->assignedProjects()
+                ->pluck('projects.id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+        } catch (QueryException $exception) {
+            if (str_contains(strtolower($exception->getMessage()), 'project_user')) {
+                return [];
+            }
+
+            throw $exception;
+        }
     }
 
     private function resolveManagedGroup(User $user, int $groupId): Group|JsonResponse

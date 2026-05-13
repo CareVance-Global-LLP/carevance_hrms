@@ -171,7 +171,7 @@ class UsageProcessingService
 
     public function summarizeIdleDurations(iterable $logs, iterable $activityEvents = []): array
     {
-        $normalizedLogs = $this->normalizeUsageLogsForIdle($logs);
+        $normalizedLogs = $this->normalizeUsageLogs($logs);
         $idleResult = $this->detectAndFilterIdleTime($normalizedLogs, $activityEvents);
         $idleLogs = collect($idleResult['idle_logs'] ?? [])->values();
 
@@ -1002,6 +1002,7 @@ class UsageProcessingService
     {
         $threshold = $this->resolveIdleThresholdSeconds();
         $rows = [];
+        $gapRows = [];
 
         foreach ($activeLogs as $activeLog) {
             $timestamps = collect((array) ($activeLog['source_recorded_timestamps'] ?? []))
@@ -1032,7 +1033,46 @@ class UsageProcessingService
             }
         }
 
-        return collect($rows)->filter()->values();
+        $groupedLogs = $activeLogs
+            ->groupBy(fn (array $row) => sprintf('%d|%d', (int) ($row['user_id'] ?? 0), (int) ($row['time_entry_id'] ?? 0)));
+
+        foreach ($groupedLogs as $logs) {
+            $sortedLogs = $logs->sortBy([
+                ['start_timestamp', 'asc'],
+                ['end_timestamp', 'asc'],
+                ['id', 'asc'],
+            ])->values();
+
+            if ($sortedLogs->count() < 2) {
+                continue;
+            }
+
+            for ($index = 0; $index < $sortedLogs->count() - 1; $index++) {
+                $current = $sortedLogs[$index];
+                $next = $sortedLogs[$index + 1];
+
+                $currentEnd = (int) ($current['end_timestamp'] ?? 0);
+                $nextStart = (int) ($next['start_timestamp'] ?? 0);
+                if ($nextStart <= $currentEnd) {
+                    continue;
+                }
+
+                $gapDuration = $nextStart - $currentEnd;
+                if ($gapDuration <= $threshold) {
+                    continue;
+                }
+
+                $idleStart = $currentEnd + $threshold;
+                $idleEnd = $nextStart;
+                if ($idleEnd <= $idleStart) {
+                    continue;
+                }
+
+                $gapRows[] = $this->makeIdleRowFromRange($next, $idleStart, $idleEnd);
+            }
+        }
+
+        return collect($rows)->concat($gapRows)->filter()->values();
     }
 
     private function makeIdleRowFromRange(array $sourceRow, int $startTimestamp, int $endTimestamp): ?array
