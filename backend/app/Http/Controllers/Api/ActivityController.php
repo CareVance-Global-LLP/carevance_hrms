@@ -249,7 +249,7 @@ class ActivityController extends Controller
     private function formatApiTimestamp(mixed $value): ?string
     {
         if ($value instanceof Carbon) {
-            return $value->toIso8601String();
+            return ExternalTimestamp::parseToAppTimezone($value)?->toIso8601String();
         }
 
         if ($value === null || $value === '') {

@@ -165,7 +165,7 @@ const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: stri
   employees: {
     eyebrow: 'Employee Management',
     title: 'Employees',
-    description: 'Employee directory with work status, tracked time, and a current 360 summary for the selected person.',
+    description: 'Employee directory with work status, tracked time, and role management controls.',
   },
   teams: {
     eyebrow: 'Employee Management',
@@ -241,10 +241,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     enabled: mode === 'invitations' && allowedRoles.length > 0,
   });
 
-  const selectedUser = useMemo(
-    () => (usersQuery.data || []).find((item: any) => item.id === selectedUserId) || (usersQuery.data || [])[0] || null,
-    [selectedUserId, usersQuery.data]
-  );
   const settingsTargetUser = useMemo(
     () => (usersQuery.data || []).find((item: any) => item.id === settingsUserId) || null,
     [settingsUserId, usersQuery.data]
@@ -304,16 +300,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       }
     };
   }, [settingsDraft, settingsTargetUser?.id]);
-
-  const profileQuery = useQuery({
-    queryKey: ['employee-workspace-profile', selectedUser?.id],
-    queryFn: async () => {
-      if (!selectedUser?.id) return null;
-      const response = await userApi.getProfile360(selectedUser.id);
-      return response.data;
-    },
-    enabled: mode === 'employees' && Boolean(selectedUser?.id),
-  });
 
   const inviteMutation = useMutation({
     mutationFn: async () => {
@@ -384,10 +370,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     },
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Additional settings updated successfully.' });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-profile'] }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to update additional settings.' });
@@ -405,7 +388,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-profile'] }),
       ]);
     },
     onError: (error: any) => {
@@ -413,8 +395,8 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     },
   });
 
-  const isLoading = usersQuery.isLoading || groupsQuery.isLoading || membersQuery.isLoading || profileQuery.isLoading || invitationsQuery.isLoading;
-  const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || profileQuery.isError || invitationsQuery.isError;
+  const isLoading = usersQuery.isLoading || groupsQuery.isLoading || membersQuery.isLoading || invitationsQuery.isLoading;
+  const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
   const users = usersQuery.data || [];
   const groups = groupsQuery.data || [];
@@ -510,20 +492,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           (groupsQuery.error as any)?.response?.data?.message ||
           (membersQuery.error as any)?.response?.data?.message ||
           (invitationsQuery.error as any)?.response?.data?.message ||
-          (profileQuery.error as any)?.response?.data?.message ||
           'Failed to load employee management data.'
         }
         onRetry={() => {
           void usersQuery.refetch();
           void groupsQuery.refetch();
           void membersQuery.refetch();
-          void profileQuery.refetch();
         }}
       />
     );
   }
-
-  const profile = profileQuery.data;
 
   return (
     <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 text-slate-900">
@@ -759,46 +737,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               </SurfaceCard>
             </div>
           ) : null}
-
-          {!profile ? (
-            <PageEmptyState title="No employee selected" description="Select an employee to load the profile summary." />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <SurfaceCard className="p-5">
-                <h2 className="text-lg font-semibold text-slate-950">Employee 360</h2>
-                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Worked</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950">{formatDuration(profile.summary.total_duration)}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Attendance Days</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950">{profile.summary.present_days}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Approved Leave</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950">{profile.summary.approved_leave_days}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Time Adjustments</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950">{formatDuration(profile.summary.approved_time_edit_seconds)}</p>
-                  </div>
-                </div>
-              </SurfaceCard>
-              <DataTable
-                title="Recent Time Entries"
-                description="Latest recorded work sessions for the selected employee."
-                rows={profile.recent_time_entries || []}
-                emptyMessage="No recent time entries found."
-                columns={[
-                  { key: 'project', header: 'Task', render: (row: any) => row.task?.title || row.project?.name || 'No task' },
-                  { key: 'description', header: 'Description', render: (row: any) => row.description || 'No description' },
-                  { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
-                  { key: 'start', header: 'Start', render: (row: any) => new Date(row.start_time).toLocaleString() },
-                ]}
-              />
-            </div>
-          )}
         </>
       )}
 
