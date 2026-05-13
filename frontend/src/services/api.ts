@@ -557,7 +557,14 @@ export const reportApi = {
   project: (projectId: number, params?: { start_date?: string; end_date?: string }) => 
     api.get(`/reports/project/${projectId}`, { params }),
   
-  export: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[] }) => 
+  export: (params?: {
+    start_date?: string;
+    end_date?: string;
+    user_ids?: number[];
+    group_ids?: number[];
+    export_scope?: 'employee' | 'department';
+    fields?: string[];
+  }) => 
     api.get('/reports/export', { 
       params, 
       responseType: 'blob' as AxiosRequestConfig['responseType'] 

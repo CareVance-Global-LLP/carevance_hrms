@@ -60,6 +60,72 @@ type ReportsWorkspaceMode =
   | 'productivity'
   | 'custom-export';
 
+type CustomExportScope = 'employee' | 'department';
+type CustomExportFieldKey =
+  | 'start_date'
+  | 'end_date'
+  | 'employee_name'
+  | 'employee_email'
+  | 'employee_region'
+  | 'department'
+  | 'working_days'
+  | 'present_days'
+  | 'leave_days'
+  | 'late_days'
+  | 'absent_days'
+  | 'attendance_rate'
+  | 'tracked_time'
+  | 'worked_time'
+  | 'idle_time'
+  | 'working_time'
+  | 'overtime_time'
+  | 'first_check_in_at'
+  | 'last_check_out_at';
+
+const customExportFieldOptions: Array<{ key: CustomExportFieldKey; label: string; description: string }> = [
+  { key: 'start_date', label: 'Start Date', description: 'Report range start date.' },
+  { key: 'end_date', label: 'End Date', description: 'Report range end date.' },
+  { key: 'employee_name', label: 'Employee Name', description: 'Employee full name.' },
+  { key: 'employee_email', label: 'Employee Email', description: 'Employee email address.' },
+  { key: 'employee_region', label: 'Employee Region', description: 'Region/country from user settings.' },
+  { key: 'department', label: 'Department', description: 'Primary department/team.' },
+  { key: 'working_days', label: 'Working Days', description: 'Working days count in selected range.' },
+  { key: 'present_days', label: 'Present Days', description: 'Attendance present day count.' },
+  { key: 'leave_days', label: 'Leave Days', description: 'Approved leave day count.' },
+  { key: 'late_days', label: 'Late Days', description: 'Days marked with late minutes.' },
+  { key: 'absent_days', label: 'Absent Days', description: 'Working days without present or leave.' },
+  { key: 'attendance_rate', label: 'Attendance Rate (%)', description: 'Present/working-day attendance rate.' },
+  { key: 'tracked_time', label: 'Tracked Time', description: 'Total tracked duration.' },
+  { key: 'worked_time', label: 'Worked Time', description: 'Attendance worked duration.' },
+  { key: 'idle_time', label: 'Idle Time', description: 'Measured idle duration.' },
+  { key: 'working_time', label: 'Working Time', description: 'Tracked time minus idle time.' },
+  { key: 'overtime_time', label: 'Overtime Time', description: 'Worked duration above 8h/day baseline.' },
+  { key: 'first_check_in_at', label: 'First Check-In', description: 'Earliest check-in in range.' },
+  { key: 'last_check_out_at', label: 'Last Check-Out', description: 'Latest check-out in range.' },
+];
+
+const defaultCustomExportFields: CustomExportFieldKey[] = [
+  'start_date',
+  'end_date',
+  'employee_name',
+  'employee_email',
+  'employee_region',
+  'department',
+  'working_days',
+  'present_days',
+  'leave_days',
+  'late_days',
+  'absent_days',
+  'attendance_rate',
+  'tracked_time',
+  'worked_time',
+  'idle_time',
+  'working_time',
+  'overtime_time',
+  'first_check_in_at',
+  'last_check_out_at',
+];
+
 type PersistedReportsWorkspaceFilters = {
   datePreset: DateRangePreset;
   startDate: string;
@@ -451,6 +517,13 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [hoursPage, setHoursPage] = useState(1);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+  const [customExportModalOpen, setCustomExportModalOpen] = useState(false);
+  const [customExportScope, setCustomExportScope] = useState<CustomExportScope>('employee');
+  const [customExportFields, setCustomExportFields] = useState<CustomExportFieldKey[]>(defaultCustomExportFields);
+  const [customExportUserIds, setCustomExportUserIds] = useState<number[]>([]);
+  const [customExportDepartmentIds, setCustomExportDepartmentIds] = useState<number[]>([]);
+  const [customExportEmployeeSearch, setCustomExportEmployeeSearch] = useState('');
   const isHubMode = mode === 'reports-hub' || mode === 'analytics-hub';
 
   useEffect(() => {
@@ -568,6 +641,63 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   );
   const projectsEmployeeNameSearch = mode === 'projects-tasks' && selectedEmployee ? String(selectedEmployee.name || '').trim() : '';
   const selectedGroup = effectiveSelectedGroupId ? groups.find((group: any) => Number(group.id) === Number(effectiveSelectedGroupId)) : null;
+  const modalScopedUsers = useMemo(() => {
+    if (!selectedGroup) {
+      return users;
+    }
+
+    const groupUserIds = new Set((selectedGroup.users || []).map((member: any) => Number(member.id)));
+    return users.filter((employee: any) => groupUserIds.has(Number(employee.id)));
+  }, [selectedGroup, users]);
+  const modalScopedUserIdSet = useMemo(() => new Set(modalScopedUsers.map((employee: any) => Number(employee.id))), [modalScopedUsers]);
+  const modalDepartmentOptions = useMemo(() => {
+    const scopedGroups = selectedGroup
+      ? groups.filter((group: any) => Number(group.id) === Number(selectedGroup.id))
+      : groups;
+
+    return scopedGroups
+      .map((group: any) => {
+        const employeeIds = (group.users || [])
+          .map((member: any) => Number(member.id))
+          .filter((id: number) => modalScopedUserIdSet.has(id));
+
+        return {
+          id: Number(group.id),
+          name: String(group.name || 'Unnamed department'),
+          employeeIds: Array.from(new Set(employeeIds)),
+        };
+      })
+      .filter((group: any) => group.id > 0 && group.employeeIds.length > 0);
+  }, [groups, modalScopedUserIdSet, selectedGroup]);
+  const departmentFilteredUsers = useMemo(() => {
+    if (customExportDepartmentIds.length === 0) {
+      return modalScopedUsers;
+    }
+
+    const allowedIds = new Set(
+      modalDepartmentOptions
+        .filter((group: any) => customExportDepartmentIds.includes(Number(group.id)))
+        .flatMap((group: any) => group.employeeIds)
+    );
+
+    return modalScopedUsers.filter((employee: any) => allowedIds.has(Number(employee.id)));
+  }, [customExportDepartmentIds, modalDepartmentOptions, modalScopedUsers]);
+  const visibleModalUsers = useMemo(() => {
+    const search = customExportEmployeeSearch.trim().toLowerCase();
+    if (!search) {
+      return departmentFilteredUsers;
+    }
+
+    return departmentFilteredUsers.filter((employee: any) => {
+      const name = String(employee.name || '').toLowerCase();
+      const email = String(employee.email || '').toLowerCase();
+      return name.includes(search) || email.includes(search);
+    });
+  }, [customExportEmployeeSearch, departmentFilteredUsers]);
+  const selectedModalUsers = useMemo(() => {
+    const selectedSet = new Set(customExportUserIds);
+    return modalScopedUsers.filter((employee: any) => selectedSet.has(Number(employee.id)));
+  }, [customExportUserIds, modalScopedUsers]);
   const scopedUserIds = useMemo(() => {
     let ids = users.map((user: any) => Number(user.id));
 
@@ -582,6 +712,15 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
     return Array.from(new Set(ids));
   }, [effectiveSelectedUserId, selectedGroup, users]);
+
+  useEffect(() => {
+    if (customExportDepartmentIds.length === 0) {
+      return;
+    }
+
+    const allowedIds = new Set(departmentFilteredUsers.map((employee: any) => Number(employee.id)));
+    setCustomExportUserIds((current) => current.filter((id) => allowedIds.has(Number(id))));
+  }, [customExportDepartmentIds, departmentFilteredUsers]);
 
   useEffect(() => {
     if (!usersQuery.isSuccess || selectedUserId === '') {
@@ -1054,15 +1193,38 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const usageUnproductiveRows = hasSelectedEmployee ? usageSelectedTools.unproductive || [] : usageOrganizationTools.unproductive || [];
   const usageContextRows = hasSelectedEmployee ? usageSelectedTools.context_dependent || [] : usageOrganizationTools.context_dependent || [];
 
-  const handleExport = async () => {
+  const handleExport = async (options?: { scope?: CustomExportScope; fields?: CustomExportFieldKey[]; userIds?: number[] }) => {
+    if (mode === 'custom-export' && !options) {
+      const preselectedIds = effectiveSelectedUserId
+        ? [Number(effectiveSelectedUserId)]
+        : modalScopedUsers.map((employee: any) => Number(employee.id));
+      setCustomExportUserIds(preselectedIds);
+      setCustomExportDepartmentIds(selectedGroup ? [Number(selectedGroup.id)] : []);
+      setCustomExportEmployeeSearch('');
+      setCustomExportModalOpen(true);
+      return;
+    }
+
+    const fields = options?.fields || customExportFields;
+    if (mode === 'custom-export' && fields.length === 0) {
+      setExportError('Select at least one field before exporting.');
+      return;
+    }
+
+    const selectedUserIds = options?.userIds || customExportUserIds;
     setExportMessage('');
     setExportError('');
+    setIsExporting(true);
     try {
       const response = await reportApi.export({
         start_date: startDate,
         end_date: endDate,
-        user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
+        user_ids: mode === 'custom-export'
+          ? (selectedUserIds.length ? selectedUserIds : undefined)
+          : (effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined),
         group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
+        export_scope: mode === 'custom-export' ? (options?.scope || customExportScope) : undefined,
+        fields: mode === 'custom-export' ? fields : undefined,
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -1073,8 +1235,13 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       link.remove();
       window.URL.revokeObjectURL(url);
       setExportMessage('Export completed.');
+      if (mode === 'custom-export') {
+        setCustomExportModalOpen(false);
+      }
     } catch (error: any) {
       setExportError(error?.response?.data?.message || 'Failed to export report.');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -1211,15 +1378,253 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         title={pageTitle.title}
         description={pageTitle.description}
         actions={
-          <Button onClick={handleExport} variant="secondary">
+          <Button onClick={() => void handleExport()} variant="secondary" disabled={isExporting}>
             <Download className="h-4 w-4" />
-            Export CSV
+            {mode === 'custom-export' ? 'Customize Export' : (isExporting ? 'Exporting...' : 'Export CSV')}
           </Button>
         }
       />
 
       {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
       {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
+
+      {mode === 'custom-export' && customExportModalOpen ? (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-6 shadow-sm sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">Custom Export Builder</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">Choose report fields</h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Select employee-wise or department-wise scope, choose columns, then download.
+                  Time metrics include both minutes and hours in the CSV.
+                </p>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => setCustomExportModalOpen(false)}>Close</Button>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <SurfaceCard className="p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Date Range</p>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="text-xs text-slate-500">
+                    <span className="mb-1 block font-semibold uppercase tracking-[0.12em]">Start Date</span>
+                    <input
+                      type="date"
+                      value={startDate}
+                      readOnly
+                      className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
+                    />
+                  </label>
+                  <label className="text-xs text-slate-500">
+                    <span className="mb-1 block font-semibold uppercase tracking-[0.12em]">End Date</span>
+                    <input
+                      type="date"
+                      value={endDate}
+                      readOnly
+                      className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
+                    />
+                  </label>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">This export includes data from {startDate} to {endDate}.</p>
+              </SurfaceCard>
+
+              <SurfaceCard className="p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Export Scope</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="custom-export-scope"
+                      checked={customExportScope === 'employee'}
+                      onChange={() => setCustomExportScope('employee')}
+                    />
+                    Employee-wise
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="custom-export-scope"
+                      checked={customExportScope === 'department'}
+                      onChange={() => setCustomExportScope('department')}
+                    />
+                    Department-wise
+                  </label>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  Current filters apply: {selectedEmployee ? selectedEmployee.name : 'All employees'} | {selectedGroup ? selectedGroup.name : 'All departments'}
+                </p>
+              </SurfaceCard>
+
+              <SurfaceCard className="p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Departments</p>
+                <p className="mt-2 text-xs text-slate-500">{modalDepartmentOptions.length} departments available.</p>
+                <div className="mt-3 max-h-36 space-y-2 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2">
+                  {modalDepartmentOptions.length === 0 ? (
+                    <p className="px-2 py-1 text-xs text-slate-500">No departments found for current scope.</p>
+                  ) : modalDepartmentOptions.map((department: any) => {
+                    const checked = customExportDepartmentIds.includes(Number(department.id));
+                    return (
+                      <label key={department.id} className="flex items-center gap-2 rounded px-2 py-1 text-sm text-slate-700 hover:bg-white">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setCustomExportDepartmentIds((current) => (
+                              current.includes(Number(department.id))
+                                ? current.filter((id) => Number(id) !== Number(department.id))
+                                : [...current, Number(department.id)]
+                            ));
+                          }}
+                        />
+                        <span className="truncate">{department.name} ({department.employeeIds.length})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard className="p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Employees</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      const visibleIds = departmentFilteredUsers.map((employee: any) => Number(employee.id));
+                      setCustomExportUserIds((current) => Array.from(new Set([...current, ...visibleIds])));
+                    }}
+                  >
+                    Select all
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setCustomExportUserIds([])}
+                  >
+                    Clear
+                  </Button>
+                </div>
+                <div className="mt-3">
+                  <input
+                    type="text"
+                    value={customExportEmployeeSearch}
+                    onChange={(event) => setCustomExportEmployeeSearch(event.target.value)}
+                    placeholder="Search employee name or email"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                  />
+                </div>
+                <p className="mt-3 text-xs text-slate-500">{customExportUserIds.length} employees selected.</p>
+                {selectedModalUsers.length > 0 ? (
+                  <div className="mt-2 flex max-h-16 flex-wrap gap-2 overflow-y-auto">
+                    {selectedModalUsers.map((employee: any) => (
+                      <span key={employee.id} className="rounded-full bg-sky-100 px-2 py-1 text-xs font-medium text-sky-700">
+                        {employee.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-3 max-h-40 space-y-2 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2">
+                  {visibleModalUsers.length === 0 ? (
+                    <p className="px-2 py-1 text-xs text-slate-500">No employees in current filters.</p>
+                  ) : visibleModalUsers.map((employee: any) => {
+                    const employeeId = Number(employee.id);
+                    const checked = customExportUserIds.includes(employeeId);
+                    return (
+                      <label key={employeeId} className="flex items-center gap-2 rounded px-2 py-1 text-sm text-slate-700 hover:bg-white">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setCustomExportUserIds((current) => (
+                              current.includes(employeeId)
+                                ? current.filter((id) => id !== employeeId)
+                                : [...current, employeeId]
+                            ));
+                          }}
+                        />
+                        <span className="truncate">{employee.name} ({employee.email})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard className="p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Field Controls</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setCustomExportFields(customExportFieldOptions.map((option) => option.key))}
+                  >
+                    Select all
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setCustomExportFields(defaultCustomExportFields)}
+                  >
+                    Reset recommended
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setCustomExportFields([])}
+                  >
+                    Clear
+                  </Button>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">{customExportFields.length} fields selected.</p>
+              </SurfaceCard>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {customExportFieldOptions.map((option) => {
+                const checked = customExportFields.includes(option.key);
+                return (
+                  <label
+                    key={option.key}
+                    className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition ${checked ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        setCustomExportFields((current) => (
+                          current.includes(option.key)
+                            ? current.filter((field) => field !== option.key)
+                            : [...current, option.key]
+                        ));
+                      }}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-900">{option.label}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{option.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button variant="secondary" onClick={() => setCustomExportModalOpen(false)} disabled={isExporting}>Cancel</Button>
+              <Button
+                onClick={() => void handleExport({ scope: customExportScope, fields: customExportFields, userIds: customExportUserIds })}
+                disabled={isExporting || customExportFields.length === 0 || customExportUserIds.length === 0}
+              >
+                {isExporting ? 'Exporting...' : 'Download CSV'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <FilterPanel className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${mode === 'projects-tasks' ? 'xl:grid-cols-8' : 'xl:grid-cols-5'}`}>
         <DateRangeFields
@@ -1874,7 +2279,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               </div>
             </div>
             <div className="mt-5">
-              <Button onClick={handleExport}>
+              <Button onClick={() => void handleExport()}>
                 <Download className="h-4 w-4" />
                 Download Current Export
               </Button>
