@@ -166,11 +166,40 @@ class UsageProcessingService
 
     public function calculateIdleTime(iterable $logs, iterable $activityEvents = []): int
     {
-        return (int) data_get(
-            $this->buildUsageSummary($logs, $activityEvents),
-            'metrics.idle_time',
-            0
-        );
+        return (int) ($this->summarizeIdleDurations($logs, $activityEvents)['total_idle_time'] ?? 0);
+    }
+
+    public function summarizeIdleDurations(iterable $logs, iterable $activityEvents = []): array
+    {
+        $normalizedLogs = $this->normalizeUsageLogsForIdle($logs);
+        $idleResult = $this->detectAndFilterIdleTime($normalizedLogs, $activityEvents);
+        $idleLogs = collect($idleResult['idle_logs'] ?? [])->values();
+
+        $byUser = $idleLogs
+            ->groupBy(fn (array $row) => (int) ($row['user_id'] ?? 0))
+            ->map(fn (Collection $rows) => (int) $rows->sum(fn (array $row) => (int) ($row['duration'] ?? 0)))
+            ->all();
+
+        $byUserDay = $idleLogs
+            ->groupBy(function (array $row) {
+                $userId = (int) ($row['user_id'] ?? 0);
+                $endTimestamp = (int) ($row['end_timestamp'] ?? 0);
+                if ($userId <= 0 || $endTimestamp <= 0) {
+                    return null;
+                }
+
+                return sprintf('%d|%s', $userId, Carbon::createFromTimestamp($endTimestamp)->toDateString());
+            })
+            ->filter(fn ($rows, $key) => is_string($key) && $key !== '')
+            ->map(fn (Collection $rows) => (int) $rows->sum(fn (array $row) => (int) ($row['duration'] ?? 0)))
+            ->all();
+
+        return [
+            'total_idle_time' => (int) ($idleResult['idle_time'] ?? 0),
+            'idle_segments_count' => (int) ($idleResult['idle_segments_count'] ?? 0),
+            'by_user' => $byUser,
+            'by_user_day' => $byUserDay,
+        ];
     }
 
     public function buildUsageSummary(iterable $logs, iterable $activityEvents = []): array
@@ -560,7 +589,15 @@ class UsageProcessingService
         return trim((string) preg_replace('/^system idle\s*-\s*/iu', '', trim($idleName)));
     }
 
-    private function toNormalizedRow(mixed $log): ?array
+    private function normalizeUsageLogsForIdle(iterable $logs): Collection
+    {
+        return collect($logs)
+            ->map(fn ($log) => $this->toNormalizedRow($log, false))
+            ->filter()
+            ->values();
+    }
+
+    private function toNormalizedRow(mixed $log, bool $includeClassification = true): ?array
     {
         $type = strtolower(trim((string) data_get($log, 'type', 'app')));
         if (! in_array($type, ['app', 'url', 'idle'], true)) {
@@ -616,7 +653,9 @@ class UsageProcessingService
                     : (string) data_get($log, 'tool_type', $this->resolveToolType($type, $rawUrl !== '' ? $rawUrl : $rawName, $label))),
             'classification' => $type === 'idle'
                 ? 'neutral'
-                : (string) data_get($log, 'classification', $this->classifyUsage($label, $rawUrl !== '' ? $rawUrl : $rawName, $type)),
+                : ($includeClassification
+                    ? (string) data_get($log, 'classification', $this->classifyUsage($label, $rawUrl !== '' ? $rawUrl : $rawName, $type))
+                    : 'neutral'),
             'classification_reason' => (string) data_get($log, 'classification_reason', ''),
             'start_at' => $startAt,
             'end_at' => $recordedAt,

@@ -773,25 +773,29 @@ class ReportController extends Controller
         $activities = $skipActivity
             ? collect()
             : $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
+        $idleSummary = $skipActivity
+            ? ['by_user' => [], 'by_user_day' => []]
+            : $this->usageProcessingService->summarizeIdleDurations($activities);
+        $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
+            ->mapWithKeys(fn ($duration, $id) => [(int) $id => (int) $duration])
+            ->all();
+        $idleDurationByUserDay = collect($idleSummary['by_user_day'] ?? [])
+            ->mapWithKeys(fn ($duration, $key) => [(string) $key => (int) $duration])
+            ->all();
 
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
         $activitiesByUser = $activities->groupBy('user_id');
-        $activitiesByUserAndDay = $this->groupActivitiesByUserAndDay($activities);
 
         $resolvedNow = now();
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $idleDurationByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userActivities = $activitiesByUser->get($user->id, collect());
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $userAdjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
-            $idleDuration = $this->safeCalculateIdleTime($userActivities, [
-                'report' => 'overall',
-                'user_id' => $user->id,
-                'scope' => 'by_user',
-            ]);
+            $idleDuration = (int) ($idleDurationByUser[(int) $user->id] ?? 0);
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $userAdjustmentDuration,
                 $idleDuration
@@ -842,7 +846,7 @@ class ReportController extends Controller
             $dayUserBuckets[$key]['total_duration'] += $adjustmentSeconds;
         }
 
-        foreach ($activitiesByUserAndDay as $key => $dayActivities) {
+        foreach ($idleDurationByUserDay as $key => $idleDuration) {
             [, $date] = explode('|', (string) $key, 2);
             if (! isset($dayUserBuckets[$key])) {
                 $dayUserBuckets[$key] = [
@@ -852,11 +856,7 @@ class ReportController extends Controller
                 ];
             }
 
-            $dayUserBuckets[$key]['idle_duration'] = $this->safeCalculateIdleTime($dayActivities, [
-                'report' => 'overall',
-                'scope' => 'by_day',
-                'bucket' => $key,
-            ]);
+            $dayUserBuckets[$key]['idle_duration'] = (int) $idleDuration;
         }
 
         $byDay = collect($dayUserBuckets)
@@ -958,20 +958,24 @@ class ReportController extends Controller
         $activities = $skipActivity
             ? collect()
             : $this->activityFeedService->forUsersInRange($users->pluck('id'), $startDate, $endDate);
+        $idleSummary = $skipActivity
+            ? ['by_user' => [], 'by_user_day' => []]
+            : $this->usageProcessingService->summarizeIdleDurations($activities);
+        $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
+            ->mapWithKeys(fn ($duration, $id) => [(int) $id => (int) $duration])
+            ->all();
+        $idleDurationByUserDay = collect($idleSummary['by_user_day'] ?? [])
+            ->mapWithKeys(fn ($duration, $key) => [(string) $key => (int) $duration])
+            ->all();
         $activitiesByUser = $activities->groupBy('user_id');
-        $activitiesByUserAndDay = $this->groupActivitiesByUserAndDay($activities);
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $idleDurationByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userActivities = $activitiesByUser->get($user->id, collect());
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $adjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
-            $idleDuration = $this->safeCalculateIdleTime($userActivities, [
-                'report' => 'overall_lite',
-                'user_id' => $user->id,
-                'scope' => 'by_user',
-            ]);
+            $idleDuration = (int) ($idleDurationByUser[(int) $user->id] ?? 0);
             $timeBreakdown = $this->timeBreakdownService->build(
                 $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration,
                 $idleDuration
@@ -1022,7 +1026,7 @@ class ReportController extends Controller
             $dayUserBuckets[$key]['total_duration'] += $adjustmentSeconds;
         }
 
-        foreach ($activitiesByUserAndDay as $key => $dayActivities) {
+        foreach ($idleDurationByUserDay as $key => $idleDuration) {
             [, $date] = explode('|', (string) $key, 2);
             if (! isset($dayUserBuckets[$key])) {
                 $dayUserBuckets[$key] = [
@@ -1032,11 +1036,7 @@ class ReportController extends Controller
                 ];
             }
 
-            $dayUserBuckets[$key]['idle_duration'] = $this->safeCalculateIdleTime($dayActivities, [
-                'report' => 'overall_lite',
-                'scope' => 'by_day',
-                'bucket' => $key,
-            ]);
+            $dayUserBuckets[$key]['idle_duration'] = (int) $idleDuration;
         }
 
         $byDay = collect($dayUserBuckets)
