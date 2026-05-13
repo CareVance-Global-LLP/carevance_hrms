@@ -6,6 +6,7 @@ use App\Services\Monitoring\ProductivityClassifier;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class UsageProcessingService
@@ -197,6 +198,61 @@ class UsageProcessingService
         return [
             'total_idle_time' => (int) ($idleResult['idle_time'] ?? 0),
             'idle_segments_count' => (int) ($idleResult['idle_segments_count'] ?? 0),
+            'by_user' => $byUser,
+            'by_user_day' => $byUserDay,
+        ];
+    }
+
+    public function summarizeIdleDurationsFastForUsers(iterable $userIds, Carbon $startDate, Carbon $endDate): array
+    {
+        $ids = collect($userIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [
+                'total_idle_time' => 0,
+                'idle_segments_count' => 0,
+                'by_user' => [],
+                'by_user_day' => [],
+            ];
+        }
+
+        $rows = DB::table('activities')
+            ->selectRaw('user_id, DATE(recorded_at) as day_key, SUM(duration) as idle_duration, COUNT(*) as idle_segments_count')
+            ->whereIn('user_id', $ids->all())
+            ->where('type', 'idle')
+            ->where('duration', '>', 0)
+            ->whereBetween('recorded_at', [$startDate, $endDate])
+            ->groupBy('user_id', DB::raw('DATE(recorded_at)'))
+            ->get();
+
+        $byUser = [];
+        $byUserDay = [];
+        $totalIdle = 0;
+        $totalSegments = 0;
+
+        foreach ($rows as $row) {
+            $userId = (int) ($row->user_id ?? 0);
+            $date = (string) ($row->day_key ?? '');
+            $idleDuration = (int) ($row->idle_duration ?? 0);
+            $segmentsCount = (int) ($row->idle_segments_count ?? 0);
+
+            if ($userId <= 0 || $date === '' || $idleDuration <= 0) {
+                continue;
+            }
+
+            $byUser[$userId] = (int) (($byUser[$userId] ?? 0) + $idleDuration);
+            $byUserDay[sprintf('%d|%s', $userId, $date)] = $idleDuration;
+            $totalIdle += $idleDuration;
+            $totalSegments += $segmentsCount;
+        }
+
+        return [
+            'total_idle_time' => $totalIdle,
+            'idle_segments_count' => $totalSegments,
             'by_user' => $byUser,
             'by_user_day' => $byUserDay,
         ];

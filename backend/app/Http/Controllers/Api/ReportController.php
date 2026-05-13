@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Activity;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
@@ -111,6 +112,28 @@ class ReportController extends Controller
             ->map(fn ($id) => (int) $id)
             ->filter(fn ($id) => $id > 0)
             ->values();
+    }
+
+    private function resolveLastActivityByUser(iterable $userIds, Carbon $startDate, Carbon $endDate): array
+    {
+        $ids = collect($userIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return Activity::query()
+            ->selectRaw('user_id, MAX(recorded_at) as last_activity_at')
+            ->whereIn('user_id', $ids->all())
+            ->whereBetween('recorded_at', [$startDate, $endDate])
+            ->groupBy('user_id')
+            ->get()
+            ->mapWithKeys(fn ($row) => [(int) $row->user_id => $row->last_activity_at])
+            ->all();
     }
 
     private function summarizeBrowserTrackingConnections(Collection $connections): array
@@ -770,28 +793,26 @@ class ReportController extends Controller
         }
 
         $skipActivity = $request->boolean('skip_activity');
-        $activities = $skipActivity
-            ? collect()
-            : $this->activityFeedService->forUsersInRangeForIdle($userIds, $startDate, $endDate);
         $idleSummary = $skipActivity
             ? ['by_user' => [], 'by_user_day' => []]
-            : $this->usageProcessingService->summarizeIdleDurations($activities);
+            : $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
         $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
             ->mapWithKeys(fn ($duration, $id) => [(int) $id => (int) $duration])
             ->all();
         $idleDurationByUserDay = collect($idleSummary['by_user_day'] ?? [])
             ->mapWithKeys(fn ($duration, $key) => [(string) $key => (int) $duration])
             ->all();
+        $lastActivityByUser = $skipActivity
+            ? []
+            : $this->resolveLastActivityByUser($userIds, $startDate, $endDate);
 
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
-        $activitiesByUser = $activities->groupBy('user_id');
 
         $resolvedNow = now();
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $idleDurationByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
-            $userActivities = $activitiesByUser->get($user->id, collect());
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $userAdjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
@@ -805,7 +826,7 @@ class ReportController extends Controller
             return [
                 'user' => $user,
                 'entries_count' => $userEntries->count(),
-                'last_activity_at' => $userActivities->max('recorded_at'),
+                'last_activity_at' => $lastActivityByUser[(int) $user->id] ?? null,
                 'is_working' => $activeUserIds->contains((int) $user->id),
             ] + $timeBreakdown + $attendanceSummary;
         })->values();
@@ -955,23 +976,25 @@ class ReportController extends Controller
         $resolvedNow = now();
         $entriesByUser = $entries->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
-        $activities = $skipActivity
-            ? collect()
-            : $this->activityFeedService->forUsersInRangeForIdle($users->pluck('id'), $startDate, $endDate);
+        $userIds = $users->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
         $idleSummary = $skipActivity
             ? ['by_user' => [], 'by_user_day' => []]
-            : $this->usageProcessingService->summarizeIdleDurations($activities);
+            : $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
         $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
             ->mapWithKeys(fn ($duration, $id) => [(int) $id => (int) $duration])
             ->all();
         $idleDurationByUserDay = collect($idleSummary['by_user_day'] ?? [])
             ->mapWithKeys(fn ($duration, $key) => [(string) $key => (int) $duration])
             ->all();
-        $activitiesByUser = $activities->groupBy('user_id');
+        $lastActivityByUser = $skipActivity
+            ? []
+            : $this->resolveLastActivityByUser($userIds, $startDate, $endDate);
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $activitiesByUser, $idleDurationByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
-            $userActivities = $activitiesByUser->get($user->id, collect());
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $adjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
@@ -985,7 +1008,7 @@ class ReportController extends Controller
             return [
                 'user' => $user,
                 'entries_count' => $userEntries->count(),
-                'last_activity_at' => $userActivities->max('recorded_at'),
+                'last_activity_at' => $lastActivityByUser[(int) $user->id] ?? null,
                 'is_working' => $activeUserIds->contains((int) $user->id),
             ] + $timeBreakdown + $attendanceSummary;
         })->values();
