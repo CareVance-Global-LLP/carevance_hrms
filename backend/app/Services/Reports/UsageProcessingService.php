@@ -292,7 +292,7 @@ class UsageProcessingService
             ->values();
     }
 
-    public function buildWebAppUsageSummary(iterable $logs, iterable $activityEvents = []): array
+    public function buildWebAppUsageSummary(iterable $logs, iterable $activityEvents = [], bool $includeProcessedLogs = true): array
     {
         $timelineRows = $this->buildTimelineRows($logs, $activityEvents)->values();
         $effectiveClassifiedLogs = $timelineRows
@@ -339,7 +339,7 @@ class UsageProcessingService
                 ->sortBy('type')
                 ->values()
                 ->all(),
-            'processed_logs' => $timelineRows,
+            'processed_logs' => $includeProcessedLogs ? $timelineRows : [],
             'idle_segments_count' => $idleRows->count(),
             'last_processed_at' => now()->toIso8601String(),
         ];
@@ -371,7 +371,14 @@ class UsageProcessingService
         return $this->combineUsageSummaries($reports);
     }
 
-    public function buildWebAppUsageUserRangeSummary(int $userId, iterable $logs, Carbon $startDate, Carbon $endDate, iterable $activityEvents = []): array
+    public function buildWebAppUsageUserRangeSummary(
+        int $userId,
+        iterable $logs,
+        Carbon $startDate,
+        Carbon $endDate,
+        iterable $activityEvents = [],
+        bool $includeProcessedLogs = true,
+    ): array
     {
         $logsByDay = collect($logs)
             ->map(function ($log) {
@@ -391,13 +398,13 @@ class UsageProcessingService
 
         $reports = [];
         foreach ($logsByDay as $day => $dayLogs) {
-            $reports[] = $this->buildCachedDailySummary($userId, $day, $dayLogs, $activityEvents, 'web-app-usage');
+            $reports[] = $this->buildCachedDailySummary($userId, $day, $dayLogs, $activityEvents, 'web-app-usage', $includeProcessedLogs);
         }
 
-        return $this->combineUsageSummaries($reports);
+        return $this->combineUsageSummaries($reports, $includeProcessedLogs);
     }
 
-    public function combineUsageSummaries(iterable $reports): array
+    public function combineUsageSummaries(iterable $reports, bool $includeProcessedLogs = true): array
     {
         $metrics = [
             'total_time' => 0,
@@ -460,7 +467,9 @@ class UsageProcessingService
                 $activityRows[$type]['total_duration'] += (int) ($row['total_duration'] ?? 0);
             }
 
-            $processedLogs = $processedLogs->concat(collect($report['processed_logs'] ?? []));
+            if ($includeProcessedLogs) {
+                $processedLogs = $processedLogs->concat(collect($report['processed_logs'] ?? []));
+            }
             $idleSegmentsCount += (int) ($report['idle_segments_count'] ?? 0);
 
             $currentProcessedAt = data_get($report, 'last_processed_at');
@@ -484,32 +493,41 @@ class UsageProcessingService
                 'context_dependent' => $toolCollection->where('classification', 'context_dependent')->values()->all(),
             ],
             'activity_breakdown' => collect(array_values($activityRows))->sortBy('type')->values()->all(),
-            'processed_logs' => $processedLogs
-                ->sortBy([
-                    ['user_id', 'asc'],
-                    ['time_entry_id', 'asc'],
-                    ['start_timestamp', 'asc'],
-                    ['end_timestamp', 'asc'],
-                    ['id', 'asc'],
-                ])
-                ->values(),
+            'processed_logs' => $includeProcessedLogs
+                ? $processedLogs
+                    ->sortBy([
+                        ['user_id', 'asc'],
+                        ['time_entry_id', 'asc'],
+                        ['start_timestamp', 'asc'],
+                        ['end_timestamp', 'asc'],
+                        ['id', 'asc'],
+                    ])
+                    ->values()
+                : [],
             'idle_segments_count' => $idleSegmentsCount,
             'last_processed_at' => $lastProcessedAt,
         ];
     }
 
-    private function buildCachedDailySummary(int $userId, string $day, iterable $logs, iterable $activityEvents = [], string $mode = 'default'): array
+    private function buildCachedDailySummary(
+        int $userId,
+        string $day,
+        iterable $logs,
+        iterable $activityEvents = [],
+        string $mode = 'default',
+        bool $includeProcessedLogs = true,
+    ): array
     {
         $logsCollection = collect($logs)->values();
         $fingerprint = $this->buildFingerprint($logsCollection);
         $cachePrefix = (string) config('usage_processing.cache.prefix', 'usage-processing');
         $classifierVersion = (string) config('productivity_monitoring.classifier_version', 'unknown');
         $ttl = (int) config('usage_processing.cache.ttl_seconds', 300);
-        $cacheKey = implode(':', [$cachePrefix, $mode, $classifierVersion, $userId, $day, $fingerprint]);
+        $cacheKey = implode(':', [$cachePrefix, $mode, $includeProcessedLogs ? 'with-logs' : 'without-logs', $classifierVersion, $userId, $day, $fingerprint]);
 
-        return Cache::remember($cacheKey, $ttl, function () use ($logsCollection, $activityEvents, $mode) {
+        return Cache::remember($cacheKey, $ttl, function () use ($logsCollection, $activityEvents, $mode, $includeProcessedLogs) {
             if ($mode === 'web-app-usage') {
-                return $this->buildWebAppUsageSummary($logsCollection, $activityEvents);
+                return $this->buildWebAppUsageSummary($logsCollection, $activityEvents, $includeProcessedLogs);
             }
 
             return $this->buildUsageSummary($logsCollection, $activityEvents);

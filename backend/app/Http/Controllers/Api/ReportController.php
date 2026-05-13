@@ -557,7 +557,7 @@ class ReportController extends Controller
     {
         $user = $request->user();
         if (!$user) {
-            return response()->json([
+                return response()->json([
                 'productivity_score' => 0,
                 'tracked_time' => 0,
                 'working_time' => 0,
@@ -1544,31 +1544,33 @@ class ReportController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $entries = TimeEntry::where('user_id', $selectedUser->id)
-            ->whereBetween('start_time', [$startDate, $endDate])
-            ->get(['id', 'start_time', 'end_time', 'duration']);
-        $entriesCount = $entries->count();
-        $resolvedNow = now();
+        try {
+            $entries = TimeEntry::where('user_id', $selectedUser->id)
+                ->whereBetween('start_time', [$startDate, $endDate])
+                ->get(['id', 'start_time', 'end_time', 'duration']);
+            $entriesCount = $entries->count();
+            $resolvedNow = now();
 
-        if ($request->boolean('dashboard_lite')) {
-            return response()->json($this->buildLiteEmployeeInsights(
-                $selectedUser,
-                $matchedUsers,
-                $entries,
-                $entriesCount,
+            if ($request->boolean('dashboard_lite')) {
+                return response()->json($this->buildLiteEmployeeInsights(
+                    $selectedUser,
+                    $matchedUsers,
+                    $entries,
+                    $entriesCount,
+                    $startDate,
+                    $endDate,
+                    $resolvedNow,
+                ));
+            }
+
+            $activities = $this->activityFeedService->forUsersInRangeForIdle([$selectedUser->id], $startDate, $endDate);
+            $selectedUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
+                (int) $selectedUser->id,
+                $activities,
                 $startDate,
                 $endDate,
-                $resolvedNow,
-            ));
-        }
-
-        $activities = $this->activityFeedService->forUsersInRange([$selectedUser->id], $startDate, $endDate);
-        $selectedUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
-            (int) $selectedUser->id,
-            $activities,
-            $startDate,
-            $endDate,
-        );
+                includeProcessedLogs: false,
+            );
         $selectedMetrics = (array) ($selectedUsageSummary['metrics'] ?? []);
         $totalIdle = (int) ($selectedMetrics['idle_time'] ?? 0);
         $selectedTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow);
@@ -1589,28 +1591,29 @@ class ReportController extends Controller
             ->limit($recentScreenshotLimit)
             ->get();
 
-        $analyticsUserIds = $analyticsUsers->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
-        $organizationEntries = $analyticsUserIds->isEmpty()
-            ? collect()
-            : TimeEntry::whereIn('user_id', $analyticsUserIds)
-                ->whereBetween('start_time', [$startDate, $endDate])
-                ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
-        $organizationEntriesByUser = $organizationEntries->groupBy(fn ($entry) => (int) $entry->user_id);
-        $organizationActivities = $analyticsUserIds->isEmpty()
-            ? collect()
-            : $this->activityFeedService->forUsersInRange($analyticsUserIds, $startDate, $endDate);
-        $organizationActivitiesByUser = collect($organizationActivities)->groupBy(fn ($activity) => (int) $activity->user_id);
+            $analyticsUserIds = $analyticsUsers->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
+            $organizationEntries = $analyticsUserIds->isEmpty()
+                ? collect()
+                : TimeEntry::whereIn('user_id', $analyticsUserIds)
+                    ->whereBetween('start_time', [$startDate, $endDate])
+                    ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
+            $organizationEntriesByUser = $organizationEntries->groupBy(fn ($entry) => (int) $entry->user_id);
+            $organizationActivities = $analyticsUserIds->isEmpty()
+                ? collect()
+                : $this->activityFeedService->forUsersInRangeForIdle($analyticsUserIds, $startDate, $endDate);
+            $organizationActivitiesByUser = collect($organizationActivities)->groupBy(fn ($activity) => (int) $activity->user_id);
 
-        $toolTotalsByKey = [];
-        $perUserScore = [];
-        foreach ($analyticsUsers as $analyticsUser) {
-            $userId = (int) $analyticsUser->id;
-            $userUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
-                $userId,
-                $organizationActivitiesByUser->get($userId, collect()),
-                $startDate,
-                $endDate,
-            );
+            $toolTotalsByKey = [];
+            $perUserScore = [];
+            foreach ($analyticsUsers as $analyticsUser) {
+                $userId = (int) $analyticsUser->id;
+                $userUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
+                    $userId,
+                    $organizationActivitiesByUser->get($userId, collect()),
+                    $startDate,
+                    $endDate,
+                    includeProcessedLogs: false,
+                );
             $userMetrics = (array) ($userUsageSummary['metrics'] ?? []);
             $userTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration(
                 $organizationEntriesByUser->get($userId, collect()),
@@ -1929,12 +1932,88 @@ class ReportController extends Controller
                 'employees_inactive' => $employeeLiveRows->where('work_status', 'inactive')->take(10)->values(),
                 'employees_on_leave' => $employeeLiveRows->where('work_status', 'on_leave')->take(10)->values(),
             ],
-            'recent_screenshots' => $recentScreenshots,
-        ]);
+                'recent_screenshots' => $recentScreenshots,
+            ]);
+        } catch (Throwable $exception) {
+            Log::error('Employee insights generation failed; returning safe fallback payload.', [
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+                'user_id' => $currentUser->id,
+                'selected_user_id' => $selectedUserId,
+                'organization_id' => $currentUser->organization_id,
+            ]);
+
+            return response()->json([
+                'start_date' => $startDate->toDateString(),
+                'end_date' => $endDate->toDateString(),
+                'matched_users' => $matchedUsers,
+                'analytics_users_count' => 0,
+                'selected_user' => $selectedUser,
+                'stats' => [
+                    'entries_count' => 0,
+                    'tracked_duration' => 0,
+                    'tracked_hours' => 0,
+                    'total_duration' => 0,
+                    'total_hours' => 0,
+                    'working_duration' => 0,
+                    'working_hours' => 0,
+                    'billable_duration' => 0,
+                    'productive_duration' => 0,
+                    'unproductive_duration' => 0,
+                    'neutral_duration' => 0,
+                    'context_dependent_duration' => 0,
+                    'activity_total_duration' => 0,
+                    'idle_total_duration' => 0,
+                    'idle_avg_duration' => 0,
+                    'activity_events' => 0,
+                ],
+                'activity_breakdown' => [],
+                'selected_user_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+                'organization_tools' => ['productive' => [], 'unproductive' => [], 'neutral' => [], 'context_dependent' => []],
+                'organization_summary' => [
+                    'tracked_duration' => 0,
+                    'total_duration' => 0,
+                    'working_duration' => 0,
+                    'idle_duration' => 0,
+                    'activity_total_duration' => 0,
+                    'productive_duration' => 0,
+                    'unproductive_duration' => 0,
+                    'neutral_duration' => 0,
+                    'context_dependent_duration' => 0,
+                    'productive_share' => 0,
+                    'unproductive_share' => 0,
+                    'neutral_share' => 0,
+                    'context_dependent_share' => 0,
+                ],
+                'employee_rankings' => [
+                    'most_productive' => null,
+                    'most_unproductive' => null,
+                    'by_productive_duration' => [],
+                    'by_unproductive_duration' => [],
+                ],
+                'team_rankings' => [
+                    'by_efficiency' => [],
+                    'top_productive' => null,
+                    'least_productive' => null,
+                ],
+                'live_monitoring' => [
+                    'selected_user' => null,
+                    'working_now' => [],
+                    'all_users' => [],
+                    'employees_active' => [],
+                    'employees_inactive' => [],
+                    'employees_on_leave' => [],
+                ],
+                'recent_screenshots' => [],
+            ]);
+        }
     }
 
-    private function buildSelectedEmployeeDashboardStats(
+    private function buildLiteEmployeeInsights(
         User $selectedUser,
+        Collection $matchedUsers,
+        Collection $entries,
+        int $entriesCount,
         Carbon $startDate,
         Carbon $endDate,
         Carbon $resolvedNow,
