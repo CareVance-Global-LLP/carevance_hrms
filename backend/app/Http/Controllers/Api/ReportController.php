@@ -582,7 +582,7 @@ class ReportController extends Controller
                 ->whereDate('attendance_date', '>=', $startDate->toDateString())
                 ->whereDate('attendance_date', '<=', $endDate->toDateString())
                 ->sum('manual_adjustment_seconds');
-        $activities = $this->activityFeedService->forUsersInRange([$user->id], $startDate, $endDate);
+        $activities = $this->activityFeedService->forUsersInRangeForIdle([$user->id], $startDate, $endDate);
         $idleDuration = $this->safeCalculateIdleTime($activities, [
             'report' => 'productivity',
             'user_id' => $user->id,
@@ -772,7 +772,7 @@ class ReportController extends Controller
         $skipActivity = $request->boolean('skip_activity');
         $activities = $skipActivity
             ? collect()
-            : $this->activityFeedService->forUsersInRange($userIds, $startDate, $endDate);
+            : $this->activityFeedService->forUsersInRangeForIdle($userIds, $startDate, $endDate);
         $idleSummary = $skipActivity
             ? ['by_user' => [], 'by_user_day' => []]
             : $this->usageProcessingService->summarizeIdleDurations($activities);
@@ -957,7 +957,7 @@ class ReportController extends Controller
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
         $activities = $skipActivity
             ? collect()
-            : $this->activityFeedService->forUsersInRange($users->pluck('id'), $startDate, $endDate);
+            : $this->activityFeedService->forUsersInRangeForIdle($users->pluck('id'), $startDate, $endDate);
         $idleSummary = $skipActivity
             ? ['by_user' => [], 'by_user_day' => []]
             : $this->usageProcessingService->summarizeIdleDurations($activities);
@@ -1142,7 +1142,7 @@ class ReportController extends Controller
             ->get();
         $idleDuration = 0;
         if ($entries->isNotEmpty()) {
-            $activities = $this->activityFeedService->forTimeEntries($entries->pluck('id'), $startDate, $endDate);
+            $activities = $this->activityFeedService->forTimeEntriesForIdle($entries->pluck('id'), $startDate, $endDate);
             $idleDuration = $this->safeCalculateIdleTime($activities, [
                 'report' => 'project',
                 'project_id' => $project->id,
@@ -1933,14 +1933,13 @@ class ReportController extends Controller
         ]);
     }
 
-    private function buildSelectedEmployeeSummary(
+    private function buildSelectedEmployeeDashboardStats(
         User $selectedUser,
-        Collection $entries,
         Carbon $startDate,
         Carbon $endDate,
         Carbon $resolvedNow,
     ): array {
-        $activities = $this->activityFeedService->forUsersInRange([$selectedUser->id], $startDate, $endDate);
+        $activities = $this->activityFeedService->forUsersInRangeForIdle([$selectedUser->id], $startDate, $endDate);
         $idleDuration = $this->safeCalculateIdleTime($activities, [
             'report' => 'dashboard_selected_employee',
             'user_id' => $selectedUser->id,

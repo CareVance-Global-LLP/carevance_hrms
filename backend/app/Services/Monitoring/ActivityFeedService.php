@@ -9,6 +9,70 @@ use Illuminate\Support\Collection;
 
 class ActivityFeedService
 {
+    public function forUsersInRangeForIdle(iterable $userIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
+    {
+        $userIdCollection = $this->normalizeIds($userIds);
+        if ($userIdCollection->isEmpty()) {
+            return collect();
+        }
+
+        $activities = Activity::query()
+            ->whereIn('user_id', $userIdCollection)
+            ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+            ->get([
+                'id',
+                'user_id',
+                'time_entry_id',
+                'type',
+                'name',
+                'duration',
+                'recorded_at',
+                'normalized_label',
+                'normalized_domain',
+                'software_name',
+                'tool_type',
+                'classification',
+                'classification_reason',
+            ])
+            ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        $sessionModels = ActivitySession::query()
+            ->whereIn('user_id', $userIdCollection)
+            ->when($startDate || $endDate, function ($query) use ($startDate, $endDate) {
+                $this->applySessionOverlapFilter($query, $startDate, $endDate);
+            })
+            ->orderBy('user_id')
+            ->orderBy('source')
+            ->orderBy('started_at')
+            ->orderBy('id')
+            ->get([
+                'id',
+                'user_id',
+                'time_entry_id',
+                'source',
+                'activity_kind',
+                'tool_type',
+                'display_name',
+                'app_name',
+                'window_title',
+                'url',
+                'normalized_label',
+                'normalized_domain',
+                'software_name',
+                'classification',
+                'classification_reason',
+                'started_at',
+                'ended_at',
+            ]);
+
+        $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
+
+        return $activities
+            ->concat($sessions)
+            ->values();
+    }
+
     public function forUsersInRange(iterable $userIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
     {
         $userIdCollection = $this->normalizeIds($userIds);
@@ -39,6 +103,70 @@ class ActivityFeedService
         return $activities
             ->concat($sessions)
             ->sortByDesc(fn ($item) => $this->sortTimestamp($item))
+            ->values();
+    }
+
+    public function forTimeEntriesForIdle(iterable $timeEntryIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
+    {
+        $timeEntryIdCollection = $this->normalizeIds($timeEntryIds);
+        if ($timeEntryIdCollection->isEmpty()) {
+            return collect();
+        }
+
+        $activities = Activity::query()
+            ->whereIn('time_entry_id', $timeEntryIdCollection)
+            ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+            ->get([
+                'id',
+                'user_id',
+                'time_entry_id',
+                'type',
+                'name',
+                'duration',
+                'recorded_at',
+                'normalized_label',
+                'normalized_domain',
+                'software_name',
+                'tool_type',
+                'classification',
+                'classification_reason',
+            ])
+            ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        $sessionModels = ActivitySession::query()
+            ->whereIn('time_entry_id', $timeEntryIdCollection)
+            ->when($startDate || $endDate, function ($query) use ($startDate, $endDate) {
+                $this->applySessionOverlapFilter($query, $startDate, $endDate);
+            })
+            ->orderBy('user_id')
+            ->orderBy('source')
+            ->orderBy('started_at')
+            ->orderBy('id')
+            ->get([
+                'id',
+                'user_id',
+                'time_entry_id',
+                'source',
+                'activity_kind',
+                'tool_type',
+                'display_name',
+                'app_name',
+                'window_title',
+                'url',
+                'normalized_label',
+                'normalized_domain',
+                'software_name',
+                'classification',
+                'classification_reason',
+                'started_at',
+                'ended_at',
+            ]);
+
+        $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
+
+        return $activities
+            ->concat($sessions)
             ->values();
     }
 
