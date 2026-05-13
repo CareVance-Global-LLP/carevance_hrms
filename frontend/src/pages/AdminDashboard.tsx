@@ -589,8 +589,8 @@ export default function AdminDashboard() {
     queryKey: ['real-admin-dashboard', selectedStartDate, selectedEndDate, dashboardScope, selectedEmployeeId, scopeDepartmentFilter],
     queryFn: async () => {
       const reportScopeParams = dashboardScope === 'employee' && selectedEmployeeId
-        ? { start_date: selectedStartDate, end_date: selectedEndDate, user_ids: [selectedEmployeeId], dashboard_lite: 1, skip_activity: 1 }
-        : { start_date: selectedStartDate, end_date: selectedEndDate, dashboard_lite: 1, skip_activity: 1 };
+        ? { start_date: selectedStartDate, end_date: selectedEndDate, user_ids: [selectedEmployeeId], dashboard_lite: 1 }
+        : { start_date: selectedStartDate, end_date: selectedEndDate, dashboard_lite: 1 };
       const [
         usersResponse,
         attendanceResponse,
@@ -661,6 +661,7 @@ export default function AdminDashboard() {
     monthlyReport: { by_day: [] },
     attendanceCalendarDays: [],
   };
+  const isDashboardInitialLoading = dashboardQuery.data === undefined && dashboardQuery.isFetching;
 
   const leavesInRange = data.leaves.filter((leave: any) =>
     String(leave?.status || '').toLowerCase() === 'approved' && rangesOverlap(leave.start_date, leave.end_date, selectedRange)
@@ -861,12 +862,37 @@ export default function AdminDashboard() {
   const overallByUserRows = safeArray<any>(data.overall.by_user)
     .filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || 0)));
   const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
+  const resolveIdleSeconds = (row: any, trackedSeconds: number): number => {
+    const reportedIdle = Number(
+      row.idle_duration
+      ?? row.idle_time
+      ?? row.idle_total_duration
+      ?? row.non_working_duration
+      ?? NaN
+    );
+    if (Number.isFinite(reportedIdle) && reportedIdle > 0) {
+      return Math.min(trackedSeconds, Math.max(0, reportedIdle));
+    }
+
+    const reportedWorking = Number(
+      row.working_duration
+      ?? row.working_time
+      ?? row.billable_duration
+      ?? row.billable_time
+      ?? NaN
+    );
+    if (Number.isFinite(reportedWorking) && reportedWorking >= 0) {
+      return Math.max(0, trackedSeconds - Math.min(trackedSeconds, reportedWorking));
+    }
+
+    return 0;
+  };
   const productivityLeaders = overallByUserRows
     .map((row: any) => {
       const userId = Number(row.user?.id || row.user_id || 0);
       const employee = employeeById.get(userId);
       const trackedSeconds = Number(row.total_duration || 0);
-      const idleSeconds = Number(row.idle_duration || row.idle_time || 0);
+      const idleSeconds = resolveIdleSeconds(row, trackedSeconds);
       const workingSeconds = Math.max(0, trackedSeconds - idleSeconds);
       const productivityPercent = trackedSeconds > 0 ? Math.round((workingSeconds / trackedSeconds) * 100) : 0;
 
@@ -895,7 +921,7 @@ export default function AdminDashboard() {
     const department = employee?.department || 'Unassigned';
     const attendance = attendanceByEmployeeId.get(userId);
     const trackedSeconds = Number(row.total_duration || 0);
-    const idleSeconds = Number(row.idle_duration || row.idle_time || 0);
+    const idleSeconds = resolveIdleSeconds(row, trackedSeconds);
     const isPresent = Number(attendance?.present_days || 0) > 0 || hasActiveAttendance(attendance);
     const isLate = Number(attendance?.late_minutes || 0) > 0;
     acc[department] = acc[department] || {
@@ -2002,7 +2028,9 @@ export default function AdminDashboard() {
 
         <Card id="productivity-leaders" className="scroll-mt-24 p-4">
           <SectionTitle title="Productivity Leaders" action={<Link to="/reports/hours-tracked" className="text-xs font-medium text-blue-600">Open Hours</Link>} />
-          {productivityLeaders.length ? (
+          {isDashboardInitialLoading ? (
+            <EmptyInline>Loading productivity data...</EmptyInline>
+          ) : productivityLeaders.length ? (
             <div className="space-y-3">
               {productivityLeaders.map((row) => (
                 <div key={row.userId} className="rounded-lg border border-slate-100 p-3">
