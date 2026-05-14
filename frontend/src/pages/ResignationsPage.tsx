@@ -33,25 +33,25 @@ export default function ResignationsPage() {
     queryKey: ['resignations-employees'],
     queryFn: async () => {
       const response = await userApi.getAll();
-      return response.data || [];
+      return (response.data || []) as any[];
     },
     enabled: isAuthenticated && !isAuthLoading,
   });
 
   if (isAuthLoading) {
-    return <PageLoadingState title="Resignations & Exit Tracking" subtitle="Checking authentication..." />;
+    return <PageLoadingState label="Checking authentication..." />;
   }
 
   if (!isAuthenticated) {
-    return <PageErrorState title="Resignations" message="Please log in to view this page." />;
+    return <PageErrorState message="Please log in to view this page." />;
   }
 
   const exitData = useMemo(() => {
-    const inNotice = employees.filter((e: ExitRecord) => 
+    const inNotice = employees.filter((e: any) => 
       e.employment_status === 'notice' && !e.exit_date
     );
     
-    const exited = employees.filter((e: ExitRecord) => 
+    const exited = employees.filter((e: any) => 
       e.exit_date || e.employment_status === 'exited'
     );
     
@@ -82,7 +82,7 @@ export default function ResignationsPage() {
     // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      data = data.filter((employee: ExitRecord) =>
+      data = data.filter((employee: any) =>
         employee.name.toLowerCase().includes(query) ||
         employee.email.toLowerCase().includes(query) ||
         (employee.department || '').toLowerCase().includes(query) ||
@@ -90,7 +90,7 @@ export default function ResignationsPage() {
       );
     }
     
-    return data.sort((a: ExitRecord, b: ExitRecord) => {
+    return data.sort((a: any, b: any) => {
       // Sort by exit date (nulls first - active notice periods)
       if (!a.exit_date && b.exit_date) return -1;
       if (a.exit_date && !b.exit_date) return 1;
@@ -110,22 +110,22 @@ export default function ResignationsPage() {
   };
 
   if (isLoading) {
-    return <PageLoadingState title="Resignations & Exit Tracking" subtitle="Loading employee data..." />;
+    return <PageLoadingState label="Loading employee data..." />;
   }
 
   if (error) {
-    return <PageErrorState title="Resignations" message="Failed to load employee data. Please try again." />;
+    return <PageErrorState message="Failed to load employee data. Please try again." />;
   }
 
   return (
     <div className="min-h-screen bg-slate-50/50 pb-8">
       <PageHeader
         title="Resignations & Exit Tracking"
-        subtitle="Monitor employees in notice period and track exits"
+        description="Monitor employees in notice period and track exits"
         actions={
           <div className="flex items-center gap-2">
             <Link to="/dashboard">
-              <Button variant="outline" size="sm" className="gap-1">
+              <Button variant="secondary" size="sm" className="gap-1">
                 <ArrowLeft className="h-4 w-4" />
                 Back to Dashboard
               </Button>
@@ -155,7 +155,7 @@ export default function ResignationsPage() {
               <div>
                 <p className="text-xs text-slate-500">Exited This Month</p>
                 <p className="mt-1 text-2xl font-semibold text-slate-950">
-                  {exitData.exited.filter((e: ExitRecord) => {
+                  {exitData.exited.filter((e: any) => {
                     if (!e.exit_date) return false;
                     const exit = new Date(e.exit_date);
                     const now = new Date();
@@ -261,7 +261,7 @@ export default function ResignationsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredExits.map((employee: ExitRecord) => {
+                  {filteredExits.map((employee: any) => {
                     const isInNotice = employee.employment_status === 'notice' && !employee.exit_date;
                     const exitDate = employee.exit_date ? new Date(employee.exit_date) : null;
                     const daysUntilExit = exitDate 
@@ -349,7 +349,7 @@ export default function ResignationsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <Link to={`/employees/${employee.id}`}>
-                            <Button variant="outline" size="sm" className="h-7 text-xs">
+                            <Button variant="secondary" size="sm" className="h-7 text-xs">
                               {isInNotice ? 'Manage Exit' : 'View History'}
                             </Button>
                           </Link>
@@ -364,7 +364,7 @@ export default function ResignationsPage() {
             <div className="p-8 text-center">
               <PageEmptyState 
                 title="No exits found"
-                message={statusFilter === 'all' 
+                description={statusFilter === 'all' 
                   ? "No employees are currently in notice period or have exited."
                   : `No employees found with status: ${statusFilter}.`
                 }

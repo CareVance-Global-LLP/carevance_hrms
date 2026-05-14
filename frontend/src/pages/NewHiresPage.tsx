@@ -31,17 +31,17 @@ export default function NewHiresPage() {
     queryKey: ['new-hires-employees'],
     queryFn: async () => {
       const response = await userApi.getAll({ is_active: true });
-      return response.data || [];
+      return (response.data || []) as any[];
     },
     enabled: isAuthenticated && !isAuthLoading,
   });
 
   if (isAuthLoading) {
-    return <PageLoadingState title="New Hires" subtitle="Checking authentication..." />;
+    return <PageLoadingState label="Checking authentication..." />;
   }
 
   if (!isAuthenticated) {
-    return <PageErrorState title="New Hires" message="Please log in to view this page." />;
+    return <PageErrorState message="Please log in to view this page." />;
   }
 
   const dateRangeLabel = useMemo(() => {
@@ -63,11 +63,11 @@ export default function NewHiresPage() {
     }
 
     return employees
-      .filter((employee: HireRecord) => {
+      .filter((employee: any) => {
         const joinDate = new Date(employee.joining_date || employee.created_at);
         return joinDate >= cutoffDate;
       })
-      .filter((employee: HireRecord) => {
+      .filter((employee: any) => {
         if (!searchQuery) return true;
         const query = searchQuery.toLowerCase();
         return (
@@ -77,7 +77,7 @@ export default function NewHiresPage() {
           (employee.employee_code || '').toLowerCase().includes(query)
         );
       })
-      .sort((a: HireRecord, b: HireRecord) => {
+      .sort((a: any, b: any) => {
         const dateA = new Date(a.joining_date || a.created_at);
         const dateB = new Date(b.joining_date || b.created_at);
         return dateB.getTime() - dateA.getTime();
@@ -86,12 +86,12 @@ export default function NewHiresPage() {
 
   const stats = useMemo(() => {
     const now = new Date();
-    const thisMonth = filteredHires.filter((e: HireRecord) => {
+    const thisMonth = filteredHires.filter((e: any) => {
       const joinDate = new Date(e.joining_date || e.created_at);
       return joinDate.getMonth() === now.getMonth() && joinDate.getFullYear() === now.getFullYear();
     }).length;
     
-    const lastMonth = employees.filter((e: HireRecord) => {
+    const lastMonth = employees.filter((e: any) => {
       const joinDate = new Date(e.joining_date || e.created_at);
       const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       return joinDate.getMonth() === lastMonth.getMonth() && joinDate.getFullYear() === lastMonth.getFullYear();
@@ -101,22 +101,22 @@ export default function NewHiresPage() {
   }, [filteredHires, employees]);
 
   if (isLoading) {
-    return <PageLoadingState title="New Hires" subtitle="Loading employee data..." />;
+    return <PageLoadingState label="Loading employee data..." />;
   }
 
   if (error) {
-    return <PageErrorState title="New Hires" message="Failed to load employee data. Please try again." />;
+    return <PageErrorState message="Failed to load employee data. Please try again." />;
   }
 
   return (
     <div className="min-h-screen bg-slate-50/50 pb-8">
       <PageHeader
         title="New Hires"
-        subtitle={`Track and manage recently joined employees - ${dateRangeLabel}`}
+        description={`Track and manage recently joined employees - ${dateRangeLabel}`}
         actions={
           <div className="flex items-center gap-2">
             <Link to="/dashboard">
-              <Button variant="outline" size="sm" className="gap-1">
+              <Button variant="secondary" size="sm" className="gap-1">
                 <ArrowLeft className="h-4 w-4" />
                 Back to Dashboard
               </Button>
@@ -219,7 +219,7 @@ export default function NewHiresPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredHires.map((employee: HireRecord) => {
+                  {filteredHires.map((employee: any) => {
                     const joinDate = new Date(employee.joining_date || employee.created_at);
                     const daysSince = Math.floor((new Date().getTime() - joinDate.getTime()) / (1000 * 60 * 60 * 24));
                     
@@ -268,7 +268,7 @@ export default function NewHiresPage() {
                         </td>
                         <td className="px-4 py-3">
                           <Link to={`/employees/${employee.id}`}>
-                            <Button variant="outline" size="sm" className="h-7 text-xs">
+                            <Button variant="secondary" size="sm" className="h-7 text-xs">
                               View Profile
                             </Button>
                           </Link>
@@ -283,7 +283,7 @@ export default function NewHiresPage() {
             <div className="p-8 text-center">
               <PageEmptyState 
                 title="No new hires found"
-                message={`No employees have joined in the ${dateRangeLabel.toLowerCase()}. Try selecting a different time period.`}
+                description={`No employees have joined in the ${dateRangeLabel.toLowerCase()}. Try selecting a different time period.`}
               />
             </div>
           )}

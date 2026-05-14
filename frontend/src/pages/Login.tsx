@@ -74,7 +74,9 @@ export default function Login() {
         return;
       }
 
-      setError(err.response?.data?.message || 'Invalid email or password');
+      // Show specific field error if available (e.g., email validation error), otherwise show general message
+      const fieldError = err.response?.data?.errors?.email?.[0] || err.response?.data?.errors?.password?.[0];
+      setError(fieldError || err.response?.data?.message || 'Invalid email or password');
     } finally {
       setIsLoading(false);
     }

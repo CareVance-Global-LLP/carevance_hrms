@@ -51,13 +51,13 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
       return inMemoryAuthToken;
     }
 
-    // Try to restore from storage (for desktop app persistence)
-    const preferredStorage = getPreferredAuthStorage();
-    const storedToken = preferredStorage?.getItem('token') ?? null;
-    
-    if (storedToken) {
-      inMemoryAuthToken = storedToken;
-      return inMemoryAuthToken;
+    // Try to restore from sessionStorage (where we saved it)
+    if (typeof window !== 'undefined') {
+      const storedToken = window.sessionStorage.getItem('token');
+      if (storedToken) {
+        inMemoryAuthToken = storedToken;
+        return inMemoryAuthToken;
+      }
     }
     
     return null;
@@ -67,11 +67,25 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
     if (inMemoryUser !== null) {
       return inMemoryUser;
     }
+    // Try to restore from sessionStorage on page reload
+    const preferredStorage = getPreferredAuthStorage();
+    const storedUser = preferredStorage?.getItem('user') ?? null;
+    if (storedUser) {
+      inMemoryUser = storedUser;
+      return inMemoryUser;
+    }
     return null;
   }
   
   if (key === 'organization') {
     if (inMemoryOrganization !== null) {
+      return inMemoryOrganization;
+    }
+    // Try to restore from sessionStorage on page reload
+    const preferredStorage = getPreferredAuthStorage();
+    const storedOrg = preferredStorage?.getItem('organization') ?? null;
+    if (storedOrg) {
+      inMemoryOrganization = storedOrg;
       return inMemoryOrganization;
     }
     return null;
@@ -83,9 +97,10 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
 export const setStoredAuthValue = (key: AuthStorageKey, value: string) => {
   if (key === 'token') {
     inMemoryAuthToken = value;
-    // Only persist token in storage for desktop app
-    if (typeof window !== 'undefined' && window.desktopTracker) {
-      getPreferredAuthStorage()?.setItem('token', value);
+    // Persist token to sessionStorage for web app persistence across reloads
+    // Use sessionStorage (not localStorage) for security - cleared when browser closes
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('token', value);
     }
     return;
   }
