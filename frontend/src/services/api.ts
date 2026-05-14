@@ -98,7 +98,7 @@ api.interceptors.response.use(
     
     // Handle forbidden errors
     if (status === 403 || errorCode === 'FORBIDDEN') {
-      console.error('Access forbidden:', error.response?.data?.message || 'You do not have permission to perform this action');
+      console.error('Access forbidden:', (error.response?.data as any)?.message || 'You do not have permission to perform this action');
       return Promise.reject(error);
     }
     

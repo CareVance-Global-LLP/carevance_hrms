@@ -13,7 +13,7 @@ $allowedOriginPatterns = array_values(array_filter(array_map(
     static fn (string $pattern) => trim($pattern),
     explode(',', (string) env(
         'CORS_ALLOWED_ORIGIN_PATTERNS',
-        $isLocalEnvironment ? '^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$' : ''
+        $isLocalEnvironment ? '#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#' : ''
     ))
 )));
 

@@ -59,6 +59,8 @@ const ReportsWorkspace = lazyWithChunkRetry(() => import('@/pages/ReportsWorkspa
 const MonitoringWorkspace = lazyWithChunkRetry(() => import('@/pages/MonitoringWorkspace'));
 const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeManagementWorkspace'));
 const EmployeeDetailWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeDetailWorkspace'));
+const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
+const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
 const AddUserPage = lazyWithChunkRetry(() => import('@/pages/AddUserPage'));
 const BillingSettingsPage = lazyWithChunkRetry(() => import('@/pages/BillingSettingsPage'));
 const SuperAdminCompanies = lazyWithChunkRetry(() => import('@/pages/super-admin/Companies'));
@@ -383,6 +385,8 @@ function App() {
             <Route path="employees/teams" element={<AdminRoute><EmployeeManagementWorkspace mode="teams" /></AdminRoute>} />
             <Route path="employees/invitations" element={<AdminRoute><EmployeeManagementWorkspace mode="invitations" /></AdminRoute>} />
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />
+            <Route path="new-hires" element={<AdminRoute><NewHiresPage /></AdminRoute>} />
+            <Route path="resignations" element={<AdminRoute><ResignationsPage /></AdminRoute>} />
             <Route path="audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
             <Route path="add-user" element={<StrictAdminRoute><AddUserPage /></StrictAdminRoute>} />
             <Route path="users/add-user" element={<StrictAdminRoute><AddUserPage /></StrictAdminRoute>} />

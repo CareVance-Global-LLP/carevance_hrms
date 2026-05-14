@@ -19,6 +19,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   SquareKanban,
+  UserMinus,
+  UserPlus,
   Users,
   Wallet,
   Waypoints,
@@ -60,6 +62,8 @@ export const topNavigation: NavGroup[] = [
     icon: Users,
     items: [
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
+      { label: 'New Hires', to: '/new-hires', icon: UserPlus, adminOnly: true },
+      { label: 'Resignations', to: '/resignations', icon: UserMinus, adminOnly: true },
       { label: 'Departments', to: '/employees/teams', icon: Building2, adminOnly: true },
       { label: 'Roles & Permissions', to: '/employees/roles', icon: ShieldCheck, adminOnly: true },
       { label: 'Announcements', to: '/notifications', icon: Bell, adminOnly: true },
