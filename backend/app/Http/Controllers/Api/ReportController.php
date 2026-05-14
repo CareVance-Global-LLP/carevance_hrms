@@ -869,7 +869,7 @@ class ReportController extends Controller
         $skipActivity = $request->boolean('skip_activity');
         $idleSummary = $skipActivity
             ? ['by_user' => [], 'by_user_day' => []]
-            : $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
+            : $this->summarizeIdleDurationsForUsers($userIds, $startDate, $endDate);
         $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
             ->mapWithKeys(fn ($duration, $id) => [(int) $id => (int) $duration])
             ->all();
@@ -1056,7 +1056,7 @@ class ReportController extends Controller
             ->values();
         $idleSummary = $skipActivity
             ? ['by_user' => [], 'by_user_day' => []]
-            : $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
+            : $this->summarizeIdleDurationsForUsers($userIds, $startDate, $endDate);
         $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
             ->mapWithKeys(fn ($duration, $id) => [(int) $id => (int) $duration])
             ->all();
@@ -1174,6 +1174,28 @@ class ReportController extends Controller
             'by_user' => $byUser,
             'by_day' => $byDay,
         ];
+    }
+
+    private function summarizeIdleDurationsForUsers(iterable $userIds, Carbon $startDate, Carbon $endDate): array
+    {
+        $ids = collect($userIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [
+                'total_idle_time' => 0,
+                'idle_segments_count' => 0,
+                'by_user' => [],
+                'by_user_day' => [],
+            ];
+        }
+
+        $activities = $this->activityFeedService->forUsersInRangeForIdle($ids->all(), $startDate, $endDate);
+
+        return $this->usageProcessingService->summarizeIdleDurations($activities);
     }
 
     private function groupActivitiesByUserAndDay(Collection $activities): Collection
@@ -1468,8 +1490,9 @@ class ReportController extends Controller
         $entriesByUser = $entries->groupBy(fn (TimeEntry $entry) => (int) $entry->user_id);
 
         $idleSummary = $userIds->isEmpty()
-            ? ['by_user' => []]
-            : $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds->all(), $startDate, $endDate);
+            ? ['by_user' => []
+            ]
+            : $this->summarizeIdleDurationsForUsers($userIds->all(), $startDate, $endDate);
         $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
             ->mapWithKeys(fn ($duration, $userId) => [(int) $userId => (int) $duration])
             ->all();

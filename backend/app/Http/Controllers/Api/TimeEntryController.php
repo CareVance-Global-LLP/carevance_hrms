@@ -519,13 +519,13 @@ class TimeEntryController extends Controller
         $configured = $attendanceSettings['late_after_time'] ?? null;
 
         if (!is_string($configured) || trim($configured) === '') {
-            return Carbon::parse(env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER))->format('H:i:s');
+            return Carbon::parse(config('attendance.late_after', self::DEFAULT_LATE_AFTER))->format('H:i:s');
         }
 
         try {
             return Carbon::parse($configured)->format('H:i:s');
         } catch (\Throwable) {
-            return Carbon::parse(env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER))->format('H:i:s');
+            return Carbon::parse(config('attendance.late_after', self::DEFAULT_LATE_AFTER))->format('H:i:s');
         }
     }
 

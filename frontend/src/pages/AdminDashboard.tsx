@@ -887,6 +887,9 @@ export default function AdminDashboard() {
 
     return 0;
   };
+  const selectedEmployeeOverallRow = selectedEmployee
+    ? overallByUserRows.find((row: any) => Number(row.user?.id || row.user_id || 0) === selectedEmployee.id) || null
+    : null;
   const productivityLeaders = overallByUserRows
     .map((row: any) => {
       const userId = Number(row.user?.id || row.user_id || 0);
@@ -963,14 +966,20 @@ export default function AdminDashboard() {
   const employeesWithoutTrackedTime = overallByUserRows.filter((row: any) => Number(row.total_duration || 0) <= 0).length;
   const workStatusRows = employees.map((employee) => {
     const attendance = attendanceByEmployeeId.get(employee.id);
+    const overallRow = overallByUserRows.find((row: any) => Number(row.user?.id || row.user_id || 0) === employee.id);
     const isWorking = employee.status !== 'On Leave' && hasActiveAttendance(attendance);
     const checkInAt = attendance?.check_in_at || attendance?.open_punch_in_at || attendance?.last_check_in_at || null;
     const checkOutAt = attendance?.check_out_at || attendance?.last_check_out_at || null;
     const presentDays = Math.max(Number(attendance?.present_days || 0), isWorking ? 1 : 0);
+    const todaySeconds = Number(attendance?.total_worked_seconds || attendance?.worked_seconds || overallRow?.total_duration || 0);
+    const idleSeconds = overallRow ? resolveIdleSeconds(overallRow, todaySeconds) : 0;
+    const workedSeconds = Math.max(0, todaySeconds - idleSeconds);
     return {
       employee,
       status: employee.status === 'On Leave' ? 'On Leave' : isWorking ? 'Working' : 'Not working',
-      todaySeconds: Number(attendance?.total_worked_seconds || attendance?.worked_seconds || 0),
+      todaySeconds,
+      workedSeconds,
+      idleSeconds,
       presentDays,
       lateMinutes: Number(attendance?.late_minutes || 0),
       checkInAt,
@@ -1059,7 +1068,17 @@ export default function AdminDashboard() {
   const employeeInsights: any = employeeDetail?.insights || null;
   const employeeScreenshots: any = employeeDetail?.screenshots || null;
   const employeeStats = employeeInsights?.stats || employeeProfile?.summary || {};
-  const selectedEmployeeIdleSeconds = Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0);
+  const selectedEmployeeTrackedSeconds = Number(
+    selectedEmployeeOverallRow?.total_duration
+    ?? selectedWorkStatus?.todaySeconds
+    ?? 0
+  );
+  const selectedEmployeeIdleFromOverall = selectedEmployeeOverallRow
+    ? resolveIdleSeconds(selectedEmployeeOverallRow, selectedEmployeeTrackedSeconds)
+    : NaN;
+  const selectedEmployeeIdleSeconds = Number.isFinite(selectedEmployeeIdleFromOverall)
+    ? selectedEmployeeIdleFromOverall
+    : Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0);
   const scopeIdleSeconds = dashboardScope === 'employee'
     ? selectedEmployeeIdleSeconds
     : Number(data.overall.summary?.idle_duration || data.overall.summary?.idle_time || 0);
@@ -1746,12 +1765,14 @@ export default function AdminDashboard() {
             </select>
           </div>
           <div className="overflow-x-auto rounded-lg border border-slate-100">
-            <table className="min-w-[760px] w-full text-left text-xs">
+            <table className="min-w-[900px] w-full text-left text-xs">
               <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Department</th>
                   <th className="px-4 py-3 font-medium">Tracked</th>
+                  <th className="px-4 py-3 font-medium">Worked</th>
+                  <th className="px-4 py-3 font-medium">Idle</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Last signal</th>
                 </tr>
@@ -1770,6 +1791,8 @@ export default function AdminDashboard() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{row.employee.department}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">{formatDuration(row.todaySeconds)}</td>
+                    <td className="px-4 py-3 font-medium text-emerald-700">{formatDuration(row.workedSeconds)}</td>
+                    <td className="px-4 py-3 font-medium text-amber-600">{formatDuration(row.idleSeconds)}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${row.status === 'Working' ? 'bg-emerald-50 text-emerald-700' : row.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{row.status}</span>
                     </td>
