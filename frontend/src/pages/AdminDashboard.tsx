@@ -2063,23 +2063,22 @@ export default function AdminDashboard() {
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {dashboardScope === 'employee' ? (
-                    [
-                      { key: 'all', label: 'All', count: selectedEmployeeRangeStatusRows.length },
-                      { key: 'present', label: 'Present', count: selectedEmployeeRangeCounts.present },
-                      { key: 'present_on_time', label: 'Present On Time', count: selectedEmployeeRangeCounts.presentOnTime },
-                      { key: 'present_late', label: 'Present Late', count: selectedEmployeeRangeCounts.presentLate },
-                      { key: 'on_leave', label: 'On Leave', count: selectedEmployeeRangeCounts.onLeave },
-                      { key: 'absent', label: 'Absent', count: selectedEmployeeRangeCounts.absent },
-                    ].map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => setRangeStatusFilter(item.key as RangeStatusFilter)}
-                        className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${rangeStatusFilter === item.key ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
-                      >
-                        {item.label} ({item.count})
-                      </button>
-                    ))
+                    <button
+                      type="button"
+                      className="rounded-md border border-blue-600 bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-700"
+                    >
+                      {rangeStatusFilter === 'all'
+                        ? `All (${selectedEmployeeRangeStatusRows.length})`
+                        : rangeStatusFilter === 'present'
+                          ? `Present (${selectedEmployeeRangeCounts.present})`
+                          : rangeStatusFilter === 'present_on_time'
+                            ? `Present On Time (${selectedEmployeeRangeCounts.presentOnTime})`
+                            : rangeStatusFilter === 'present_late'
+                              ? `Present Late (${selectedEmployeeRangeCounts.presentLate})`
+                              : rangeStatusFilter === 'on_leave'
+                                ? `On Leave (${selectedEmployeeRangeCounts.onLeave})`
+                                : `Absent (${selectedEmployeeRangeCounts.absent})`}
+                    </button>
                   ) : (
                     <button
                       type="button"
