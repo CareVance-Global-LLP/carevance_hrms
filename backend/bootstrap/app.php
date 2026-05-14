@@ -24,6 +24,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'api.token' => \App\Http\Middleware\AuthenticateApiToken::class,
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+            'sanitize' => \App\Http\Middleware\SanitizeInput::class,
+        ]);
+
+        // Apply sanitize middleware to API routes
+        $middleware->api(prepend: [
+            \App\Http\Middleware\SanitizeInput::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

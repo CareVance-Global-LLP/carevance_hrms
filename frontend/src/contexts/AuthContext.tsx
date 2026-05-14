@@ -30,8 +30,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const COOKIE_AUTH_STATE_TOKEN = '__cookie_authenticated__';
 
-// Demo mode - set to true to use mock data without backend
-const DEMO_MODE = false;
+// Demo mode - only enabled in development when explicitly set
+const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_MODE === 'true';
 const API_URL = apiUrl;
 
 const getResponseStatus = (error: unknown): number | null => {

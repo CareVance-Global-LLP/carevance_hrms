@@ -776,7 +776,7 @@ class AttendanceService
 
     private function shiftTargetSeconds(): int
     {
-        return max(1, (int) env('ATTENDANCE_SHIFT_SECONDS', 8 * 3600));
+        return config('attendance.shift_seconds', 8 * 3600);
     }
 
     private function officeStartTimeForUser(User $user): string
@@ -795,7 +795,7 @@ class AttendanceService
 
         return $this->normalizeTimeString(
             $attendanceSettings['late_after_time'] ?? null,
-            env('ATTENDANCE_LATE_AFTER', self::DEFAULT_LATE_AFTER)
+            config('attendance.late_after', self::DEFAULT_LATE_AFTER)
         );
     }
 

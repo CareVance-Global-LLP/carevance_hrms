@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DesktopDownloadController;
+use App\Http\Controllers\Api\HealthCheckController;
 use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\SettingsController;
@@ -10,6 +11,9 @@ use App\Http\Controllers\Api\ScreenshotController;
 use App\Http\Controllers\Api\SupportController;
 use App\Http\Controllers\Api\PasswordResetController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/health', [HealthCheckController::class, 'index']);
+Route::get('/health/simple', [HealthCheckController::class, 'simple']);
 
 Route::get('/auth/email/verify/{id}/{hash}', [VerifyEmailController::class, 'verify'])
     ->whereNumber('id')

@@ -73,6 +73,11 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
+  // Add request timeout for better error handling
+  config.timeout = config.timeout || 30000; // 30 seconds default
+  config.timeoutErrorMessage = 'Request timed out. Please check your connection.';
+  
   return config;
 });
 
@@ -80,10 +85,45 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    const errorCode = (error.response?.data as any)?.error_code;
+    
+    // Handle authentication errors
+    if (status === 401 || errorCode === 'UNAUTHORIZED') {
       clearAuthStorage();
       window.dispatchEvent(new Event('app:auth-cleared'));
+      // Don't reject - let the component handle the redirect
+      return Promise.reject(error);
     }
+    
+    // Handle forbidden errors
+    if (status === 403 || errorCode === 'FORBIDDEN') {
+      console.error('Access forbidden:', error.response?.data?.message || 'You do not have permission to perform this action');
+      return Promise.reject(error);
+    }
+    
+    // Handle validation errors
+    if (status === 422 || errorCode === 'VALIDATION_ERROR') {
+      // Let the component handle validation errors
+      return Promise.reject(error);
+    }
+    
+    // Handle rate limiting
+    if (status === 429 || errorCode === 'TOO_MANY_REQUESTS') {
+      console.error('Rate limit exceeded. Please try again later.');
+      return Promise.reject(error);
+    }
+    
+    // Handle server errors
+    if (status && status >= 500) {
+      console.error('Server error. Please try again later.');
+      const requestId = (error.response?.data as any)?.request_id;
+      if (requestId) {
+        console.error('Request ID:', requestId);
+      }
+      return Promise.reject(error);
+    }
+    
     return Promise.reject(error);
   }
 );
