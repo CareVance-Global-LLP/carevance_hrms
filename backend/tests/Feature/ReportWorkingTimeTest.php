@@ -352,6 +352,56 @@ class ReportWorkingTimeTest extends TestCase
         $this->assertSame(0, (int) $overallResponse->json('summary.idle_duration'));
     }
 
+    public function test_dashboard_lite_overall_and_employee_insights_share_normalized_idle_time_for_duplicate_idle_rows(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        $entry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => '2026-03-17 10:00:00',
+            'end_time' => '2026-03-17 10:15:00',
+            'duration' => 900,
+            'billable' => true,
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'idle',
+            'name' => 'System Idle - Duplicate A',
+            'duration' => 300,
+            'recorded_at' => '2026-03-17 10:10:00',
+        ]);
+
+        Activity::create([
+            'user_id' => $employee->id,
+            'time_entry_id' => $entry->id,
+            'type' => 'idle',
+            'name' => 'System Idle - Duplicate B',
+            'duration' => 300,
+            'recorded_at' => '2026-03-17 10:10:00',
+        ]);
+
+        $overallResponse = $this->getJson('/api/reports/overall?start_date=2026-03-17&end_date=2026-03-17&dashboard_lite=1&user_ids[]='.$employee->id, $headers)
+            ->assertOk()
+            ->assertJsonPath('summary.total_duration', 900)
+            ->assertJsonPath('summary.idle_duration', 300)
+            ->assertJsonPath('summary.working_duration', 600)
+            ->assertJsonPath('by_user.0.idle_duration', 300)
+            ->assertJsonPath('by_day.0.idle_duration', 300);
+
+        $insightsResponse = $this->getJson("/api/reports/employee-insights?start_date=2026-03-17&end_date=2026-03-17&user_id={$employee->id}", $headers)
+            ->assertOk()
+            ->assertJsonPath('stats.total_duration', 900)
+            ->assertJsonPath('stats.idle_total_duration', 300)
+            ->assertJsonPath('stats.working_duration', 600);
+
+        $this->assertSame(
+            (int) $insightsResponse->json('stats.idle_total_duration'),
+            (int) $overallResponse->json('summary.idle_duration')
+        );
+    }
+
     public function test_admin_overall_report_counts_live_duration_for_open_time_entries(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-03-16 11:15:00'));

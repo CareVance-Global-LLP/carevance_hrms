@@ -887,6 +887,9 @@ export default function AdminDashboard() {
 
     return 0;
   };
+  const selectedEmployeeOverallRow = selectedEmployee
+    ? overallByUserRows.find((row: any) => Number(row.user?.id || row.user_id || 0) === selectedEmployee.id) || null
+    : null;
   const productivityLeaders = overallByUserRows
     .map((row: any) => {
       const userId = Number(row.user?.id || row.user_id || 0);
@@ -1059,7 +1062,17 @@ export default function AdminDashboard() {
   const employeeInsights: any = employeeDetail?.insights || null;
   const employeeScreenshots: any = employeeDetail?.screenshots || null;
   const employeeStats = employeeInsights?.stats || employeeProfile?.summary || {};
-  const selectedEmployeeIdleSeconds = Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0);
+  const selectedEmployeeTrackedSeconds = Number(
+    selectedEmployeeOverallRow?.total_duration
+    ?? selectedWorkStatus?.todaySeconds
+    ?? 0
+  );
+  const selectedEmployeeIdleFromOverall = selectedEmployeeOverallRow
+    ? resolveIdleSeconds(selectedEmployeeOverallRow, selectedEmployeeTrackedSeconds)
+    : NaN;
+  const selectedEmployeeIdleSeconds = Number.isFinite(selectedEmployeeIdleFromOverall)
+    ? selectedEmployeeIdleFromOverall
+    : Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0);
   const scopeIdleSeconds = dashboardScope === 'employee'
     ? selectedEmployeeIdleSeconds
     : Number(data.overall.summary?.idle_duration || data.overall.summary?.idle_time || 0);

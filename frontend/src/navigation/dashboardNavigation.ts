@@ -7,7 +7,6 @@ import {
   CalendarClock,
   Camera,
   FileClock,
-  FileSpreadsheet,
   Fingerprint,
   FolderKanban,
   Gauge,
@@ -120,8 +119,6 @@ export const topNavigation: NavGroup[] = [
     adminOnly: true,
     items: [
       { label: 'Settings', to: '/settings', icon: Settings, adminOnly: true },
-      { label: 'Integrations', to: '/settings/integrations', icon: Building2, adminOnly: true },
-      { label: 'Custom Fields', to: '/settings/custom-fields', icon: FileSpreadsheet, adminOnly: true },
       { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true },
     ],
   },
