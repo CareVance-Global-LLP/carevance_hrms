@@ -10,7 +10,6 @@ import { FieldLabel, SelectInput, ToggleInput } from '@/components/ui/FormField'
 import EmailTagInput from '@/components/add-user/EmailTagInput';
 import RoleSelector from '@/components/add-user/RoleSelector';
 import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
-import ProjectMultiSelect from '@/components/add-user/ProjectMultiSelect';
 import InviteLinkPanel from '@/components/add-user/InviteLinkPanel';
 import CsvUploadPanel from '@/components/add-user/CsvUploadPanel';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
@@ -74,7 +73,7 @@ export default function AddUserDrawer({
   const [invalidEmails, setInvalidEmails] = useState<string[]>([]);
   const [role, setRole] = useState<InviteUserRole>('employee');
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>(storedDefaults.groupIds);
-  const [selectedProjectIds, setSelectedProjectIds] = useState<number[]>(storedDefaults.projectIds);
+  const selectedProjectIds: number[] = [];
   const [rememberDefaults, setRememberDefaults] = useState(storedDefaults.remember);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [settings, setSettings] = useState<AdditionalInviteSettings>(defaultSettings);
@@ -426,19 +425,6 @@ export default function AddUserDrawer({
                   onCreateNew={() => setShowGroupModal(true)}
                 />
 
-                <div className="h-px bg-slate-200" />
-              </>
-            ) : null}
-
-            {activeTab !== 'csv' ? (
-              <>
-                <ProjectMultiSelect
-                  options={projectsQuery.data || []}
-                  selectedIds={selectedProjectIds}
-                  onChange={setSelectedProjectIds}
-                  isLoading={projectsQuery.isLoading}
-                  errorMessage={projectsQuery.isError ? 'Failed to load projects.' : undefined}
-                />
                 <div className="h-px bg-slate-200" />
               </>
             ) : null}
