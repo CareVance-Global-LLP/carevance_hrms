@@ -22,7 +22,8 @@ import TaskSelect from '@/components/ui/TaskSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput } from '@/components/ui/FormField';
 import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
-import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
+import { DATE_RANGE_PRESET_OPTIONS, deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
+
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
@@ -589,6 +590,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     setStartDate(nextRange.startDate);
     setEndDate(nextRange.endDate);
   };
+
+  const customExportRangePresetLabel = DATE_RANGE_PRESET_OPTIONS.find((option) => option.value === datePreset)?.label || 'Custom range';
+  const customExportRangeLabel = startDate === endDate ? startDate : `${startDate} - ${endDate}`;
 
   const usersQuery = useQuery({
     queryKey: ['report-workspace-users'],
@@ -1412,28 +1416,63 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <SurfaceCard className="p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Date Range</p>
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="text-xs text-slate-500">
-                  <span className="mb-1 block font-semibold uppercase tracking-[0.12em]">Start Date</span>
-                  <input
-                    type="date"
-                    value={startDate}
-                    readOnly
-                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
-                  />
-                </label>
-                <label className="text-xs text-slate-500">
-                  <span className="mb-1 block font-semibold uppercase tracking-[0.12em]">End Date</span>
-                  <input
-                    type="date"
-                    value={endDate}
-                    readOnly
-                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
-                  />
-                </label>
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Date Filter</p>
+                  <p className="mt-1 truncate text-sm font-medium text-slate-900">{customExportRangePresetLabel}: {customExportRangeLabel}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {DATE_RANGE_PRESET_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleDatePresetChange(option.value)}
+                      className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${datePreset === option.value ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'}`}
+                    >
+                      {option.value === 'custom' ? 'Custom' : option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <p className="mt-3 text-xs text-slate-500">This export includes data from {startDate} to {endDate}.</p>
+              {datePreset === 'custom' ? (
+                <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[minmax(0,180px)_minmax(0,180px)_1fr] sm:items-end">
+                  <label className="text-xs font-medium text-slate-600">
+                    Start date
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => {
+                        const nextStart = event.target.value;
+                        setDatePreset('custom');
+                        setStartDate(nextStart);
+                        if (endDate < nextStart) {
+                          setEndDate(nextStart);
+                        }
+                      }}
+                      className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    End date
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(event) => {
+                        const nextEnd = event.target.value;
+                        setDatePreset('custom');
+                        if (startDate > nextEnd) {
+                          setStartDate(nextEnd);
+                        }
+                        setEndDate(nextEnd);
+                      }}
+                      className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <p className="text-xs leading-5 text-slate-500">
+                    Custom ranges automatically apply after you choose dates. If the dates are reversed, the range is fixed automatically.
+                  </p>
+                </div>
+              ) : null}
             </SurfaceCard>
 
             <SurfaceCard className="p-4">
