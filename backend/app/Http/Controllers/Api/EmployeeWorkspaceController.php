@@ -224,7 +224,6 @@ class EmployeeWorkspaceController extends Controller
 
         return User::query()
             ->where('organization_id', $organizationId)
-            ->where('role', 'employee')
             ->find($id);
     }
 
