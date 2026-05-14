@@ -1396,7 +1396,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     );
   }
 
-  if (mode === 'custom-export') {
+  if (pageTitle.title === modeCopy['custom-export'].title) {
     return (
       <div className="space-y-6">
         {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
