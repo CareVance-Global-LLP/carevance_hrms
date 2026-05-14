@@ -686,6 +686,7 @@ export default function AdminDashboard() {
       || allEmployees[0]
       || null
     : null;
+  const isMultiDayRange = selectedStartDate !== selectedEndDate;
   const scopedEmployeeIds = new Set(
     dashboardScope === 'employee' && selectedEmployee
       ? [selectedEmployee.id]
@@ -693,6 +694,30 @@ export default function AdminDashboard() {
         .filter((employee) => scopeDepartmentFilter === 'All' || employee.department === scopeDepartmentFilter)
         .map((employee) => employee.id)
   );
+  const scopedEmployeeIdList = Array.from(scopedEmployeeIds).sort((left, right) => left - right);
+  const rangeAttendanceCalendarQuery = useQuery({
+    queryKey: ['dashboard-range-attendance-calendars', selectedStartDate, selectedEndDate, dashboardScope, selectedEmployee?.id || null, scopeDepartmentFilter, scopedEmployeeIdList],
+    enabled: isMultiDayRange && scopedEmployeeIdList.length > 0 && scopedEmployeeIdList.length <= 60,
+    queryFn: async () => {
+      const months = enumerateMonths(selectedRange);
+      const entries = await Promise.all(scopedEmployeeIdList.map(async (userId) => {
+        const responses = await Promise.all(months.map(async (month) => {
+          try {
+            return await attendanceApi.calendar({ month, user_id: userId, scope: 'selected' });
+          } catch {
+            return null;
+          }
+        }));
+        const days = responses
+          .flatMap((response) => safeArray<any>(response?.data?.days))
+          .filter((day) => dateInRange(day?.date, selectedRange))
+          .sort((a, b) => String(a?.date || '').localeCompare(String(b?.date || '')));
+        return [userId, days] as const;
+      }));
+
+      return Object.fromEntries(entries) as Record<number, any[]>;
+    },
+  });
   const scopedLeavesInRange = leavesInRange.filter((leave: any) => {
     const leaveUserId = resolveLeaveUserId(leave);
     return leaveUserId > 0 && scopedEmployeeIds.has(leaveUserId);
@@ -964,13 +989,30 @@ export default function AdminDashboard() {
   }).sort((left, right) => right.trackedSeconds - left.trackedSeconds).slice(0, 6);
   const departmentsNeedingAttention = departmentPerformanceRows.filter((row) => row.healthLabel === 'Needs attention').length;
   const employeesWithoutTrackedTime = overallByUserRows.filter((row: any) => Number(row.total_duration || 0) <= 0).length;
+  const isRangeIncludingToday = selectedStartDate <= todayIso() && selectedEndDate >= todayIso();
+  const rangeCalendarByEmployeeId = useMemo(() => {
+    const fromQuery = rangeAttendanceCalendarQuery.data || {};
+    if (Object.keys(fromQuery).length > 0) {
+      return new Map<number, any[]>(
+        Object.entries(fromQuery).map(([key, value]) => [Number(key), safeArray<any>(value)])
+      );
+    }
+
+    if (dashboardScope === 'employee' && selectedEmployee?.id) {
+      return new Map<number, any[]>([[selectedEmployee.id, calendarDaysInRange]]);
+    }
+
+    return new Map<number, any[]>();
+  }, [calendarDaysInRange, dashboardScope, rangeAttendanceCalendarQuery.data, selectedEmployee?.id]);
   const workStatusRows = employees.map((employee) => {
     const attendance = attendanceByEmployeeId.get(employee.id);
     const overallRow = overallByUserRows.find((row: any) => Number(row.user?.id || row.user_id || 0) === employee.id);
     const isWorking = employee.status !== 'On Leave' && hasActiveAttendance(attendance);
     const checkInAt = attendance?.check_in_at || attendance?.open_punch_in_at || attendance?.last_check_in_at || null;
     const checkOutAt = attendance?.check_out_at || attendance?.last_check_out_at || null;
-    const presentDays = Math.max(Number(attendance?.present_days || 0), isWorking ? 1 : 0);
+    const presentDays = isRangeIncludingToday
+      ? Math.max(Number(attendance?.present_days || 0), isWorking ? 1 : 0)
+      : Number(attendance?.present_days || 0);
     const todaySeconds = Number(attendance?.total_worked_seconds || attendance?.worked_seconds || overallRow?.total_duration || 0);
     const idleSeconds = overallRow ? resolveIdleSeconds(overallRow, todaySeconds) : 0;
     const workedSeconds = Math.max(0, todaySeconds - idleSeconds);
@@ -981,6 +1023,7 @@ export default function AdminDashboard() {
       workedSeconds,
       idleSeconds,
       presentDays,
+      lateDays: Number(attendance?.late_days || 0),
       lateMinutes: Number(attendance?.late_minutes || 0),
       checkInAt,
       checkOutAt,
@@ -992,9 +1035,9 @@ export default function AdminDashboard() {
     const matchesSearch = !search || [row.employee.name, row.employee.email, row.employee.position, row.employee.department]
       .some((value) => String(value || '').toLowerCase().includes(search));
     const matchesDepartment = workDepartmentFilter === 'All' || row.employee.department === workDepartmentFilter;
-    const isPresentLate = row.status !== 'On Leave' && row.lateMinutes > 0;
+    const isPresentLate = row.status !== 'On Leave' && (row.lateDays > 0 || (isRangeIncludingToday && row.lateMinutes > 0));
     const isPresent = row.status !== 'On Leave' && row.presentDays > 0;
-    const isAbsent = row.status !== 'On Leave' && row.presentDays <= 0 && !hasActiveAttendance(attendanceByEmployeeId.get(row.employee.id));
+    const isAbsent = row.status !== 'On Leave' && row.presentDays <= 0 && (!isRangeIncludingToday || !hasActiveAttendance(attendanceByEmployeeId.get(row.employee.id)));
     const matchesStatus =
       workStatusFilter === 'All'
       || row.status === workStatusFilter
@@ -1003,6 +1046,79 @@ export default function AdminDashboard() {
       || (workStatusFilter === 'Absent' && isAbsent);
     return matchesSearch && matchesDepartment && matchesStatus;
   });
+  const absentDateRows = useMemo(() => {
+    if (!isMultiDayRange || dashboardScope === 'employee') return [];
+
+    return filteredWorkStatusRows
+      .map((row) => {
+        const days = safeArray<any>(rangeCalendarByEmployeeId.get(row.employee.id));
+        const absentDates = days
+          .filter((day) => {
+            const status = String(day?.status || '').toLowerCase();
+            const date = String(day?.date || '').slice(0, 10);
+            return status === 'none' && !day?.is_holiday && !day?.is_weekend && date <= todayIso();
+          })
+          .map((day) => String(day.date || '').slice(0, 10));
+
+        return {
+          employee: row.employee,
+          absentDates,
+          total: absentDates.length,
+        };
+      })
+      .filter((row) => row.total > 0)
+      .sort((left, right) => right.total - left.total);
+  }, [dashboardScope, filteredWorkStatusRows, isMultiDayRange, rangeCalendarByEmployeeId]);
+  const presentLateDateRows = useMemo(() => {
+    if (!isMultiDayRange || dashboardScope === 'employee') return [];
+
+    return filteredWorkStatusRows
+      .map((row) => {
+        const days = safeArray<any>(rangeCalendarByEmployeeId.get(row.employee.id));
+        const lateEntries = days
+          .filter((day) => {
+            const lateMinutes = Number(day?.late_minutes || 0);
+            const status = String(day?.status || '').toLowerCase();
+            return lateMinutes > 0 && (status === 'present' || status === 'checked_in');
+          })
+          .map((day) => ({
+            date: String(day.date || '').slice(0, 10),
+            lateMinutes: Number(day.late_minutes || 0),
+          }));
+
+        const lateDays = lateEntries.length;
+        const averageLateMinutes = lateDays > 0
+          ? Math.round(lateEntries.reduce((sum, entry) => sum + entry.lateMinutes, 0) / lateDays)
+          : 0;
+
+        return {
+          employee: row.employee,
+          lateEntries,
+          lateDays,
+          averageLateMinutes,
+        };
+      })
+      .filter((row) => row.lateDays > 0)
+      .sort((left, right) => right.lateDays - left.lateDays);
+  }, [dashboardScope, filteredWorkStatusRows, isMultiDayRange, rangeCalendarByEmployeeId]);
+  const selectedEmployeeRangeStatusRows = useMemo(() => {
+    if (!isMultiDayRange || dashboardScope !== 'employee' || !selectedEmployee) return [];
+    const days = safeArray<any>(rangeCalendarByEmployeeId.get(selectedEmployee.id));
+    return days.map((day) => {
+      const status = String(day?.status || 'none').toLowerCase();
+      const label = status === 'checked_in' || status === 'present'
+        ? 'Present'
+        : status.includes('leave')
+          ? 'On Leave'
+          : status === 'holiday'
+            ? 'Holiday'
+            : 'Absent';
+      return {
+        date: String(day?.date || '').slice(0, 10),
+        status: label,
+      };
+    });
+  }, [dashboardScope, isMultiDayRange, rangeCalendarByEmployeeId, selectedEmployee]);
   const workingCount = workStatusRows.filter((row) => row.status === 'Working').length;
   const notWorkingCount = workStatusRows.filter((row) => row.status === 'Not working').length;
   const attendanceHealth = [
@@ -1804,6 +1920,96 @@ export default function AdminDashboard() {
             {filteredWorkStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No employees found</EmptyInline></div> : null}
           </div>
           <div className="mt-3 text-[11px] text-slate-400">Showing {Math.min(filteredWorkStatusRows.length, 8)} of {filteredWorkStatusRows.length} matching employees</div>
+          {isMultiDayRange ? (
+            <div className="mt-4 rounded-lg border border-slate-100">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  {dashboardScope === 'employee'
+                    ? 'Range Status Detail'
+                    : workStatusFilter === 'Present Late'
+                      ? 'Present Late Summary'
+                      : 'Absent Date Summary'}
+                </p>
+              </div>
+              {rangeAttendanceCalendarQuery.isFetching ? (
+                <div className="px-4 py-4 text-xs text-blue-600">Loading range attendance details...</div>
+              ) : dashboardScope === 'employee' ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[560px] w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Date</th>
+                        <th className="px-4 py-3 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedEmployeeRangeStatusRows.map((row) => (
+                        <tr key={row.date}>
+                          <td className="px-4 py-3 text-slate-700">{formatDate(row.date)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${row.status === 'Absent' ? 'bg-red-50 text-red-700' : row.status === 'Present' ? 'bg-emerald-50 text-emerald-700' : row.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                              {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {selectedEmployeeRangeStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No day-level records for this range</EmptyInline></div> : null}
+                </div>
+              ) : workStatusFilter === 'Present Late' ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[940px] w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Employee</th>
+                        <th className="px-4 py-3 font-medium">Department</th>
+                        <th className="px-4 py-3 font-medium">Late Dates</th>
+                        <th className="px-4 py-3 font-medium">Late Days</th>
+                        <th className="px-4 py-3 font-medium">Avg Late Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {presentLateDateRows.map((row) => (
+                        <tr key={row.employee.id}>
+                          <td className="px-4 py-3 font-medium text-slate-900">{row.employee.name}</td>
+                          <td className="px-4 py-3 text-slate-600">{row.employee.department}</td>
+                          <td className="px-4 py-3 text-slate-700">{row.lateEntries.map((entry) => formatDate(entry.date)).join(', ')}</td>
+                          <td className="px-4 py-3 font-semibold text-slate-900">{row.lateDays}</td>
+                          <td className="px-4 py-3 font-semibold text-rose-700">{row.averageLateMinutes} min</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {presentLateDateRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No late records found in this range for current filters</EmptyInline></div> : null}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[860px] w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Employee</th>
+                        <th className="px-4 py-3 font-medium">Department</th>
+                        <th className="px-4 py-3 font-medium">Absent Dates</th>
+                        <th className="px-4 py-3 font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {absentDateRows.map((row) => (
+                        <tr key={row.employee.id}>
+                          <td className="px-4 py-3 font-medium text-slate-900">{row.employee.name}</td>
+                          <td className="px-4 py-3 text-slate-600">{row.employee.department}</td>
+                          <td className="px-4 py-3 text-slate-700">{row.absentDates.map((date) => formatDate(date)).join(', ')}</td>
+                          <td className="px-4 py-3 font-semibold text-slate-900">{row.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {absentDateRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No absent days found in this range for current filters</EmptyInline></div> : null}
+                </div>
+              )}
+            </div>
+          ) : null}
         </Card>
 
         <Card id="time-tracker-card" className="scroll-mt-24 p-4">
@@ -1867,8 +2073,14 @@ export default function AdminDashboard() {
                     <td className="px-4 py-3 text-slate-600">{row.status === 'Working' ? 'Still checked in' : formatDateTime(row.checkOutAt)}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">{row.status === 'Working' ? 'Working now' : formatDuration(row.todaySeconds)}</td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${!row.checkInAt ? 'bg-slate-100 text-slate-600' : row.lateMinutes > 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                        {!row.checkInAt ? 'No punch' : row.lateMinutes > 0 ? `${row.lateMinutes} min late` : 'On time'}
+                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${!row.checkInAt ? 'bg-slate-100 text-slate-600' : (row.lateDays > 0 || (isRangeIncludingToday && row.lateMinutes > 0)) ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                        {!row.checkInAt
+                          ? 'No punch'
+                          : row.lateDays > 0
+                            ? `${row.lateDays} late day${row.lateDays === 1 ? '' : 's'}`
+                            : (isRangeIncludingToday && row.lateMinutes > 0)
+                              ? `${row.lateMinutes} min late`
+                              : 'On time'}
                       </span>
                     </td>
                   </tr>

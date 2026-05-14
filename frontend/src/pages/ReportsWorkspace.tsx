@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -524,6 +524,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [customExportUserIds, setCustomExportUserIds] = useState<number[]>([]);
   const [customExportDepartmentIds, setCustomExportDepartmentIds] = useState<number[]>([]);
   const [customExportEmployeeSearch, setCustomExportEmployeeSearch] = useState('');
+  const hasAutoOpenedCustomExportModal = useRef(false);
   const isHubMode = mode === 'reports-hub' || mode === 'analytics-hub';
 
   useEffect(() => {
@@ -721,6 +722,26 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     const allowedIds = new Set(departmentFilteredUsers.map((employee: any) => Number(employee.id)));
     setCustomExportUserIds((current) => current.filter((id) => allowedIds.has(Number(id))));
   }, [customExportDepartmentIds, departmentFilteredUsers]);
+
+  useEffect(() => {
+    if (mode !== 'custom-export' || hasAutoOpenedCustomExportModal.current) {
+      return;
+    }
+
+    if (!usersQuery.isSuccess || !groupsQuery.isSuccess) {
+      return;
+    }
+
+    const preselectedIds = effectiveSelectedUserId
+      ? [Number(effectiveSelectedUserId)]
+      : modalScopedUsers.map((employee: any) => Number(employee.id));
+
+    setCustomExportUserIds(preselectedIds);
+    setCustomExportDepartmentIds(selectedGroup ? [Number(selectedGroup.id)] : []);
+    setCustomExportEmployeeSearch('');
+    setCustomExportModalOpen(true);
+    hasAutoOpenedCustomExportModal.current = true;
+  }, [effectiveSelectedUserId, groupsQuery.isSuccess, mode, modalScopedUsers, selectedGroup, usersQuery.isSuccess]);
 
   useEffect(() => {
     if (!usersQuery.isSuccess || selectedUserId === '') {
@@ -1368,6 +1389,247 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           void dataQuery.refetch();
         }}
       />
+    );
+  }
+
+  if (mode === 'custom-export') {
+    return (
+      <div className="space-y-6">
+        {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
+        {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
+
+        <SurfaceCard className="w-full p-6 sm:p-7">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">Custom Export Builder</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">Choose report fields</h2>
+              <p className="mt-2 text-sm text-slate-500">
+                Select employee-wise or department-wise scope, choose columns, then download.
+                Time metrics include both minutes and hours in the CSV.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SurfaceCard className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Date Range</p>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="text-xs text-slate-500">
+                  <span className="mb-1 block font-semibold uppercase tracking-[0.12em]">Start Date</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    readOnly
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="text-xs text-slate-500">
+                  <span className="mb-1 block font-semibold uppercase tracking-[0.12em]">End Date</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    readOnly
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">This export includes data from {startDate} to {endDate}.</p>
+            </SurfaceCard>
+
+            <SurfaceCard className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Export Scope</p>
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="custom-export-scope"
+                    checked={customExportScope === 'employee'}
+                    onChange={() => setCustomExportScope('employee')}
+                  />
+                  Employee-wise
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="custom-export-scope"
+                    checked={customExportScope === 'department'}
+                    onChange={() => setCustomExportScope('department')}
+                  />
+                  Department-wise
+                </label>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                Current filters apply: {selectedEmployee ? selectedEmployee.name : 'All employees'} | {selectedGroup ? selectedGroup.name : 'All departments'}
+              </p>
+            </SurfaceCard>
+
+            <SurfaceCard className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Departments</p>
+              <p className="mt-2 text-xs text-slate-500">{modalDepartmentOptions.length} departments available.</p>
+              <div className="mt-3 max-h-36 space-y-2 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2">
+                {modalDepartmentOptions.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-slate-500">No departments found for current scope.</p>
+                ) : modalDepartmentOptions.map((department: any) => {
+                  const checked = customExportDepartmentIds.includes(Number(department.id));
+                  return (
+                    <label key={department.id} className="flex items-center gap-2 rounded px-2 py-1 text-sm text-slate-700 hover:bg-white">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setCustomExportDepartmentIds((current) => (
+                            current.includes(Number(department.id))
+                              ? current.filter((id) => Number(id) !== Number(department.id))
+                              : [...current, Number(department.id)]
+                          ));
+                        }}
+                      />
+                      <span className="truncate">{department.name} ({department.employeeIds.length})</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </SurfaceCard>
+
+            <SurfaceCard className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Employees</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const visibleIds = departmentFilteredUsers.map((employee: any) => Number(employee.id));
+                    setCustomExportUserIds((current) => Array.from(new Set([...current, ...visibleIds])));
+                  }}
+                >
+                  Select all
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setCustomExportUserIds([])}
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="mt-3">
+                <input
+                  type="text"
+                  value={customExportEmployeeSearch}
+                  onChange={(event) => setCustomExportEmployeeSearch(event.target.value)}
+                  placeholder="Search employee name or email"
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                />
+              </div>
+              <p className="mt-3 text-xs text-slate-500">{customExportUserIds.length} employees selected.</p>
+              {selectedModalUsers.length > 0 ? (
+                <div className="mt-2 flex max-h-16 flex-wrap gap-2 overflow-y-auto">
+                  {selectedModalUsers.map((employee: any) => (
+                    <span key={employee.id} className="rounded-full bg-sky-100 px-2 py-1 text-xs font-medium text-sky-700">
+                      {employee.name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <div className="mt-3 max-h-40 space-y-2 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-2">
+                {visibleModalUsers.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-slate-500">No employees in current filters.</p>
+                ) : visibleModalUsers.map((employee: any) => {
+                  const employeeId = Number(employee.id);
+                  const checked = customExportUserIds.includes(employeeId);
+                  return (
+                    <label key={employeeId} className="flex items-center gap-2 rounded px-2 py-1 text-sm text-slate-700 hover:bg-white">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setCustomExportUserIds((current) => (
+                            current.includes(employeeId)
+                              ? current.filter((id) => id !== employeeId)
+                              : [...current, employeeId]
+                          ));
+                        }}
+                      />
+                      <span className="truncate">{employee.name} ({employee.email})</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </SurfaceCard>
+
+            <SurfaceCard className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Field Controls</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setCustomExportFields(customExportFieldOptions.map((option) => option.key))}
+                >
+                  Select all
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setCustomExportFields(defaultCustomExportFields)}
+                >
+                  Reset recommended
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setCustomExportFields([])}
+                >
+                  Clear
+                </Button>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">{customExportFields.length} fields selected.</p>
+            </SurfaceCard>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {customExportFieldOptions.map((option) => {
+              const checked = customExportFields.includes(option.key);
+              return (
+                <label
+                  key={option.key}
+                  className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition ${checked ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      setCustomExportFields((current) => (
+                        current.includes(option.key)
+                          ? current.filter((field) => field !== option.key)
+                          : [...current, option.key]
+                      ));
+                    }}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-slate-900">{option.label}</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">{option.description}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <Button
+              onClick={() => void handleExport({ scope: customExportScope, fields: customExportFields, userIds: customExportUserIds })}
+              disabled={isExporting || customExportFields.length === 0 || customExportUserIds.length === 0}
+            >
+              {isExporting ? 'Exporting...' : 'Download CSV'}
+            </Button>
+          </div>
+        </SurfaceCard>
+      </div>
     );
   }
 
