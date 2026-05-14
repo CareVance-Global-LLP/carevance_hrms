@@ -70,6 +70,8 @@ type DateRange = {
 
 type DashboardScope = 'overall' | 'employee';
 
+type RangeStatusFilter = 'all' | 'present' | 'present_on_time' | 'present_late' | 'on_leave' | 'absent';
+
 type PersistedDashboardFilters = {
   dashboardScope?: DashboardScope;
   selectedEmployeeId?: number | null;
@@ -538,6 +540,7 @@ export default function AdminDashboard() {
   const [workSearch, setWorkSearch] = useState('');
   const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
+  const [rangeStatusFilter, setRangeStatusFilter] = useState<RangeStatusFilter>('all');
   const [dashboardScope, setDashboardScope] = useState<DashboardScope>(() =>
     isDashboardScope(persistedFilters.dashboardScope) ? persistedFilters.dashboardScope : 'overall'
   );
@@ -584,6 +587,27 @@ export default function AdminDashboard() {
     };
     window.localStorage.setItem(dashboardFilterStorageKey, JSON.stringify(nextFilters));
   }, [customRange, dashboardScope, datePreset, scopeDepartmentFilter, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (workStatusFilter === 'Present Late') {
+      setRangeStatusFilter('present_late');
+      return;
+    }
+    if (workStatusFilter === 'Present') {
+      setRangeStatusFilter('present');
+      return;
+    }
+    if (workStatusFilter === 'Absent') {
+      setRangeStatusFilter('absent');
+      return;
+    }
+    if (workStatusFilter === 'On Leave') {
+      setRangeStatusFilter('on_leave');
+      return;
+    }
+
+    setRangeStatusFilter('all');
+  }, [workStatusFilter]);
 
   const dashboardQuery = useQuery({
     queryKey: ['real-admin-dashboard', selectedStartDate, selectedEndDate, dashboardScope, selectedEmployeeId, scopeDepartmentFilter],
@@ -1101,24 +1125,123 @@ export default function AdminDashboard() {
       .filter((row) => row.lateDays > 0)
       .sort((left, right) => right.lateDays - left.lateDays);
   }, [dashboardScope, filteredWorkStatusRows, isMultiDayRange, rangeCalendarByEmployeeId]);
+  const presentDateRows = useMemo(() => {
+    if (!isMultiDayRange || dashboardScope === 'employee') return [];
+
+    return filteredWorkStatusRows
+      .map((row) => {
+        const days = safeArray<any>(rangeCalendarByEmployeeId.get(row.employee.id));
+        const presentEntries = days
+          .filter((day) => {
+            const status = String(day?.status || '').toLowerCase();
+            return status === 'present' || status === 'checked_in';
+          })
+          .map((day) => ({
+            date: String(day.date || '').slice(0, 10),
+            lateMinutes: Number(day.late_minutes || 0),
+          }));
+
+        const presentDays = presentEntries.length;
+        const lateDays = presentEntries.filter((entry) => entry.lateMinutes > 0).length;
+
+        return {
+          employee: row.employee,
+          presentEntries,
+          presentDays,
+          onTimeDays: Math.max(0, presentDays - lateDays),
+          lateDays,
+        };
+      })
+      .filter((row) => row.presentDays > 0)
+      .sort((left, right) => right.presentDays - left.presentDays);
+  }, [dashboardScope, filteredWorkStatusRows, isMultiDayRange, rangeCalendarByEmployeeId]);
+  const leaveDateRows = useMemo(() => {
+    if (!isMultiDayRange || dashboardScope === 'employee') return [];
+
+    return filteredWorkStatusRows
+      .map((row) => {
+        const days = safeArray<any>(rangeCalendarByEmployeeId.get(row.employee.id));
+        const leaveDates = days
+          .filter((day) => String(day?.status || '').toLowerCase().includes('leave'))
+          .map((day) => String(day.date || '').slice(0, 10));
+
+        return {
+          employee: row.employee,
+          leaveDates,
+          total: leaveDates.length,
+        };
+      })
+      .filter((row) => row.total > 0)
+      .sort((left, right) => right.total - left.total);
+  }, [dashboardScope, filteredWorkStatusRows, isMultiDayRange, rangeCalendarByEmployeeId]);
   const selectedEmployeeRangeStatusRows = useMemo(() => {
     if (!isMultiDayRange || dashboardScope !== 'employee' || !selectedEmployee) return [];
     const days = safeArray<any>(rangeCalendarByEmployeeId.get(selectedEmployee.id));
     return days.map((day) => {
-      const status = String(day?.status || 'none').toLowerCase();
-      const label = status === 'checked_in' || status === 'present'
-        ? 'Present'
-        : status.includes('leave')
-          ? 'On Leave'
-          : status === 'holiday'
-            ? 'Holiday'
-            : 'Absent';
+      const rawStatus = String(day?.status || 'none').toLowerCase();
+      const lateMinutes = Number(day?.late_minutes || 0);
+      const statusKey = rawStatus === 'checked_in' || rawStatus === 'present'
+        ? (lateMinutes > 0 ? 'present_late' : 'present_on_time')
+        : rawStatus.includes('leave')
+          ? 'on_leave'
+          : rawStatus === 'holiday'
+            ? 'all'
+            : 'absent';
+      const label = statusKey === 'present_late'
+        ? 'Present Late'
+        : statusKey === 'present_on_time'
+          ? 'Present On Time'
+          : statusKey === 'on_leave'
+            ? 'On Leave'
+            : rawStatus === 'holiday'
+              ? 'Holiday'
+              : 'Absent';
+
       return {
         date: String(day?.date || '').slice(0, 10),
+        statusKey,
         status: label,
+        lateMinutes,
       };
     });
   }, [dashboardScope, isMultiDayRange, rangeCalendarByEmployeeId, selectedEmployee]);
+  const selectedEmployeeRangeCounts = useMemo(() => {
+    return selectedEmployeeRangeStatusRows.reduce((acc, row) => {
+      if (row.statusKey === 'present_on_time') {
+        acc.presentOnTime += 1;
+        acc.present += 1;
+      } else if (row.statusKey === 'present_late') {
+        acc.presentLate += 1;
+        acc.present += 1;
+      } else if (row.statusKey === 'on_leave') {
+        acc.onLeave += 1;
+      } else if (row.statusKey === 'absent') {
+        acc.absent += 1;
+      }
+      return acc;
+    }, { present: 0, presentOnTime: 0, presentLate: 0, onLeave: 0, absent: 0 });
+  }, [selectedEmployeeRangeStatusRows]);
+  const filteredSelectedEmployeeRangeStatusRows = useMemo(() => {
+    if (rangeStatusFilter === 'all') {
+      return selectedEmployeeRangeStatusRows;
+    }
+    if (rangeStatusFilter === 'present') {
+      return selectedEmployeeRangeStatusRows.filter((row) => row.statusKey === 'present_on_time' || row.statusKey === 'present_late');
+    }
+    if (rangeStatusFilter === 'present_on_time') {
+      return selectedEmployeeRangeStatusRows.filter((row) => row.statusKey === 'present_on_time');
+    }
+    if (rangeStatusFilter === 'present_late') {
+      return selectedEmployeeRangeStatusRows.filter((row) => row.statusKey === 'present_late');
+    }
+    if (rangeStatusFilter === 'on_leave') {
+      return selectedEmployeeRangeStatusRows.filter((row) => row.statusKey === 'on_leave');
+    }
+    return selectedEmployeeRangeStatusRows.filter((row) => row.statusKey === 'absent');
+  }, [rangeStatusFilter, selectedEmployeeRangeStatusRows]);
+  const effectiveRangeStatusFilter: RangeStatusFilter = dashboardScope === 'overall' && rangeStatusFilter === 'all'
+    ? 'absent'
+    : rangeStatusFilter;
   const workingCount = workStatusRows.filter((row) => row.status === 'Working').length;
   const notWorkingCount = workStatusRows.filter((row) => row.status === 'Not working').length;
   const attendanceHealth = [
@@ -1926,39 +2049,84 @@ export default function AdminDashboard() {
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                   {dashboardScope === 'employee'
                     ? 'Range Status Detail'
-                    : workStatusFilter === 'Present Late'
+                    : effectiveRangeStatusFilter === 'present_late'
                       ? 'Present Late Summary'
-                      : 'Absent Date Summary'}
+                      : effectiveRangeStatusFilter === 'present' || effectiveRangeStatusFilter === 'present_on_time'
+                        ? 'Present Summary'
+                        : effectiveRangeStatusFilter === 'on_leave'
+                          ? 'Leave Date Summary'
+                          : 'Absent Date Summary'}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {dashboardScope === 'employee' ? (
+                    [
+                      { key: 'all', label: 'All', count: selectedEmployeeRangeStatusRows.length },
+                      { key: 'present', label: 'Present', count: selectedEmployeeRangeCounts.present },
+                      { key: 'present_on_time', label: 'Present On Time', count: selectedEmployeeRangeCounts.presentOnTime },
+                      { key: 'present_late', label: 'Present Late', count: selectedEmployeeRangeCounts.presentLate },
+                      { key: 'on_leave', label: 'On Leave', count: selectedEmployeeRangeCounts.onLeave },
+                      { key: 'absent', label: 'Absent', count: selectedEmployeeRangeCounts.absent },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setRangeStatusFilter(item.key as RangeStatusFilter)}
+                        className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${rangeStatusFilter === item.key ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
+                      >
+                        {item.label} ({item.count})
+                      </button>
+                    ))
+                  ) : (
+                    [
+                      { key: 'present', label: 'Present' },
+                      { key: 'present_late', label: 'Present Late' },
+                      { key: 'on_leave', label: 'On Leave' },
+                      { key: 'absent', label: 'Absent' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setRangeStatusFilter(item.key as RangeStatusFilter)}
+                        className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${effectiveRangeStatusFilter === item.key ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-blue-700'}`}
+                      >
+                        {item.label}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
               {rangeAttendanceCalendarQuery.isFetching ? (
                 <div className="px-4 py-4 text-xs text-blue-600">Loading range attendance details...</div>
               ) : dashboardScope === 'employee' ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-[560px] w-full text-left text-xs">
+                <div className="max-h-[360px] overflow-auto">
+                  <table className="min-w-[680px] w-full text-left text-xs">
                     <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="px-4 py-3 font-medium">Date</th>
                         <th className="px-4 py-3 font-medium">Status</th>
+                        <th className="px-4 py-3 font-medium">Late</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {selectedEmployeeRangeStatusRows.map((row) => (
-                        <tr key={row.date}>
+                      {filteredSelectedEmployeeRangeStatusRows.map((row) => (
+                        <tr key={`${row.date}-${row.statusKey}`}>
                           <td className="px-4 py-3 text-slate-700">{formatDate(row.date)}</td>
                           <td className="px-4 py-3">
-                            <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${row.status === 'Absent' ? 'bg-red-50 text-red-700' : row.status === 'Present' ? 'bg-emerald-50 text-emerald-700' : row.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                            <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${row.status === 'Absent' ? 'bg-red-50 text-red-700' : row.status === 'Present On Time' ? 'bg-emerald-50 text-emerald-700' : row.status === 'Present Late' ? 'bg-rose-50 text-rose-700' : row.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
                               {row.status}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 font-medium text-slate-700">
+                            {row.statusKey === 'present_late' ? `${row.lateMinutes} min` : row.statusKey === 'present_on_time' ? 'On time' : '--'}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  {selectedEmployeeRangeStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No day-level records for this range</EmptyInline></div> : null}
+                  {filteredSelectedEmployeeRangeStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No records found for selected status and range</EmptyInline></div> : null}
                 </div>
-              ) : workStatusFilter === 'Present Late' ? (
-                <div className="overflow-x-auto">
+              ) : effectiveRangeStatusFilter === 'present_late' ? (
+                <div className="max-h-[360px] overflow-auto">
                   <table className="min-w-[940px] w-full text-left text-xs">
                     <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                       <tr>
@@ -1983,8 +2151,60 @@ export default function AdminDashboard() {
                   </table>
                   {presentLateDateRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No late records found in this range for current filters</EmptyInline></div> : null}
                 </div>
+              ) : effectiveRangeStatusFilter === 'present' || effectiveRangeStatusFilter === 'present_on_time' ? (
+                <div className="max-h-[360px] overflow-auto">
+                  <table className="min-w-[980px] w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Employee</th>
+                        <th className="px-4 py-3 font-medium">Department</th>
+                        <th className="px-4 py-3 font-medium">Present Dates</th>
+                        <th className="px-4 py-3 font-medium">Present Days</th>
+                        <th className="px-4 py-3 font-medium">On Time</th>
+                        <th className="px-4 py-3 font-medium">Late</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {presentDateRows.map((row) => (
+                        <tr key={row.employee.id}>
+                          <td className="px-4 py-3 font-medium text-slate-900">{row.employee.name}</td>
+                          <td className="px-4 py-3 text-slate-600">{row.employee.department}</td>
+                          <td className="px-4 py-3 text-slate-700">{row.presentEntries.map((entry) => formatDate(entry.date)).join(', ')}</td>
+                          <td className="px-4 py-3 font-semibold text-slate-900">{row.presentDays}</td>
+                          <td className="px-4 py-3 font-semibold text-emerald-700">{row.onTimeDays}</td>
+                          <td className="px-4 py-3 font-semibold text-rose-700">{row.lateDays}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {presentDateRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No present records found in this range for current filters</EmptyInline></div> : null}
+                </div>
+              ) : effectiveRangeStatusFilter === 'on_leave' ? (
+                <div className="max-h-[360px] overflow-auto">
+                  <table className="min-w-[860px] w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-medium">Employee</th>
+                        <th className="px-4 py-3 font-medium">Department</th>
+                        <th className="px-4 py-3 font-medium">Leave Dates</th>
+                        <th className="px-4 py-3 font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {leaveDateRows.map((row) => (
+                        <tr key={row.employee.id}>
+                          <td className="px-4 py-3 font-medium text-slate-900">{row.employee.name}</td>
+                          <td className="px-4 py-3 text-slate-600">{row.employee.department}</td>
+                          <td className="px-4 py-3 text-slate-700">{row.leaveDates.map((date) => formatDate(date)).join(', ')}</td>
+                          <td className="px-4 py-3 font-semibold text-slate-900">{row.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {leaveDateRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No leave days found in this range for current filters</EmptyInline></div> : null}
+                </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="max-h-[360px] overflow-auto">
                   <table className="min-w-[860px] w-full text-left text-xs">
                     <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                       <tr>
