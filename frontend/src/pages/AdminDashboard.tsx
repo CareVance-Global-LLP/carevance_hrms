@@ -1443,7 +1443,17 @@ export default function AdminDashboard() {
             scrollToDashboardSection('current-work-status');
           }}
         />
-          <KpiCard to="/approval-inbox?section=leave&view=pending&leave_window=today" label="On Leave" value={onLeave} hint={`${leavePercent}% of total`} icon={Umbrella} tint="bg-amber-50 text-amber-600" />
+        <KpiCard
+          label="On Leave"
+          value={onLeave}
+          hint={`${leavePercent}% of total`}
+          icon={Umbrella}
+          tint="bg-amber-50 text-amber-600"
+          onClick={() => {
+            setWorkStatusFilter('On Leave');
+            scrollToDashboardSection('current-work-status');
+          }}
+        />
         <KpiCard
           label="Absent"
           value={attendanceAbsentDays}
