@@ -133,9 +133,33 @@ class ReportController extends Controller
         return $user && in_array($user->role, ['admin', 'manager'], true);
     }
 
-    private function canViewOrganization(?User $user): bool
+    private function hasManagerRole(User $user): bool
     {
-        return $user?->role === 'admin';
+        return $user->role === 'manager';
+    }
+
+    private function normalizeDepartmentIdsFilter(Request $request): void
+    {
+        if (! $request->exists('department_ids')) {
+            return;
+        }
+
+        $departmentIds = $request->input('department_ids');
+
+        if (! $request->exists('group_ids')) {
+            $request->merge([
+                'group_ids' => $departmentIds,
+            ]);
+
+            return;
+        }
+
+        $groupIds = $request->input('group_ids');
+        if (is_array($groupIds) && is_array($departmentIds)) {
+            $request->merge([
+                'group_ids' => array_values(array_unique(array_merge($groupIds, $departmentIds))),
+            ]);
+        }
     }
 
     private function restrictMonitoringToEmployees(?User $user): bool
@@ -736,6 +760,8 @@ class ReportController extends Controller
 
     public function overall(Request $request)
     {
+        $this->normalizeDepartmentIdsFilter($request);
+
         $request->validate([
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
@@ -1287,6 +1313,8 @@ class ReportController extends Controller
 
     public function export(Request $request)
     {
+        $this->normalizeDepartmentIdsFilter($request);
+
         $request->validate([
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
@@ -1765,6 +1793,8 @@ class ReportController extends Controller
 
     public function attendance(Request $request)
     {
+        $this->normalizeDepartmentIdsFilter($request);
+
         $request->validate([
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
@@ -1925,6 +1955,8 @@ class ReportController extends Controller
 
     public function employeeInsights(Request $request)
     {
+        $this->normalizeDepartmentIdsFilter($request);
+
         $request->validate([
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',

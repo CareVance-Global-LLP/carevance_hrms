@@ -193,12 +193,14 @@ export const invitationApi = {
     api.get<InvitationListResponse>('/invitations'),
 
   create: (data: {
+    organization_id?: number;
     email?: string;
     emails?: string[];
     role: User['role'];
     delivery?: 'email' | 'link';
     expires_in_hours?: number;
     group_ids?: number[];
+    department_ids?: number[];
     project_ids?: number[];
     settings?: Record<string, any>;
   }) => api.post<InvitationCreateResponse>('/invitations', data),
@@ -208,10 +210,12 @@ export const invitationApi = {
       email: string;
       role: User['role'];
       group_ids?: number[];
+      department_ids?: number[];
       project_ids?: number[];
       settings?: Record<string, any>;
     }>;
     default_group_ids?: number[];
+    default_department_ids?: number[];
     default_project_ids?: number[];
     settings?: Record<string, any>;
     expires_in_hours?: number;

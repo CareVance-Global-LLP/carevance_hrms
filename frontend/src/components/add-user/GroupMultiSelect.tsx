@@ -53,10 +53,10 @@ export default function GroupMultiSelect({
   return (
     <div>
       <div className="flex items-end justify-between gap-3">
-        <FieldLabel hint={`${selectedIds.length} selected`}>Groups they&apos;re members of</FieldLabel>
+        <FieldLabel hint={`${selectedIds.length} selected`}>Departments they&apos;re members of</FieldLabel>
         {onCreateNew ? (
           <Button type="button" variant="ghost" size="sm" onClick={onCreateNew}>
-            + Create new group
+            + Create new department
           </Button>
         ) : null}
       </div>
@@ -77,18 +77,18 @@ export default function GroupMultiSelect({
             setSelectedSearchGroupId(Number.isFinite(nextGroupId) && nextGroupId > 0 ? nextGroupId : null);
           }}
           suggestions={groupSearchSuggestions}
-          placeholder="Search groups"
+          placeholder="Search departments"
           className="border-slate-200 bg-slate-50 shadow-none focus:bg-white"
           icon={<Search className="h-4 w-4" />}
-          emptyMessage="No groups match this search."
+          emptyMessage="No departments match this search."
         />
-        {isLoading ? <p className="mt-3 text-sm text-slate-500">Loading available groups...</p> : null}
+        {isLoading ? <p className="mt-3 text-sm text-slate-500">Loading available departments...</p> : null}
         {errorMessage ? <p className="mt-3 text-sm text-rose-600">{errorMessage}</p> : null}
         {!isLoading && !errorMessage && filteredOptions.length === 0 ? (
           <div className="mt-4">
             <PageEmptyState
-              title={query.trim() ? 'No groups match this search' : 'No groups available'}
-              description={query.trim() ? 'Try another group name or clear the search to view all groups.' : 'Report groups can be added later; this selector is ready for existing teams.'}
+              title={query.trim() ? 'No departments match this search' : 'No departments available'}
+              description={query.trim() ? 'Try another department name or clear the search to view all departments.' : 'Departments can be added later; this selector is ready for existing teams.'}
             />
           </div>
         ) : (

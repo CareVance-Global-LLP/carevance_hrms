@@ -215,7 +215,7 @@ export default function Tasks() {
     },
     onError: (error: any) => {
       const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
-      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to update group membership.') });
+      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to update department membership.') });
     },
   });
 
@@ -248,7 +248,7 @@ export default function Tasks() {
     },
     onError: (error: any) => {
       const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
-      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to add members to the group.') });
+      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to add members to the department.') });
     },
   });
 
@@ -278,7 +278,7 @@ export default function Tasks() {
     },
     onError: (error: any) => {
       const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
-      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to delete group.') });
+      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to delete department.') });
     },
     onSettled: () => {
       setDeletingGroupId(null);
@@ -376,13 +376,13 @@ export default function Tasks() {
     const draftKey = `${currentGroup.id}:${member.id}`;
     const selectedTargetId = Number(memberMoveDrafts[draftKey] || 0);
     if (!selectedTargetId || selectedTargetId === currentGroup.id) {
-      setFeedback({ tone: 'error', message: 'Choose a different group before moving this employee.' });
+      setFeedback({ tone: 'error', message: 'Choose a different department before moving this employee.' });
       return;
     }
 
     const targetGroup = groups.find((group) => group.id === selectedTargetId);
     if (!targetGroup) {
-      setFeedback({ tone: 'error', message: 'Selected destination group could not be found.' });
+      setFeedback({ tone: 'error', message: 'Selected destination department could not be found.' });
       return;
     }
 
@@ -402,7 +402,7 @@ export default function Tasks() {
     if (nextGroupIds.length === 0) {
       setFeedback({
         tone: 'error',
-        message: `${member.name} is currently only in ${currentGroup.name}. Move them to another group before removing this membership.`,
+        message: `${member.name} is currently only in ${currentGroup.name}. Move them to another department before removing this membership.`,
       });
       return;
     }
@@ -418,7 +418,7 @@ export default function Tasks() {
   };
 
   const handleDeleteGroup = (group: Group) => {
-    if (!confirm(`Delete "${group.name}"? Members will be detached and tasks in this group will become ungrouped.`)) {
+    if (!confirm(`Delete "${group.name}"? Members will be detached and tasks in this department will become unassigned.`)) {
       return;
     }
 
@@ -449,8 +449,8 @@ export default function Tasks() {
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600">Task workspace</p>
-            <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.05em] text-slate-950">Manage tasks by group instead of project.</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">Each task now belongs to a department group, and assignees are limited to users inside that group.</p>
+            <h1 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.05em] text-slate-950">Manage tasks by department instead of project.</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">Each task now belongs to a department, and assignees are limited to users inside that department.</p>
           </div>
           {canManageTasks ? (
             <div className="flex flex-wrap gap-3">
@@ -463,7 +463,7 @@ export default function Tasks() {
                     setShowGroupModal(true);
                   }}
                 >
-                  New Group
+                  New Department
                 </Button>
               ) : null}
               <Button iconLeft={<Plus className="h-4 w-4" />} onClick={() => {
@@ -480,46 +480,46 @@ export default function Tasks() {
         <MetricCard label="Tasks In View" value={filteredTasks.length} hint="After filters" icon={CheckCircle2} accent="sky" />
         <MetricCard label="Completed" value={filteredTasks.filter((task) => task.status === 'done').length} hint="Marked done" icon={CheckCircle2} accent="emerald" />
         <MetricCard label="Overdue" value={filteredTasks.filter((task) => task.due_date && (toDate(task.due_date)?.getTime() || 0) < Date.now() && task.status !== 'done').length} hint="Open past deadline" icon={AlertTriangle} accent="rose" />
-        <MetricCard label="Groups In View" value={groups.length} hint="Available departments" icon={Users2} accent="violet" />
+        <MetricCard label="Departments In View" value={groups.length} hint="Available departments" icon={Users2} accent="violet" />
       </div>
 
       {canManageTasks ? (
         <SurfaceCard className="p-5 sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Group directory</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">See every group and manage members from this page.</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Add existing members into a group, review who is already inside each department, or move an employee directly to another group without leaving the task workspace.</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Department directory</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">See every department and manage members from this page.</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Add existing members into a department, review who is already inside each department, or move an employee directly to another department without leaving the task workspace.</p>
             </div>
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Quick rule</p>
-              <p className="mt-2">Adding keeps existing memberships. Moving switches active assignment, and remove detaches the employee from this specific group.</p>
+              <p className="mt-2">Adding keeps existing memberships. Moving switches active assignment, and remove detaches the employee from this specific department.</p>
             </div>
           </div>
 
           <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_auto] lg:items-end">
               <div>
-                <FieldLabel>Search Group</FieldLabel>
+                <FieldLabel>Search Department</FieldLabel>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <TextInput
-                    aria-label="Search group directory"
+                    aria-label="Search department directory"
                     value={groupDirectoryQuery}
                     onChange={(event) => setGroupDirectoryQuery(event.target.value)}
-                    placeholder="Search group by name"
+                    placeholder="Search department by name"
                     className="pl-10"
                   />
                 </div>
               </div>
               <div>
-                <FieldLabel>Group Dropdown</FieldLabel>
+                <FieldLabel>Department Dropdown</FieldLabel>
                 <SelectInput
-                  aria-label="Filter group directory"
+                  aria-label="Filter department directory"
                   value={groupDirectoryFilter}
                   onChange={(event) => setGroupDirectoryFilter(event.target.value)}
                 >
-                  <option value="all">All groups</option>
+                  <option value="all">All departments</option>
                   {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
                 </SelectInput>
               </div>
@@ -536,17 +536,17 @@ export default function Tasks() {
             </div>
             <p className="mt-3 text-xs text-slate-500">
               {shouldShowDirectoryResults
-                ? `Showing ${filteredDirectoryGroups.length} of ${groups.length} group${groups.length === 1 ? '' : 's'}.`
-                : 'Groups are hidden by default. Search by name or choose one group from the dropdown.'}
+                ? `Showing ${filteredDirectoryGroups.length} of ${groups.length} department${groups.length === 1 ? '' : 's'}.`
+                : 'Departments are hidden by default. Search by name or choose one department from the dropdown.'}
             </p>
           </div>
 
           {groups.length === 0 ? (
-            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No groups have been created yet. Create the first group to start organizing users and tasks.</div>
+            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No departments have been created yet. Create the first department to start organizing users and tasks.</div>
           ) : !shouldShowDirectoryResults ? (
-            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Search for a group name to view directory cards.</div>
+            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Search for a department name to view directory cards.</div>
           ) : filteredDirectoryGroups.length === 0 ? (
-            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No groups match your search right now. Try a different name or reset the group filters.</div>
+            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No departments match your search right now. Try a different name or reset the department filters.</div>
           ) : (
             <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
               {filteredDirectoryGroups.map((group) => {
@@ -582,7 +582,7 @@ export default function Tasks() {
                             {group.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">{group.description || 'No group description yet. Use this section to keep people and tasks aligned inside the same department.'}</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{group.description || 'No department description yet. Use this section to keep people and tasks aligned inside the same department.'}</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
@@ -598,11 +598,11 @@ export default function Tasks() {
                           variant="ghost"
                           iconLeft={<Trash2 className="h-4 w-4" />}
                           className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                          aria-label={`Delete group ${group.name}`}
+                          aria-label={`Delete department ${group.name}`}
                           disabled={deleteGroupMutation.isPending}
                           onClick={() => handleDeleteGroup(group)}
                         >
-                          {deletingGroupId === group.id ? 'Deleting...' : 'Delete Group'}
+                          {deletingGroupId === group.id ? 'Deleting...' : 'Delete Department'}
                         </Button>
                       </div>
                     </div>
@@ -657,7 +657,7 @@ export default function Tasks() {
                           </div>
                           {availableMembers.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                              Only unassigned employees and unassigned managers can be added here. Move existing members from their current group instead.
+                              Only unassigned employees and unassigned managers can be added here. Move existing members from their current department instead.
                             </div>
                           ) : (
                             <div className="max-h-56 space-y-2 overflow-auto pr-1">
@@ -726,7 +726,7 @@ export default function Tasks() {
 
                     <div className="mt-5 space-y-3">
                       {members.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">No members are assigned to this group yet.</div>
+                        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">No members are assigned to this department yet.</div>
                       ) : (
                         members.map((member) => {
                           const moveKey = `${group.id}:${member.id}`;
@@ -742,19 +742,19 @@ export default function Tasks() {
                                   </div>
                                   <p className="mt-1 truncate text-sm text-slate-500">{member.email}</p>
                                   <p className="mt-2 text-xs text-slate-500">
-                                    Current group{(member.groups || []).length === 1 ? '' : 's'}: {(member.groups || []).map((assignedGroup) => assignedGroup.name).join(', ') || 'None'}
+                                    Current department{(member.groups || []).length === 1 ? '' : 's'}: {(member.groups || []).map((assignedGroup) => assignedGroup.name).join(', ') || 'None'}
                                   </p>
                                 </div>
 
                                 {canManageMembership ? (
                                   <div className="grid min-w-full gap-3 xl:min-w-[22rem]">
                                     <SelectInput
-                                      aria-label={`Move ${member.name} to another group`}
+                                      aria-label={`Move ${member.name} to another department`}
                                       value={memberMoveDrafts[moveKey] || ''}
                                       onChange={(event) => setMemberMoveDrafts((current) => ({ ...current, [moveKey]: event.target.value }))}
                                       disabled={groups.length <= 1 || syncMembershipMutation.isPending}
                                     >
-                                      <option value="">{groups.length <= 1 ? 'Create another group first' : 'Move member to another group'}</option>
+                                      <option value="">{groups.length <= 1 ? 'Create another department first' : 'Move member to another department'}</option>
                                       {groups.filter((targetGroup) => targetGroup.id !== group.id).map((targetGroup) => (
                                         <option key={targetGroup.id} value={targetGroup.id}>
                                           {targetGroup.name}
@@ -862,7 +862,7 @@ export default function Tasks() {
                   <div className="mt-4 flex flex-wrap gap-2">
                     <button type="button" onClick={() => setGroupFilter((current) => current === String(task.group_id || '') ? 'all' : String(task.group_id || ''))} className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
                       <Building2 className="h-3.5 w-3.5" />
-                      {task.group?.name || 'Ungrouped'}
+                      {task.group?.name || 'Unassigned department'}
                     </button>
                   </div>
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -904,7 +904,7 @@ export default function Tasks() {
             <form className="mt-6 space-y-4" onSubmit={(event) => {
               event.preventDefault();
               if (!resolvedGroupId) {
-                setFeedback({ tone: 'error', message: 'Select a group before saving this task.' });
+                setFeedback({ tone: 'error', message: 'Select a department before saving this task.' });
                 return;
               }
               void saveTaskMutation.mutate({
@@ -927,7 +927,7 @@ export default function Tasks() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-3">
-                    <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Group</label>
+                    <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Department</label>
                     {canCreateGroups ? (
                       <button
                         type="button"
@@ -937,17 +937,17 @@ export default function Tasks() {
                         }}
                         className="text-xs font-semibold text-sky-600 transition hover:text-sky-700"
                       >
-                        + Create new group
+                        + Create new department
                       </button>
                     ) : null}
                   </div>
                   {isManagerWithSingleGroup ? (
                     <div className="min-h-11 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700">
-                      {groups[0]?.name || 'Assigned group'}
+                      {groups[0]?.name || 'Assigned department'}
                     </div>
                   ) : (
                     <SelectInput required value={taskForm.group_id} onChange={(event) => setTaskForm((current) => ({ ...current, group_id: event.target.value, project_id: '', assignee_id: '', assignee_ids: [] }))}>
-                      <option value="">Select group</option>
+                      <option value="">Select department</option>
                       {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
                     </SelectInput>
                   )}
@@ -955,7 +955,7 @@ export default function Tasks() {
                 <div>
                   <FieldLabel>Project</FieldLabel>
                   <SelectInput value={taskForm.project_id} onChange={(event) => setTaskForm((current) => ({ ...current, project_id: event.target.value }))} disabled={!resolvedGroupId}>
-                    <option value="">{!resolvedGroupId ? 'Select group first' : 'No project'}</option>
+                    <option value="">{!resolvedGroupId ? 'Select department first' : 'No project'}</option>
                     {availableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                   </SelectInput>
                 </div>
@@ -970,7 +970,7 @@ export default function Tasks() {
                     >
                       <span className="truncate">
                         {!resolvedGroupId
-                          ? 'Select group first'
+                          ? 'Select department first'
                           : taskForm.assignee_ids.length === 0
                             ? 'Unassigned'
                             : `${taskForm.assignee_ids.length} employee${taskForm.assignee_ids.length === 1 ? '' : 's'} selected`}
@@ -980,7 +980,7 @@ export default function Tasks() {
                     {assigneeDropdownOpen && resolvedGroupId ? (
                       <div className="absolute z-30 mt-2 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
                         {availableAssignees.length === 0 ? (
-                          <p className="px-2 py-2 text-xs text-slate-500">No employees available for this group.</p>
+                          <p className="px-2 py-2 text-xs text-slate-500">No employees available for this department.</p>
                         ) : availableAssignees.map((member) => {
                           const checked = taskForm.assignee_ids.includes(String(member.id));
                           return (
@@ -1011,7 +1011,7 @@ export default function Tasks() {
                       </div>
                     ) : null}
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">{!resolvedGroupId ? 'Select group first' : 'Click employees in dropdown to select multiple assignees.'}</p>
+                  <p className="mt-2 text-xs text-slate-500">{!resolvedGroupId ? 'Select department first' : 'Click employees in dropdown to select multiple assignees.'}</p>
                 </div>
                 <div>
                   <FieldLabel>Status</FieldLabel>
@@ -1055,7 +1055,8 @@ export default function Tasks() {
             setTaskForm((current) => ({ ...current, group_id: String(group.id) }));
           }
         }}
-        title="Create a group without leaving tasks"
+        title="Create a department without leaving tasks"
+        eyebrow="Department quick add"
         description="Add the new department here and it will be available immediately in the task form."
       />
 

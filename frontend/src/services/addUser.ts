@@ -75,6 +75,7 @@ interface BulkInviteRowPayload {
   email: string;
   role: InviteUserRole;
   group_ids?: number[];
+  department_ids?: number[];
   project_ids?: number[];
   job_title?: string;
 }
@@ -278,10 +279,11 @@ export const addUserService = {
 
   async inviteByEmail(payload: InviteSubmissionPayload): Promise<InviteSubmissionResult> {
     const response = await invitationApi.create({
+      organization_id: payload.organizationId,
       emails: payload.emails,
       role: payload.role,
       delivery: 'email',
-      group_ids: payload.groupIds,
+      department_ids: payload.groupIds,
       project_ids: payload.projectIds,
       settings: {
         monitoring_interval_minutes: payload.settings.monitoringInterval,
@@ -302,10 +304,11 @@ export const addUserService = {
 
   async generateInviteLink(payload: InviteLinkPayload) {
     const response = await invitationApi.create({
+      organization_id: payload.organizationId,
       email: payload.email,
       role: payload.role,
       delivery: 'link',
-      group_ids: payload.groupIds,
+      department_ids: payload.groupIds,
       project_ids: payload.projectIds,
       settings: {
         monitoring_interval_minutes: payload.settings.monitoringInterval,
@@ -476,7 +479,7 @@ export const addUserService = {
     const rows: BulkInviteRowPayload[] = parsed.rows.map((row) => ({
       email: row.email,
       role: row.role,
-      group_ids: row.groupIds,
+      department_ids: row.groupIds,
       project_ids: row.projectIds,
       job_title: row.skippedRoleLabel || undefined,
     }));
@@ -486,7 +489,7 @@ export const addUserService = {
       try {
         const response = await invitationApi.importCsv({
           rows: rowChunk,
-          default_group_ids: basePayload.defaultGroupIds,
+          default_department_ids: basePayload.defaultGroupIds,
           default_project_ids: basePayload.defaultProjectIds,
           settings: {
             monitoring_interval_minutes: basePayload.settings.monitoringInterval,
@@ -531,7 +534,7 @@ export const addUserService = {
   
   downloadCsvTemplate() {
     const template = [
-      'email,name,role,access_role,groups,projects',
+      'email,name,role,access_role,departments,projects',
       'alex@example.com,Alex Johnson,Software Engineer,employee,"Operations|Night Shift","CareVance HRMS"',
       'jordan@example.com,Jordan Lee,Team Lead,manager,"Operations","Implementation"',
     ].join('\n');

@@ -21,9 +21,9 @@ export default function QuickCreateGroupDialog({
   open,
   onClose,
   onCreated,
-  title = 'Create a new group',
-  eyebrow = 'Group quick add',
-  description = 'Add a group here and it will become available immediately in the current flow.',
+  title = 'Create a new department',
+  eyebrow = 'Department quick add',
+  description = 'Add a department here and it will become available immediately in the current flow.',
 }: QuickCreateGroupDialogProps) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
@@ -36,7 +36,7 @@ export default function QuickCreateGroupDialog({
       description: groupDescription.trim() || undefined,
     })).data as Group,
     onSuccess: async (group) => {
-      setFeedback({ tone: 'success', message: `Group "${group.name}" was created.` });
+      setFeedback({ tone: 'success', message: `Department "${group.name}" was created.` });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.groups }),
         queryClient.invalidateQueries({ queryKey: queryKeys.reportGroups }),
@@ -55,7 +55,7 @@ export default function QuickCreateGroupDialog({
 
       setFeedback({
         tone: 'error',
-        message: String(firstFieldError || error?.response?.data?.message || 'Failed to create group.'),
+        message: String(firstFieldError || error?.response?.data?.message || 'Failed to create department.'),
       });
     },
   });
@@ -75,7 +75,7 @@ export default function QuickCreateGroupDialog({
           </div>
           <button
             type="button"
-            aria-label="Close group modal"
+            aria-label="Close department modal"
             onClick={onClose}
             className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
           >
@@ -94,7 +94,7 @@ export default function QuickCreateGroupDialog({
           className="mt-6 space-y-4"
         >
           <div>
-            <FieldLabel>Group Name</FieldLabel>
+            <FieldLabel>Department Name</FieldLabel>
             <TextInput
               required
               value={name}
@@ -116,7 +116,7 @@ export default function QuickCreateGroupDialog({
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button variant="secondary" onClick={onClose} disabled={createGroupMutation.isPending}>Cancel</Button>
             <Button type="submit" disabled={createGroupMutation.isPending || !name.trim()}>
-              {createGroupMutation.isPending ? 'Saving...' : 'Create Group'}
+              {createGroupMutation.isPending ? 'Saving...' : 'Create Department'}
             </Button>
           </div>
         </form>

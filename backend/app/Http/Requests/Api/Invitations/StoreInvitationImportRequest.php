@@ -7,6 +7,61 @@ use Illuminate\Validation\Rule;
 
 class StoreInvitationImportRequest extends ApiFormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $rows = $this->input('rows');
+
+        if (is_array($rows)) {
+            foreach ($rows as $index => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+
+                $hasGroupIds = array_key_exists('group_ids', $row);
+                $hasDepartmentIds = array_key_exists('department_ids', $row);
+
+                if (! $hasDepartmentIds) {
+                    continue;
+                }
+
+                if (! $hasGroupIds) {
+                    $rows[$index]['group_ids'] = $row['department_ids'];
+                    continue;
+                }
+
+                if (is_array($row['group_ids']) && is_array($row['department_ids'])) {
+                    $rows[$index]['group_ids'] = array_values(array_unique(array_merge($row['group_ids'], $row['department_ids'])));
+                }
+            }
+
+            $this->merge(['rows' => $rows]);
+        }
+
+        $hasDefaultGroupIds = $this->exists('default_group_ids');
+        $hasDefaultDepartmentIds = $this->exists('default_department_ids');
+
+        if (! $hasDefaultDepartmentIds) {
+            return;
+        }
+
+        if (! $hasDefaultGroupIds) {
+            $this->merge([
+                'default_group_ids' => $this->input('default_department_ids'),
+            ]);
+
+            return;
+        }
+
+        $defaultGroupIds = $this->input('default_group_ids');
+        $defaultDepartmentIds = $this->input('default_department_ids');
+
+        if (is_array($defaultGroupIds) && is_array($defaultDepartmentIds)) {
+            $this->merge([
+                'default_group_ids' => array_values(array_unique(array_merge($defaultGroupIds, $defaultDepartmentIds))),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [

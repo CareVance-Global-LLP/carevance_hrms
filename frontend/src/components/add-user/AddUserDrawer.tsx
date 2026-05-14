@@ -422,7 +422,7 @@ export default function AddUserDrawer({
                   selectedIds={selectedGroupIds}
                   onChange={setSelectedGroupIds}
                   isLoading={groupsQuery.isLoading}
-                  errorMessage={groupsQuery.isError ? 'Failed to load groups.' : undefined}
+                  errorMessage={groupsQuery.isError ? 'Failed to load departments.' : undefined}
                   onCreateNew={() => setShowGroupModal(true)}
                 />
 
@@ -531,7 +531,7 @@ export default function AddUserDrawer({
                 className="mt-1"
               />
               <span>
-                <span className="font-semibold text-slate-950">Remember selected groups for next invite</span>
+                <span className="font-semibold text-slate-950">Remember selected departments for next invite</span>
                 <span className="mt-1 block text-slate-500">Saved locally in this browser so repeated onboarding stays faster.</span>
               </span>
             </label>
@@ -623,8 +623,8 @@ export default function AddUserDrawer({
         onCreated={(group) => {
           setSelectedGroupIds((current) => (current.includes(group.id) ? current : [...current, group.id]));
         }}
-        eyebrow="Group quick add"
-        title="Create a group without leaving onboarding"
+        eyebrow="Department quick add"
+        title="Create a department without leaving onboarding"
         description="Add the new department here and it will be selected for this invite immediately."
       />
     </div>

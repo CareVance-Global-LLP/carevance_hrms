@@ -7,6 +7,33 @@ use Illuminate\Validation\Rule;
 
 class StoreInvitationRequest extends ApiFormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $hasGroupIds = $this->exists('group_ids');
+        $hasDepartmentIds = $this->exists('department_ids');
+
+        if (! $hasDepartmentIds) {
+            return;
+        }
+
+        if (! $hasGroupIds) {
+            $this->merge([
+                'group_ids' => $this->input('department_ids'),
+            ]);
+
+            return;
+        }
+
+        $groupIds = $this->input('group_ids');
+        $departmentIds = $this->input('department_ids');
+
+        if (is_array($groupIds) && is_array($departmentIds)) {
+            $this->merge([
+                'group_ids' => array_values(array_unique(array_merge($groupIds, $departmentIds))),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [

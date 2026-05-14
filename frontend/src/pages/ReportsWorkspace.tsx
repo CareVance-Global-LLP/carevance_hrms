@@ -1396,7 +1396,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     );
   }
 
-  if (pageTitle.title === modeCopy['custom-export'].title) {
+  if (mode === 'custom-export') {
     return (
       <div className="space-y-6">
         {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
@@ -1681,7 +1681,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         actions={
           <Button onClick={() => void handleExport()} variant="secondary" disabled={isExporting}>
             <Download className="h-4 w-4" />
-            {mode === 'custom-export' ? 'Customize Export' : (isExporting ? 'Exporting...' : 'Export CSV')}
+            {isExporting ? 'Exporting...' : 'Export CSV'}
           </Button>
         }
       />
@@ -1689,7 +1689,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {exportMessage ? <FeedbackBanner tone="success" message={exportMessage} /> : null}
       {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
 
-      {mode === 'custom-export' && customExportModalOpen ? (
+      {customExportModalOpen ? (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4">
           <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-6 shadow-sm sm:p-7">
             <div className="flex items-start justify-between gap-4">
@@ -1978,9 +1978,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           </div>
         )}
         <div>
-          <FieldLabel>Team</FieldLabel>
+          <FieldLabel>Department</FieldLabel>
           <SelectInput value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value ? Number(event.target.value) : '')}>
-            <option value="">All groups</option>
+            <option value="">All departments</option>
             {groups.map((group: any) => (
               <option key={group.id} value={group.id}>
                 {group.name}
@@ -2161,7 +2161,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         </>
       ) : null}
 
-      {(mode === 'hours-tracked' || mode === 'productivity' || mode === 'custom-export') && (
+      {(mode === 'hours-tracked' || mode === 'productivity') && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard label="Tracked Time" value={formatDuration(overallSummary.total_duration || 0)} hint="Total duration in range" icon={TimerReset} accent="sky" />
@@ -2557,68 +2557,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         </>
       )}
 
-      {mode === 'custom-export' ? (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-          <SurfaceCard className="p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">Export Scope</h2>
-                <p className="mt-1 text-sm text-slate-500">Use the current filters to export the same report range used across dashboards.</p>
-              </div>
-              {renderPanelRefreshButton()}
-            </div>
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Date Range</p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">{startDate} to {endDate}</p>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Filters</p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">
-                  {effectiveSelectedUserId ? 'Single employee' : selectedGroupId ? 'Single group' : 'Organization-wide'}
-                </p>
-              </div>
-            </div>
-            <div className="mt-5">
-              <Button onClick={() => void handleExport()}>
-                <Download className="h-4 w-4" />
-                Download Current Export
-              </Button>
-            </div>
-          </SurfaceCard>
-
-          <SurfaceCard className="p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">Data Preview</h2>
-                <p className="mt-1 text-sm text-slate-500">Current totals from the selected export scope.</p>
-              </div>
-              {renderPanelRefreshButton()}
-            </div>
-            <div className="mt-5 space-y-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Tracked time</span>
-                <span className="font-medium text-slate-950">{formatDuration(overallSummary.total_duration || 0)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Working time</span>
-                <span className="font-medium text-slate-950">{formatDuration(getWorkingDuration(overallSummary))}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Idle time</span>
-                <span className="font-medium text-slate-950">{formatDuration(overallSummary.idle_duration || 0)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Active users</span>
-                <span className="font-medium text-slate-950">{overallSummary.active_users || 0}</span>
-              </div>
-            </div>
-          </SurfaceCard>
-        </div>
-      ) : null}
-
-      {mode !== 'custom-export' &&
-      mode !== 'attendance' &&
+      {mode !== 'attendance' &&
       mode !== 'hours-tracked' &&
       mode !== 'projects-tasks' &&
       mode !== 'timeline' &&

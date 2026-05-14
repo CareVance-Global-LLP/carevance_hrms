@@ -111,6 +111,20 @@ class OrganizationController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        if ($request->exists('department_ids')) {
+            $departmentIds = $request->input('department_ids');
+
+            if (! $request->exists('group_ids')) {
+                $request->merge([
+                    'group_ids' => $departmentIds,
+                ]);
+            } elseif (is_array($request->input('group_ids')) && is_array($departmentIds)) {
+                $request->merge([
+                    'group_ids' => array_values(array_unique(array_merge($request->input('group_ids'), $departmentIds))),
+                ]);
+            }
+        }
+
         $validated = $request->validate([
             'email' => 'required|email',
             'role' => 'required|in:admin,manager,employee,client',
