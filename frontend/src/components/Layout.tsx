@@ -17,7 +17,9 @@ import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import StatusBadge from '@/components/ui/StatusBadge';
 import BrandLogo from '@/components/branding/BrandLogo';
 import { topNavigation } from '@/navigation/dashboardNavigation';
+import { cn } from '@/utils/cn';
 import {
+  Bell,
   CalendarClock,
   Clock,
   LifeBuoy,
@@ -764,42 +766,252 @@ export default function Layout() {
               );
             })}
           </nav>
-
-          <div className="border-t border-slate-100 p-3">
-            <button
-              type="button"
-              onClick={() => setProfileOpen((prev) => !prev)}
-              className="flex w-full items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3 text-left"
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-sm font-semibold text-white">
-                {user?.name?.charAt(0).toUpperCase() || 'A'}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-900">{user?.name || 'Jane Cooper'}</p>
-                <p className="truncate text-xs capitalize text-slate-500">{user?.role || 'HR Manager'}</p>
-              </div>
-              <MoreHorizontal className="h-4 w-4 text-slate-400" />
-            </button>
-
-            {profileOpen ? (
-              <div className="mt-2 rounded-lg border border-slate-100 bg-white p-1 shadow-sm">
-                <Link to="/settings" onClick={() => setProfileOpen(false)} className="block rounded-md px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
-                  Settings
-                </Link>
-                <Link to="/settings?tab=help" onClick={() => setProfileOpen(false)} className="block rounded-md px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
-                  Help
-                </Link>
-                <button type="button" onClick={handleLogout} className="block w-full rounded-md px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50">
-                  Sign Out
-                </button>
-              </div>
-            ) : null}
-          </div>
         </aside>
 
-        <main className="min-w-0 px-4 py-4  lg:pr-5 lg:py-4  xl:pr-6">
+        <main className="min-w-0 px-4 py-4 lg:pr-5 lg:py-4 xl:pr-6">
+          <div className="flex items-center justify-between gap-4 mb-5">
+            <div className="flex items-center gap-3 shrink-0">
+              <BrandLogo variant="full" size="sm" className="max-w-[9.75rem]" />
+            </div>
+
+            <div ref={globalSearchRef} className="relative flex-1 min-w-0 max-w-[36rem]">
+              <label className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-400 shadow-sm">
+                <Search className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+                <input
+                  aria-label="Universal search"
+                  value={globalSearch}
+                  onFocus={() => setIsGlobalSearchOpen(hasGlobalSearchQuery)}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setGlobalSearch(nextValue);
+                    setIsGlobalSearchOpen(nextValue.trim().length > 0);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      openGlobalSuggestion(filteredGlobalSuggestions[0]);
+                    }
+                    if (event.key === 'Escape') {
+                      setIsGlobalSearchOpen(false);
+                    }
+                  }}
+                  className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
+                  placeholder="Search panels, employees, reports, settings, attendance..."
+                />
+                <kbd className="hidden shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 sm:inline-flex">Enter</kbd>
+              </label>
+
+              {isGlobalSearchOpen && (
+                <div className="absolute left-0 right-0 top-12 z-[80] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+                  {filteredGlobalSuggestions.length ? (
+                    <div className="max-h-80 overflow-y-auto p-2">
+                      {filteredGlobalSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => openGlobalSuggestion(suggestion)}
+                          className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-blue-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold text-slate-900">{suggestion.label}</span>
+                            <span className="block truncate text-xs text-slate-500">{suggestion.description}</span>
+                          </span>
+                          <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">{suggestion.category}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-sm text-slate-500">No matching panel found.</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              <div ref={notificationsRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNotificationsOpen((prev) => !prev);
+                    setProfileOpen(false);
+                  }}
+                  aria-haspopup="menu"
+                  aria-expanded={notificationsOpen}
+                  aria-label="Notifications"
+                  className={cn(
+                    'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
+                    notificationsOpen
+                      ? 'border-sky-200 bg-sky-50 text-sky-700'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-white'
+                  )}
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadNotifications > 0 ? (
+                    <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                    </span>
+                  ) : null}
+                </button>
+
+                {notificationsOpen && (
+                  <AdaptiveSurface
+                    className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-[24px] border border-white/80 bg-white/95 shadow-[0_32px_90px_-48px_rgba(15,23,42,0.55)] backdrop-blur-2xl"
+                    tone="light"
+                    backgroundColor="rgba(255,255,255,0.95)"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                      <p className="text-sm font-semibold contrast-text-primary">Notifications</p>
+                      <div className="flex items-center gap-3">
+                        <Link
+                          to="/notifications"
+                          onClick={() => setNotificationsOpen(false)}
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-900"
+                        >
+                          View all
+                        </Link>
+                        <button
+                          className="text-xs font-semibold text-sky-700 hover:underline"
+                          onClick={async () => {
+                            await notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES });
+                            setUnreadNotifications(0);
+                            setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+                          }}
+                        >
+                          Mark all read
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                      {notifications.length ? (
+                        notifications.slice(0, 10).map((n) => {
+                          const notificationDisplay = getNotificationDisplay(n.type);
+                          return (
+                            <button
+                              key={n.id}
+                              type="button"
+                              onClick={() => {
+                                void openNotification(n);
+                              }}
+                              className="w-full border-b border-slate-50 px-4 py-3 text-left transition hover:bg-slate-50 last:border-b-0"
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className="mt-0.5">
+                                  {(() => {
+                                    if (isChatNotification(n)) {
+                                      return <MessageSquare className="h-4 w-4 text-sky-600" />;
+                                    }
+                                    return notificationDisplay.icon;
+                                  })()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-semibold contrast-text-primary">{n.title}</p>
+                                    {!n.is_read ? <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" /> : null}
+                                  </div>
+                                  <p className="mt-0.5 text-xs leading-5 contrast-text-secondary">{n.message}</p>
+                                  <div className="mt-1 flex items-center gap-2">
+                                    {(() => {
+                                      if (isChatNotification(n)) {
+                                        return <StatusBadge tone="info" className="gap-1 tracking-[0.14em]">Chat</StatusBadge>;
+                                      }
+                                      return (
+                                        <StatusBadge tone={notificationDisplay.tone} className="gap-1 tracking-[0.14em]">
+                                          {notificationDisplay.label}
+                                        </StatusBadge>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="px-4 py-8 text-center text-sm text-slate-500">No notifications yet.</div>
+                      )}
+                    </div>
+                  </AdaptiveSurface>
+                )}
+              </div>
+
+              <div className="relative" ref={profileRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileOpen((prev) => !prev);
+                    setNotificationsOpen(false);
+                  }}
+                  aria-haspopup="menu"
+                  aria-expanded={profileOpen}
+                  aria-label={`${user?.name || 'Account'}`}
+                  className={cn(
+                    'relative flex h-11 shrink-0 items-center rounded-lg border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
+                    profileOpen
+                      ? 'border-sky-200 bg-sky-50 text-sky-900'
+                      : 'border-slate-200 bg-white hover:bg-white',
+                    'gap-2 px-2 sm:gap-3 sm:px-3'
+                  )}
+                >
+                  {user?.avatar ? (
+                    <img src={resolveMediaUrl(user.avatar)} alt={user.name || 'Profile'} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#0f172a,#0284c7)] text-xs font-semibold text-white">
+                      {user?.name?.charAt(0).toUpperCase() || 'A'}
+                    </div>
+                  )}
+                  <div className="min-w-0 text-left">
+                    <p className="max-w-[7rem] truncate text-sm font-semibold text-slate-900 sm:max-w-[9rem]">{user?.name || 'Admin'}</p>
+                    <p className="hidden text-xs capitalize text-slate-500 sm:block">{user?.role || 'user'}</p>
+                  </div>
+                </button>
+
+                {profileOpen && (
+                  <AdaptiveSurface
+                    className="fixed right-4 top-4 z-50 w-64 overflow-hidden rounded-[24px] border border-white/80 bg-white/95 p-2 shadow-[0_32px_90px_-48px_rgba(15,23,42,0.55)] backdrop-blur-2xl"
+                    tone="light"
+                    backgroundColor="rgba(255,255,255,0.95)"
+                  >
+                    <div className="border-b border-slate-100 px-3 py-3">
+                      <p className="text-sm font-semibold text-slate-900">{user?.name || 'Admin'}</p>
+                      <p className="text-xs capitalize text-slate-500">{user?.role || 'user'}</p>
+                    </div>
+                    <div className="space-y-1 p-2">
+                      <Link
+                        to="/settings"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+                      >
+                        <Settings className="h-4 w-4 text-slate-400" />
+                        Settings
+                      </Link>
+                      <Link
+                        to="/settings?tab=help"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+                      >
+                        <LifeBuoy className="h-4 w-4 text-slate-400" />
+                        Help
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setProfileOpen(false);
+                          await handleLogout();
+                        }}
+                        className="flex w-full items-center gap-3 rounded-[18px] px-3 py-2.5 text-left text-sm font-medium text-rose-600 transition hover:bg-rose-50"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  </AdaptiveSurface>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-5">
-            {globalPanelHeader}
             <Outlet />
           </div>
         </main>
@@ -907,7 +1119,7 @@ export default function Layout() {
             <div ref={profileRef}>
               {profileOpen && (
                 <AdaptiveSurface
-                  className="absolute right-0 top-full z-50 mt-3 w-64 overflow-hidden rounded-[24px] border border-white/80 bg-white/95 p-2 shadow-[0_32px_90px_-48px_rgba(15,23,42,0.55)] backdrop-blur-2xl"
+                  className="fixed right-4 top-4 z-50 w-64 overflow-hidden rounded-[24px] border border-white/80 bg-white/95 p-2 shadow-[0_32px_90px_-48px_rgba(15,23,42,0.55)] backdrop-blur-2xl"
                   tone="light"
                   backgroundColor="rgba(255,255,255,0.95)"
                 >
