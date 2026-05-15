@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
-use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Services\AppNotificationService;
 use App\Services\Approvals\ApprovalRoutingService;
@@ -84,18 +83,6 @@ class AttendanceTimeEditRequestController extends Controller
 
         $date = Carbon::parse($request->attendance_date)->toDateString();
         $extraSeconds = (int) $request->extra_minutes * 60;
-
-        $hasApprovedLeave = LeaveRequest::query()
-            ->where('organization_id', $currentUser->organization_id)
-            ->where('user_id', $currentUser->id)
-            ->where('status', 'approved')
-            ->where('leave_type', '!=', 'half_day')
-            ->whereDate('start_date', '<=', $date)
-            ->whereDate('end_date', '>=', $date)
-            ->exists();
-        if ($hasApprovedLeave) {
-            return response()->json(['message' => 'Time edit request is not allowed on approved leave days.'], 422);
-        }
 
         $userCountry = AttendanceHoliday::countryForSettings($currentUser->settings);
         $isHoliday = AttendanceHoliday::query()
@@ -339,7 +326,7 @@ class AttendanceTimeEditRequestController extends Controller
             ->values();
 
         $reviewerLabel = match ($requester->role) {
-            'employee' => $names->count() === 1 ? 'your group manager' : 'your group managers',
+            'employee' => $names->count() === 1 ? 'your department manager' : 'your department managers',
             'manager' => $names->count() === 1 ? 'an admin' : 'admins',
             default => 'the reviewer',
         };
@@ -371,7 +358,7 @@ class AttendanceTimeEditRequestController extends Controller
             ->values();
 
         $reviewerLabel = match ($item->user->role) {
-            'employee' => $reviewerNames->count() === 1 ? 'your group manager' : 'your group managers',
+            'employee' => $reviewerNames->count() === 1 ? 'your department manager' : 'your department managers',
             'manager' => $reviewerNames->count() === 1 ? 'an admin' : 'admins',
             default => 'the reviewer',
         };

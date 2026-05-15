@@ -81,11 +81,18 @@ class UserController extends Controller
 
         if ($simple) {
             return response()->json($users->map(function (User $user) {
+                $departmentName = (string) (
+                    $user->employeeWorkInfo?->department?->name
+                    ?? $user->groups->first()?->name
+                    ?? ''
+                );
+
                 return [
                     'id' => (int) $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
                     'role' => $user->role,
+                    'department' => trim($departmentName),
                     'groups' => collect($user->groups)->map(fn ($group) => [
                         'id' => (int) $group->id,
                         'name' => $group->name,
@@ -129,6 +136,11 @@ class UserController extends Controller
             $isWorking = (bool) $activeEntry;
             $currentDuration = 0;
             $storedTotalDuration = (int) ($totalsByUser->get($user->id)->total_duration ?? 0);
+            $departmentName = (string) (
+                $user->employeeWorkInfo?->department?->name
+                ?? $user->groups->first()?->name
+                ?? ''
+            );
 
             if ($activeEntry) {
                 $currentDuration = max(
@@ -143,6 +155,7 @@ class UserController extends Controller
                 'current_project' => $this->resolveCurrentProjectLabel($activeEntry),
                 'total_duration' => $storedTotalDuration,
                 'total_elapsed_duration' => $storedTotalDuration + (int) $currentDuration,
+                'department' => trim($departmentName),
                 'timezone' => $timezone,
             ]);
         });
@@ -777,7 +790,7 @@ class UserController extends Controller
     {
         if (in_array($role, ['employee', 'manager'], true) && count($groupIds) > 1) {
             throw ValidationException::withMessages([
-                'group_ids' => ['Managers and employees can belong to only one group at a time.'],
+                'group_ids' => ['Managers and employees can belong to only one department at a time.'],
             ]);
         }
     }

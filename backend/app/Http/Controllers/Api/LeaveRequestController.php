@@ -641,7 +641,7 @@ class LeaveRequestController extends Controller
             ->values();
 
         $reviewerLabel = match ($leave->user->role) {
-            'employee' => $reviewerNames->count() === 1 ? 'your group manager' : 'your group managers',
+            'employee' => $reviewerNames->count() === 1 ? 'your department manager' : 'your department managers',
             'manager' => $reviewerNames->count() === 1 ? 'an admin' : 'admins',
             default => 'the reviewer',
         };

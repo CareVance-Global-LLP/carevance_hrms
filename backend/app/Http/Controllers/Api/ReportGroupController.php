@@ -71,7 +71,7 @@ class ReportGroupController extends Controller
         $group->users()->sync($userIds);
         $this->syncEmployeesForGroup((int) $currentUser->organization_id, (int) $group->id);
 
-        return $this->createdResponse($this->serializeGroup($group), 'Group created.');
+        return $this->createdResponse($this->serializeGroup($group), 'Department created.');
     }
 
     public function show(Request $request, int $id)
@@ -89,7 +89,7 @@ class ReportGroupController extends Controller
             ->find($id);
 
         if (!$group) {
-            return response()->json(['message' => 'Group not found'], 404);
+            return response()->json(['message' => 'Department not found'], 404);
         }
 
         if (!$this->groupAccessService->canAccessGroup($currentUser, $group)) {
@@ -107,7 +107,7 @@ class ReportGroupController extends Controller
         }
         $group = Group::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$group) {
-            return response()->json(['message' => 'Group not found'], 404);
+            return response()->json(['message' => 'Department not found'], 404);
         }
 
         if (!$this->groupAccessService->canManageGroup($currentUser, $group)) {
@@ -143,7 +143,7 @@ class ReportGroupController extends Controller
             $this->syncEmployeesForGroup((int) $currentUser->organization_id, (int) $group->id);
         }
 
-        return $this->updatedResponse($this->serializeGroup($group->fresh()), 'Group updated.');
+        return $this->updatedResponse($this->serializeGroup($group->fresh()), 'Department updated.');
     }
 
     public function destroy(Request $request, int $id)
@@ -154,7 +154,7 @@ class ReportGroupController extends Controller
         }
         $group = Group::where('organization_id', $currentUser->organization_id)->find($id);
         if (!$group) {
-            return response()->json(['message' => 'Group not found'], 404);
+            return response()->json(['message' => 'Department not found'], 404);
         }
 
         if (!$this->groupAccessService->canManageGroup($currentUser, $group)) {
@@ -163,7 +163,7 @@ class ReportGroupController extends Controller
 
         $group->delete();
 
-        return $this->deletedResponse('Group deleted');
+        return $this->deletedResponse('Department deleted');
     }
 
     private function assertUniqueGroupName(int $organizationId, string $name, ?int $ignoreId = null): void
@@ -176,14 +176,14 @@ class ReportGroupController extends Controller
 
         if ($exists) {
             throw ValidationException::withMessages([
-                'name' => ['A group with this name already exists.'],
+                'name' => ['A department with this name already exists.'],
             ]);
         }
     }
 
     private function uniqueSlug(int $organizationId, string $name, ?int $ignoreId = null): string
     {
-        $baseSlug = Str::slug($name) ?: 'group';
+        $baseSlug = Str::slug($name) ?: 'department';
         $slug = $baseSlug;
         $suffix = 2;
 
@@ -243,7 +243,7 @@ class ReportGroupController extends Controller
 
         throw ValidationException::withMessages([
             'user_ids' => [sprintf(
-                '%s is already assigned to another group. Move %s instead of adding to multiple groups.',
+                '%s is already assigned to another department. Move %s instead of adding to multiple departments.',
                 $conflictingUser->name,
                 $conflictingUser->role === 'manager' ? 'this manager' : 'this employee'
             )],

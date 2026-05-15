@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Bell, Menu, X } from 'lucide-react';
+import { Bell, Menu, MoreHorizontal, X } from 'lucide-react';
 import type { User } from '@/types';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import TopNavigation from '@/components/dashboard/TopNavigation';
 import type { NavGroup } from '@/navigation/dashboardNavigation';
 import BrandLogo from '@/components/branding/BrandLogo';
 import { cn } from '@/utils/cn';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 
 interface DashboardTopbarProps {
   user?: User | null;
@@ -86,8 +87,8 @@ export default function DashboardTopbar({
           tone="light"
           backgroundColor="#ffffff"
         >
-          <div className="flex min-h-[4.25rem] items-center gap-3 lg:grid lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_auto] lg:gap-4 xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_auto] xl:gap-6">
-            <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-h-[4.25rem] items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3 shrink-0">
               <button
                 type="button"
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white contrast-text-secondary shadow-sm transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80 lg:hidden"
@@ -124,11 +125,11 @@ export default function DashboardTopbar({
               </div>
             </div>
 
-            <div className="hidden min-w-0 lg:flex lg:justify-center">
+            <div className="flex-1 min-w-0 hidden lg:flex lg:justify-center">
               <TopNavigation groups={groups} onOpenExternal={onOpenExternal} />
             </div>
 
-            <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-2.5 lg:ml-0">
+            <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-2.5">
               <div className="relative">
                 <button
                   type="button"
@@ -167,22 +168,22 @@ export default function DashboardTopbar({
                     profileOpen
                       ? 'border-sky-200 bg-sky-50 text-sky-900'
                       : 'border-slate-200 bg-white hover:bg-white',
-                    'w-11 justify-center px-0 xl:w-auto xl:justify-start xl:gap-3 xl:pl-1.5 xl:pr-3.5'
+                    'gap-2 px-2 sm:gap-3 sm:px-3'
                   )}
                 >
                   {user?.avatar ? (
-                    <img src={user.avatar} alt={user.name || 'Profile'} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                    <img src={resolveMediaUrl(user.avatar)} alt={user.name || 'Profile'} className="h-8 w-8 shrink-0 rounded-full object-cover" />
                   ) : (
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#0f172a,#0284c7)] text-sm font-semibold text-white">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#0f172a,#0284c7)] text-xs font-semibold text-white">
                       {user?.name?.charAt(0).toUpperCase() || 'A'}
                     </div>
                   )}
                   {profileHasUnreadUpdate ? (
-                    <span className="absolute right-0 top-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500 xl:left-[4.05rem] xl:right-auto xl:top-2.5" />
+                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500" />
                   ) : null}
-                  <div className="hidden min-w-0 text-left xl:block">
-                    <p className="max-w-[8.5rem] truncate text-sm font-semibold contrast-text-primary">{user?.name || 'Admin'}</p>
-                    <p className="hidden text-xs capitalize contrast-text-muted min-[1380px]:block">{user?.role || 'user'}</p>
+                  <div className="min-w-0 text-left">
+                    <p className="max-w-[7rem] truncate text-sm font-semibold contrast-text-primary sm:max-w-[9rem]">{user?.name || 'Admin'}</p>
+                    <p className="hidden text-xs capitalize contrast-text-muted sm:block">{user?.role || 'user'}</p>
                   </div>
                 </button>
                 {profilePanel}

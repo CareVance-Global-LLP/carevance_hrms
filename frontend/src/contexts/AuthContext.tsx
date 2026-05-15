@@ -423,6 +423,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
     setStoredAuthValue('user', JSON.stringify(updatedUser));
+    window.dispatchEvent(new CustomEvent('app:user-updated', { detail: updatedUser }));
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'carevance:user',
+      newValue: JSON.stringify(updatedUser),
+      storageArea: window.sessionStorage,
+    }));
   };
 
   const updateOrganization = (updatedOrganization: Organization | null) => {

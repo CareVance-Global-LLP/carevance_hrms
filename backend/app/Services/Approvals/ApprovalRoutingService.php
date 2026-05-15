@@ -110,7 +110,7 @@ class ApprovalRoutingService
     public function missingReviewerMessage(User $requester): string
     {
         return match ($requester->role) {
-            'employee' => 'No manager is assigned to your group yet. Please contact an admin.',
+            'employee' => 'No manager is assigned to your department yet. Please contact an admin.',
             'manager' => 'No admin is available to review this request yet. Please contact an admin owner.',
             default => 'No eligible reviewer is configured for this request.',
         };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { attendanceApi, attendanceTimeEditApi, leaveApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -222,6 +222,7 @@ export default function ApprovalInbox() {
       nextParams.set('leave_window', next.leaveWindow);
     }
     navigate(`/approval-inbox?${nextParams.toString()}`, { replace: true });
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'auto' }), 50);
   };
 
   const load = async () => {
@@ -261,6 +262,11 @@ export default function ApprovalInbox() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
+    return () => cancelAnimationFrame(id);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     const leaveWindow = String(params.get('leave_window') || '').trim().toLowerCase();
@@ -575,7 +581,7 @@ export default function ApprovalInbox() {
     id: item.id,
     kind: 'leave',
     submittedAt: item.created_at,
-    title: `Leave request: ${item.start_date} to ${item.end_date}`,
+    title: `Leave request: ${String(item.start_date || '').slice(0, 10)} to ${String(item.end_date || '').slice(0, 10)}`,
     description: item.reason || 'No reason provided.',
     employeeName: item.user?.name || 'Unknown',
     employeeEmail: item.user?.email || '',
@@ -588,7 +594,7 @@ export default function ApprovalInbox() {
     id: item.id,
     kind: 'leave',
     submittedAt: item.created_at,
-    title: `Leave request: ${item.start_date} to ${item.end_date}`,
+    title: `Leave request: ${String(item.start_date || '').slice(0, 10)} to ${String(item.end_date || '').slice(0, 10)}`,
     description: item.reason || 'No reason provided.',
     employeeName: item.user?.name || 'Unknown',
     employeeEmail: item.user?.email || '',

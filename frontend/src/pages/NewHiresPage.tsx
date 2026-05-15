@@ -22,6 +22,16 @@ interface HireRecord {
   avatar?: string;
 }
 
+const resolveEmployeeDepartment = (employee: any) =>
+  String(
+    employee?.department
+    || employee?.employee_work_info?.department?.name
+    || employee?.employeeWorkInfo?.department?.name
+    || employee?.employee_work_info?.department_name
+    || employee?.groups?.[0]?.name
+    || 'Unassigned'
+  ).trim() || 'Unassigned';
+
 export default function NewHiresPage() {
   const { user, isLoading: isAuthLoading, isAuthenticated } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,7 +83,7 @@ export default function NewHiresPage() {
         return (
           employee.name.toLowerCase().includes(query) ||
           employee.email.toLowerCase().includes(query) ||
-          (employee.department || '').toLowerCase().includes(query) ||
+          resolveEmployeeDepartment(employee).toLowerCase().includes(query) ||
           (employee.employee_code || '').toLowerCase().includes(query)
         );
       })
@@ -245,7 +255,7 @@ export default function NewHiresPage() {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 text-slate-600">
                             <Building2 className="h-3.5 w-3.5" />
-                            <span className="text-xs">{employee.department || 'Unassigned'}</span>
+                            <span className="text-xs">{resolveEmployeeDepartment(employee)}</span>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-slate-600">
