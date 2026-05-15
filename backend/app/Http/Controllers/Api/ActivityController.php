@@ -31,127 +31,141 @@ class ActivityController extends Controller
         return $user && in_array($user->role, ['admin', 'manager'], true);
     }
 
-    /**
-     * Display a listing of the resource.
-     */
     public function index(Request $request)
     {
         try {
-            return $this->indexInternal($request);
-        } catch (\Throwable $e) {
-            Log::error('Activity index error', [
-                'error' => $e->getMessage(),
-                'user_id' => $request->user()?->id,
-                'trace' => $e->getTraceAsString()
-            ]);
-            return response()->json([
-                'data' => [],
-                'message' => 'Failed to load timeline data',
-                'error' => 'Server error'
-            ], 500);
-        }
-    }
+            $user = $request->user();
+            if (!$user) {
+                return response()->json(['data' => []]);
+            }
 
-    private function indexInternal(Request $request)
-    {
-        $user = $request->user();
-        if (!$user) {
-            return response()->json(['data' => []]);
-        }
-
-        $canViewAll = $this->canViewAll($user);
-        $groupUserIds = null;
-        $selectedGroupIds = collect($request->input('group_ids', []))
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->unique()
-            ->values();
-
-        if ($canViewAll && $selectedGroupIds->isNotEmpty()) {
-            $groupUserIds = ReportGroup::query()
-                ->where('organization_id', $user->organization_id)
-                ->whereIn('id', $selectedGroupIds)
-                ->with('users:id')
-                ->get()
-                ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+            $canViewAll = $this->canViewAll($user);
+            $groupUserIds = null;
+            $selectedGroupIds = collect($request->input('group_ids', []))
                 ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
                 ->unique()
                 ->values();
 
-            if ($groupUserIds->isEmpty()) {
-                return response()->json(Activity::query()->whereRaw('1 = 0')->paginate(10));
-            }
-        }
+            if ($canViewAll && $selectedGroupIds->isNotEmpty()) {
+                $groupUserIds = ReportGroup::query()
+                    ->where('organization_id', $user->organization_id)
+                    ->whereIn('id', $selectedGroupIds)
+                    ->with('users:id')
+                    ->get()
+                    ->flatMap(fn (ReportGroup $group) => $group->users->pluck('id'))
+                    ->map(fn ($id) => (int) $id)
+                    ->unique()
+                    ->values();
 
-        $perPage = (int) $request->get('per_page', 10);
-        $perPage = max(1, min($perPage, 10));
-        $page = max(1, (int) $request->get('page', 1));
-
-        $scopedUserIds = User::query()
-            ->where('organization_id', $user->organization_id)
-            ->when(! $canViewAll, fn ($query) => $query->where('id', $user->id))
-            ->when($canViewAll && $request->user_id, fn ($query) => $query->where('id', (int) $request->user_id))
-            ->when($canViewAll && $groupUserIds !== null, function ($query) use ($groupUserIds, $request) {
-                $selectedUserId = $request->user_id ? (int) $request->user_id : null;
-                if ($selectedUserId) {
-                    $query->whereIn('id', $groupUserIds->intersect([$selectedUserId]));
-                } else {
-                    $query->whereIn('id', $groupUserIds);
+                if ($groupUserIds->isEmpty()) {
+                    return response()->json(Activity::query()->whereRaw('1 = 0')->paginate(10));
                 }
-            })
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->values();
+            }
 
-        if ($scopedUserIds->isEmpty()) {
-            return response()->json(new LengthAwarePaginator(
-                collect(),
-                0,
-                $perPage,
+            $perPage = (int) $request->get('per_page', 10);
+            $perPage = max(1, min($perPage, 10));
+            $page = max(1, (int) $request->get('page', 1));
+
+            $scopedUserIds = User::query()
+                ->where('organization_id', $user->organization_id)
+                ->when(! $canViewAll, fn ($query) => $query->where('id', $user->id))
+                ->when($canViewAll && $request->user_id, fn ($query) => $query->where('id', (int) $request->user_id))
+                ->when($canViewAll && $groupUserIds !== null, function ($query) use ($groupUserIds, $request) {
+                    $selectedUserId = $request->user_id ? (int) $request->user_id : null;
+                    if ($selectedUserId) {
+                        $query->whereIn('id', $groupUserIds->intersect([$selectedUserId]));
+                    } else {
+                        $query->whereIn('id', $groupUserIds);
+                    }
+                })
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->values();
+
+            if ($scopedUserIds->isEmpty()) {
+                return response()->json(new LengthAwarePaginator(
+                    collect(),
+                    0,
+                    $perPage,
+                    $page,
+                    [
+                        'path' => $request->url(),
+                        'query' => $request->query(),
+                    ]
+                ));
+            }
+
+            $startDate = $request->start_date
+                ? Carbon::parse((string) $request->start_date)->startOfDay()
+                : null;
+            $endDate = $request->end_date
+                ? Carbon::parse((string) $request->end_date)->endOfDay()
+                : null;
+            $simplePagination = $request->boolean('simple');
+
+            $usersById = User::query()
+                ->whereIn('id', $scopedUserIds)
+                ->get(['id', 'name', 'email', 'role'])
+                ->mapWithKeys(fn (User $scopedUser) => [
+                    (int) $scopedUser->id => [
+                        'id' => (int) $scopedUser->id,
+                        'name' => $scopedUser->name,
+                        'email' => $scopedUser->email,
+                        'role' => $scopedUser->role,
+                    ],
+                ]);
+
+            if ($request->boolean('processed') || $request->boolean('normalized')) {
+                $processedRows = $this->filterProcessedTimelineRows(
+                    $this->buildProcessedTimelineRows(
+                        $this->activityFeedService->forUsersInRange($scopedUserIds, $startDate, $endDate),
+                        $usersById,
+                    ),
+                    $request,
+                )->values();
+                $total = $processedRows->count();
+                $offset = ($page - 1) * $perPage;
+                $pageRows = $processedRows->slice($offset, $perPage)->values();
+                $hasMore = $processedRows->count() > ($offset + $perPage);
+
+                $paginator = new LengthAwarePaginator(
+                    $pageRows,
+                    $total,
+                    $perPage,
+                    $page,
+                    [
+                        'path' => $request->url(),
+                        'query' => $request->query(),
+                    ]
+                );
+
+                return response()->json($this->withHasMore($paginator, $hasMore));
+            }
+
+            $feedPage = $this->activityFeedService->pageForUsersInRange(
+                $scopedUserIds,
+                $startDate,
+                $endDate,
                 $page,
-                [
-                    'path' => $request->url(),
-                    'query' => $request->query(),
-                ]
-            ));
-        }
+                $perPage,
+                $request->type ? (string) $request->type : null,
+                $request->classification ? (string) $request->classification : null,
+                $request->tool_type ? (string) $request->tool_type : null,
+                ! $simplePagination,
+            );
+            $feed = $feedPage['items'];
+            $hasMore = (bool) ($feedPage['has_more'] ?? false);
+            $total = $feedPage['total'] === null
+                ? (($page - 1) * $perPage) + $feed->count() + ($hasMore ? 1 : 0)
+                : (int) $feedPage['total'];
 
-        $startDate = $request->start_date
-            ? Carbon::parse((string) $request->start_date)->startOfDay()
-            : null;
-        $endDate = $request->end_date
-            ? Carbon::parse((string) $request->end_date)->endOfDay()
-            : null;
-        $simplePagination = $request->boolean('simple');
-
-        $usersById = User::query()
-            ->whereIn('id', $scopedUserIds)
-            ->get(['id', 'name', 'email', 'role'])
-            ->mapWithKeys(fn (User $scopedUser) => [
-                (int) $scopedUser->id => [
-                    'id' => (int) $scopedUser->id,
-                    'name' => $scopedUser->name,
-                    'email' => $scopedUser->email,
-                    'role' => $scopedUser->role,
-                ],
-            ]);
-
-        if ($request->boolean('processed') || $request->boolean('normalized')) {
-            $processedRows = $this->filterProcessedTimelineRows(
-                $this->buildProcessedTimelineRows(
-                    $this->activityFeedService->forUsersInRange($scopedUserIds, $startDate, $endDate),
-                    $usersById,
-                ),
-                $request,
-            )->values();
-            $total = $processedRows->count();
-            $offset = ($page - 1) * $perPage;
-            $pageRows = $processedRows->slice($offset, $perPage)->values();
-            $hasMore = $processedRows->count() > ($offset + $perPage);
+            $rows = $feed->map(fn (object $item) => $this->mapFeedItemForResponse($item, $usersById))
+                ->values();
 
             $paginator = new LengthAwarePaginator(
-                $pageRows,
+                $rows->take($perPage)->values(),
                 $total,
                 $perPage,
                 $page,
@@ -162,40 +176,17 @@ class ActivityController extends Controller
             );
 
             return response()->json($this->withHasMore($paginator, $hasMore));
+        } catch (Throwable $e) {
+            Log::error('Activity index error', [
+                'error' => $e->getMessage(),
+                'user_id' => $request->user()?->id,
+            ]);
+            return response()->json([
+                'data' => [],
+                'message' => 'Failed to load timeline data',
+                'error' => 'Server error'
+            ], 500);
         }
-
-        $feedPage = $this->activityFeedService->pageForUsersInRange(
-            $scopedUserIds,
-            $startDate,
-            $endDate,
-            $page,
-            $perPage,
-            $request->type ? (string) $request->type : null,
-            $request->classification ? (string) $request->classification : null,
-            $request->tool_type ? (string) $request->tool_type : null,
-            ! $simplePagination,
-        );
-        $feed = $feedPage['items'];
-        $hasMore = (bool) ($feedPage['has_more'] ?? false);
-        $total = $feedPage['total'] === null
-            ? (($page - 1) * $perPage) + $feed->count() + ($hasMore ? 1 : 0)
-            : (int) $feedPage['total'];
-
-        $rows = $feed->map(fn (object $item) => $this->mapFeedItemForResponse($item, $usersById))
-            ->values();
-
-        $paginator = new LengthAwarePaginator(
-            $rows->take($perPage)->values(),
-            $total,
-            $perPage,
-            $page,
-            [
-                'path' => $request->url(),
-                'query' => $request->query(),
-            ]
-        );
-
-        return response()->json($this->withHasMore($paginator, $hasMore));
     }
 
     private function withHasMore(LengthAwarePaginator $paginator, bool $hasMore): array
@@ -316,9 +307,6 @@ class ActivityController extends Controller
         ];
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -338,7 +326,6 @@ class ActivityController extends Controller
         ]);
 
         if ($request->user()) {
-            // Employees can only submit their own telemetry.
             $validated['user_id'] = $request->user()->id;
         }
 
@@ -428,9 +415,6 @@ class ActivityController extends Controller
         return response()->json($activity, 201);
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(Activity $activity)
     {
         $requestUser = request()->user();
@@ -447,9 +431,6 @@ class ActivityController extends Controller
         return response()->json($activity);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, Activity $activity)
     {
         $requestUser = $request->user();
@@ -493,9 +474,6 @@ class ActivityController extends Controller
         return response()->json($activity);
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(Activity $activity)
     {
         $requestUser = request()->user();
