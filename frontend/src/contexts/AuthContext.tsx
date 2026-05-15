@@ -287,9 +287,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Failed to fetch user:', error);
-      if (isActiveRef.current) {
-        clearAuthState();
-      }
+      // Don't clear auth state here - let the API interceptor handle 401s
+      // This prevents redirect loops when fetchUser fails temporarily
     }
   };
 
@@ -325,7 +324,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       remember: Boolean(options?.remember),
     });
-    const { user: userData, token: authToken, organization: org } = response.data;
+
+    const responseData = response.data as any;
+    if (!responseData.success || !responseData.token || !responseData.user) {
+      const error = new Error(responseData.message || 'Login failed') as any;
+      error.response = response;
+      throw error;
+    }
+
+    const { user: userData, token: authToken, organization: org } = responseData;
 
     storeAuthState(authToken, userData, org);
   };
