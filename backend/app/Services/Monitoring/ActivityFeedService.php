@@ -266,30 +266,24 @@ class ActivityFeedService
     }
 
     /**
-     * Get approximate count for better performance on large tables
+     * Get count with caching for better performance on large tables
      */
     private function getApproximateCount($query): int
     {
         try {
-            // For PostgreSQL, use EXPLAIN to get approximate count
+            // Generate a cache key based on query hash
             $sql = $query->toSql();
             $bindings = $query->getBindings();
-            $fullSql = vsprintf(str_replace('?', '%s', $sql), array_map(fn ($b) => is_string($b) ? "'$b'" : $b, $bindings));
+            $cacheKey = 'count_' . md5($sql . serialize($bindings));
             
-            // Use EXPLAIN to get estimated rows
-            $explain = \DB::select("EXPLAIN (FORMAT JSON) " . $fullSql);
-            if (!empty($explain) && isset($explain[0]->QUERY PLAN)) {
-                $plan = json_decode($explain[0]->QUERY PLAN, true);
-                if (isset($plan[0]['Plan']['Plan Rows'])) {
-                    return (int) $plan[0]['Plan']['Plan Rows'];
-                }
-            }
+            // Try to get from cache first
+            return Cache::remember($cacheKey, 30, function () use ($query) {
+                return $query->count();
+            });
         } catch (\Throwable $e) {
-            Log::warning('Failed to get approximate count, falling back to exact count', ['error' => $e->getMessage()]);
+            Log::warning('Failed to get count', ['error' => $e->getMessage()]);
+            return 0;
         }
-        
-        // Fallback to exact count
-        return $query->count();
     }
 
     public function forTimeEntries(iterable $timeEntryIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
