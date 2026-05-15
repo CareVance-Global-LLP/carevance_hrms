@@ -65,6 +65,10 @@ const api = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
+  // Global timeout to prevent hanging requests
+  timeout: 30000,
+  // Retry configuration for transient failures
+  validateStatus: (status) => status >= 200 && status < 500,
 });
 
 // Request interceptor to add auth token

@@ -96,6 +96,11 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Performance optimizations for AWS Lightsail
+            'options' => [
+                PDO::ATTR_PERSISTENT => env('DB_PERSISTENT_CONNECTIONS', true),
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ],
         ],
 
         'sqlsrv' => [

@@ -6,9 +6,15 @@ use App\Models\Activity;
 use App\Models\ActivitySession;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class ActivityFeedService
 {
+    // Maximum number of activities to fetch per query
+    private const MAX_ACTIVITIES_PER_QUERY = 5000;
+    private const CACHE_TTL_SECONDS = 60;
+
     public function forUsersInRangeForIdle(iterable $userIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
     {
         $userIdCollection = $this->normalizeIds($userIds);
@@ -16,61 +22,69 @@ class ActivityFeedService
             return collect();
         }
 
-        $activities = Activity::query()
-            ->whereIn('user_id', $userIdCollection)
-            ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
-            ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
-            ->get([
-                'id',
-                'user_id',
-                'time_entry_id',
-                'type',
-                'name',
-                'duration',
-                'recorded_at',
-                'normalized_label',
-                'normalized_domain',
-                'software_name',
-                'tool_type',
-                'classification',
-                'classification_reason',
-            ])
-            ->map(fn (Activity $activity) => $this->mapActivity($activity));
+        // Build cache key
+        $cacheKey = 'activities_idle_' . md5($userIdCollection->implode(',') . ($startDate?->toDateString() ?? '') . ($endDate?->toDateString() ?? ''));
+        
+        return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($userIdCollection, $startDate, $endDate) {
+            // Limit query to prevent memory issues
+            $activities = Activity::query()
+                ->whereIn('user_id', $userIdCollection)
+                ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+                ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+                ->limit(self::MAX_ACTIVITIES_PER_QUERY)
+                ->get([
+                    'id',
+                    'user_id',
+                    'time_entry_id',
+                    'type',
+                    'name',
+                    'duration',
+                    'recorded_at',
+                    'normalized_label',
+                    'normalized_domain',
+                    'software_name',
+                    'tool_type',
+                    'classification',
+                    'classification_reason',
+                ])
+                ->map(fn (Activity $activity) => $this->mapActivity($activity));
 
-        $sessionModels = ActivitySession::query()
-            ->whereIn('user_id', $userIdCollection)
-            ->when($startDate || $endDate, function ($query) use ($startDate, $endDate) {
-                $this->applySessionOverlapFilter($query, $startDate, $endDate);
-            })
-            ->orderBy('user_id')
-            ->orderBy('source')
-            ->orderBy('started_at')
-            ->orderBy('id')
-            ->get([
-                'id',
-                'user_id',
-                'time_entry_id',
-                'source',
-                'activity_kind',
-                'tool_type',
-                'display_name',
-                'app_name',
-                'window_title',
-                'url',
-                'normalized_label',
-                'normalized_domain',
-                'software_name',
-                'classification',
-                'classification_reason',
-                'started_at',
-                'ended_at',
-            ]);
+            $sessionModels = ActivitySession::query()
+                ->whereIn('user_id', $userIdCollection)
+                ->when($startDate || $endDate, function ($query) use ($startDate, $endDate) {
+                    $this->applySessionOverlapFilter($query, $startDate, $endDate);
+                })
+                ->orderBy('user_id')
+                ->orderBy('source')
+                ->orderBy('started_at')
+                ->orderBy('id')
+                ->limit(self::MAX_ACTIVITIES_PER_QUERY)
+                ->get([
+                    'id',
+                    'user_id',
+                    'time_entry_id',
+                    'source',
+                    'activity_kind',
+                    'tool_type',
+                    'display_name',
+                    'app_name',
+                    'window_title',
+                    'url',
+                    'normalized_label',
+                    'normalized_domain',
+                    'software_name',
+                    'classification',
+                    'classification_reason',
+                    'started_at',
+                    'ended_at',
+                ]);
 
-        $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
+            $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
 
-        return $activities
-            ->concat($sessions)
-            ->values();
+            return $activities
+                ->concat($sessions)
+                ->values();
+        });
     }
 
     public function forUsersInRange(iterable $userIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
@@ -84,6 +98,7 @@ class ActivityFeedService
             ->whereIn('user_id', $userIdCollection)
             ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get()
             ->map(fn (Activity $activity) => $this->mapActivity($activity));
 
@@ -96,6 +111,7 @@ class ActivityFeedService
             ->orderBy('source')
             ->orderBy('started_at')
             ->orderBy('id')
+            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get();
 
         $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
@@ -117,6 +133,7 @@ class ActivityFeedService
             ->whereIn('time_entry_id', $timeEntryIdCollection)
             ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get([
                 'id',
                 'user_id',
@@ -143,6 +160,7 @@ class ActivityFeedService
             ->orderBy('source')
             ->orderBy('started_at')
             ->orderBy('id')
+            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get([
                 'id',
                 'user_id',
@@ -187,9 +205,12 @@ class ActivityFeedService
         }
 
         $page = max(1, $page);
-        $perPage = max(1, min($perPage, 10));
+        $perPage = max(1, min($perPage, 50)); // Max 50 per page
         $offset = ($page - 1) * $perPage;
-        $windowSize = $offset + $perPage + ($includeTotal ? ($perPage * 2) : 1);
+        
+        // Use smaller window for better performance
+        $windowSize = $offset + $perPage + ($includeTotal ? $perPage : 1);
+        $windowSize = min($windowSize, self::MAX_ACTIVITIES_PER_QUERY);
 
         $activitiesQuery = Activity::query()
             ->whereIn('user_id', $userIdCollection)
@@ -197,7 +218,12 @@ class ActivityFeedService
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate));
         $this->applyActivityFilters($activitiesQuery, $type, $classification, $toolType);
 
-        $activityTotal = $includeTotal ? (clone $activitiesQuery)->count() : null;
+        // Use approximate count for large datasets (much faster)
+        $activityTotal = null;
+        if ($includeTotal) {
+            $activityTotal = $this->getApproximateCount($activitiesQuery);
+        }
+        
         $activities = (clone $activitiesQuery)
             ->orderByDesc('recorded_at')
             ->orderByDesc('id')
@@ -212,7 +238,11 @@ class ActivityFeedService
             });
         $this->applySessionFilters($sessionsQuery, $type, $classification, $toolType);
 
-        $sessionTotal = $includeTotal ? (clone $sessionsQuery)->count() : null;
+        $sessionTotal = null;
+        if ($includeTotal) {
+            $sessionTotal = $this->getApproximateCount($sessionsQuery);
+        }
+        
         $sessionModels = (clone $sessionsQuery)
             ->orderByRaw('COALESCE(ended_at, started_at) DESC')
             ->orderByDesc('id')
@@ -235,6 +265,33 @@ class ActivityFeedService
         ];
     }
 
+    /**
+     * Get approximate count for better performance on large tables
+     */
+    private function getApproximateCount($query): int
+    {
+        try {
+            // For PostgreSQL, use EXPLAIN to get approximate count
+            $sql = $query->toSql();
+            $bindings = $query->getBindings();
+            $fullSql = vsprintf(str_replace('?', '%s', $sql), array_map(fn ($b) => is_string($b) ? "'$b'" : $b, $bindings));
+            
+            // Use EXPLAIN to get estimated rows
+            $explain = \DB::select("EXPLAIN (FORMAT JSON) " . $fullSql);
+            if (!empty($explain) && isset($explain[0]->QUERY PLAN)) {
+                $plan = json_decode($explain[0]->QUERY PLAN, true);
+                if (isset($plan[0]['Plan']['Plan Rows'])) {
+                    return (int) $plan[0]['Plan']['Plan Rows'];
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to get approximate count, falling back to exact count', ['error' => $e->getMessage()]);
+        }
+        
+        // Fallback to exact count
+        return $query->count();
+    }
+
     public function forTimeEntries(iterable $timeEntryIds, ?Carbon $startDate = null, ?Carbon $endDate = null): Collection
     {
         $timeEntryIdCollection = $this->normalizeIds($timeEntryIds);
@@ -246,6 +303,7 @@ class ActivityFeedService
             ->whereIn('time_entry_id', $timeEntryIdCollection)
             ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get()
             ->map(fn (Activity $activity) => $this->mapActivity($activity));
 
@@ -258,6 +316,7 @@ class ActivityFeedService
             ->orderBy('source')
             ->orderBy('started_at')
             ->orderBy('id')
+            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get();
 
         $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
