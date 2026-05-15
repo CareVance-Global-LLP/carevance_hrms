@@ -15,6 +15,8 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ActivityController extends Controller
 {
@@ -33,6 +35,24 @@ class ActivityController extends Controller
      * Display a listing of the resource.
      */
     public function index(Request $request)
+    {
+        try {
+            return $this->indexInternal($request);
+        } catch (\Throwable $e) {
+            Log::error('Activity index error', [
+                'error' => $e->getMessage(),
+                'user_id' => $request->user()?->id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'data' => [],
+                'message' => 'Failed to load timeline data',
+                'error' => 'Server error'
+            ], 500);
+        }
+    }
+
+    private function indexInternal(Request $request)
     {
         $user = $request->user();
         if (!$user) {
