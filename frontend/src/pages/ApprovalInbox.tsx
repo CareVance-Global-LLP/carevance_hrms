@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { attendanceApi, attendanceTimeEditApi, leaveApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -191,6 +191,7 @@ export default function ApprovalInbox() {
   const [analyticsDepartment, setAnalyticsDepartment] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const cardsRef = useRef<HTMLDivElement>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const todayIso = useMemo(() => today.toISOString().slice(0, 10), [today]);
@@ -222,7 +223,6 @@ export default function ApprovalInbox() {
       nextParams.set('leave_window', next.leaveWindow);
     }
     navigate(`/approval-inbox?${nextParams.toString()}`, { replace: true });
-    setTimeout(() => window.scrollTo({ top: 0, behavior: 'auto' }), 50);
   };
 
   const load = async () => {
@@ -264,16 +264,19 @@ export default function ApprovalInbox() {
   }, []);
 
   useEffect(() => {
-    const id = requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'auto' }));
-    return () => cancelAnimationFrame(id);
-  }, [location.pathname, location.search]);
-
-  useEffect(() => {
     const leaveWindow = String(params.get('leave_window') || '').trim().toLowerCase();
     if (leaveWindow === 'today') {
       setAnalyticsPreset('today');
     }
   }, [params]);
+
+  useEffect(() => {
+    if (activeView === 'history' && cardsRef.current) {
+      requestAnimationFrame(() => {
+        cardsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }, [activeView]);
 
   const handleAction = async (action: () => Promise<void>, successMessage: string) => {
     setFeedback(null);
@@ -963,7 +966,7 @@ export default function ApprovalInbox() {
             : `No ${activeSection === 'leave' ? 'leave' : 'time edit'} approval history matches this view.`}
         />
       ) : (
-        <div className="space-y-3">
+        <div ref={cardsRef} className="space-y-3">
           {currentCards.map((item) => (
             <SurfaceCard key={`${item.kind}-${item.id}`} className="p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
