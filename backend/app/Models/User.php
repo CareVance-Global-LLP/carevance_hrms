@@ -158,6 +158,7 @@ class User extends Authenticatable
         'avatar',
         'settings',
         'last_seen_at',
+        'email_verified_at',
     ];
 
     /**
