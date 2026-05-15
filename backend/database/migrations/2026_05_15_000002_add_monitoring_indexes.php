@@ -33,16 +33,7 @@ return new class extends Migration
             }
         });
 
-        // Time entries additional indexes
-        Schema::table('time_entries', function (Blueprint $table) {
-            if (!$this->indexExists('time_entries', 'idx_time_entries_user_slot')) {
-                $table->index(['user_id', 'timer_slot', 'start_time'], 'idx_time_entries_user_slot');
-            }
-            if (!$this->indexExists('time_entries', 'idx_time_entries_created_at')) {
-                $table->index(['created_at'], 'idx_time_entries_created_at');
-            }
-        });
-
+        // Note: time_entries indexes are in the first migration
         // Activity sessions additional indexes
         Schema::table('activity_sessions', function (Blueprint $table) {
             if (!$this->indexExists('activity_sessions', 'idx_sessions_activity_kind')) {
@@ -78,15 +69,6 @@ return new class extends Migration
         Schema::table('attendance_punches', function (Blueprint $table) {
             if ($this->indexExists('attendance_punches', 'idx_punches_user_record')) {
                 $table->dropIndex('idx_punches_user_record');
-            }
-        });
-
-        Schema::table('time_entries', function (Blueprint $table) {
-            if ($this->indexExists('time_entries', 'idx_time_entries_user_slot')) {
-                $table->dropIndex('idx_time_entries_user_slot');
-            }
-            if ($this->indexExists('time_entries', 'idx_time_entries_created_at')) {
-                $table->dropIndex('idx_time_entries_created_at');
             }
         });
 

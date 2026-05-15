@@ -54,16 +54,26 @@ return new class extends Migration
             }
         });
 
-        // Time entries - additional indexes for better performance
+        // Time entries - additional indexes for better performance (only existing columns)
         Schema::table('time_entries', function (Blueprint $table) {
-            // Index for active timers (null end_time)
+            // Index for active timers (null end_time) - user_id + end_time
             if (!$this->indexExists('time_entries', 'idx_time_entries_active')) {
                 $table->index(['user_id', 'end_time'], 'idx_time_entries_active');
             }
             
-            // Index for organization lookups
-            if (!$this->indexExists('time_entries', 'idx_time_entries_org_start')) {
-                $table->index(['organization_id', 'start_time'], 'idx_time_entries_org_start');
+            // Index for user + start_time (common query pattern)
+            if (!$this->indexExists('time_entries', 'idx_time_entries_user_start')) {
+                $table->index(['user_id', 'start_time'], 'idx_time_entries_user_start');
+            }
+            
+            // Index for project + start_time
+            if (!$this->indexExists('time_entries', 'idx_time_entries_project_start')) {
+                $table->index(['project_id', 'start_time'], 'idx_time_entries_project_start');
+            }
+            
+            // Index for created_at (for sorting)
+            if (!$this->indexExists('time_entries', 'idx_time_entries_created_at')) {
+                $table->index(['created_at'], 'idx_time_entries_created_at');
             }
         });
 
@@ -126,8 +136,14 @@ return new class extends Migration
             if ($this->indexExists('time_entries', 'idx_time_entries_active')) {
                 $table->dropIndex('idx_time_entries_active');
             }
-            if ($this->indexExists('time_entries', 'idx_time_entries_org_start')) {
-                $table->dropIndex('idx_time_entries_org_start');
+            if ($this->indexExists('time_entries', 'idx_time_entries_user_start')) {
+                $table->dropIndex('idx_time_entries_user_start');
+            }
+            if ($this->indexExists('time_entries', 'idx_time_entries_project_start')) {
+                $table->dropIndex('idx_time_entries_project_start');
+            }
+            if ($this->indexExists('time_entries', 'idx_time_entries_created_at')) {
+                $table->dropIndex('idx_time_entries_created_at');
             }
         });
 
