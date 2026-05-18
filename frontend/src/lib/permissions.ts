@@ -9,6 +9,9 @@ type ApprovalActor = Pick<User, 'id'> & {
   role?: string | null;
 };
 
+const normalizeRole = (role: string | null | undefined): string =>
+  String(role || '').trim().toLowerCase();
+
 export const hasStrictAdminAccess = (user: User | null | undefined): boolean =>
   user?.role === 'admin';
 
@@ -23,19 +26,22 @@ export const canReviewApprovalRequest = (
     return false;
   }
 
-  if (reviewer.role !== 'admin' && reviewer.role !== 'manager') {
+  const reviewerRole = normalizeRole(reviewer.role);
+  const requesterRole = normalizeRole(requester.role);
+
+  if (reviewerRole !== 'admin' && reviewerRole !== 'manager') {
     return false;
   }
 
-  if (reviewer.role === 'manager') {
-    return reviewer.id !== requester.id && requester.role === 'employee';
+  if (reviewerRole === 'manager') {
+    return reviewer.id !== requester.id && requesterRole === 'employee';
   }
 
   if (reviewer.id === requester.id) {
     return true;
   }
 
-  return requester.role === 'employee' || requester.role === 'manager';
+  return requesterRole === 'employee' || requesterRole === 'manager';
 };
 
 export const isEmployeeUser = (user: User | null | undefined): boolean =>

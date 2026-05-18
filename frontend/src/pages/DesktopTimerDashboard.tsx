@@ -119,6 +119,23 @@ const restoreTimerSnapshot = (
   }
 };
 
+const toArrayPayload = <T,>(payload: unknown): T[] => {
+  if (Array.isArray(payload)) {
+    return payload as T[];
+  }
+
+  if (
+    payload
+    && typeof payload === 'object'
+    && 'data' in payload
+    && Array.isArray((payload as { data?: unknown }).data)
+  ) {
+    return (payload as { data: T[] }).data;
+  }
+
+  return [];
+};
+
 export default function DesktopTimerDashboard() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -294,12 +311,12 @@ export default function DesktopTimerDashboard() {
       }
 
       if (projectsSucceeded) {
-        const fetchedProjects = projectsResult.value.data || [];
+        const fetchedProjects = toArrayPayload<Project>(projectsResult.value.data);
         setAllowedProjects(fetchedProjects);
       }
 
       if (tasksSucceeded) {
-        const fetchedTasks = (tasksResult.value.data || []).filter((task) => task.status !== 'done');
+        const fetchedTasks = toArrayPayload<Task>(tasksResult.value.data).filter((task) => task.status !== 'done');
         setAllowedTasks(fetchedTasks);
         if (!dashboardSucceeded) {
           setActiveTasksCount(fetchedTasks.length);

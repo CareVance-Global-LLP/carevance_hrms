@@ -26,6 +26,31 @@ interface MinimalOrganizationData {
 
 const hasWindow = () => typeof window !== 'undefined';
 
+const safelyAccessStorage = <T>(operation: () => T, fallback: T): T => {
+  try {
+    return operation();
+  } catch {
+    return fallback;
+  }
+};
+
+const getStorageItem = (storage: Storage | null, key: string): string | null =>
+  safelyAccessStorage(() => storage?.getItem(key) ?? null, null);
+
+const setStorageItem = (storage: Storage | null, key: string, value: string) => {
+  safelyAccessStorage(() => {
+    storage?.setItem(key, value);
+    return true;
+  }, false);
+};
+
+const removeStorageItem = (storage: Storage | null, key: string) => {
+  safelyAccessStorage(() => {
+    storage?.removeItem(key);
+    return true;
+  }, false);
+};
+
 const getPreferredAuthStorage = (): Storage | null => {
   if (!hasWindow()) {
     return null;
@@ -33,7 +58,10 @@ const getPreferredAuthStorage = (): Storage | null => {
 
   // Always prefer sessionStorage for security (cleared when browser closes)
   // Use localStorage only in desktop environment
-  return window.desktopTracker ? window.localStorage : window.sessionStorage;
+  return safelyAccessStorage(
+    () => (window.desktopTracker ? window.localStorage : window.sessionStorage),
+    null,
+  );
 };
 
 const getSecondaryAuthStorage = (): Storage | null => {
@@ -41,7 +69,10 @@ const getSecondaryAuthStorage = (): Storage | null => {
     return null;
   }
 
-  return window.desktopTracker ? window.sessionStorage : window.localStorage;
+  return safelyAccessStorage(
+    () => (window.desktopTracker ? window.sessionStorage : window.localStorage),
+    null,
+  );
 };
 
 export const getStoredAuthValue = (key: AuthStorageKey) => {
@@ -53,7 +84,8 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
 
     // Try to restore from sessionStorage (where we saved it)
     if (typeof window !== 'undefined') {
-      const storedToken = window.sessionStorage.getItem('token');
+      const storedToken = getStorageItem(getPreferredAuthStorage(), 'token')
+        ?? getStorageItem(getSecondaryAuthStorage(), 'token');
       if (storedToken) {
         inMemoryAuthToken = storedToken;
         return inMemoryAuthToken;
@@ -69,7 +101,7 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
     }
     // Try to restore from sessionStorage on page reload
     const preferredStorage = getPreferredAuthStorage();
-    const storedUser = preferredStorage?.getItem('user') ?? null;
+    const storedUser = getStorageItem(preferredStorage, 'user');
     if (storedUser) {
       inMemoryUser = storedUser;
       return inMemoryUser;
@@ -83,7 +115,7 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
     }
     // Try to restore from sessionStorage on page reload
     const preferredStorage = getPreferredAuthStorage();
-    const storedOrg = preferredStorage?.getItem('organization') ?? null;
+    const storedOrg = getStorageItem(preferredStorage, 'organization');
     if (storedOrg) {
       inMemoryOrganization = storedOrg;
       return inMemoryOrganization;
@@ -100,7 +132,8 @@ export const setStoredAuthValue = (key: AuthStorageKey, value: string) => {
     // Persist token to sessionStorage for web app persistence across reloads
     // Use sessionStorage (not localStorage) for security - cleared when browser closes
     if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem('token', value);
+      setStorageItem(getPreferredAuthStorage(), 'token', value);
+      setStorageItem(getSecondaryAuthStorage(), 'token', value);
     }
     return;
   }
@@ -118,7 +151,7 @@ export const setStoredAuthValue = (key: AuthStorageKey, value: string) => {
         organization_id: userData.organization_id,
       };
       // Only store in sessionStorage, never localStorage (unless desktop)
-      getPreferredAuthStorage()?.setItem(key, JSON.stringify(minimalUser));
+      setStorageItem(getPreferredAuthStorage(), key, JSON.stringify(minimalUser));
     } catch {
       // If parsing fails, don't store
     }
@@ -135,7 +168,7 @@ export const setStoredAuthValue = (key: AuthStorageKey, value: string) => {
         name: orgData.name,
         slug: orgData.slug,
       };
-      getPreferredAuthStorage()?.setItem(key, JSON.stringify(minimalOrg));
+      setStorageItem(getPreferredAuthStorage(), key, JSON.stringify(minimalOrg));
     } catch {
       // If parsing fails, don't store
     }
@@ -154,8 +187,8 @@ export const removeStoredAuthValue = (key: AuthStorageKey) => {
   }
   
   // Clear from all storage
-  getPreferredAuthStorage()?.removeItem(key);
-  getSecondaryAuthStorage()?.removeItem(key);
+  removeStorageItem(getPreferredAuthStorage(), key);
+  removeStorageItem(getSecondaryAuthStorage(), key);
 };
 
 export const clearAuthStorage = () => {
@@ -166,8 +199,8 @@ export const clearAuthStorage = () => {
   
   // Clear all storage
   AUTH_STORAGE_KEYS.forEach((key) => {
-    getPreferredAuthStorage()?.removeItem(key);
-    getSecondaryAuthStorage()?.removeItem(key);
+    removeStorageItem(getPreferredAuthStorage(), key);
+    removeStorageItem(getSecondaryAuthStorage(), key);
   });
 };
 
@@ -182,20 +215,20 @@ export const migrateStoredAuth = () => {
   }
 
   // Migrate token to memory (don't persist in secondary storage)
-  const legacyToken = preferredStorage.getItem('token') ?? secondaryStorage.getItem('token');
+  const legacyToken = getStorageItem(preferredStorage, 'token') ?? getStorageItem(secondaryStorage, 'token');
   if (legacyToken !== null) {
     inMemoryAuthToken = legacyToken;
     // Only keep in preferred storage if it's sessionStorage (more secure)
     if (preferredStorage === window.sessionStorage) {
-      preferredStorage.setItem('token', legacyToken);
+      setStorageItem(preferredStorage, 'token', legacyToken);
     }
   }
-  secondaryStorage.removeItem('token');
+  removeStorageItem(secondaryStorage, 'token');
 
   // Migrate user/org data but only store minimal data
   PERSISTED_AUTH_STORAGE_KEYS.forEach((key: PersistedAuthStorageKey) => {
-    const preferredValue = preferredStorage.getItem(key);
-    const secondaryValue = secondaryStorage.getItem(key);
+    const preferredValue = getStorageItem(preferredStorage, key);
+    const secondaryValue = getStorageItem(secondaryStorage, key);
     
     let valueToMigrate = preferredValue ?? secondaryValue;
     
@@ -211,21 +244,21 @@ export const migrateStoredAuth = () => {
             role: data.role,
             organization_id: data.organization_id,
           };
-          preferredStorage.setItem(key, JSON.stringify(minimalUser));
+          setStorageItem(preferredStorage, key, JSON.stringify(minimalUser));
         } else if (key === 'organization') {
           const minimalOrg: MinimalOrganizationData = {
             id: data.id,
             name: data.name,
             slug: data.slug,
           };
-          preferredStorage.setItem(key, JSON.stringify(minimalOrg));
+          setStorageItem(preferredStorage, key, JSON.stringify(minimalOrg));
         }
       } catch {
         // Invalid JSON, remove it
-        preferredStorage.removeItem(key);
+        removeStorageItem(preferredStorage, key);
       }
     }
 
-    secondaryStorage.removeItem(key);
+    removeStorageItem(secondaryStorage, key);
   });
 };

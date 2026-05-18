@@ -24,6 +24,11 @@ class LeaveRequestController extends Controller
     ) {
     }
 
+    private function normalizeRole(?string $role): string
+    {
+        return strtolower(trim((string) $role));
+    }
+
     public function index(Request $request)
     {
         $request->validate([
@@ -103,11 +108,11 @@ class LeaveRequestController extends Controller
         if ($this->canManage($currentUser)) {
             $teamUsersQuery = User::query()
                 ->where('organization_id', $currentUser->organization_id)
-                ->whereIn('role', ['employee', 'manager'])
+                ->whereRaw('LOWER(TRIM(role)) IN (?, ?)', ['employee', 'manager'])
                 ->with(['groups:id,name', 'employeeWorkInfo.department:id,name', 'employeeWorkInfo.reportingManager:id,name,email'])
                 ->orderBy('name');
 
-            if ($currentUser->role === 'manager') {
+            if ($this->normalizeRole($currentUser->role) === 'manager') {
                 $reviewableUserIds = $this->approvalRoutingService
                     ->reviewableRequesterIds($currentUser)
                     ->unique()
@@ -158,9 +163,9 @@ class LeaveRequestController extends Controller
             'team' => $teamBalances,
             'approval_scope' => [
                 'can_manage' => $this->canManage($currentUser),
-                'can_approve_roles' => $currentUser->role === 'manager'
+                'can_approve_roles' => $this->normalizeRole($currentUser->role) === 'manager'
                     ? ['employee']
-                    : ($currentUser->role === 'admin' ? ['manager'] : []),
+                    : ($this->normalizeRole($currentUser->role) === 'admin' ? ['manager'] : []),
             ],
         ]);
     }
@@ -588,7 +593,7 @@ class LeaveRequestController extends Controller
 
     private function canManage(User $user): bool
     {
-        return in_array($user->role, ['admin', 'manager'], true);
+        return in_array($this->normalizeRole($user->role), ['admin', 'manager'], true);
     }
 
     private function sendSubmissionNotification(LeaveRequest $leave, User $requester): void
@@ -640,7 +645,7 @@ class LeaveRequestController extends Controller
             ->filter()
             ->values();
 
-        $reviewerLabel = match ($leave->user->role) {
+        $reviewerLabel = match ($this->normalizeRole($leave->user->role)) {
             'employee' => $reviewerNames->count() === 1 ? 'your department manager' : 'your department managers',
             'manager' => $reviewerNames->count() === 1 ? 'an admin' : 'admins',
             default => 'the reviewer',

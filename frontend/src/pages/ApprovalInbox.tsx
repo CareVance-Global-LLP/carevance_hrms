@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { attendanceApi, attendanceTimeEditApi, leaveApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { canReviewApprovalRequest } from '@/lib/permissions';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -225,10 +224,31 @@ export default function ApprovalInbox() {
     navigate(`/approval-inbox?${nextParams.toString()}`, { replace: true });
   };
 
+  const isSuccessfulResponse = (response: any) => Number(response?.status || 0) >= 200 && Number(response?.status || 0) < 300;
+
+  const toApprovalItems = (response: any) => {
+    if (!isSuccessfulResponse(response)) {
+      return [];
+    }
+
+    const payload = response?.data?.data;
+    return Array.isArray(payload) ? payload : [];
+  };
+
+  const ensureSuccessfulAction = (response: any, fallbackMessage: string) => {
+    if (!isSuccessfulResponse(response)) {
+      const message = String(response?.data?.message || fallbackMessage);
+      const error: any = new Error(message);
+      error.response = { data: { message } };
+      throw error;
+    }
+  };
+
   const load = async () => {
     setIsLoading(true);
+    setFeedback(null);
     try {
-      const [pendingLeaveResponse, approvedLeaveResponse, rejectedLeaveResponse, autoCancelledLeaveResponse, pendingTimeEditResponse, approvedTimeEditResponse, rejectedTimeEditResponse, employeesResponse, attendanceResponse] = await Promise.all([
+      const [pendingLeaveResult, approvedLeaveResult, rejectedLeaveResult, autoCancelledLeaveResult, pendingTimeEditResult, approvedTimeEditResult, rejectedTimeEditResult, employeesResult, attendanceResult] = await Promise.allSettled([
         leaveApi.list({ status: 'pending', limit: 500 }),
         leaveApi.list({ status: 'approved', limit: 500 }),
         leaveApi.list({ status: 'rejected', limit: 500 }),
@@ -240,20 +260,55 @@ export default function ApprovalInbox() {
         attendanceApi.summary({ start_date: todayIso, end_date: todayIso }),
       ]);
 
-      setPendingLeaveRequests(pendingLeaveResponse.data?.data || []);
+      const pendingLeaveResponse = pendingLeaveResult.status === 'fulfilled' ? pendingLeaveResult.value : null;
+      const approvedLeaveResponse = approvedLeaveResult.status === 'fulfilled' ? approvedLeaveResult.value : null;
+      const rejectedLeaveResponse = rejectedLeaveResult.status === 'fulfilled' ? rejectedLeaveResult.value : null;
+      const autoCancelledLeaveResponse = autoCancelledLeaveResult.status === 'fulfilled' ? autoCancelledLeaveResult.value : null;
+      const pendingTimeEditResponse = pendingTimeEditResult.status === 'fulfilled' ? pendingTimeEditResult.value : null;
+      const approvedTimeEditResponse = approvedTimeEditResult.status === 'fulfilled' ? approvedTimeEditResult.value : null;
+      const rejectedTimeEditResponse = rejectedTimeEditResult.status === 'fulfilled' ? rejectedTimeEditResult.value : null;
+      const employeesResponse = employeesResult.status === 'fulfilled' ? employeesResult.value : null;
+      const attendanceResponse = attendanceResult.status === 'fulfilled' ? attendanceResult.value : null;
+
+      setPendingLeaveRequests(toApprovalItems(pendingLeaveResponse));
       setLeaveHistory(
-        [...(approvedLeaveResponse.data?.data || []), ...(rejectedLeaveResponse.data?.data || []), ...(autoCancelledLeaveResponse.data?.data || [])]
+        [...toApprovalItems(approvedLeaveResponse), ...toApprovalItems(rejectedLeaveResponse), ...toApprovalItems(autoCancelledLeaveResponse)]
           .sort((left, right) => +new Date(right.reviewed_at || right.created_at) - +new Date(left.reviewed_at || left.created_at))
       );
-      setPendingTimeEditRequests(pendingTimeEditResponse.data?.data || []);
+      setPendingTimeEditRequests(toApprovalItems(pendingTimeEditResponse));
       setTimeEditHistory(
-        [...(approvedTimeEditResponse.data?.data || []), ...(rejectedTimeEditResponse.data?.data || [])]
+        [...toApprovalItems(approvedTimeEditResponse), ...toApprovalItems(rejectedTimeEditResponse)]
           .sort((left, right) => +new Date(right.reviewed_at || right.created_at) - +new Date(left.reviewed_at || left.created_at))
       );
-      setEmployees(Array.isArray(employeesResponse.data) ? employeesResponse.data : []);
-      setTodayAttendanceRows(Array.isArray(attendanceResponse.data?.data) ? attendanceResponse.data.data : []);
-    } catch (error: any) {
-      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to load approval inbox.' });
+      setEmployees(Array.isArray(employeesResponse?.data) ? employeesResponse.data : []);
+      setTodayAttendanceRows(Array.isArray(attendanceResponse?.data?.data) ? attendanceResponse.data.data : []);
+
+      const endpointResults: Array<{ name: string; result: PromiseSettledResult<any> }> = [
+        { name: 'leave pending', result: pendingLeaveResult },
+        { name: 'leave approved', result: approvedLeaveResult },
+        { name: 'leave rejected', result: rejectedLeaveResult },
+        { name: 'leave auto-cancelled', result: autoCancelledLeaveResult },
+        { name: 'time-edit pending', result: pendingTimeEditResult },
+        { name: 'time-edit approved', result: approvedTimeEditResult },
+        { name: 'time-edit rejected', result: rejectedTimeEditResult },
+        { name: 'employees', result: employeesResult },
+        { name: 'attendance summary', result: attendanceResult },
+      ];
+
+      const failedEndpoints = endpointResults.flatMap(({ name, result }) => {
+        if (result.status === 'rejected') {
+          return [name];
+        }
+        return isSuccessfulResponse(result.value)
+          ? []
+          : [`${name} (${result.value?.status || 'error'})`];
+      });
+
+      if (failedEndpoints.length > 0) {
+        setFeedback({ tone: 'error', message: `Some approval inbox data failed: ${failedEndpoints.join(', ')}.` });
+      }
+    } catch {
+      setFeedback({ tone: 'error', message: 'Failed to load approval inbox.' });
     } finally {
       setIsLoading(false);
     }
@@ -290,20 +345,20 @@ export default function ApprovalInbox() {
   };
 
   const reviewablePendingLeaves = useMemo(
-    () => pendingLeaveRequests.filter((item) => canReviewApprovalRequest(user, item.user)),
-    [pendingLeaveRequests, user]
+    () => pendingLeaveRequests,
+    [pendingLeaveRequests]
   );
   const reviewableLeaveHistory = useMemo(
-    () => leaveHistory.filter((item) => canReviewApprovalRequest(user, item.user)),
-    [leaveHistory, user]
+    () => leaveHistory,
+    [leaveHistory]
   );
   const reviewablePendingTimeEdits = useMemo(
-    () => pendingTimeEditRequests.filter((item) => canReviewApprovalRequest(user, item.user)),
-    [pendingTimeEditRequests, user]
+    () => pendingTimeEditRequests,
+    [pendingTimeEditRequests]
   );
   const reviewableTimeEditHistory = useMemo(
-    () => timeEditHistory.filter((item) => canReviewApprovalRequest(user, item.user)),
-    [timeEditHistory, user]
+    () => timeEditHistory,
+    [timeEditHistory]
   );
 
   const employeeDirectory = useMemo(() => {
@@ -589,8 +644,14 @@ export default function ApprovalInbox() {
     employeeName: item.user?.name || 'Unknown',
     employeeEmail: item.user?.email || '',
     status: item.status,
-    onApprove: async () => { await leaveApi.approve(item.id); },
-    onReject: async () => { await leaveApi.reject(item.id); },
+    onApprove: async () => {
+      const response = await leaveApi.approve(item.id);
+      ensureSuccessfulAction(response, 'Leave approval failed.');
+    },
+    onReject: async () => {
+      const response = await leaveApi.reject(item.id);
+      ensureSuccessfulAction(response, 'Leave rejection failed.');
+    },
   })), [reviewablePendingLeaves]);
 
   const leaveHistoryCards = useMemo<ApprovalCardItem[]>(() => reviewableLeaveHistory.map((item) => ({
@@ -615,8 +676,14 @@ export default function ApprovalInbox() {
     employeeName: item.user?.name || 'Unknown',
     employeeEmail: item.user?.email || '',
     status: item.status,
-    onApprove: async () => { await attendanceTimeEditApi.approve(item.id); },
-    onReject: async () => { await attendanceTimeEditApi.reject(item.id); },
+    onApprove: async () => {
+      const response = await attendanceTimeEditApi.approve(item.id);
+      ensureSuccessfulAction(response, 'Time edit approval failed.');
+    },
+    onReject: async () => {
+      const response = await attendanceTimeEditApi.reject(item.id);
+      ensureSuccessfulAction(response, 'Time edit rejection failed.');
+    },
   })), [reviewablePendingTimeEdits]);
 
   const timeEditHistoryCards = useMemo<ApprovalCardItem[]>(() => reviewableTimeEditHistory.map((item) => ({
@@ -988,7 +1055,7 @@ export default function ApprovalInbox() {
                     ) : null}
                   </div>
                   <h3 className="text-lg font-semibold text-slate-950">{item.title}</h3>
-                  <p className="text-sm text-slate-600">{item.employeeName} | {item.employeeEmail}</p>
+                  <p className="text-sm text-slate-600">Submitted by: {item.employeeName} {item.employeeEmail ? `| ${item.employeeEmail}` : ''}</p>
                   <p className="text-sm text-slate-600">{item.description}</p>
                   {item.reviewerName ? (
                     <p className="text-xs text-slate-500">Reviewed by {item.reviewerName}</p>

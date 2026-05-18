@@ -22,6 +22,11 @@ class AttendanceTimeEditRequestController extends Controller
     ) {
     }
 
+    private function normalizeRole(?string $role): string
+    {
+        return strtolower(trim((string) $role));
+    }
+
     public function index(Request $request)
     {
         $request->validate([
@@ -299,7 +304,7 @@ class AttendanceTimeEditRequestController extends Controller
 
     private function canManage(User $user): bool
     {
-        return in_array($user->role, ['admin', 'manager'], true);
+        return in_array($this->normalizeRole($user->role), ['admin', 'manager'], true);
     }
 
     private function shiftTargetSeconds(): int
@@ -325,7 +330,7 @@ class AttendanceTimeEditRequestController extends Controller
             ->filter()
             ->values();
 
-        $reviewerLabel = match ($requester->role) {
+        $reviewerLabel = match ($this->normalizeRole($requester->role)) {
             'employee' => $names->count() === 1 ? 'your department manager' : 'your department managers',
             'manager' => $names->count() === 1 ? 'an admin' : 'admins',
             default => 'the reviewer',
@@ -357,7 +362,7 @@ class AttendanceTimeEditRequestController extends Controller
             ->filter()
             ->values();
 
-        $reviewerLabel = match ($item->user->role) {
+        $reviewerLabel = match ($this->normalizeRole($item->user->role)) {
             'employee' => $reviewerNames->count() === 1 ? 'your department manager' : 'your department managers',
             'manager' => $reviewerNames->count() === 1 ? 'an admin' : 'admins',
             default => 'the reviewer',
