@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { useAuth } from '@/contexts/AuthContext';
@@ -73,6 +73,29 @@ const calculateContextMenuLayout = (
 };
 
 const getThreadKey = (thread: ThreadSelection) => (thread ? `${thread.type}:${thread.id}` : '');
+
+const MAX_CHAT_ATTACHMENT_BYTES = 200 * 1024 * 1024;
+const EMAIL_TOKEN_PATTERN = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+const URL_TOKEN_PATTERN = /^(https?:\/\/|www\.)[^\s<]+$/i;
+const URL_OR_EMAIL_PATTERN = /((?:https?:\/\/|www\.)[^\s<]+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/gi;
+
+const resolveLinkTarget = (token: string) => {
+  if (EMAIL_TOKEN_PATTERN.test(token)) {
+    return {
+      href: `mailto:${token}`,
+      label: token,
+    };
+  }
+
+  const sanitized = token.replace(/[),.;!?]+$/, '');
+
+  return {
+    href: sanitized.startsWith('http://') || sanitized.startsWith('https://')
+      ? sanitized
+      : `https://${sanitized}`,
+    label: sanitized,
+  };
+};
 
 const isSameThread = (left: ThreadSelection, right: ThreadSelection) => (
   left?.type === right?.type && left?.id === right?.id
@@ -578,6 +601,11 @@ export default function Chat() {
     setError('');
     if (!selectedThread || (!messageText.trim() && !attachmentFile)) return;
 
+    if (attachmentFile && attachmentFile.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      setError('Attachment must be 200 MB or smaller.');
+      return;
+    }
+
     try {
       const response = selectedThread.type === 'direct'
         ? await chatApi.sendMessage(selectedThread.id, {
@@ -696,6 +724,41 @@ export default function Chat() {
     if (size < 1024) return `${size} B`;
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const renderMessageBody = (body: string, mine: boolean) => {
+    const lines = body.split('\n');
+
+    return lines.map((line, lineIndex) => {
+      const segments = line.split(URL_OR_EMAIL_PATTERN);
+
+      return (
+        <Fragment key={`line-${lineIndex}`}>
+          {segments.map((segment, segmentIndex) => {
+            const isLinkToken = EMAIL_TOKEN_PATTERN.test(segment) || URL_TOKEN_PATTERN.test(segment);
+
+            if (!isLinkToken) {
+              return <Fragment key={`text-${lineIndex}-${segmentIndex}`}>{segment}</Fragment>;
+            }
+
+            const { href, label } = resolveLinkTarget(segment);
+
+            return (
+              <a
+                key={`link-${lineIndex}-${segmentIndex}`}
+                href={href}
+                target={href.startsWith('mailto:') ? undefined : '_blank'}
+                rel={href.startsWith('mailto:') ? undefined : 'noopener noreferrer'}
+                className={mine ? 'underline text-primary-100' : 'underline text-primary-700'}
+              >
+                {label}
+              </a>
+            );
+          })}
+          {lineIndex < lines.length - 1 ? <br /> : null}
+        </Fragment>
+      );
+    });
   };
 
   const openMessageContextMenu = (event: React.MouseEvent<HTMLDivElement>, message: ChatFeedMessage, mine: boolean) => {
@@ -1081,7 +1144,7 @@ export default function Chat() {
                           </div>
                         </div>
                       ) : (
-                        <p className="break-words whitespace-pre-wrap">{message.body}</p>
+                        <p className="break-words whitespace-pre-wrap">{renderMessageBody(message.body || '', mine)}</p>
                       )}
                       {message.has_attachment && (
                         <button
@@ -1209,6 +1272,7 @@ export default function Chat() {
                 onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
                 className="block w-full text-xs text-gray-600 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs file:font-medium"
               />
+              <span className="text-[11px] text-gray-500">Max file size: 200 MB</span>
               {attachmentFile && (
                 <button
                   type="button"

@@ -269,7 +269,11 @@ class UsageProcessingService
                 (string) ($row['type'] ?? 'app'),
             );
 
-            if (($row['type'] ?? 'app') === 'app' && ($row['classification'] ?? 'neutral') === 'neutral') {
+            if (
+                ($row['type'] ?? 'app') === 'app'
+                && ($row['classification'] ?? 'neutral') === 'neutral'
+                && ! $this->isSystemUtilitySoftwareLabel((string) ($row['label'] ?? ''))
+            ) {
                 $row['classification'] = 'productive';
             }
 
@@ -325,7 +329,11 @@ class UsageProcessingService
                 (string) ($row['type'] ?? 'app'),
             );
 
-            if (($row['type'] ?? 'app') === 'app' && ($row['classification'] ?? 'neutral') === 'neutral') {
+            if (
+                ($row['type'] ?? 'app') === 'app'
+                && ($row['classification'] ?? 'neutral') === 'neutral'
+                && ! $this->isSystemUtilitySoftwareLabel((string) ($row['label'] ?? ''))
+            ) {
                 $row['classification'] = 'productive';
             }
 
@@ -1185,6 +1193,21 @@ class UsageProcessingService
             'neutral' => $tools->where('classification', 'neutral')->values()->all(),
             'context_dependent' => $tools->where('classification', 'context_dependent')->values()->all(),
         ];
+    }
+
+    private function isSystemUtilitySoftwareLabel(string $label): bool
+    {
+        $normalizedLabel = strtolower(trim($label));
+        if ($normalizedLabel === '') {
+            return false;
+        }
+
+        $utilityLabels = collect((array) config('productivity_monitoring.system_utility_software_labels', []))
+            ->map(fn ($value) => strtolower(trim((string) $value)))
+            ->filter()
+            ->values();
+
+        return $utilityLabels->contains($normalizedLabel);
     }
 
     private function resolveToolType(string $activityType, string $rawName, string $label): string

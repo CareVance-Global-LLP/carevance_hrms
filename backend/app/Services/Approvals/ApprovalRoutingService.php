@@ -8,6 +8,11 @@ use Illuminate\Support\Collection;
 
 class ApprovalRoutingService
 {
+    private function normalizeRole(?string $role): string
+    {
+        return strtolower(trim((string) $role));
+    }
+
     /**
      * @return Collection<int, int>
      */
@@ -17,7 +22,7 @@ class ApprovalRoutingService
             return collect();
         }
 
-        return match ($requester->role) {
+        return match ($this->normalizeRole($requester->role)) {
             'employee' => $this->employeeGroupManagerReviewerUserIds($requester),
             'manager' => $this->organizationRoleIds($requester, 'admin', (int) $requester->id),
             'admin' => collect(),
@@ -31,12 +36,16 @@ class ApprovalRoutingService
             ! $reviewer->organization_id
             || ! $requester->organization_id
             || (int) $reviewer->organization_id !== (int) $requester->organization_id
-            || ! in_array($reviewer->role, ['admin', 'manager'], true)
+            || ! in_array($this->normalizeRole($reviewer->role), ['admin', 'manager'], true)
         ) {
             return false;
         }
 
-        if ($reviewer->role === 'admin' && $requester->role === 'admin' && (int) $reviewer->id === (int) $requester->id) {
+        if (
+            $this->normalizeRole($reviewer->role) === 'admin'
+            && $this->normalizeRole($requester->role) === 'admin'
+            && (int) $reviewer->id === (int) $requester->id
+        ) {
             return true;
         }
 
@@ -48,20 +57,50 @@ class ApprovalRoutingService
      */
     private function employeeGroupManagerReviewerUserIds(User $requester): Collection
     {
+        $directManagerIds = $this->employeeReportingManagerReviewerUserIds($requester);
         $groupIds = $this->requesterGroupIds($requester);
 
         if ($groupIds->isEmpty()) {
-            return collect();
+            return $directManagerIds;
         }
 
-        return User::query()
+        $groupManagerIds = User::query()
             ->where('organization_id', $requester->organization_id)
-            ->where('role', 'manager')
+            ->whereRaw('LOWER(TRIM(role)) = ?', ['manager'])
             ->where('id', '!=', (int) $requester->id)
             ->whereHas('groups', fn ($query) => $query->whereIn('groups.id', $groupIds))
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->unique()
+            ->values();
+
+        return $directManagerIds
+            ->concat($groupManagerIds)
+            ->unique()
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function employeeReportingManagerReviewerUserIds(User $requester): Collection
+    {
+        $workInfo = $requester->relationLoaded('employeeWorkInfo')
+            ? $requester->employeeWorkInfo
+            : $requester->employeeWorkInfo()->first();
+        $reportingManagerId = (int) ($workInfo?->reporting_manager_id ?? 0);
+
+        if ($reportingManagerId <= 0) {
+            return collect();
+        }
+
+        return User::query()
+            ->where('organization_id', $requester->organization_id)
+            ->whereRaw('LOWER(TRIM(role)) = ?', ['manager'])
+            ->where('id', '!=', (int) $requester->id)
+            ->where('id', $reportingManagerId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
             ->values();
     }
 
@@ -100,7 +139,7 @@ class ApprovalRoutingService
 
     public function hasEligibleReviewer(User $requester): bool
     {
-        if ($requester->role === 'admin') {
+        if ($this->normalizeRole($requester->role) === 'admin') {
             return true;
         }
 
@@ -109,7 +148,7 @@ class ApprovalRoutingService
 
     public function missingReviewerMessage(User $requester): string
     {
-        return match ($requester->role) {
+        return match ($this->normalizeRole($requester->role)) {
             'employee' => 'No manager is assigned to your department yet. Please contact an admin.',
             'manager' => 'No admin is available to review this request yet. Please contact an admin owner.',
             default => 'No eligible reviewer is configured for this request.',
@@ -121,7 +160,7 @@ class ApprovalRoutingService
      */
     public function reviewableRequesterIds(User $reviewer): Collection
     {
-        if (! $reviewer->organization_id || ! in_array($reviewer->role, ['admin', 'manager'], true)) {
+        if (! $reviewer->organization_id || ! in_array($this->normalizeRole($reviewer->role), ['admin', 'manager'], true)) {
             return collect();
         }
 
@@ -142,7 +181,7 @@ class ApprovalRoutingService
     {
         return User::query()
             ->where('organization_id', $requester->organization_id)
-            ->where('role', $role)
+            ->whereRaw('LOWER(TRIM(role)) = ?', [strtolower(trim($role))])
             ->where('id', '!=', $excludeUserId)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)

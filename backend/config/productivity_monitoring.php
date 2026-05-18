@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'classifier_version' => '2026-05-04.1',
+    'classifier_version' => '2026-05-18.1',
     'fallback_classification' => [
         'unknown' => 'neutral',
         'browser_without_context' => 'context_dependent',
@@ -47,6 +47,17 @@ return [
         'chatgpt' => ['chatgpt'],
         'claude' => ['claude'],
         'gemini' => ['gemini'],
+    ],
+    'system_utility_software_labels' => [
+        'searchhost.exe',
+        'searchhost',
+        'startmenuexperiencehost.exe',
+        'shellexperiencehost.exe',
+        'windows shell experience host',
+        'windows explorer',
+        'file explorer',
+        'snippingtool.exe',
+        'snipping tool',
     ],
     'default_rules' => [
         ['name' => 'GitHub', 'target_type' => 'domain', 'match_mode' => 'exact', 'target_value' => 'github.com', 'classification' => 'productive', 'priority' => 300, 'reason' => 'Code hosting and review'],

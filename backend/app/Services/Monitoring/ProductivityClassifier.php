@@ -54,6 +54,15 @@ class ProductivityClassifier
             return $this->buildResult($normalized, 'neutral', 'Idle time is never marked productive.', null);
         }
 
+        if ($this->isSystemUtilitySoftware($normalized)) {
+            return $this->buildResult(
+                $normalized,
+                'neutral',
+                'System utility process is excluded from productivity scoring.',
+                null
+            );
+        }
+
         $rule = $this->resolveMatchingRule($normalized, $context);
         if ($rule) {
             return $this->buildResult(
@@ -324,5 +333,28 @@ class ProductivityClassifier
             ],
             'classifier_version' => (string) config('productivity_monitoring.classifier_version'),
         ];
+    }
+
+    private function isSystemUtilitySoftware(array $normalized): bool
+    {
+        if (($normalized['tool_type'] ?? null) !== 'software') {
+            return false;
+        }
+
+        $labels = collect((array) config('productivity_monitoring.system_utility_software_labels', []))
+            ->map(fn ($label) => mb_strtolower(trim((string) $label)))
+            ->filter()
+            ->values();
+
+        if ($labels->isEmpty()) {
+            return false;
+        }
+
+        $softwareName = mb_strtolower(trim((string) ($normalized['software_name'] ?? '')));
+        if ($softwareName === '') {
+            return false;
+        }
+
+        return $labels->contains($softwareName);
     }
 }

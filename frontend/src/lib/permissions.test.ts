@@ -60,4 +60,11 @@ describe('canReviewApprovalRequest', () => {
     expect(canReviewApprovalRequest(admin, { id: 1, role: 'admin' })).toBe(true);
     expect(canReviewApprovalRequest(admin, { id: 4, role: 'admin' })).toBe(false);
   });
+
+  it('normalizes role casing and whitespace before evaluating approval permissions', () => {
+    const admin = { id: 1, role: ' Admin ' };
+    const manager = { id: 2, role: ' Manager ' };
+
+    expect(canReviewApprovalRequest(admin, manager)).toBe(true);
+  });
 });

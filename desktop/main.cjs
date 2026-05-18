@@ -151,6 +151,8 @@ let updateState = {
 let browserTrackingBridge = null;
 let desktopDeviceIdentity = null;
 
+app.disableHardwareAcceleration();
+
 app.setName('CareVance Tracker');
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -686,6 +688,77 @@ const ensureBrowserTrackingBridgeReady = async () => {
   return bridge.start();
 };
 
+const escapeHtml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const buildRendererLoadErrorDataUrl = ({
+  appUrl,
+  errorCode,
+  errorDescription,
+  failedUrl,
+}) => {
+  const diagnostics = [
+    `Configured app URL: ${appUrl}`,
+    failedUrl ? `Failed URL: ${failedUrl}` : '',
+    typeof errorCode === 'number' ? `Error code: ${errorCode}` : '',
+    errorDescription ? `Error: ${errorDescription}` : '',
+  ].filter(Boolean);
+
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CareVance desktop load error</title>
+    <style>
+      body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: #f8fafc; color: #0f172a; }
+      .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+      .card { width: min(760px, 100%); background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 14px 35px rgba(15,23,42,0.08); }
+      h1 { margin: 0 0 10px; font-size: 20px; }
+      p { margin: 0 0 12px; line-height: 1.5; }
+      ul { margin: 8px 0 0; padding-left: 18px; }
+      code { font-family: Consolas, monospace; background: #f1f5f9; border-radius: 4px; padding: 2px 6px; }
+      .actions { margin-top: 18px; display: flex; gap: 10px; }
+      button { border: none; border-radius: 8px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
+      .primary { background: #0ea5e9; color: #ffffff; }
+      .secondary { background: #e2e8f0; color: #0f172a; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Desktop app could not load the web workspace</h1>
+        <p>CareVance desktop opened, but the configured web URL is not reachable from this machine.</p>
+        <p>Set a reachable <code>APP_URL</code> when packaging/running the desktop app (for production this should be your deployed HTTPS app URL).</p>
+        <ul>${diagnostics.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+        <div class="actions">
+          <button class="primary" onclick="location.reload()">Retry</button>
+          <button class="secondary" onclick="window.location.href='${escapeHtml(appUrl)}'">Open APP_URL</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>`;
+
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+};
+
+const renderRendererLoadError = async (details) => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  try {
+    await mainWindow.loadURL(buildRendererLoadErrorDataUrl(details));
+  } catch {
+    // Last-resort fallback: keep app alive even if fallback screen fails.
+  }
+};
+
 const createWindow = async () => {
   mainWindow = new BrowserWindow({
     width: 1366,
@@ -702,6 +775,40 @@ const createWindow = async () => {
     },
   });
 
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || String(validatedURL || '').startsWith('data:text/html')) {
+      return;
+    }
+
+    console.error('[desktop] failed to load renderer', {
+      appUrl: APP_URL,
+      failedUrl: validatedURL,
+      errorCode,
+      errorDescription,
+    });
+
+    void renderRendererLoadError({
+      appUrl: APP_URL,
+      errorCode,
+      errorDescription,
+      failedUrl: validatedURL,
+    });
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[desktop] renderer process exited', {
+      appUrl: APP_URL,
+      reason: details?.reason || 'unknown',
+      exitCode: typeof details?.exitCode === 'number' ? details.exitCode : null,
+    });
+
+    void renderRendererLoadError({
+      appUrl: APP_URL,
+      errorDescription: `Renderer process exited (${details?.reason || 'unknown'})`,
+      failedUrl: String(mainWindow?.webContents?.getURL() || APP_URL),
+    });
+  });
+
   if (app.isPackaged && IS_REMOTE_APP_URL) {
     try {
       await mainWindow.webContents.session.clearCache();
@@ -710,9 +817,27 @@ const createWindow = async () => {
     }
   }
 
-  await mainWindow.loadURL(APP_URL);
+  try {
+    await mainWindow.loadURL(APP_URL);
+  } catch (error) {
+    const errorDescription = error?.message || 'Unknown renderer load error';
+    console.error('[desktop] initial renderer load failed', {
+      appUrl: APP_URL,
+      errorDescription,
+    });
+    await renderRendererLoadError({
+      appUrl: APP_URL,
+      errorDescription,
+      failedUrl: APP_URL,
+    });
+  }
 
   mainWindow.webContents.on('did-finish-load', () => {
+    const loadedUrl = String(mainWindow?.webContents?.getURL() || '');
+    if (!/^https?:\/\//i.test(loadedUrl)) {
+      return;
+    }
+
     broadcastUpdateState();
     broadcastBrowserTrackingState();
     startForegroundWindowWatcher();

@@ -44,6 +44,7 @@ import {
   LineChart,
   ListFilter,
   Monitor,
+  PieChart,
   RefreshCw,
   TimerReset,
   Users,
@@ -954,41 +955,52 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       .sort((left: any, right: any) => Number(right.risk_score || 0) - Number(left.risk_score || 0))
       .slice(0, 8);
   }, [attendanceRows, mode]);
-  const attendanceRiskRows = useMemo(() => {
+  const attendanceDepartmentBarRows = useMemo(() => {
     if (mode !== 'attendance') return [];
-    return [...attendanceRows]
-      .map((row: any) => {
-        const expectedDays = Number(row.calendar_days_in_range || row.working_days_in_range || 0);
-        const presentDays = Number(row.days_present || 0);
-        const leaveDays = Number(row.leave_days || 0);
-        const absentDays = Math.max(0, expectedDays - presentDays - leaveDays);
-        const rate = Number(row.attendance_rate || 0);
-        return {
-          ...row,
-          absentDays,
-          rate,
-          risk: clampPercent((100 - rate) + absentDays * 6),
-        };
-      })
-      .sort((left: any, right: any) => Number(right.risk || 0) - Number(left.risk || 0))
-      .slice(0, 5);
-  }, [attendanceRows, mode]);
-  const attendanceDayMatrixRows = useMemo(() => {
-    if (mode !== 'attendance') return [];
-    return attendanceRows.slice(0, 6).map((row: any) => {
-      const expectedDays = Math.max(1, Number(row.calendar_days_in_range || row.working_days_in_range || 0));
-      const presentDays = Math.max(0, Number(row.days_present || 0));
-      const leaveDays = Math.max(0, Number(row.leave_days || 0));
-      return {
-        row,
-        cells: Array.from({ length: Math.min(14, expectedDays) }, (_, index) => {
-          if (index < presentDays) return 'present';
-          if (index < presentDays + leaveDays) return 'leave';
-          return 'absent';
-        }),
-      };
+
+    return attendanceDepartmentRows
+      .map((row) => ({
+        ...row,
+        attendanceRate: clampPercent((Number(row.presentDays || 0) / Math.max(1, Number(row.expectedDays || 0))) * 100),
+      }))
+      .sort((left, right) => Number(right.attendanceRate || 0) - Number(left.attendanceRate || 0))
+      .slice(0, 6);
+  }, [attendanceDepartmentRows, mode]);
+
+  const attendanceComposition = useMemo(() => {
+    if (mode !== 'attendance' || !attendanceTotals) return [];
+
+    const segments = [
+      { label: 'Present', value: Number(attendanceTotals.presentDays || 0), color: '#10b981' },
+      { label: 'Leave', value: Number(attendanceTotals.leaveDays || 0), color: '#f59e0b' },
+      { label: 'Absent', value: Number(attendanceTotals.absentDays || 0), color: '#ef4444' },
+    ];
+    const total = Math.max(1, segments.reduce((sum, segment) => sum + segment.value, 0));
+
+    return segments.map((segment) => ({
+      ...segment,
+      share: clampPercent((segment.value / total) * 100),
+    }));
+  }, [attendanceTotals, mode]);
+
+  const attendanceCompositionGradient = useMemo(() => {
+    if (!attendanceComposition.length) {
+      return 'conic-gradient(#e2e8f0 0% 100%)';
+    }
+
+    let cursor = 0;
+    const slices = attendanceComposition.map((segment) => {
+      const start = cursor;
+      cursor += Number(segment.share || 0);
+      return `${segment.color} ${start.toFixed(2)}% ${Math.min(100, cursor).toFixed(2)}%`;
     });
-  }, [attendanceRows, mode]);
+
+    if (cursor < 100) {
+      slices.push(`#e2e8f0 ${cursor.toFixed(2)}% 100%`);
+    }
+
+    return `conic-gradient(${slices.join(', ')})`;
+  }, [attendanceComposition]);
 
   const overallData = dataQuery.data as any;
   const overallSummary = overallData?.summary || {};
@@ -2016,7 +2028,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Department Spread</p>
                 <p className="mt-2 text-sm font-semibold text-slate-950">{attendanceDepartmentRows.length} departments represented</p>
-                <p className="mt-1 text-xs text-slate-500">{attendanceRiskRows[0]?.user?.name ? `${attendanceRiskRows[0].user.name} currently has the highest attendance risk.` : 'No significant attendance risk detected in this scope.'}</p>
+                <p className="mt-1 text-xs text-slate-500">{attendanceDepartmentBarRows[0]?.department ? `${attendanceDepartmentBarRows[0].department} currently has the strongest attendance coverage.` : 'No department attendance data available in this scope.'}</p>
               </div>
             </div>
           </SurfaceCard>
@@ -2035,76 +2047,62 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               {renderPanelRefreshButton()}
             </div>
 
-            <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <div className="rounded-lg border border-emerald-200 bg-[linear-gradient(135deg,#f0fdf4_0%,#ffffff_58%,#f8fafc_100%)] p-4">
-                <div className="flex items-center justify-between gap-3">
+            <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-lg border border-blue-200 bg-[linear-gradient(140deg,#eff6ff_0%,#ffffff_55%,#f8fafc_100%)] p-4">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-950">Attendance Risk Radar</h3>
-                    <p className="mt-1 text-xs text-slate-500">Hover rows to inspect the highest absence and low-rate pressure points.</p>
+                    <h3 className="text-sm font-semibold text-slate-950">Department Attendance Distribution</h3>
+                    <p className="mt-1 text-xs text-slate-500">Bar graph of attendance rate by department for the selected date window.</p>
                   </div>
-                  <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
-                    {formatPercent(attendanceTotals.averageAttendanceRate)}
-                  </span>
+                  <BarChart3 className="h-5 w-5 text-blue-600" />
                 </div>
                 <div className="mt-5 space-y-3">
-                  {attendanceRiskRows.length === 0 ? (
-                    <p className="text-sm text-slate-500">No attendance risk rows in this scope.</p>
-                  ) : attendanceRiskRows.map((row: any) => (
-                    <div key={row.user?.id || row.user?.email || row.user?.name} className="group rounded-lg border border-white/80 bg-white/85 p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold text-slate-950">{row.user?.name || 'Unknown employee'}</p>
-                          <p className="text-xs text-slate-500">{resolveAttendanceDepartment(row)} | {row.absentDays} absent days</p>
-                        </div>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 group-hover:bg-emerald-100 group-hover:text-emerald-700">{formatPercent(row.risk)} risk</span>
+                  {attendanceDepartmentBarRows.length === 0 ? (
+                    <p className="text-sm text-slate-500">No department attendance rows found.</p>
+                  ) : attendanceDepartmentBarRows.map((row: any) => (
+                    <div key={row.department}>
+                      <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                        <p className="truncate font-semibold text-slate-800">{row.department}</p>
+                        <p className="whitespace-nowrap text-slate-600">{formatPercent(row.attendanceRate)} ({row.presentDays}/{Math.max(1, row.expectedDays)})</p>
                       </div>
-                      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-200">
-                        <div className="h-full rounded-full bg-[linear-gradient(90deg,#10b981_0%,#f59e0b_58%,#ef4444_100%)] transition-all duration-500 group-hover:brightness-110" style={{ width: `${Math.max(8, row.risk)}%` }} />
+                      <div className="h-3 overflow-hidden rounded-full bg-blue-100">
+                        <div className="h-full rounded-full bg-[linear-gradient(90deg,#0ea5e9_0%,#2563eb_100%)]" style={{ width: `${Math.max(6, row.attendanceRate)}%` }} />
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-lg border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    <p className="mt-3 text-xs text-slate-500">Working now</p>
-                    <p className="mt-1 text-2xl font-semibold text-slate-950">{attendanceTotals.currentWorking}</p>
+              <div className="rounded-lg border border-violet-200 bg-[linear-gradient(145deg,#f5f3ff_0%,#ffffff_55%,#f8fafc_100%)] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-950">Attendance Status Split</h3>
+                    <p className="mt-1 text-xs text-slate-500">Pie chart of present, leave, and absent totals for quick decision-making.</p>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-md">
-                    <AlertTriangle className="h-5 w-5 text-amber-600" />
-                    <p className="mt-3 text-xs text-slate-500">Exception rows</p>
-                    <p className="mt-1 text-2xl font-semibold text-slate-950">{attendanceExceptionRows.length}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md">
-                    <Building2 className="h-5 w-5 text-blue-600" />
-                    <p className="mt-3 text-xs text-slate-500">Departments</p>
-                    <p className="mt-1 text-2xl font-semibold text-slate-950">{attendanceDepartmentRows.length}</p>
-                  </div>
+                  <PieChart className="h-5 w-5 text-violet-600" />
                 </div>
-
-                <div className="rounded-lg border border-slate-200 bg-white p-4">
-                  <h3 className="text-sm font-semibold text-slate-950">Employee Day Matrix</h3>
-                  <p className="mt-1 text-xs text-slate-500">Compact day-level pattern: present, leave, and absent signals per employee.</p>
-                  <div className="mt-4 space-y-3">
-                    {attendanceDayMatrixRows.map(({ row, cells }: any) => (
-                      <div key={row.user?.id || row.user?.email || row.user?.name} className="grid grid-cols-[minmax(7rem,0.65fr)_1fr] items-center gap-3">
-                        <p className="truncate text-xs font-medium text-slate-700">{row.user?.name || 'Unknown'}</p>
-                        <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
-                          {cells.map((cell: string, index: number) => (
-                            <span
-                              key={`${row.user?.id || row.user?.email || row.user?.name}-${index}`}
-                              title={`${row.user?.name || 'Employee'} day ${index + 1}: ${cell}`}
-                              className={`h-5 rounded transition duration-200 hover:scale-125 ${
-                                cell === 'present' ? 'bg-emerald-500' : cell === 'leave' ? 'bg-amber-400' : 'bg-rose-400'
-                              }`}
-                            />
-                          ))}
+                <div className="mt-4 grid grid-cols-1 items-center gap-4 sm:grid-cols-[0.95fr_1.05fr]">
+                  <div className="relative mx-auto h-44 w-44">
+                    <div className="h-full w-full rounded-full" style={{ background: attendanceCompositionGradient }} />
+                    <div className="absolute inset-8 flex flex-col items-center justify-center rounded-full bg-white text-center shadow-sm ring-1 ring-slate-200">
+                      <p className="text-lg font-semibold text-slate-950">{formatPercent(attendanceTotals.averageAttendanceRate)}</p>
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Avg attendance</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {attendanceComposition.map((segment) => (
+                      <div key={segment.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: segment.color }} />
+                            <span className="font-semibold text-slate-800">{segment.label}</span>
+                          </div>
+                          <span className="text-slate-500">{formatPercent(segment.share)}</span>
                         </div>
+                        <p className="mt-1 text-sm font-semibold text-slate-950">{segment.value} days</p>
                       </div>
                     ))}
+                    <p className="text-xs text-slate-500">Working now: {attendanceTotals.currentWorking} employee(s) in this scope.</p>
                   </div>
                 </div>
               </div>

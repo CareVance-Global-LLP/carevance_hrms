@@ -88,6 +88,32 @@ type XlsxSheetResult = {
 
 const INVITE_DEFAULTS_KEY = 'carevance-add-user-defaults';
 
+const unwrapInviteResponsePayload = (rawData: any) => {
+  if (rawData && typeof rawData === 'object' && rawData.data && typeof rawData.data === 'object') {
+    return rawData.data;
+  }
+
+  return rawData;
+};
+
+const ensureInviteRequestSucceeded = (response: any, fallbackMessage: string) => {
+  const status = Number(response?.status || 0);
+  const rawData = response?.data;
+  const payload = unwrapInviteResponsePayload(rawData);
+  const explicitSuccess = typeof rawData?.success === 'boolean' ? rawData.success : undefined;
+
+  if (status >= 400 || explicitSuccess === false) {
+    const error: any = new Error(rawData?.message || payload?.message || fallbackMessage);
+    error.response = {
+      ...response,
+      data: rawData,
+    };
+    throw error;
+  }
+
+  return payload || {};
+};
+
 const roleAliasMap: Partial<Record<string, InviteUserRole>> = {
   employee: 'employee',
   user: 'employee',
@@ -294,9 +320,22 @@ export const addUserService = {
       },
     });
 
-    const failed = response.data.failed || [];
+    const responsePayload = ensureInviteRequestSucceeded(response, 'Failed to send invites.');
+    const failed = Array.isArray(responsePayload.failed) ? responsePayload.failed : [];
+    const invitedCount = Number(
+      responsePayload.invited_count
+      ?? responsePayload.invitedCount
+      ?? (Array.isArray(responsePayload.invitations) ? responsePayload.invitations.length : 0)
+    ) || 0;
+
+    if (invitedCount === 0 && failed.length === 0) {
+      const error: any = new Error(responsePayload.message || 'No invitations were created.');
+      error.response = { ...response, data: response.data };
+      throw error;
+    }
+
     return {
-      invitedCount: response.data.invited_count || 0,
+      invitedCount,
       failed,
       deferredAssignments: [],
     };
@@ -319,7 +358,15 @@ export const addUserService = {
       },
     });
 
-    const invitation = response.data.invitations[0];
+    const responsePayload = ensureInviteRequestSucceeded(response, 'Failed to generate invite link.');
+    const invitations = Array.isArray(responsePayload.invitations) ? responsePayload.invitations : [];
+    const invitation = invitations[0];
+
+    if (!invitation?.invite_url) {
+      const error: any = new Error(responsePayload.message || 'Invite link could not be generated.');
+      error.response = { ...response, data: response.data };
+      throw error;
+    }
 
     return {
       url: invitation?.invite_url || '',
@@ -500,8 +547,9 @@ export const addUserService = {
           },
         });
 
-        invitedCount += response.data.invited_count || 0;
-        failed.push(...(response.data.failed || []));
+        const responsePayload = ensureInviteRequestSucceeded(response, 'Unable to import this CSV batch.');
+        invitedCount += Number(responsePayload.invited_count || 0) || 0;
+        failed.push(...(Array.isArray(responsePayload.failed) ? responsePayload.failed : []));
       } catch (error: any) {
         const responseFailed = error?.response?.data?.failed;
 

@@ -21,12 +21,36 @@ export const defaultCookieConsentState: CookieConsentState = {
   updatedAt: null,
 };
 
+const safelyGetCookieConsentValue = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+};
+
+const safelySetCookieConsentValue = (value: string) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(COOKIE_CONSENT_STORAGE_KEY, value);
+  } catch {
+    // Ignore storage failures so consent persistence never crashes rendering.
+  }
+};
+
 export function loadCookieConsentState(): CookieConsentState {
   if (typeof window === 'undefined') {
     return defaultCookieConsentState;
   }
 
-  const rawValue = window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY);
+  const rawValue = safelyGetCookieConsentValue();
 
   if (!rawValue) {
     return defaultCookieConsentState;
@@ -57,7 +81,7 @@ export function persistCookieConsentState(nextState: CookieConsentState) {
     return;
   }
 
-  window.localStorage.setItem(COOKIE_CONSENT_STORAGE_KEY, JSON.stringify(nextState));
+  safelySetCookieConsentValue(JSON.stringify(nextState));
 }
 
 export function buildAcceptedCookieConsentState(): CookieConsentState {

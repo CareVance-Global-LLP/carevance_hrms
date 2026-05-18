@@ -263,6 +263,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [leaveEndDate, setLeaveEndDate] = useState(formatLocalDate(new Date()));
   const [leaveType, setLeaveType] = useState<'full_day' | 'half_day'>('full_day');
   const [leaveCategory, setLeaveCategory] = useState('paid');
+  const [leaveFilterUserId, setLeaveFilterUserId] = useState<number | ''>('');
+  const [leaveFilterDepartment, setLeaveFilterDepartment] = useState('ALL');
   const [leaveReason, setLeaveReason] = useState('');
   const [leaveBalances, setLeaveBalances] = useState<any | null>(null);
   const [isLeaveBalanceLoading, setIsLeaveBalanceLoading] = useState(false);
@@ -756,10 +758,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       setTimeEditFeedback('', 'Time edit request is not allowed on holidays.');
       return;
     }
-    if (requestedDay?.status === 'leave' || (requestedDay?.is_leave && !requestedDay?.is_half_leave)) {
-      setTimeEditFeedback('', 'Time edit request is not allowed on leave days.');
-      return;
-    }
 
     setIsTimeEditSubmitting(true);
     setTimeEditFeedback();
@@ -1032,6 +1030,55 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       .sort((left: any, right: any) => String(left?.user?.name || '').localeCompare(String(right?.user?.name || ''))),
     [leaveTeamBalances]
   );
+  const leaveFilterEmployeeOptions = useMemo(
+    () => leaveTeamRows
+      .map((row: any) => row?.user)
+      .filter((employee: any) => Number(employee?.id || 0) > 0)
+      .sort((left: any, right: any) => String(left?.name || '').localeCompare(String(right?.name || ''))),
+    [leaveTeamRows]
+  );
+  const leaveFilterDepartmentOptions = useMemo(() => {
+    const values = new Set<string>();
+    leaveTeamRows.forEach((row: any) => {
+      const department = String(row?.user?.department || '').trim();
+      if (department) {
+        values.add(department);
+      }
+    });
+    return Array.from(values).sort((left, right) => left.localeCompare(right));
+  }, [leaveTeamRows]);
+  const leaveDepartmentByUserId = useMemo(() => {
+    const lookup = new Map<number, string>();
+    leaveTeamRows.forEach((row: any) => {
+      const userId = Number(row?.user?.id || 0);
+      if (!userId) return;
+      const department = String(row?.user?.department || '').trim();
+      if (department) {
+        lookup.set(userId, department);
+      }
+    });
+    return lookup;
+  }, [leaveTeamRows]);
+  const filteredLeaveTeamRows = useMemo(
+    () => leaveTeamRows.filter((row: any) => {
+      const userId = Number(row?.user?.id || 0);
+      const department = String(row?.user?.department || '').trim();
+      const matchesEmployee = !leaveFilterUserId || userId === Number(leaveFilterUserId);
+      const matchesDepartment = leaveFilterDepartment === 'ALL' || department === leaveFilterDepartment;
+      return matchesEmployee && matchesDepartment;
+    }),
+    [leaveFilterDepartment, leaveFilterUserId, leaveTeamRows]
+  );
+  const filteredLeaveRequests = useMemo(
+    () => leaveRequests.filter((item: any) => {
+      const userId = Number(item?.user?.id || item?.user_id || 0);
+      const requestDepartment = String(item?.user?.department || leaveDepartmentByUserId.get(userId) || '').trim();
+      const matchesEmployee = !leaveFilterUserId || userId === Number(leaveFilterUserId);
+      const matchesDepartment = leaveFilterDepartment === 'ALL' || requestDepartment === leaveFilterDepartment;
+      return matchesEmployee && matchesDepartment;
+    }),
+    [leaveDepartmentByUserId, leaveFilterDepartment, leaveFilterUserId, leaveRequests]
+  );
   const pendingTimeEditRequests = useMemo(
     () => timeEditRequests.filter((item) => item.status === 'pending' && canReviewApprovalRequest(user, item?.user)),
     [timeEditRequests, user]
@@ -1179,13 +1226,48 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
         {leaveBalances?.approval_scope?.can_manage ? (
           <SurfaceCard className="p-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <FieldLabel>Specific Employee</FieldLabel>
+                <EmployeeSelect
+                  employees={leaveFilterEmployeeOptions}
+                  value={leaveFilterUserId}
+                  onChange={(nextValue) => setLeaveFilterUserId(nextValue)}
+                  includeAllOption
+                  allOptionLabel="All employees"
+                  placeholder="Choose employee"
+                  searchPlaceholder="Search employee"
+                  emptyMessage="No employee matched the current search."
+                  ariaLabel="Filter leave by employee"
+                />
+              </div>
+              <div>
+                <FieldLabel>Department</FieldLabel>
+                <SelectInput
+                  value={leaveFilterDepartment}
+                  onChange={(event) => setLeaveFilterDepartment(String(event.target.value || 'ALL'))}
+                >
+                  <option value="ALL">All departments</option>
+                  {leaveFilterDepartmentOptions.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+            </div>
+          </SurfaceCard>
+        ) : null}
+
+        {leaveBalances?.approval_scope?.can_manage ? (
+          <SurfaceCard className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold text-gray-900">Team Leave Balance</h2>
               <Button onClick={fetchLeaveBalances} variant="ghost" size="sm" disabled={isLeaveBalanceLoading}>
                 {isLeaveBalanceLoading ? 'Refreshing...' : 'Refresh'}
               </Button>
             </div>
-            {leaveTeamRows.length === 0 ? (
+            {filteredLeaveTeamRows.length === 0 ? (
               <PageEmptyState title="No team balances" description="No employees are mapped to your leave approval scope yet." />
             ) : (
               <div className="max-h-80 overflow-auto rounded-lg border border-slate-200">
@@ -1200,7 +1282,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {leaveTeamRows.map((row: any) => {
+                    {filteredLeaveTeamRows.map((row: any) => {
                       const categorySummary = (row.balance?.categories || [])
                         .map((category: any) => `${category.name}: ${Number(category.remaining || 0).toFixed(1)}`)
                         .join(' | ');
@@ -1344,11 +1426,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
             {isLeaveLoading ? (
               <PageLoadingState label="Loading leave requests..." />
-            ) : leaveRequests.length === 0 ? (
+            ) : filteredLeaveRequests.length === 0 ? (
               <PageEmptyState title="No leave requests found" description="Submitted leave requests will appear here." />
             ) : (
               <div className="mt-3 space-y-2 max-h-72 overflow-auto">
-                {leaveRequests.map((item) => (
+                {filteredLeaveRequests.map((item) => (
                   <div key={item.id} className="rounded-lg border border-slate-200 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-gray-900">

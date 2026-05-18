@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AttendanceRecord;
 use App\Models\AppNotification;
+use App\Models\EmployeeWorkInfo;
 use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
@@ -131,6 +132,57 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
             ->assertJsonPath('message', 'No manager is assigned to your group yet. Please contact an admin.');
     }
 
+    public function test_employee_leave_request_is_reviewable_by_reporting_manager_without_shared_group(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-reporting-scope@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+        $employee = User::create([
+            'name' => 'Employee',
+            'email' => 'employee-reporting-scope@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Design',
+            'slug' => 'design-reporting-scope',
+            'is_active' => true,
+        ]);
+        $employee->groups()->attach($group->id);
+
+        EmployeeWorkInfo::create([
+            'organization_id' => $organization->id,
+            'user_id' => $employee->id,
+            'report_group_id' => $group->id,
+            'reporting_manager_id' => $manager->id,
+        ]);
+
+        $leaveDate = Carbon::tomorrow()->startOfDay();
+        while ($leaveDate->isWeekend()) {
+            $leaveDate->addDay();
+        }
+
+        $this->postJson('/api/leave-requests', [
+            'start_date' => $leaveDate->toDateString(),
+            'end_date' => $leaveDate->toDateString(),
+            'reason' => 'Reporting manager review path',
+        ], $this->apiHeadersFor($employee))
+            ->assertCreated();
+
+        $this->getJson('/api/leave-requests?status=pending', $this->apiHeadersFor($manager))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.user.id', $employee->id);
+    }
+
     public function test_manager_leave_request_notifies_admin_and_manager_cannot_self_approve(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
@@ -179,6 +231,41 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
         $this->patchJson("/api/leave-requests/{$leaveId}/approve", [], $this->apiHeadersFor($admin))
             ->assertOk()
             ->assertJsonPath('data.status', 'approved');
+    }
+
+    public function test_admin_can_list_pending_manager_leave_with_mixed_case_roles(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $admin = User::create([
+            'name' => 'Admin',
+            'email' => 'admin-mixed-role@org.test',
+            'password' => Hash::make('password123'),
+            'role' => ' Admin ',
+            'organization_id' => $organization->id,
+        ]);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-mixed-role@org.test',
+            'password' => Hash::make('password123'),
+            'role' => ' Manager ',
+            'organization_id' => $organization->id,
+        ]);
+
+        $leaveDate = Carbon::tomorrow()->startOfDay();
+        while ($leaveDate->isWeekend()) {
+            $leaveDate->addDay();
+        }
+
+        $this->postJson('/api/leave-requests', [
+            'start_date' => $leaveDate->toDateString(),
+            'end_date' => $leaveDate->toDateString(),
+            'reason' => 'Manager leave with mixed role formatting',
+        ], $this->apiHeadersFor($manager))->assertCreated();
+
+        $this->getJson('/api/leave-requests?status=pending', $this->apiHeadersFor($admin))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.user.id', $manager->id);
     }
 
     public function test_leave_request_approval_marks_leave_and_updates_attendance(): void

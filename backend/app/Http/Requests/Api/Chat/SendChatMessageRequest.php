@@ -13,7 +13,7 @@ class SendChatMessageRequest extends ApiFormRequest
             'attachment' => [
                 'nullable',
                 'file',
-                'max:10240',
+                'max:204800',
                 'mimetypes:application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp',
             ],
         ];

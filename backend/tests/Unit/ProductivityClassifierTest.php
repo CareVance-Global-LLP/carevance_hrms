@@ -202,4 +202,18 @@ class ProductivityClassifierTest extends TestCase
         $this->assertSame('productive', $result['classification']);
         $this->assertSame('website', $result['tool_type']);
     }
+
+    public function test_classifier_treats_searchhost_as_neutral_system_utility(): void
+    {
+        $result = app(ProductivityClassifier::class)->classifyActivity([
+            'type' => 'app',
+            'name' => 'searchhost.exe',
+            'app_name' => 'searchhost.exe',
+            'window_title' => 'searchhost.exe',
+            'url' => null,
+        ]);
+
+        $this->assertSame('searchhost.exe', $result['software_name']);
+        $this->assertSame('neutral', $result['classification']);
+    }
 }

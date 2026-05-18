@@ -193,8 +193,8 @@ describe('ReportsWorkspace timeline navigation', () => {
 
     expect(await screen.findByText('Attendance Report')).toBeInTheDocument();
     expect(screen.getByText('Report Specific Analysis')).toBeInTheDocument();
-    expect(screen.getByText('Attendance Risk Radar')).toBeInTheDocument();
-    expect(screen.getByText('Employee Day Matrix')).toBeInTheDocument();
+    expect(screen.getByText('Department Attendance Distribution')).toBeInTheDocument();
+    expect(screen.getByText('Attendance Status Split')).toBeInTheDocument();
     expect(screen.getByText('Absent Days')).toBeInTheDocument();
     expect(screen.getByText('Avg Attendance')).toBeInTheDocument();
     expect(screen.queryByText('Payroll Cost Waterfall')).not.toBeInTheDocument();

@@ -87,7 +87,18 @@ api.interceptors.request.use((config) => {
 
 // Response interceptor to handle errors
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const status = Number(response?.status || 0);
+    const errorCode = (response?.data as any)?.error_code;
+
+    if (status === 401 || errorCode === 'UNAUTHORIZED') {
+      clearAuthStorage();
+      window.dispatchEvent(new Event('app:auth-cleared'));
+      return Promise.reject(new Error((response?.data as any)?.message || 'Unauthorized'));
+    }
+
+    return response;
+  },
   (error: AxiosError) => {
     const status = error.response?.status;
     const errorCode = (error.response?.data as any)?.error_code;
