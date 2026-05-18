@@ -205,7 +205,7 @@ class DashboardSummaryService
             ];
         }
 
-        $cacheKey = self::CACHE_PREFIX . 'team_stats_' . $user->organization_id . '_' . $weekStart->toDateString();
+        $cacheKey = self::CACHE_PREFIX . 'team_stats_' . $user->organization_id . '_' . $user->id . '_' . $weekStart->toDateString();
         
         return Cache::remember($cacheKey, 600, function () use ($user, $weekStart) {
             $visibleUsersQuery = $this->visibleTeamMembersQuery($user);
@@ -228,7 +228,7 @@ class DashboardSummaryService
 
             return [
                 'team_members_count' => $teamMembersCount,
-                'new_members_this_week' => $newMembersCount,
+                'new_members_this_week' => $newMembersThisWeek,
                 'active_projects_count' => $activeProjectsCount,
                 'total_projects_count' => $totalProjectsCount,
                 'active_tasks_count' => $activeTasksCount,
