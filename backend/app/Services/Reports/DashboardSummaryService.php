@@ -228,7 +228,7 @@ class DashboardSummaryService
 
             return [
                 'team_members_count' => $teamMembersCount,
-                'new_members_this_week' => $newMembersCount,
+                'new_members_this_week' => $newMembersThisWeek,
                 'active_projects_count' => $activeProjectsCount,
                 'total_projects_count' => $totalProjectsCount,
                 'active_tasks_count' => $activeTasksCount,

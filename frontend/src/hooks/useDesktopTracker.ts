@@ -949,13 +949,16 @@ export const useDesktopTracker = () => {
         activeSegmentRef.current = null;
       }
 
-      if (activeSegmentRef.current?.signature === idleSignature) {
-        await activityApi.update(activeSegmentRef.current.activityId, {
+      const currentIdleSegment = activeSegmentRef.current;
+      if (currentIdleSegment?.signature === idleSignature) {
+        await activityApi.update(currentIdleSegment.activityId, {
           name: idleName,
           duration: idleSeconds,
           recorded_at: recordedAt,
         });
-        activeSegmentRef.current.durationSeconds = idleSeconds;
+        if (activeSegmentRef.current?.kind === 'idle' && activeSegmentRef.current.signature === idleSignature) {
+          activeSegmentRef.current.durationSeconds = idleSeconds;
+        }
         return;
       }
 
