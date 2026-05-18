@@ -539,7 +539,20 @@ export default function DesktopTimerDashboard() {
       await fetchData();
     } catch (error: any) {
       console.error('Error starting timer:', error);
-      setNotice(error?.response?.data?.message || (isAutoStart ? 'Could not auto-start the timer.' : 'Failed to start timer'));
+      const errorCode = String(error?.response?.data?.error_code || '').trim();
+      const errorMessage = String(error?.response?.data?.message || '').trim();
+      const isLeaveStartBlocked = errorCode === 'ON_APPROVED_LEAVE'
+        || (/leave/i.test(errorMessage) && /timer\s+cannot\s+start/i.test(errorMessage));
+
+      if (isLeaveStartBlocked) {
+        setFeedback({
+          tone: 'error',
+          message: errorMessage || 'You are on leave today. Timer cannot start.',
+        });
+        setNotice('');
+      } else {
+        setNotice(errorMessage || (isAutoStart ? 'Could not auto-start the timer.' : 'Failed to start timer'));
+      }
     } finally {
       setIsStarting(false);
     }

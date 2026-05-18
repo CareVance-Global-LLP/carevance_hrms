@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Cookie;
 use Illuminate\Validation\ValidationException;
@@ -115,6 +116,8 @@ class AuthController extends Controller
                 'email' => $user->email,
             ], 403);
         }
+
+        $this->clearLoginRateLimits($request, (string) $user->email);
 
         $remember = $request->boolean('remember');
         $token = $this->apiTokenService->issue(
@@ -360,5 +363,22 @@ class AuthController extends Controller
         $sameSite = strtolower((string) config('carevance.auth.api_auth_cookie.same_site', 'lax'));
 
         return in_array($sameSite, ['lax', 'strict', 'none'], true) ? $sameSite : 'lax';
+    }
+
+    private function clearLoginRateLimits(Request $request, string $email): void
+    {
+        $normalizedEmail = Str::lower(trim($email));
+        if ($normalizedEmail === '') {
+            return;
+        }
+
+        $ip = (string) $request->ip();
+        $userAgent = Str::lower((string) $request->userAgent());
+        $isDesktopClient = str_contains($userAgent, 'electron') || str_contains($userAgent, 'carevance tracker');
+        $clientType = $isDesktopClient ? 'desktop' : 'web';
+        $clientFingerprint = sha1($userAgent !== '' ? $userAgent : 'unknown-client');
+
+        RateLimiter::clear($normalizedEmail.'|'.$ip.'|'.$clientFingerprint);
+        RateLimiter::clear($ip.'|'.$clientType);
     }
 }

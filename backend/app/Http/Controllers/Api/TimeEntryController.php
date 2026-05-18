@@ -426,7 +426,10 @@ class TimeEntryController extends Controller
     {
         $today = now()->toDateString();
         if ($this->hasApprovedFullDayLeaveOnDate((int) $user->organization_id, (int) $user->id, $today)) {
-            return response()->json(['message' => 'You are on approved leave today. Timer cannot start.'], 422);
+            return response()->json([
+                'message' => 'You are on approved leave today. Timer cannot start.',
+                'error_code' => 'ON_APPROVED_LEAVE',
+            ], 422);
         }
 
         $record = AttendanceRecord::firstOrNew([

@@ -225,6 +225,8 @@ const resolveDesktopSessionSignature = (payload: DesktopForegroundWindowPayload)
 );
 
 const EXPLORER_APP_KEYWORDS = ['explorer.exe', 'windows explorer', 'file explorer'];
+const LOCK_SCREEN_APP_KEYWORDS = ['lockapp.exe', 'logonui.exe', 'winlogon.exe', 'screensaverhost.exe'];
+const LOCK_SCREEN_TITLE_KEYWORDS = ['lock screen', 'windows lock', 'sign-in'];
 
 const shouldPreferWindowTitleForDesktopApp = (appName?: string | null, windowTitle?: string | null) => {
   const normalizedAppName = String(appName || '').trim().toLowerCase();
@@ -250,6 +252,22 @@ const resolveDesktopSessionDisplayName = (payload: DesktopForegroundWindowPayloa
   }
 
   return appName || windowTitle || 'Unknown App';
+};
+
+const isLockScreenForegroundContext = (payload?: DesktopForegroundWindowPayload | null) => {
+  const appName = String(payload?.app || '').trim().toLowerCase();
+  const windowTitle = String(payload?.title || '').trim().toLowerCase();
+  const url = String(payload?.url || '').trim().toLowerCase();
+
+  if (url && !url.startsWith('lock:')) {
+    return false;
+  }
+
+  if (LOCK_SCREEN_APP_KEYWORDS.some((keyword) => appName.includes(keyword))) {
+    return true;
+  }
+
+  return LOCK_SCREEN_TITLE_KEYWORDS.some((keyword) => windowTitle.includes(keyword));
 };
 
 const resolveLatestBrowserTrackingSignalAt = (state?: BrowserTrackingState | null) => {
@@ -906,6 +924,27 @@ export const useDesktopTracker = () => {
         console.warn('Desktop tracker system idle lookup failed, falling back to page input activity.', error);
       }
 
+      if (typeof desktopApi.getActiveWindowContext === 'function') {
+        try {
+          const activeContext = await desktopApi.getActiveWindowContext();
+          if (isLockScreenForegroundContext(activeContext)) {
+            if (systemLockedAtMsRef.current === null) {
+              systemLockedAtMsRef.current = now;
+            }
+
+            const lockedIdleSeconds = Math.max(0, Math.floor((now - systemLockedAtMsRef.current) / 1000));
+
+            return {
+              idleSeconds: lockedIdleSeconds,
+              lastActivityAtMs: systemLockedAtMsRef.current,
+              contextName: 'Locked Screen',
+            };
+          }
+        } catch (error) {
+          console.warn('Desktop tracker lock-screen fallback lookup failed.', error);
+        }
+      }
+
       const idleSecondsFromInput = Math.max(0, Math.floor((now - lastInputRef.current) / 1000));
 
       return {
@@ -1298,7 +1337,7 @@ export const useDesktopTracker = () => {
     const runIdleGuard = async () => {
       if (!isCurrentRun()) return;
 
-      const activeEntry = activeEntryRef.current;
+      const activeEntry = activeEntryRef.current || await getOrLoadActiveEntry();
       if (!activeEntry?.id) {
         return;
       }
@@ -1370,8 +1409,16 @@ export const useDesktopTracker = () => {
         }
         activeEntryRef.current = activeEntry;
 
-        if (activeEntry.id !== scheduledEntryId) {
-          syncScreenshotInterval(activeEntry.id);
+        await runIdleGuard();
+
+        const currentActiveEntry = activeEntryRef.current;
+        if (!currentActiveEntry?.id) {
+          syncScreenshotInterval(null);
+          return;
+        }
+
+        if (currentActiveEntry.id !== scheduledEntryId) {
+          syncScreenshotInterval(currentActiveEntry.id);
           return;
         }
 
