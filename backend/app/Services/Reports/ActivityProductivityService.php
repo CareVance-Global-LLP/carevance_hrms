@@ -6,6 +6,8 @@ use App\Services\Monitoring\ProductivityClassifier;
 
 class ActivityProductivityService
 {
+    private const SYSTEM_UTILITY_CLASSIFICATION = 'neutral';
+
     public function __construct(
         private readonly ActivityDurationNormalizer $activityDurationNormalizer,
         private readonly ProductivityClassifier $productivityClassifier,
@@ -119,6 +121,11 @@ class ActivityProductivityService
             $label = (string) ($activity->normalized_label ?? $this->normalizeToolLabel((string) ($activity->name ?? ''), (string) ($activity->type ?? 'app')));
             $classification = (string) ($activity->classification ?? $this->classifyProductivity($label, (string) ($activity->type ?? 'app')));
             $type = (string) ($activity->tool_type ?? $this->guessToolType((string) ($activity->type ?? 'app')));
+
+            if ($this->isSystemUtilitySoftwareLabel($label, $type)) {
+                $classification = self::SYSTEM_UTILITY_CLASSIFICATION;
+            }
+
             $key = strtolower($classification.'|'.$type.'|'.$label);
 
             if (! isset($rows[$key])) {
@@ -211,5 +218,24 @@ class ActivityProductivityService
         }
 
         return '';
+    }
+
+    private function isSystemUtilitySoftwareLabel(string $label, string $toolType): bool
+    {
+        if (strtolower(trim($toolType)) !== 'software') {
+            return false;
+        }
+
+        $normalizedLabel = strtolower(trim($label));
+        if ($normalizedLabel === '') {
+            return false;
+        }
+
+        $utilityLabels = collect((array) config('productivity_monitoring.system_utility_software_labels', []))
+            ->map(fn ($value) => strtolower(trim((string) $value)))
+            ->filter()
+            ->values();
+
+        return $utilityLabels->contains($normalizedLabel);
     }
 }
