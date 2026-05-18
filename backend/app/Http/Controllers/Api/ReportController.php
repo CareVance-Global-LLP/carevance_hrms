@@ -1082,7 +1082,7 @@ class ReportController extends Controller
             ->values();
         $idleSummary = $skipActivity
             ? ['by_user' => [], 'by_user_day' => []]
-            : $this->summarizeIdleDurationsForUsers($userIds, $startDate, $endDate);
+            : $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
         $idleDurationByUser = collect($idleSummary['by_user'] ?? [])
             ->mapWithKeys(fn ($duration, $id) => [(int) $id => (int) $duration])
             ->all();
