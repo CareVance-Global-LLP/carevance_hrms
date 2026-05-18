@@ -26,28 +26,58 @@ class ActivityFeedService
         $cacheKey = 'activities_idle_' . md5($userIdCollection->implode(',') . ($startDate?->toDateString() ?? '') . ($endDate?->toDateString() ?? ''));
         
         return Cache::remember($cacheKey, self::CACHE_TTL_SECONDS, function () use ($userIdCollection, $startDate, $endDate) {
-            // Limit query to prevent memory issues
-            $activities = Activity::query()
+            $activityColumns = [
+                'id',
+                'user_id',
+                'time_entry_id',
+                'type',
+                'name',
+                'duration',
+                'recorded_at',
+                'normalized_label',
+                'normalized_domain',
+                'software_name',
+                'tool_type',
+                'classification',
+                'classification_reason',
+            ];
+
+            // Always fetch ALL explicit idle activities (typically few per user) so the
+            // idle summary is never silently truncated by the row cap.
+            $idleActivities = Activity::query()
                 ->whereIn('user_id', $userIdCollection)
+                ->where('type', 'idle')
                 ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
                 ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
-                ->limit(self::MAX_ACTIVITIES_PER_QUERY)
-                ->get([
-                    'id',
-                    'user_id',
-                    'time_entry_id',
-                    'type',
-                    'name',
-                    'duration',
-                    'recorded_at',
-                    'normalized_label',
-                    'normalized_domain',
-                    'software_name',
-                    'tool_type',
-                    'classification',
-                    'classification_reason',
-                ])
+                ->orderBy('recorded_at')
+                ->orderBy('id')
+                ->get($activityColumns)
                 ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+            // Non-idle activities are bounded; used for gap inference + classification.
+            $nonIdleActivities = Activity::query()
+                ->whereIn('user_id', $userIdCollection)
+                ->where(function ($query) {
+                    $query->where('type', '!=', 'idle')->orWhereNull('type');
+                })
+                ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+                ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+                ->orderByDesc('recorded_at')
+                ->orderByDesc('id')
+                ->limit(self::MAX_ACTIVITIES_PER_QUERY)
+                ->get($activityColumns)
+                ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+            if ($nonIdleActivities->count() >= self::MAX_ACTIVITIES_PER_QUERY) {
+                Log::warning('ActivityFeedService::forUsersInRangeForIdle non-idle row cap hit', [
+                    'users_count' => $userIdCollection->count(),
+                    'cap' => self::MAX_ACTIVITIES_PER_QUERY,
+                    'start' => $startDate?->toDateTimeString(),
+                    'end' => $endDate?->toDateTimeString(),
+                ]);
+            }
+
+            $activities = $idleActivities->concat($nonIdleActivities)->values();
 
             $sessionModels = ActivitySession::query()
                 ->whereIn('user_id', $userIdCollection)
