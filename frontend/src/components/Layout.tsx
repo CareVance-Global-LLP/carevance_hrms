@@ -735,21 +735,21 @@ export default function Layout() {
             <BrandLogo variant="full" size="sm" className="max-w-[9.75rem]" />
           </div>
 
-          <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+          <nav className="flex-1 overflow-y-auto px-3 py-4">
             {primaryNavigation.map((group) => {
               const activeItemTo = getBestMatchedItemTo(group.items);
               const groupActive = isRouteActive(group.to) || Boolean(activeItemTo);
 
               if (group.to) {
                 return (
-                  <div key={group.label}>
+                  <div key={group.label} className="mb-3">
                     {renderSidebarLink(group)}
                   </div>
                 );
               }
 
               return (
-                <div key={group.label} className="space-y-1">
+                <div key={group.label} className="mb-5 space-y-1">
                   <p className={`px-3 text-[10px] font-semibold uppercase tracking-[0.18em] ${groupActive ? 'text-blue-600' : 'text-slate-400'}`}>
                     {group.label}
                   </p>
