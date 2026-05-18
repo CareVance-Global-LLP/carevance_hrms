@@ -25,10 +25,20 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('auth.login', function (Request $request) {
             $email = Str::lower((string) $request->input('email', 'guest'));
+            $userAgent = Str::lower((string) $request->userAgent());
+            $isDesktopClient = str_contains($userAgent, 'electron') || str_contains($userAgent, 'carevance tracker');
+            $clientType = $isDesktopClient ? 'desktop' : 'web';
+            $emailLimit = $isDesktopClient
+                ? (int) env('RATE_LIMIT_LOGIN_DESKTOP_PER_MINUTE', 12)
+                : (int) env('RATE_LIMIT_LOGIN_PER_MINUTE', 5);
+            $ipLimit = $isDesktopClient
+                ? (int) env('RATE_LIMIT_LOGIN_DESKTOP_IP_PER_MINUTE', 40)
+                : (int) env('RATE_LIMIT_LOGIN_IP_PER_MINUTE', 20);
+            $clientFingerprint = sha1($userAgent !== '' ? $userAgent : 'unknown-client');
 
             return [
-                Limit::perMinute((int) env('RATE_LIMIT_LOGIN_PER_MINUTE', 5))->by($email.'|'.$request->ip()),
-                Limit::perMinute((int) env('RATE_LIMIT_LOGIN_IP_PER_MINUTE', 20))->by($request->ip()),
+                Limit::perMinute($emailLimit)->by($email.'|'.$request->ip().'|'.$clientFingerprint),
+                Limit::perMinute($ipLimit)->by($request->ip().'|'.$clientType),
             ];
         });
 

@@ -584,4 +584,39 @@ describe('DesktopTimerDashboard', () => {
     expect(screen.getByText('01:00:00')).toBeInTheDocument();
     expect(screen.getByText(/today's attendance worked: 9h 0m/i)).toBeInTheDocument();
   });
+
+  it('shows a leave-specific red error when timer start is blocked by approved leave', async () => {
+    const user = userEvent.setup();
+
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock.mockResolvedValue({
+      data: {
+        active_timer: null,
+        today_entries: [],
+        today_total_elapsed_duration: 0,
+        all_time_total_elapsed_duration: 0,
+        team_members_count: 4,
+        new_members_this_week: 1,
+        productivity_score: 82,
+        active_tasks_count: 1,
+        total_tasks_count: 1,
+      },
+    });
+
+    mocks.startMock.mockReset();
+    mocks.startMock.mockRejectedValue({
+      response: {
+        data: {
+          error_code: 'ON_APPROVED_LEAVE',
+          message: 'You are on approved leave today. Timer cannot start.',
+        },
+      },
+    });
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    await user.click(await screen.findByRole('button', { name: /start timer/i }));
+
+    expect(await screen.findByText('You are on approved leave today. Timer cannot start.')).toBeInTheDocument();
+  });
 });
