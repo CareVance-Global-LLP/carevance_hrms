@@ -1048,14 +1048,14 @@ export default function AdminDashboard() {
     const presentDays = isRangeIncludingToday
       ? Math.max(Number(attendance?.present_days || 0), isWorking ? 1 : 0)
       : Number(attendance?.present_days || 0);
-    const todaySeconds = Number(
-      attendance?.total_worked_seconds
-      || attendance?.worked_seconds
-      || overallRow?.total_duration
-      || employee.total_elapsed_duration
-      || employee.total_duration
-      || employee.current_duration
-      || 0
+    const todaySeconds = Math.max(
+      0,
+      ...[
+        attendance?.total_worked_seconds,
+        attendance?.worked_seconds,
+        overallRow?.total_duration,
+        isRangeIncludingToday ? employee.current_duration : 0,
+      ].map((value) => Number(value || 0)).filter((value) => Number.isFinite(value))
     );
     const idleSeconds = overallRow ? resolveIdleSeconds(overallRow, todaySeconds) : 0;
     const workedSeconds = Math.max(0, todaySeconds - idleSeconds);
@@ -1340,13 +1340,11 @@ export default function AdminDashboard() {
   const selectedEmployeeTrackedSeconds = Math.max(
     0,
     ...[
-      selectedEmployeeOverallRow?.total_duration,
       employeeStats.tracked_duration,
       employeeStats.total_duration,
+      selectedEmployeeOverallRow?.total_duration,
       selectedWorkStatus?.todaySeconds,
-      selectedEmployee?.total_elapsed_duration,
-      selectedEmployee?.total_duration,
-      selectedEmployee?.current_duration,
+      isRangeIncludingToday ? selectedEmployee?.current_duration : 0,
     ].map((value) => Number(value || 0)).filter((value) => Number.isFinite(value))
   );
   const selectedEmployeeIdleFromOverall = selectedEmployeeOverallRow
