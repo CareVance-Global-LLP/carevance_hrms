@@ -929,7 +929,7 @@ export const useDesktopTracker = () => {
           const activeContext = await desktopApi.getActiveWindowContext();
           if (isLockScreenForegroundContext(activeContext)) {
             if (systemLockedAtMsRef.current === null) {
-              systemLockedAtMsRef.current = now;
+              systemLockedAtMsRef.current = lastInputRef.current;
             }
 
             const lockedIdleSeconds = Math.max(0, Math.floor((now - systemLockedAtMsRef.current) / 1000));

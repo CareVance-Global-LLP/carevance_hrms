@@ -220,34 +220,73 @@ class UsageProcessingService
             ];
         }
 
+        // Load only idle activities (far fewer rows than full activity load).
+        // Each record: recorded_at = window END, duration = window length in seconds.
+        // Multiple overlapping records can exist for the same idle period when the
+        // desktop app re-mounts mid-session and resets its in-memory ref, causing it
+        // to create a new cumulative record instead of updating the old one.
+        // We therefore merge overlapping [start, end] intervals before summing.
         $rows = DB::table('activities')
-            ->selectRaw('user_id, DATE(recorded_at) as day_key, SUM(duration) as idle_duration, COUNT(*) as idle_segments_count')
+            ->select(['user_id', 'duration', 'recorded_at'])
             ->whereIn('user_id', $ids->all())
             ->where('type', 'idle')
             ->where('duration', '>', 0)
             ->whereBetween('recorded_at', [$startDate, $endDate])
-            ->groupBy('user_id', DB::raw('DATE(recorded_at)'))
+            ->orderBy('user_id')
+            ->orderBy('recorded_at')
             ->get();
+
+        // Build per-user interval lists: [startTs, endTs]
+        $intervalsByUser = [];
+        foreach ($rows as $row) {
+            $userId = (int) ($row->user_id ?? 0);
+            if ($userId <= 0) {
+                continue;
+            }
+
+            $endTs = strtotime((string) ($row->recorded_at ?? ''));
+            $duration = (int) ($row->duration ?? 0);
+            if ($endTs === false || $endTs <= 0 || $duration <= 0) {
+                continue;
+            }
+
+            $intervalsByUser[$userId][] = [$endTs - $duration, $endTs];
+        }
 
         $byUser = [];
         $byUserDay = [];
         $totalIdle = 0;
         $totalSegments = 0;
 
-        foreach ($rows as $row) {
-            $userId = (int) ($row->user_id ?? 0);
-            $date = (string) ($row->day_key ?? '');
-            $idleDuration = (int) ($row->idle_duration ?? 0);
-            $segmentsCount = (int) ($row->idle_segments_count ?? 0);
+        foreach ($intervalsByUser as $userId => $intervals) {
+            // Sort by interval start time
+            usort($intervals, fn ($a, $b) => $a[0] <=> $b[0]);
 
-            if ($userId <= 0 || $date === '' || $idleDuration <= 0) {
-                continue;
+            // Merge overlapping / adjacent intervals
+            $merged = [];
+            foreach ($intervals as [$start, $end]) {
+                if (empty($merged) || $start > $merged[count($merged) - 1][1]) {
+                    $merged[] = [$start, $end];
+                } else {
+                    $merged[count($merged) - 1][1] = max($merged[count($merged) - 1][1], $end);
+                }
             }
 
-            $byUser[$userId] = (int) (($byUser[$userId] ?? 0) + $idleDuration);
-            $byUserDay[sprintf('%d|%s', $userId, $date)] = $idleDuration;
-            $totalIdle += $idleDuration;
-            $totalSegments += $segmentsCount;
+            $userTotal = 0;
+            foreach ($merged as [$start, $end]) {
+                $segmentDuration = $end - $start;
+                $userTotal += $segmentDuration;
+                $totalIdle += $segmentDuration;
+                $totalSegments++;
+
+                $day = Carbon::createFromTimestamp($end)->toDateString();
+                $key = sprintf('%d|%s', $userId, $day);
+                $byUserDay[$key] = ($byUserDay[$key] ?? 0) + $segmentDuration;
+            }
+
+            if ($userTotal > 0) {
+                $byUser[(int) $userId] = $userTotal;
+            }
         }
 
         return [
