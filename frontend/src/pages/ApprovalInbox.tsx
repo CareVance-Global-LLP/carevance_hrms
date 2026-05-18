@@ -191,7 +191,7 @@ export default function ApprovalInbox() {
   const [analyticsDepartment, setAnalyticsDepartment] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
-  const cardsRef = useRef<HTMLDivElement>(null);
+  const historyDetailsRef = useRef<HTMLDivElement>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const todayIso = useMemo(() => today.toISOString().slice(0, 10), [today]);
@@ -270,11 +270,32 @@ export default function ApprovalInbox() {
     }
   }, [params]);
 
+  const scrollToHistoryDetails = () => {
+    const target = historyDetailsRef.current;
+    if (!target) {
+      return;
+    }
+
+    const scrollWithFallback = () => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      const targetTop = target.getBoundingClientRect().top;
+      if (targetTop < 0 || targetTop > window.innerHeight * 0.75) {
+        const absoluteTop = window.scrollY + targetTop - 88;
+        window.scrollTo({ top: Math.max(0, absoluteTop), behavior: 'smooth' });
+      }
+    };
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollWithFallback);
+    });
+
+    window.setTimeout(scrollWithFallback, 220);
+  };
+
   useEffect(() => {
-    if (activeView === 'history' && cardsRef.current) {
-      requestAnimationFrame(() => {
-        cardsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
+    if (activeView === 'history') {
+      scrollToHistoryDetails();
     }
   }, [activeView]);
 
@@ -672,7 +693,12 @@ export default function ApprovalInbox() {
               <button
                 key={section.id}
                 type="button"
-                onClick={() => setRouteState({ section: section.id as ApprovalSection })}
+                onClick={() => {
+                  setRouteState({ section: section.id as ApprovalSection });
+                  if (activeView === 'history') {
+                    scrollToHistoryDetails();
+                  }
+                }}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
                   activeSection === section.id
                     ? 'bg-blue-600 text-white shadow-sm'
@@ -702,7 +728,10 @@ export default function ApprovalInbox() {
           </button>
           <button
             type="button"
-            onClick={() => setRouteState({ section: activeSection, view: 'history' })}
+            onClick={() => {
+              setRouteState({ section: activeSection, view: 'history' });
+              scrollToHistoryDetails();
+            }}
             className={`rounded-xl border px-4 py-4 text-left transition ${
               activeView === 'history' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-100'
             }`}
@@ -936,25 +965,27 @@ export default function ApprovalInbox() {
         </div>
       </SurfaceCard>
 
-      <SurfaceCard className="p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold text-slate-950">{sectionTitle}</h2>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeView === 'pending' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>
-                {activeView === 'pending' ? 'Pending' : 'History'}
-              </span>
+      <div ref={historyDetailsRef}>
+        <SurfaceCard className="p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-950">{sectionTitle}</h2>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeView === 'pending' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>
+                  {activeView === 'pending' ? 'Pending' : 'History'}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">{sectionDescription}</p>
             </div>
-            <p className="mt-1 text-sm text-slate-500">{sectionDescription}</p>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <History className="h-4 w-4" />
+              {activeView === 'pending'
+                ? `${currentCards.length} requests need review`
+                : `${currentCards.length} requests in history`}
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <History className="h-4 w-4" />
-            {activeView === 'pending'
-              ? `${currentCards.length} requests need review`
-              : `${currentCards.length} requests in history`}
-          </div>
-        </div>
-      </SurfaceCard>
+        </SurfaceCard>
+      </div>
 
       {isLoading ? (
         <PageLoadingState label="Loading approval inbox..." />
@@ -966,7 +997,7 @@ export default function ApprovalInbox() {
             : `No ${activeSection === 'leave' ? 'leave' : 'time edit'} approval history matches this view.`}
         />
       ) : (
-        <div ref={cardsRef} className="space-y-3">
+        <div className="space-y-3">
           {currentCards.map((item) => (
             <SurfaceCard key={`${item.kind}-${item.id}`} className="p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

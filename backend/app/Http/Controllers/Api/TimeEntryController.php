@@ -116,7 +116,7 @@ class TimeEntryController extends Controller
             'timer_slot' => $request->get('timer_slot', 'primary'),
         ]);
 
-        $this->markTaskInProgress($taskId);
+        $this->syncTaskStatusForTimer($taskId, $user);
         $timeEntry->load(['project', 'task.group']);
         return response()->json($timeEntry, 201);
     }
@@ -187,7 +187,7 @@ class TimeEntryController extends Controller
         }
 
         $timeEntry->update($payload);
-        $this->markTaskInProgress($taskId);
+        $this->syncTaskStatusForTimer($taskId, $user);
 
         return response()->json($timeEntry->fresh()->load(['project', 'task.group']));
     }
@@ -250,7 +250,7 @@ class TimeEntryController extends Controller
             'timer_slot' => $slot,
         ]);
 
-        $this->markTaskInProgress($taskId);
+        $this->syncTaskStatusForTimer($taskId, $user);
         $timeEntry->load(['project', 'task.group']);
         return response()->json($timeEntry, 201);
     }
@@ -737,7 +737,7 @@ class TimeEntryController extends Controller
         return max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
     }
 
-    private function markTaskInProgress(?int $taskId): void
+    private function syncTaskStatusForTimer(?int $taskId, User $user): void
     {
         if (! $taskId) {
             return;
@@ -745,6 +745,14 @@ class TimeEntryController extends Controller
 
         $task = Task::query()->find($taskId);
         if (! $task) {
+            return;
+        }
+
+        if ($user->role === 'employee') {
+            if ($task->status !== 'todo') {
+                $task->update(['status' => 'todo']);
+            }
+
             return;
         }
 

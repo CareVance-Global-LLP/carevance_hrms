@@ -13,6 +13,7 @@ const defaultColors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#
 export default function Projects() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const canManageProjects = user?.role === 'admin' || user?.role === 'manager';
   const [showModal, setShowModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
@@ -158,13 +159,15 @@ export default function Projects() {
           <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
           <p className="text-gray-500 mt-1">Manage your projects</p>
         </div>
-        <button
-          onClick={() => { resetForm(); setShowModal(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
-        >
-          <Plus className="h-5 w-5" />
-          New Project
-        </button>
+        {canManageProjects ? (
+          <button
+            onClick={() => { resetForm(); setShowModal(true); }}
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+          >
+            <Plus className="h-5 w-5" />
+            New Project
+          </button>
+        ) : null}
       </div>
 
       {/* Projects Grid */}
@@ -189,14 +192,16 @@ export default function Projects() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => openEditModal(project)} className="p-2 text-gray-400 hover:text-gray-600">
-                    <Edit2 className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => handleDelete(project.id)} className="p-2 text-gray-400 hover:text-red-600">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                {canManageProjects ? (
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEditModal(project)} className="p-2 text-gray-400 hover:text-gray-600">
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => handleDelete(project.id)} className="p-2 text-gray-400 hover:text-red-600">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : null}
               </div>
               {project.description && (
                 <p className="mt-3 text-sm text-gray-600 line-clamp-2">{project.description}</p>
@@ -219,7 +224,7 @@ export default function Projects() {
       </div>
 
       {/* Modal */}
-      {showModal && (
+      {showModal && canManageProjects && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <h2 className="text-xl font-semibold mb-4">{editingProject ? 'Edit Project' : 'New Project'}</h2>

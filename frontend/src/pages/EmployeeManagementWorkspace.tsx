@@ -8,7 +8,7 @@ import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAssignableRoles, hasStrictAdminAccess } from '@/lib/permissions';
+import { getAssignableRoles, hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
@@ -203,8 +203,8 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const settingsPanelRef = useRef<HTMLDivElement | null>(null);
   const pendingSettingsScrollUserIdRef = useRef<number | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
+  const canManageDirectoryRoles = hasAdminAccess(user);
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
-  const employeeRoleOptions = useMemo(() => allowedRoles, [allowedRoles]);
 
   const usersQuery = useQuery({
     queryKey: ['employee-workspace-users'],
@@ -402,9 +402,34 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
   const invitations = invitationsQuery.data || [];
+  const managerManagedDepartment = useMemo(() => {
+    if (user?.role !== 'manager') {
+      return null;
+    }
+
+    const managedGroup = groups.find((group: any) =>
+      Array.isArray(group?.users)
+      && group.users.some((member: any) => Number(member?.id) === Number(user.id) && member?.role === 'manager')
+    );
+
+    const managedGroupName = String(managedGroup?.name || '').trim();
+    if (managedGroupName) {
+      return managedGroupName;
+    }
+
+    const currentUserRecord = users.find((item: any) => Number(item.id) === Number(user.id));
+    const fallbackDepartment = resolveEmployeeDepartment(currentUserRecord);
+    return fallbackDepartment === 'Unassigned' ? null : fallbackDepartment;
+  }, [groups, user, users]);
   const departmentOptions = useMemo(
-    () => ['All departments', ...Array.from(new Set(users.map((item: any) => resolveEmployeeDepartment(item)).filter(Boolean)))],
-    [users]
+    () => {
+      if (user?.role === 'manager' && managerManagedDepartment) {
+        return ['All departments', managerManagedDepartment];
+      }
+
+      return ['All departments', ...Array.from(new Set(users.map((item: any) => resolveEmployeeDepartment(item)).filter(Boolean)))];
+    },
+    [managerManagedDepartment, user?.role, users]
   );
   const employeeDirectoryRows = useMemo(() => {
     const filteredRows = directoryFilterUserId === ''
@@ -448,6 +473,44 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         .some((value) => String(value || '').toLowerCase().includes(normalizedQuery))
     );
   }, [roleSearchQuery, users]);
+
+  useEffect(() => {
+    if (!departmentOptions.includes(directoryDepartmentFilter)) {
+      setDirectoryDepartmentFilter(departmentOptions[0] || 'All departments');
+    }
+  }, [departmentOptions, directoryDepartmentFilter]);
+
+  const getPromoteRoleOptions = (row: any): Array<'admin' | 'manager' | 'employee'> => {
+    const currentRole = row?.role as 'admin' | 'manager' | 'employee';
+
+    if (user?.role === 'admin') {
+      if (Number(row?.id) === Number(user.id)) {
+        return ['admin'];
+      }
+
+      const roleOptions: Array<'admin' | 'manager' | 'employee'> = ['admin', 'manager', 'employee'];
+      if (!roleOptions.includes(currentRole)) {
+        roleOptions.unshift(currentRole);
+      }
+
+      return roleOptions;
+    }
+
+    if (user?.role === 'manager') {
+      if (Number(row?.id) === Number(user.id)) {
+        return ['manager', 'employee', 'admin'];
+      }
+
+      const roleOptions: Array<'admin' | 'manager' | 'employee'> = ['employee'];
+      if (currentRole && !roleOptions.includes(currentRole)) {
+        roleOptions.unshift(currentRole);
+      }
+
+      return roleOptions;
+    }
+
+    return currentRole ? [currentRole] : ['employee'];
+  };
 
   const handleDeleteUser = (targetUser: any) => {
     if (!isStrictAdmin || !targetUser?.id) {
@@ -532,7 +595,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
           <DataTable
             title="Employee Directory"
-            description={isStrictAdmin ? 'Role, work state, tracked hours, and admin-only promotion controls from the existing users endpoint.' : 'Role, work state, and tracked hours from the existing users endpoint.'}
+            description={canManageDirectoryRoles ? 'Role, department, work state, tracked hours, and promotion controls from the existing users endpoint.' : 'Role, department, work state, and tracked hours from the existing users endpoint.'}
             rows={employeeDirectoryRows}
             emptyMessage="No employees found."
             bodyClassName="max-h-[34rem] overflow-auto"
@@ -587,6 +650,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             columns={[
               { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
               { key: 'role', header: 'Role', render: (row: any) => row.role },
+              { key: 'department', header: 'Department', render: (row: any) => resolveEmployeeDepartment(row) },
               { key: 'working', header: 'Working', render: (row: any) => (row.is_working ? 'Yes' : 'No') },
               { key: 'project', header: 'Current Task', render: (row: any) => row.current_task || row.current_project || 'No active timer' },
               { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.total_elapsed_duration || row.total_duration || 0) },
@@ -614,28 +678,35 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                         Remove
                       </Button>
                     ),
-                  }, {
+                  }]
+                : []),
+              ...(canManageDirectoryRoles
+                ? [{
                     key: 'promote',
                     header: 'Promote',
-                    render: (row: any) => (
-                      <SelectInput
-                        value={row.role}
-                        onChange={(event) =>
-                          updateRoleMutation.mutate({
-                            userId: row.id,
-                            role: event.target.value as 'admin' | 'manager' | 'employee',
-                          })
-                        }
-                        disabled={updateRoleMutation.isPending}
-                        className="min-w-[10rem]"
-                      >
-                        {employeeRoleOptions.map((role) => (
-                          <option key={role} value={role}>
-                            {role.charAt(0).toUpperCase() + role.slice(1)}
-                          </option>
-                        ))}
-                      </SelectInput>
-                    ),
+                    render: (row: any) => {
+                      const roleOptions = getPromoteRoleOptions(row);
+
+                      return (
+                        <SelectInput
+                          value={row.role}
+                          onChange={(event) =>
+                            updateRoleMutation.mutate({
+                              userId: row.id,
+                              role: event.target.value as 'admin' | 'manager' | 'employee',
+                            })
+                          }
+                          disabled={updateRoleMutation.isPending || roleOptions.length <= 1}
+                          className="min-w-[10rem]"
+                        >
+                          {roleOptions.map((role) => (
+                            <option key={role} value={role}>
+                              {role.charAt(0).toUpperCase() + role.slice(1)}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      );
+                    },
                   }]
                 : []),
             ]}

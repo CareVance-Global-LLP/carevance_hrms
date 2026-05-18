@@ -637,6 +637,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   }
 
   const organizationSummary = insights?.organization_summary || {};
+  const selectedUserStats = insights?.stats || {};
   const selectedUserTools = insights?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
   const organizationTools = insights?.organization_tools || { productive: [], unproductive: [] };
   const employeeRankings = insights?.employee_rankings?.by_productive_duration || [];
@@ -645,6 +646,9 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const recentEmployeeScreenshots = insights?.recent_screenshots || [];
   const screenshotCountLabel = screenshotTotalQuery.data ? screenshotTotal : recentEmployeeScreenshots.length;
   const topUnproductiveTool = selectedUserTools.unproductive?.[0] || null;
+  const trackedDurationValue = Number(organizationSummary.tracked_duration || organizationSummary.total_duration || 0);
+  const workingDurationValue = Number(organizationSummary.working_duration || 0);
+  const idleDurationValue = Number(organizationSummary.idle_duration || 0);
   const productiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.productive || [] : organizationTools.productive || [];
   const unproductiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.unproductive || [] : organizationTools.unproductive || [];
   const selectedUserBrowserTracking = (selectedUserLive?.browser_tracking || null) as BrowserTrackingHealthSummary | null;
@@ -802,6 +806,33 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
               icon={Activity}
               accent={mode === 'productive-time' ? 'emerald' : 'amber'}
             />
+            {!hasExplicitEmployeeSelection ? (
+              <MetricCard
+                label="Tracked Time"
+                value={formatDuration(trackedDurationValue)}
+                hint="All visible users in range"
+                icon={TimerReset}
+                accent="amber"
+              />
+            ) : null}
+            {!hasExplicitEmployeeSelection ? (
+              <MetricCard
+                label="Work Time"
+                value={formatDuration(workingDurationValue)}
+                hint="All visible users active work"
+                icon={Activity}
+                accent="emerald"
+              />
+            ) : null}
+            {!hasExplicitEmployeeSelection ? (
+              <MetricCard
+                label="Idle Time"
+                value={formatDuration(idleDurationValue)}
+                hint="All visible users idle duration"
+                icon={TimerReset}
+                accent="violet"
+              />
+            ) : null}
             <MetricCard
               label="Active Employees"
               value={liveMonitoring.employees_active?.length || 0}
@@ -856,6 +887,24 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                     <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
                   </div>
                   {renderBrowserTrackingCard(selectedUserBrowserTracking)}
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tracked time</p>
+                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.tracked_duration || selectedUserStats.total_duration || 0))}</p>
+                    <p className="mt-1 text-sm text-slate-500">Total tracked in selected range</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work time</p>
+                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.working_duration || 0))}</p>
+                    <p className="mt-1 text-sm text-slate-500">Effective worked duration</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Idle time</p>
+                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.idle_total_duration || selectedUserStats.idle_duration || 0))}</p>
+                    <p className="mt-1 text-sm text-slate-500">Idle duration in selected range</p>
+                  </div>
                 </div>
 
                 <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">

@@ -285,7 +285,18 @@ class UserController extends Controller
         ]);
 
         if (array_key_exists('role', $validated)) {
-            $this->organizationRoleService->assertCanAssignRole($request->user(), $validated['role']);
+            $actor = $request->user();
+            $isSelfRoleChange = $actor && (int) $actor->id === (int) $user->id;
+
+            if ($isSelfRoleChange && $actor->role === 'admin' && $validated['role'] !== 'admin') {
+                throw ValidationException::withMessages([
+                    'role' => ['Admin users cannot demote themselves.'],
+                ]);
+            }
+
+            if (!($isSelfRoleChange && $actor->role === 'manager' && in_array($validated['role'], ['admin', 'manager', 'employee'], true))) {
+                $this->organizationRoleService->assertCanAssignRole($actor, $validated['role']);
+            }
         }
 
         $originalRole = $user->role;

@@ -41,6 +41,7 @@ const ResetPasswordPage = lazyWithChunkRetry(() => import('@/pages/ResetPassword
 const VerifyEmailPage = lazyWithChunkRetry(() => import('@/pages/VerifyEmailPage'));
 const Dashboard = lazyWithChunkRetry(() => import('@/pages/Dashboard'));
 const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
+const OrgHierarchy = lazyWithChunkRetry(() => import('@/pages/OrgHierarchy'));
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
 const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
 const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
@@ -343,6 +344,7 @@ function App() {
             }
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
+            <Route path="org-hierarchy" element={<AdminRoute><OrgHierarchy /></AdminRoute>} />
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin/companies" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<Projects />} />
             <Route path="tasks" element={<Tasks />} />

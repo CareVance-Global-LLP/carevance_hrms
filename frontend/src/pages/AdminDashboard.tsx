@@ -47,6 +47,10 @@ type DashboardEmployee = {
   department: string;
   position: string;
   status: 'Active' | 'Inactive' | 'On Leave';
+  is_working?: boolean;
+  current_duration?: number;
+  total_duration?: number;
+  total_elapsed_duration?: number;
   avatar?: string | null;
   created_at?: string | null;
   date_of_birth?: string | null;
@@ -352,6 +356,10 @@ const normalizeEmployee = (item: any): DashboardEmployee => {
     department,
     position: workInfo?.designation || item?.position || item?.designation || item?.job_title || item?.role || 'Not set',
     status: item?.is_active === false || ['inactive', 'exited', 'terminated'].includes(employmentStatus) ? 'Inactive' : 'Active',
+    is_working: Boolean(item?.is_working),
+    current_duration: Number(item?.current_duration || 0),
+    total_duration: Number(item?.total_duration || 0),
+    total_elapsed_duration: Number(item?.total_elapsed_duration || 0),
     avatar: item?.avatar || null,
     created_at: item?.created_at || null,
     date_of_birth: profile?.date_of_birth || null,
@@ -540,6 +548,7 @@ export default function AdminDashboard() {
   const [workSearch, setWorkSearch] = useState('');
   const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
+  const [selectedKpiStatus, setSelectedKpiStatus] = useState<RangeStatusFilter | null>(null);
   const [rangeStatusFilter, setRangeStatusFilter] = useState<RangeStatusFilter>('all');
   const [dashboardScope, setDashboardScope] = useState<DashboardScope>(() =>
     isDashboardScope(persistedFilters.dashboardScope) ? persistedFilters.dashboardScope : 'overall'
@@ -719,9 +728,10 @@ export default function AdminDashboard() {
         .map((employee) => employee.id)
   );
   const scopedEmployeeIdList = Array.from(scopedEmployeeIds).sort((left, right) => left - right);
+  const shouldShowRangeStatusDetail = isMultiDayRange && selectedKpiStatus !== null;
   const rangeAttendanceCalendarQuery = useQuery({
     queryKey: ['dashboard-range-attendance-calendars', selectedStartDate, selectedEndDate, dashboardScope, selectedEmployee?.id || null, scopeDepartmentFilter, scopedEmployeeIdList],
-    enabled: isMultiDayRange && scopedEmployeeIdList.length > 0 && scopedEmployeeIdList.length <= 60,
+    enabled: shouldShowRangeStatusDetail && scopedEmployeeIdList.length > 0 && scopedEmployeeIdList.length <= 60,
     queryFn: async () => {
       const months = enumerateMonths(selectedRange);
       const entries = await Promise.all(scopedEmployeeIdList.map(async (userId) => {
@@ -1031,13 +1041,22 @@ export default function AdminDashboard() {
   const workStatusRows = employees.map((employee) => {
     const attendance = attendanceByEmployeeId.get(employee.id);
     const overallRow = overallByUserRows.find((row: any) => Number(row.user?.id || row.user_id || 0) === employee.id);
-    const isWorking = employee.status !== 'On Leave' && hasActiveAttendance(attendance);
+    const hasLiveTimerSignal = Boolean(employee.is_working) || Number(employee.current_duration || 0) > 0;
+    const isWorking = employee.status !== 'On Leave' && (hasActiveAttendance(attendance) || hasLiveTimerSignal);
     const checkInAt = attendance?.check_in_at || attendance?.open_punch_in_at || attendance?.last_check_in_at || null;
     const checkOutAt = attendance?.check_out_at || attendance?.last_check_out_at || null;
     const presentDays = isRangeIncludingToday
       ? Math.max(Number(attendance?.present_days || 0), isWorking ? 1 : 0)
       : Number(attendance?.present_days || 0);
-    const todaySeconds = Number(attendance?.total_worked_seconds || attendance?.worked_seconds || overallRow?.total_duration || 0);
+    const todaySeconds = Number(
+      attendance?.total_worked_seconds
+      || attendance?.worked_seconds
+      || overallRow?.total_duration
+      || employee.total_elapsed_duration
+      || employee.total_duration
+      || employee.current_duration
+      || 0
+    );
     const idleSeconds = overallRow ? resolveIdleSeconds(overallRow, todaySeconds) : 0;
     const workedSeconds = Math.max(0, todaySeconds - idleSeconds);
     return {
@@ -1070,11 +1089,9 @@ export default function AdminDashboard() {
       || (workStatusFilter === 'Absent' && isAbsent);
     return matchesSearch && matchesDepartment && matchesStatus;
   });
-  const activeOverallRangeStatusFilter: RangeStatusFilter = dashboardScope === 'overall' && rangeStatusFilter === 'all'
-    ? 'absent'
-    : rangeStatusFilter;
+  const activeOverallRangeStatusFilter: RangeStatusFilter = selectedKpiStatus ?? 'all';
   const overallRangeStatusRows = useMemo(() => {
-    if (!isMultiDayRange || dashboardScope === 'employee') return [];
+    if (!shouldShowRangeStatusDetail || dashboardScope === 'employee') return [];
 
     if (activeOverallRangeStatusFilter === 'present_late') {
       return filteredWorkStatusRows
@@ -1177,11 +1194,11 @@ export default function AdminDashboard() {
     activeOverallRangeStatusFilter,
     dashboardScope,
     filteredWorkStatusRows,
-    isMultiDayRange,
     rangeCalendarByEmployeeId,
+    shouldShowRangeStatusDetail,
   ]);
   const selectedEmployeeRangeStatusRows = useMemo(() => {
-    if (!isMultiDayRange || dashboardScope !== 'employee' || !selectedEmployee) return [];
+    if (!shouldShowRangeStatusDetail || dashboardScope !== 'employee' || !selectedEmployee) return [];
     const days = safeArray<any>(rangeCalendarByEmployeeId.get(selectedEmployee.id));
     return days.map((day) => {
       const rawStatus = String(day?.status || 'none').toLowerCase();
@@ -1210,7 +1227,7 @@ export default function AdminDashboard() {
         lateMinutes,
       };
     });
-  }, [dashboardScope, isMultiDayRange, rangeCalendarByEmployeeId, selectedEmployee]);
+  }, [dashboardScope, rangeCalendarByEmployeeId, selectedEmployee, shouldShowRangeStatusDetail]);
   const selectedEmployeeRangeCounts = useMemo(() => {
     return selectedEmployeeRangeStatusRows.reduce((acc, row) => {
       if (row.statusKey === 'present_on_time') {
@@ -1311,10 +1328,26 @@ export default function AdminDashboard() {
   const employeeInsights: any = employeeDetail?.insights || null;
   const employeeScreenshots: any = employeeDetail?.screenshots || null;
   const employeeStats = employeeInsights?.stats || employeeProfile?.summary || {};
-  const selectedEmployeeTrackedSeconds = Number(
-    selectedEmployeeOverallRow?.total_duration
-    ?? selectedWorkStatus?.todaySeconds
-    ?? 0
+  const selectedEmployeeActiveEntry = safeArray<any>(employeeProfile?.recent_time_entries)
+    .find((entry: any) => !entry.end_time);
+  const selectedEmployeeLiveTimerSignal = Boolean(selectedEmployee?.is_working) || Number(selectedEmployee?.current_duration || 0) > 0;
+  const selectedEmployeeIsWorking = Boolean(
+    selectedWorkStatus?.status === 'Working'
+    || employeeProfile?.status?.is_working
+    || selectedEmployeeActiveEntry
+    || selectedEmployeeLiveTimerSignal
+  );
+  const selectedEmployeeTrackedSeconds = Math.max(
+    0,
+    ...[
+      selectedEmployeeOverallRow?.total_duration,
+      employeeStats.tracked_duration,
+      employeeStats.total_duration,
+      selectedWorkStatus?.todaySeconds,
+      selectedEmployee?.total_elapsed_duration,
+      selectedEmployee?.total_duration,
+      selectedEmployee?.current_duration,
+    ].map((value) => Number(value || 0)).filter((value) => Number.isFinite(value))
   );
   const selectedEmployeeIdleFromOverall = selectedEmployeeOverallRow
     ? resolveIdleSeconds(selectedEmployeeOverallRow, selectedEmployeeTrackedSeconds)
@@ -1351,12 +1384,10 @@ export default function AdminDashboard() {
     ...safeArray<any>(employeeTools.neutral),
     ...safeArray<any>(employeeTools.context_dependent),
   ].sort((a, b) => Number(b.total_duration || 0) - Number(a.total_duration || 0)).slice(0, 4);
-  const selectedEmployeeActiveEntry = safeArray<any>(employeeProfile?.recent_time_entries)
-    .find((entry: any) => !entry.end_time);
   const selectedEmployeeTimerStartedAt =
     selectedEmployeeActiveEntry?.start_time ||
     employeeProfile?.status?.current_timer_started_at ||
-    (selectedWorkStatus?.status === 'Working' ? selectedWorkStatus.checkInAt : null);
+    (selectedEmployeeIsWorking ? selectedWorkStatus?.checkInAt : null);
   const selectedEmployeeTimer = dashboardScope === 'employee' && selectedEmployee && selectedEmployeeTimerStartedAt
     ? {
       id: selectedEmployeeActiveEntry?.id || selectedEmployee.id,
@@ -1702,6 +1733,7 @@ export default function AdminDashboard() {
           tint="bg-emerald-50 text-emerald-600"
           onClick={() => {
             setWorkStatusFilter('Present');
+            setSelectedKpiStatus('present');
             scrollToDashboardSection('current-work-status');
           }}
         />
@@ -1713,6 +1745,7 @@ export default function AdminDashboard() {
           tint="bg-amber-50 text-amber-600"
           onClick={() => {
             setWorkStatusFilter('On Leave');
+            setSelectedKpiStatus('on_leave');
             scrollToDashboardSection('current-work-status');
           }}
         />
@@ -1724,6 +1757,7 @@ export default function AdminDashboard() {
           tint="bg-red-50 text-red-600"
           onClick={() => {
             setWorkStatusFilter('Absent');
+            setSelectedKpiStatus('absent');
             scrollToDashboardSection('current-work-status');
           }}
         />
@@ -1735,6 +1769,7 @@ export default function AdminDashboard() {
           tint="bg-rose-50 text-rose-600"
           onClick={() => {
             setWorkStatusFilter('Present Late');
+            setSelectedKpiStatus('present_late');
             scrollToDashboardSection('current-work-status');
           }}
         />
@@ -1803,8 +1838,8 @@ export default function AdminDashboard() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate text-base font-semibold text-slate-950">{selectedEmployee.name}</h3>
-                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${selectedWorkStatus?.status === 'Working' ? 'bg-emerald-50 text-emerald-700' : selectedWorkStatus?.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                        {selectedWorkStatus?.status || selectedEmployee.status}
+                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${selectedWorkStatus?.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : selectedEmployeeIsWorking ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {selectedWorkStatus?.status === 'On Leave' ? 'On Leave' : selectedEmployeeIsWorking ? 'Working' : 'Not working'}
                       </span>
                     </div>
                     <p className="mt-1 truncate text-xs text-slate-500">{selectedEmployee.email}</p>
@@ -1812,14 +1847,14 @@ export default function AdminDashboard() {
                       <div><p className="text-slate-400">Department</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployee.department}</p></div>
                       <div><p className="text-slate-400">Role</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployee.position}</p></div>
                       <div><p className="text-slate-400">Last check in</p><p className="mt-1 font-semibold text-slate-800">{formatDateTime(selectedWorkStatus?.checkInAt || employeeProfile?.status?.latest_attendance?.check_in_at)}</p></div>
-                      <div><p className="text-slate-400">Last check out</p><p className="mt-1 font-semibold text-slate-800">{selectedWorkStatus?.status === 'Working' ? 'Still checked in' : formatDateTime(selectedWorkStatus?.checkOutAt || employeeProfile?.status?.latest_attendance?.check_out_at)}</p></div>
+                      <div><p className="text-slate-400">Last check out</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployeeIsWorking ? 'Still checked in' : formatDateTime(selectedWorkStatus?.checkOutAt || employeeProfile?.status?.latest_attendance?.check_out_at)}</p></div>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Tracked</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedWorkStatus?.todaySeconds || 0)}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Tracked</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedEmployeeTrackedSeconds)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{employeePresentDays} present</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Screenshots</p><p className="mt-2 text-lg font-semibold text-blue-700">{employeeScreenshotCount}</p></div>
@@ -2047,7 +2082,7 @@ export default function AdminDashboard() {
             {filteredWorkStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No employees found</EmptyInline></div> : null}
           </div>
           <div className="mt-3 text-[11px] text-slate-400">Showing {Math.min(filteredWorkStatusRows.length, 8)} of {filteredWorkStatusRows.length} matching employees</div>
-          {isMultiDayRange ? (
+          {shouldShowRangeStatusDetail ? (
             <div className="mt-4 rounded-lg border border-slate-100">
               <div className="border-b border-slate-100 px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">

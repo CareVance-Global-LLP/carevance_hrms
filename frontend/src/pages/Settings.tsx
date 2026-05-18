@@ -157,7 +157,7 @@ export default function SettingsPage() {
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
-    { id: 'organization', name: 'Organization', icon: Building },
+    ...(hasAdminAccess(user) ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
     { id: 'help', name: 'Help', icon: LifeBuoy },

@@ -129,13 +129,18 @@ export default function Tasks() {
   });
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects,
-    queryFn: async () => (await projectApi.getAll()).data || [],
+    queryFn: async () => {
+      const payload: any = (await projectApi.getAll()).data;
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      return [];
+    },
   });
 
   const tasks = tasksQuery.data || [];
   const groups = groupsQuery.data || [];
   const users = usersQuery.data || [];
-  const projects = projectsQuery.data || [];
+  const projects = Array.isArray(projectsQuery.data) ? projectsQuery.data : [];
   const isManagerWithSingleGroup = user?.role === 'manager' && groups.length === 1;
   const managerGroupId = isManagerWithSingleGroup ? String(groups[0].id) : '';
   const resolvedGroupId = taskForm.group_id || managerGroupId;
@@ -879,9 +884,9 @@ export default function Tasks() {
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
-                    {task.status !== 'todo' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'todo' })}>Move To Do</Button> : null}
-                    {task.status !== 'in_progress' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'in_progress' })}>Start Work</Button> : null}
-                    {task.status !== 'done' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'done' })}>Mark Done</Button> : null}
+                    {canManageTasks && task.status !== 'todo' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'todo' })}>Move To Do</Button> : null}
+                    {canManageTasks && task.status !== 'in_progress' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'in_progress' })}>Start Work</Button> : null}
+                    {canManageTasks && task.status !== 'done' ? <Button variant="ghost" size="sm" onClick={() => void updateStatusMutation.mutate({ taskId: task.id, status: 'done' })}>Mark Done</Button> : null}
                   </div>
                 </article>
               ))}

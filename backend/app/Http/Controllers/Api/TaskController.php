@@ -266,6 +266,10 @@ class TaskController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        if (!$this->groupAccessService->canManageTasks($request->user())) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         $request->validate([
             'status' => 'required|in:todo,in_progress,done',
         ]);

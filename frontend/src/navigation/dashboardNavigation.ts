@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LineChart,
   MessageSquare,
+  Network,
   Play,
   Receipt,
   Settings,
@@ -56,6 +57,12 @@ export const topNavigation: NavGroup[] = [
     label: 'Dashboard',
     to: '/dashboard',
     icon: LayoutDashboard,
+  },
+  {
+    label: 'Org.Hierarchy',
+    to: '/org-hierarchy',
+    icon: Network,
+    adminOnly: true,
   },
   {
     label: 'HRMS',
