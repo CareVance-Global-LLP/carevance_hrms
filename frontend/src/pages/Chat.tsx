@@ -124,6 +124,7 @@ export default function Chat() {
   const [isDeletingMessage, setIsDeletingMessage] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [inlineAttachmentUrls, setInlineAttachmentUrls] = useState<Record<string, string>>({});
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messageContextMenuRef = useRef<HTMLDivElement | null>(null);
@@ -179,6 +180,11 @@ export default function Chat() {
   };
 
   const isGroupMessage = (message: ChatFeedMessage): message is ChatGroupMessage => 'group_id' in message;
+  const getInlineAttachmentKey = (message: ChatFeedMessage) => `${isGroupMessage(message) ? 'group' : 'direct'}:${message.id}`;
+  const isImageAttachment = (message: ChatFeedMessage) => (
+    Boolean(message.has_attachment)
+    && String(message.attachment_mime || '').toLowerCase().startsWith('image/')
+  );
 
   const loadThreads = async () => {
     try {
@@ -512,6 +518,89 @@ export default function Chat() {
       scrollToBottom();
     }
   }, [messages.length]);
+
+  useEffect(() => {
+    const imageMessages = messages.filter((message) => isImageAttachment(message));
+    const activeKeys = new Set(imageMessages.map((message) => getInlineAttachmentKey(message)));
+
+    setInlineAttachmentUrls((previous) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+
+      Object.entries(previous).forEach(([key, value]) => {
+        if (activeKeys.has(key)) {
+          next[key] = value;
+          return;
+        }
+
+        URL.revokeObjectURL(value);
+        changed = true;
+      });
+
+      return changed ? next : previous;
+    });
+
+    const missingMessages = imageMessages.filter((message) => !inlineAttachmentUrls[getInlineAttachmentKey(message)]);
+    if (missingMessages.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all(missingMessages.map(async (message) => {
+      try {
+        const response = isGroupMessage(message)
+          ? await chatApi.getGroupAttachment(message.id)
+          : await chatApi.getAttachment(message.id);
+
+        const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'image/*';
+        const blob = new Blob([response.data], { type: contentType });
+
+        return {
+          key: getInlineAttachmentKey(message),
+          objectUrl: URL.createObjectURL(blob),
+        };
+      } catch {
+        return null;
+      }
+    })).then((results) => {
+      if (cancelled) {
+        results.forEach((result) => {
+          if (result?.objectUrl) {
+            URL.revokeObjectURL(result.objectUrl);
+          }
+        });
+        return;
+      }
+
+      setInlineAttachmentUrls((previous) => {
+        const next = { ...previous };
+
+        results.forEach((result) => {
+          if (!result) return;
+
+          if (next[result.key]) {
+            URL.revokeObjectURL(result.objectUrl);
+            return;
+          }
+
+          next[result.key] = result.objectUrl;
+        });
+
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inlineAttachmentUrls, messages]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(inlineAttachmentUrls).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [inlineAttachmentUrls]);
 
   useEffect(() => {
     return () => {
@@ -1124,6 +1213,9 @@ export default function Chat() {
               const mine = Number(message.sender_id) === Number(user?.id);
               const groupMessage = isGroupMessage(message);
               const hasReactions = (message.reactions || []).length > 0;
+              const messageInlineAttachmentUrl = inlineAttachmentUrls[getInlineAttachmentKey(message)] || null;
+              const messageHasImageAttachment = isImageAttachment(message);
+              const hasBodyText = Boolean((message.body || '').trim());
 
               return (
                 <div
@@ -1190,17 +1282,44 @@ export default function Chat() {
                           </div>
                         </div>
                       ) : (
-                        <p className="break-words whitespace-pre-wrap">{renderMessageBody(message.body || '', mine)}</p>
-                      )}
-                      {message.has_attachment && (
-                        <button
-                          onClick={() => openAttachment(message)}
-                          type="button"
-                          className={`mt-2 inline-flex items-center gap-1 text-xs underline ${mine ? 'text-primary-100' : 'text-primary-700'}`}
-                        >
-                          Open attachment
-                          {message.attachment_name ? ` (${message.attachment_name}${message.attachment_size ? `, ${formatBytes(message.attachment_size)}` : ''})` : ''}
-                        </button>
+                        <>
+                          {messageHasImageAttachment ? (
+                            <button
+                              onClick={() => openAttachment(message)}
+                              type="button"
+                              className={`block overflow-hidden rounded-lg border ${mine ? 'border-primary-400/50' : 'border-gray-200'} bg-black/5`}
+                            >
+                              {messageInlineAttachmentUrl ? (
+                                <img
+                                  src={messageInlineAttachmentUrl}
+                                  alt={message.attachment_name || 'Shared image'}
+                                  className="max-h-72 w-full max-w-[22rem] object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-32 w-56 items-center justify-center text-xs text-gray-500">
+                                  Loading image...
+                                </div>
+                              )}
+                            </button>
+                          ) : null}
+
+                          {hasBodyText ? (
+                            <p className={`${messageHasImageAttachment ? 'mt-2' : ''} break-words whitespace-pre-wrap`}>
+                              {renderMessageBody(message.body || '', mine)}
+                            </p>
+                          ) : null}
+
+                          {message.has_attachment && !messageHasImageAttachment ? (
+                            <button
+                              onClick={() => openAttachment(message)}
+                              type="button"
+                              className={`mt-2 inline-flex items-center gap-1 text-xs underline ${mine ? 'text-primary-100' : 'text-primary-700'}`}
+                            >
+                              Open attachment
+                              {message.attachment_name ? ` (${message.attachment_name}${message.attachment_size ? `, ${formatBytes(message.attachment_size)}` : ''})` : ''}
+                            </button>
+                          ) : null}
+                        </>
                       )}
                       {renderMessageTimestamp(message, mine, groupMessage)}
                     </div>
@@ -1301,67 +1420,71 @@ export default function Chat() {
           </div>
         ) : null}
 
-        <form onSubmit={handleSendMessage} className="flex gap-2 border-t border-gray-200 p-3">
-          <div className="flex-1 space-y-2">
-            <textarea
-              value={messageText}
-              onChange={(e) => handleMessageChange(e.target.value)}
-              onPaste={handleComposerPaste}
-              placeholder={selectedThread ? `Type a message to this ${selectedThreadLabel}...` : 'Select chat first'}
-              disabled={!selectedThread}
-              rows={attachmentFile ? 3 : 2}
-              className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
-            />
+        <form onSubmit={handleSendMessage} className="border-t border-gray-200 p-3">
+          <div className="space-y-3">
             {attachmentFile && (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                {attachmentPreviewUrl ? (
-                  <img
-                    src={attachmentPreviewUrl}
-                    alt="Pasted screenshot preview"
-                    className="max-h-44 rounded-md border border-gray-200 object-contain"
-                  />
-                ) : null}
-                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-600">
-                  <span className="truncate">
-                    {attachmentFile.name || 'Pasted screenshot'}
-                    {attachmentFile.size ? ` (${formatBytes(attachmentFile.size)})` : ''}
-                  </span>
+              <div className="rounded-xl border border-gray-200 bg-white p-2">
+                <div className="relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                  {attachmentPreviewUrl ? (
+                    <img
+                      src={attachmentPreviewUrl}
+                      alt="Pasted screenshot preview"
+                      className="max-h-80 w-full object-contain"
+                    />
+                  ) : (
+                    <div className="flex h-36 items-center justify-center text-xs text-gray-500">
+                      {attachmentFile.name || 'Attachment selected'}
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => applyAttachmentFile(null)}
-                    className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100"
+                    className="absolute right-2 top-2 rounded-full bg-black/65 px-2 py-1 text-xs font-medium text-white hover:bg-black/75"
                   >
                     Remove
                   </button>
                 </div>
+                <p className="mt-2 truncate text-xs text-gray-600">
+                  {attachmentFile.name || 'Pasted screenshot'}
+                  {attachmentFile.size ? ` (${formatBytes(attachmentFile.size)})` : ''}
+                </p>
               </div>
             )}
+
+            <div className="flex items-end gap-2">
+              <textarea
+                value={messageText}
+                onChange={(e) => handleMessageChange(e.target.value)}
+                onPaste={handleComposerPaste}
+                placeholder={attachmentFile
+                  ? 'Add a caption (optional)'
+                  : selectedThread
+                    ? `Type a message to this ${selectedThreadLabel}...`
+                    : 'Select chat first'}
+                disabled={!selectedThread}
+                rows={attachmentFile ? 2 : 2}
+                className="w-full resize-y rounded-2xl border border-gray-300 px-4 py-2.5 text-sm disabled:bg-gray-100"
+              />
+              <button
+                type="submit"
+                disabled={!selectedThread || (!messageText.trim() && !attachmentFile)}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-primary-600 text-base font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
+                aria-label="Send message"
+              >
+                ➤
+              </button>
+            </div>
+
             <div className="flex items-center gap-2">
               <input
                 type="file"
                 disabled={!selectedThread}
                 onChange={(e) => applyAttachmentFile(e.target.files?.[0] || null)}
-                className="block w-full text-xs text-gray-600 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs file:font-medium"
+                className="block w-full text-xs text-gray-600 file:mr-2 file:rounded-full file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:font-medium"
               />
-              <span className="text-[11px] text-gray-500">Max file size: 200 MB</span>
-              {attachmentFile && (
-                <button
-                  type="button"
-                  onClick={() => applyAttachmentFile(null)}
-                  className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
-                >
-                  Clear
-                </button>
-              )}
+              <span className="text-[11px] text-gray-500">Max 200 MB</span>
             </div>
           </div>
-          <button
-            type="submit"
-            disabled={!selectedThread || (!messageText.trim() && !attachmentFile)}
-            className="rounded-lg bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700 disabled:opacity-50"
-          >
-            Send
-          </button>
         </form>
         {error && <p className="px-3 pb-3 text-sm text-red-600">{error}</p>}
       </div>

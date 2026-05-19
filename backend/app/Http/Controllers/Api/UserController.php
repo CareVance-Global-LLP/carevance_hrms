@@ -92,6 +92,9 @@ class UserController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'role' => $user->role,
+                    'reporting_manager_id' => $user->employeeWorkInfo?->reporting_manager_id
+                        ? (int) $user->employeeWorkInfo->reporting_manager_id
+                        : null,
                     'department' => trim($departmentName),
                     'groups' => collect($user->groups)->map(fn ($group) => [
                         'id' => (int) $group->id,

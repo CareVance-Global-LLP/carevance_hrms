@@ -12,6 +12,7 @@ type HierarchyUser = {
   name: string;
   email?: string;
   role?: string;
+  reporting_manager_id?: number | null;
   department?: string;
   groups?: Array<{ id: number; name: string }>;
 };
@@ -88,18 +89,27 @@ export default function OrgHierarchy() {
       ? managers.filter((manager) => Number(manager.id) !== Number(topAdmin.id))
       : managers;
 
+    const managerIds = new Set<number>(visibleManagers.map((manager) => Number(manager.id)));
+
     const assignedEmployeeIds = new Set<number>();
     const managerNodes = visibleManagers.map((manager) => {
       const managerDepartment = resolveDepartment(manager);
-      const directEmployees = employees.filter((employee) => {
+      const directEmployeesByReporting = employees.filter((employee) => {
         if (assignedEmployeeIds.has(employee.id)) return false;
+        return Number(employee.reporting_manager_id || 0) === Number(manager.id);
+      });
+      directEmployeesByReporting.forEach((employee) => assignedEmployeeIds.add(employee.id));
+
+      const directEmployeesByDepartment = employees.filter((employee) => {
+        if (assignedEmployeeIds.has(employee.id)) return false;
+        if (managerIds.has(Number(employee.reporting_manager_id || 0))) return false;
         return managerDepartment !== 'Unassigned' && resolveDepartment(employee) === managerDepartment;
       });
-      directEmployees.forEach((employee) => assignedEmployeeIds.add(employee.id));
+      directEmployeesByDepartment.forEach((employee) => assignedEmployeeIds.add(employee.id));
 
       return {
         manager,
-        employees: [...directEmployees],
+        employees: [...directEmployeesByReporting, ...directEmployeesByDepartment],
       };
     });
 
@@ -107,17 +117,15 @@ export default function OrgHierarchy() {
       ? employees.filter((employee) => Number(employee.id) !== Number(topAdmin.id))
       : [];
 
-    const unassignedEmployees = employees.filter((employee) => !assignedEmployeeIds.has(employee.id));
-    if (managerNodes.length > 0) {
-      unassignedEmployees.forEach((employee, index) => {
-        managerNodes[index % managerNodes.length].employees.push(employee);
-      });
-    }
+    const unassignedEmployees = managerNodes.length > 0
+      ? employees.filter((employee) => !assignedEmployeeIds.has(employee.id))
+      : [];
 
     return {
       topAdmin,
       managers: managerNodes,
       topNodeEmployees,
+      unassignedEmployees,
       totals: {
         admins: admins.length,
         managers: managers.length,
@@ -238,6 +246,19 @@ export default function OrgHierarchy() {
                 )
               )}
             </div>
+
+            {hierarchy.managers.length > 0 && hierarchy.unassignedEmployees.length > 0 ? (
+              <div className="mt-8">
+                <div className="mb-3 rounded-lg border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-600">
+                  Employees without manager relation (showing separately)
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {hierarchy.unassignedEmployees.map((employee) => (
+                    <PersonNode key={employee.id} user={employee} tone="employee" />
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </SurfaceCard>
 
