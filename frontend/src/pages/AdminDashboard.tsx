@@ -2299,7 +2299,7 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card id="checkin-log" className="scroll-mt-24 p-4">
           <SectionTitle title="Check-In / Check-Out Log" action={<Link to="/attendance" className="text-xs font-medium text-blue-600">Open Attendance</Link>} />
-          <div className="overflow-x-auto rounded-lg border border-slate-100">
+          <div className={`overflow-x-auto rounded-lg border border-slate-100 ${filteredWorkStatusRows.length > 10 ? 'max-h-[520px] overflow-y-auto' : ''}`}>
             <table className="min-w-[760px] w-full text-left text-xs">
               <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
@@ -2311,7 +2311,7 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredWorkStatusRows.slice(0, 6).map((row) => (
+                {filteredWorkStatusRows.map((row) => (
                   <tr key={row.employee.id}>
                     <td className="px-4 py-3">
                       <div className="flex min-w-0 items-center gap-3">
