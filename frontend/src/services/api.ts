@@ -1188,7 +1188,25 @@ export const settingsApi = {
       user: User;
       organization: Organization | null;
       can_manage_org: boolean;
+      employee_profile?: EmployeeProfileDetails | null;
+      profile_onboarding_completed?: boolean;
+      profile_onboarding_skipped?: boolean;
     }>('/settings/me'),
+
+  updateOnboardingProfile: (data: Partial<EmployeeProfileDetails>) =>
+    api.put<{
+      message: string;
+      user: User;
+      employee_profile: EmployeeProfileDetails;
+      profile_onboarding_completed: boolean;
+    }>('/settings/onboarding-profile', data),
+
+  skipOnboardingProfile: () =>
+    api.put<{
+      message: string;
+      user: User;
+      profile_onboarding_skipped: boolean;
+    }>('/settings/onboarding-profile/skip'),
 
   updateProfile: (data: FormData | { name: string; email?: string; avatar?: string | null }) => {
     if (data instanceof FormData) {

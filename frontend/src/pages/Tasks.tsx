@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRightLeft, Building2, CalendarDays, CheckCircle2, Clock3, Edit2, Plus, Search, TimerReset, Trash2, UserPlus2, UserRound, Users, Users2, X } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarDays, CheckCircle2, Clock3, Edit2, Plus, TimerReset, Trash2, UserRound, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
-import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { queryKeys } from '@/lib/queryKeys';
-import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
 import { groupApi, projectApi, taskApi, userApi } from '@/services/api';
-import type { Group, Project, Task, User } from '@/types';
+import type { Project, Task } from '@/types';
 import { cn } from '@/utils/cn';
 
 type SavedTaskStatus = Exclude<Task['status'], 'in_review'>;
@@ -91,24 +88,13 @@ export default function Tasks() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const canManageTasks = user?.role === 'admin' || user?.role === 'manager';
-  const canCreateGroups = user?.role === 'admin';
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTaskModal, setShowTaskModal] = useState(false);
-  const [showGroupModal, setShowGroupModal] = useState(false);
-  const [groupModalSource, setGroupModalSource] = useState<'workspace' | 'task-form'>('workspace');
   const [searchQuery] = useState('');
   const [statusFilter] = useState<'all' | SavedTaskStatus>('all');
   const [groupFilter, setGroupFilter] = useState('all');
   const [assigneeFilter] = useState('all');
-  const [groupDirectoryQuery, setGroupDirectoryQuery] = useState('');
-  const [groupDirectoryFilter, setGroupDirectoryFilter] = useState('all');
-  const [expandedAddMemberGroupId, setExpandedAddMemberGroupId] = useState<number | null>(null);
-  const [memberDrafts, setMemberDrafts] = useState<Record<number, number[]>>({});
-  const [memberSearchDrafts, setMemberSearchDrafts] = useState<Record<number, string>>({});
-  const [memberSearchSelectionDrafts, setMemberSearchSelectionDrafts] = useState<Record<number, number | null>>({});
-  const [memberMoveDrafts, setMemberMoveDrafts] = useState<Record<string, string>>({});
-  const [deletingGroupId, setDeletingGroupId] = useState<number | null>(null);
   const [assigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false);
   const [taskForm, setTaskForm] = useState<TaskFormState>(createTaskFormState());
 
@@ -152,12 +138,6 @@ export default function Tasks() {
       return { ...current, group_id: managerGroupId, project_id: '', assignee_id: '', assignee_ids: [] };
     });
   }, [isManagerWithSingleGroup, managerGroupId]);
-  const internalUsers = useMemo(
-    () => users.filter((member) => member.role !== 'client'),
-    [users]
-  );
-  const canManageGroupMember = (member: User) => member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
-  const isEligibleForDirectGroupAdd = (member: User) => canManageGroupMember(member) && (member.groups || []).length === 0;
   const selectedGroupId = resolvedGroupId ? Number(resolvedGroupId) : null;
   const availableAssignees = useMemo(
     () => users.filter((member) => !selectedGroupId || member.groups?.some((group) => group.id === selectedGroupId)),
@@ -205,90 +185,6 @@ export default function Tasks() {
     },
   });
 
-  const syncMembershipMutation = useMutation({
-    mutationFn: async ({ userId, groupIds, successMessage }: { userId: number; groupIds: number[]; successMessage: string }) => {
-      await userApi.update(userId, { group_ids: groupIds });
-      return successMessage;
-    },
-    onSuccess: async (message) => {
-      setFeedback({ tone: 'success', message });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.groups }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.users({ period: 'all' }) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.tasks }),
-      ]);
-    },
-    onError: (error: any) => {
-      const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
-      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to update department membership.') });
-    },
-  });
-
-  const addMembersToGroupMutation = useMutation({
-    mutationFn: async ({ group, members }: { group: Group; members: User[] }) => {
-      await Promise.all(
-        members.map((member) => {
-          const nextGroupIds = Array.from(new Set([...(member.groups || []).map((currentGroup) => currentGroup.id), group.id]));
-          return userApi.update(member.id, { group_ids: nextGroupIds });
-        })
-      );
-
-      return { group, members };
-    },
-    onSuccess: async ({ group, members }) => {
-      setFeedback({
-        tone: 'success',
-        message: members.length === 1
-          ? `${members[0].name} was added to ${group.name}.`
-          : `${members.length} members were added to ${group.name}.`,
-      });
-      setMemberDrafts((current) => ({ ...current, [group.id]: [] }));
-      setMemberSearchDrafts((current) => ({ ...current, [group.id]: '' }));
-      setMemberSearchSelectionDrafts((current) => ({ ...current, [group.id]: null }));
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.groups }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.users({ period: 'all' }) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.tasks }),
-      ]);
-    },
-    onError: (error: any) => {
-      const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
-      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to add members to the department.') });
-    },
-  });
-
-  const deleteGroupMutation = useMutation({
-    mutationFn: async (group: Group) => {
-      await groupApi.delete(group.id);
-      return group;
-    },
-    onMutate: (group) => {
-      setDeletingGroupId(group.id);
-    },
-    onSuccess: async (group) => {
-      setFeedback({ tone: 'success', message: `${group.name} was deleted.` });
-      setGroupDirectoryFilter((current) => (current === String(group.id) ? 'all' : current));
-      setGroupFilter((current) => (current === String(group.id) ? 'all' : current));
-      setTaskForm((current) => (
-        current.group_id === String(group.id)
-          ? { ...current, group_id: '', project_id: '', assignee_id: '', assignee_ids: [] }
-          : current
-      ));
-
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.groups }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.users({ period: 'all' }) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.tasks }),
-      ]);
-    },
-    onError: (error: any) => {
-      const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
-      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to delete department.') });
-    },
-    onSettled: () => {
-      setDeletingGroupId(null);
-    },
-  });
 
   const isLoading = tasksQuery.isLoading || groupsQuery.isLoading || usersQuery.isLoading || projectsQuery.isLoading;
   const isError = tasksQuery.isError || groupsQuery.isError || usersQuery.isError || projectsQuery.isError;
@@ -330,106 +226,6 @@ export default function Tasks() {
       .sort((a, b) => b.completionPercent - a.completionPercent);
   }, [filteredTasks]);
 
-  const hasDirectorySearch = groupDirectoryQuery.trim().length > 0;
-  const hasDirectorySelection = groupDirectoryFilter !== 'all';
-  const shouldShowDirectoryResults = hasDirectorySearch || hasDirectorySelection;
-
-  const filteredDirectoryGroups = useMemo(() => {
-    if (!shouldShowDirectoryResults) {
-      return [];
-    }
-
-    const needle = groupDirectoryQuery.trim().toLowerCase();
-
-    return groups.filter((group) => {
-      const matchesSelectedGroup = groupDirectoryFilter === 'all' || String(group.id) === groupDirectoryFilter;
-      if (!matchesSelectedGroup) return false;
-
-      if (!needle) return true;
-
-      const searchable = [group.name, group.description]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-
-      return searchable.includes(needle);
-    });
-  }, [groupDirectoryFilter, groupDirectoryQuery, groups, shouldShowDirectoryResults]);
-
-  const findUserById = (userId: number) => users.find((candidate) => candidate.id === userId);
-
-  const handleAddMemberToGroup = (group: Group) => {
-    const selectedUserIds = memberDrafts[group.id] || [];
-    if (selectedUserIds.length === 0) {
-      setFeedback({ tone: 'error', message: `Select at least one eligible member to add into ${group.name}.` });
-      return;
-    }
-
-    const members = selectedUserIds
-      .map((userId) => findUserById(userId))
-      .filter((member): member is User => Boolean(member) && canManageGroupMember(member));
-
-    if (members.length === 0) {
-      setFeedback({ tone: 'error', message: 'Selected team members could not be found.' });
-      return;
-    }
-
-    addMembersToGroupMutation.mutate({ group, members });
-  };
-
-  const handleMoveEmployeeToGroup = (member: User, currentGroup: Group) => {
-    const draftKey = `${currentGroup.id}:${member.id}`;
-    const selectedTargetId = Number(memberMoveDrafts[draftKey] || 0);
-    if (!selectedTargetId || selectedTargetId === currentGroup.id) {
-      setFeedback({ tone: 'error', message: 'Choose a different department before moving this employee.' });
-      return;
-    }
-
-    const targetGroup = groups.find((group) => group.id === selectedTargetId);
-    if (!targetGroup) {
-      setFeedback({ tone: 'error', message: 'Selected destination department could not be found.' });
-      return;
-    }
-
-    syncMembershipMutation.mutate({
-      userId: member.id,
-      groupIds: [targetGroup.id],
-      successMessage: `${member.name} was moved to ${targetGroup.name}.`,
-    });
-
-    setMemberMoveDrafts((current) => ({ ...current, [draftKey]: '' }));
-  };
-
-  const handleRemoveEmployeeFromGroup = (member: User, currentGroup: Group) => {
-    const currentGroupIds = (member.groups || []).map((assignedGroup) => assignedGroup.id);
-    const nextGroupIds = currentGroupIds.filter((groupId) => groupId !== currentGroup.id);
-
-    if (nextGroupIds.length === 0) {
-      setFeedback({
-        tone: 'error',
-        message: `${member.name} is currently only in ${currentGroup.name}. Move them to another department before removing this membership.`,
-      });
-      return;
-    }
-
-    syncMembershipMutation.mutate({
-      userId: member.id,
-      groupIds: nextGroupIds,
-      successMessage: `${member.name} was removed from ${currentGroup.name}.`,
-    });
-
-    const draftKey = `${currentGroup.id}:${member.id}`;
-    setMemberMoveDrafts((current) => ({ ...current, [draftKey]: '' }));
-  };
-
-  const handleDeleteGroup = (group: Group) => {
-    if (!confirm(`Delete "${group.name}"? Members will be detached and tasks in this department will become unassigned.`)) {
-      return;
-    }
-
-    deleteGroupMutation.mutate(group);
-  };
-
   if (isLoading) return <PageLoadingState label="Loading task workspace..." />;
 
   if (isError) {
@@ -459,18 +255,6 @@ export default function Tasks() {
           </div>
           {canManageTasks ? (
             <div className="flex flex-wrap gap-3">
-              {canCreateGroups ? (
-                <Button
-                  variant="secondary"
-                  iconLeft={<Building2 className="h-4 w-4" />}
-                  onClick={() => {
-                    setGroupModalSource('workspace');
-                    setShowGroupModal(true);
-                  }}
-                >
-                  New Department
-                </Button>
-              ) : null}
               <Button iconLeft={<Plus className="h-4 w-4" />} onClick={() => {
                 setEditingTask(null);
                 setTaskForm(createTaskFormState(groupFilter === 'all' ? '' : groupFilter));
@@ -481,335 +265,11 @@ export default function Tasks() {
         </div>
       </SurfaceCard>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard label="Tasks In View" value={filteredTasks.length} hint="After filters" icon={CheckCircle2} accent="sky" />
         <MetricCard label="Completed" value={filteredTasks.filter((task) => task.status === 'done').length} hint="Marked done" icon={CheckCircle2} accent="emerald" />
         <MetricCard label="Overdue" value={filteredTasks.filter((task) => task.due_date && (toDate(task.due_date)?.getTime() || 0) < Date.now() && task.status !== 'done').length} hint="Open past deadline" icon={AlertTriangle} accent="rose" />
-        <MetricCard label="Departments In View" value={groups.length} hint="Available departments" icon={Users2} accent="violet" />
       </div>
-
-      {canManageTasks ? (
-        <SurfaceCard className="p-5 sm:p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Department directory</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">See every department and manage members from this page.</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Add existing members into a department, review who is already inside each department, or move an employee directly to another department without leaving the task workspace.</p>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Quick rule</p>
-              <p className="mt-2">Adding keeps existing memberships. Moving switches active assignment, and remove detaches the employee from this specific department.</p>
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_auto] lg:items-end">
-              <div>
-                <FieldLabel>Search Department</FieldLabel>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <TextInput
-                    aria-label="Search department directory"
-                    value={groupDirectoryQuery}
-                    onChange={(event) => setGroupDirectoryQuery(event.target.value)}
-                    placeholder="Search department by name"
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-              <div>
-                <FieldLabel>Department Dropdown</FieldLabel>
-                <SelectInput
-                  aria-label="Filter department directory"
-                  value={groupDirectoryFilter}
-                  onChange={(event) => setGroupDirectoryFilter(event.target.value)}
-                >
-                  <option value="all">All departments</option>
-                  {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-                </SelectInput>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setGroupDirectoryQuery('');
-                  setGroupDirectoryFilter('all');
-                }}
-              >
-                Reset
-              </Button>
-            </div>
-            <p className="mt-3 text-xs text-slate-500">
-              {shouldShowDirectoryResults
-                ? `Showing ${filteredDirectoryGroups.length} of ${groups.length} department${groups.length === 1 ? '' : 's'}.`
-                : 'Departments are hidden by default. Search by name or choose one department from the dropdown.'}
-            </p>
-          </div>
-
-          {groups.length === 0 ? (
-            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No departments have been created yet. Create the first department to start organizing users and tasks.</div>
-          ) : !shouldShowDirectoryResults ? (
-            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Search for a department name to view directory cards.</div>
-          ) : filteredDirectoryGroups.length === 0 ? (
-            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No departments match your search right now. Try a different name or reset the department filters.</div>
-          ) : (
-            <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {filteredDirectoryGroups.map((group) => {
-                const members = (group.users || [])
-                  .map((member) => findUserById(member.id) || null)
-                  .filter((member): member is User => Boolean(member) && member.role !== 'client');
-                const selectedMemberIds = memberDrafts[group.id] || [];
-                const memberSearchQuery = memberSearchDrafts[group.id] || '';
-                const selectedSearchMemberId = memberSearchSelectionDrafts[group.id] ?? null;
-                const availableMembers = internalUsers.filter((member) => isEligibleForDirectGroupAdd(member));
-                const availableMemberSuggestions = buildSearchSuggestions(availableMembers, (member) => ({
-                  id: member.id,
-                  label: member.name,
-                  description: `${member.email} • ${titleCase(member.role)}`,
-                  searchValues: [member.name, member.email, member.role],
-                  payload: member,
-                }));
-                const filteredAvailableMembers = availableMembers.filter((member) => {
-                  if (selectedSearchMemberId) {
-                    return Number(member.id) === Number(selectedSearchMemberId);
-                  }
-
-                  return matchesSearchFilter(memberSearchQuery, [member.name, member.email, member.role]);
-                });
-
-                return (
-                  <div key={group.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{group.name}</h3>
-                          <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', group.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600')}>
-                            {group.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">{group.description || 'No department description yet. Use this section to keep people and tasks aligned inside the same department.'}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                          <Users className="h-3.5 w-3.5" />
-                          {members.length} member{members.length === 1 ? '' : 's'}
-                        </span>
-                        <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          {group.tasks_count ?? tasks.filter((task) => task.group_id === group.id).length} task{(group.tasks_count ?? tasks.filter((task) => task.group_id === group.id).length) === 1 ? '' : 's'}
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          iconLeft={<Trash2 className="h-4 w-4" />}
-                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                          aria-label={`Delete department ${group.name}`}
-                          disabled={deleteGroupMutation.isPending}
-                          onClick={() => handleDeleteGroup(group)}
-                        >
-                          {deletingGroupId === group.id ? 'Deleting...' : 'Delete Department'}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <FieldLabel hint={expandedAddMemberGroupId === group.id ? `${selectedMemberIds.length} selected` : undefined}>
-                          Add Existing Member
-                        </FieldLabel>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          iconLeft={<UserPlus2 className="h-4 w-4" />}
-                          aria-label={`${expandedAddMemberGroupId === group.id ? 'Close' : 'Open'} add member for ${group.name}`}
-                          onClick={() => {
-                            setExpandedAddMemberGroupId((current) => (current === group.id ? null : group.id));
-                            setMemberDrafts((current) => ({ ...current, [group.id]: current[group.id] || [] }));
-                          }}
-                        >
-                          {expandedAddMemberGroupId === group.id ? 'Close Add Member' : 'Add Member'}
-                        </Button>
-                      </div>
-
-                      {expandedAddMemberGroupId === group.id ? (
-                        <div className="mt-3 flex flex-col gap-3">
-                          <div className="min-w-0 flex-1">
-                            <SearchSuggestInput
-                              aria-label={`Search eligible members for ${group.name}`}
-                              value={memberSearchQuery}
-                              onValueChange={(value) => {
-                                setMemberSearchDrafts((current) => ({ ...current, [group.id]: value }));
-                                const selectedMemberName = availableMembers.find((member) => Number(member.id) === Number(selectedSearchMemberId))?.name || '';
-                                if (!value.trim() || normalizeSearchValue(value) !== normalizeSearchValue(selectedMemberName)) {
-                                  setMemberSearchSelectionDrafts((current) => ({ ...current, [group.id]: null }));
-                                }
-                              }}
-                              onSuggestionSelect={(suggestion) => {
-                                const nextMemberId = Number((suggestion.payload as User | undefined)?.id || suggestion.id || 0);
-                                setMemberSearchDrafts((current) => ({ ...current, [group.id]: getSuggestionDisplayValue(suggestion) }));
-                                setMemberSearchSelectionDrafts((current) => ({
-                                  ...current,
-                                  [group.id]: Number.isFinite(nextMemberId) && nextMemberId > 0 ? nextMemberId : null,
-                                }));
-                              }}
-                              suggestions={availableMemberSuggestions}
-                              placeholder={availableMembers.length === 0 ? 'No unassigned eligible members available' : 'Search eligible members'}
-                              className="border-slate-200 bg-white shadow-none focus:bg-white"
-                              icon={<Search className="h-4 w-4" />}
-                              emptyMessage="No eligible members match this search."
-                              disabled={availableMembers.length === 0 || addMembersToGroupMutation.isPending}
-                            />
-                          </div>
-                          {availableMembers.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                              Only unassigned employees and unassigned managers can be added here. Move existing members from their current department instead.
-                            </div>
-                          ) : (
-                            <div className="max-h-56 space-y-2 overflow-auto pr-1">
-                              {filteredAvailableMembers.map((member) => {
-                                const checked = selectedMemberIds.includes(member.id);
-
-                                return (
-                                  <label
-                                    key={member.id}
-                                    className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition ${
-                                      checked ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-white hover:border-slate-300'
-                                    }`}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      className="mt-1"
-                                      checked={checked}
-                                      onChange={(event) =>
-                                        setMemberDrafts((current) => ({
-                                          ...current,
-                                          [group.id]: event.target.checked
-                                            ? [...selectedMemberIds, member.id]
-                                            : selectedMemberIds.filter((id) => id !== member.id),
-                                        }))
-                                      }
-                                      disabled={addMembersToGroupMutation.isPending}
-                                    />
-                                    <div className="min-w-0">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <p className="text-sm font-semibold text-slate-950">{member.name}</p>
-                                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                                          {titleCase(member.role)}
-                                        </span>
-                                      </div>
-                                      <p className="mt-1 text-xs text-slate-500">{member.email}</p>
-                                    </div>
-                                  </label>
-                                );
-                              })}
-                              {filteredAvailableMembers.length === 0 ? (
-                                <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
-                                  No eligible members match this search.
-                                </div>
-                              ) : null}
-                            </div>
-                          )}
-                          <div className="flex justify-end">
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              iconLeft={<UserPlus2 className="h-4 w-4" />}
-                              aria-label={`Add members to ${group.name}`}
-                              disabled={selectedMemberIds.length === 0 || addMembersToGroupMutation.isPending}
-                              onClick={() => handleAddMemberToGroup(group)}
-                            >
-                              {addMembersToGroupMutation.isPending
-                                ? 'Saving...'
-                                : selectedMemberIds.length > 1
-                                  ? 'Add Members'
-                                  : 'Add Member'}
-                            </Button>
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-5 space-y-3">
-                      {members.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">No members are assigned to this department yet.</div>
-                      ) : (
-                        members.map((member) => {
-                          const moveKey = `${group.id}:${member.id}`;
-                          const canManageMembership = member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
-
-                          return (
-                            <div key={moveKey} className="rounded-lg border border-slate-200 bg-white p-4">
-                              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="font-semibold text-slate-950">{member.name}</p>
-                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{titleCase(member.role)}</span>
-                                  </div>
-                                  <p className="mt-1 truncate text-sm text-slate-500">{member.email}</p>
-                                  <p className="mt-2 text-xs text-slate-500">
-                                    Current department{(member.groups || []).length === 1 ? '' : 's'}: {(member.groups || []).map((assignedGroup) => assignedGroup.name).join(', ') || 'None'}
-                                  </p>
-                                </div>
-
-                                {canManageMembership ? (
-                                  <div className="grid min-w-full gap-3 xl:min-w-[22rem]">
-                                    <SelectInput
-                                      aria-label={`Move ${member.name} to another department`}
-                                      value={memberMoveDrafts[moveKey] || ''}
-                                      onChange={(event) => setMemberMoveDrafts((current) => ({ ...current, [moveKey]: event.target.value }))}
-                                      disabled={groups.length <= 1 || syncMembershipMutation.isPending}
-                                    >
-                                      <option value="">{groups.length <= 1 ? 'Create another department first' : 'Move member to another department'}</option>
-                                      {groups.filter((targetGroup) => targetGroup.id !== group.id).map((targetGroup) => (
-                                        <option key={targetGroup.id} value={targetGroup.id}>
-                                          {targetGroup.name}
-                                        </option>
-                                      ))}
-                                    </SelectInput>
-                                    <div className="flex flex-wrap gap-2 sm:justify-end">
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        iconLeft={<ArrowRightLeft className="h-4 w-4" />}
-                                        aria-label={`Move ${member.name}`}
-                                        disabled={!memberMoveDrafts[moveKey] || syncMembershipMutation.isPending}
-                                        onClick={() => handleMoveEmployeeToGroup(member, group)}
-                                      >
-                                        {syncMembershipMutation.isPending ? 'Moving...' : 'Move'}
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        iconLeft={<Trash2 className="h-4 w-4" />}
-                                        aria-label={`Remove ${member.name} from ${group.name}`}
-                                        className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                                        disabled={(member.groups || []).length <= 1 || syncMembershipMutation.isPending}
-                                        onClick={() => handleRemoveEmployeeFromGroup(member, group)}
-                                      >
-                                        {syncMembershipMutation.isPending ? 'Removing...' : 'Remove'}
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
-                                    {member.role === 'manager'
-                                      ? 'Only admins can move or remove managers here.'
-                                      : 'Move action is available for employees here.'}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </SurfaceCard>
-      ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {STATUS_OPTIONS.map((section) => (
@@ -933,18 +393,6 @@ export default function Tasks() {
                 <div>
                   <div className="mb-1.5 flex items-center justify-between gap-3">
                     <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Department</label>
-                    {canCreateGroups ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGroupModalSource('task-form');
-                          setShowGroupModal(true);
-                        }}
-                        className="text-xs font-semibold text-sky-600 transition hover:text-sky-700"
-                      >
-                        + Create new department
-                      </button>
-                    ) : null}
                   </div>
                   {isManagerWithSingleGroup ? (
                     <div className="min-h-11 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700">
@@ -1051,19 +499,6 @@ export default function Tasks() {
           </div>
         </div>
       ) : null}
-
-      <QuickCreateGroupDialog
-        open={showGroupModal}
-        onClose={() => setShowGroupModal(false)}
-        onCreated={(group) => {
-          if (groupModalSource === 'task-form') {
-            setTaskForm((current) => ({ ...current, group_id: String(group.id) }));
-          }
-        }}
-        title="Create a department without leaving tasks"
-        eyebrow="Department quick add"
-        description="Add the new department here and it will be available immediately in the task form."
-      />
 
       {projectProgressRows.length > 0 ? (
         <SurfaceCard className="mt-6">

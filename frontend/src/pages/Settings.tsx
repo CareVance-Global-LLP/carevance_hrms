@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
-import { productivityRuleApi, settingsApi, supportApi } from '@/services/api';
+import { employeeWorkspaceApi, productivityRuleApi, settingsApi, supportApi } from '@/services/api';
 import type { ProductivityRule as ProductivityRuleType } from '@/types';
 import { User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -52,6 +52,43 @@ type LeaveCategorySetting = {
   name: string;
   annual_quota: string;
 };
+
+type PersonalDetailsForm = {
+  first_name: string;
+  last_name: string;
+  gender: string;
+  date_of_birth: string;
+  phone: string;
+  personal_email: string;
+  address_line: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  emergency_contact_name: string;
+  emergency_contact_number: string;
+  emergency_contact_relationship: string;
+};
+
+const createEmptyPersonalDetailsForm = (): PersonalDetailsForm => ({
+  first_name: '',
+  last_name: '',
+  gender: '',
+  date_of_birth: '',
+  phone: '',
+  personal_email: '',
+  address_line: '',
+  city: '',
+  state: '',
+  postal_code: '',
+  emergency_contact_name: '',
+  emergency_contact_number: '',
+  emergency_contact_relationship: '',
+});
+
+const labelize = (value: string) =>
+  value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const DEFAULT_LEAVE_CATEGORIES: LeaveCategorySetting[] = [
   { code: 'paid', name: 'Paid Leave', annual_quota: '21' },
@@ -120,6 +157,8 @@ export default function SettingsPage() {
   const [profileAvatar, setProfileAvatar] = useState(user?.avatar || '');
   const [profileAvatarFile, setProfileAvatarFile] = useState<File | null>(null);
   const [profileAvatarPreview, setProfileAvatarPreview] = useState(user?.avatar || '');
+  const [personalDetailsForm, setPersonalDetailsForm] = useState<PersonalDetailsForm>(createEmptyPersonalDetailsForm());
+  const [isLoadingPersonalDetails, setIsLoadingPersonalDetails] = useState(false);
 
   const [orgName, setOrgName] = useState(organization?.name || '');
   const [orgSlug, setOrgSlug] = useState(organization?.slug || '');
@@ -289,6 +328,44 @@ export default function SettingsPage() {
     load();
   }, [isEmployee, user]);
 
+  useEffect(() => {
+    const currentUserId = Number(user?.id || 0);
+    if (!currentUserId) {
+      setPersonalDetailsForm(createEmptyPersonalDetailsForm());
+      setIsLoadingPersonalDetails(false);
+      return;
+    }
+
+    const loadPersonalDetails = async () => {
+      setIsLoadingPersonalDetails(true);
+      try {
+        const response = await employeeWorkspaceApi.getWorkspace(currentUserId);
+        const about = (response.data as any)?.about || {};
+        setPersonalDetailsForm({
+          first_name: about.first_name || '',
+          last_name: about.last_name || '',
+          gender: about.gender || '',
+          date_of_birth: String(about.date_of_birth || '').slice(0, 10),
+          phone: about.phone || '',
+          personal_email: about.personal_email || '',
+          address_line: about.address_line || '',
+          city: about.city || '',
+          state: about.state || '',
+          postal_code: about.postal_code || '',
+          emergency_contact_name: about.emergency_contact_name || '',
+          emergency_contact_number: about.emergency_contact_number || '',
+          emergency_contact_relationship: about.emergency_contact_relationship || '',
+        });
+      } catch {
+        setPersonalDetailsForm(createEmptyPersonalDetailsForm());
+      } finally {
+        setIsLoadingPersonalDetails(false);
+      }
+    };
+
+    void loadPersonalDetails();
+  }, [user?.id]);
+
   const handleTabChange = (nextTab: string) => {
     setActiveTab(nextTab);
     if (location.search) {
@@ -341,6 +418,7 @@ export default function SettingsPage() {
       const name = profileName.trim();
       const email = profileEmail.trim();
       const avatar = profileAvatar.trim() || null;
+      const currentUserId = Number(user?.id || 0);
       const payload = profileAvatarFile
         ? (() => {
             const formData = new FormData();
@@ -357,7 +435,14 @@ export default function SettingsPage() {
             ...(canEditEmail ? { email } : {}),
           };
 
-      const res = await settingsApi.updateProfile(payload);
+      const [profileResponse, personalDetailsResponse] = await Promise.all([
+        settingsApi.updateProfile(payload),
+        currentUserId > 0
+          ? employeeWorkspaceApi.updateProfile(currentUserId, personalDetailsForm)
+          : Promise.resolve(null),
+      ]);
+
+      const res = profileResponse;
       const updated = (res.data as any)?.user;
       if (updated) {
         updateUser(updated);
@@ -365,7 +450,11 @@ export default function SettingsPage() {
         setProfileAvatarPreview(resolveMediaUrl(updated.avatar || ''));
       }
       setProfileAvatarFile(null);
-      setMessage((res.data as any)?.message || 'Profile updated');
+      setMessage(
+        (personalDetailsResponse as any)?.data?.message ||
+        (res.data as any)?.message ||
+        'Profile updated'
+      );
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to update profile');
     }
@@ -672,7 +761,43 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
-              <Button onClick={saveProfile}>Save Changes</Button>
+
+              <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-base font-semibold text-slate-900">Personal Details</h3>
+                <p className="mt-1 text-sm text-slate-500">Add or update your personal information here anytime, even if you skipped details earlier.</p>
+
+                {isLoadingPersonalDetails ? (
+                  <p className="mt-3 text-sm text-slate-500">Loading your personal details...</p>
+                ) : (
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {Object.keys(personalDetailsForm).map((key) => (
+                      <div key={key}>
+                        <FieldLabel>{labelize(key)}</FieldLabel>
+                        {key === 'gender' ? (
+                          <SelectInput
+                            value={personalDetailsForm[key as keyof PersonalDetailsForm]}
+                            onChange={(event) => setPersonalDetailsForm((current) => ({ ...current, [key]: event.target.value }))}
+                          >
+                            <option value="">Select gender</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                            <option value="prefer_not_to_say">Prefer not to say</option>
+                          </SelectInput>
+                        ) : (
+                          <TextInput
+                            type={key.includes('date') ? 'date' : key.includes('email') ? 'email' : 'text'}
+                            value={personalDetailsForm[key as keyof PersonalDetailsForm]}
+                            onChange={(event) => setPersonalDetailsForm((current) => ({ ...current, [key]: event.target.value }))}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Button onClick={saveProfile} disabled={isLoadingPersonalDetails || !user?.id}>Save Changes</Button>
             </div>
           )}
 

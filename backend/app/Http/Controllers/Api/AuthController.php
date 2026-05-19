@@ -70,7 +70,7 @@ class AuthController extends Controller
                 'owner_user_id' => $user->id,
             ])->save();
 
-            $user->load(['organization', 'groups']);
+            $user->load(['organization', 'groups', 'employeeProfile']);
 
             $this->auditLogService->log(
                 action: 'auth.owner_signup',
@@ -125,7 +125,7 @@ class AuthController extends Controller
             'auth-token',
             $this->getApiAuthTokenMinutes($remember)
         );
-        $user->load(['organization', 'groups']);
+        $user->load(['organization', 'groups', 'employeeProfile']);
 
         $this->auditLogService->log(
             action: 'auth.login',
@@ -183,7 +183,7 @@ class AuthController extends Controller
         }
 
         $user->load('organization');
-        $user->loadMissing('groups');
+        $user->loadMissing(['groups', 'employeeProfile']);
 
         return $this->successResponse($user->toArray());
     }
@@ -240,7 +240,7 @@ class AuthController extends Controller
         }
 
         $token = $this->apiTokenService->issue($user, 'web-handoff-token');
-        $user->load(['organization', 'groups']);
+        $user->load(['organization', 'groups', 'employeeProfile']);
 
         return $this->successResponse([
             'user' => $user,

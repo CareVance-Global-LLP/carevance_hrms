@@ -32,7 +32,7 @@ class EmployeeWorkspaceController extends Controller
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
-        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
+        if (!$currentUser || !$employee || !$this->canEditProfile($currentUser, $employee)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -248,5 +248,10 @@ class EmployeeWorkspaceController extends Controller
         }
 
         return $employee->groups()->whereIn('groups.id', $groupIds)->exists();
+    }
+
+    private function canEditProfile(User $actor, User $employee): bool
+    {
+        return $actor->id === $employee->id;
     }
 }
