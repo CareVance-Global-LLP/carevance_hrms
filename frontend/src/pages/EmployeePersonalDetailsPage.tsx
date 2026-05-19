@@ -31,7 +31,6 @@ export default function EmployeePersonalDetailsPage() {
     setAboutForm({
       first_name: workspaceQuery.data.about?.first_name || '',
       last_name: workspaceQuery.data.about?.last_name || '',
-      display_name: workspaceQuery.data.about?.display_name || '',
       gender: workspaceQuery.data.about?.gender || '',
       date_of_birth: String(workspaceQuery.data.about?.date_of_birth || '').slice(0, 10),
       phone: workspaceQuery.data.about?.phone || '',
@@ -74,7 +73,6 @@ export default function EmployeePersonalDetailsPage() {
   const summaryFields = [
     { label: 'First Name', value: data.about?.first_name },
     { label: 'Last Name', value: data.about?.last_name },
-    { label: 'Display Name', value: data.about?.display_name },
     { label: 'Gender', value: data.about?.gender },
     { label: 'Date of Birth', value: data.about?.date_of_birth },
     { label: 'Phone', value: data.about?.phone },

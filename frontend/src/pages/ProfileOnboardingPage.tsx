@@ -12,7 +12,6 @@ import type { EmployeeProfileDetails } from '@/types';
 type ProfileForm = {
   first_name: string;
   last_name: string;
-  display_name: string;
   gender: string;
   date_of_birth: string;
   phone: string;
@@ -29,7 +28,6 @@ type ProfileForm = {
 const createEmptyForm = (): ProfileForm => ({
   first_name: '',
   last_name: '',
-  display_name: '',
   gender: '',
   date_of_birth: '',
   phone: '',
@@ -46,7 +44,6 @@ const createEmptyForm = (): ProfileForm => ({
 const normalizeProfile = (profile?: EmployeeProfileDetails | null): ProfileForm => ({
   first_name: String(profile?.first_name || ''),
   last_name: String(profile?.last_name || ''),
-  display_name: String(profile?.display_name || ''),
   gender: String(profile?.gender || ''),
   date_of_birth: String(profile?.date_of_birth || '').slice(0, 10),
   phone: String(profile?.phone || ''),
@@ -84,7 +81,6 @@ export default function ProfileOnboardingPage() {
         ...current,
         first_name: current.first_name || firstName,
         last_name: current.last_name || rest.join(' '),
-        display_name: current.display_name || user.name,
         personal_email: current.personal_email || String(user.email || ''),
       }));
     }
@@ -169,7 +165,6 @@ export default function ProfileOnboardingPage() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div><FieldLabel>First Name</FieldLabel><TextInput value={form.first_name} onChange={(event) => setForm((current) => ({ ...current, first_name: event.target.value }))} required /></div>
                 <div><FieldLabel>Last Name</FieldLabel><TextInput value={form.last_name} onChange={(event) => setForm((current) => ({ ...current, last_name: event.target.value }))} required /></div>
-                <div><FieldLabel>Display Name</FieldLabel><TextInput value={form.display_name} onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))} required /></div>
                 <div>
                   <FieldLabel>Gender</FieldLabel>
                   <SelectInput value={form.gender} onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))} required>
