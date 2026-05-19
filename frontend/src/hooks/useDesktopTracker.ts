@@ -89,6 +89,7 @@ const formatIdleDurationLabel = (seconds: number) => {
 };
 
 const IDLE_AUTO_STOP_MESSAGE = `You were idle for ${formatIdleDurationLabel(IDLE_AUTO_STOP_THRESHOLD_SECONDS)}, so your timer was stopped.`;
+const LOCK_SCREEN_AUTO_STOP_MESSAGE = 'Your timer was stopped because your device was locked.';
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
   'mousemove',
   'mousedown',
@@ -346,6 +347,7 @@ export const useDesktopTracker = () => {
   const browserTrackingRealtimeSeenRef = useRef(false);
   const systemLockedAtMsRef = useRef<number | null>(null);
   const lockAutoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lockScreenAutoStopRevealPendingRef = useRef(false);
 
   const clearLockAutoStopTimeout = () => {
     if (lockAutoStopTimeoutRef.current !== null) {
@@ -436,6 +438,7 @@ export const useDesktopTracker = () => {
       lastReliableTrackingContextRef.current = null;
       pendingTrackedSecondsRef.current = 0;
       systemLockedAtMsRef.current = null;
+      lockScreenAutoStopRevealPendingRef.current = false;
       return;
     }
 
@@ -468,6 +471,7 @@ export const useDesktopTracker = () => {
     idleStopBlockedUntilMsRef.current = 0;
     lastReliableTrackingContextRef.current = null;
     pendingTrackedSecondsRef.current = 0;
+    lockScreenAutoStopRevealPendingRef.current = false;
 
     const syncScreenshotInterval = (timeEntryId: number | null) => {
       if (activeScreenshotEntryIdRef.current === timeEntryId) {
@@ -1126,6 +1130,61 @@ export const useDesktopTracker = () => {
       return true;
     };
 
+    const attemptLockScreenAutoStop = async (activeEntry: TimeEntry, lockedAtMs: number) => {
+      const now = Date.now();
+      if (
+        lastAutoStoppedEntryIdRef.current === activeEntry.id
+        || idleStopInFlightRef.current
+        || now < idleStopBlockedUntilMsRef.current
+      ) {
+        return false;
+      }
+
+      idleStopInFlightRef.current = true;
+
+      try {
+        await timeEntryApi.stop({
+          timer_slot: 'primary',
+        });
+        lastAutoStoppedEntryIdRef.current = activeEntry.id;
+      } catch (error: any) {
+        const status = error?.response?.status;
+        if (status === 404) {
+          activeSegmentRef.current = null;
+          activeEntryRef.current = null;
+          pendingIdleRewindRef.current.clear();
+          pendingTrackedSecondsRef.current = 0;
+          syncScreenshotInterval(null);
+          idleStopBlockedUntilMsRef.current = 0;
+          return true;
+        }
+
+        throw error;
+      } finally {
+        idleStopInFlightRef.current = false;
+      }
+
+      activeSegmentRef.current = null;
+      activeEntryRef.current = null;
+      pendingIdleRewindRef.current.clear();
+      pendingTrackedSecondsRef.current = 0;
+      syncScreenshotInterval(null);
+      idleStopBlockedUntilMsRef.current = 0;
+
+      if (userId) {
+        suppressAutoStart(userId);
+        setIdleAutoStopNotice(userId, LOCK_SCREEN_AUTO_STOP_MESSAGE);
+        emitDesktopTimerIdleStop({
+          userId,
+          message: LOCK_SCREEN_AUTO_STOP_MESSAGE,
+        });
+      }
+
+      lockScreenAutoStopRevealPendingRef.current = true;
+      systemLockedAtMsRef.current = lockedAtMs;
+      return true;
+    };
+
     const tick = async () => {
       if (inFlight || !isCurrentRun()) return;
       const now = Date.now();
@@ -1360,22 +1419,19 @@ export const useDesktopTracker = () => {
       await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt);
     };
 
-    const scheduleLockAutoStopGuard = () => {
-      clearLockAutoStopTimeout();
-      lockAutoStopTimeoutRef.current = setTimeout(() => {
-        lockAutoStopTimeoutRef.current = null;
-        void runIdleGuard();
-      }, IDLE_AUTO_STOP_THRESHOLD_SECONDS * 1000);
-    };
-
     const applySystemLockState = async (payload?: DesktopSystemLockState | null) => {
       const lockedAt = payload?.locked_at ? Date.parse(payload.locked_at) : NaN;
       const recordedAt = payload?.recorded_at ? Date.parse(payload.recorded_at) : NaN;
       const isLocked = Boolean(payload?.locked || payload?.state === 'locked' || payload?.state === 'suspended');
 
       if (isLocked) {
-        systemLockedAtMsRef.current = Number.isFinite(lockedAt) ? lockedAt : Date.now();
-        scheduleLockAutoStopGuard();
+        const resolvedLockedAtMs = Number.isFinite(lockedAt) ? lockedAt : Date.now();
+        systemLockedAtMsRef.current = resolvedLockedAtMs;
+        clearLockAutoStopTimeout();
+        const activeEntry = activeEntryRef.current || await getOrLoadActiveEntry();
+        if (activeEntry?.id) {
+          await attemptLockScreenAutoStop(activeEntry, resolvedLockedAtMs);
+        }
         await runIdleGuard();
         return;
       }
@@ -1393,6 +1449,13 @@ export const useDesktopTracker = () => {
       }
       systemLockedAtMsRef.current = null;
       clearLockAutoStopTimeout();
+
+      if (lockScreenAutoStopRevealPendingRef.current) {
+        lockScreenAutoStopRevealPendingRef.current = false;
+        if (typeof desktopApi?.revealWindow === 'function') {
+          await desktopApi.revealWindow();
+        }
+      }
     };
 
     const captureScreenshotOnInterval = async () => {
@@ -1584,6 +1647,7 @@ export const useDesktopTracker = () => {
       pendingTrackedSecondsRef.current = 0;
       activeScreenshotEntryIdRef.current = null;
       systemLockedAtMsRef.current = null;
+      lockScreenAutoStopRevealPendingRef.current = false;
       idleStopInFlightRef.current = false;
       idleStopBlockedUntilMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
