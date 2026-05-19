@@ -16,6 +16,7 @@ export interface User {
   total_duration?: number;
   total_elapsed_duration?: number;
   settings?: Record<string, any>;
+  employee_profile?: EmployeeProfileDetails | null;
   groups?: Group[];
   created_at: string;
   updated_at: string;

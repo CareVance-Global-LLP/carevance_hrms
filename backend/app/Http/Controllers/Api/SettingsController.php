@@ -8,6 +8,8 @@ use App\Http\Requests\Api\Settings\UpdateOrganizationRequest;
 use App\Http\Requests\Api\Settings\UpdatePasswordRequest as UpdatePasswordFormRequest;
 use App\Http\Requests\Api\Settings\UpdatePreferencesRequest;
 use App\Http\Requests\Api\Settings\UpdateProfileRequest;
+use App\Models\EmployeeProfile;
+use App\Models\User;
 use App\Services\Audit\AuditLogService;
 use App\Services\Billing\WorkspaceBillingService;
 use Carbon\Carbon;
@@ -58,13 +60,102 @@ class SettingsController extends Controller
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-        $user->load('organization');
+        $user->load(['organization', 'employeeProfile']);
 
         return $this->successResponse([
             'user' => $user,
             'organization' => $user->organization,
             'can_manage_org' => $this->canManageOrg($user),
+            'employee_profile' => $user->employeeProfile,
+            'profile_onboarding_completed' => $this->isProfileOnboardingComplete($user),
+            'profile_onboarding_skipped' => $this->isProfileOnboardingSkipped($user),
         ]);
+    }
+
+    public function updateOnboardingProfile(Request $request)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $validated = $request->validate([
+            'first_name' => 'required|string|max:120',
+            'last_name' => 'required|string|max:120',
+            'display_name' => 'required|string|max:120',
+            'gender' => 'required|string|max:32',
+            'date_of_birth' => 'required|date',
+            'phone' => 'required|string|max:64',
+            'personal_email' => 'required|email',
+            'address_line' => 'required|string|max:255',
+            'city' => 'required|string|max:120',
+            'state' => 'required|string|max:120',
+            'postal_code' => 'required|string|max:32',
+            'emergency_contact_name' => 'required|string|max:120',
+            'emergency_contact_number' => 'required|string|max:64',
+            'emergency_contact_relationship' => 'required|string|max:120',
+        ]);
+
+        $profile = EmployeeProfile::query()->firstOrNew([
+            'organization_id' => $user->organization_id,
+            'user_id' => $user->id,
+        ]);
+
+        $profile->fill($validated);
+        $profile->organization_id = $user->organization_id;
+        $profile->user_id = $user->id;
+        $profile->save();
+
+        $settings = is_array($user->settings) ? $user->settings : [];
+        $settings['profile_onboarding_completed'] = true;
+        $settings['profile_onboarding_completed_at'] = now()->toIso8601String();
+        $user->settings = $settings;
+        $user->save();
+
+        $this->auditLogService->log(
+            action: 'settings.profile_onboarding_completed',
+            actor: $user,
+            target: $user,
+            metadata: [
+                'changed_fields' => array_keys($validated),
+            ],
+            request: $request
+        );
+
+        return $this->updatedResponse([
+            'message' => 'Profile details saved successfully.',
+            'user' => $user->fresh(['organization', 'employeeProfile']),
+            'employee_profile' => $profile->fresh(),
+            'profile_onboarding_completed' => true,
+        ], 'Profile details saved successfully.');
+    }
+
+    public function skipOnboardingProfile(Request $request)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $settings = is_array($user->settings) ? $user->settings : [];
+        $settings['profile_onboarding_skipped'] = true;
+        $settings['profile_onboarding_skipped_at'] = now()->toIso8601String();
+        $user->settings = $settings;
+        $user->save();
+
+        $this->auditLogService->log(
+            action: 'settings.profile_onboarding_skipped',
+            actor: $user,
+            target: $user,
+            metadata: [],
+            request: $request
+        );
+
+        return $this->updatedResponse([
+            'message' => 'Profile setup skipped for now.',
+            'user' => $user->fresh(['organization', 'employeeProfile']),
+            'profile_onboarding_skipped' => true,
+        ], 'Profile setup skipped for now.');
     }
 
     public function updateProfile(UpdateProfileRequest $request)
@@ -395,5 +486,51 @@ class SettingsController extends Controller
     private function canManageOrg($user): bool
     {
         return in_array($user->role, ['admin', 'manager'], true);
+    }
+
+    private function isProfileOnboardingComplete(User $user): bool
+    {
+        $settings = is_array($user->settings) ? $user->settings : [];
+        if (! empty($settings['profile_onboarding_completed'])) {
+            return true;
+        }
+
+        $profile = $user->employeeProfile;
+        if (! $profile) {
+            return false;
+        }
+
+        $requiredFields = [
+            'first_name',
+            'last_name',
+            'display_name',
+            'gender',
+            'date_of_birth',
+            'phone',
+            'personal_email',
+            'address_line',
+            'city',
+            'state',
+            'postal_code',
+            'emergency_contact_name',
+            'emergency_contact_number',
+            'emergency_contact_relationship',
+        ];
+
+        foreach ($requiredFields as $field) {
+            $value = data_get($profile, $field);
+            if ($value === null || trim((string) $value) === '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function isProfileOnboardingSkipped(User $user): bool
+    {
+        $settings = is_array($user->settings) ? $user->settings : [];
+
+        return ! empty($settings['profile_onboarding_skipped']);
     }
 }

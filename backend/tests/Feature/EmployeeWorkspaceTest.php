@@ -100,6 +100,13 @@ class EmployeeWorkspaceTest extends TestCase
             ->putJson("/api/employees/{$employee->id}/profile", [
                 'first_name' => 'Ava',
                 'last_name' => 'Sharma',
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($employee)
+            ->putJson("/api/employees/{$employee->id}/profile", [
+                'first_name' => 'Ava',
+                'last_name' => 'Sharma',
                 'display_name' => 'Ava Sharma',
                 'gender' => 'female',
                 'phone' => '9999999999',

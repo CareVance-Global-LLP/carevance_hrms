@@ -3,13 +3,14 @@ import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
+import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
-import { KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
+import { ArrowRightLeft, Building2, KeyRound, MailPlus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserPlus, UserPlus2, UserRound, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 type EmployeeDirectorySort = 'default' | 'name_asc' | 'tracked_desc' | 'working_first';
@@ -125,6 +126,25 @@ const resolveEmployeeDepartment = (user: any) =>
     || 'Unassigned'
   ).trim() || 'Unassigned';
 
+const piePalette = ['#2563eb', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6'];
+
+const polarToCartesian = (cx: number, cy: number, radius: number, angleInDegrees: number) => {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
+  return {
+    x: cx + radius * Math.cos(angleInRadians),
+    y: cy + radius * Math.sin(angleInRadians),
+  };
+};
+
+const describeArc = (cx: number, cy: number, radius: number, startAngle: number, endAngle: number) => {
+  const start = polarToCartesian(cx, cy, radius, endAngle);
+  const end = polarToCartesian(cx, cy, radius, startAngle);
+  const angleDelta = Math.min(359.999, Math.max(0.001, endAngle - startAngle));
+  const largeArcFlag = angleDelta <= 180 ? '0' : '1';
+
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
+};
+
 const monitoringIntervalOptions = [
   { value: 1, label: 'Every 1 minute' },
   { value: 3, label: 'Every 3 minutes' },
@@ -192,15 +212,22 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [directoryFilterUserId, setDirectoryFilterUserId] = useState<number | ''>('');
   const [directoryDepartmentFilter, setDirectoryDepartmentFilter] = useState('All departments');
   const [directorySort, setDirectorySort] = useState<EmployeeDirectorySort>('default');
-  const [groupName, setGroupName] = useState('');
-  const [groupMembers, setGroupMembers] = useState<number[]>([]);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [groupDirectoryQuery, setGroupDirectoryQuery] = useState('');
+  const [groupDirectoryFilter, setGroupDirectoryFilter] = useState('all');
+  const [memberDrafts, setMemberDrafts] = useState<Record<number, string>>({});
+  const [memberMoveDrafts, setMemberMoveDrafts] = useState<Record<string, string>>({});
+  const [deletingGroupId, setDeletingGroupId] = useState<number | null>(null);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee'>('employee');
   const [roleSearchQuery, setRoleSearchQuery] = useState('');
   const [settingsUserId, setSettingsUserId] = useState<number | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<EmployeeSettingsDraft | null>(null);
+  const [activeTeamId, setActiveTeamId] = useState<number | null>(null);
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const settingsPanelRef = useRef<HTMLDivElement | null>(null);
+  const teamDetailRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const pendingSettingsScrollUserIdRef = useRef<number | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
   const canManageDirectoryRoles = hasAdminAccess(user);
@@ -324,21 +351,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || error?.message || 'Failed to send invitation.' });
-    },
-  });
-
-  const createGroupMutation = useMutation({
-    mutationFn: async () => {
-      await reportGroupApi.create({ name: groupName.trim(), user_ids: groupMembers });
-    },
-    onSuccess: async () => {
-      setGroupName('');
-      setGroupMembers([]);
-      setFeedback({ tone: 'success', message: 'Team created successfully.' });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace-groups'] });
-    },
-    onError: (error: any) => {
-      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to create team.' });
     },
   });
 
@@ -474,6 +486,236 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     );
   }, [roleSearchQuery, users]);
 
+  const canCreateGroups = user?.role === 'admin';
+  const canManageDepartments = user?.role === 'admin' || user?.role === 'manager';
+  const internalUsers = useMemo(
+    () => users.filter((member: any) => member.role !== 'client'),
+    [users]
+  );
+  const hasDirectorySearch = groupDirectoryQuery.trim().length > 0;
+  const hasDirectorySelection = groupDirectoryFilter !== 'all';
+  const shouldShowDirectoryResults = hasDirectorySearch || hasDirectorySelection;
+  const filteredDirectoryGroups = useMemo(() => {
+    if (!shouldShowDirectoryResults) {
+      return [];
+    }
+
+    const needle = groupDirectoryQuery.trim().toLowerCase();
+
+    return groups.filter((group: any) => {
+      const matchesSelectedGroup = groupDirectoryFilter === 'all' || String(group.id) === groupDirectoryFilter;
+      if (!matchesSelectedGroup) return false;
+
+      if (!needle) return true;
+
+      const searchable = [group.name, group.description]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return searchable.includes(needle);
+    });
+  }, [groupDirectoryFilter, groupDirectoryQuery, groups, shouldShowDirectoryResults]);
+
+  const findUserById = (userId: number) => users.find((candidate: any) => Number(candidate.id) === Number(userId));
+  const canManageGroupMember = (member: any) => member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
+  const isEligibleForDirectGroupAdd = (member: any) => canManageGroupMember(member) && (member.groups || []).length === 0;
+
+  const syncMembershipMutation = useMutation({
+    mutationFn: async ({ userId, groupIds, successMessage }: { userId: number; groupIds: number[]; successMessage: string }) => {
+      await userApi.update(userId, { group_ids: groupIds });
+      return successMessage;
+    },
+    onSuccess: async (message) => {
+      setFeedback({ tone: 'success', message });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-groups'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+      ]);
+    },
+    onError: (error: any) => {
+      const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
+      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to update department membership.') });
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (group: any) => {
+      await reportGroupApi.delete(group.id);
+      return group;
+    },
+    onMutate: (group) => {
+      setDeletingGroupId(group.id);
+    },
+    onSuccess: async (group) => {
+      setFeedback({ tone: 'success', message: `${group.name} was deleted.` });
+      setGroupDirectoryFilter((current) => (current === String(group.id) ? 'all' : current));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-groups'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+      ]);
+    },
+    onError: (error: any) => {
+      const fieldError = Object.values(error?.response?.data?.errors || {}).flat().find(Boolean);
+      setFeedback({ tone: 'error', message: String(fieldError || error?.response?.data?.message || 'Failed to delete department.') });
+    },
+    onSettled: () => {
+      setDeletingGroupId(null);
+    },
+  });
+
+  const handleAddMemberToGroup = (group: any) => {
+    const selectedUserId = Number(memberDrafts[group.id] || 0);
+    if (!selectedUserId) {
+      setFeedback({ tone: 'error', message: `Select one eligible member to add into ${group.name}.` });
+      return;
+    }
+
+    const member = findUserById(selectedUserId);
+    if (!member || !canManageGroupMember(member)) {
+      setFeedback({ tone: 'error', message: 'Selected member could not be found.' });
+      return;
+    }
+
+    const nextGroupIds = Array.from(new Set([...(member.groups || []).map((currentGroup: any) => currentGroup.id), group.id]));
+    syncMembershipMutation.mutate({
+      userId: member.id,
+      groupIds: nextGroupIds,
+      successMessage: `${member.name} was added to ${group.name}.`,
+    });
+    setMemberDrafts((current) => ({ ...current, [group.id]: '' }));
+  };
+
+  const handleMoveEmployeeToGroup = (member: any, currentGroup: any) => {
+    const draftKey = `${currentGroup.id}:${member.id}`;
+    const selectedTargetId = Number(memberMoveDrafts[draftKey] || 0);
+    if (!selectedTargetId || selectedTargetId === currentGroup.id) {
+      setFeedback({ tone: 'error', message: 'Choose a different department before moving this employee.' });
+      return;
+    }
+
+    const targetGroup = groups.find((group: any) => Number(group.id) === selectedTargetId);
+    if (!targetGroup) {
+      setFeedback({ tone: 'error', message: 'Selected destination department could not be found.' });
+      return;
+    }
+
+    syncMembershipMutation.mutate({
+      userId: member.id,
+      groupIds: [targetGroup.id],
+      successMessage: `${member.name} was moved to ${targetGroup.name}.`,
+    });
+    setMemberMoveDrafts((current) => ({ ...current, [draftKey]: '' }));
+  };
+
+  const handleRemoveEmployeeFromGroup = (member: any, currentGroup: any) => {
+    const currentGroupIds = (member.groups || []).map((assignedGroup: any) => assignedGroup.id);
+    const nextGroupIds = currentGroupIds.filter((groupId: number) => groupId !== currentGroup.id);
+    if (nextGroupIds.length === 0) {
+      setFeedback({
+        tone: 'error',
+        message: `${member.name} is currently only in ${currentGroup.name}. Move to another department before removing this membership.`,
+      });
+      return;
+    }
+
+    syncMembershipMutation.mutate({
+      userId: member.id,
+      groupIds: nextGroupIds,
+      successMessage: `${member.name} was removed from ${currentGroup.name}.`,
+    });
+  };
+
+  const handleDeleteGroup = (group: any) => {
+    if (!confirm(`Delete "${group.name}"? Members will be detached and tasks in this department will become unassigned.`)) {
+      return;
+    }
+
+    deleteGroupMutation.mutate(group);
+  };
+
+  const teamInsights = useMemo(() => {
+    return groups.map((group: any, index: number) => {
+      const teamUsers = Array.isArray(group?.users) ? group.users : [];
+      const employeeCount = teamUsers.filter((member: any) => String(member?.role || '').toLowerCase() === 'employee').length;
+      const manager = teamUsers.find((member: any) => {
+        const role = String(member?.role || '').toLowerCase();
+        return role === 'manager' || role === 'admin';
+      }) || null;
+
+      return {
+        id: Number(group.id),
+        name: String(group.name || 'Department'),
+        description: String(group.description || '').trim(),
+        users: teamUsers,
+        employeeCount,
+        membersCount: teamUsers.length,
+        managerName: manager?.name || 'Not assigned',
+        managerEmail: manager?.email || null,
+        color: piePalette[index % piePalette.length],
+      };
+    });
+  }, [groups]);
+
+  const totalDepartmentEmployees = useMemo(
+    () => teamInsights.reduce((sum, team) => sum + team.employeeCount, 0),
+    [teamInsights]
+  );
+  const managedDepartmentsCount = useMemo(
+    () => teamInsights.filter((team) => team.managerName !== 'Not assigned').length,
+    [teamInsights]
+  );
+  const avgEmployeesPerDepartment = useMemo(
+    () => teamInsights.length ? (totalDepartmentEmployees / teamInsights.length).toFixed(1) : '0.0',
+    [teamInsights, totalDepartmentEmployees]
+  );
+
+  const pieSegments = useMemo(() => {
+    const values = teamInsights.map((team) => (team.employeeCount > 0 ? team.employeeCount : Math.max(1, team.membersCount)));
+    const total = values.reduce((sum, value) => sum + value, 0);
+    if (total <= 0) return [];
+
+    let currentAngle = 0;
+    return teamInsights.map((team, index) => {
+      const value = values[index];
+      const sweep = (value / total) * 360;
+      const startAngle = currentAngle;
+      const endAngle = startAngle + sweep;
+      currentAngle = endAngle;
+
+      return {
+        ...team,
+        startAngle,
+        endAngle,
+        percentage: Math.round((value / total) * 100),
+      };
+    });
+  }, [teamInsights]);
+
+  const highlightedTeamId = activeTeamId ?? selectedTeamId ?? pieSegments[0]?.id ?? null;
+  const highlightedTeam = pieSegments.find((team) => team.id === highlightedTeamId) || null;
+
+  const scrollToTeamDetail = (teamId: number) => {
+    setSelectedTeamId(teamId);
+    const element = teamDetailRefs.current[teamId];
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  useEffect(() => {
+    if (mode !== 'teams' || selectedTeamId === null) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const element = teamDetailRefs.current[selectedTeamId];
+      element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [mode, selectedTeamId]);
+
   useEffect(() => {
     if (!departmentOptions.includes(directoryDepartmentFilter)) {
       setDirectoryDepartmentFilter(departmentOptions[0] || 'All departments');
@@ -579,6 +821,10 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             <UserPlus className="h-4 w-4" />
             Add Employee
           </Link>
+        ) : mode === 'teams' && canCreateGroups ? (
+          <Button variant="secondary" iconLeft={<Building2 className="h-4 w-4" />} onClick={() => setShowGroupModal(true)}>
+            Add Department
+          </Button>
         ) : null}
       </header>
 
@@ -812,51 +1058,348 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       )}
 
       {mode === 'teams' && (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <SurfaceCard className="p-5">
-            <h2 className="text-lg font-semibold text-slate-950">Create Team / Department</h2>
-            <div className="mt-4 space-y-4">
-              <div>
-                <FieldLabel>Team Name</FieldLabel>
-                <TextInput value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Engineering" />
-              </div>
-              <div>
-                <FieldLabel>Members</FieldLabel>
-                <div className="max-h-56 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  {users.map((user: any) => (
-                    <label key={user.id} className="flex items-center gap-2 py-1.5 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={groupMembers.includes(user.id)}
-                        onChange={(event) =>
-                          setGroupMembers((current) =>
-                            event.target.checked ? [...current, user.id] : current.filter((value) => value !== user.id)
-                          )
-                        }
-                      />
-                      {user.name} ({user.email})
-                    </label>
-                  ))}
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Total Departments" value={teamInsights.length} hint="Active team groups" icon={Building2} accent="sky" />
+            <MetricCard label="Department Employees" value={totalDepartmentEmployees} hint="Employees in departments" icon={Users} accent="emerald" />
+            <MetricCard label="Managed Departments" value={managedDepartmentsCount} hint="Assigned manager/admin" icon={UserRound} accent="violet" />
+            <MetricCard label="Avg Employees/Dept" value={avgEmployeesPerDepartment} hint="Average headcount" icon={SlidersHorizontal} accent="amber" />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+            <SurfaceCard className="p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Department directory</p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">See every department and manage members from this page.</h2>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Add existing members into a department, move them across departments, or remove membership with complete control.</p>
                 </div>
               </div>
-              <Button onClick={() => createGroupMutation.mutate()} disabled={!groupName.trim() || createGroupMutation.isPending}>
-                Create Team
-              </Button>
+
+              <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,16rem)_auto] lg:items-end">
+                  <div>
+                    <FieldLabel>Search Department</FieldLabel>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <TextInput
+                        aria-label="Search department directory"
+                        value={groupDirectoryQuery}
+                        onChange={(event) => setGroupDirectoryQuery(event.target.value)}
+                        placeholder="Search department by name"
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Department Dropdown</FieldLabel>
+                    <SelectInput value={groupDirectoryFilter} onChange={(event) => setGroupDirectoryFilter(event.target.value)}>
+                      <option value="all">All departments</option>
+                      {groups.map((group: any) => (
+                        <option key={group.id} value={group.id}>{group.name}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setGroupDirectoryQuery('');
+                      setGroupDirectoryFilter('all');
+                    }}
+                  >
+                    Reset
+                  </Button>
+                </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  {shouldShowDirectoryResults
+                    ? `Showing ${filteredDirectoryGroups.length} of ${groups.length} department${groups.length === 1 ? '' : 's'}.`
+                    : 'Departments are hidden by default. Search by name or choose one department from the dropdown.'}
+                </p>
+              </div>
+
+              {groups.length === 0 ? (
+                <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No departments have been created yet.</div>
+              ) : !shouldShowDirectoryResults ? (
+                <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Search for a department name to view directory cards.</div>
+              ) : filteredDirectoryGroups.length === 0 ? (
+                <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">No departments match your search right now.</div>
+              ) : (
+                <div className="mt-6 grid grid-cols-1 gap-4">
+                  {filteredDirectoryGroups.map((group: any) => {
+                    const membersInGroup = (group.users || [])
+                      .map((member: any) => findUserById(member.id) || member)
+                      .filter((member: any) => Boolean(member) && member.role !== 'client');
+                    const addableMembers = internalUsers.filter((member: any) => isEligibleForDirectGroupAdd(member));
+
+                    return (
+                      <div key={group.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h3 className="text-xl font-semibold tracking-[-0.03em] text-slate-950">{group.name}</h3>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">{group.description || 'No department description yet.'}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                              <Users className="h-3.5 w-3.5" />
+                              {membersInGroup.length} member{membersInGroup.length === 1 ? '' : 's'}
+                            </span>
+                            {canCreateGroups ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                iconLeft={<Trash2 className="h-4 w-4" />}
+                                className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                disabled={deleteGroupMutation.isPending}
+                                onClick={() => handleDeleteGroup(group)}
+                              >
+                                {deletingGroupId === group.id ? 'Deleting...' : 'Delete Department'}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <FieldLabel>Add Existing Member</FieldLabel>
+                          <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                            <SelectInput
+                              value={memberDrafts[group.id] || ''}
+                              onChange={(event) => setMemberDrafts((current) => ({ ...current, [group.id]: event.target.value }))}
+                              disabled={addableMembers.length === 0 || syncMembershipMutation.isPending}
+                            >
+                              <option value="">{addableMembers.length === 0 ? 'No eligible members available' : 'Select member to add'}</option>
+                              {addableMembers.map((member: any) => (
+                                <option key={member.id} value={member.id}>{member.name} ({member.email})</option>
+                              ))}
+                            </SelectInput>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              iconLeft={<UserPlus2 className="h-4 w-4" />}
+                              disabled={!memberDrafts[group.id] || syncMembershipMutation.isPending || !canManageDepartments}
+                              onClick={() => handleAddMemberToGroup(group)}
+                            >
+                              {syncMembershipMutation.isPending ? 'Saving...' : 'Add Member'}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 space-y-3">
+                          {membersInGroup.length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">No members are assigned to this department yet.</div>
+                          ) : (
+                            membersInGroup.map((member: any) => {
+                              const moveKey = `${group.id}:${member.id}`;
+                              const canManageMembership = member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
+
+                              return (
+                                <div key={moveKey} className="rounded-lg border border-slate-200 bg-white p-4">
+                                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <p className="font-semibold text-slate-950">{member.name}</p>
+                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{String(member.role || '').replace('_', ' ')}</span>
+                                      </div>
+                                      <p className="mt-1 truncate text-sm text-slate-500">{member.email}</p>
+                                      <p className="mt-2 text-xs text-slate-500">
+                                        Current department{(member.groups || []).length === 1 ? '' : 's'}: {(member.groups || []).map((assignedGroup: any) => assignedGroup.name).join(', ') || 'None'}
+                                      </p>
+                                    </div>
+
+                                    {canManageMembership ? (
+                                      <div className="grid min-w-full gap-3 xl:min-w-[22rem]">
+                                        <SelectInput
+                                          value={memberMoveDrafts[moveKey] || ''}
+                                          onChange={(event) => setMemberMoveDrafts((current) => ({ ...current, [moveKey]: event.target.value }))}
+                                          disabled={groups.length <= 1 || syncMembershipMutation.isPending || !canManageDepartments}
+                                        >
+                                          <option value="">{groups.length <= 1 ? 'Create another department first' : 'Move member to another department'}</option>
+                                          {groups.filter((targetGroup: any) => targetGroup.id !== group.id).map((targetGroup: any) => (
+                                            <option key={targetGroup.id} value={targetGroup.id}>{targetGroup.name}</option>
+                                          ))}
+                                        </SelectInput>
+                                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            iconLeft={<ArrowRightLeft className="h-4 w-4" />}
+                                            disabled={!memberMoveDrafts[moveKey] || syncMembershipMutation.isPending || !canManageDepartments}
+                                            onClick={() => handleMoveEmployeeToGroup(member, group)}
+                                          >
+                                            {syncMembershipMutation.isPending ? 'Moving...' : 'Move'}
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            iconLeft={<Trash2 className="h-4 w-4" />}
+                                            className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                            disabled={(member.groups || []).length <= 1 || syncMembershipMutation.isPending || !canManageDepartments}
+                                            onClick={() => handleRemoveEmployeeFromGroup(member, group)}
+                                          >
+                                            {syncMembershipMutation.isPending ? 'Removing...' : 'Remove'}
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+                                        Only admins can move/remove managers.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </SurfaceCard>
+
+            <SurfaceCard className="p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">Existing Teams Distribution</h2>
+                  <p className="mt-1 text-sm text-slate-500">Hover a slice to preview manager and employee count. Click to jump to department details.</p>
+                </div>
+              </div>
+
+              {pieSegments.length === 0 ? (
+                <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                  No departments found yet.
+                </div>
+              ) : (
+                <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[19rem_minmax(0,1fr)]">
+                  <div className="mx-auto w-full max-w-[18rem]">
+                    <svg viewBox="0 0 220 220" className="h-full w-full">
+                      {pieSegments.length === 1 ? (
+                        <circle
+                          cx="110"
+                          cy="110"
+                          r="88"
+                          fill={pieSegments[0].color}
+                          stroke="white"
+                          strokeWidth={3}
+                          className="cursor-pointer transition-opacity"
+                          style={{ opacity: highlightedTeamId === null || highlightedTeamId === pieSegments[0].id ? 1 : 0.5 }}
+                          onMouseEnter={() => setActiveTeamId(pieSegments[0].id)}
+                          onMouseLeave={() => setActiveTeamId(null)}
+                          onClick={() => scrollToTeamDetail(pieSegments[0].id)}
+                        />
+                      ) : (
+                        pieSegments.map((team) => (
+                          <path
+                            key={team.id}
+                            d={describeArc(110, 110, 88, team.startAngle, team.endAngle)}
+                            fill={team.color}
+                            stroke="white"
+                            strokeWidth={3}
+                            className="cursor-pointer transition-opacity"
+                            style={{ opacity: highlightedTeamId === null || highlightedTeamId === team.id ? 1 : 0.5 }}
+                            onMouseEnter={() => setActiveTeamId(team.id)}
+                            onMouseLeave={() => setActiveTeamId(null)}
+                            onClick={() => scrollToTeamDetail(team.id)}
+                          />
+                        ))
+                      )}
+                      <circle cx="110" cy="110" r="43" fill="white" />
+                      <text x="110" y="104" textAnchor="middle" className="fill-slate-500 text-[11px] font-semibold uppercase tracking-[0.22em]">Teams</text>
+                      <text x="110" y="126" textAnchor="middle" className="fill-slate-900 text-[20px] font-semibold">{teamInsights.length}</text>
+                    </svg>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Hover summary</p>
+                      {highlightedTeam ? (
+                        <div className="mt-2 text-sm text-slate-700">
+                          <p className="font-semibold text-slate-900">{highlightedTeam.name}</p>
+                          <p className="mt-1">Employees: {highlightedTeam.employeeCount}</p>
+                          <p>Manager: {highlightedTeam.managerName}</p>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm text-slate-500">Hover a department slice to preview details.</p>
+                      )}
+                    </div>
+
+                    <div className="max-h-64 space-y-2 overflow-auto pr-1">
+                      {pieSegments.map((team) => (
+                        <button
+                          key={team.id}
+                          type="button"
+                          onClick={() => scrollToTeamDetail(team.id)}
+                          onMouseEnter={() => setActiveTeamId(team.id)}
+                          onMouseLeave={() => setActiveTeamId(null)}
+                          className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
+                            selectedTeamId === team.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: team.color }} />
+                            <p className="truncate text-sm font-medium text-slate-900">{team.name}</p>
+                          </div>
+                          <p className="text-xs font-semibold text-slate-500">{team.percentage}%</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </SurfaceCard>
+          </div>
+
+          <SurfaceCard className="p-5">
+            <h2 className="text-lg font-semibold text-slate-950">Department Details</h2>
+            <p className="mt-1 text-sm text-slate-500">Click any pie slice to view that department details here.</p>
+            <div className="mt-4 space-y-3">
+              {teamInsights.length === 0 ? (
+                <PageEmptyState title="No departments yet" description="Create a department to see detailed cards here." />
+              ) : selectedTeamId === null ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                  Select a department from the pie chart to view details.
+                </div>
+              ) : (
+                teamInsights
+                  .filter((team) => team.id === selectedTeamId)
+                  .map((team) => (
+                    <div
+                      key={team.id}
+                      ref={(element) => {
+                        teamDetailRefs.current[team.id] = element;
+                      }}
+                      className={`rounded-lg border p-4 transition ${selectedTeamId === team.id ? 'border-blue-300 bg-blue-50/40' : 'border-slate-200 bg-white'}`}
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h3 className="text-base font-semibold text-slate-950">{team.name}</h3>
+                          <p className="mt-1 text-sm text-slate-500">{team.description || 'No department description added yet.'}</p>
+                        </div>
+                        <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {team.employeeCount} employee{team.employeeCount === 1 ? '' : 's'}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-3 text-sm text-slate-600 md:grid-cols-2">
+                        <p><span className="font-semibold text-slate-900">Manager:</span> {team.managerName}</p>
+                        <p><span className="font-semibold text-slate-900">Contact:</span> {team.managerEmail || 'Not available'}</p>
+                      </div>
+
+                      <div className="mt-3 border-t border-slate-200 pt-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Members</p>
+                        <p className="mt-2 text-sm text-slate-600">
+                          {team.users.length > 0
+                            ? team.users.map((member: any) => member.name).join(', ')
+                            : 'No users assigned yet.'}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+              )}
             </div>
           </SurfaceCard>
-
-          <DataTable
-            title="Existing Teams"
-            description="Current report groups reused as teams or departments."
-            rows={groups}
-            emptyMessage="No teams found."
-            columns={[
-              { key: 'name', header: 'Team', render: (row: any) => row.name },
-              { key: 'members', header: 'Members', render: (row: any) => row.users?.length || 0 },
-              { key: 'member_names', header: 'People', render: (row: any) => (row.users || []).map((user: any) => user.name).join(', ') || 'No members' },
-            ]}
-          />
-        </div>
+        </>
       )}
 
       {mode === 'invitations' && (
@@ -996,6 +1539,20 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           </SurfaceCard>
         </>
       )}
+
+      <QuickCreateGroupDialog
+        open={showGroupModal}
+        onClose={() => setShowGroupModal(false)}
+        onCreated={async () => {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['employee-workspace-groups'] }),
+            queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+          ]);
+        }}
+        title="Create Department"
+        eyebrow="Department quick add"
+        description="Add a department and manage members from the directory below."
+      />
     </div>
   );
 }

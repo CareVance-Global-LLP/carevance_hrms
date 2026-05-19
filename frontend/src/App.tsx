@@ -39,6 +39,7 @@ const Login = lazyWithChunkRetry(() => import('@/pages/Login'));
 const ForgotPasswordPage = lazyWithChunkRetry(() => import('@/pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazyWithChunkRetry(() => import('@/pages/ResetPasswordPage'));
 const VerifyEmailPage = lazyWithChunkRetry(() => import('@/pages/VerifyEmailPage'));
+const ProfileOnboardingPage = lazyWithChunkRetry(() => import('@/pages/ProfileOnboardingPage'));
 const Dashboard = lazyWithChunkRetry(() => import('@/pages/Dashboard'));
 const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
 const OrgHierarchy = lazyWithChunkRetry(() => import('@/pages/OrgHierarchy'));
@@ -59,7 +60,7 @@ const NotificationsCenter = lazyWithChunkRetry(() => import('@/pages/Notificatio
 const ReportsWorkspace = lazyWithChunkRetry(() => import('@/pages/ReportsWorkspace'));
 const MonitoringWorkspace = lazyWithChunkRetry(() => import('@/pages/MonitoringWorkspace'));
 const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeManagementWorkspace'));
-const EmployeeDetailWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeDetailWorkspace'));
+const EmployeePersonalDetailsPage = lazyWithChunkRetry(() => import('@/pages/EmployeePersonalDetailsPage'));
 const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
 const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
 const AddUserPage = lazyWithChunkRetry(() => import('@/pages/AddUserPage'));
@@ -173,7 +174,43 @@ function HomeRoute() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+
+  const hasOnboardingProfile = (candidate: any) => {
+    if (!candidate || typeof candidate !== 'object') return false;
+
+    const requiredFields = [
+      'first_name',
+      'last_name',
+      'display_name',
+      'gender',
+      'date_of_birth',
+      'phone',
+      'personal_email',
+      'address_line',
+      'city',
+      'state',
+      'postal_code',
+      'emergency_contact_name',
+      'emergency_contact_number',
+      'emergency_contact_relationship',
+    ];
+
+    return requiredFields.every((field) => String(candidate[field] || '').trim() !== '');
+  };
+
+  const requiresOnboarding = Boolean(
+    user
+    && ['admin', 'manager', 'employee'].includes(String(user.role || '').toLowerCase())
+    && user.organization_id
+  );
+  const onboardingCompleted = Boolean(
+    user?.settings?.profile_onboarding_completed
+    || hasOnboardingProfile(user?.employee_profile)
+  );
+  const onboardingSkipped = Boolean(user?.settings?.profile_onboarding_skipped);
+  const onboardingPath = '/onboarding/profile';
 
   if (isLoading) {
     return (
@@ -185,6 +222,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (requiresOnboarding && !onboardingCompleted && !onboardingSkipped && location.pathname !== onboardingPath) {
+    return <Navigate to={onboardingPath} replace />;
+  }
+
+  if (requiresOnboarding && onboardingCompleted && location.pathname === onboardingPath) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
@@ -296,6 +341,14 @@ function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route
+            path="/onboarding/profile"
+            element={
+              <ProtectedRoute>
+                <ProfileOnboardingPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/login"
             element={
               <PublicRoute>
@@ -383,7 +436,7 @@ function App() {
             <Route path="payroll/settings" element={<PayrollWorkspace mode="settings" />} />
             <Route path="user-management" element={<Navigate to="/employees" replace />} />
             <Route path="employees" element={<AdminRoute><EmployeeManagementWorkspace mode="employees" /></AdminRoute>} />
-            <Route path="employees/:employeeId" element={<AdminRoute><EmployeeDetailWorkspace /></AdminRoute>} />
+            <Route path="employees/:employeeId" element={<AdminRoute><EmployeePersonalDetailsPage /></AdminRoute>} />
             <Route path="employees/teams" element={<AdminRoute><EmployeeManagementWorkspace mode="teams" /></AdminRoute>} />
             <Route path="employees/invitations" element={<AdminRoute><EmployeeManagementWorkspace mode="invitations" /></AdminRoute>} />
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />
