@@ -1,4 +1,4 @@
-import { FormEvent, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardEvent, FormEvent, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { useAuth } from '@/contexts/AuthContext';
@@ -158,6 +158,13 @@ export default function Chat() {
     [availableUsers]
   );
   const persistedQuickReactions = NORMALIZED_QUICK_REACTIONS;
+  const attachmentPreviewUrl = useMemo(() => {
+    if (!attachmentFile || !attachmentFile.type.startsWith('image/')) {
+      return null;
+    }
+
+    return URL.createObjectURL(attachmentFile);
+  }, [attachmentFile]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -507,6 +514,14 @@ export default function Chat() {
   }, [messages.length]);
 
   useEffect(() => {
+    return () => {
+      if (attachmentPreviewUrl) {
+        URL.revokeObjectURL(attachmentPreviewUrl);
+      }
+    };
+  }, [attachmentPreviewUrl]);
+
+  useEffect(() => {
     if (editingMessageId && !messages.some((message) => message.id === editingMessageId)) {
       cancelEditingMessage();
     }
@@ -596,15 +611,46 @@ export default function Chat() {
     }
   };
 
+  const applyAttachmentFile = (nextFile: File | null) => {
+    if (!nextFile) {
+      setAttachmentFile(null);
+      return;
+    }
+
+    if (nextFile.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      setError('Attachment must be 200 MB or smaller.');
+      return;
+    }
+
+    setAttachmentFile(nextFile);
+    setError('');
+  };
+
+  const handleComposerPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!selectedThread) {
+      return;
+    }
+
+    const clipboardItems = Array.from(event.clipboardData?.items || []);
+    const imageItem = clipboardItems.find((item) => item.type.startsWith('image/'));
+
+    if (!imageItem) {
+      return;
+    }
+
+    const pastedFile = imageItem.getAsFile();
+    if (!pastedFile) {
+      return;
+    }
+
+    event.preventDefault();
+    applyAttachmentFile(pastedFile);
+  };
+
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     if (!selectedThread || (!messageText.trim() && !attachmentFile)) return;
-
-    if (attachmentFile && attachmentFile.size > MAX_CHAT_ATTACHMENT_BYTES) {
-      setError('Attachment must be 200 MB or smaller.');
-      return;
-    }
 
     try {
       const response = selectedThread.type === 'direct'
@@ -618,7 +664,7 @@ export default function Chat() {
           });
 
       setMessageText('');
-      setAttachmentFile(null);
+      applyAttachmentFile(null);
 
       if (selectedThread.type === 'direct') {
         await chatApi.setTyping(selectedThread.id, false);
@@ -1257,26 +1303,51 @@ export default function Chat() {
 
         <form onSubmit={handleSendMessage} className="flex gap-2 border-t border-gray-200 p-3">
           <div className="flex-1 space-y-2">
-            <input
-              type="text"
+            <textarea
               value={messageText}
               onChange={(e) => handleMessageChange(e.target.value)}
+              onPaste={handleComposerPaste}
               placeholder={selectedThread ? `Type a message to this ${selectedThreadLabel}...` : 'Select chat first'}
               disabled={!selectedThread}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+              rows={attachmentFile ? 3 : 2}
+              className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
             />
+            {attachmentFile && (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                {attachmentPreviewUrl ? (
+                  <img
+                    src={attachmentPreviewUrl}
+                    alt="Pasted screenshot preview"
+                    className="max-h-44 rounded-md border border-gray-200 object-contain"
+                  />
+                ) : null}
+                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-600">
+                  <span className="truncate">
+                    {attachmentFile.name || 'Pasted screenshot'}
+                    {attachmentFile.size ? ` (${formatBytes(attachmentFile.size)})` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => applyAttachmentFile(null)}
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <input
                 type="file"
                 disabled={!selectedThread}
-                onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+                onChange={(e) => applyAttachmentFile(e.target.files?.[0] || null)}
                 className="block w-full text-xs text-gray-600 file:mr-2 file:rounded file:border-0 file:bg-gray-100 file:px-2 file:py-1 file:text-xs file:font-medium"
               />
               <span className="text-[11px] text-gray-500">Max file size: 200 MB</span>
               {attachmentFile && (
                 <button
                   type="button"
-                  onClick={() => setAttachmentFile(null)}
+                  onClick={() => applyAttachmentFile(null)}
                   className="rounded-md border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
                 >
                   Clear

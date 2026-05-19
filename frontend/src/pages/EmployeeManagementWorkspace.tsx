@@ -203,7 +203,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const settingsPanelRef = useRef<HTMLDivElement | null>(null);
   const pendingSettingsScrollUserIdRef = useRef<number | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
-  const canManageDirectoryRoles = hasAdminAccess(user);
+  const canManageDirectoryRoles = isStrictAdmin;
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
 
   const usersQuery = useQuery({
@@ -497,16 +497,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
 
     if (user?.role === 'manager') {
-      if (Number(row?.id) === Number(user.id)) {
-        return ['manager', 'employee', 'admin'];
-      }
-
-      const roleOptions: Array<'admin' | 'manager' | 'employee'> = ['employee'];
-      if (currentRole && !roleOptions.includes(currentRole)) {
-        roleOptions.unshift(currentRole);
-      }
-
-      return roleOptions;
+      return currentRole ? [currentRole] : ['employee'];
     }
 
     return currentRole ? [currentRole] : ['employee'];
@@ -982,6 +973,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                             role: event.target.value as 'admin' | 'manager' | 'employee',
                           })
                         }
+                        disabled={!isStrictAdmin || updateRoleMutation.isPending}
                         className="min-w-[11rem]"
                       >
                         <option value="employee">Employee</option>

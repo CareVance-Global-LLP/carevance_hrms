@@ -288,15 +288,19 @@ class UserController extends Controller
             $actor = $request->user();
             $isSelfRoleChange = $actor && (int) $actor->id === (int) $user->id;
 
+            if ($actor?->role === 'manager') {
+                throw ValidationException::withMessages([
+                    'role' => ['Managers are not allowed to change user roles.'],
+                ]);
+            }
+
             if ($isSelfRoleChange && $actor->role === 'admin' && $validated['role'] !== 'admin') {
                 throw ValidationException::withMessages([
                     'role' => ['Admin users cannot demote themselves.'],
                 ]);
             }
 
-            if (!($isSelfRoleChange && $actor->role === 'manager' && in_array($validated['role'], ['admin', 'manager', 'employee'], true))) {
-                $this->organizationRoleService->assertCanAssignRole($actor, $validated['role']);
-            }
+            $this->organizationRoleService->assertCanAssignRole($actor, $validated['role']);
         }
 
         $originalRole = $user->role;
