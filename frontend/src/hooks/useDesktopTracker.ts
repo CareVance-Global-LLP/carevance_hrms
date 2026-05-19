@@ -412,7 +412,8 @@ export const useDesktopTracker = () => {
   useEffect(() => {
     const isTrackedUser = isTrackedTimerUser(user);
     const desktopApi = window.desktopTracker;
-    if (!isAuthenticated || !isTrackedUser || !desktopApi) {
+    const canCaptureScreenshots = typeof desktopApi?.captureScreenshot === 'function';
+    if (!isAuthenticated || !isTrackedUser) {
       clearTrackerIntervals();
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
@@ -440,7 +441,7 @@ export const useDesktopTracker = () => {
 
     const runId = ++desktopTrackerRunSequence;
     const isCurrentRun = () => desktopTrackerRunSequence === runId;
-    const hasForegroundWindowBridge = typeof desktopApi.onForegroundWindowChange === 'function';
+    const hasForegroundWindowBridge = typeof desktopApi?.onForegroundWindowChange === 'function';
     const screenshotIntervalMs = resolveScreenshotIntervalMs(user?.settings);
     let inFlight = false;
     let screenshotInFlight = false;
@@ -481,6 +482,10 @@ export const useDesktopTracker = () => {
       activeScreenshotEntryIdRef.current = timeEntryId;
 
       if (timeEntryId === null) {
+        return;
+      }
+
+      if (!canCaptureScreenshots) {
         return;
       }
 
@@ -909,7 +914,7 @@ export const useDesktopTracker = () => {
       }
 
       try {
-        const idleSecondsSystem = Number(await desktopApi.getSystemIdleSeconds());
+        const idleSecondsSystem = Number(await desktopApi?.getSystemIdleSeconds?.());
 
         if (Number.isFinite(idleSecondsSystem)) {
           const safeIdleSecondsSystem = Math.max(0, Math.floor(idleSecondsSystem));
@@ -924,7 +929,7 @@ export const useDesktopTracker = () => {
         console.warn('Desktop tracker system idle lookup failed, falling back to page input activity.', error);
       }
 
-      if (typeof desktopApi.getActiveWindowContext === 'function') {
+      if (typeof desktopApi?.getActiveWindowContext === 'function') {
         try {
           const activeContext = await desktopApi.getActiveWindowContext();
           if (isLockScreenForegroundContext(activeContext)) {
@@ -1114,7 +1119,7 @@ export const useDesktopTracker = () => {
         });
       }
 
-      if (typeof desktopApi.revealWindow === 'function') {
+      if (typeof desktopApi?.revealWindow === 'function') {
         await desktopApi.revealWindow();
       }
 
@@ -1152,7 +1157,7 @@ export const useDesktopTracker = () => {
           0,
           Math.round((trackedWindowEnd - previousTickAt) / 1000)
         );
-        const activeContext = typeof desktopApi.getActiveWindowContext === 'function'
+        const activeContext = typeof desktopApi?.getActiveWindowContext === 'function'
           ? await desktopApi.getActiveWindowContext()
           : null;
         const fallbackTitle = typeof document !== 'undefined' ? document.title : '';
@@ -1423,6 +1428,9 @@ export const useDesktopTracker = () => {
         }
 
         const now = Date.now();
+        if (!canCaptureScreenshots || typeof desktopApi?.captureScreenshot !== 'function') {
+          return;
+        }
         const screenshotDataUrl = await withTimeout(
           desktopApi.captureScreenshot(),
           SCREENSHOT_CAPTURE_TIMEOUT_MS,
@@ -1467,23 +1475,23 @@ export const useDesktopTracker = () => {
       detail.promise = flushTrackerState(new Date().toISOString());
     };
 
-    const removeForegroundWindowChangeListener = hasForegroundWindowBridge
+    const removeForegroundWindowChangeListener = hasForegroundWindowBridge && desktopApi
       ? desktopApi.onForegroundWindowChange((payload) => {
         void handleForegroundWindowChange(payload);
       })
       : undefined;
-    const removeSystemLockStateListener = typeof desktopApi.onSystemLockState === 'function'
+    const removeSystemLockStateListener = desktopApi && typeof desktopApi.onSystemLockState === 'function'
       ? desktopApi.onSystemLockState((payload) => {
         void applySystemLockState(payload);
       })
       : undefined;
-    const removeBrowserTrackingStateListener = typeof desktopApi.onBrowserTrackingState === 'function'
+    const removeBrowserTrackingStateListener = desktopApi && typeof desktopApi.onBrowserTrackingState === 'function'
       ? desktopApi.onBrowserTrackingState((payload) => {
         browserTrackingRealtimeSeenRef.current = true;
         void applyBrowserTrackingState(payload);
       })
       : undefined;
-    const removeBrowserTrackingEventListener = typeof desktopApi.onBrowserTrackingEvent === 'function'
+    const removeBrowserTrackingEventListener = desktopApi && typeof desktopApi.onBrowserTrackingEvent === 'function'
       ? desktopApi.onBrowserTrackingEvent((payload) => {
         browserTrackingRealtimeSeenRef.current = true;
         void handleBrowserTrackingEvent(payload);
@@ -1499,7 +1507,7 @@ export const useDesktopTracker = () => {
     window.addEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
     window.addEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);
     window.addEventListener('desktop-tracker:flush', handleTrackerFlush as EventListener);
-    if (typeof desktopApi.getDesktopDeviceIdentity === 'function') {
+    if (desktopApi && typeof desktopApi.getDesktopDeviceIdentity === 'function') {
       void desktopApi.getDesktopDeviceIdentity()
         .then((deviceIdentity) => {
           if (!isCurrentRun() || !deviceIdentity?.device_id) {
@@ -1516,7 +1524,7 @@ export const useDesktopTracker = () => {
           console.warn('Desktop tracker device identity lookup failed:', error);
         });
     }
-    if (typeof desktopApi.getSystemLockState === 'function') {
+    if (desktopApi && typeof desktopApi.getSystemLockState === 'function') {
       void desktopApi.getSystemLockState()
         .then((state) => {
           if (!isCurrentRun()) {
@@ -1529,7 +1537,7 @@ export const useDesktopTracker = () => {
           console.warn('Desktop tracker system lock state lookup failed:', error);
         });
     }
-    if (typeof desktopApi.getBrowserTrackingState === 'function') {
+    if (desktopApi && typeof desktopApi.getBrowserTrackingState === 'function') {
       void desktopApi.getBrowserTrackingState()
         .then((state) => {
           if (!isCurrentRun() || !state || browserTrackingRealtimeSeenRef.current) {
@@ -1542,7 +1550,7 @@ export const useDesktopTracker = () => {
           console.warn('Desktop tracker browser tracking state lookup failed:', error);
         });
     }
-    if (typeof desktopApi.getSystemLockState === 'function') {
+    if (desktopApi && typeof desktopApi.getSystemLockState === 'function') {
       void desktopApi.getSystemLockState()
         .then((state) => {
           if (!isCurrentRun()) {

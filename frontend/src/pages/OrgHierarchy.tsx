@@ -89,37 +89,65 @@ export default function OrgHierarchy() {
       ? managers.filter((manager) => Number(manager.id) !== Number(topAdmin.id))
       : managers;
 
-    const managerIds = new Set<number>(visibleManagers.map((manager) => Number(manager.id)));
+    const managerNodes = visibleManagers.map((manager) => ({
+      manager,
+      employees: [] as HierarchyUser[],
+    }));
+    const managerNodeById = new Map<number, { manager: HierarchyUser; employees: HierarchyUser[] }>(
+      managerNodes.map((node) => [Number(node.manager.id), node])
+    );
 
-    const assignedEmployeeIds = new Set<number>();
-    const managerNodes = visibleManagers.map((manager) => {
-      const managerDepartment = resolveDepartment(manager);
-      const directEmployeesByReporting = employees.filter((employee) => {
-        if (assignedEmployeeIds.has(employee.id)) return false;
-        return Number(employee.reporting_manager_id || 0) === Number(manager.id);
-      });
-      directEmployeesByReporting.forEach((employee) => assignedEmployeeIds.add(employee.id));
+    const takeLeastLoadedManagerNode = (nodes: Array<{ manager: HierarchyUser; employees: HierarchyUser[] }>) => {
+      if (nodes.length === 0) return null;
 
-      const directEmployeesByDepartment = employees.filter((employee) => {
-        if (assignedEmployeeIds.has(employee.id)) return false;
-        if (managerIds.has(Number(employee.reporting_manager_id || 0))) return false;
-        return managerDepartment !== 'Unassigned' && resolveDepartment(employee) === managerDepartment;
-      });
-      directEmployeesByDepartment.forEach((employee) => assignedEmployeeIds.add(employee.id));
+      return nodes.reduce((best, current) => {
+        if (!best) return current;
+        if (current.employees.length < best.employees.length) return current;
+        return best;
+      }, null as { manager: HierarchyUser; employees: HierarchyUser[] } | null);
+    };
 
-      return {
-        manager,
-        employees: [...directEmployeesByReporting, ...directEmployeesByDepartment],
-      };
+    const unresolvedEmployees: HierarchyUser[] = [];
+
+    employees.forEach((employee) => {
+      const explicitManagerNode = managerNodeById.get(Number(employee.reporting_manager_id || 0));
+      if (explicitManagerNode) {
+        explicitManagerNode.employees.push(employee);
+        return;
+      }
+
+      unresolvedEmployees.push(employee);
+    });
+
+    const unresolvedAfterDepartment: HierarchyUser[] = [];
+
+    unresolvedEmployees.forEach((employee) => {
+      const employeeDepartment = resolveDepartment(employee);
+      const departmentManagerNodes = employeeDepartment === 'Unassigned'
+        ? []
+        : managerNodes.filter((node) => resolveDepartment(node.manager) === employeeDepartment);
+
+      const departmentNode = takeLeastLoadedManagerNode(departmentManagerNodes);
+      if (departmentNode) {
+        departmentNode.employees.push(employee);
+        return;
+      }
+
+      unresolvedAfterDepartment.push(employee);
+    });
+
+    unresolvedAfterDepartment.forEach((employee) => {
+      const fallbackNode = takeLeastLoadedManagerNode(managerNodes);
+      if (fallbackNode) {
+        fallbackNode.employees.push(employee);
+      }
     });
 
     const topNodeEmployees = managerNodes.length === 0 && topAdmin
       ? employees.filter((employee) => Number(employee.id) !== Number(topAdmin.id))
       : [];
 
-    const unassignedEmployees = managerNodes.length > 0
-      ? employees.filter((employee) => !assignedEmployeeIds.has(employee.id))
-      : [];
+    const unassignedEmployees = managerNodes.length > 0 ? [] : unresolvedAfterDepartment;
 
     return {
       topAdmin,
@@ -209,21 +237,23 @@ export default function OrgHierarchy() {
                   <div className="mx-auto h-6 w-px bg-slate-300" />
                   <PersonNode user={manager} tone="manager" />
 
-                  <div className="mx-auto mt-3 h-4 w-px bg-slate-300" />
-                  <div className="h-px w-full bg-slate-300" />
+                  {employees.length > 0 ? (
+                    <>
+                      <div className="mx-auto mt-3 h-4 w-px bg-slate-300" />
+                      <div className="h-px w-full bg-slate-300" />
 
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {employees.length > 0 ? employees.map((employee) => (
-                      <div key={employee.id}>
-                        <div className="mx-auto h-4 w-px bg-slate-300" />
-                        <PersonNode user={employee} tone="employee" />
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {employees.map((employee) => (
+                          <div key={employee.id}>
+                            <div className="mx-auto h-4 w-px bg-slate-300" />
+                            <PersonNode user={employee} tone="employee" />
+                          </div>
+                        ))}
                       </div>
-                    )) : (
-                      <div className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-500">
-                        No employees mapped yet.
-                      </div>
-                    )}
-                  </div>
+                    </>
+                  ) : (
+                    <p className="mt-3 text-center text-xs text-slate-500">No direct reports yet.</p>
+                  )}
                 </div>
               )) : (
                 hierarchy.topNodeEmployees.length > 0 ? (
