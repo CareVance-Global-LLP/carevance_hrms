@@ -26,6 +26,12 @@ type MessageContextMenuLayout = {
   maxHeight: number;
 };
 
+type ImageViewerState = {
+  url: string;
+  fileName: string;
+  revokeOnClose: boolean;
+};
+
 const NORMALIZED_QUICK_REACTIONS = ['\u{1F44D}', '\u2764\uFE0F', '\u{1F602}', '\u{1F389}', '\u{1F62E}'];
 const EMOJI_PICKER_GROUPS = [
   {
@@ -125,6 +131,7 @@ export default function Chat() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [inlineAttachmentUrls, setInlineAttachmentUrls] = useState<Record<string, string>>({});
+  const [imageViewer, setImageViewer] = useState<ImageViewerState | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messageContextMenuRef = useRef<HTMLDivElement | null>(null);
@@ -604,6 +611,32 @@ export default function Chat() {
 
   useEffect(() => {
     return () => {
+      if (imageViewer?.revokeOnClose) {
+        URL.revokeObjectURL(imageViewer.url);
+      }
+    };
+  }, [imageViewer]);
+
+  useEffect(() => {
+    if (!imageViewer) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeImageViewer();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [imageViewer]);
+
+  useEffect(() => {
+    return () => {
       if (attachmentPreviewUrl) {
         URL.revokeObjectURL(attachmentPreviewUrl);
       }
@@ -832,7 +865,64 @@ export default function Chat() {
     }, 1800);
   };
 
+  const closeImageViewer = () => {
+    setImageViewer((current) => {
+      if (current?.revokeOnClose) {
+        URL.revokeObjectURL(current.url);
+      }
+
+      return null;
+    });
+  };
+
+  const downloadImageFromViewer = () => {
+    if (!imageViewer) {
+      return;
+    }
+
+    const anchor = document.createElement('a');
+    anchor.href = imageViewer.url;
+    anchor.download = imageViewer.fileName || `chat-image-${Date.now()}`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  };
+
+  const openImageViewer = async (message: ChatFeedMessage) => {
+    const existingInlineUrl = inlineAttachmentUrls[getInlineAttachmentKey(message)];
+    if (existingInlineUrl) {
+      setImageViewer({
+        url: existingInlineUrl,
+        fileName: message.attachment_name || `chat-image-${message.id}.png`,
+        revokeOnClose: false,
+      });
+      return;
+    }
+
+    try {
+      const response = isGroupMessage(message)
+        ? await chatApi.getGroupAttachment(message.id)
+        : await chatApi.getAttachment(message.id);
+      const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'image/*';
+      const blob = new Blob([response.data], { type: contentType });
+      const objectUrl = URL.createObjectURL(blob);
+
+      setImageViewer({
+        url: objectUrl,
+        fileName: message.attachment_name || `chat-image-${message.id}.png`,
+        revokeOnClose: true,
+      });
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not open image.');
+    }
+  };
+
   const openAttachment = async (message: ChatFeedMessage) => {
+    if (isImageAttachment(message)) {
+      await openImageViewer(message);
+      return;
+    }
+
     try {
       const response = isGroupMessage(message)
         ? await chatApi.getGroupAttachment(message.id)
@@ -1417,6 +1507,47 @@ export default function Chat() {
                 </button>
               ) : null}
             </div>
+          </div>
+        ) : null}
+
+        {imageViewer ? (
+          <div
+            className="fixed inset-0 z-[80] flex flex-col bg-black/90"
+            role="dialog"
+            aria-modal="true"
+            onClick={closeImageViewer}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-white/20 px-4 py-3 text-white">
+              <p className="truncate text-sm font-medium">{imageViewer.fileName}</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadImageFromViewer}
+                  className="rounded-md border border-white/30 px-3 py-1.5 text-xs font-medium hover:bg-white/10"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  onClick={closeImageViewer}
+                  className="rounded-md border border-white/30 px-3 py-1.5 text-xs font-medium hover:bg-white/10"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={closeImageViewer}
+              className="flex min-h-0 flex-1 items-center justify-center p-4"
+            >
+              <img
+                src={imageViewer.url}
+                alt={imageViewer.fileName || 'Opened screenshot'}
+                onClick={(event) => event.stopPropagation()}
+                className="max-h-full max-w-full object-contain"
+              />
+            </button>
           </div>
         ) : null}
 
