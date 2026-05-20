@@ -27,7 +27,7 @@ const securityItems = [
 
 export default function Security() {
   return (
-    <section id="security" className="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="security" className="px-4 py-12 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl rounded-[28px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(240,249,255,0.92))] p-6 shadow-[0_32px_90px_-54px_rgba(15,23,42,0.85)] backdrop-blur sm:rounded-[36px] sm:p-10 lg:p-12">
         <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr]">
           <SectionHeading

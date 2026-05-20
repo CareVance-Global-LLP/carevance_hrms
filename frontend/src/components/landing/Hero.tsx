@@ -22,7 +22,7 @@ const item: Variants = {
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden px-4 pb-20 pt-8 sm:px-6 sm:pb-28 sm:pt-12 lg:px-8 lg:pb-36 lg:pt-16">
+    <section className="relative overflow-hidden px-4 pb-16 pt-8 sm:px-6 sm:pb-28 sm:pt-12 lg:px-8 lg:pb-36 lg:pt-16">
       <div className="hero-grid pointer-events-none absolute inset-0 opacity-60" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.3),transparent_55%)]" />
       <div className="pointer-events-none absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-cyan-300/20 blur-3xl" />
@@ -31,7 +31,7 @@ export default function Hero() {
         <motion.div variants={container} initial="hidden" animate="show" className="relative z-10">
           <motion.h1
             variants={item}
-            className="max-w-4xl text-4xl font-semibold tracking-[-0.065em] text-slate-950 sm:text-6xl lg:pt-2 lg:text-[5.2rem] lg:leading-[0.95]"
+            className="max-w-4xl text-3xl font-semibold tracking-[-0.065em] text-slate-950 sm:text-6xl lg:pt-2 lg:text-[5.2rem] lg:leading-[0.95]"
           >
             Monitor team productivity
             <span className="block bg-[linear-gradient(135deg,#020617_0%,#0f172a_18%,#0369a1_52%,#22d3ee_100%)] bg-clip-text pb-2 text-transparent">
@@ -121,7 +121,7 @@ export default function Hero() {
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+              <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr]">
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0">
@@ -132,7 +132,7 @@ export default function Hero() {
                       <BarChart3 className="h-7 w-7" />
                     </div>
                   </div>
-                  <div className="mt-6 flex h-36 items-end gap-3">
+                  <div className="mt-6 flex h-28 items-end gap-3 sm:h-36">
                     {[48, 62, 55, 84, 76, 92, 88].map((height, index) => (
                       <motion.div
                         key={height}

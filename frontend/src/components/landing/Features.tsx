@@ -44,7 +44,7 @@ const features = [
 
 export default function Features() {
   return (
-    <section id="features" className="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="features" className="px-4 py-12 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Features"
@@ -52,7 +52,7 @@ export default function Features() {
           description="These cards reflect the modules and workflows that are present in the current frontend and backend code."
         />
 
-        <div className="mt-10 grid gap-4 sm:mt-12 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-10 grid gap-4 sm:mt-12 sm:gap-5 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-3">
           {features.map((feature, index) => (
             <motion.div
               key={feature.title}

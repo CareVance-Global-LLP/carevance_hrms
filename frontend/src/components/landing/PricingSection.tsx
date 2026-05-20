@@ -43,7 +43,7 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
           </div>
         </div>
 
-        <div className="mt-12 grid gap-6 lg:grid-cols-3">
+        <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {pricingPlans.map((plan) => {
             const price = getPlanPrice(plan, billingCycle);
             const query = buildSignupQuery(plan.code, plan.trialAvailable ? 'trial' : 'paid', billingCycle);

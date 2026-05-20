@@ -22,7 +22,7 @@ const steps = [
 
 export default function Workflow() {
   return (
-    <section id="workflow" className="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="workflow" className="px-4 py-12 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Workflow"
@@ -30,7 +30,7 @@ export default function Workflow() {
           description="This sequence is taken from the code paths that connect auth, timer tracking, desktop telemetry, reporting, and admin approvals."
         />
 
-        <div className="relative mt-12 grid gap-6 sm:mt-16 sm:gap-8 lg:grid-cols-3">
+        <div className="relative mt-12 grid gap-6 sm:mt-16 sm:gap-8 md:grid-cols-2 lg:grid-cols-3">
           <div className="absolute left-1/2 top-12 hidden h-px w-[68%] -translate-x-1/2 bg-[linear-gradient(90deg,rgba(15,23,42,0.15),rgba(14,165,233,0.55),rgba(15,23,42,0.15))] lg:block" />
           {steps.map((step, index) => (
             <motion.div

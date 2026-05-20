@@ -297,7 +297,7 @@ export default function Login() {
                       {desktopDownloadLabel}
                     </a>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
                     <div className="col-span-2 rounded-[24px] border border-white/10 bg-white/5 p-4">
                       <div className="mb-3 h-2 w-28 rounded-full bg-cyan-200/60" />
                       <div className="mb-3 h-2 w-20 rounded-full bg-white/25" />
