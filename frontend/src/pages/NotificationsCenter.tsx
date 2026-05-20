@@ -29,6 +29,7 @@ export default function NotificationsCenter() {
   const [query, setQuery] = useState('');
   const [selectedNotificationId, setSelectedNotificationId] = useState<number | null>(null);
   const [publishType, setPublishType] = useState<'announcement' | 'news'>('announcement');
+  const [publishPriority, setPublishPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [publishTitle, setPublishTitle] = useState('');
   const [publishMessage, setPublishMessage] = useState('');
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<number[]>([]);
@@ -133,6 +134,7 @@ export default function NotificationsCenter() {
         type: publishType,
         title: publishTitle.trim(),
         message: publishMessage.trim(),
+        priority: publishType === 'announcement' ? publishPriority : undefined,
         recipient_user_ids: selectedRecipientIds.length > 0 ? selectedRecipientIds : undefined,
       });
       setPublishTitle('');
@@ -245,7 +247,7 @@ export default function NotificationsCenter() {
             </Button>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
               <FieldLabel>Type</FieldLabel>
               <SelectInput value={publishType} onChange={(event) => setPublishType(event.target.value as 'announcement' | 'news')}>
@@ -253,6 +255,17 @@ export default function NotificationsCenter() {
                 <option value="news">News</option>
               </SelectInput>
             </div>
+            {publishType === 'announcement' && (
+              <div>
+                <FieldLabel>Priority</FieldLabel>
+                <SelectInput value={publishPriority} onChange={(event) => setPublishPriority(event.target.value as 'low' | 'medium' | 'high' | 'urgent')}>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </SelectInput>
+              </div>
+            )}
             <div>
               <FieldLabel>Title</FieldLabel>
               <TextInput value={publishTitle} onChange={(event) => setPublishTitle(event.target.value)} placeholder="Title" />

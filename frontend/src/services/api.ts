@@ -1145,13 +1145,13 @@ export const payrollWorkspaceApi = {
 };
 
 export const notificationApi = {
-  list: (params?: { limit?: number; type?: string; exclude_types?: string[]; q?: string; unread_only?: boolean }) =>
+  list: (params?: { limit?: number; type?: string; types?: string[]; exclude_types?: string[]; q?: string; unread_only?: boolean }) =>
     api.get<{
       data: AppNotificationItem[];
       unread_count: number;
     }>('/notifications', { params }),
 
-  publish: (data: { type: 'announcement' | 'news'; title: string; message: string; recipient_user_ids?: number[] }) =>
+  publish: (data: { type: 'announcement' | 'news'; title: string; message: string; priority?: 'low' | 'medium' | 'high' | 'urgent'; recipient_user_ids?: number[] }) =>
     api.post('/notifications/publish', data),
 
   markRead: (id: number) =>

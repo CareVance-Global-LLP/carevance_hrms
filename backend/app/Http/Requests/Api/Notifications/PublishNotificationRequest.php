@@ -12,6 +12,7 @@ class PublishNotificationRequest extends ApiFormRequest
             'type' => 'required|in:announcement,news',
             'title' => 'required|string|max:150',
             'message' => 'required|string|max:3000',
+            'priority' => 'nullable|in:low,medium,high,urgent',
             'recipient_user_ids' => 'nullable|array',
             'recipient_user_ids.*' => 'integer',
         ];

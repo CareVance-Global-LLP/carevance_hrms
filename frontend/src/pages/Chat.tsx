@@ -802,6 +802,13 @@ export default function Chat() {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void handleSendMessage(e as any);
+    }
+  };
+
   const handleEditMessage = (message: ChatFeedMessage) => {
     setEditingMessageId(message.id);
     setEditingMessageText(message.body || '');
@@ -1593,6 +1600,7 @@ export default function Chat() {
               <textarea
                 value={messageText}
                 onChange={(e) => handleMessageChange(e.target.value)}
+                onKeyDown={handleKeyDown}
                 onPaste={handleComposerPaste}
                 placeholder={attachmentFile
                   ? 'Add a caption (optional)'

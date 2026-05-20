@@ -6,11 +6,12 @@ import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotificat
 import { buildSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
-import { getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
+import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
 import { webAppUrl } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, userApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
+import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound, shouldShowDesktopNotification } from '@/lib/desktopNotifications';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
@@ -135,6 +136,14 @@ export default function Layout() {
       return;
     }
 
+    if (!shouldShowDesktopNotification(notification, seenNotificationIdsRef.current)) {
+      return;
+    }
+
+    const formattedTitle = formatNotificationTitle(notification, user);
+    const formattedMessage = formatNotificationMessage(notification);
+    const soundType = getNotificationSoundType(notification);
+
     const notificationId = Number(notification.id);
     if (Number.isFinite(notificationId) && notificationId > 0) {
       desktopNotificationByIdRef.current.set(notificationId, notification);
@@ -143,11 +152,12 @@ export default function Layout() {
     if (window.desktopTracker?.showNotification) {
       void window.desktopTracker.showNotification({
         id: notificationId,
-        title: notification.title,
-        body: notification.message,
+        title: formattedTitle,
+        body: formattedMessage,
         route: resolveNotificationRoute(notification, user),
         type: notification.type,
       });
+      playNotificationSound(soundType);
       return;
     }
 
@@ -155,9 +165,10 @@ export default function Layout() {
       return;
     }
 
-    const systemNotification = new Notification(notification.title, {
-      body: notification.message,
+    const systemNotification = new Notification(formattedTitle, {
+      body: formattedMessage,
       tag: `app-notification-${notification.id}`,
+      icon: notification.type === 'announcement' ? '/carevance-logo-icon.png' : undefined,
     });
 
     systemNotification.onclick = () => {
@@ -165,6 +176,8 @@ export default function Layout() {
       void openNotification(notification);
       systemNotification.close();
     };
+
+    playNotificationSound(soundType);
   };
 
   const primaryNavigation = useMemo(
@@ -572,9 +585,10 @@ export default function Layout() {
             ])
           : Promise.resolve(null);
 
-        const [notificationResponse, desktopNotificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
+        const [notificationResponse, desktopNotificationResponse, chatNotificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
           notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
           notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
+          notificationApi.list({ limit: 20, types: CHAT_NOTIFICATION_TYPES }),
           chatApi.getUnreadSummary(),
           approvalPromise,
         ]);
@@ -586,9 +600,13 @@ export default function Layout() {
         const nextDesktopNotifications = ((desktopNotificationResponse.data?.data || []) as AppNotificationItem[]).filter(
           (item) => !isChatNotification(item)
         );
+        const nextChatNotifications = ((chatNotificationResponse.data?.data || []) as AppNotificationItem[]).filter(
+          (item) => isChatNotification(item)
+        );
         setNotifications(nextNotifications);
         setUnreadNotifications(Number(notificationResponse.data?.unread_count || 0));
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
+
         if (approvalResponses) {
           const [leaveResponse, timeEditResponse] = approvalResponses;
           const leaveCount = Number(leaveResponse.data?.data?.length || 0);
@@ -599,15 +617,28 @@ export default function Layout() {
         }
 
         const nextIds = new Set<number>(nextDesktopNotifications.map((item) => Number(item.id)).filter((id) => id > 0));
+        const nextChatIds = new Set<number>(nextChatNotifications.map((item) => Number(item.id)).filter((id) => id > 0));
+        const allSeenIds = new Set([...seenNotificationIdsRef.current, ...nextIds, ...nextChatIds]);
+
         if (!hasLoadedNotificationsRef.current) {
-          seenNotificationIdsRef.current = nextIds;
+          seenNotificationIdsRef.current = allSeenIds;
           hasLoadedNotificationsRef.current = true;
         } else {
           nextDesktopNotifications
             .filter((item) => !item.is_read)
-            .filter((item) => !seenNotificationIdsRef.current.has(Number(item.id)))
-            .forEach((item) => showDesktopNotification(item));
-          seenNotificationIdsRef.current = nextIds;
+            .filter((item) => shouldShowDesktopNotification(item, seenNotificationIdsRef.current))
+            .forEach((item) => {
+              showDesktopNotification(item);
+            });
+
+          nextChatNotifications
+            .filter((item) => !item.is_read)
+            .filter((item) => shouldShowDesktopNotification(item, seenNotificationIdsRef.current))
+            .forEach((item) => {
+              showDesktopNotification(item);
+            });
+
+          seenNotificationIdsRef.current = allSeenIds;
         }
       } catch {
         if (active) {
@@ -661,7 +692,8 @@ export default function Layout() {
     }
 
     if (Notification.permission === 'default') {
-      void Notification.requestPermission();
+      console.log('Requesting notification permission (current state):', Notification.permission);
+        void Notification.requestPermission();
     }
   }, [desktopPushEnabled]);
 

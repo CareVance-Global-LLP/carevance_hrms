@@ -41,13 +41,19 @@ class NotificationController extends Controller
             ->filter()
             ->unique()
             ->values();
+
+        $includeTypes = collect((array) $request->input('types', []))
+            ->map(fn ($type) => trim((string) $type))
+            ->filter()
+            ->unique()
+            ->values();
+
         $query = AppNotification::with('sender:id,name,email')
             ->where('organization_id', $currentUser->organization_id)
             ->where('user_id', $currentUser->id)
             ->when($request->filled('type'), fn ($builder) => $builder->where('type', (string) $request->type))
+            ->when($includeTypes->isNotEmpty(), fn ($builder) => $builder->whereIn('type', $includeTypes->all()))
             ->when($excludeTypes->isNotEmpty(), fn ($builder) => $builder->whereNotIn('type', $excludeTypes->all()))
-            ->where('title', 'not like', 'New message from %')
-            ->where('title', 'not like', '% sent a message in %')
             ->when($request->boolean('unread_only'), fn ($builder) => $builder->where('is_read', false))
             ->when($request->filled('q'), function ($builder) use ($request) {
                 $term = trim((string) $request->q);
@@ -89,7 +95,8 @@ class NotificationController extends Controller
             senderId: (int) $currentUser->id,
             type: (string) $request->type,
             title: (string) $request->title,
-            message: (string) $request->message
+            message: (string) $request->message,
+            meta: $request->priority ? ['priority' => $request->priority] : null
         );
 
         return $this->createdResponse([], 'Notification published.');
@@ -137,8 +144,6 @@ class NotificationController extends Controller
             ->where('user_id', $currentUser->id)
             ->where('is_read', false)
             ->when($excludeTypes->isNotEmpty(), fn ($builder) => $builder->whereNotIn('type', $excludeTypes->all()))
-            ->where('title', 'not like', 'New message from %')
-            ->where('title', 'not like', '% sent a message in %')
             ->update([
                 'is_read' => true,
                 'read_at' => now(),
