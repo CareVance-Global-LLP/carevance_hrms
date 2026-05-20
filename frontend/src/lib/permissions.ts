@@ -1,6 +1,6 @@
 import type { Organization, User } from '@/types';
 
-export type AssignableRole = Exclude<User['role'], 'client'>;
+export type AssignableRole = Exclude<User['role'], 'client' | 'super_admin'>;
 
 export const hasAdminAccess = (user: User | null | undefined): boolean =>
   Boolean(user && (user.role === 'admin' || user.role === 'manager'));
