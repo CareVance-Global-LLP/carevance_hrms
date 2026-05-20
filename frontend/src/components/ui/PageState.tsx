@@ -60,13 +60,15 @@ export function PageEmptyState({
 export function FeedbackBanner({
   tone,
   message,
+  className,
 }: {
   tone: 'success' | 'error';
   message: string;
+  className?: string;
 }) {
   const styles = tone === 'success'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
     : 'border-rose-200 bg-rose-50 text-rose-700';
 
-  return <div className={`rounded-lg border px-4 py-3 text-sm shadow-sm ${styles}`}>{message}</div>;
+  return <div className={`rounded-lg border px-4 py-3 text-sm shadow-sm ${styles} ${className || ''}`}>{message}</div>;
 }
