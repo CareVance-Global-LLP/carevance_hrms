@@ -771,14 +771,15 @@ export default function AdminDashboard() {
     .map((employee) => effectiveLeaveUserIds.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
 
   const totalEmployees = employees.length;
-  const presentLateToday = attendanceRows.filter((row: any) => Number(row.late_days || row.late_minutes || 0) > 0).length;
-  const presentOnTimeToday = attendanceRows.filter((row: any) => {
+  const presentLateInRange = attendanceRows.filter((row: any) => Number(row.late_days || row.late_minutes || 0) > 0).length;
+  const presentOnTimeInRange = attendanceRows.filter((row: any) => {
     const isLate = Number(row.late_days || row.late_minutes || 0) > 0;
     return !isLate && (Number(row.present_days || 0) > 0 || hasActiveAttendance(row));
   }).length;
-  const totalPresentToday = presentOnTimeToday + presentLateToday;
-  const presentPercent = totalEmployees ? Math.round((totalPresentToday / totalEmployees) * 100) : 0;
+  const totalPresentInRange = presentOnTimeInRange + presentLateInRange;
+  const presentPercent = totalEmployees ? Math.round((totalPresentInRange / totalEmployees) * 100) : 0;
   const onLeave = effectiveLeaveUserIds.size;
+  const absentCount = Math.max(0, totalEmployees - presentOnTimeInRange - presentLateInRange - onLeave);
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
   const dashboardSummary = data.summary as any;
@@ -791,10 +792,10 @@ export default function AdminDashboard() {
     .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
   const attendanceOnTimeDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => ['present', 'checked_in'].includes(String(day.status || '')) && Number(day.late_minutes || 0) <= 0).length
-    : presentOnTimeToday;
+    : presentOnTimeInRange;
   const attendanceLatePresentDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => Number(day.late_minutes || 0) > 0).length
-    : presentLateToday;
+    : presentLateInRange;
   const attendancePresentDays = attendanceOnTimeDays + attendanceLatePresentDays;
   const attendanceLeaveDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => String(day.status || '').includes('leave') || day.is_leave).length
@@ -804,7 +805,7 @@ export default function AdminDashboard() {
       const dayDate = String(day.date || '').slice(0, 10);
       return String(day.status || 'none') === 'none' && !day.is_holiday && dayDate <= todayIso();
     }).length
-    : Math.max(0, totalEmployees - presentOnTimeToday - presentLateToday - onLeave);
+    : absentCount;
   const selectedEmployeePieStatus = attendanceLatePresentDays > 0
     ? { label: 'Present Late', value: 1, color: '#f97316', bgClass: 'bg-orange-500' }
     : attendancePresentDays > 0
@@ -820,9 +821,9 @@ export default function AdminDashboard() {
         { label: 'Present Late', value: attendanceLatePresentDays, color: '#f97316', bgClass: 'bg-orange-500' },
       ]
     : [
-      { label: 'Present', value: totalPresentToday, color: '#16a34a', bgClass: 'bg-green-600' },
-      { label: 'Absent', value: Math.max(0, totalEmployees - presentOnTimeToday - presentLateToday - onLeave), color: '#dc2626', bgClass: 'bg-red-600' },
-      { label: 'Present Late', value: presentLateToday, color: '#f97316', bgClass: 'bg-orange-500' },
+      { label: 'Present', value: totalPresentInRange, color: '#16a34a', bgClass: 'bg-green-600' },
+      { label: 'Absent', value: absentCount, color: '#dc2626', bgClass: 'bg-red-600' },
+      { label: 'Present Late', value: presentLateInRange, color: '#f97316', bgClass: 'bg-orange-500' },
     ];
 
   const activities: DashboardActivity[] = data.auditLogs.map((item: any, index: number) => ({
@@ -916,7 +917,7 @@ export default function AdminDashboard() {
   const payrollDeductions = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.deductions || record.tax || 0), 0);
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
   const absentPercent = totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0;
-  const presentLatePercent = totalEmployees ? Math.round((presentLateToday / totalEmployees) * 100) : 0;
+  const presentLatePercent = totalEmployees ? Math.round((presentLateInRange / totalEmployees) * 100) : 0;
   const attendanceByEmployeeId = new Map(attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
   const overallByUserRows = safeArray<any>(data.overall.by_user)
     .filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || 0)));
@@ -1048,17 +1049,20 @@ export default function AdminDashboard() {
     const presentDays = isRangeIncludingToday
       ? Math.max(Number(attendance?.present_days || 0), isWorking ? 1 : 0)
       : Number(attendance?.present_days || 0);
-    const todaySeconds = Math.max(
-      0,
-      ...[
-        attendance?.total_worked_seconds,
-        attendance?.worked_seconds,
-        overallRow?.total_duration,
-        isRangeIncludingToday ? employee.current_duration : 0,
-      ].map((value) => Number(value || 0)).filter((value) => Number.isFinite(value))
-    );
-    const idleSeconds = overallRow ? resolveIdleSeconds(overallRow, todaySeconds) : 0;
-    const workedSeconds = Math.max(0, todaySeconds - idleSeconds);
+    const trackedDuration = Number(overallRow?.total_duration || 0);
+    const liveDuration = isRangeIncludingToday ? Number(employee.current_duration || 0) : 0;
+    const workedDurationFromAttendance = Number(attendance?.total_worked_seconds || attendance?.worked_seconds || 0);
+    const todaySeconds = trackedDuration > 0
+      ? trackedDuration
+      : liveDuration > 0
+        ? liveDuration
+        : workedDurationFromAttendance > 0
+          ? workedDurationFromAttendance
+          : 0;
+    const idleSeconds = overallRow && trackedDuration > 0 ? resolveIdleSeconds(overallRow, todaySeconds) : 0;
+    const workedSeconds = trackedDuration > 0 || liveDuration > 0
+      ? Math.max(0, todaySeconds - idleSeconds)
+      : todaySeconds;
     return {
       employee,
       status: employee.status === 'On Leave' ? 'On Leave' : isWorking ? 'Working' : 'Not working',
@@ -1268,7 +1272,7 @@ export default function AdminDashboard() {
   const attendanceHealth = [
     { label: 'Working now', value: workingCount, color: 'bg-emerald-500' },
     { label: 'Not started', value: notWorkingCount, color: 'bg-slate-400' },
-    { label: 'Present late', value: presentLateToday, color: 'bg-rose-500' },
+    { label: 'Present late', value: presentLateInRange, color: 'bg-rose-500' },
     { label: 'On leave', value: onLeave, color: 'bg-amber-500' },
     { label: 'Absent', value: attendanceAbsentDays, color: 'bg-red-500' },
   ];
@@ -1725,7 +1729,7 @@ export default function AdminDashboard() {
         <KpiCard to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
         <KpiCard
           label="Present"
-          value={totalPresentToday}
+          value={totalPresentInRange}
           hint={`${presentPercent}% of total`}
           icon={UserPlus}
           tint="bg-emerald-50 text-emerald-600"
@@ -1761,7 +1765,7 @@ export default function AdminDashboard() {
         />
         <KpiCard
           label="Present Late"
-          value={presentLateToday}
+          value={presentLateInRange}
           hint={`${presentLatePercent}% of total`}
           icon={Clock3}
           tint="bg-rose-50 text-rose-600"
@@ -1968,11 +1972,11 @@ export default function AdminDashboard() {
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                 <p className="text-[11px] text-slate-500">Present on time</p>
-                <p className="mt-2 text-xl font-semibold text-blue-700">{presentOnTimeToday}</p>
+                <p className="mt-2 text-xl font-semibold text-blue-700">{presentOnTimeInRange}</p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                 <p className="text-[11px] text-slate-500">Present late</p>
-                <p className="mt-2 text-xl font-semibold text-rose-600">{presentLateToday}</p>
+                <p className="mt-2 text-xl font-semibold text-rose-600">{presentLateInRange}</p>
               </div>
             </div>
             <div className="rounded-lg border border-slate-100 p-4">
@@ -2593,7 +2597,7 @@ export default function AdminDashboard() {
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
               <p className="text-[11px] text-slate-500">Late Today</p>
-              <p className="mt-1 text-xl font-semibold text-orange-700">{presentLateToday}</p>
+              <p className="mt-1 text-xl font-semibold text-orange-700">{presentLateInRange}</p>
             </div>
           </div>
           <div className="mt-3 rounded-lg border border-slate-100 bg-white p-3 text-xs text-slate-600">

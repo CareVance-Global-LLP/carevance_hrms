@@ -136,6 +136,7 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messageContextMenuRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
+  const lastTypingSentAtRef = useRef<number>(0);
   const shouldStickToBottomRef = useRef(true);
   const pendingThreadRef = useRef<ThreadSelection>(null);
   const activeThreadKeyRef = useRef('');
@@ -303,7 +304,7 @@ export default function Chat() {
   useEffect(() => {
     loadThreads();
 
-    const interval = setInterval(loadThreads, 5000);
+    const interval = setInterval(loadThreads, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -847,11 +848,17 @@ export default function Chat() {
       return;
     }
 
-    const updateTyping = selectedThread.type === 'direct'
-      ? chatApi.setTyping(selectedThread.id, value.trim().length > 0)
-      : chatApi.setGroupTyping(selectedThread.id, value.trim().length > 0);
+    const isTyping = value.trim().length > 0;
+    const now = Date.now();
+    const shouldSendTyping = isTyping && (now - lastTypingSentAtRef.current > 2000);
 
-    updateTyping.catch(() => {});
+    if (shouldSendTyping) {
+      lastTypingSentAtRef.current = now;
+      const updateTyping = selectedThread.type === 'direct'
+        ? chatApi.setTyping(selectedThread.id, true)
+        : chatApi.setGroupTyping(selectedThread.id, true);
+      updateTyping.catch(() => {});
+    }
 
     if (typingTimeoutRef.current) {
       window.clearTimeout(typingTimeoutRef.current);

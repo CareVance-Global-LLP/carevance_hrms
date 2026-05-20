@@ -181,14 +181,15 @@ export default function Dashboard() {
     }
 
     let active = true;
+    const snapshot = notifications;
 
     setUnreadNotifications(0);
     setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
 
     notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES }).catch(() => {
       if (active) {
-        setUnreadNotifications(notifications.filter((item) => !item.is_read).length);
-        setNotifications(notifications);
+        setUnreadNotifications(snapshot.filter((item) => !item.is_read).length);
+        setNotifications(snapshot);
       }
     });
 

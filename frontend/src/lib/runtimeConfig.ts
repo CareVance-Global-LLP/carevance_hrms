@@ -151,6 +151,6 @@ export const idleAutoStopThresholdSeconds = resolveNumericConfigValue(
 export const idleGuardIntervalMs = resolveNumericConfigValue(
   runtimeConfig.VITE_IDLE_GUARD_INTERVAL_MS,
   import.meta.env.VITE_IDLE_GUARD_INTERVAL_MS,
-  1000,
+  10000,
   250
 );

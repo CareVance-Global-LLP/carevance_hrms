@@ -388,8 +388,6 @@ export const useDesktopTracker = () => {
       systemLockedAtMsRef.current = null;
       clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
-      systemLockedAtMsRef.current = null;
-      clearLockAutoStopTimeout();
     };
 
     const markVisibleActivity = () => {
@@ -1611,19 +1609,6 @@ export const useDesktopTracker = () => {
         })
         .catch((error) => {
           console.warn('Desktop tracker browser tracking state lookup failed:', error);
-        });
-    }
-    if (desktopApi && typeof desktopApi.getSystemLockState === 'function') {
-      void desktopApi.getSystemLockState()
-        .then((state) => {
-          if (!isCurrentRun()) {
-            return;
-          }
-
-          void applySystemLockState(state);
-        })
-        .catch((error) => {
-          console.warn('Desktop tracker system lock state lookup failed:', error);
         });
     }
     void tick();

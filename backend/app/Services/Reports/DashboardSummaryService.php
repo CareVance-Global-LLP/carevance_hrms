@@ -144,6 +144,7 @@ class DashboardSummaryService
             'all_time_total_duration' => $allTimeDuration,
             'all_time_total_elapsed_duration' => $allTimeElapsedDuration,
             'yesterday_total_duration' => $yesterdayDuration,
+            'weekly_total_elapsed_duration' => $weekData['week_total'],
             'today_change_percent' => $todayChangePercent,
             'active_projects_count' => $teamStats['active_projects_count'],
             'total_projects_count' => $teamStats['total_projects_count'],
