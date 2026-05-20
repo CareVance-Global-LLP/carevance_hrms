@@ -35,8 +35,7 @@ class NotificationController extends Controller
         }
 
         $limit = (int) ($request->limit ?: 30);
-        $excludeTypes = collect(self::CHAT_NOTIFICATION_TYPES)
-            ->merge((array) $request->input('exclude_types', []))
+        $excludeTypes = collect((array) $request->input('exclude_types', []))
             ->map(fn ($type) => trim((string) $type))
             ->filter()
             ->unique()
@@ -133,8 +132,7 @@ class NotificationController extends Controller
             return response()->json(['message' => 'Organization is required.'], 422);
         }
 
-        $excludeTypes = collect(self::CHAT_NOTIFICATION_TYPES)
-            ->merge((array) $request->input('exclude_types', []))
+        $excludeTypes = collect((array) $request->input('exclude_types', []))
             ->map(fn ($type) => trim((string) $type))
             ->filter()
             ->unique()

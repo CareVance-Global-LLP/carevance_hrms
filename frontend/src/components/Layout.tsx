@@ -11,7 +11,7 @@ import { webAppUrl } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, userApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
-import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound, shouldShowDesktopNotification } from '@/lib/desktopNotifications';
+import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound } from '@/lib/desktopNotifications';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
@@ -71,9 +71,9 @@ export default function Layout() {
   const globalSearchRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
-  const seenNotificationIdsRef = useRef<Set<number>>(new Set());
   const desktopNotificationByIdRef = useRef<Map<number, AppNotificationItem>>(new Map());
-  const hasLoadedNotificationsRef = useRef(false);
+  const seenNotificationIdsRef = useRef<Set<number>>(new Set());
+  const isInitialLoadRef = useRef(true);
   const isAdminView = hasAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
   const isSuperAdminView = hasSuperAdminAccess(user);
@@ -136,7 +136,7 @@ export default function Layout() {
       return;
     }
 
-    if (!shouldShowDesktopNotification(notification, seenNotificationIdsRef.current)) {
+    if (notification.is_read) {
       return;
     }
 
@@ -162,9 +162,11 @@ export default function Layout() {
     }
 
     if (!('Notification' in window) || Notification.permission !== 'granted') {
+      console.log('[Notify] Permission not granted:', Notification.permission);
       return;
     }
 
+    console.log('[Notify] Showing:', notification.type, formattedTitle);
     const systemNotification = new Notification(formattedTitle, {
       body: formattedMessage,
       tag: `app-notification-${notification.id}`,
@@ -585,25 +587,19 @@ export default function Layout() {
             ])
           : Promise.resolve(null);
 
-        const [notificationResponse, desktopNotificationResponse, chatNotificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
-          notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
-          notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
-          notificationApi.list({ limit: 20, types: CHAT_NOTIFICATION_TYPES }),
+        const [notificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
+          notificationApi.list({ limit: 20, unread_only: true }),
           chatApi.getUnreadSummary(),
           approvalPromise,
         ]);
 
         if (!active) return;
-        const nextNotifications = ((notificationResponse.data?.data || []) as AppNotificationItem[]).filter(
-          (item) => !isChatNotification(item)
-        );
-        const nextDesktopNotifications = ((desktopNotificationResponse.data?.data || []) as AppNotificationItem[]).filter(
-          (item) => !isChatNotification(item)
-        );
-        const nextChatNotifications = ((chatNotificationResponse.data?.data || []) as AppNotificationItem[]).filter(
-          (item) => isChatNotification(item)
-        );
-        setNotifications(nextNotifications);
+
+        const allItems = (notificationResponse.data?.data || []) as AppNotificationItem[];
+        const nextNonChat = allItems.filter((item) => !isChatNotification(item));
+        const nextChat = allItems.filter((item) => isChatNotification(item));
+
+        setNotifications(nextNonChat);
         setUnreadNotifications(Number(notificationResponse.data?.unread_count || 0));
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
 
@@ -616,30 +612,29 @@ export default function Layout() {
           setPendingApprovals(0);
         }
 
-        const nextIds = new Set<number>(nextDesktopNotifications.map((item) => Number(item.id)).filter((id) => id > 0));
-        const nextChatIds = new Set<number>(nextChatNotifications.map((item) => Number(item.id)).filter((id) => id > 0));
-        const allSeenIds = new Set([...seenNotificationIdsRef.current, ...nextIds, ...nextChatIds]);
-
-        if (!hasLoadedNotificationsRef.current) {
-          seenNotificationIdsRef.current = allSeenIds;
-          hasLoadedNotificationsRef.current = true;
-        } else {
-          nextDesktopNotifications
-            .filter((item) => !item.is_read)
-            .filter((item) => shouldShowDesktopNotification(item, seenNotificationIdsRef.current))
-            .forEach((item) => {
-              showDesktopNotification(item);
-            });
-
-          nextChatNotifications
-            .filter((item) => !item.is_read)
-            .filter((item) => shouldShowDesktopNotification(item, seenNotificationIdsRef.current))
-            .forEach((item) => {
-              showDesktopNotification(item);
-            });
-
-          seenNotificationIdsRef.current = allSeenIds;
+        if (isInitialLoadRef.current) {
+          allItems.forEach((item) => seenNotificationIdsRef.current.add(Number(item.id)));
+          isInitialLoadRef.current = false;
+          return;
         }
+
+        const newNonChat = nextNonChat.filter((item) => {
+          const id = Number(item.id);
+          return !item.is_read && !seenNotificationIdsRef.current.has(id);
+        });
+        const newChat = nextChat.filter((item) => {
+          const id = Number(item.id);
+          return !item.is_read && !seenNotificationIdsRef.current.has(id);
+        });
+
+        if (newNonChat.length > 0 || newChat.length > 0) {
+          console.log('[Notify] New notifications:', { nonChat: newNonChat.length, chat: newChat.length });
+        }
+
+        newNonChat.forEach((item) => showDesktopNotification(item));
+        newChat.forEach((item) => showDesktopNotification(item));
+
+        allItems.forEach((item) => seenNotificationIdsRef.current.add(Number(item.id)));
       } catch {
         if (active) {
           setNotifications([]);
