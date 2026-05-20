@@ -698,6 +698,15 @@ class TimeEntryController extends Controller
             ->where('type', 'idle')
             ->sum('duration');
 
+        $reportedIdleFromSystem = $reportedIdleSeconds >= $idleAutoStopThresholdSeconds;
+        $continuousIdleFromActivity = $continuousIdleSeconds >= $idleAutoStopThresholdSeconds;
+        $resolvedIdleFromBoth = $resolvedIdleSeconds >= $idleAutoStopThresholdSeconds;
+
+        $activityNoiseGraceSeconds = 15;
+        $hasRecentActivityNoise = $reportedIdleFromSystem
+            && !$continuousIdleFromActivity
+            && ($continuousIdleSeconds + $activityNoiseGraceSeconds) >= $idleAutoStopThresholdSeconds;
+
         $log = [
             'session_id' => $entry?->id,
             'employee_id' => $userId,
@@ -717,12 +726,11 @@ class TimeEntryController extends Controller
             'retry_after_seconds' => $retryAfterSeconds,
             'timer_stop_reason' => 'continuous_idle_threshold',
             'email_sent' => false,
+            'has_recent_activity_noise' => $hasRecentActivityNoise,
         ];
 
         return [
-            'eligible' => $trackedIdleSeconds >= $idleAutoStopThresholdSeconds
-                && $continuousIdleSeconds >= $idleAutoStopThresholdSeconds
-                && $resolvedIdleSeconds >= $idleAutoStopThresholdSeconds,
+            'eligible' => $resolvedIdleFromBoth || $hasRecentActivityNoise,
             'resolved_idle_seconds' => $resolvedIdleSeconds,
             'retry_after_seconds' => $retryAfterSeconds,
             'dedupe_key' => sprintf(
