@@ -189,19 +189,19 @@ export default function SettingsPage() {
   const [isSubmittingHelp, setIsSubmittingHelp] = useState(false);
 
   const isEmployee = isEmployeeUser(user);
-  const isOrgEditable = canManageOrg && hasAdminAccess(user) && !isEmployee;
+  const isOrgEditable = canManageOrg && hasStrictAdminAccess(user);
   const isStrictAdminUser = hasStrictAdminAccess(user);
   const canEditEmail = hasStrictAdminAccess(user);
   const hasDesktopBrowserTracking = Boolean(window.desktopTracker);
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
-    ...(hasAdminAccess(user) ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
+    ...(hasStrictAdminAccess(user) ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
     { id: 'help', name: 'Help', icon: LifeBuoy },
-    ...(hasAdminAccess(user) ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
-    ...(hasAdminAccess(user) ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
+    ...(hasStrictAdminAccess(user) ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
+    ...(hasStrictAdminAccess(user) ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
     { id: 'billing', name: 'Billing', icon: CreditCard },
     ...(hasDesktopBrowserTracking ? [{ id: 'browser-tracking', name: 'Browser Tracking', icon: Link2 }] : []),
     ...(hasStrictAdminAccess(user) ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
