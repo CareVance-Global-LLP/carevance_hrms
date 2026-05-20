@@ -166,6 +166,7 @@ export default function DesktopTimerDashboard() {
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const hasRestoredSnapshotRef = useRef(false);
   const hasAttemptedAutoStartRef = useRef(false);
+  const latestWorkedSecondsRef = useRef(0);
 
   useEffect(() => {
     if (!activeTimer) {
@@ -413,12 +414,16 @@ export default function DesktopTimerDashboard() {
 
     const pendingNotice = consumeIdleAutoStopNotice(userId);
     if (pendingNotice) {
+      const finalWorkedSeconds = latestWorkedSecondsRef.current;
+      setWorkedBaseSeconds(finalWorkedSeconds);
+      setTodayTotal((current) => Math.max(current, finalWorkedSeconds));
+      setTimerBaseSeconds(0);
+      setWorkedBaselineSnapshot(userId, finalWorkedSeconds, attendanceToday?.attendance_date);
       setFeedback({ tone: 'error', message: pendingNotice });
       setNotice('');
       setActiveTimer(null);
       localStorage.removeItem(ACTIVE_TIMER_KEY);
       emitDesktopTimerStopped({ userId });
-      void fetchData();
     }
 
     const handleIdleAutoStop = (event: Event) => {
@@ -427,12 +432,22 @@ export default function DesktopTimerDashboard() {
         return;
       }
 
+      const finalWorkedSeconds = latestWorkedSecondsRef.current;
+      setWorkedBaseSeconds(finalWorkedSeconds);
+      setTodayTotal((current) => Math.max(current, finalWorkedSeconds));
+      setTimerBaseSeconds(0);
+      setWorkedBaselineSnapshot(userId, finalWorkedSeconds, attendanceToday?.attendance_date);
+      setAttendanceToday((prev: any) => prev ? {
+        ...prev,
+        is_checked_in: false,
+        worked_seconds: Math.max(Number(prev?.worked_seconds || 0), finalWorkedSeconds),
+        check_out_at: new Date().toISOString(),
+      } : prev);
       setFeedback({ tone: 'error', message: detail.message });
       setNotice('');
       setActiveTimer(null);
       localStorage.removeItem(ACTIVE_TIMER_KEY);
       emitDesktopTimerStopped({ userId });
-      void fetchData();
     };
 
     window.addEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, handleIdleAutoStop as EventListener);
@@ -536,7 +551,6 @@ export default function DesktopTimerDashboard() {
         });
       }
       setNotice(isAutoStart ? 'Timer started. Choose a task for the running session if needed.' : '');
-      await fetchData();
     } catch (error: any) {
       console.error('Error starting timer:', error);
       const errorCode = String(error?.response?.data?.error_code || '').trim();
@@ -605,7 +619,6 @@ export default function DesktopTimerDashboard() {
         setTodayEntries(todayResponse.data.time_entries);
         setTodayTotal(todayResponse.data.total_duration);
       }
-      await fetchData();
     } catch (error) {
       const status = (error as any)?.response?.status;
       if (status === 404) {
@@ -620,7 +633,6 @@ export default function DesktopTimerDashboard() {
             entryId: activeTimer?.id ?? null,
           });
         }
-        await fetchData();
         return;
       }
       console.error('Error stopping timer:', error);
@@ -697,6 +709,7 @@ export default function DesktopTimerDashboard() {
   );
   const effectiveWorkedSeconds = Math.max(currentWorkedSeconds, todayTotal);
   const todayDisplaySeconds = effectiveWorkedSeconds;
+  latestWorkedSecondsRef.current = todayDisplaySeconds;
   const timerDisplaySeconds = activeTimer ? liveDuration : 0;
   const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
   const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);

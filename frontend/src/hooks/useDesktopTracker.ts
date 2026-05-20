@@ -226,8 +226,24 @@ const resolveDesktopSessionSignature = (payload: DesktopForegroundWindowPayload)
 );
 
 const EXPLORER_APP_KEYWORDS = ['explorer.exe', 'windows explorer', 'file explorer'];
-const LOCK_SCREEN_APP_KEYWORDS = ['lockapp.exe', 'logonui.exe', 'winlogon.exe', 'screensaverhost.exe'];
-const LOCK_SCREEN_TITLE_KEYWORDS = ['lock screen', 'windows lock', 'sign-in'];
+const LOCK_SCREEN_APP_KEYWORDS = [
+  'lockapp.exe',
+  'logonui.exe',
+  'winlogon.exe',
+  'screensaverhost.exe',
+  'systemsettings.exe',
+  'lockapp',
+  'logonui',
+  'winlogon',
+];
+const LOCK_SCREEN_TITLE_KEYWORDS = [
+  'lock screen',
+  'windows lock',
+  'sign-in',
+  'locked',
+  'screen lock',
+  'welcome screen',
+];
 
 const shouldPreferWindowTitleForDesktopApp = (appName?: string | null, windowTitle?: string | null) => {
   const normalizedAppName = String(appName || '').trim().toLowerCase();
@@ -861,6 +877,9 @@ export const useDesktopTracker = () => {
       if (!isCurrentRun()) {
         return;
       }
+      if (systemLockedAtMsRef.current !== null) {
+        return;
+      }
 
       pendingTrackedSecondsRef.current = 0;
       clearTrackedActivitySegment();
@@ -880,6 +899,9 @@ export const useDesktopTracker = () => {
 
     const handleBrowserTrackingEvent = async (event: BrowserTrackingEvent) => {
       if (!isCurrentRun()) {
+        return;
+      }
+      if (systemLockedAtMsRef.current !== null) {
         return;
       }
 
@@ -1087,7 +1109,6 @@ export const useDesktopTracker = () => {
           activeSegmentRef.current = null;
           pendingIdleRewindRef.current.clear();
           pendingTrackedSecondsRef.current = 0;
-          lastInputRef.current = Date.now();
           console.info('[desktop-tracker] idle auto-stop rejected by backend validation', {
             session_id: activeEntry.id,
             employee_id: userId,
@@ -1179,12 +1200,14 @@ export const useDesktopTracker = () => {
       }
 
       lockScreenAutoStopRevealPendingRef.current = true;
-      systemLockedAtMsRef.current = lockedAtMs;
       return true;
     };
 
     const tick = async () => {
       if (inFlight || !isCurrentRun()) return;
+      if (systemLockedAtMsRef.current !== null) {
+        return;
+      }
       const now = Date.now();
       const previousTickAt = lastTickAtRef.current ?? now;
       lastTickAtRef.current = now;
@@ -1428,7 +1451,11 @@ export const useDesktopTracker = () => {
         clearLockAutoStopTimeout();
         const activeEntry = activeEntryRef.current || await getOrLoadActiveEntry();
         if (activeEntry?.id) {
-          await attemptLockScreenAutoStop(activeEntry, resolvedLockedAtMs);
+          try {
+            await attemptLockScreenAutoStop(activeEntry, resolvedLockedAtMs);
+          } catch (error) {
+            console.error('[desktop-tracker] lock screen auto-stop failed:', error);
+          }
         }
         await runIdleGuard();
         return;
@@ -1458,6 +1485,9 @@ export const useDesktopTracker = () => {
 
     const captureScreenshotOnInterval = async () => {
       if (screenshotInFlight || !isCurrentRun()) return;
+      if (systemLockedAtMsRef.current !== null) {
+        return;
+      }
 
       screenshotInFlight = true;
       try {
