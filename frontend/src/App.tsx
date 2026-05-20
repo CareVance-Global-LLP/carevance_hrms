@@ -65,6 +65,8 @@ const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
 const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
 const AddUserPage = lazyWithChunkRetry(() => import('@/pages/AddUserPage'));
 const BillingSettingsPage = lazyWithChunkRetry(() => import('@/pages/BillingSettingsPage'));
+const SuperAdminDashboard = lazyWithChunkRetry(() => import('@/pages/super-admin/SuperAdminDashboard'));
+const SuperAdminOrganizations = lazyWithChunkRetry(() => import('@/pages/super-admin/Organizations'));
 const SuperAdminCompanies = lazyWithChunkRetry(() => import('@/pages/super-admin/Companies'));
 const SuperAdminCompanyDetail = lazyWithChunkRetry(() => import('@/pages/super-admin/CompanyDetail'));
 
@@ -167,7 +169,7 @@ function HomeRoute() {
       return <Navigate to="/login" replace />;
     }
 
-    return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin/companies' : '/dashboard'} replace />;
+    return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin' : '/dashboard'} replace />;
   }
 
   return <LandingPage />;
@@ -247,7 +249,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
-    return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin/companies' : '/dashboard'} replace />;
+    return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin' : '/dashboard'} replace />;
   }
 
   return <>{children}</>;
@@ -312,7 +314,7 @@ function App() {
   const isSuperAdmin = hasSuperAdminAccess(user);
   const dashboardElement = window.desktopTracker && !isSuperAdmin ? <DesktopTimerDashboard /> : <Dashboard />;
   const effectiveDashboardElement = isSuperAdmin
-    ? <SuperAdminCompanies />
+    ? <SuperAdminDashboard />
     : window.desktopTracker
       ? dashboardElement
       : hasAdminAccess(user)
@@ -398,7 +400,7 @@ function App() {
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
             <Route path="org-hierarchy" element={<AdminRoute><OrgHierarchy /></AdminRoute>} />
-            <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin/companies" replace /> : <DesktopTimerDashboard />} />
+            <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<Projects />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />
@@ -450,7 +452,9 @@ function App() {
             <Route path="settings/integrations" element={<Settings />} />
             <Route path="settings/custom-fields" element={<Settings />} />
             <Route path="settings/billing" element={<AdminRoute><BillingSettingsPage /></AdminRoute>} />
-            <Route path="super-admin" element={<SuperAdminRoute><SuperAdminCompanies /></SuperAdminRoute>} />
+            <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+            <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
+            <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />
             <Route path="super-admin/companies" element={<SuperAdminRoute><SuperAdminCompanies /></SuperAdminRoute>} />
             <Route path="super-admin/companies/:companyId" element={<SuperAdminRoute><SuperAdminCompanyDetail /></SuperAdminRoute>} />
             <Route path="legacy/reports" element={<AdminRoute><Reports /></AdminRoute>} />

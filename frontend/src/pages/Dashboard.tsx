@@ -422,7 +422,18 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-100 p-3">
                 <p className="text-slate-500">Late</p>
-                <p className={`mt-2 font-semibold ${lateMinutes > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{lateMinutes > 0 ? `${lateMinutes}m` : 'On time'}</p>
+                <p className={`mt-2 font-semibold ${lateMinutes > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {lateMinutes > 0
+                    ? (() => {
+                        const hrs = Math.floor(lateMinutes / 60);
+                        const mins = lateMinutes % 60;
+                        if (hrs > 0) {
+                          return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+                        }
+                        return `${lateMinutes}m`;
+                      })()
+                    : 'On time'}
+                </p>
               </div>
               <div className="rounded-lg border border-slate-100 p-3">
                 <p className="text-slate-500">Overtime</p>

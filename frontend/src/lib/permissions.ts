@@ -15,8 +15,8 @@ const normalizeRole = (role: string | null | undefined): string =>
 export const hasStrictAdminAccess = (user: User | null | undefined): boolean =>
   user?.role === 'admin';
 
-export const hasSuperAdminAccess = (_user: User | null | undefined): boolean =>
-  false;
+export const hasSuperAdminAccess = (user: User | null | undefined): boolean =>
+  user?.role === 'super_admin';
 
 export const canReviewApprovalRequest = (
   reviewer: ApprovalActor | null | undefined,

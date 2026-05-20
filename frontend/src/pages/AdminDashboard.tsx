@@ -1945,7 +1945,16 @@ export default function AdminDashboard() {
                       <div key={record.id || record.attendance_date} className="flex items-center justify-between gap-3 text-xs">
                         <div>
                           <p className="font-medium text-slate-700">{formatDate(record.attendance_date)}</p>
-                          <p className="text-[11px] text-slate-400">{record.late_minutes ? `${record.late_minutes} min late` : 'On time'}</p>
+                          <p className="text-[11px] text-slate-400">{record.late_minutes
+                            ? (() => {
+                                const hrs = Math.floor(record.late_minutes / 60);
+                                const mins = record.late_minutes % 60;
+                                if (hrs > 0) {
+                                  return mins > 0 ? `${hrs}h ${mins}m late` : `${hrs}h late`;
+                                }
+                                return `${record.late_minutes} min late`;
+                              })()
+                            : 'On time'}</p>
                         </div>
                         <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] capitalize text-slate-600">{String(record.status || 'none').replace('_', ' ')}</span>
                       </div>
@@ -2150,7 +2159,16 @@ export default function AdminDashboard() {
                             </span>
                           </td>
                           <td className="px-4 py-3 font-medium text-slate-700">
-                            {row.statusKey === 'present_late' ? `${row.lateMinutes} min` : row.statusKey === 'present_on_time' ? 'On time' : '--'}
+                            {row.statusKey === 'present_late'
+                              ? (() => {
+                                  const hrs = Math.floor(row.lateMinutes / 60);
+                                  const mins = row.lateMinutes % 60;
+                                  if (hrs > 0) {
+                                    return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+                                  }
+                                  return `${row.lateMinutes} min`;
+                                })()
+                              : row.statusKey === 'present_on_time' ? 'On time' : '--'}
                           </td>
                         </tr>
                       ))}
@@ -2329,10 +2347,17 @@ export default function AdminDashboard() {
                       <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${!row.checkInAt ? 'bg-slate-100 text-slate-600' : (row.lateDays > 0 || (isRangeIncludingToday && row.lateMinutes > 0)) ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
                         {!row.checkInAt
                           ? 'No punch'
-                          : row.lateDays > 0
-                            ? `${row.lateDays} late day${row.lateDays === 1 ? '' : 's'}`
-                            : (isRangeIncludingToday && row.lateMinutes > 0)
-                              ? `${row.lateMinutes} min late`
+                          : (isRangeIncludingToday && row.lateMinutes > 0)
+                            ? (() => {
+                                const hrs = Math.floor(row.lateMinutes / 60);
+                                const mins = row.lateMinutes % 60;
+                                if (hrs > 0) {
+                                  return mins > 0 ? `${hrs}h ${mins}m late` : `${hrs}h late`;
+                                }
+                                return `${row.lateMinutes} min late`;
+                              })()
+                            : row.lateDays > 0
+                              ? `${row.lateDays} late day${row.lateDays === 1 ? '' : 's'}`
                               : 'On time'}
                       </span>
                     </td>
