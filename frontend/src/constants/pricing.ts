@@ -4,7 +4,7 @@ export type PricingBillingCycle = 'monthly' | 'yearly';
 export type SignupMode = 'trial' | 'paid';
 
 export interface PricingPlan {
-  code: 'starter' | 'growth' | 'enterprise';
+  code: 'basic' | 'advanced_tracker' | 'enterprise';
   label: string;
   shortDescription: string;
   monthlyPrice: string | null;
@@ -14,6 +14,7 @@ export interface PricingPlan {
   badge?: string;
   enterpriseContactOnly: boolean;
   trialAvailable: boolean;
+  minSeats: number;
 }
 
 export const pricingUi = {
@@ -22,40 +23,62 @@ export const pricingUi = {
   contactEmail: salesContactEmail,
 };
 
+export const PRICE_CURRENCY = '₹';
+export const MIN_SEATS = 10;
+export const TRIAL_SEATS = 5;
+
+export const basicFeatures = [
+  'Desktop timer app',
+  'Check-in / check-out',
+  'Idle detection and auto-stop',
+  'Screenshot capture and viewer history',
+  'Reports module with CSV export',
+  'User and role management',
+  'Overtime calculation and history',
+  'Approval workflow',
+  'Workspace onboarding and invites',
+  'Multi-role access',
+];
+
+export const advancedOnlyFeatures = [
+  'Chat module',
+  'Geo-fencing',
+  'Leave application and approval workflow',
+  'Employee timeline',
+  'Project tracking',
+  'Task tracking',
+];
+
+export const advancedFeatures = [
+  ...basicFeatures,
+  ...advancedOnlyFeatures,
+];
+
 export const pricingPlans: PricingPlan[] = [
   {
-    code: 'starter',
-    label: 'Starter',
-    shortDescription: 'For growing teams standardizing attendance, task visibility, and employee onboarding.',
-    monthlyPrice: '$29',
-    yearlyPrice: '$290',
-    features: [
-      'Attendance and shift tracking',
-      'Employee directory and invite workflows',
-      'Core dashboard, projects, and tasks',
-      'Basic reporting and approval inbox',
-    ],
-    ctaLabel: 'Start Free Trial',
-    badge: 'Fast setup',
-    enterpriseContactOnly: false,
-    trialAvailable: true,
-  },
-  {
-    code: 'growth',
-    label: 'Growth',
-    shortDescription: 'For operations and HR teams that need deeper reporting, permissions, and payroll readiness.',
-    monthlyPrice: '$79',
-    yearlyPrice: '$790',
-    features: [
-      'Everything in Starter',
-      'Advanced reporting and monitoring views',
-      'Role-based invites and onboarding controls',
-      'Payroll and billing foundations',
-    ],
-    ctaLabel: 'Start Free Trial',
+    code: 'basic',
+    label: 'Basic',
+    shortDescription: 'Core monitoring, attendance, and reporting for growing teams.',
+    monthlyPrice: '₹300',
+    yearlyPrice: '₹270',
+    features: basicFeatures,
+    ctaLabel: 'Buy Now',
     badge: 'Most popular',
     enterpriseContactOnly: false,
     trialAvailable: true,
+    minSeats: MIN_SEATS,
+  },
+  {
+    code: 'advanced_tracker',
+    label: 'Advanced Tracker',
+    shortDescription: 'Advanced monitoring, communication, and project management features for scaling teams.',
+    monthlyPrice: '₹450',
+    yearlyPrice: '₹400',
+    features: advancedFeatures,
+    ctaLabel: 'Buy Now',
+    enterpriseContactOnly: false,
+    trialAvailable: false,
+    minSeats: MIN_SEATS,
   },
   {
     code: 'enterprise',
@@ -73,29 +96,39 @@ export const pricingPlans: PricingPlan[] = [
     badge: 'Custom rollout',
     enterpriseContactOnly: true,
     trialAvailable: false,
+    minSeats: MIN_SEATS,
   },
 ];
+
+export const freeTrial = {
+  label: 'Start Free Trial',
+  shortDescription: '14 days free. Basic plan with 5 seats.',
+  ctaLabel: 'Start Free Trial',
+  planCode: 'basic' as const,
+  seats: 5,
+  trialDays: 14,
+};
 
 export const pricingFaqs = [
   {
     question: 'How does the free trial work?',
-    answer: 'Starter and Growth can begin with a 14-day trial. You can create your workspace, invite your team, and configure the product before finalizing billing.',
+    answer: 'You get 14 days of the Basic plan with 5 seats. Screenshot features are disabled during trial — upgrade to access them. No credit card required to start.',
   },
   {
-    question: 'Do invited employees choose their own role?',
-    answer: 'No. Roles are assigned by an authorized workspace admin and are enforced by the backend when the invitation is accepted.',
+    question: 'How is per-user pricing calculated?',
+    answer: 'Each plan has a per-user per-month price. You choose the number of seats (minimum 10) during checkout. Annual billing gives you a discounted per-user rate.',
   },
   {
-    question: 'What happens if we choose a paid plan before checkout is connected?',
-    answer: 'CareVance stores the selected plan and paid intent so your billing setup is ready for a future checkout or sales-assisted activation.',
+    question: 'Can I add more seats later?',
+    answer: 'Yes. Visit Subscription settings in your workspace to add seats, upgrade your plan, or view your remaining seat count.',
   },
   {
-    question: 'Can we onboard multiple people at once?',
-    answer: 'Yes. Admins can invite multiple email addresses at once, generate secure invite links, and use CSV upload scaffolding for batch onboarding.',
+    question: 'Do invited employees count toward my seat limit?',
+    answer: 'Yes. Every active user in your workspace uses one seat. If you hit your seat limit, you\'ll need to add more seats before inviting new members.',
   },
   {
-    question: 'Can we cancel or change plans later?',
-    answer: 'Yes. Billing status, trial end date, and upgrade paths are tracked in workspace settings so future plan changes can be handled cleanly.',
+    question: 'Can I upgrade from Basic to Advanced Tracker?',
+    answer: 'Yes. You can switch plans anytime from your subscription settings. The upgrade applies immediately.',
   },
 ];
 
@@ -107,10 +140,59 @@ export function getPlanPrice(plan: PricingPlan, billingCycle: PricingBillingCycl
   return billingCycle === 'yearly' ? plan.yearlyPrice : plan.monthlyPrice;
 }
 
-export function buildSignupQuery(planCode: PricingPlan['code'], mode: SignupMode, billingCycle: PricingBillingCycle = 'monthly') {
+export function getPricePerUserPerMonth(plan: PricingPlan, billingCycle: PricingBillingCycle): number {
+  const priceStr = getPlanPrice(plan, billingCycle) || '0';
+  return parseInt(priceStr.replace(/[^0-9]/g, ''), 10) || 0;
+}
+
+export function calculateTotal(plan: PricingPlan, seats: number, billingCycle: PricingBillingCycle): number {
+  const monthly = getPricePerUserPerMonth(plan, billingCycle) * seats;
+  return billingCycle === 'yearly' ? monthly * 12 : monthly;
+}
+
+export function buildSignupQuery(planCode: string, mode: SignupMode, billingCycle: PricingBillingCycle = 'monthly', seats: number = MIN_SEATS) {
   return new URLSearchParams({
     plan: planCode,
     mode,
     interval: billingCycle,
+    seats: String(seats),
   }).toString();
+}
+
+export function buildCheckoutPath(planCode: string, billingCycle: PricingBillingCycle = 'monthly'): string {
+  return `/checkout?plan=${planCode}&interval=${billingCycle}`;
+}
+
+export function buildUpgradePath(targetPlanCode: string, billingCycle: PricingBillingCycle = 'monthly'): string {
+  return `/checkout?plan=${targetPlanCode}&interval=${billingCycle}&mode=upgrade`;
+}
+
+export function calculateUpgradeCost(
+  currentPlan: PricingPlan,
+  targetPlan: PricingPlan,
+  seats: number,
+  billingCycle: PricingBillingCycle,
+  isTrial: boolean,
+  monthsRemaining: number = 1
+): number {
+  if (isTrial) {
+    return calculateTotal(targetPlan, seats, billingCycle);
+  }
+  const currentMonthly = getPricePerUserPerMonth(currentPlan, 'monthly');
+  const targetMonthly = getPricePerUserPerMonth(targetPlan, 'monthly');
+  const diffPerUserPerMonth = targetMonthly - currentMonthly;
+  if (diffPerUserPerMonth <= 0) return 0;
+  return diffPerUserPerMonth * seats * monthsRemaining;
+}
+
+export function getMonthsRemaining(subscriptionExpiresAt: string | null, billingCycle: PricingBillingCycle): number {
+  if (!subscriptionExpiresAt) return 1;
+  const expires = new Date(subscriptionExpiresAt);
+  const now = new Date();
+  const diffMs = expires.getTime() - now.getTime();
+  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  if (billingCycle === 'yearly') {
+    return Math.max(1, Math.ceil(diffDays / 30));
+  }
+  return Math.max(1, Math.ceil(diffDays / 30));
 }

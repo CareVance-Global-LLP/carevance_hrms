@@ -359,7 +359,7 @@ class InvitationFlowTest extends TestCase
         $organization = Organization::create([
             'name' => 'CareVance',
             'slug' => 'carevance',
-            'plan_code' => 'starter',
+            'plan_code' => 'basic',
             'subscription_status' => 'trial',
             'subscription_intent' => 'trial',
             'trial_starts_at' => now(),

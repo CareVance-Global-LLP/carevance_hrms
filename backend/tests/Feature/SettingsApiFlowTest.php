@@ -146,7 +146,7 @@ class SettingsApiFlowTest extends TestCase
 
         $this->getJson('/api/settings/billing', $headers)
             ->assertOk()
-            ->assertJsonPath('plan.code', 'starter')
+            ->assertJsonPath('plan.code', 'basic')
             ->assertJsonPath('workspace.id', $organization->id);
     }
 

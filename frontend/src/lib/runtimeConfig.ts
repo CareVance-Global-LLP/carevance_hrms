@@ -13,6 +13,7 @@ type AppRuntimeConfig = {
   VITE_IDLE_TRACK_THRESHOLD_SECONDS?: string;
   VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS?: string;
   VITE_IDLE_GUARD_INTERVAL_MS?: string;
+  VITE_PAYROLL_ENABLED?: string;
 };
 
 const runtimeConfig: AppRuntimeConfig =
@@ -146,6 +147,12 @@ export const idleAutoStopThresholdSeconds = resolveNumericConfigValue(
   import.meta.env.VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS,
   5 * 60,
   60
+);
+
+export const payrollEnabled = resolveBooleanConfigValue(
+  runtimeConfig.VITE_PAYROLL_ENABLED,
+  import.meta.env.VITE_PAYROLL_ENABLED,
+  false
 );
 
 export const idleGuardIntervalMs = resolveNumericConfigValue(

@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { Check, ChevronRight } from 'lucide-react';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import {
-  buildSignupQuery,
+  advancedOnlyFeatures,
+  basicFeatures,
+  buildCheckoutPath,
   getPlanPrice,
   pricingPlans,
   pricingUi,
@@ -46,7 +48,6 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
         <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {pricingPlans.map((plan) => {
             const price = getPlanPrice(plan, billingCycle);
-            const query = buildSignupQuery(plan.code, plan.trialAvailable ? 'trial' : 'paid', billingCycle);
 
             return (
               <AdaptiveSurface
@@ -94,14 +95,30 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                   </div>
 
                   <ul className="mt-6 space-y-3">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-3 rounded-[18px] bg-white/75 px-3 py-2.5">
-                        <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                          <Check className="h-3.5 w-3.5" />
-                        </span>
-                        <span className="text-sm leading-7 text-slate-600">{feature}</span>
-                      </li>
-                    ))}
+                    {plan.code === 'advanced_tracker' ? (
+                      <>
+                        <li className="rounded-[18px] bg-sky-50/80 px-3 py-2.5 text-sm font-medium text-slate-700">
+                          All {basicFeatures.length} Basic features included, plus:
+                        </li>
+                        {advancedOnlyFeatures.map((feature) => (
+                          <li key={feature} className="flex items-start gap-3 rounded-[18px] bg-white/75 px-3 py-2.5">
+                            <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                              <Check className="h-3.5 w-3.5" />
+                            </span>
+                            <span className="text-sm leading-7 text-slate-600">{feature}</span>
+                          </li>
+                        ))}
+                      </>
+                    ) : (
+                      plan.features.map((feature) => (
+                        <li key={feature} className="flex items-start gap-3 rounded-[18px] bg-white/75 px-3 py-2.5">
+                          <span className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                            <Check className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="text-sm leading-7 text-slate-600">{feature}</span>
+                        </li>
+                      ))
+                    )}
                   </ul>
 
                   <div className="mt-8 flex flex-col gap-3">
@@ -118,28 +135,16 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                         <ChevronRight className="h-4 w-4" />
                       </Link>
                     ) : (
-                      <>
-                        <Link
-                          to={`/signup-owner?${query}`}
-                          onClick={() => {
-                            analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'start-trial' });
-                            analytics.trackEvent('start_trial_clicked', { location: 'pricing', plan_code: plan.code });
-                          }}
-                          className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5"
-                        >
-                          {plan.ctaLabel}
-                          <ChevronRight className="h-4 w-4" />
-                        </Link>
-                        <Link
-                          to={`/signup-owner?${buildSignupQuery(plan.code, 'paid', billingCycle)}`}
-                          onClick={() => {
-                            analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'paid-plan' });
-                          }}
-                          className="inline-flex items-center justify-center rounded-full border border-slate-300/85 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition duration-300 hover:-translate-y-0.5 hover:border-slate-950"
-                        >
-                          Continue with Paid Plan
-                        </Link>
-                      </>
+                      <Link
+                      to={buildCheckoutPath(plan.code, billingCycle)}
+                      onClick={() => {
+                        analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'buy-now' });
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition duration-300 hover:-translate-y-0.5"
+                    >
+                      {plan.ctaLabel}
+                      <ChevronRight className="h-4 w-4" />
+                    </Link>
                     )}
                   </div>
                 </div>

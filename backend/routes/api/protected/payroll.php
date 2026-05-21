@@ -3,7 +3,7 @@
 use App\Http\Controllers\Api\SimplePayrollController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('payroll')->group(function () {
+Route::middleware('payroll.enabled')->prefix('payroll')->group(function () {
     Route::get('/payslips', [SimplePayrollController::class, 'payslips']);
     Route::get('/payslips/{id}', [SimplePayrollController::class, 'showPayslip']);
     Route::get('/payslips/{id}/pdf', [SimplePayrollController::class, 'downloadPayslipPdf']);

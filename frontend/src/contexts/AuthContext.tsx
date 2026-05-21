@@ -355,6 +355,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         slug: payload.company_name.toLowerCase().replace(/\s+/g, '-'),
         owner_user_id: 1,
         plan_code: payload.plan_code,
+        max_seats: payload.seats || 5,
         billing_cycle: payload.billing_cycle || 'monthly',
         subscription_status: payload.signup_mode === 'paid' ? 'inactive' : 'trial',
         subscription_intent: payload.signup_mode,

@@ -1259,6 +1259,12 @@ export const settingsApi = {
 export const billingApi = {
   current: () =>
     api.get<BillingSnapshot>('/billing/current'),
+  mockPay: () =>
+    api.post<{ subscription_status: string; subscription_expires_at: string }>('/billing/mock-pay'),
+  upgradePlan: (data: { target_plan_code: string; billing_cycle: string; seats?: number }) =>
+    api.post<{ amount: number; currency: string; proration_details: any; current_plan: string; target_plan: string }>('/billing/upgrade', data),
+  confirmUpgrade: (data: { payment_intent_id: string }) =>
+    api.post<{ subscription_status: string; plan_code: string; subscription_expires_at: string }>('/billing/confirm-upgrade', data),
 };
 
 export const companyApi = {
