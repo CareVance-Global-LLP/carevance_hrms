@@ -1,87 +1,128 @@
 # CareVance HRMS
 
-CareVance HRMS is a comprehensive workforce operations platform built with a Laravel API, a React web app, an Electron desktop tracker, and a browser extension for exact browser activity capture.
+**CareVance HRMS** is a comprehensive workforce operations platform built for modern organizations. It combines time tracking, attendance monitoring, payroll management, team communication, and productivity analytics into a single unified system.
 
-It covers team onboarding, attendance, time tracking, screenshots, monitoring, chat, payroll, invoicing, approvals, and reporting in one repository.
+The platform consists of four integrated components:
+- **Laravel API** - Backend system of record
+- **React Web App** - Full-featured HRMS client
+- **Electron Desktop Tracker** - Time tracking with idle detection and auto-start
+- **Browser Extension** - Exact browser activity capture
 
-## What Is In This Repo
+---
 
-- `backend/` Laravel 12 API and business logic
-- `frontend/` React 18 + TypeScript web application
-- `desktop/` Electron desktop tracker and browser-tracking bridge
-- `browser-extension/` Chromium-based extension used by the desktop bridge
-- `docs/` supporting product and operational documentation
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Core Features](#core-features)
+- [Quick Start](#quick-start)
+- [Desktop Tracker](#desktop-tracker)
+- [Browser Tracking](#browser-tracking)
+- [API Overview](#api-overview)
+- [Frontend Routes](#frontend-routes)
+- [Common Commands](#common-commands)
+- [Deployment](#deployment)
+- [Security](#security)
+- [License](#license)
+
+---
+
+## Architecture
+
+CareVance is structured as a modular monorepo with four interconnected components:
+
+```
+CareVance/
+── backend/              # Laravel 12 API (system of record)
+├── frontend/             # React 18 + TypeScript web application
+├── desktop/              # Electron desktop tracker + browser bridge
+├── browser-extension/    # Chromium extension for browser activity
+└── docs/                 # Product and operational documentation
+```
+
+**Data Flow:**
+1. Desktop tracker captures activity → sends to Laravel API
+2. Browser extension pairs with desktop bridge → forwards browser activity
+3. React web app consumes API → renders dashboards, reports, and management UI
+4. All components share the same PostgreSQL database through the API
+
+---
 
 ## Tech Stack
 
 ### Backend
-
-- PHP 8.2+
-- Laravel 12
-- PostgreSQL by default
-- Database queue driver by default
-- Token-based API auth with secure HTTP-only cookie support for the SPA
-- Dompdf for PDF generation
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| PHP | 8.2+ | Runtime |
+| Laravel | 12 | Framework |
+| PostgreSQL | 15+ | Database |
+| Laravel Queue | database | Job processing |
+| Dompdf | latest | PDF generation |
+| Auth | Token-based + HTTP-only cookies | Authentication |
 
 ### Frontend
-
-- React 18
-- TypeScript 5
-- Vite 7
-- React Router 6
-- TanStack React Query 5
-- Tailwind CSS 3
-- Framer Motion 12
-- Lucide React
-- Vitest 4
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| React | 18 | UI library |
+| TypeScript | 5 | Type safety |
+| Vite | 7 | Build tool |
+| React Router | 6 | Routing |
+| TanStack React Query | 5 | Data fetching |
+| Tailwind CSS | 3 | Styling |
+| Framer Motion | 12 | Animations |
+| Lucide React | latest | Icons |
+| Vitest | 4 | Testing |
 
 ### Desktop
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| Electron | 41 | Desktop shell |
+| Electron Builder | latest | Packaging |
+| Electron Updater | latest | Auto-updates |
+| powerMonitor | Electron API | Idle/lock detection |
 
-- Electron 41
-- Electron Builder
-- Electron Updater
-- Local browser-tracking bridge for the Chromium extension
+---
 
 ## Core Features
 
 ### HRMS & Employee Management
-- Owner signup and invitation-based employee onboarding
+- Owner signup with invitation-based employee onboarding
 - Bulk employee import via Excel
-- Role-aware user management (admin, manager, employee, client)
-- Employee 360-degree profiles with work info, government IDs, bank accounts, and documents
+- Role-based access (super admin, admin, manager, employee, client)
+- Employee 360° profiles (work info, government IDs, bank accounts, documents)
 - New hires and resignations tracking
 - Departments, roles, and permissions management
-- Announcements and notifications center
+- Announcements and notifications center with desktop push notifications
 
 ### Attendance & Leave
 - Check-in/check-out with today status, calendar view, and summary reports
-- Leave request lifecycle with approval workflow (approve/reject/revoke)
-- Leave revocation workflow (request revoke, then approve/reject revocation)
+- Leave request lifecycle with multi-level approval workflow
+- Leave revocation workflow (request → approve/reject)
 - Leave balances and consumption tracking
 - Attendance time edit requests (overtime corrections) with approval flow
-- Holiday management (admin)
-- Approval Inbox for centralized leave and time edit approvals with pending/history views
-- Leave Intelligence analytics with trend charts, department breakdowns, and coverage pressure metrics
+- Holiday management
+- Approval Inbox with pending/history views
+- Leave Intelligence analytics (trend charts, department breakdowns, coverage pressure)
 
 ### Time Tracking & Monitoring
-- Desktop timer with auto-start capability and dedicated timer dashboard
-- Screenshots with bulk management, single detail view, and signed URL access
-- Activity and session tracking with store/update endpoints
-- Exact browser activity tracking through the desktop bridge + extension
-- Browser tracking connection sync and health monitoring
-- Productivity rules engine (classify apps, domains, URLs, titles as productive/unproductive/neutral with regex, contains, starts_with, ends_with match modes)
-- Productivity rule testing endpoint before saving
-- Live monitoring dashboards (productive time, unproductive time, screenshots, app usage, website usage)
+- Desktop timer with **auto-start at office hours** and **OS boot auto-launch**
+- **Idle time detection** with configurable thresholds (3 min track, 5 min auto-stop)
+- **Lockscreen detection** - tracks idle during lock, auto-stops after threshold
+- Screenshots with bulk management, detail view, and signed URL access
+- Activity and session tracking with desktop/browser separation
+- **Exact browser activity tracking** through desktop bridge + extension
+- Productivity rules engine (classify apps/domains/URLs with regex matching)
+- Live monitoring dashboards (productive time, unproductive time, screenshots)
 - Web and app usage reports
 - Timeline reports for employee work patterns
 - Custom report groups for filtering
 
 ### Communication
 - Private direct messaging with full CRUD, edit, and delete
-- Group chats with create, send, update, delete, reactions, and typing indicators
-- File attachments in chat with download support
+- Group chats with create, send, reactions, and typing indicators
+- File attachments with download support
 - Unread message summary and tracking
-- Available users listing for chat initiation
+- **Desktop notifications** for new messages with sound
 - Mark conversations and groups as read
 
 ### Payroll
@@ -107,8 +148,6 @@ It covers team onboarding, attendance, time tracking, screenshots, monitoring, c
 - Attendance reports
 - Team and employee insights
 - Overall organizational reports
-- Project-specific reports
-- Projects and tasks report
 - Custom export functionality
 - Analytics hub with visualizations
 - Timeline reports for activity patterns
@@ -119,49 +158,44 @@ It covers team onboarding, attendance, time tracking, screenshots, monitoring, c
 - Billing and subscription management (trial/paid, monthly/yearly)
 
 ### Administration
-- Super admin multi-tenant company management with company detail views
+- Super admin multi-tenant company management
 - Audit logs for system-wide activity tracking
-- Organization settings and configuration with member management
-- Bug report system with categorized submissions (bug, UI, performance, billing, account, other)
-- Integrations settings page
-- Custom fields settings page
+- Organization settings with member management
+- Bug report system with categorized submissions
+- Integrations and custom fields settings
 - Billing settings and subscription management
 - Role-based route guards (Protected, Public, Admin, StrictAdmin, SuperAdmin)
-- Per-endpoint rate limiting (auth, screenshots, chat, invitations, notifications, settings)
+- Per-endpoint rate limiting
 - Chunk recovery mechanism for failed dynamic imports
-- Stripe payment return flow handling
 
-## Architecture
-
-This is a modular monorepo.
-
-- The `backend` folder is the system of record and exposes the API used by the web app and desktop app.
-- The `frontend` folder is the main HRMS client.
-- The `desktop` folder wraps the web experience with tracker capabilities and a localhost browser-tracking service.
-- The `browser-extension` folder contains the extension assets that pair with the desktop bridge.
+---
 
 ## Quick Start
+
+### Prerequisites
+- PHP 8.2+ with Composer
+- Node.js 18+ with npm
+- PostgreSQL 15+
+- Git
 
 ### 1. Backend
 
 ```bash
 cd backend
 composer install
-copy .env.example .env
+cp .env.example .env
 php artisan key:generate
 php artisan migrate
 php artisan serve
 ```
 
 Run the queue worker in a second terminal:
-
 ```bash
 cd backend
 php artisan queue:listen --tries=1 --timeout=0
 ```
 
-Useful backend defaults:
-
+**Environment Configuration:**
 ```env
 APP_URL=http://localhost:8000
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
@@ -181,18 +215,17 @@ CACHE_STORE=database
 ```bash
 cd frontend
 npm install
-copy .env.example .env
+cp .env.example .env
 npm run dev
 ```
 
-Recommended local frontend env:
-
+**Environment Configuration:**
 ```env
 VITE_API_URL=http://localhost:8000/api
 VITE_WEB_APP_URL=http://localhost:5173
 VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
-VITE_SALES_EMAIL=aayushborwal.carevanceglobal@gmail.com
-VITE_SUPPORT_EMAIL=mavliribaz.carevanceglobal@gmail.com
+VITE_SALES_EMAIL=sales@carevance.com
+VITE_SUPPORT_EMAIL=support@carevance.com
 ```
 
 ### 3. Desktop Tracker
@@ -203,134 +236,151 @@ npm install
 npm start
 ```
 
-The desktop shell opens the URL provided by `APP_URL`.
-
-Allowed values are intentionally restricted:
-
+The desktop shell opens the URL from `APP_URL`. Allowed values:
 - `https://...` for deployed environments
 - `http://localhost...` for local development
 - `http://127.0.0.1...` for local development
-
-Example:
 
 ```powershell
 $env:APP_URL="http://localhost:5173"
 npm start
 ```
 
+---
+
+## Desktop Tracker
+
+The CareVance Desktop Tracker runs in the system tray and provides:
+
+### Auto-Start Behavior
+- **OS Boot Launch** - Automatically starts when Windows boots (Registry + Task Scheduler + Startup folder)
+- **Timer Auto-Start** - Automatically starts timer at configured office hours
+- **Hidden on Launch** - Starts minimized to system tray, visible when user is ready
+
+### Idle Detection
+| Threshold | Default | Behavior |
+|-----------|---------|----------|
+| Idle Track | 3 minutes | Records idle activity after 3 min of inactivity |
+| Idle Auto-Stop | 5 minutes | Stops timer and sends email notification after 5 min |
+| Lockscreen | Immediate | Tracks as idle immediately, stops after 5 min |
+
+### System Tray
+- Double-click tray icon to open app window
+- Right-click for menu (Open / Exit)
+- Window close minimizes to tray (doesn't quit)
+
+### Notifications
+- Desktop push notifications for chat messages
+- Desktop popup for idle auto-stop events
+- Sound alerts for different notification types
+
+---
+
 ## Browser Tracking
 
-The browser tracking flow uses the desktop app plus the extension together.
+The browser tracking flow uses the desktop app plus the extension together:
 
-- The desktop app exposes a localhost bridge
-- The browser extension pairs to that bridge with a short-lived pairing code
+1. Desktop app exposes a localhost bridge service
+2. Browser extension pairs to the bridge with a short-lived pairing code
+3. Extension forwards browser activity to the bridge
+4. Bridge syncs activity to the Laravel API
+
+**Configuration:**
 - Trusted extension origins are allowlisted in desktop app config
 - Chrome and Edge origins can both be configured
+- Extension origins must be explicitly allowlisted (no wildcards)
 
-Important:
+**Important:**
+- Keep desktop app and extension on matching versions
+- Use the generated app config for Chrome/Edge origin allowlisting
+- Do not trust wildcard extension origins
 
-- do not trust wildcard extension origins
-- keep the desktop app and extension on matching versions
-- use the generated app config for Chrome and Edge origin allowlisting
+---
 
 ## Common Commands
 
 ### Backend
-
 ```bash
 cd backend
-php artisan test
-composer test:coverage
-composer route:test-matrix
+php artisan test                    # Run tests
+composer test:coverage              # Test with coverage
+composer route:test-matrix          # Route matrix test
+php artisan idle:health-check       # Validate idle pipeline config
 ```
 
 ### Frontend
-
 ```bash
 cd frontend
-npm test
-npm run build
-npm run test:coverage
+npm test                            # Run tests
+npm run build                       # Production build
+npm run test:coverage               # Test with coverage
+npx tsc --noEmit                    # Type check
 ```
 
 ### Desktop
-
 ```bash
 cd desktop
-npm start
-npm run dist:win
-npm run dist:portable
+npm start                           # Development mode
+npm run dist:win                    # Build Windows installer
+npm run dist:portable               # Build portable version
 ```
+
+---
 
 ## API Overview
 
-The API is organized into these route groups:
-
 | Group | Base Path | Description |
 |-------|-----------|-------------|
-| Health | `/api/health` | Health check endpoints (`/health`, `/health/simple`) |
-| Auth | `/api/auth` | Login, logout, registration, password reset, email verification, `/me`, `/handoff` |
-| Users | `/api/users` | User CRUD, employee profiles, groups, teams, `/stats`, `/profile-360` |
-| Employees | `/api/employees` | Employee workspace, profile, work info, government IDs, bank accounts, documents |
-| Attendance | `/api/attendance` | Check-in/out, today status, calendar, summary, holidays |
-| Leave | `/api/leave-requests` | Leave CRUD, balances, approve/reject, revoke request/approve/reject |
-| Time Edits | `/api/attendance-time-edit-requests` | Overtime/time edit requests with approval flow |
-| Monitoring | `/api/monitoring` | Screenshots (CRUD, bulk delete, signed file access), activities |
-| Activity Sessions | `/api/activity-sessions` | Activity session store and update |
-| Browser Tracking | `/api/browser-tracking` | Browser tracking connection sync and health |
-| Payroll | `/api/payroll` | Payslips (PDF download), payroll runs, salary profiles, adjustments, settings, mark paid |
-| Reports | `/api/reports` | Daily/weekly/monthly, productivity, attendance, team, employee insights, overall, project, exports |
-| Dashboard | `/api/dashboard` | Dashboard stats and KPIs |
-| Chat | `/api/chat` | Direct messages, group chats, reactions, typing, attachments, unread summary, available users |
-| Projects | `/api/projects` | Project CRUD, tasks, time entries, stats |
-| Tasks | `/api/tasks` | Task CRUD, status updates, time entries |
-| Time Entries | `/api/time-entries` | Time entry CRUD, start/stop timer, active, today |
+| Health | `/api/health` | Health check endpoints |
+| Auth | `/api/auth` | Login, logout, registration, password reset, `/me` |
+| Users | `/api/users` | User CRUD, employee profiles, groups, teams |
+| Employees | `/api/employees` | Employee workspace, profiles, documents |
+| Attendance | `/api/attendance` | Check-in/out, today status, calendar, holidays |
+| Leave | `/api/leave-requests` | Leave CRUD, balances, approve/reject, revoke |
+| Time Edits | `/api/attendance-time-edit-requests` | Overtime requests with approval |
+| Monitoring | `/api/monitoring` | Screenshots, activities, productivity |
+| Activity Sessions | `/api/activity-sessions` | Session store and update |
+| Browser Tracking | `/api/browser-tracking` | Connection sync and health |
+| Payroll | `/api/payroll` | Payslips, runs, profiles, adjustments |
+| Reports | `/api/reports` | Daily/weekly/monthly, productivity, attendance |
+| Dashboard | `/api/dashboard` | Stats and KPIs |
+| Chat | `/api/chat` | Direct messages, groups, reactions, typing |
+| Projects | `/api/projects` | Project CRUD, tasks, time entries |
+| Tasks | `/api/tasks` | Task CRUD, status updates |
+| Time Entries | `/api/time-entries` | Timer start/stop, active entries |
 | Invoices | `/api/invoices` | Invoice CRUD, send, mark paid |
-| Notifications | `/api/notifications` | Notifications, announcements, mark read/all read, publish |
-| Settings | `/api/settings` | Profile, password, preferences, organization, productivity rules (CRUD + test), billing |
-| Billing | `/api/billing` | Current billing snapshot and subscription info |
-| Audit | `/api/audit` | Audit logs (admin/manager) |
-| Invitations | `/api/invitations` | Invitation management, bulk import from Excel |
-| Invites | `/api/invites` | Send invite, validate invite, accept invite |
-| Organizations | `/api/organizations` | Organization CRUD, member listing, invite-to-org |
-| Company | `/api/me/company` | Current company info |
+| Notifications | `/api/notifications` | Notifications, announcements, publish |
+| Settings | `/api/settings` | Profile, org, productivity rules |
+| Billing | `/api/billing` | Subscription info |
+| Audit | `/api/audit` | Audit logs |
+| Invitations | `/api/invitations` | Bulk import from Excel |
+| Invites | `/api/invites` | Send, validate, accept invites |
+| Organizations | `/api/organizations` | Org CRUD, member listing |
 | Support | `/api/support` | Bug report submission |
-| Downloads | `/api/downloads` | Desktop app download (Windows) |
-| Media | `/api/media` | Public media file serving |
-| Groups | `/api/groups` | Custom report group CRUD |
+| Downloads | `/api/downloads` | Desktop app download |
+
+---
 
 ## Frontend Routes
-
-Key pages and routes in the web application:
 
 | Route | Page | Access |
 |-------|------|--------|
 | `/` | Landing page | Public |
 | `/login` | Login | Public |
 | `/register`, `/signup`, `/start-trial` | Owner signup | Public |
-| `/forgot-password`, `/reset-password`, `/verify-email` | Password recovery | Public |
-| `/accept-invite/:token` | Accept invitation | Public |
-| `/pricing`, `/contact-sales`, `/support`, `/terms`, `/privacy` | Info pages | Public |
 | `/dashboard` | Main dashboard | Protected |
-| `/time-tracker` | Desktop timer dashboard | Protected (desktop context) |
+| `/time-tracker` | Desktop timer dashboard | Protected |
 | `/employees` | Employee management | Admin |
-| `/employees/:employeeId` | Employee detail workspace | Admin |
-| `/employees/teams`, `/employees/invitations`, `/employees/roles` | Employee sub-pages | Admin |
-| `/new-hires`, `/resignations` | Onboarding/offboarding | Admin |
-| `/add-user` | Add user page | Strict Admin |
 | `/attendance` | Attendance view | Protected |
 | `/leave` | Leave requests | Protected |
 | `/edit-time` | Time edit requests | Protected |
-| `/approval-inbox` | Approval inbox (leave + time edit) | Admin/Manager |
+| `/approval-inbox` | Approval inbox | Admin/Manager |
 | `/monitoring/productive-time` | Productive time monitoring | Admin/Manager |
-| `/monitoring/unproductive-time` | Unproductive time monitoring | Admin/Manager |
 | `/monitoring/screenshots` | Screenshot gallery | Admin/Manager |
 | `/monitoring/app-usage` | App usage report | Admin/Manager |
 | `/monitoring/website-usage` | Website usage report | Admin/Manager |
 | `/reports/hours-tracked` | Timesheets | Protected |
-| `/reports/projects-tasks` | Projects and tasks report | Protected |
 | `/reports/productivity` | Productivity report | Protected |
-| `/reports/custom-export` | Custom export | Protected |
 | `/reports/attendance` | Attendance report | Protected |
 | `/reports/timeline` | Timeline report | Protected |
 | `/analytics` | Analytics hub | Protected |
@@ -338,49 +388,67 @@ Key pages and routes in the web application:
 | `/chat` | Chat | Protected |
 | `/notifications` | Notifications center | Protected |
 | `/payroll` | Payroll workspace | Admin |
-| `/payroll/employees/:employeeId` | Employee payroll detail | Admin |
 | `/invoices` | Invoices | Admin/Manager |
-| `/settings` | Settings (profile, org, notifications, security, help) | Protected |
-| `/settings/integrations` | Integrations settings | Admin |
-| `/settings/custom-fields` | Custom fields settings | Admin |
-| `/settings/billing` | Billing settings | Admin |
+| `/settings` | Settings | Protected |
 | `/audit-logs` | Audit logs | Admin/Manager |
 | `/super-admin/companies` | Company management | Super Admin |
-| `/super-admin/companies/:companyId` | Company detail | Super Admin |
 
-Route guards: `ProtectedRoute`, `PublicRoute`, `AdminRoute`, `StrictAdminRoute`, `SuperAdminRoute`
+**Route Guards:** `ProtectedRoute`, `PublicRoute`, `AdminRoute`, `StrictAdminRoute`, `SuperAdminRoute`
 
-## Deployment Notes
+---
 
-- Set real secrets through environment variables, not committed files
-- Keep `APP_DEBUG=false` outside local development
-- Use HTTPS in deployed frontend and desktop `APP_URL` targets
+## Deployment
+
+### Environment
+- Set secrets through environment variables, never commit them
+- Keep `APP_DEBUG=false` in production
+- Use HTTPS for deployed frontend and desktop `APP_URL` targets
 - Run the backend queue worker in production
-- Keep browser-tracking extension origins explicitly allowlisted
 - Store employee documents on private storage only
 
-## Security Notes
+### Desktop Distribution
+- Build Windows installer: `npm run dist:win`
+- Build portable version: `npm run dist:portable`
+- Desktop auto-updates via Electron Updater
+- Auto-start configured via Registry + Task Scheduler + Startup folder
 
-Recent hardening in this repository includes:
+### Browser Extension
+- Keep extension origins explicitly allowlisted
+- Match desktop app and extension versions
+- Use generated app config for Chrome/Edge allowlisting
 
-- secure handling of backend secrets and safer env defaults
-- removal of TLS verification bypasses for Stripe requests
-- stricter Electron sandboxing and remote URL validation
-- allowlisted external URL opening from the desktop app
-- encrypted persistence for desktop browser-tracking state
-- reduced browser token persistence in the extension
-- removal of SPA token storage from browser local/session storage
-- private storage for employee documents
+---
+
+## Security
+
+Recent hardening includes:
+
+- Secure handling of backend secrets and safer env defaults
+- Removal of TLS verification bypasses for Stripe requests
+- Stricter Electron sandboxing and remote URL validation
+- Allowlisted external URL opening from desktop app
+- Encrypted persistence for desktop browser-tracking state
+- Reduced browser token persistence in extension
+- Removal of SPA token storage from browser local/session storage
+- Private storage for employee documents
+- Per-endpoint rate limiting (auth, screenshots, chat, invitations)
+
+---
 
 ## Repository Status
 
-Current package baselines in this repo:
+| Component | Version |
+|-----------|---------|
+| Laravel | ^12.0 |
+| PHP | 8.2+ |
+| React | ^18.2.0 |
+| TypeScript | 5 |
+| Vite | ^7.3.2 |
+| Electron | ^41.3.0 |
+| PostgreSQL | 15+ |
 
-- Laravel `^12.0`
-- React `^18.2.0`
-- Vite `^7.3.2`
-- Electron `^41.3.0`
+---
 
 ## License
 
-Commercial - all rights reserved.
+**Commercial** - All rights reserved.
