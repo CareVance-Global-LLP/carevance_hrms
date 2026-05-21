@@ -702,7 +702,7 @@ export default function Layout() {
     setUnreadNotifications(0);
     setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
 
-    notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES }).catch(() => {
+    notificationApi.markAllRead().catch(() => {
       if (active) {
         setUnreadNotifications(notifications.filter((item) => !item.is_read).length);
         setNotifications(notifications);

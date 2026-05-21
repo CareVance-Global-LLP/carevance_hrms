@@ -326,6 +326,9 @@ export const useDesktopTracker = () => {
   const browserTrackingSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const browserTrackingSyncSignatureRef = useRef<string | null>(null);
   const browserTrackingRealtimeSeenRef = useRef(false);
+  const systemLockedAtMsRef = useRef<number | null>(null);
+  const lockScreenAutoStopRevealPendingRef = useRef(false);
+  const lockAutoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearTrackerIntervals = () => {
     if (activityIntervalRef.current !== null) {
       clearInterval(activityIntervalRef.current);
@@ -348,6 +351,13 @@ export const useDesktopTracker = () => {
     if (browserTrackingSyncTimeoutRef.current !== null) {
       clearTimeout(browserTrackingSyncTimeoutRef.current);
       browserTrackingSyncTimeoutRef.current = null;
+    }
+  };
+
+  const clearLockAutoStopTimeout = () => {
+    if (lockAutoStopTimeoutRef.current !== null) {
+      clearTimeout(lockAutoStopTimeoutRef.current);
+      lockAutoStopTimeoutRef.current = null;
     }
   };
 
@@ -393,6 +403,7 @@ export const useDesktopTracker = () => {
       browserTrackingSyncSignatureRef.current = null;
       browserTrackingRealtimeSeenRef.current = false;
       clearBrowserTrackingSyncTimeout();
+      clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
       lastAutoStoppedEntryIdRef.current = null;
       activeScreenshotEntryIdRef.current = null;
@@ -400,6 +411,8 @@ export const useDesktopTracker = () => {
       idleStopBlockedUntilMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
       pendingTrackedSecondsRef.current = 0;
+      systemLockedAtMsRef.current = null;
+      lockScreenAutoStopRevealPendingRef.current = false;
       return;
     }
 
