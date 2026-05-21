@@ -295,8 +295,9 @@ describe('useDesktopTracker', () => {
     });
   });
 
-  it('auto-stops immediately on lock-screen and reveals the app on unlock', async () => {
-    mocks.getSystemIdleSecondsMock.mockResolvedValue(0);
+  it('does not auto-stop immediately on lock-screen — relies on idle auto-stop after 5 minutes', async () => {
+    const idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
 
     render(<TrackerHarness />);
 
@@ -309,24 +310,18 @@ describe('useDesktopTracker', () => {
       });
     });
 
-    expect(mocks.stopMock).toHaveBeenCalledWith({
-      timer_slot: 'primary',
-    });
-    expect(sessionStorage.getItem('desktop_timer_idle_auto_stop_notice:1')).toBe(
-      'Your timer was stopped because your device was locked.'
-    );
-    expect(mocks.revealWindowMock).not.toHaveBeenCalled();
+    expect(mocks.stopMock).not.toHaveBeenCalled();
 
     await act(async () => {
-      systemLockStateListeners[0]?.({
-        state: 'unlocked',
-        locked: false,
-        locked_at: null,
-        recorded_at: '2026-03-18T09:00:05.000Z',
-      });
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
     });
 
-    expect(mocks.revealWindowMock).toHaveBeenCalledTimes(1);
+    expect(mocks.stopMock).toHaveBeenCalledWith({
+      timer_slot: 'primary',
+      auto_stopped_for_idle: true,
+      idle_seconds: 300,
+      last_activity_at: '2026-03-18T09:00:00.000Z',
+    });
   });
 
   it('uses the 1 second idle guard so auto-stop does not wait for the next 5 second activity tick', async () => {

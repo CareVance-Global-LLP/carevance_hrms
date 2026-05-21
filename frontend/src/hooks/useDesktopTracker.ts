@@ -89,7 +89,6 @@ const formatIdleDurationLabel = (seconds: number) => {
 };
 
 const IDLE_AUTO_STOP_MESSAGE = `You were idle for ${formatIdleDurationLabel(IDLE_AUTO_STOP_THRESHOLD_SECONDS)}, so your timer was stopped.`;
-const LOCK_SCREEN_AUTO_STOP_MESSAGE = 'Your timer was stopped because your device was locked.';
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
   'mousemove',
   'mousedown',
@@ -226,24 +225,6 @@ const resolveDesktopSessionSignature = (payload: DesktopForegroundWindowPayload)
 );
 
 const EXPLORER_APP_KEYWORDS = ['explorer.exe', 'windows explorer', 'file explorer'];
-const LOCK_SCREEN_APP_KEYWORDS = [
-  'lockapp.exe',
-  'logonui.exe',
-  'winlogon.exe',
-  'screensaverhost.exe',
-  'systemsettings.exe',
-  'lockapp',
-  'logonui',
-  'winlogon',
-];
-const LOCK_SCREEN_TITLE_KEYWORDS = [
-  'lock screen',
-  'windows lock',
-  'sign-in',
-  'locked',
-  'screen lock',
-  'welcome screen',
-];
 
 const shouldPreferWindowTitleForDesktopApp = (appName?: string | null, windowTitle?: string | null) => {
   const normalizedAppName = String(appName || '').trim().toLowerCase();
@@ -269,22 +250,6 @@ const resolveDesktopSessionDisplayName = (payload: DesktopForegroundWindowPayloa
   }
 
   return appName || windowTitle || 'Unknown App';
-};
-
-const isLockScreenForegroundContext = (payload?: DesktopForegroundWindowPayload | null) => {
-  const appName = String(payload?.app || '').trim().toLowerCase();
-  const windowTitle = String(payload?.title || '').trim().toLowerCase();
-  const url = String(payload?.url || '').trim().toLowerCase();
-
-  if (url && !url.startsWith('lock:')) {
-    return false;
-  }
-
-  if (LOCK_SCREEN_APP_KEYWORDS.some((keyword) => appName.includes(keyword))) {
-    return true;
-  }
-
-  return LOCK_SCREEN_TITLE_KEYWORDS.some((keyword) => windowTitle.includes(keyword));
 };
 
 const resolveLatestBrowserTrackingSignalAt = (state?: BrowserTrackingState | null) => {
@@ -361,17 +326,6 @@ export const useDesktopTracker = () => {
   const browserTrackingSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const browserTrackingSyncSignatureRef = useRef<string | null>(null);
   const browserTrackingRealtimeSeenRef = useRef(false);
-  const systemLockedAtMsRef = useRef<number | null>(null);
-  const lockAutoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lockScreenAutoStopRevealPendingRef = useRef(false);
-
-  const clearLockAutoStopTimeout = () => {
-    if (lockAutoStopTimeoutRef.current !== null) {
-      clearTimeout(lockAutoStopTimeoutRef.current);
-      lockAutoStopTimeoutRef.current = null;
-    }
-  };
-
   const clearTrackerIntervals = () => {
     if (activityIntervalRef.current !== null) {
       clearInterval(activityIntervalRef.current);
@@ -388,7 +342,6 @@ export const useDesktopTracker = () => {
       screenshotIntervalRef.current = null;
     }
 
-    clearLockAutoStopTimeout();
   };
 
   const clearBrowserTrackingSyncTimeout = () => {
@@ -401,8 +354,6 @@ export const useDesktopTracker = () => {
   useEffect(() => {
     const markInput = () => {
       lastInputRef.current = Date.now();
-      systemLockedAtMsRef.current = null;
-      clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
     };
 
@@ -441,9 +392,7 @@ export const useDesktopTracker = () => {
       pendingBrowserTrackingSyncStateRef.current = null;
       browserTrackingSyncSignatureRef.current = null;
       browserTrackingRealtimeSeenRef.current = false;
-      systemLockedAtMsRef.current = null;
       clearBrowserTrackingSyncTimeout();
-      clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
       lastAutoStoppedEntryIdRef.current = null;
       activeScreenshotEntryIdRef.current = null;
@@ -451,8 +400,6 @@ export const useDesktopTracker = () => {
       idleStopBlockedUntilMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
       pendingTrackedSecondsRef.current = 0;
-      systemLockedAtMsRef.current = null;
-      lockScreenAutoStopRevealPendingRef.current = false;
       return;
     }
 
@@ -475,9 +422,7 @@ export const useDesktopTracker = () => {
     pendingBrowserTrackingSyncStateRef.current = null;
     browserTrackingSyncSignatureRef.current = null;
     browserTrackingRealtimeSeenRef.current = false;
-    systemLockedAtMsRef.current = null;
     clearBrowserTrackingSyncTimeout();
-    clearLockAutoStopTimeout();
     pendingIdleRewindRef.current.clear();
     lastAutoStoppedEntryIdRef.current = null;
     activeScreenshotEntryIdRef.current = null;
@@ -485,7 +430,6 @@ export const useDesktopTracker = () => {
     idleStopBlockedUntilMsRef.current = 0;
     lastReliableTrackingContextRef.current = null;
     pendingTrackedSecondsRef.current = 0;
-    lockScreenAutoStopRevealPendingRef.current = false;
 
     const syncScreenshotInterval = (timeEntryId: number | null) => {
       if (activeScreenshotEntryIdRef.current === timeEntryId) {
@@ -877,9 +821,6 @@ export const useDesktopTracker = () => {
       if (!isCurrentRun()) {
         return;
       }
-      if (systemLockedAtMsRef.current !== null) {
-        return;
-      }
 
       pendingTrackedSecondsRef.current = 0;
       clearTrackedActivitySegment();
@@ -899,9 +840,6 @@ export const useDesktopTracker = () => {
 
     const handleBrowserTrackingEvent = async (event: BrowserTrackingEvent) => {
       if (!isCurrentRun()) {
-        return;
-      }
-      if (systemLockedAtMsRef.current !== null) {
         return;
       }
 
@@ -927,16 +865,6 @@ export const useDesktopTracker = () => {
     };
 
     const getIdleState = async (now: number) => {
-      if (systemLockedAtMsRef.current !== null) {
-        const lockedIdleSeconds = Math.max(0, Math.floor((now - systemLockedAtMsRef.current) / 1000));
-
-        return {
-          idleSeconds: lockedIdleSeconds,
-          lastActivityAtMs: systemLockedAtMsRef.current,
-          contextName: 'Locked Screen',
-        };
-      }
-
       try {
         const idleSecondsSystem = Number(await desktopApi?.getSystemIdleSeconds?.());
 
@@ -951,27 +879,6 @@ export const useDesktopTracker = () => {
         }
       } catch (error) {
         console.warn('Desktop tracker system idle lookup failed, falling back to page input activity.', error);
-      }
-
-      if (typeof desktopApi?.getActiveWindowContext === 'function') {
-        try {
-          const activeContext = await desktopApi.getActiveWindowContext();
-          if (isLockScreenForegroundContext(activeContext)) {
-            if (systemLockedAtMsRef.current === null) {
-              systemLockedAtMsRef.current = lastInputRef.current;
-            }
-
-            const lockedIdleSeconds = Math.max(0, Math.floor((now - systemLockedAtMsRef.current) / 1000));
-
-            return {
-              idleSeconds: lockedIdleSeconds,
-              lastActivityAtMs: systemLockedAtMsRef.current,
-              contextName: 'Locked Screen',
-            };
-          }
-        } catch (error) {
-          console.warn('Desktop tracker lock-screen fallback lookup failed.', error);
-        }
       }
 
       const idleSecondsFromInput = Math.max(0, Math.floor((now - lastInputRef.current) / 1000));
@@ -1163,60 +1070,6 @@ export const useDesktopTracker = () => {
         await desktopApi.revealWindow();
       }
 
-      return true;
-    };
-
-    const attemptLockScreenAutoStop = async (activeEntry: TimeEntry, lockedAtMs: number) => {
-      const now = Date.now();
-      if (
-        lastAutoStoppedEntryIdRef.current === activeEntry.id
-        || idleStopInFlightRef.current
-        || now < idleStopBlockedUntilMsRef.current
-      ) {
-        return false;
-      }
-
-      idleStopInFlightRef.current = true;
-
-      try {
-        await timeEntryApi.stop({
-          timer_slot: 'primary',
-        });
-        lastAutoStoppedEntryIdRef.current = activeEntry.id;
-      } catch (error: any) {
-        const status = error?.response?.status;
-        if (status === 404) {
-          activeSegmentRef.current = null;
-          activeEntryRef.current = null;
-          pendingIdleRewindRef.current.clear();
-          pendingTrackedSecondsRef.current = 0;
-          syncScreenshotInterval(null);
-          idleStopBlockedUntilMsRef.current = 0;
-          return true;
-        }
-
-        throw error;
-      } finally {
-        idleStopInFlightRef.current = false;
-      }
-
-      activeSegmentRef.current = null;
-      activeEntryRef.current = null;
-      pendingIdleRewindRef.current.clear();
-      pendingTrackedSecondsRef.current = 0;
-      syncScreenshotInterval(null);
-      idleStopBlockedUntilMsRef.current = 0;
-
-      if (userId) {
-        suppressAutoStart(userId);
-        setIdleAutoStopNotice(userId, LOCK_SCREEN_AUTO_STOP_MESSAGE);
-        emitDesktopTimerIdleStop({
-          userId,
-          message: LOCK_SCREEN_AUTO_STOP_MESSAGE,
-        });
-      }
-
-      lockScreenAutoStopRevealPendingRef.current = true;
       return true;
     };
 
@@ -1489,9 +1342,6 @@ export const useDesktopTracker = () => {
 
     const captureScreenshotOnInterval = async () => {
       if (screenshotInFlight || !isCurrentRun()) return;
-      if (systemLockedAtMsRef.current !== null) {
-        return;
-      }
 
       screenshotInFlight = true;
       try {
@@ -1575,11 +1425,6 @@ export const useDesktopTracker = () => {
         void handleForegroundWindowChange(payload);
       })
       : undefined;
-    const removeSystemLockStateListener = desktopApi && typeof desktopApi.onSystemLockState === 'function'
-      ? desktopApi.onSystemLockState((payload) => {
-        void applySystemLockState(payload);
-      })
-      : undefined;
     const removeBrowserTrackingStateListener = desktopApi && typeof desktopApi.onBrowserTrackingState === 'function'
       ? desktopApi.onBrowserTrackingState((payload) => {
         browserTrackingRealtimeSeenRef.current = true;
@@ -1619,19 +1464,6 @@ export const useDesktopTracker = () => {
           console.warn('Desktop tracker device identity lookup failed:', error);
         });
     }
-    if (desktopApi && typeof desktopApi.getSystemLockState === 'function') {
-      void desktopApi.getSystemLockState()
-        .then((state) => {
-          if (!isCurrentRun()) {
-            return;
-          }
-
-          void applySystemLockState(state);
-        })
-        .catch((error) => {
-          console.warn('Desktop tracker system lock state lookup failed:', error);
-        });
-    }
     if (desktopApi && typeof desktopApi.getBrowserTrackingState === 'function') {
       void desktopApi.getBrowserTrackingState()
         .then((state) => {
@@ -1659,22 +1491,15 @@ export const useDesktopTracker = () => {
       pendingBrowserTrackingSyncStateRef.current = null;
       browserTrackingSyncSignatureRef.current = null;
       browserTrackingRealtimeSeenRef.current = false;
-      systemLockedAtMsRef.current = null;
       clearBrowserTrackingSyncTimeout();
-      clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
       pendingTrackedSecondsRef.current = 0;
       activeScreenshotEntryIdRef.current = null;
-      systemLockedAtMsRef.current = null;
-      lockScreenAutoStopRevealPendingRef.current = false;
       idleStopInFlightRef.current = false;
       idleStopBlockedUntilMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
       if (typeof removeForegroundWindowChangeListener === 'function') {
         removeForegroundWindowChangeListener();
-      }
-      if (typeof removeSystemLockStateListener === 'function') {
-        removeSystemLockStateListener();
       }
       if (typeof removeBrowserTrackingStateListener === 'function') {
         removeBrowserTrackingStateListener();

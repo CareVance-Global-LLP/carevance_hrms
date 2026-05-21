@@ -12,7 +12,7 @@ export default function DemoSection() {
   const y = useTransform(scrollYProgress, [0, 1], [50, -50]);
 
   return (
-    <section id="product" className="px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="product" className="px-4 py-12 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:gap-14">
         <div>
           <SectionHeading
@@ -68,7 +68,7 @@ export default function DemoSection() {
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+              <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-[0.9fr_1.1fr]">
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-sm font-medium text-slate-500">Core operations modules</p>
                   <div className="mt-4 space-y-3">

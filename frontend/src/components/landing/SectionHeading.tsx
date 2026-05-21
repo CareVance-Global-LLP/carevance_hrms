@@ -30,7 +30,7 @@ export default function SectionHeading({
         </span>
       )}
       <div className="space-y-4">
-        <h2 className="text-4xl font-semibold tracking-[-0.05em] text-slate-950 sm:text-5xl">
+        <h2 className="text-3xl font-semibold tracking-[-0.05em] text-slate-950 sm:text-5xl">
           {title}
         </h2>
         {description && (
