@@ -59,6 +59,7 @@ export default function PaymentPage() {
   }
 
   const isPendingUpgrade = organization.subscription_intent === 'upgrade';
+  const isPendingAddSeats = organization.subscription_intent === 'add_seats';
   const isTrial = organization.subscription_status === 'trial';
 
   const pendingPlanCode = organization.pending_plan_code || 'basic';
@@ -67,7 +68,7 @@ export default function PaymentPage() {
   const seats = organization.pending_seats || organization.max_seats || 10;
 
   const pendingAmount = organization.pending_upgrade_amount;
-  const total = isPendingUpgrade && pendingAmount ? Number(pendingAmount) : 0;
+  const total = (isPendingUpgrade || isPendingAddSeats) && pendingAmount ? Number(pendingAmount) : 0;
 
   const handlePayNow = async () => {
     setIsProcessing(true);
@@ -89,6 +90,18 @@ export default function PaymentPage() {
           pending_plan_code: null,
           pending_billing_cycle: null,
           pending_seats: null,
+          pending_upgrade_amount: null,
+        };
+        updateOrganization(updatedOrg);
+      } else if (isPendingAddSeats) {
+        const response = await billingApi.confirmAddSeats({ payment_intent_id: 'upi_pending' });
+
+        const updatedOrg = {
+          ...organization,
+          max_seats: response.data.max_seats || seats,
+          subscription_intent: 'paid' as const,
+          pending_seats: null,
+          pending_billing_cycle: null,
           pending_upgrade_amount: null,
         };
         updateOrganization(updatedOrg);
@@ -125,12 +138,14 @@ export default function PaymentPage() {
             <ArrowUpRight className="h-7 w-7" />
           </div>
           <h1 className="mt-4 text-2xl font-semibold">
-            {isTrial ? 'Activate your plan' : 'Complete your upgrade'}
+            {isTrial ? 'Activate your plan' : isPendingAddSeats ? 'Add seats to your plan' : 'Complete your upgrade'}
           </h1>
           <p className="mt-2 text-sm text-slate-600">
             {isTrial
               ? `Start your ${targetPlan.label} plan with full features.`
-              : `Upgrade to ${targetPlan.label} to unlock all features.`
+              : isPendingAddSeats
+                ? `Add ${seats - (organization.max_seats || 10)} seat${seats - (organization.max_seats || 10) > 1 ? 's' : ''} to your ${targetPlan.label} plan.`
+                : `Upgrade to ${targetPlan.label} to unlock all features.`
             }
           </p>
         </div>
@@ -141,16 +156,29 @@ export default function PaymentPage() {
               <span className="text-sm text-emerald-700">Trial ending</span>
               <span className="text-sm font-semibold text-emerald-700">Switching to paid</span>
             </div>
+          ) : isPendingAddSeats ? (
+            <>
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 px-5 py-4">
+                <span className="text-sm text-slate-600">Current plan</span>
+                <span className="text-sm font-semibold">{targetPlan.label}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-5 py-4">
+                <span className="text-sm text-emerald-700">Adding seats</span>
+                <span className="text-sm font-semibold text-emerald-700">+{seats - (organization.max_seats || 10)}</span>
+              </div>
+            </>
           ) : (
-            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-5 py-4">
-              <span className="text-sm text-slate-600">Current plan</span>
-              <span className="text-sm font-semibold">{getPricingPlan(organization.plan_code || 'basic').label}</span>
-            </div>
+            <>
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 px-5 py-4">
+                <span className="text-sm text-slate-600">Current plan</span>
+                <span className="text-sm font-semibold">{getPricingPlan(organization.plan_code || 'basic').label}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl bg-sky-50 px-5 py-4">
+                <span className="text-sm text-sky-700">Selected plan</span>
+                <span className="text-sm font-semibold text-sky-700">{targetPlan.label}</span>
+              </div>
+            </>
           )}
-          <div className="flex items-center justify-between rounded-xl bg-sky-50 px-5 py-4">
-            <span className="text-sm text-sky-700">Selected plan</span>
-            <span className="text-sm font-semibold text-sky-700">{targetPlan.label}</span>
-          </div>
           <div className="flex items-center justify-between rounded-xl bg-slate-50 px-5 py-4">
             <span className="text-sm text-slate-600">Billing</span>
             <span className="text-sm font-semibold capitalize">{billingCycle}</span>
@@ -204,7 +232,7 @@ export default function PaymentPage() {
               </>
             ) : (
               <>
-                {isTrial ? 'Pay & Activate' : 'Pay & Upgrade'} <ShieldCheck className="h-4 w-4" />
+                {isTrial ? 'Pay & Activate' : isPendingAddSeats ? 'Pay & Add Seats' : 'Pay & Upgrade'} <ShieldCheck className="h-4 w-4" />
               </>
             )}
           </button>

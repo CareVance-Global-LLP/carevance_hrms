@@ -173,16 +173,23 @@ export function calculateUpgradeCost(
   seats: number,
   billingCycle: PricingBillingCycle,
   isTrial: boolean,
-  monthsRemaining: number = 1
+  monthsRemaining: number = 1,
+  currentMaxSeats: number = 10
 ): number {
   if (isTrial) {
     return calculateTotal(targetPlan, seats, billingCycle);
   }
-  const currentMonthly = getPricePerUserPerMonth(currentPlan, 'monthly');
-  const targetMonthly = getPricePerUserPerMonth(targetPlan, 'monthly');
-  const diffPerUserPerMonth = targetMonthly - currentMonthly;
-  if (diffPerUserPerMonth <= 0) return 0;
-  return diffPerUserPerMonth * seats * monthsRemaining;
+  const currentPrice = getPricePerUserPerMonth(currentPlan, billingCycle);
+  const targetPrice = getPricePerUserPerMonth(targetPlan, billingCycle);
+  const diffPerUserPerMonth = targetPrice - currentPrice;
+  
+  const existingSeats = Math.min(seats, currentMaxSeats);
+  const newSeats = Math.max(0, seats - currentMaxSeats);
+  
+  const existingSeatsCost = diffPerUserPerMonth * existingSeats * monthsRemaining;
+  const newSeatsCost = targetPrice * newSeats * monthsRemaining;
+  
+  return existingSeatsCost + newSeatsCost;
 }
 
 export function getMonthsRemaining(subscriptionExpiresAt: string | null, billingCycle: PricingBillingCycle): number {

@@ -50,7 +50,7 @@ export default function CheckoutPage() {
   const [seats, setSeats] = useState(defaultSeats);
 
   const total = isUpgradeMode && currentPlan
-    ? calculateUpgradeCost(currentPlan, plan, seats, billingCycle, isTrial, monthsRemaining)
+    ? calculateUpgradeCost(currentPlan, plan, seats, billingCycle, isTrial, monthsRemaining, currentMaxSeats)
     : calculateTotal(plan, seats, billingCycle);
 
   const seatIncrement = () => setSeats((s) => s + 1);
@@ -168,15 +168,15 @@ export default function CheckoutPage() {
                 <>
                   <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
                     <span className="text-sm text-slate-600">Current plan</span>
-                    <span className="text-sm font-semibold">{currentPlan.label} ({PRICE_CURRENCY}{getPricePerUserPerMonth(currentPlan, 'monthly')}/user/month)</span>
+                    <span className="text-sm font-semibold">{currentPlan.label} ({PRICE_CURRENCY}{getPricePerUserPerMonth(currentPlan, billingCycle)}/user/month)</span>
                   </div>
                   <div className="flex items-center justify-between rounded-2xl bg-sky-50 px-5 py-4">
                     <span className="text-sm text-sky-700">Upgrading to</span>
-                    <span className="text-sm font-semibold text-sky-700">{plan.label} ({PRICE_CURRENCY}{getPricePerUserPerMonth(plan, 'monthly')}/user/month)</span>
+                    <span className="text-sm font-semibold text-sky-700">{plan.label} ({PRICE_CURRENCY}{getPricePerUserPerMonth(plan, billingCycle)}/user/month)</span>
                   </div>
                   <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-5 py-4">
                     <span className="text-sm text-amber-700">Price difference</span>
-                    <span className="text-sm font-semibold text-amber-700">{PRICE_CURRENCY}{getPricePerUserPerMonth(plan, 'monthly') - getPricePerUserPerMonth(currentPlan, 'monthly')}/user/month</span>
+                    <span className="text-sm font-semibold text-amber-700">{PRICE_CURRENCY}{getPricePerUserPerMonth(plan, billingCycle) - getPricePerUserPerMonth(currentPlan, billingCycle)}/user/month</span>
                   </div>
                 </>
               ) : (
@@ -227,7 +227,18 @@ export default function CheckoutPage() {
                   {isTrial
                     ? `Full plan price: ${PRICE_CURRENCY}${calculateTotal(plan, seats, billingCycle).toLocaleString('en-IN')} (${billingCycle === 'yearly' ? '12' : '1'} months at ${PRICE_CURRENCY}${pricePerUser}/user/month × ${seats} seats)`
                     : currentPlan
-                      ? `Upgrade cost: ${PRICE_CURRENCY}${getPricePerUserPerMonth(plan, 'monthly') - getPricePerUserPerMonth(currentPlan, 'monthly')}/user × ${seats} seats × ${monthsRemaining} month${monthsRemaining > 1 ? 's' : ''} remaining`
+                      ? (() => {
+                          const existingSeats = Math.min(seats, currentMaxSeats);
+                          const newSeats = Math.max(0, seats - currentMaxSeats);
+                          const diffPerUser = getPricePerUserPerMonth(plan, billingCycle) - getPricePerUserPerMonth(currentPlan, billingCycle);
+                          const existingCost = diffPerUser * existingSeats * monthsRemaining;
+                          const newCost = getPricePerUserPerMonth(plan, billingCycle) * newSeats * monthsRemaining;
+                          
+                          if (newSeats > 0) {
+                            return `Upgrade cost: ${PRICE_CURRENCY}${existingCost.toLocaleString('en-IN')} (${existingSeats} existing seats × ${PRICE_CURRENCY}${diffPerUser}) + ${PRICE_CURRENCY}${newCost.toLocaleString('en-IN')} (${newSeats} new seat${newSeats > 1 ? 's' : ''} × ${PRICE_CURRENCY}${getPricePerUserPerMonth(plan, billingCycle)}) × ${monthsRemaining} month${monthsRemaining > 1 ? 's' : ''} remaining`;
+                          }
+                          return `Upgrade cost: ${PRICE_CURRENCY}${diffPerUser}/user × ${seats} seats × ${monthsRemaining} month${monthsRemaining > 1 ? 's' : ''} remaining`;
+                        })()
                       : `Prorated for ${monthsRemaining} remaining month${monthsRemaining > 1 ? 's' : ''} in your billing cycle`
                   }
                 </p>

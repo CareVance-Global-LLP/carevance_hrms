@@ -87,8 +87,8 @@ class BillingController extends Controller
             $seats = max($requestedSeats > 0 ? $requestedSeats : $organization->max_seats, $minSeats, $usedSeats);
         }
 
-        $currentPricePerUser = (int) ($currentPlanConfig['monthly_price'] ?? 0);
-        $targetPricePerUser = (int) ($targetPlanConfig['monthly_price'] ?? 0);
+        $currentPricePerUser = (int) ($currentPlanConfig[$billingCycle === 'yearly' ? 'yearly_price' : 'monthly_price'] ?? 0);
+        $targetPricePerUser = (int) ($targetPlanConfig[$billingCycle === 'yearly' ? 'yearly_price' : 'monthly_price'] ?? 0);
 
         if ($isTrial) {
             $totalMonths = $billingCycle === 'yearly' ? 12 : 1;
@@ -117,7 +117,14 @@ class BillingController extends Controller
                 $monthsRemaining = max(1, (int) ceil($diffDays / 30));
             }
 
-            $amount = $diffPerUser * $seats * $monthsRemaining;
+            $currentMaxSeats = $organization->max_seats ?? 10;
+            $existingSeats = min($seats, $currentMaxSeats);
+            $newSeats = max(0, $seats - $currentMaxSeats);
+
+            $existingSeatsCost = $diffPerUser * $existingSeats * $monthsRemaining;
+            $newSeatsCost = $targetPricePerUser * $newSeats * $monthsRemaining;
+            $amount = $existingSeatsCost + $newSeatsCost;
+            
             $prorationDetails = [
                 'type' => 'prorated_upgrade',
                 'current_plan' => $currentPlanCode,
@@ -125,6 +132,8 @@ class BillingController extends Controller
                 'current_price_per_user' => $currentPricePerUser,
                 'target_price_per_user' => $targetPricePerUser,
                 'price_difference_per_user' => $diffPerUser,
+                'existing_seats' => $existingSeats,
+                'new_seats' => $newSeats,
                 'seats' => $seats,
                 'used_seats' => $usedSeats,
                 'months_remaining' => $monthsRemaining,
@@ -204,5 +213,81 @@ class BillingController extends Controller
             'plan_code' => $targetPlanCode,
             'subscription_expires_at' => $newExpiresAt,
         ], 'Upgrade successful. Your workspace is now on the ' . ($targetPlanConfig['label'] ?? $targetPlanCode) . ' plan.');
+    }
+
+    public function addSeats(Request $request)
+    {
+        $user = $request->user();
+        $organization = $user?->organization;
+
+        if (!$organization) {
+            return $this->errorResponse('No organization found.', 404);
+        }
+
+        $requestedSeats = (int) ($request->input('seats') ?? 0);
+        $billingCycle = $request->input('billing_cycle', $organization->billing_cycle ?? 'monthly');
+
+        if ($requestedSeats <= $organization->max_seats) {
+            return $this->errorResponse('New seat count must be greater than current seats.', 400);
+        }
+
+        $plans = config('carevance.plans', []);
+        $currentPlanCode = $organization->plan_code ?? 'basic';
+        $currentPlanConfig = $plans[$currentPlanCode] ?? [];
+
+        $pricePerUser = (int) ($currentPlanConfig[$billingCycle === 'yearly' ? 'yearly_price' : 'monthly_price'] ?? 0);
+        $seatsToAdd = $requestedSeats - $organization->max_seats;
+        $totalMonths = $billingCycle === 'yearly' ? 12 : 1;
+        $amount = $seatsToAdd * $pricePerUser * $totalMonths;
+
+        $paymentIntentId = 'upi_' . bin2hex(random_bytes(16));
+
+        $organization->update([
+            'subscription_intent' => 'add_seats',
+            'pending_seats' => $requestedSeats,
+            'pending_billing_cycle' => $billingCycle,
+            'pending_upgrade_amount' => $amount,
+        ]);
+
+        return $this->successResponse([
+            'payment_intent_id' => $paymentIntentId,
+            'amount' => $amount,
+            'currency' => 'INR',
+            'seats_to_add' => $seatsToAdd,
+            'new_total_seats' => $requestedSeats,
+            'price_per_user' => $pricePerUser,
+            'months' => $totalMonths,
+        ]);
+    }
+
+    public function confirmAddSeats(Request $request)
+    {
+        $user = $request->user();
+        $organization = $user?->organization;
+
+        if (!$organization) {
+            return $this->errorResponse('No organization found.', 404);
+        }
+
+        if ($organization->subscription_intent !== 'add_seats') {
+            return $this->errorResponse('No pending seat addition found. Please add seats first.', 400);
+        }
+
+        $seats = $organization->pending_seats ?? $organization->max_seats;
+        $billingCycle = $organization->pending_billing_cycle ?? $organization->billing_cycle;
+
+        $organization->update([
+            'max_seats' => $seats,
+            'billing_cycle' => $billingCycle,
+            'subscription_intent' => 'paid',
+            'pending_seats' => null,
+            'pending_billing_cycle' => null,
+            'pending_upgrade_amount' => null,
+        ]);
+
+        return $this->successResponse([
+            'subscription_status' => 'active',
+            'max_seats' => $seats,
+        ], 'Seats added successfully. Your workspace now has ' . $seats . ' seats.');
     }
 }
