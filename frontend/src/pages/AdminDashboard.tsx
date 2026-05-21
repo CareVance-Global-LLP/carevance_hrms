@@ -39,6 +39,7 @@ import {
   userApi,
 } from '@/services/api';
 import { SelectInput } from '@/components/ui/FormField';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 type DashboardEmployee = {
   id: number;
@@ -384,6 +385,118 @@ const EmptyInline = ({ children }: { children: ReactNode }) => (
     {children}
   </div>
 );
+
+const DepartmentWorkIdleChart = ({ data }: { data: Array<{ department: string; workedSeconds: number; idleSeconds: number; members: number }> }) => {
+  const chartData = data
+    .map((row) => ({
+      department: row.department,
+      workedSeconds: row.workedSeconds,
+      idleSeconds: row.idleSeconds,
+      totalSeconds: row.workedSeconds + row.idleSeconds,
+    }))
+    .sort((a, b) => b.totalSeconds - a.totalSeconds);
+
+  if (!chartData.length) return null;
+
+  const formatSeconds = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${m}m`;
+  };
+
+  const maxTotal = Math.max(...chartData.map((d) => d.totalSeconds), 1);
+  const yMax = Math.ceil(maxTotal * 1.15);
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const worked = payload.find((p: any) => p.dataKey === 'workedSeconds');
+    const idle = payload.find((p: any) => p.dataKey === 'idleSeconds');
+    const total = (worked?.value || 0) + (idle?.value || 0);
+    const idlePercent = total > 0 ? Math.round((idle?.value || 0) / total * 100) : 0;
+
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-2xl">
+        <p className="text-sm font-bold text-slate-900">{label}</p>
+        <div className="mt-2.5 space-y-2">
+          {worked && (
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-blue-600" />
+                <span className="text-xs font-medium text-slate-600">Worked</span>
+              </div>
+              <span className="text-xs font-bold text-blue-600">{formatSeconds(worked.value)}</span>
+            </div>
+          )}
+          {idle && (
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                <span className="text-xs font-medium text-slate-600">Idle</span>
+              </div>
+              <span className="text-xs font-bold text-amber-600">{formatSeconds(idle.value)}</span>
+            </div>
+          )}
+          <div className="border-t border-slate-100 pt-2">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-semibold text-slate-700">Total Time</span>
+              <span className="text-xs font-bold text-slate-900">{formatSeconds(total)}</span>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between gap-4">
+              <span className="text-xs text-slate-500">Idle Share</span>
+              <span className={`text-xs font-bold ${idlePercent >= 40 ? 'text-rose-600' : 'text-emerald-600'}`}>{idlePercent}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="relative select-none" tabIndex={-1} style={{ outline: 'none' }}>
+      <ResponsiveContainer width="100%" height={320}>
+        <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 80 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis
+            dataKey="department"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }}
+            interval={0}
+            angle={-45}
+            textAnchor="end"
+            height={70}
+            dy={10}
+          />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 11, fill: '#94a3b8' }}
+            domain={[0, yMax]}
+            tickFormatter={(val: number) => {
+              const h = Math.floor(val / 3600);
+              const m = Math.floor((val % 3600) / 60);
+              if (h > 0 && m > 0) return `${h}h ${m}m`;
+              if (h > 0) return `${h}h`;
+              return `${m}m`;
+            }}
+            width={48}
+          />
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }} />
+          <Bar dataKey="workedSeconds" name="Worked" stackId="a" radius={[0, 0, 0, 0]} barSize={40}>
+            {chartData.map((_entry, index) => (
+              <Cell key={`cell-work-${index}`} fill="#2563eb" />
+            ))}
+          </Bar>
+          <Bar dataKey="idleSeconds" name="Idle" stackId="a" radius={[6, 6, 0, 0]} barSize={40}>
+            {chartData.map((_entry, index) => (
+              <Cell key={`cell-idle-${index}`} fill="#f59e0b" />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
 
 const KpiCard = ({ label, value, hint, icon: Icon, tint, to, onClick }: { label: string; value: string | number; hint: string; icon: any; tint: string; to?: string; onClick?: () => void }) => {
   const content = (
@@ -2577,6 +2690,28 @@ export default function AdminDashboard() {
               ))}
             </div>
           ) : <EmptyInline>No productivity rows in this scope</EmptyInline>}
+        </Card>
+      </section>
+
+      <section>
+        <Card id="department-work-idle-chart" className="scroll-mt-24 p-4">
+          <SectionTitle title="Department Work vs Idle Time" />
+          {departmentPerformanceRows.length ? (
+            <>
+              <DepartmentWorkIdleChart
+                data={departmentPerformanceRows.map((row) => ({
+                  department: row.department,
+                  workedSeconds: row.trackedSeconds - row.idleSeconds,
+                  idleSeconds: row.idleSeconds,
+                  members: row.members,
+                }))}
+              />
+              <div className="mt-3 flex items-center justify-center gap-6 text-xs text-slate-600">
+                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-blue-600" />Worked Time</span>
+                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-amber-500" />Idle Time</span>
+              </div>
+            </>
+          ) : <EmptyInline>No department data available for the selected range</EmptyInline>}
         </Card>
       </section>
 

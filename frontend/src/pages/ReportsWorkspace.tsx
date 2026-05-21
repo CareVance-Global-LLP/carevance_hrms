@@ -2174,70 +2174,82 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <div className="space-y-3">
-              <DataTable
-                title={mode === 'productivity' ? 'Employee Productivity' : 'Employee Hours'}
-                description="Per-user totals, idle share, and latest activity."
-                rows={byUser}
-                emptyMessage="No employee rows found."
-                headerAction={renderPanelRefreshButton()}
-                bodyClassName={shouldScrollByUser ? 'max-h-[360px] overflow-y-auto' : undefined}
-                columns={[
-                  { key: 'user', header: 'User', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
-                  {
-                    key: 'first_check_in_at',
-                    header: 'Check In',
-                    render: (row: any) => formatAttendanceDateTime(row.first_check_in_at, displayTimezone),
+          <div className="space-y-4">
+            <DataTable
+              title={mode === 'productivity' ? 'Employee Productivity' : 'Employee Hours'}
+              description="Per-user totals, idle share, and latest activity."
+              rows={byUser}
+              emptyMessage="No employee rows found."
+              headerAction={renderPanelRefreshButton()}
+              bodyClassName={shouldScrollByUser ? 'max-h-[360px] overflow-y-auto' : undefined}
+              columns={[
+                { key: 'user', header: 'User', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
+                {
+                  key: 'first_check_in_at',
+                  header: 'Check In',
+                  render: (row: any) => formatAttendanceDateTime(row.first_check_in_at, displayTimezone),
+                },
+                {
+                  key: 'last_check_out_at',
+                  header: 'Last Check Out',
+                  render: (row: any) => formatAttendanceDateTime(row.last_check_out_at, displayTimezone),
+                },
+                {
+                  key: 'attendance_rate',
+                  header: 'Attendance',
+                  render: (row: any) => {
+                    const presentDays = Number(row.attendance_days_present || 0);
+                    const totalDays = Math.max(1, Number(row.attendance_days_in_range || 0));
+                    return `${Number(row.attendance_rate || 0).toFixed(1)}% (${presentDays}/${totalDays})`;
                   },
-                  {
-                    key: 'last_check_out_at',
-                    header: 'Last Check Out',
-                    render: (row: any) => formatAttendanceDateTime(row.last_check_out_at, displayTimezone),
+                },
+                { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
+                { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
+                { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
+                { key: 'idle_pct', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
+                {
+                  key: 'overtime',
+                  header: 'Overtime',
+                  render: (row: any) => {
+                    const workingSec = getWorkingDuration(row);
+                    const daysInRange = Number(row.calendar_days_in_range || row.working_days_in_range || 1);
+                    const thresholdSec = daysInRange * 8 * 3600;
+                    const overtimeSec = Math.max(0, workingSec - thresholdSec);
+                    const h = Math.floor(overtimeSec / 3600);
+                    const m = Math.floor((overtimeSec % 3600) / 60);
+                    return `${h}h ${m}m`;
                   },
-                  {
-                    key: 'attendance_rate',
-                    header: 'Attendance',
-                    render: (row: any) => {
-                      const presentDays = Number(row.attendance_days_present || 0);
-                      const totalDays = Math.max(1, Number(row.attendance_days_in_range || 0));
-                      return `${Number(row.attendance_rate || 0).toFixed(1)}% (${presentDays}/${totalDays})`;
-                    },
-                  },
-                  { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
-                  { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
-                  { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
-                  { key: 'idle_pct', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
-                ]}
-              />
-              {mode === 'hours-tracked' && hoursTotal > 0 ? (
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                  <span>
-                    Page {hoursCurrentPage} of {hoursLastPage} - {hoursTotal} employee rows
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={hoursCurrentPage <= 1 || dataQuery.isFetching}
-                      onClick={() => setHoursPage((page) => Math.max(1, page - 1))}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={hoursCurrentPage >= hoursLastPage || dataQuery.isFetching}
-                      onClick={() => setHoursPage((page) => Math.min(hoursLastPage, page + 1))}
-                    >
-                      Next
-                    </Button>
-                  </div>
+                },
+              ]}
+            />
+            {mode === 'hours-tracked' && hoursTotal > 0 ? (
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                <span>
+                  Page {hoursCurrentPage} of {hoursLastPage} - {hoursTotal} employee rows
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={hoursCurrentPage <= 1 || dataQuery.isFetching}
+                    onClick={() => setHoursPage((page) => Math.max(1, page - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={hoursCurrentPage >= hoursLastPage || dataQuery.isFetching}
+                    onClick={() => setHoursPage((page) => Math.min(hoursLastPage, page + 1))}
+                  >
+                    Next
+                  </Button>
                 </div>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
+
             <SurfaceCard className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
