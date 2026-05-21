@@ -20,12 +20,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { analytics } from '@/lib/analytics';
 import { apiUrl } from '@/lib/runtimeConfig';
 import {
+  calculateTotal,
   getPlanPrice,
   getPricingPlan,
   pricingPlans,
   pricingUi,
   PricingBillingCycle,
   SignupMode,
+  MIN_SEATS,
+  TRIAL_SEATS,
 } from '@/constants/pricing';
 
 const formatError = (error: any) => {
@@ -54,25 +57,41 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
   const { signupOwner } = useAuth();
 
   const initialPlanCode = searchParams.get('plan');
-  const initialMode = (searchParams.get('mode') as SignupMode | null) || defaultMode;
+  const explicitMode = searchParams.get('mode') as SignupMode | null;
+  const initialMode = explicitMode || defaultMode;
   const initialInterval = (searchParams.get('interval') as PricingBillingCycle | null) || 'monthly';
+  const initialSeats = parseInt(searchParams.get('seats') || String(initialMode === 'trial' ? TRIAL_SEATS : MIN_SEATS), 10);
+  const modeLocked = explicitMode !== null;
 
   const [companyName, setCompanyName] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
-  const [planCode, setPlanCode] = useState(getPricingPlan(initialPlanCode).code);
+  const [planCode, setPlanCode] = useState(initialMode === 'trial' ? 'basic' : getPricingPlan(initialPlanCode).code);
   const [signupMode, setSignupMode] = useState<SignupMode>(initialMode);
   const [billingCycle, setBillingCycle] = useState<PricingBillingCycle>(initialInterval);
+  const [seats, setSeats] = useState(Math.max(initialSeats, initialMode === 'trial' ? TRIAL_SEATS : MIN_SEATS));
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
 
+  useEffect(() => {
+    if (signupMode === 'trial') {
+      setPlanCode('basic');
+      setSeats(TRIAL_SEATS);
+    } else {
+      setSeats((s) => Math.max(s, MIN_SEATS));
+    }
+  }, [signupMode]);
+
   const selectedPlan = useMemo(() => getPricingPlan(planCode), [planCode]);
   const selectedPlanPrice = getPlanPrice(selectedPlan, billingCycle);
+
+  const isTrialMode = signupMode === 'trial';
+  const isPaidMode = signupMode === 'paid';
 
   useEffect(() => {
     if (!selectedPlan.trialAvailable && signupMode === 'trial') {
@@ -113,6 +132,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
         plan_code: planCode,
         signup_mode: signupMode,
         billing_cycle: billingCycle,
+        seats,
         ...(termsAccepted ? { terms_accepted: true } : {}),
       });
 
@@ -181,73 +201,41 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
               ) : null}
 
               <form className="space-y-5" onSubmit={handleSubmit}>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {pricingPlans.map((plan) => {
-                    const active = plan.code === planCode;
-                    return (
-                      <button
-                        key={plan.code}
-                        type="button"
-                        onClick={() => setPlanCode(plan.code)}
-                        className={`rounded-[24px] border px-4 py-4 text-left transition ${
-                          active
-                            ? 'border-sky-300 bg-sky-50/85 shadow-[0_22px_46px_-34px_rgba(14,165,233,0.45)]'
-                            : 'border-slate-200/90 bg-white/85 hover:border-slate-300'
-                        }`}
-                      >
-                        <p className="text-sm font-semibold text-slate-950">{plan.label}</p>
-                        <p className="mt-1 text-xs leading-6 text-slate-500">{plan.shortDescription}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => setSignupMode('trial')}
-                    disabled={!selectedPlan.trialAvailable}
-                    className={`rounded-[24px] border px-4 py-4 text-left transition ${
-                      signupMode === 'trial'
-                        ? 'border-emerald-300 bg-emerald-50/85'
-                        : 'border-slate-200/90 bg-white/85'
-                    } ${!selectedPlan.trialAvailable ? 'cursor-not-allowed opacity-50' : 'hover:border-emerald-300'}`}
-                  >
-                    <p className="text-sm font-semibold text-slate-950">Start Free Trial</p>
-                    <p className="mt-1 text-xs leading-6 text-slate-500">
-                      {selectedPlan.trialAvailable ? `${pricingUi.trialBadge}. ${pricingUi.noCardCopy}.` : 'Not available for this plan.'}
+                {isPaidMode && initialPlanCode ? (
+                  <div className="rounded-[24px] border border-sky-200 bg-sky-50/85 px-5 py-5">
+                    <p className="text-sm font-semibold text-sky-900">{selectedPlan.label} Plan</p>
+                    <p className="mt-1 text-xs leading-6 text-sky-700">
+                      {selectedPlanPrice}/user/month · {billingCycle === 'yearly' ? 'Yearly billing' : 'Monthly billing'} · {seats} seats
                     </p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSignupMode('paid')}
-                    className={`rounded-[24px] border px-4 py-4 text-left transition ${
-                      signupMode === 'paid'
-                        ? 'border-sky-300 bg-sky-50/85'
-                        : 'border-slate-200/90 bg-white/85 hover:border-slate-300'
-                    }`}
-                  >
-                    <p className="text-sm font-semibold text-slate-950">Continue with Paid Plan</p>
-                    <p className="mt-1 text-xs leading-6 text-slate-500">Store billing intent now and activate checkout or sales follow-up later.</p>
-                  </button>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {(['monthly', 'yearly'] as PricingBillingCycle[]).map((cycle) => (
-                    <button
-                      key={cycle}
-                      type="button"
-                      onClick={() => setBillingCycle(cycle)}
-                      className={`rounded-[22px] border px-4 py-3 text-left transition ${
-                        billingCycle === cycle
-                          ? 'border-slate-950 bg-slate-950 text-white'
-                          : 'border-slate-200/90 bg-white/85 text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      <p className="text-sm font-semibold">{cycle === 'monthly' ? 'Monthly billing' : 'Yearly billing'}</p>
-                    </button>
-                  ))}
-                </div>
+                    <p className="mt-2 text-xs text-sky-600">Total: ₹{calculateTotal(selectedPlan, seats, billingCycle).toLocaleString('en-IN')}</p>
+                  </div>
+                ) : isTrialMode ? (
+                  <div className="rounded-[24px] border border-emerald-200 bg-emerald-50/85 px-5 py-5">
+                    <p className="text-sm font-semibold text-emerald-800">14-day free trial</p>
+                    <p className="mt-1 text-xs leading-6 text-emerald-700">Basic plan with 5 seats. No credit card required. Full access expires in 14 days.</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {pricingPlans.map((plan) => {
+                      const active = plan.code === planCode;
+                      return (
+                        <button
+                          key={plan.code}
+                          type="button"
+                          onClick={() => setPlanCode(plan.code)}
+                          className={`rounded-[24px] border px-4 py-4 text-left transition ${
+                            active
+                              ? 'border-sky-300 bg-sky-50/85 shadow-[0_22px_46px_-34px_rgba(14,165,233,0.45)]'
+                              : 'border-slate-200/90 bg-white/85 hover:border-slate-300'
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-slate-950">{plan.label}</p>
+                          <p className="mt-1 text-xs leading-6 text-slate-500">{plan.shortDescription}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div>
                   <label htmlFor="company-name" className="mb-2 block text-sm font-semibold text-slate-800">
@@ -381,7 +369,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     </>
                   ) : (
                     <>
-                      {signupMode === 'trial' ? 'Start free trial' : 'Create workspace'}
+                      {signupMode === 'trial' ? 'Start free trial' : 'Proceed to Payment'}
                       <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                     </>
                   )}
@@ -407,22 +395,39 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                 </p>
 
                 <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                  <div className="glass-panel premium-ring rounded-[28px] px-5 py-5">
-                    <ShieldCheck className="mb-3 h-5 w-5 text-sky-700" />
-                    <p className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Selected plan</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">{selectedPlan.label}</p>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">
-                      {selectedPlan.enterpriseContactOnly ? 'Sales-assisted pricing' : `${selectedPlanPrice} with ${billingCycle} billing`}
-                    </p>
-                  </div>
-                  <div className="glass-panel premium-ring rounded-[28px] px-5 py-5">
-                    <Monitor className="mb-3 h-5 w-5 text-sky-700" />
-                    <p className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Signup mode</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">{signupMode === 'trial' ? pricingUi.trialBadge : 'Paid plan intent'}</p>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">
-                      {signupMode === 'trial' ? pricingUi.noCardCopy : 'Stored now for future activation or sales follow-up.'}
-                    </p>
-                  </div>
+                  {isTrialMode ? (
+                    <>
+                      <div className="glass-panel premium-ring rounded-[28px] px-5 py-5">
+                        <ShieldCheck className="mb-3 h-5 w-5 text-emerald-700" />
+                        <p className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Trial plan</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">Basic</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-500">5 seats included</p>
+                      </div>
+                      <div className="glass-panel premium-ring rounded-[28px] px-5 py-5">
+                        <Monitor className="mb-3 h-5 w-5 text-emerald-700" />
+                        <p className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Trial duration</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">14 days</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-500">Exact expiry tracked from signup</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="glass-panel premium-ring rounded-[28px] px-5 py-5">
+                        <ShieldCheck className="mb-3 h-5 w-5 text-sky-700" />
+                        <p className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Selected plan</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{selectedPlan.label}</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-500">
+                          {selectedPlanPrice}/user/month · {seats} seats
+                        </p>
+                      </div>
+                      <div className="glass-panel premium-ring rounded-[28px] px-5 py-5">
+                        <Monitor className="mb-3 h-5 w-5 text-sky-700" />
+                        <p className="text-lg font-semibold tracking-[-0.04em] text-slate-950">Billing</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600 capitalize">{billingCycle}</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-500">Total: ₹{calculateTotal(selectedPlan, seats, billingCycle).toLocaleString('en-IN')}</p>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <AdaptiveSurface
@@ -437,21 +442,67 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     </div>
                   </div>
                   <div className="space-y-3">
-                    {[
-                      ['01', 'Workspace is created', 'Company profile, slug, plan, billing intent, and trial state are saved in the backend.'],
-                      ['02', 'Owner becomes first admin', 'The first account is the workspace owner and can invite managers, employees, clients, and other admins.'],
-                      ['03', 'Future users join by invite', 'Invite links lock email and role, then auto-place accepted users inside the existing workspace.'],
-                    ].map(([step, title, description]) => (
-                      <div key={step} className="flex gap-3 rounded-[24px] border border-white/10 bg-white/5 px-4 py-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-cyan-400/15 text-sm font-semibold text-cyan-200">
-                          {step}
+                    {isTrialMode ? (
+                      <>
+                        <div className="flex gap-3 rounded-[24px] border border-white/10 bg-white/5 px-4 py-4">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-400/15 text-sm font-semibold text-emerald-200">
+                            01
+                          </div>
+                          <div>
+                            <p className="contrast-text-primary text-sm font-semibold">14-day trial starts</p>
+                            <p className="contrast-text-secondary mt-1 text-sm leading-6">Basic plan with 5 seats activated. Exact expiry timestamp recorded.</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="contrast-text-primary text-sm font-semibold">{title}</p>
-                          <p className="contrast-text-secondary mt-1 text-sm leading-6">{description}</p>
+                        <div className="flex gap-3 rounded-[24px] border border-white/10 bg-white/5 px-4 py-4">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-400/15 text-sm font-semibold text-emerald-200">
+                            02
+                          </div>
+                          <div>
+                            <p className="contrast-text-primary text-sm font-semibold">Basic features only</p>
+                            <p className="contrast-text-secondary mt-1 text-sm leading-6">Advanced features locked until you upgrade to a paid plan.</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                        <div className="flex gap-3 rounded-[24px] border border-white/10 bg-white/5 px-4 py-4">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-400/15 text-sm font-semibold text-emerald-200">
+                            03
+                          </div>
+                          <div>
+                            <p className="contrast-text-primary text-sm font-semibold">Upgrade anytime</p>
+                            <p className="contrast-text-secondary mt-1 text-sm leading-6">Switch to Basic or Advanced paid plan before trial expires to keep access.</p>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex gap-3 rounded-[24px] border border-white/10 bg-white/5 px-4 py-4">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-cyan-400/15 text-sm font-semibold text-cyan-200">
+                            01
+                          </div>
+                          <div>
+                            <p className="contrast-text-primary text-sm font-semibold">Create your account</p>
+                            <p className="contrast-text-secondary mt-1 text-sm leading-6">Workspace is created with your selected plan and billing details.</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-3 rounded-[24px] border border-white/10 bg-white/5 px-4 py-4">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-cyan-400/15 text-sm font-semibold text-cyan-200">
+                            02
+                          </div>
+                          <div>
+                            <p className="contrast-text-primary text-sm font-semibold">Verify your email</p>
+                            <p className="contrast-text-secondary mt-1 text-sm leading-6">Confirm your email address to activate the workspace.</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-3 rounded-[24px] border border-white/10 bg-white/5 px-4 py-4">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-cyan-400/15 text-sm font-semibold text-cyan-200">
+                            03
+                          </div>
+                          <div>
+                            <p className="contrast-text-primary text-sm font-semibold">Complete payment</p>
+                            <p className="contrast-text-secondary mt-1 text-sm leading-6">Secure payment gateway opens. Pay to activate your dashboard.</p>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="mt-6 rounded-[24px] border border-white/10 bg-white/5 px-4 py-4">
                     <div className="flex items-center gap-2">

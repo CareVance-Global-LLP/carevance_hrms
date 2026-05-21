@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.token' => \App\Http\Middleware\AuthenticateApiToken::class,
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'sanitize' => \App\Http\Middleware\SanitizeInput::class,
+            'payroll.enabled' => \App\Http\Middleware\PayrollEnabled::class,
         ]);
 
         // Apply sanitize middleware to API routes

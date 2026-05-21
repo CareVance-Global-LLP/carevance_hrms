@@ -19,6 +19,7 @@ class CreateSuperAdminSeeder extends Seeder
                 'slug' => 'carevance-super-admin',
                 'plan_code' => 'super_admin',
                 'subscription_status' => 'active',
+                'max_seats' => 100,
             ]);
 
             // Create Super Admin User
@@ -46,6 +47,7 @@ class CreateSuperAdminSeeder extends Seeder
                 'slug' => 'carevance-admin',
                 'plan_code' => 'enterprise',
                 'subscription_status' => 'active',
+                'max_seats' => 50,
             ]);
 
             $admin = User::create([

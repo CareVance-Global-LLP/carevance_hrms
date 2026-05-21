@@ -167,7 +167,6 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(screen.getByText('Attendance Report')).toBeInTheDocument();
     expect(screen.getByText('Hours Tracked')).toBeInTheDocument();
     expect(screen.getByText('Task Overview')).toBeInTheDocument();
-    expect(screen.getByText('Payroll Report')).toBeInTheDocument();
     expect(screen.getByText('Custom Export')).toBeInTheDocument();
     expect(screen.queryByText('Analytics Center')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /attendance report/i })).toHaveAttribute('href', '/reports/attendance');

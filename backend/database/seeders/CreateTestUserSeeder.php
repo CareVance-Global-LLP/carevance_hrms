@@ -15,7 +15,8 @@ class CreateTestUserSeeder extends Seeder
         $organization = Organization::create([
             'name' => 'Test Organization',
             'slug' => 'test-organization',
-            'plan_code' => 'starter',
+            'plan_code' => 'basic',
+            'max_seats' => 5,
         ]);
 
         // Create user with your email

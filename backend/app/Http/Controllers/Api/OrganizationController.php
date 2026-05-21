@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Services\Invitations\InvitationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class OrganizationController extends Controller
@@ -85,9 +86,34 @@ class OrganizationController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $organization->delete();
+        $user = request()->user();
+        if ($user->role !== 'admin' && $organization->owner_user_id !== $user->id) {
+            return response()->json(['message' => 'Only the organization owner or admin can delete the organization.'], 403);
+        }
 
-        return response()->json(['message' => 'Organization deleted']);
+        $orgId = $organization->id;
+
+        DB::transaction(function () use ($orgId) {
+            DB::table('personal_access_tokens')->where('tokenable_type', 'App\Models\User')->whereIn('tokenable_id', function ($query) use ($orgId) {
+                $query->select('id')->from('users')->where('organization_id', $orgId);
+            })->delete();
+
+            DB::table('time_entries')->whereIn('user_id', function ($query) use ($orgId) {
+                $query->select('id')->from('users')->where('organization_id', $orgId);
+            })->delete();
+
+            DB::table('tasks')->whereIn('project_id', function ($query) use ($orgId) {
+                $query->select('id')->from('projects')->where('organization_id', $orgId);
+            })->delete();
+
+            DB::table('projects')->where('organization_id', $orgId)->delete();
+            DB::table('invitations')->where('organization_id', $orgId)->delete();
+            DB::table('audit_logs')->where('organization_id', $orgId)->delete();
+            DB::table('users')->where('organization_id', $orgId)->delete();
+            DB::table('organizations')->where('id', $orgId)->delete();
+        });
+
+        return response()->json(['message' => 'Organization and all associated data have been deleted.']);
     }
 
     public function members(int $id)

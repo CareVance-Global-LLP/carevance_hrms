@@ -5,7 +5,7 @@ return [
 
     'trial_days' => (int) env('SAAS_TRIAL_DAYS', 14),
 
-    'default_plan' => (string) env('SAAS_DEFAULT_PLAN', 'starter'),
+    'default_plan' => (string) env('SAAS_DEFAULT_PLAN', 'basic'),
 
     'default_billing_cycle' => (string) env('SAAS_DEFAULT_BILLING_CYCLE', 'monthly'),
 
@@ -46,21 +46,27 @@ return [
     ],
 
     'plans' => [
-        'starter' => [
-            'label' => 'Starter',
-            'description' => 'For smaller teams rolling out structured HR and operations workflows.',
+        'basic' => [
+            'label' => 'Basic',
+            'description' => 'Core monitoring, attendance, and reporting for growing teams.',
+            'monthly_price' => 300,
+            'yearly_price' => 270,
             'trial_available' => true,
             'contact_sales_only' => false,
         ],
-        'growth' => [
-            'label' => 'Growth',
-            'description' => 'For scaling teams that need stronger reporting, approvals, and controls.',
-            'trial_available' => true,
+        'advanced_tracker' => [
+            'label' => 'Advanced Tracker',
+            'description' => 'Everything in Basic plus chat, leave management, projects, and task tracking.',
+            'monthly_price' => 450,
+            'yearly_price' => 400,
+            'trial_available' => false,
             'contact_sales_only' => false,
         ],
         'enterprise' => [
             'label' => 'Enterprise',
             'description' => 'For larger organizations that want custom rollout, controls, and support.',
+            'monthly_price' => 0,
+            'yearly_price' => 0,
             'trial_available' => false,
             'contact_sales_only' => true,
         ],

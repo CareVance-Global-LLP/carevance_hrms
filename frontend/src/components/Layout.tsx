@@ -5,9 +5,10 @@ import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
 import { buildSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
+import { usePlan } from '@/hooks/usePlan';
 import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
-import { webAppUrl } from '@/lib/runtimeConfig';
+import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, userApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
@@ -54,6 +55,7 @@ type GlobalSuggestion = SearchSuggestionOption<any> & {
 export default function Layout() {
   const { user, organization, logout, token } = useAuth();
   useDesktopTracker();
+  const { hasFeature } = usePlan();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
@@ -226,6 +228,8 @@ export default function Layout() {
 
       return navigationGroups
         .filter((group) => {
+          if (group.payroll && !payrollEnabled) return false;
+          if (group.planFeature && !hasFeature(group.planFeature)) return false;
           if (group.strictAdminOnly) return isStrictAdminView;
           if (group.superAdminOnly) return isSuperAdminView;
           if (group.adminOnly) return isAdminView;
@@ -233,6 +237,7 @@ export default function Layout() {
         })
         .map((group) => {
           let filteredItems = group.items?.filter((item) => {
+            if (item.planFeature && !hasFeature(item.planFeature)) return false;
             if (item.to === '/attendance' && !canAccessAttendance) return false;
             if (item.to === '/edit-time' && !canAccessEditTime) return false;
             if (item.strictAdminOnly) return isStrictAdminView;
@@ -290,7 +295,7 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, pendingApprovals, unreadChatMessages]
+    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, pendingApprovals, unreadChatMessages, hasFeature]
   );
 
   const globalSuggestions = useMemo<GlobalSuggestion[]>(

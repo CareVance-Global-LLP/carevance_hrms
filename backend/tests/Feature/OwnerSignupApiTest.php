@@ -23,7 +23,7 @@ class OwnerSignupApiTest extends TestCase
             'email' => 'owner@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
-            'plan_code' => 'starter',
+            'plan_code' => 'basic',
             'signup_mode' => 'trial',
             'billing_cycle' => 'monthly',
             'terms_accepted' => true,
@@ -33,7 +33,7 @@ class OwnerSignupApiTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('user.role', 'admin')
             ->assertJsonPath('organization.name', 'CareVance Labs')
-            ->assertJsonPath('organization.plan_code', 'starter')
+            ->assertJsonPath('organization.plan_code', 'basic')
             ->assertJsonPath('organization.subscription_status', 'trial')
             ->assertJsonPath('requires_verification', true)
             ->assertJsonMissingPath('token')
@@ -60,7 +60,7 @@ class OwnerSignupApiTest extends TestCase
             'email' => 'paid@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
-            'plan_code' => 'growth',
+            'plan_code' => 'advanced_tracker',
             'signup_mode' => 'paid',
             'terms_accepted' => true,
             'role' => 'admin',
@@ -96,7 +96,7 @@ class OwnerSignupApiTest extends TestCase
                 'email' => "owner{$attempt}@example.com",
                 'password' => 'password123',
                 'password_confirmation' => 'password123',
-                'plan_code' => 'starter',
+                'plan_code' => 'basic',
                 'signup_mode' => 'trial',
                 'billing_cycle' => 'monthly',
                 'terms_accepted' => true,
@@ -109,7 +109,7 @@ class OwnerSignupApiTest extends TestCase
             'email' => 'owner4@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
-            'plan_code' => 'starter',
+            'plan_code' => 'basic',
             'signup_mode' => 'trial',
             'billing_cycle' => 'monthly',
             'terms_accepted' => true,
@@ -124,7 +124,7 @@ class OwnerSignupApiTest extends TestCase
             'email' => 'owner@example.com',
             'password' => 'password123',
             'password_confirmation' => 'password123',
-            'plan_code' => 'starter',
+            'plan_code' => 'basic',
             'signup_mode' => 'trial',
             'billing_cycle' => 'monthly',
         ]);

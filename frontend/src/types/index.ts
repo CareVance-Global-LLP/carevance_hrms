@@ -31,11 +31,18 @@ export interface Organization {
   plan_code?: string | null;
   billing_cycle?: 'monthly' | 'yearly' | null;
   subscription_status?: 'trial' | 'active' | 'inactive' | 'past_due' | 'cancelled' | 'expired';
-  subscription_intent?: 'trial' | 'paid' | null;
+  subscription_intent?: 'trial' | 'paid' | 'upgrade' | null;
   trial_starts_at?: string | null;
   trial_ends_at?: string;
   max_users?: number;
+  max_seats?: number;
   settings?: Record<string, any>;
+  pending_plan_code?: string | null;
+  pending_billing_cycle?: 'monthly' | 'yearly' | null;
+  pending_seats?: number | null;
+  pending_upgrade_amount?: number | string | null;
+  subscription_expires_at?: string | null;
+  users_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -383,6 +390,7 @@ export interface OwnerSignupRequest {
   plan_code: string;
   signup_mode: 'trial' | 'paid';
   billing_cycle?: 'monthly' | 'yearly';
+  seats?: number;
   terms_accepted?: boolean;
 }
 
@@ -456,11 +464,18 @@ export interface BillingSnapshot {
     description?: string | null;
     status: string;
     billing_cycle?: 'monthly' | 'yearly' | null;
-    subscription_intent?: 'trial' | 'paid' | null;
+    subscription_intent?: 'trial' | 'paid' | 'upgrade' | null;
     is_trial?: boolean;
     trial_end_date?: string | null;
     renewal_date?: string | null;
     contact_sales_only?: boolean;
+    max_seats?: number;
+    used_seats?: number;
+    users_count?: number;
+    pending_plan_code?: string | null;
+    pending_billing_cycle?: 'monthly' | 'yearly' | null;
+    pending_seats?: number | null;
+    pending_upgrade_amount?: number | string | null;
   } | null;
   workspace?: {
     id: number;

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
-import { employeeWorkspaceApi, productivityRuleApi, settingsApi, supportApi } from '@/services/api';
+import { employeeWorkspaceApi, productivityRuleApi, settingsApi, supportApi, organizationApi } from '@/services/api';
 import type { ProductivityRule as ProductivityRuleType } from '@/types';
-import { User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy } from 'lucide-react';
+import { ArrowRight, User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy, Trash2, AlertTriangle } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
@@ -187,6 +187,10 @@ export default function SettingsPage() {
   const [helpSummary, setHelpSummary] = useState('');
   const [helpDescription, setHelpDescription] = useState('');
   const [isSubmittingHelp, setIsSubmittingHelp] = useState(false);
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeletingOrg, setIsDeletingOrg] = useState(false);
 
   const isEmployee = isEmployeeUser(user);
   const isOrgEditable = canManageOrg && hasStrictAdminAccess(user);
@@ -516,6 +520,24 @@ export default function SettingsPage() {
       setMessage((res.data as any)?.message || 'Organization updated');
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to update organization');
+    }
+  };
+
+  const deleteOrganization = async () => {
+    if (deleteConfirmText !== organization?.name) {
+      setError('Organization name does not match. Please type the exact name to confirm.');
+      return;
+    }
+
+    setIsDeletingOrg(true);
+    setError('');
+    try {
+      await organizationApi.delete(organization!.id);
+      localStorage.clear();
+      window.location.href = '/';
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Failed to delete organization');
+      setIsDeletingOrg(false);
     }
   };
 
@@ -922,6 +944,61 @@ export default function SettingsPage() {
               ) : (
                 <p className="text-sm text-gray-500">Only admin/manager can update organization settings.</p>
               )}
+
+              {isStrictAdminUser && (
+                <div className="mt-8 pt-8 border-t border-red-200">
+                  <h3 className="text-lg font-semibold text-red-700 flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5" />
+                    Danger Zone
+                  </h3>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Once you delete your organization, there is no going back. This will permanently delete your organization, all users, projects, tasks, time entries, and all associated data.
+                  </p>
+
+                  {!showDeleteConfirm ? (
+                    <Button
+                      variant="danger"
+                      className="mt-4"
+                      onClick={() => setShowDeleteConfirm(true)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete Organization
+                    </Button>
+                  ) : (
+                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm font-medium text-red-800 mb-3">
+                        Type <span className="font-bold">"{organization?.name}"</span> to confirm deletion:
+                      </p>
+                      <div className="flex gap-3">
+                        <input
+                          type="text"
+                          value={deleteConfirmText}
+                          onChange={(e) => setDeleteConfirmText(e.target.value)}
+                          placeholder="Type organization name"
+                          className="flex-1 px-3 py-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                        <Button
+                          variant="danger"
+                          onClick={deleteOrganization}
+                          disabled={isDeletingOrg || deleteConfirmText !== organization?.name}
+                        >
+                          {isDeletingOrg ? 'Deleting...' : 'Confirm Delete'}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setShowDeleteConfirm(false);
+                            setDeleteConfirmText('');
+                            setError('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1026,7 +1103,9 @@ export default function SettingsPage() {
                   {billingPlan?.renewal_date ? ` | Renewal: ${new Date(billingPlan.renewal_date).toLocaleDateString()}` : ''}
                 </p>
               </div>
-              <Button disabled variant="secondary">Manage Subscription (Coming soon)</Button>
+              <Link to="/settings/billing" className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800">
+                Manage Subscription <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
           )}
 

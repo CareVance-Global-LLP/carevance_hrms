@@ -21,6 +21,11 @@ class Organization extends Model
         'trial_starts_at',
         'trial_ends_at',
         'subscription_expires_at',
+        'max_seats',
+        'pending_plan_code',
+        'pending_billing_cycle',
+        'pending_seats',
+        'pending_upgrade_amount',
     ];
 
     protected $casts = [
@@ -28,6 +33,9 @@ class Organization extends Model
         'trial_starts_at' => 'datetime',
         'trial_ends_at' => 'datetime',
         'subscription_expires_at' => 'date',
+        'max_seats' => 'integer',
+        'pending_seats' => 'integer',
+        'pending_upgrade_amount' => 'decimal:2',
     ];
 
     public function owner(): BelongsTo

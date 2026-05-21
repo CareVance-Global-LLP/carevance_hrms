@@ -40,12 +40,27 @@ class AuthController extends Controller
     {
         $validated = $request->validated();
         $organizationName = trim((string) ($validated['company_name'] ?? $validated['organization_name'] ?? ''));
-        $planCode = (string) ($validated['plan_code'] ?? config('carevance.default_plan', 'starter'));
         $signupMode = (string) ($validated['signup_mode'] ?? 'trial');
+        $planCode = $signupMode === 'trial' ? 'basic' : (string) ($validated['plan_code'] ?? config('carevance.default_plan', 'basic'));
         $billingCycle = $validated['billing_cycle'] ?? config('carevance.default_billing_cycle', 'monthly');
         $trialDays = max(1, (int) config('carevance.trial_days', 14));
+        $seats = $signupMode === 'trial' ? 5 : max(10, (int) ($validated['seats'] ?? 10));
 
-        $result = DB::transaction(function () use ($validated, $organizationName, $planCode, $signupMode, $billingCycle, $trialDays, $request) {
+        $result = DB::transaction(function () use ($validated, $organizationName, $planCode, $signupMode, $billingCycle, $trialDays, $seats, $request) {
+            $existingUser = User::whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])->first();
+
+            if ($existingUser && $existingUser->organization && $existingUser->organization->subscription_status === 'inactive') {
+                $orgId = $existingUser->organization->id;
+                $existingUser->organization->delete();
+                $existingUser->delete();
+
+                DB::table('personal_access_tokens')->where('tokenable_id', $existingUser->id)->delete();
+            } elseif ($existingUser) {
+                throw ValidationException::withMessages([
+                    'email' => ['This email is already registered. Please sign in or use a different email.'],
+                ]);
+            }
+
             $organization = Organization::create([
                 'name' => $organizationName,
                 'slug' => $this->generateUniqueOrganizationSlug($organizationName),
@@ -56,6 +71,7 @@ class AuthController extends Controller
                 'trial_starts_at' => $signupMode === 'trial' ? now() : null,
                 'trial_ends_at' => $signupMode === 'trial' ? now()->addDays($trialDays) : null,
                 'subscription_expires_at' => $signupMode === 'trial' ? now()->addDays($trialDays)->toDateString() : null,
+                'max_seats' => $seats,
             ]);
 
             $user = User::create([
@@ -225,6 +241,38 @@ class AuthController extends Controller
                 $this->getApiAuthCookiePath(),
                 $this->getApiAuthCookieDomain()
             );
+    }
+
+    public function cleanupPendingSignup(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['success' => false], 401);
+        }
+
+        $organization = $user->organization;
+        
+        // Only cleanup if status is 'inactive' (paid intent but no payment completed)
+        // Do not cleanup 'trial' or 'active' statuses
+        if ($organization && $organization->subscription_status === 'inactive') {
+            $orgId = $organization->id;
+            
+            // Delete user
+            $user->delete();
+            
+            // Delete organization if no other users remain
+            if (!User::where('organization_id', $orgId)->exists()) {
+                $organization->delete();
+            }
+            
+            // Revoke current token
+            $tokenRecord = $request->attributes->get('access_token');
+            if ($tokenRecord && isset($tokenRecord->id)) {
+                DB::table('personal_access_tokens')->where('id', $tokenRecord->id)->delete();
+            }
+        }
+        
+        return response()->json(['success' => true]);
     }
 
     public function handoff(Request $request)

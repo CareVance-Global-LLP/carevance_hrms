@@ -35,6 +35,7 @@ export type NavLinkItem = {
   adminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
+  planFeature?: string;
   external?: boolean;
   externalPath?: string;
 };
@@ -47,6 +48,8 @@ export type NavGroup = {
   adminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
+  planFeature?: string;
+  payroll?: boolean;
   items?: NavLinkItem[];
   external?: boolean;
   externalPath?: string;
@@ -74,7 +77,7 @@ export const topNavigation: NavGroup[] = [
       { label: 'Departments', to: '/employees/teams', icon: Building2, adminOnly: true },
       { label: 'Roles & Permissions', to: '/employees/roles', icon: ShieldCheck, adminOnly: true },
       { label: 'Announcements', to: '/notifications', icon: Bell, adminOnly: true },
-      { label: 'Chat', to: '/chat', icon: MessageSquare },
+      { label: 'Chat', to: '/chat', icon: MessageSquare, planFeature: 'chat' },
     ],
   },
   {
@@ -82,10 +85,10 @@ export const topNavigation: NavGroup[] = [
     icon: CalendarClock,
     items: [
       { label: 'Attendance', to: '/attendance', icon: CalendarClock },
-      { label: 'Leave', to: '/leave', icon: CalendarClock },
+      { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management' },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
-      { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true },
+      { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true, planFeature: 'monitoring' },
       { label: 'Screenshots', to: '/monitoring/screenshots', icon: Camera, adminOnly: true },
       { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true },
     ],
@@ -94,13 +97,13 @@ export const topNavigation: NavGroup[] = [
     label: 'Payroll',
     icon: Wallet,
     adminOnly: true,
+    payroll: true,
     items: [
       { label: 'Overview', to: '/payroll', icon: Wallet, adminOnly: true },
       { label: 'Run Payroll', to: '/payroll/runs', icon: Play, adminOnly: true },
       { label: 'Salary Setup', to: '/payroll/employees', icon: Users, adminOnly: true },
       { label: 'Adjustments', to: '/payroll/adjustments', icon: SlidersHorizontal, adminOnly: true },
       { label: 'Payslips', to: '/payroll/payslips', icon: Receipt, adminOnly: true },
-      { label: 'Payroll Report', to: '/payroll/reports', icon: BarChart3, adminOnly: true },
       { label: 'Payroll Settings', to: '/payroll/settings', icon: Settings, adminOnly: true },
     ],
   },
@@ -109,8 +112,8 @@ export const topNavigation: NavGroup[] = [
     icon: FolderKanban,
     items: [
       { label: 'Timesheets', to: '/reports/hours-tracked', icon: FileClock, adminOnly: true },
-      { label: 'Projects', to: '/projects', icon: FolderKanban },
-      { label: 'Tasks', to: '/tasks', icon: SquareKanban },
+      { label: 'Projects', to: '/projects', icon: FolderKanban, planFeature: 'project_tracking' },
+      { label: 'Tasks', to: '/tasks', icon: SquareKanban, planFeature: 'task_tracking' },
     ],
   },
   {
@@ -120,8 +123,8 @@ export const topNavigation: NavGroup[] = [
     items: [
       { label: 'Reports', to: '/reports', icon: BarChart3, adminOnly: true },
       { label: 'Analytics', to: '/analytics', icon: LineChart, adminOnly: true },
-      { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true },
-      { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true },
+      { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true, planFeature: 'employee_timeline' },
+      { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true, planFeature: 'monitoring' },
     ],
   },
   {

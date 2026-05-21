@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
+import { usePlan } from '@/hooks/usePlan';
 
 const lazyWithChunkRetry = <T extends { default: React.ComponentType<any> }>(
   importer: () => Promise<T>
@@ -27,8 +28,10 @@ const lazyWithChunkRetry = <T extends { default: React.ComponentType<any> }>(
 
 const LandingPage = lazyWithChunkRetry(() => import('@/pages/LandingPage'));
 const PricingPage = lazyWithChunkRetry(() => import('@/pages/PricingPage'));
+const CheckoutPage = lazyWithChunkRetry(() => import('@/pages/CheckoutPage'));
 const PrivacyPolicyPage = lazyWithChunkRetry(() => import('@/pages/PrivacyPolicyPage'));
 const TermsPage = lazyWithChunkRetry(() => import('@/pages/TermsPage'));
+const PaymentPage = lazyWithChunkRetry(() => import('@/pages/PaymentPage'));
 const OwnerSignupPage = lazyWithChunkRetry(() => import('@/pages/OwnerSignupPage'));
 const InviteSignupPage = lazyWithChunkRetry(() => import('@/pages/InviteSignupPage'));
 const ContactSalesPage = lazyWithChunkRetry(() => import('@/pages/ContactSalesPage'));
@@ -176,7 +179,7 @@ function HomeRoute() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, organization, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
   const hasOnboardingProfile = (candidate: any) => {
@@ -226,11 +229,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (requiresOnboarding && !onboardingCompleted && !onboardingSkipped && location.pathname !== onboardingPath) {
+  const needsPayment = organization?.subscription_intent === 'paid' && organization?.subscription_status !== 'active';
+  const isOnboardingRoute = location.pathname === onboardingPath;
+  const isPaymentRoute = location.pathname === '/payment';
+
+  if (needsPayment && !isPaymentRoute) {
+    return <Navigate to="/payment" replace />;
+  }
+
+  if (!needsPayment && requiresOnboarding && !onboardingCompleted && !onboardingSkipped && !isOnboardingRoute) {
     return <Navigate to={onboardingPath} replace />;
   }
 
-  if (requiresOnboarding && onboardingCompleted && location.pathname === onboardingPath) {
+  if (requiresOnboarding && onboardingCompleted && isOnboardingRoute) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -238,7 +249,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, organization, isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -249,6 +260,10 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
+    const needsPayment = organization?.subscription_intent === 'paid' && organization?.subscription_status !== 'active';
+    if (needsPayment) {
+      return <Navigate to="/payment" replace />;
+    }
     return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin' : '/dashboard'} replace />;
   }
 
@@ -309,6 +324,16 @@ function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PlanFeatureRoute({ feature, children }: { feature: string; children: React.ReactNode }) {
+  const { hasFeature } = usePlan();
+
+  if (!hasFeature(feature)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function App() {
   const { user } = useAuth();
   const isSuperAdmin = hasSuperAdminAccess(user);
@@ -333,6 +358,8 @@ function App() {
         <Routes>
           <Route path="/" element={<HomeRoute />} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/payment" element={<ProtectedRoute><PaymentPage /></ProtectedRoute>} />
           <Route path="/contact-sales" element={<ContactSalesPage />} />
           <Route path="/support" element={<SupportPage />} />
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
@@ -401,26 +428,26 @@ function App() {
             <Route path="dashboard" element={effectiveDashboardElement} />
             <Route path="org-hierarchy" element={<AdminRoute><OrgHierarchy /></AdminRoute>} />
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
-            <Route path="projects" element={<Projects />} />
-            <Route path="tasks" element={<Tasks />} />
-            <Route path="chat" element={<Chat />} />
+            <Route path="projects" element={<PlanFeatureRoute feature="project_tracking"><Projects /></PlanFeatureRoute>} />
+            <Route path="tasks" element={<PlanFeatureRoute feature="task_tracking"><Tasks /></PlanFeatureRoute>} />
+            <Route path="chat" element={<PlanFeatureRoute feature="chat"><Chat /></PlanFeatureRoute>} />
             <Route path="attendance" element={<Attendance />} />
-            <Route path="leave" element={<Attendance mode="leave" />} />
+            <Route path="leave" element={<PlanFeatureRoute feature="leave_management"><Attendance mode="leave" /></PlanFeatureRoute>} />
             <Route path="edit-time" element={<Attendance mode="time-edit" />} />
             <Route path="team" element={<Navigate to="/user-management" replace />} />
             <Route path="monitoring" element={<Navigate to="/monitoring/productive-time" replace />} />
-            <Route path="monitoring/productive-time" element={<AdminRoute><MonitoringWorkspace mode="productive-time" /></AdminRoute>} />
-            <Route path="monitoring/unproductive-time" element={<AdminRoute><MonitoringWorkspace mode="unproductive-time" /></AdminRoute>} />
+            <Route path="monitoring/productive-time" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="productive-time" /></AdminRoute></PlanFeatureRoute>} />
+            <Route path="monitoring/unproductive-time" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="unproductive-time" /></AdminRoute></PlanFeatureRoute>} />
             <Route path="monitoring/screenshots" element={<AdminRoute><MonitoringWorkspace mode="screenshots" /></AdminRoute>} />
-            <Route path="monitoring/app-usage" element={<AdminRoute><MonitoringWorkspace mode="app-usage" /></AdminRoute>} />
-            <Route path="monitoring/website-usage" element={<AdminRoute><MonitoringWorkspace mode="website-usage" /></AdminRoute>} />
+            <Route path="monitoring/app-usage" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="app-usage" /></AdminRoute></PlanFeatureRoute>} />
+            <Route path="monitoring/website-usage" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="website-usage" /></AdminRoute></PlanFeatureRoute>} />
             <Route path="approval-inbox" element={<AdminRoute><ApprovalInbox /></AdminRoute>} />
             <Route path="reports" element={<AdminRoute><ReportsWorkspace key="reports-hub" mode="reports-hub" /></AdminRoute>} />
             <Route path="analytics" element={<AdminRoute><ReportsWorkspace key="analytics-hub" mode="analytics-hub" /></AdminRoute>} />
             <Route path="reports/attendance" element={<AdminRoute><ReportsWorkspace key="attendance" mode="attendance" /></AdminRoute>} />
             <Route path="reports/hours-tracked" element={<AdminRoute><ReportsWorkspace key="hours-tracked" mode="hours-tracked" /></AdminRoute>} />
             <Route path="reports/projects-tasks" element={<AdminRoute><ReportsWorkspace key="projects-tasks" mode="projects-tasks" /></AdminRoute>} />
-            <Route path="reports/timeline" element={<AdminRoute><ReportsWorkspace key="timeline" mode="timeline" /></AdminRoute>} />
+            <Route path="reports/timeline" element={<PlanFeatureRoute feature="employee_timeline"><AdminRoute><ReportsWorkspace key="timeline" mode="timeline" /></AdminRoute></PlanFeatureRoute>} />
             <Route path="reports/web-app-usage" element={<AdminRoute><ReportsWorkspace key="web-app-usage" mode="web-app-usage" /></AdminRoute>} />
             <Route path="reports/productivity" element={<AdminRoute><ReportsWorkspace key="productivity" mode="productivity" /></AdminRoute>} />
             <Route path="reports/custom-export" element={<AdminRoute><ReportsWorkspace key="custom-export" mode="custom-export" /></AdminRoute>} />

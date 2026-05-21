@@ -10,6 +10,7 @@ import {
   userApi,
 } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlan } from '@/hooks/usePlan';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
@@ -39,7 +40,6 @@ import {
   CheckCircle2,
   Download,
   FileClock,
-  FileSpreadsheet,
   Gauge,
   LineChart,
   ListFilter,
@@ -328,7 +328,7 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
   'reports-hub': {
     eyebrow: 'Reports',
     title: 'Reports Center',
-    description: 'All operational reports in one place: attendance, hours, task, payroll, timeline, and exports.',
+    description: 'All operational reports in one place: attendance, hours, task, timeline, and exports.',
   },
   'analytics-hub': {
     eyebrow: 'Analytics',
@@ -400,6 +400,7 @@ const reportCatalogItems = [
     highlights: ['Task load', 'Assignee detail', 'Tracked effort'],
     icon: ListFilter,
     accent: 'bg-violet-50 text-violet-700 ring-violet-200',
+    planFeature: 'task_tracking',
   },
   {
     title: 'Timeline Report',
@@ -409,15 +410,7 @@ const reportCatalogItems = [
     highlights: ['Raw timeline', 'App and site events', 'Idle periods'],
     icon: Waypoints,
     accent: 'bg-amber-50 text-amber-700 ring-amber-200',
-  },
-  {
-    title: 'Payroll Report',
-    description: 'Payroll report area for runs, payslips, reimbursements, salary structures, and payroll exports.',
-    to: '/payroll/reports',
-    category: 'Compensation ops',
-    highlights: ['Runs', 'Payslips', 'Structures'],
-    icon: FileSpreadsheet,
-    accent: 'bg-rose-50 text-rose-700 ring-rose-200',
+    planFeature: 'employee_timeline',
   },
   {
     title: 'Custom Export',
@@ -439,6 +432,7 @@ const analyticsCatalogItems = [
     highlights: ['Productive share', 'Idle trend', 'Top contributors'],
     icon: Gauge,
     accent: 'bg-blue-50 text-blue-700 ring-blue-200',
+    planFeature: 'monitoring',
   },
   {
     title: 'Web & App Usage',
@@ -448,6 +442,7 @@ const analyticsCatalogItems = [
     highlights: ['Apps', 'Websites', 'Classification'],
     icon: Monitor,
     accent: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
+    planFeature: 'monitoring',
   },
   {
     title: 'Productive Time',
@@ -457,6 +452,7 @@ const analyticsCatalogItems = [
     highlights: ['Focused employees', 'Tools', 'Sessions'],
     icon: LineChart,
     accent: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+    planFeature: 'monitoring',
   },
   {
     title: 'Unproductive Time',
@@ -466,6 +462,7 @@ const analyticsCatalogItems = [
     highlights: ['Time loss', 'Tool patterns', 'Attention signals'],
     icon: Activity,
     accent: 'bg-orange-50 text-orange-700 ring-orange-200',
+    planFeature: 'monitoring',
   },
   {
     title: 'Timeline Analytics',
@@ -475,6 +472,7 @@ const analyticsCatalogItems = [
     highlights: ['Event flow', 'Duration', 'Productivity class'],
     icon: Waypoints,
     accent: 'bg-purple-50 text-purple-700 ring-purple-200',
+    planFeature: 'employee_timeline',
   },
   {
     title: 'App Usage',
@@ -484,6 +482,7 @@ const analyticsCatalogItems = [
     highlights: ['Apps by employee', 'Duration', 'Usage class'],
     icon: BarChart3,
     accent: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+    planFeature: 'monitoring',
   },
   {
     title: 'Website Usage',
@@ -493,6 +492,7 @@ const analyticsCatalogItems = [
     highlights: ['Domains', 'Duration', 'Usage class'],
     icon: Monitor,
     accent: 'bg-teal-50 text-teal-700 ring-teal-200',
+    planFeature: 'monitoring',
   },
   {
     title: 'Screenshots',
@@ -507,6 +507,7 @@ const analyticsCatalogItems = [
 
 export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode }) {
   const { user } = useAuth();
+  const { hasFeature } = usePlan();
   const location = useLocation();
   const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsWorkspaceFilters(mode).datePreset);
@@ -1302,7 +1303,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     }
   }, [mode, selectedTaskId, taskFilterOptions]);
 
-  const catalogItems = mode === 'analytics-hub' ? analyticsCatalogItems : reportCatalogItems;
+  const catalogItems = useMemo(() => {
+    const baseItems = mode === 'analytics-hub' ? analyticsCatalogItems : reportCatalogItems;
+    return baseItems.filter((item) => !item.planFeature || hasFeature(item.planFeature));
+  }, [mode, hasFeature]);
 
   if (isHubMode) {
     return (
@@ -1369,7 +1373,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               <p className="mt-1 text-sm text-slate-500">
                 {mode === 'analytics-hub'
                   ? 'Use these views to inspect trends, focus, and usage behavior.'
-                  : 'Use these views for attendance, hours, tasks, payroll, and export records.'}
+                  : 'Use these views for attendance, hours, tasks, and export records.'}
               </p>
             </div>
             <div>
