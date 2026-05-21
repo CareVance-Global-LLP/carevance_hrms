@@ -144,6 +144,15 @@ export default function BillingSettingsPage() {
                   </>
                 ) : (
                   <>
+                    {planCode === 'basic' && (
+                      <Link
+                        to={buildUpgradePath('advanced_tracker', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
+                        className="flex items-center justify-between rounded-[22px] border border-sky-200/90 bg-sky-50/80 px-4 py-4 text-sm font-semibold text-sky-800 transition hover:-translate-y-0.5 hover:border-sky-600"
+                      >
+                        Upgrade to Advanced Tracker
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    )}
                     <Link
                       to="/pricing"
                       className="flex items-center justify-between rounded-[22px] border border-slate-200/90 bg-white/90 px-4 py-4 text-sm font-semibold text-slate-800 transition hover:-translate-y-0.5 hover:border-slate-950"
