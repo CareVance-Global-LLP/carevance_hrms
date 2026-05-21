@@ -1,10 +1,11 @@
-const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage, Tray, Menu } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { NsisUpdater } = require('electron-updater');
 const { createBrowserTrackingBridge } = require('./browser-tracking-bridge.cjs');
+const { setupStrongAutoStart } = require('./auto-start.cjs');
 const {
   getBrowserTrackingManagerUrl,
   getBrowserTrackingOptionsUrl,
@@ -129,6 +130,7 @@ const FOREGROUND_WINDOW_POLL_INTERVAL_MS = 1000;
 const DEVICE_IDENTITY_FILENAME = 'desktop-device.json';
 const BROWSER_TRACKING_STATE_FILENAME = 'browser-tracking-state.json';
 let mainWindow = null;
+let tray = null;
 let allowWindowClose = false;
 let closePreparationInProgress = false;
 let closePreparationTimeout = null;
@@ -841,6 +843,10 @@ const createWindow = async () => {
     broadcastUpdateState();
     broadcastBrowserTrackingState();
     startForegroundWindowWatcher();
+
+    if (!tray && process.platform === 'win32') {
+      createTray();
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -945,6 +951,49 @@ const revealMainWindow = () => {
   }, 3000);
 
   return true;
+};
+
+const createTray = () => {
+  if (process.platform !== 'win32') return;
+
+  const trayIconPath = path.join(__dirname, 'tray-icon.ico');
+  const iconPath = fs.existsSync(trayIconPath) ? trayIconPath : APP_ICON;
+
+  tray = new Tray(iconPath);
+  tray.setToolTip('CareVance Tracker');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open CareVance Tracker',
+      click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.setSkipTaskbar(false);
+          mainWindow.focus();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Exit',
+      click: () => {
+        allowWindowClose = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  tray.on('double-click', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.setSkipTaskbar(false);
+      mainWindow.focus();
+    }
+  });
+
+  console.log('[desktop] System tray created');
 };
 
 const checkForDesktopUpdates = async () => {
@@ -1260,6 +1309,8 @@ ipcMain.handle('desktop:install-update', async () => {
 
 if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
+  setupStrongAutoStart();
+
   powerMonitor.on('lock-screen', () => {
     markSystemLocked('locked');
   });
@@ -1287,6 +1338,9 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  if (process.platform === 'win32' && tray) {
+    return;
+  }
   if (process.platform !== 'darwin') {
     app.quit();
   }

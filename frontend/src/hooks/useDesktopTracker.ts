@@ -1133,6 +1133,23 @@ export const useDesktopTracker = () => {
       syncScreenshotInterval(null);
       idleStopBlockedUntilMsRef.current = 0;
 
+      const idleDurationLabel = formatIdleDurationLabel(idleSeconds);
+
+      if (typeof desktopApi?.showNotification === 'function') {
+        await desktopApi.showNotification({
+          id: Date.now(),
+          title: 'Timer Stopped - Idle Detected',
+          body: `You were idle for ${idleDurationLabel}. Your timer has been stopped.`,
+          route: '/dashboard',
+          type: 'idle_stop',
+        });
+      } else if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Timer Stopped - Idle Detected', {
+          body: `You were idle for ${idleDurationLabel}. Your timer has been stopped.`,
+          tag: 'idle-auto-stop',
+        });
+      }
+
       if (userId) {
         suppressAutoStart(userId);
         setIdleAutoStopNotice(userId, IDLE_AUTO_STOP_MESSAGE);
@@ -1205,9 +1222,6 @@ export const useDesktopTracker = () => {
 
     const tick = async () => {
       if (inFlight || !isCurrentRun()) return;
-      if (systemLockedAtMsRef.current !== null) {
-        return;
-      }
       const now = Date.now();
       const previousTickAt = lastTickAtRef.current ?? now;
       lastTickAtRef.current = now;
@@ -1429,9 +1443,14 @@ export const useDesktopTracker = () => {
 
       const now = Date.now();
       const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName } = await getIdleState(now);
-      if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
+
+      if (idleSeconds < IDLE_THRESHOLD_SECONDS) {
         idleStopBlockedUntilMsRef.current = 0;
         return;
+      }
+
+      if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
+        idleStopBlockedUntilMsRef.current = 0;
       }
 
       const recordedAt = new Date(now).toISOString();
@@ -1449,14 +1468,6 @@ export const useDesktopTracker = () => {
         const resolvedLockedAtMs = Number.isFinite(lockedAt) ? lockedAt : Date.now();
         systemLockedAtMsRef.current = resolvedLockedAtMs;
         clearLockAutoStopTimeout();
-        const activeEntry = activeEntryRef.current || await getOrLoadActiveEntry();
-        if (activeEntry?.id) {
-          try {
-            await attemptLockScreenAutoStop(activeEntry, resolvedLockedAtMs);
-          } catch (error) {
-            console.error('[desktop-tracker] lock screen auto-stop failed:', error);
-          }
-        }
         await runIdleGuard();
         return;
       }
@@ -1474,13 +1485,6 @@ export const useDesktopTracker = () => {
       }
       systemLockedAtMsRef.current = null;
       clearLockAutoStopTimeout();
-
-      if (lockScreenAutoStopRevealPendingRef.current) {
-        lockScreenAutoStopRevealPendingRef.current = false;
-        if (typeof desktopApi?.revealWindow === 'function') {
-          await desktopApi.revealWindow();
-        }
-      }
     };
 
     const captureScreenshotOnInterval = async () => {

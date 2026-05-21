@@ -53,6 +53,19 @@ const getLocalDateString = () => {
   return new Date(now.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
 };
 
+const isAtOrAfterOfficeStartTime = (officeStartTime?: string | null): boolean => {
+  if (!officeStartTime) return true;
+
+  const now = new Date();
+  const [hours, minutes] = officeStartTime.split(':').map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return true;
+
+  const officeStart = new Date();
+  officeStart.setHours(hours, minutes, 0, 0);
+
+  return now >= officeStart;
+};
+
 const getEntryLocalDateString = (value?: string) => {
   const parsedMs = getStartTimeMs(value);
   if (!Number.isFinite(parsedMs)) {
@@ -137,7 +150,7 @@ const toArrayPayload = <T,>(payload: unknown): T[] => {
 };
 
 export default function DesktopTimerDashboard() {
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
   const userId = user?.id ?? null;
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [liveDuration, setLiveDuration] = useState(0);
@@ -504,9 +517,14 @@ export default function DesktopTimerDashboard() {
       return;
     }
 
+    const officeStartTime = (organization?.settings as any)?.attendance?.office_start_time;
+    if (!isAtOrAfterOfficeStartTime(officeStartTime)) {
+      return;
+    }
+
     hasAttemptedAutoStartRef.current = true;
     void handleStartTimer(true);
-  }, [activeTimer?.id, isLoading, isStarting, user, userId]);
+  }, [activeTimer?.id, isLoading, isStarting, user, userId, organization]);
 
   const handleStartTimer = async (isAutoStart = false) => {
     setIsStarting(true);
