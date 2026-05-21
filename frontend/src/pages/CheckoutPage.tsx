@@ -44,8 +44,9 @@ export default function CheckoutPage() {
   const pricePerUser = getPricePerUserPerMonth(plan, billingCycle);
 
   const usedSeats = snapshotData?.plan?.used_seats ?? snapshotData?.plan?.users_count ?? 0;
-  const minSeats = isTrial ? Math.max(MIN_SEATS - usedSeats, 1) : MIN_SEATS;
-  const defaultSeats = Math.max(usedSeats, MIN_SEATS);
+  const currentMaxSeats = organization?.max_seats ?? MIN_SEATS;
+  const minSeats = isTrial ? Math.max(MIN_SEATS - usedSeats, 1) : Math.max(currentMaxSeats, MIN_SEATS);
+  const defaultSeats = isTrial ? Math.max(usedSeats, MIN_SEATS) : currentMaxSeats;
   const [seats, setSeats] = useState(defaultSeats);
 
   const total = isUpgradeMode && currentPlan
@@ -62,10 +63,15 @@ export default function CheckoutPage() {
       billingApi.current().then((res) => {
         setSnapshotData(res.data);
         const uSeats = res.data?.plan?.used_seats ?? res.data?.plan?.users_count ?? 0;
-        setSeats(Math.max(uSeats, MIN_SEATS));
+        const orgMaxSeats = organization?.max_seats ?? MIN_SEATS;
+        if (isTrial) {
+          setSeats(Math.max(uSeats, MIN_SEATS));
+        } else {
+          setSeats(orgMaxSeats);
+        }
       }).catch(() => {});
     }
-  }, [isUpgradeMode]);
+  }, [isUpgradeMode, isTrial, organization?.max_seats]);
 
   const handleUpgrade = async () => {
     if (!isUpgradeMode || !organization) return;
@@ -133,7 +139,11 @@ export default function CheckoutPage() {
             <h2 className="text-xl font-semibold tracking-[-0.04em]">Plan summary</h2>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {pricingPlans.filter((p) => !p.enterpriseContactOnly).map((p) => {
+              {pricingPlans.filter((p) => {
+                if (p.enterpriseContactOnly) return false;
+                if (isUpgradeMode && !isTrial && currentPlan && p.code === currentPlan.code) return false;
+                return true;
+              }).map((p) => {
                 const active = p.code === selectedPlanCode;
                 return (
                   <button
@@ -154,14 +164,33 @@ export default function CheckoutPage() {
             </div>
 
             <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
-                <span className="text-sm text-slate-600">Plan</span>
-                <span className="text-sm font-semibold">{plan.label}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
-                <span className="text-sm text-slate-600">Price per user</span>
-                <span className="text-sm font-semibold">{getPlanPrice(plan, billingCycle)}</span>
-              </div>
+              {isUpgradeMode && !isTrial && currentPlan ? (
+                <>
+                  <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
+                    <span className="text-sm text-slate-600">Current plan</span>
+                    <span className="text-sm font-semibold">{currentPlan.label} ({PRICE_CURRENCY}{getPricePerUserPerMonth(currentPlan, 'monthly')}/user/month)</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl bg-sky-50 px-5 py-4">
+                    <span className="text-sm text-sky-700">Upgrading to</span>
+                    <span className="text-sm font-semibold text-sky-700">{plan.label} ({PRICE_CURRENCY}{getPricePerUserPerMonth(plan, 'monthly')}/user/month)</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-5 py-4">
+                    <span className="text-sm text-amber-700">Price difference</span>
+                    <span className="text-sm font-semibold text-amber-700">{PRICE_CURRENCY}{getPricePerUserPerMonth(plan, 'monthly') - getPricePerUserPerMonth(currentPlan, 'monthly')}/user/month</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
+                    <span className="text-sm text-slate-600">Plan</span>
+                    <span className="text-sm font-semibold">{plan.label}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
+                    <span className="text-sm text-slate-600">Price per user</span>
+                    <span className="text-sm font-semibold">{getPlanPrice(plan, billingCycle)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
                 <span className="text-sm text-slate-600">Billing</span>
                 <span className="text-sm font-semibold capitalize">{billingCycle}</span>
@@ -173,6 +202,9 @@ export default function CheckoutPage() {
                 Number of seats (min {minSeats})
                 {isTrial && usedSeats > 0 && (
                   <span className="ml-1 text-xs font-normal text-slate-500">· You have {usedSeats} employee(s), need {minSeats} more to reach minimum</span>
+                )}
+                {!isTrial && isUpgradeMode && (
+                  <span className="ml-1 text-xs font-normal text-slate-500">· Current: {currentMaxSeats} seats</span>
                 )}
               </label>
               <div className="flex items-center gap-4">
@@ -194,7 +226,9 @@ export default function CheckoutPage() {
                 <p className="text-xs text-slate-500">
                   {isTrial
                     ? `Full plan price: ${PRICE_CURRENCY}${calculateTotal(plan, seats, billingCycle).toLocaleString('en-IN')} (${billingCycle === 'yearly' ? '12' : '1'} months at ${PRICE_CURRENCY}${pricePerUser}/user/month × ${seats} seats)`
-                    : `Prorated for ${monthsRemaining} remaining month${monthsRemaining > 1 ? 's' : ''} in your billing cycle`
+                    : currentPlan
+                      ? `Upgrade cost: ${PRICE_CURRENCY}${getPricePerUserPerMonth(plan, 'monthly') - getPricePerUserPerMonth(currentPlan, 'monthly')}/user × ${seats} seats × ${monthsRemaining} month${monthsRemaining > 1 ? 's' : ''} remaining`
+                      : `Prorated for ${monthsRemaining} remaining month${monthsRemaining > 1 ? 's' : ''} in your billing cycle`
                   }
                 </p>
               </div>
