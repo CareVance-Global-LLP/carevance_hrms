@@ -358,6 +358,9 @@ export const resignationApi = {
   getMyResignation: () =>
     api.get('/resignations/my'),
   
+  getMyResignationHistory: () =>
+    api.get('/resignations/my/history'),
+  
   cancel: () =>
     api.delete('/resignations/my'),
   

@@ -44,7 +44,7 @@ export default function MyResignationStatusPage() {
         }
 
         // Load resignation history
-        const historyResponse = await resignationApi.list();
+        const historyResponse = await resignationApi.getMyResignationHistory();
         const historyData = historyResponse.data as any;
         if (historyData && Array.isArray(historyData.resignations)) {
           setResignationHistory(historyData.resignations);

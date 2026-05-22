@@ -32,8 +32,8 @@ export default function ResignationHistoryPage() {
   useEffect(() => {
     const loadResignationHistory = async () => {
       try {
-        // Get all resignations (history)
-        const response = await resignationApi.list();
+        // Get resignation history
+        const response = await resignationApi.getMyResignationHistory();
         const data = response.data as any;
         if (data && Array.isArray(data.resignations)) {
           setResignations(data.resignations);

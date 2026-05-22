@@ -198,6 +198,16 @@ class User extends Authenticatable
         return $this->hasMany(Invitation::class, 'invited_by');
     }
 
+    public function resignations(): HasMany
+    {
+        return $this->hasMany(Resignation::class);
+    }
+
+    public function approvedResignations(): HasMany
+    {
+        return $this->hasMany(Resignation::class, 'approved_by');
+    }
+
     public function getIsActiveAttribute(): bool
     {
         return true;

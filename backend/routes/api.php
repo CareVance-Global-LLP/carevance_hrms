@@ -24,4 +24,5 @@ Route::middleware('api.token')->group(function () {
     require base_path('routes/api/protected/tasks.php');
     require base_path('routes/api/protected/organizations.php');
     require base_path('routes/api/protected/super-admin.php');
+    require base_path('routes/api/protected/resignations.php');
 });
