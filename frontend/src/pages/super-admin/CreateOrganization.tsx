@@ -497,7 +497,7 @@ export default function CreateOrganizationPage() {
                 <select
                   required
                   value={planCode}
-                  onChange={(e) => setPlanCode(e.target.value)}
+                   onChange={(e) => setPlanCode(e.target.value as 'basic' | 'advanced_tracker' | 'enterprise')}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
                   {pricingPlans
