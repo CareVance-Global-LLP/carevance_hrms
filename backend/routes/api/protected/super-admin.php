@@ -10,6 +10,7 @@ Route::middleware(['role:super_admin'])->group(function () {
     
     // Organizations management
     Route::get('/super-admin/organizations', [SuperAdminController::class, 'organizations']);
+    Route::post('/super-admin/organizations', [SuperAdminController::class, 'createOrganization']);
     Route::get('/super-admin/organizations/{organization}', [SuperAdminController::class, 'showOrganization']);
     Route::put('/super-admin/organizations/{organization}/toggle-status', [SuperAdminController::class, 'toggleStatus']);
     Route::delete('/super-admin/organizations/{organization}', [SuperAdminController::class, 'deleteOrganization']);
@@ -21,4 +22,8 @@ Route::middleware(['role:super_admin'])->group(function () {
     // Billing & subscriptions
     Route::get('/super-admin/subscriptions', [SuperAdminController::class, 'subscriptions']);
     Route::get('/super-admin/revenue', [SuperAdminController::class, 'revenue']);
+    
+    // Export & Search
+    Route::get('/super-admin/organizations/export', [SuperAdminController::class, 'exportOrganizations']);
+    Route::get('/super-admin/search', [SuperAdminController::class, 'globalSearch']);
 });

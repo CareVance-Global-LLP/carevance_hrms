@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { formatDate as formatDateForTimezone, formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
+import { formatDuration, formatTimerClock } from '@/lib/formatters';
 import {
   Activity,
   Bell,
@@ -254,21 +255,6 @@ export default function Dashboard() {
     } finally {
       setIsSubmittingOvertime(false);
     }
-  };
-
-  const formatDuration = (seconds: number) => {
-    const safeSeconds = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-    const hours = Math.floor(safeSeconds / 3600);
-    const minutes = Math.floor((safeSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
-  };
-
-  const formatTimerClock = (seconds: number) => {
-    const safeSeconds = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : 0;
-    const hours = Math.floor(safeSeconds / 3600);
-    const minutes = Math.floor((safeSeconds % 3600) / 60);
-    const secs = Math.floor(safeSeconds % 60);
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
   const formatClockTime = (value?: string | null) => {

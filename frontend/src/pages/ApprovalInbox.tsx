@@ -1,18 +1,19 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { attendanceApi, attendanceTimeEditApi, leaveApi, userApi } from '@/services/api';
+import { attendanceApi, attendanceTimeEditApi, leaveApi, userApi, resignationApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
-import { BarChart3, Building2, CheckCircle2, Clock3, History, Inbox, TrendingUp, UserRound, Users, XCircle } from 'lucide-react';
+import { formatDuration } from '@/lib/formatters';
+import { BarChart3, Building2, CheckCircle2, Clock3, History, Inbox, TrendingUp, UserMinus, UserRound, Users, XCircle } from 'lucide-react';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LEAVE_COLORS = ['#2563eb', '#0ea5e9', '#14b8a6', '#f59e0b', '#f97316', '#8b5cf6', '#ef4444'];
 
-type ApprovalSection = 'leave' | 'time-edit';
+type ApprovalSection = 'leave' | 'time-edit' | 'resignation';
 type ApprovalView = 'pending' | 'history';
 type AnalyticsPreset = 'today' | '2d' | '5d' | '7d' | 'custom';
 type AnalyticsSource = 'approved' | 'approved_pending';
@@ -48,13 +49,6 @@ const formatDateLabel = (value: Date) =>
 
 const inclusiveDayDiff = (startDate: Date, endDate: Date) =>
   Math.floor((startOfDay(endDate).getTime() - startOfDay(startDate).getTime()) / DAY_MS) + 1;
-
-const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  return `${hours}h ${minutes}m`;
-};
 
 const hasActiveAttendance = (row: any) =>
   Boolean(row?.is_checked_in || row?.check_in_at || row?.open_punch_in_at || row?.last_check_in_at);
@@ -185,6 +179,8 @@ export default function ApprovalInbox() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [pendingTimeEditRequests, setPendingTimeEditRequests] = useState<any[]>([]);
   const [timeEditHistory, setTimeEditHistory] = useState<any[]>([]);
+  const [pendingResignations, setPendingResignations] = useState<any[]>([]);
+  const [resignationHistory, setResignationHistory] = useState<any[]>([]);
   const [analyticsPreset, setAnalyticsPreset] = useState<AnalyticsPreset>('7d');
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('approved_pending');
   const [analyticsDepartment, setAnalyticsDepartment] = useState<string>('All');
@@ -205,7 +201,9 @@ export default function ApprovalInbox() {
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const activeSection = useMemo<ApprovalSection>(() => {
     const section = String(params.get('section') || '').trim().toLowerCase();
-    return section === 'time-edit' || section === 'time_edit' ? 'time-edit' : 'leave';
+    if (section === 'time-edit' || section === 'time_edit') return 'time-edit';
+    if (section === 'resignation') return 'resignation';
+    return 'leave';
   }, [params]);
   const activeView = useMemo<ApprovalView>(() => {
     const view = String(params.get('view') || '').trim().toLowerCase();
@@ -248,7 +246,7 @@ export default function ApprovalInbox() {
     setIsLoading(true);
     setFeedback(null);
     try {
-      const [pendingLeaveResult, approvedLeaveResult, rejectedLeaveResult, autoCancelledLeaveResult, pendingTimeEditResult, approvedTimeEditResult, rejectedTimeEditResult, employeesResult, attendanceResult] = await Promise.allSettled([
+      const [pendingLeaveResult, approvedLeaveResult, rejectedLeaveResult, autoCancelledLeaveResult, pendingTimeEditResult, approvedTimeEditResult, rejectedTimeEditResult, employeesResult, attendanceResult, pendingResignationResult, approvedResignationResult, rejectedResignationResult] = await Promise.allSettled([
         leaveApi.list({ status: 'pending', limit: 500 }),
         leaveApi.list({ status: 'approved', limit: 500 }),
         leaveApi.list({ status: 'rejected', limit: 500 }),
@@ -258,6 +256,9 @@ export default function ApprovalInbox() {
         attendanceTimeEditApi.list({ status: 'rejected' }),
         userApi.getAll({ period: 'all' }),
         attendanceApi.summary({ start_date: todayIso, end_date: todayIso }),
+        resignationApi.list({ status: 'pending' }),
+        resignationApi.list({ status: 'approved' }),
+        resignationApi.list({ status: 'rejected' }),
       ]);
 
       const pendingLeaveResponse = pendingLeaveResult.status === 'fulfilled' ? pendingLeaveResult.value : null;
@@ -269,6 +270,9 @@ export default function ApprovalInbox() {
       const rejectedTimeEditResponse = rejectedTimeEditResult.status === 'fulfilled' ? rejectedTimeEditResult.value : null;
       const employeesResponse = employeesResult.status === 'fulfilled' ? employeesResult.value : null;
       const attendanceResponse = attendanceResult.status === 'fulfilled' ? attendanceResult.value : null;
+      const pendingResignationResponse = pendingResignationResult.status === 'fulfilled' ? pendingResignationResult.value : null;
+      const approvedResignationResponse = approvedResignationResult.status === 'fulfilled' ? approvedResignationResult.value : null;
+      const rejectedResignationResponse = rejectedResignationResult.status === 'fulfilled' ? rejectedResignationResult.value : null;
 
       setPendingLeaveRequests(toApprovalItems(pendingLeaveResponse));
       setLeaveHistory(
@@ -278,6 +282,11 @@ export default function ApprovalInbox() {
       setPendingTimeEditRequests(toApprovalItems(pendingTimeEditResponse));
       setTimeEditHistory(
         [...toApprovalItems(approvedTimeEditResponse), ...toApprovalItems(rejectedTimeEditResponse)]
+          .sort((left, right) => +new Date(right.reviewed_at || right.created_at) - +new Date(left.reviewed_at || left.created_at))
+      );
+      setPendingResignations(toApprovalItems(pendingResignationResponse));
+      setResignationHistory(
+        [...toApprovalItems(approvedResignationResponse), ...toApprovalItems(rejectedResignationResponse)]
           .sort((left, right) => +new Date(right.reviewed_at || right.created_at) - +new Date(left.reviewed_at || left.created_at))
       );
       setEmployees(Array.isArray(employeesResponse?.data) ? employeesResponse.data : []);
@@ -291,6 +300,9 @@ export default function ApprovalInbox() {
         { name: 'time-edit pending', result: pendingTimeEditResult },
         { name: 'time-edit approved', result: approvedTimeEditResult },
         { name: 'time-edit rejected', result: rejectedTimeEditResult },
+        { name: 'resignation pending', result: pendingResignationResult },
+        { name: 'resignation approved', result: approvedResignationResult },
+        { name: 'resignation rejected', result: rejectedResignationResult },
         { name: 'employees', result: employeesResult },
         { name: 'attendance summary', result: attendanceResult },
       ];
@@ -720,13 +732,54 @@ export default function ApprovalInbox() {
     reviewedAt: item.reviewed_at,
   })), [reviewableTimeEditHistory]);
 
+  // Resignation cards
+  const pendingResignationCards = useMemo<ApprovalCardItem[]>(() => pendingResignations.map((item: any) => ({
+    id: item.id,
+    kind: 'resignation',
+    submittedAt: item.created_at || item.submitted_at,
+    title: `Resignation Request`,
+    description: `Last working date: ${item.last_working_date}${item.reason ? ` | Reason: ${item.reason}` : ''}`,
+    employeeName: item.user?.name || 'Unknown',
+    employeeEmail: item.user?.email || '',
+    status: item.status,
+    onApprove: async () => {
+      const response = await resignationApi.approve(item.id);
+      ensureSuccessfulAction(response, 'Resignation approval failed.');
+    },
+    onReject: async () => {
+      const response = await resignationApi.reject(item.id, { reason: 'Rejected by manager' });
+      ensureSuccessfulAction(response, 'Resignation rejection failed.');
+    },
+  })), [pendingResignations]);
+
+  const resignationHistoryCards = useMemo<ApprovalCardItem[]>(() => resignationHistory.map((item: any) => ({
+    id: item.id,
+    kind: 'resignation',
+    submittedAt: item.created_at || item.submitted_at,
+    title: `Resignation Request`,
+    description: `Last working date: ${item.last_working_date}${item.reason ? ` | Reason: ${item.reason}` : ''}`,
+    employeeName: item.user?.name || 'Unknown',
+    employeeEmail: item.user?.email || '',
+    status: item.status,
+    reviewerName: item.approver?.name || undefined,
+    reviewedAt: item.approved_at || item.rejected_at,
+  })), [resignationHistory]);
+
   const currentCards = activeSection === 'leave'
     ? (activeView === 'pending' ? pendingLeaveCards : leaveHistoryCards)
+    : activeSection === 'resignation'
+    ? (activeView === 'pending' ? pendingResignationCards : resignationHistoryCards)
     : (activeView === 'pending' ? pendingTimeEditCards : timeEditHistoryCards);
 
-  const sectionTitle = activeSection === 'leave' ? 'Leave Approval' : 'Edit Time Approval';
+  const sectionTitle = activeSection === 'leave' 
+    ? 'Leave Approval' 
+    : activeSection === 'resignation'
+    ? 'Resignation Approval'
+    : 'Edit Time Approval';
   const sectionDescription = activeSection === 'leave'
     ? (activeView === 'pending' ? 'Review pending leave requests for your organization.' : 'Track approved, rejected, and auto-cancelled leave decisions.')
+    : activeSection === 'resignation'
+    ? (activeView === 'pending' ? 'Review pending resignation requests from employees.' : 'Track approved and rejected resignation decisions.')
     : (activeView === 'pending' ? 'Review pending time edit and overtime correction requests.' : 'Track approved and rejected time edit decisions.');
 
   return (
@@ -740,10 +793,11 @@ export default function ApprovalInbox() {
 
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <MetricCard label="Pending Total" value={pendingLeaveCards.length + pendingTimeEditCards.length} icon={Inbox} accent="sky" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <MetricCard label="Pending Total" value={pendingLeaveCards.length + pendingTimeEditCards.length + pendingResignations.length} icon={Inbox} accent="sky" />
         <MetricCard label="Leave Requests" value={pendingLeaveCards.length} icon={Clock3} accent="amber" />
         <MetricCard label="Time Edits" value={pendingTimeEditCards.length} icon={CheckCircle2} accent="emerald" />
+        <MetricCard label="Resignations" value={pendingResignations.length} icon={UserMinus} accent="rose" />
       </div>
 
       <SurfaceCard className="p-4">
@@ -756,6 +810,7 @@ export default function ApprovalInbox() {
             {[
               { id: 'leave', label: 'Leave Approval', count: pendingLeaveCards.length },
               { id: 'time-edit', label: 'Edit Time Approval', count: pendingTimeEditCards.length },
+              { id: 'resignation', label: 'Resignation', count: pendingResignations.length },
             ].map((section) => (
               <button
                 key={section.id}
@@ -790,7 +845,9 @@ export default function ApprovalInbox() {
             }`}
           >
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pending</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-950">{activeSection === 'leave' ? pendingLeaveCards.length : pendingTimeEditCards.length}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">
+              {activeSection === 'leave' ? pendingLeaveCards.length : activeSection === 'resignation' ? pendingResignationCards.length : pendingTimeEditCards.length}
+            </p>
             <p className="mt-1 text-sm text-slate-500">Requests waiting for approval</p>
           </button>
           <button
@@ -804,7 +861,9 @@ export default function ApprovalInbox() {
             }`}
           >
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">History</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-950">{activeSection === 'leave' ? leaveHistoryCards.length : timeEditHistoryCards.length}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">
+              {activeSection === 'leave' ? leaveHistoryCards.length : activeSection === 'resignation' ? resignationHistoryCards.length : timeEditHistoryCards.length}
+            </p>
             <p className="mt-1 text-sm text-slate-500">Approved and completed decisions</p>
           </button>
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -815,7 +874,9 @@ export default function ApprovalInbox() {
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current view</p>
             <p className="mt-2 text-lg font-semibold text-slate-950">{activeView === 'pending' ? 'Pending approvals' : 'History'}</p>
-            <p className="mt-1 text-sm text-slate-500">{activeSection === 'leave' ? 'Leave workflow' : 'Time edit workflow'}</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {activeSection === 'leave' ? 'Leave workflow' : activeSection === 'resignation' ? 'Resignation workflow' : 'Time edit workflow'}
+            </p>
           </div>
         </div>
       </SurfaceCard>
@@ -1070,8 +1131,14 @@ export default function ApprovalInbox() {
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.kind === 'leave' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                      {item.kind === 'leave' ? 'Leave' : 'Time Edit'}
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      item.kind === 'leave' ? 'bg-amber-100 text-amber-700' :
+                      item.kind === 'resignation' ? 'bg-rose-100 text-rose-700' :
+                      'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      {item.kind === 'leave' ? 'Leave' :
+                       item.kind === 'resignation' ? 'Resignation' :
+                       'Time Edit'}
                     </span>
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>
                       {String(item.status || '').replace(/_/g, ' ')}

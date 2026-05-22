@@ -350,6 +350,30 @@ export const employeeWorkspaceApi = {
     }),
 };
 
+// Resignation API
+export const resignationApi = {
+  submit: (data: { last_working_date: string; reason?: string }) =>
+    api.post('/resignations', data),
+  
+  getMyResignation: () =>
+    api.get('/resignations/my'),
+  
+  getMyResignationHistory: () =>
+    api.get('/resignations/my/history'),
+  
+  cancel: () =>
+    api.delete('/resignations/my'),
+  
+  list: (params?: { status?: 'pending' | 'approved' | 'rejected'; employee_id?: number }) =>
+    api.get('/resignations', { params }),
+  
+  approve: (id: number, data?: { approved_last_date?: string; notes?: string }) =>
+    api.post(`/resignations/${id}/approve`, data),
+  
+  reject: (id: number, data?: { reason?: string }) =>
+    api.post(`/resignations/${id}/reject`, data),
+};
+
 // Project API
 export const projectApi = {
   getAll: (params?: { status?: string }) => 

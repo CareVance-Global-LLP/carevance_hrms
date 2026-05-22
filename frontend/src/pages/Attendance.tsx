@@ -18,16 +18,11 @@ import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateR
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
+import { formatDuration } from '@/lib/formatters';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Briefcase, CalendarDays, Clock, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
 
-const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  return `${hours}h ${minutes}m`;
-};
 const formatDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
   formatDateTimeForTimezone(value, timezone, 'en-US', 'Not available');
 const resolveLiveToolLabel = (liveRow?: any | null) => {

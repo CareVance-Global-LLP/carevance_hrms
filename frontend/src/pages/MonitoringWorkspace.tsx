@@ -18,6 +18,7 @@ import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
 import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
+import { formatDuration } from '@/lib/formatters';
 import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 import type { BrowserTrackingHealthSummary } from '@/types';
 
@@ -79,26 +80,7 @@ const readPersistedMonitoringWorkspaceFilters = (mode: MonitoringWorkspaceMode):
     selectedUserId: coercePositiveNumber(parsed.selectedUserId) ?? '',
   };
 };
-const formatDuration = (seconds: number) => {
-  const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const remainingSeconds = safe % 60;
 
-  if (hours > 0) {
-    return remainingSeconds > 0 ? `${hours}h ${minutes}m ${remainingSeconds}s` : `${hours}h ${minutes}m`;
-  }
-
-  if (minutes > 0) {
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-  }
-
-  if (remainingSeconds > 0) {
-    return `${remainingSeconds}s`;
-  }
-
-  return `${hours}h ${minutes}m`;
-};
 const formatDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
   formatDateTimeForTimezone(value, timezone, 'en-US', 'No recent activity');
 const resolveLiveToolLabel = (liveRow?: any | null) => {

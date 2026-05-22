@@ -74,9 +74,23 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
   const [seats, setSeats] = useState(Math.max(initialSeats, initialMode === 'trial' ? TRIAL_SEATS : MIN_SEATS));
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showOrgDetails, setShowOrgDetails] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+
+  // Organization profile fields
+  const [description, setDescription] = useState('');
+  const [website, setWebsite] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [size, setSize] = useState('');
+  const [phone, setPhone] = useState('');
+  const [orgEmail, setOrgEmail] = useState('');
+  const [addressLine, setAddressLine] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+  const [country, setCountry] = useState('');
 
   useEffect(() => {
     if (signupMode === 'trial') {
@@ -134,6 +148,18 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
         billing_cycle: billingCycle,
         seats,
         ...(termsAccepted ? { terms_accepted: true } : {}),
+        // Organization profile fields (only include if provided)
+        ...(description.trim() ? { description: description.trim() } : {}),
+        ...(website.trim() ? { website: website.trim() } : {}),
+        ...(industry ? { industry } : {}),
+        ...(size ? { size } : {}),
+        ...(phone.trim() ? { phone: phone.trim() } : {}),
+        ...(orgEmail.trim() ? { org_email: orgEmail.trim() } : {}),
+        ...(addressLine.trim() ? { address_line: addressLine.trim() } : {}),
+        ...(city.trim() ? { city: city.trim() } : {}),
+        ...(state.trim() ? { state: state.trim() } : {}),
+        ...(postalCode.trim() ? { postal_code: postalCode.trim() } : {}),
+        ...(country.trim() ? { country: country.trim() } : {}),
       });
 
       analytics.trackEvent('owner_signup_completed', {
@@ -339,7 +365,196 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                       placeholder="********"
                     />
                   </div>
-                  {fieldErrors.password_confirmation ? <p className="mt-2 text-sm text-red-600">{fieldErrors.password_confirmation[0]}</p> : null}
+                {fieldErrors.password_confirmation ? <p className="mt-2 text-sm text-red-600">{fieldErrors.password_confirmation[0]}</p> : null}
+
+                {/* Organization Details Toggle */}
+                <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70">
+                  <button
+                    type="button"
+                    onClick={() => setShowOrgDetails(!showOrgDetails)}
+                    className="flex w-full items-center justify-between px-4 py-4 text-left"
+                  >
+                    <span className="text-sm font-semibold text-slate-800">Organization Details (Optional)</span>
+                    <span className="text-xs text-slate-500 transition-transform duration-300" style={{ transform: showOrgDetails ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+                  </button>
+                  
+                  {showOrgDetails && (
+                    <div className="space-y-4 px-4 pb-4">
+                      <div>
+                        <label htmlFor="description" className="mb-2 block text-sm font-medium text-slate-700">
+                          Description
+                        </label>
+                        <textarea
+                          id="description"
+                          value={description}
+                          onChange={(e) => setDescription(e.target.value)}
+                          className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                          placeholder="Tell us about your company..."
+                          rows={3}
+                        />
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label htmlFor="website" className="mb-2 block text-sm font-medium text-slate-700">
+                            Website
+                          </label>
+                          <input
+                            id="website"
+                            type="url"
+                            value={website}
+                            onChange={(e) => setWebsite(e.target.value)}
+                            className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                            placeholder="https://example.com"
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="industry" className="mb-2 block text-sm font-medium text-slate-700">
+                            Industry
+                          </label>
+                          <select
+                            id="industry"
+                            value={industry}
+                            onChange={(e) => setIndustry(e.target.value)}
+                            className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                          >
+                            <option value="">Select industry</option>
+                            <option value="technology">Technology</option>
+                            <option value="healthcare">Healthcare</option>
+                            <option value="finance">Finance</option>
+                            <option value="education">Education</option>
+                            <option value="manufacturing">Manufacturing</option>
+                            <option value="retail">Retail</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label htmlFor="size" className="mb-2 block text-sm font-medium text-slate-700">
+                            Company Size
+                          </label>
+                          <select
+                            id="size"
+                            value={size}
+                            onChange={(e) => setSize(e.target.value)}
+                            className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                          >
+                            <option value="">Select size</option>
+                            <option value="1-10">1-10 employees</option>
+                            <option value="11-50">11-50 employees</option>
+                            <option value="51-200">51-200 employees</option>
+                            <option value="201-500">201-500 employees</option>
+                            <option value="500+">500+ employees</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label htmlFor="org-phone" className="mb-2 block text-sm font-medium text-slate-700">
+                            Phone Number
+                          </label>
+                          <input
+                            id="org-phone"
+                            type="tel"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                            className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                            placeholder="+1 (555) 123-4567"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="org-email" className="mb-2 block text-sm font-medium text-slate-700">
+                          Organization Email
+                        </label>
+                        <input
+                          id="org-email"
+                          type="email"
+                          value={orgEmail}
+                          onChange={(e) => setOrgEmail(e.target.value)}
+                          className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                          placeholder="contact@company.com"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="address" className="mb-2 block text-sm font-medium text-slate-700">
+                          Address
+                        </label>
+                        <input
+                          id="address"
+                          type="text"
+                          value={addressLine}
+                          onChange={(e) => setAddressLine(e.target.value)}
+                          className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                          placeholder="123 Business Street"
+                        />
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label htmlFor="city" className="mb-2 block text-sm font-medium text-slate-700">
+                            City
+                          </label>
+                          <input
+                            id="city"
+                            type="text"
+                            value={city}
+                            onChange={(e) => setCity(e.target.value)}
+                            className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                            placeholder="New York"
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="state" className="mb-2 block text-sm font-medium text-slate-700">
+                            State/Province
+                          </label>
+                          <input
+                            id="state"
+                            type="text"
+                            value={state}
+                            onChange={(e) => setState(e.target.value)}
+                            className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                            placeholder="NY"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label htmlFor="postal-code" className="mb-2 block text-sm font-medium text-slate-700">
+                            Postal Code
+                          </label>
+                          <input
+                            id="postal-code"
+                            type="text"
+                            value={postalCode}
+                            onChange={(e) => setPostalCode(e.target.value)}
+                            className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                            placeholder="10001"
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="country" className="mb-2 block text-sm font-medium text-slate-700">
+                            Country
+                          </label>
+                          <input
+                            id="country"
+                            type="text"
+                            value={country}
+                            onChange={(e) => setCountry(e.target.value)}
+                            className="block w-full rounded-[18px] border border-slate-200/90 bg-white/85 px-4 py-3 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                            placeholder="United States"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <label className="flex items-start gap-3 rounded-[22px] border border-slate-200/80 bg-slate-50/70 px-4 py-4 text-sm text-slate-600">

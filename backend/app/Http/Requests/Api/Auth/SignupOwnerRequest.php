@@ -21,6 +21,18 @@ class SignupOwnerRequest extends ApiFormRequest
             'seats' => ['nullable', 'integer', 'min:5', 'max:1000'],
             'terms_accepted' => 'required|accepted',
             'role' => ['nullable', 'string', Rule::in(['admin'])],
+            // Organization profile fields
+            'description' => 'nullable|string|max:1000',
+            'website' => 'nullable|url|max:255',
+            'industry' => 'nullable|string|max:100',
+            'size' => 'nullable|string|max:50',
+            'phone' => 'nullable|string|max:20',
+            'org_email' => 'nullable|email|max:255',
+            'address_line' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:100',
+            'state' => 'nullable|string|max:100',
+            'postal_code' => 'nullable|string|max:20',
+            'country' => 'nullable|string|max:100',
         ];
     }
 

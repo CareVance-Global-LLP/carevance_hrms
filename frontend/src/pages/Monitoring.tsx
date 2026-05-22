@@ -14,16 +14,10 @@ import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePre
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { formatDuration } from '@/lib/formatters';
 import { Activity, Camera, Users } from 'lucide-react';
 
 const PIE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];
-
-const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  return `${hours}h ${minutes}m`;
-};
 
 const polarToCartesian = (cx: number, cy: number, r: number, angle: number) => {
   const rad = (angle - 90) * Math.PI / 180;

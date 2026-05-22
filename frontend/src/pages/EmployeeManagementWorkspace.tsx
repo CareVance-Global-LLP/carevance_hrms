@@ -10,6 +10,7 @@ import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
+import { formatDuration } from '@/lib/formatters';
 import { ArrowRightLeft, Building2, KeyRound, MailPlus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserPlus, UserPlus2, UserRound, Users } from 'lucide-react';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
@@ -110,12 +111,6 @@ function DataTable<T>({
   );
 }
 
-const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  return `${hours}h ${minutes}m`;
-};
 
 const resolveEmployeeDepartment = (user: any) =>
   String(

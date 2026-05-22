@@ -16,23 +16,11 @@ import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { SelectInput } from '@/components/ui/FormField';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
+import { formatDurationSmart as formatDuration } from '@/lib/formatters';
 import { BarChart3, Calendar, Clock, Download, TrendingUp, Users } from 'lucide-react';
 
 type OrgUser = { id: number; name: string; email: string; role: string };
 type Group = { id: number; name: string; users: OrgUser[] };
-
-const formatDuration = (seconds: number) => {
-  const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
-  const h = Math.floor(safe / 3600);
-  const m = Math.floor((safe % 3600) / 60);
-  const s = safe % 60;
-
-  if (h === 0 && s > 0) {
-    return `${m}m ${s}s`;
-  }
-
-  return `${h}h ${m}m`;
-};
 
 const formatLastActivity = (value?: string | null) => {
   if (!value) return 'No activity';

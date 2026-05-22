@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarClock,
   Camera,
+  Clock,
   FileClock,
   Fingerprint,
   FolderKanban,
@@ -134,6 +135,14 @@ export const topNavigation: NavGroup[] = [
     items: [
       { label: 'Settings', to: '/settings', icon: Settings, adminOnly: true },
       { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true },
+    ],
+  },
+  {
+    label: 'Resignation',
+    icon: UserMinus,
+    items: [
+      { label: 'Submit Resignation', to: '/resignation', icon: UserMinus },
+      { label: 'My Resignation', to: '/resignation/status', icon: FileClock },
     ],
   },
 ];
