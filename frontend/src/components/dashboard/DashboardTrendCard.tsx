@@ -1,3 +1,4 @@
+import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { PageEmptyState } from '@/components/ui/PageState';
 
@@ -19,6 +20,15 @@ interface DashboardTrendCardProps {
   footer?: string;
 }
 
+const colorMap: Record<string, string> = {
+  'bg-sky-500': '#0ea5e9',
+  'bg-blue-500': '#3b82f6',
+  'bg-emerald-500': '#10b981',
+  'bg-amber-500': '#f59e0b',
+  'bg-rose-500': '#f43f5e',
+  'bg-violet-500': '#8b5cf6',
+};
+
 export default function DashboardTrendCard({
   title,
   description,
@@ -28,7 +38,7 @@ export default function DashboardTrendCard({
   emptyDescription = 'No data is available for this selection yet.',
   footer,
 }: DashboardTrendCardProps) {
-  const maxValue = Math.max(...points.map((point) => point.value), 1);
+  const fillColor = colorMap[colorClassName] || '#0ea5e9';
 
   return (
     <SurfaceCard className="p-5">
@@ -40,25 +50,32 @@ export default function DashboardTrendCard({
           <PageEmptyState title={emptyTitle} description={emptyDescription} />
         </div>
       ) : (
-        <div className="mt-5 space-y-3">
-          {points.map((point) => {
-            const width = Math.max(10, Math.round((point.value / maxValue) * 100));
-
-            return (
-              <div key={point.id} className="space-y-1.5">
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-900">{point.label}</p>
-                    {point.hint ? <p className="truncate text-xs text-slate-500">{point.hint}</p> : null}
-                  </div>
-                  <span className="shrink-0 font-medium text-slate-900">{point.formattedValue}</span>
-                </div>
-                <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-                  <div className={`h-full rounded-full ${colorClassName}`} style={{ width: `${width}%` }} />
-                </div>
-              </div>
-            );
-          })}
+        <div className="mt-5">
+          <ResponsiveContainer width="100%" height={Math.max(60, points.length * 40)}>
+            <BarChart data={points} layout="vertical" margin={{ top: 4, right: 100, left: 100, bottom: 4 }} barCategoryGap="20%">
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={95} />
+              <Tooltip
+                content={({ active, payload }: any) => {
+                  if (!active || !payload?.length) return null;
+                  const row = payload[0].payload;
+                  return (
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                      <p className="text-xs font-bold text-slate-900">{row.label}</p>
+                      <p className="mt-1 text-xs text-slate-500">{row.formattedValue}</p>
+                      {row.hint && <p className="mt-0.5 text-xs text-slate-400">{row.hint}</p>}
+                    </div>
+                  );
+                }}
+                cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                offset={28}
+              />
+              <Bar dataKey="value" name="Value" radius={[0, 4, 4, 0]} barSize={16} fill={fillColor}>
+                <LabelList dataKey="formattedValue" position="right" style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
 

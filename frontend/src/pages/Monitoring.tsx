@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { deriveDateRangeFromPreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import StatusBadge from '@/components/ui/StatusBadge';
+import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Activity, Camera, Users } from 'lucide-react';
 
 const PIE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];
@@ -478,26 +479,31 @@ export default function Monitoring() {
               {productiveEmployeeRanking.length === 0 ? (
                 <p className="text-sm text-gray-500">No employee productivity data found.</p>
               ) : (
-                <div className="border border-gray-100 rounded-lg p-3 space-y-2 max-h-72 overflow-auto">
-                  {productiveEmployeeRanking.map((item: any) => {
-                    const duration = Number(item?.productive_duration || 0);
-                    const widthPercent = Math.max(6, Math.round((duration / maxProductiveDuration) * 100));
-                    return (
-                      <div key={`rank-${item?.user?.id}`} className="space-y-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs text-gray-700 truncate">{item?.user?.name || 'Unknown'}</p>
-                          <p className="text-xs text-gray-600 shrink-0">{formatDuration(duration)}</p>
-                        </div>
-                        <div className="h-3 w-full bg-gray-100 rounded-md overflow-hidden">
-                          <div
-                            className="h-3 bg-green-500 rounded-md"
-                            style={{ width: `${widthPercent}%` }}
-                            title={`${item?.user?.name || 'Unknown'} - ${formatDuration(duration)}`}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="max-h-72 overflow-auto">
+                  <ResponsiveContainer width="100%" height={Math.max(60, productiveEmployeeRanking.length * 36)}>
+                    <BarChart data={productiveEmployeeRanking} layout="vertical" margin={{ top: 4, right: 80, left: 110, bottom: 4 }} barCategoryGap="15%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => formatDuration(v)} />
+                      <YAxis type="category" dataKey="user.name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={105} />
+                      <Tooltip
+                        content={({ active, payload }: any) => {
+                          if (!active || !payload?.length) return null;
+                          const row = payload[0].payload;
+                          return (
+                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                              <p className="text-xs font-bold text-slate-900">{row.user?.name || 'Unknown'}</p>
+                              <p className="mt-1 text-xs text-slate-500">Productive: <span className="font-semibold text-slate-700">{formatDuration(Number(row.productive_duration || 0))}</span></p>
+                            </div>
+                          );
+                        }}
+                        cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                        offset={28}
+                      />
+                      <Bar dataKey="productive_duration" name="Productive Time" radius={[0, 4, 4, 0]} barSize={16} fill="#22c55e">
+                        <LabelList dataKey="productive_duration" position="right" formatter={(v: number) => formatDuration(v)} style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               )}
             </SurfaceCard>
@@ -522,22 +528,31 @@ export default function Monitoring() {
                     </div>
                   </div>
 
-                  <div className="border border-gray-100 rounded-lg p-3 space-y-2 max-h-48 overflow-auto">
-                    {teamEfficiencyRanking.map((item: any) => {
-                      const score = Number(item?.efficiency_score || 0);
-                      const widthPercent = Math.max(6, Math.round((score / maxTeamEfficiency) * 100));
-                      return (
-                        <div key={`team-eff-${item?.group?.id}`} className="space-y-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-xs text-gray-700 truncate">{item?.group?.name || 'Unnamed Team'}</p>
-                            <p className="text-xs text-gray-600 shrink-0">{score.toFixed(2)}%</p>
-                          </div>
-                          <div className="h-3 w-full bg-gray-100 rounded-md overflow-hidden">
-                            <div className="h-3 bg-blue-500 rounded-md" style={{ width: `${widthPercent}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="max-h-48 overflow-auto">
+                    <ResponsiveContainer width="100%" height={Math.max(60, teamEfficiencyRanking.length * 36)}>
+                      <BarChart data={teamEfficiencyRanking} layout="vertical" margin={{ top: 4, right: 80, left: 110, bottom: 4 }} barCategoryGap="15%">
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v.toFixed(0)}%`} />
+                        <YAxis type="category" dataKey="group.name" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={105} />
+                        <Tooltip
+                          content={({ active, payload }: any) => {
+                            if (!active || !payload?.length) return null;
+                            const row = payload[0].payload;
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                                <p className="text-xs font-bold text-slate-900">{row.group?.name || 'Unnamed Team'}</p>
+                                <p className="mt-1 text-xs text-slate-500">Efficiency: <span className="font-semibold text-slate-700">{Number(row.efficiency_score || 0).toFixed(2)}%</span></p>
+                              </div>
+                            );
+                          }}
+                          cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                          offset={28}
+                        />
+                        <Bar dataKey="efficiency_score" name="Efficiency" radius={[0, 4, 4, 0]} barSize={16} fill="#3b82f6">
+                          <LabelList dataKey="efficiency_score" position="right" formatter={(v: number) => `${v.toFixed(1)}%`} style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               )}

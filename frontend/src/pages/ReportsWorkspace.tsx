@@ -44,12 +44,13 @@ import {
   LineChart,
   ListFilter,
   Monitor,
-  PieChart,
+  PieChart as PieChartIcon,
   RefreshCw,
   TimerReset,
   Users,
   Waypoints,
 } from 'lucide-react';
+import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 type ReportsWorkspaceMode =
   | 'reports-hub'
@@ -983,25 +984,6 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       share: clampPercent((segment.value / total) * 100),
     }));
   }, [attendanceTotals, mode]);
-
-  const attendanceCompositionGradient = useMemo(() => {
-    if (!attendanceComposition.length) {
-      return 'conic-gradient(#e2e8f0 0% 100%)';
-    }
-
-    let cursor = 0;
-    const slices = attendanceComposition.map((segment) => {
-      const start = cursor;
-      cursor += Number(segment.share || 0);
-      return `${segment.color} ${start.toFixed(2)}% ${Math.min(100, cursor).toFixed(2)}%`;
-    });
-
-    if (cursor < 100) {
-      slices.push(`#e2e8f0 ${cursor.toFixed(2)}% 100%`);
-    }
-
-    return `conic-gradient(${slices.join(', ')})`;
-  }, [attendanceComposition]);
 
   const overallData = dataQuery.data as any;
   const overallSummary = overallData?.summary || {};
@@ -2060,20 +2042,38 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                   </div>
                   <BarChart3 className="h-5 w-5 text-blue-600" />
                 </div>
-                <div className="mt-5 space-y-3">
+                <div className="mt-5">
                   {attendanceDepartmentBarRows.length === 0 ? (
                     <p className="text-sm text-slate-500">No department attendance rows found.</p>
-                  ) : attendanceDepartmentBarRows.map((row: any) => (
-                    <div key={row.department}>
-                      <div className="mb-1 flex items-center justify-between gap-3 text-xs">
-                        <p className="truncate font-semibold text-slate-800">{row.department}</p>
-                        <p className="whitespace-nowrap text-slate-600">{formatPercent(row.attendanceRate)} ({row.presentDays}/{Math.max(1, row.expectedDays)})</p>
-                      </div>
-                      <div className="h-3 overflow-hidden rounded-full bg-blue-100">
-                        <div className="h-full rounded-full bg-[linear-gradient(90deg,#0ea5e9_0%,#2563eb_100%)]" style={{ width: `${Math.max(6, row.attendanceRate)}%` }} />
-                      </div>
-                    </div>
-                  ))}
+                  ) : (
+                    <ResponsiveContainer width="100%" height={Math.max(120, attendanceDepartmentBarRows.length * 40)}>
+                      <BarChart data={attendanceDepartmentBarRows} layout="vertical" margin={{ top: 4, right: 60, left: 80, bottom: 4 }} barCategoryGap="20%">
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                        <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} />
+                        <YAxis type="category" dataKey="department" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={75} />
+                        <Tooltip
+                          content={({ active, payload }: any) => {
+                            if (!active || !payload?.length) return null;
+                            const row = payload[0].payload;
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                                <p className="text-xs font-bold text-slate-900">{row.department}</p>
+                                <p className="mt-1 text-xs text-slate-500">Attendance Rate: <span className="font-semibold text-slate-700">{formatPercent(row.attendanceRate)}</span></p>
+                                <p className="text-xs text-slate-500">Present: <span className="font-semibold text-slate-700">{row.presentDays}</span> / {Math.max(1, row.expectedDays)} days</p>
+                              </div>
+                            );
+                          }}
+                          cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                          offset={28}
+                        />
+                        <Bar dataKey="attendanceRate" name="Attendance Rate" radius={[0, 4, 4, 0]} barSize={20}>
+                          {attendanceDepartmentBarRows.map((row: any) => (
+                            <Cell key={row.department} fill={row.attendanceRate >= 75 ? '#2563eb' : row.attendanceRate >= 50 ? '#f59e0b' : '#ef4444'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </div>
 
@@ -2083,12 +2083,44 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                     <h3 className="text-sm font-semibold text-slate-950">Attendance Status Split</h3>
                     <p className="mt-1 text-xs text-slate-500">Pie chart of present, leave, and absent totals for quick decision-making.</p>
                   </div>
-                  <PieChart className="h-5 w-5 text-violet-600" />
+                  <PieChartIcon className="h-5 w-5 text-violet-600" />
                 </div>
                 <div className="mt-4 grid grid-cols-1 items-center gap-4 sm:grid-cols-[0.95fr_1.05fr]">
                   <div className="relative mx-auto h-44 w-44">
-                    <div className="h-full w-full rounded-full" style={{ background: attendanceCompositionGradient }} />
-                    <div className="absolute inset-8 flex flex-col items-center justify-center rounded-full bg-white text-center shadow-sm ring-1 ring-slate-200">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={attendanceComposition}
+                          cx="50%" cy="50%"
+                          innerRadius={50}
+                          outerRadius={78}
+                          paddingAngle={2}
+                          dataKey="value"
+                          nameKey="label"
+                          stroke="none"
+                          isAnimationActive={false}
+                        >
+                          {attendanceComposition.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          content={({ active, payload }: any) => {
+                            if (!active || !payload?.length) return null;
+                            const data = payload[0].payload;
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                                <p className="text-xs font-bold text-slate-900">{data.label}</p>
+                                <p className="text-xs text-slate-500">{data.value} days ({data.share}%)</p>
+                              </div>
+                            );
+                          }}
+                          position={{ x: 180, y: 72 }}
+                          offset={10}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                       <p className="text-lg font-semibold text-slate-950">{formatPercent(attendanceTotals.averageAttendanceRate)}</p>
                       <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Avg attendance</p>
                     </div>
@@ -2267,24 +2299,35 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                   <PageEmptyState title="No trend data" description="Tracked work by day will appear here." />
                 </div>
               ) : (
-                <div className={`mt-5 space-y-3 ${shouldScrollByDay ? 'max-h-[360px] overflow-y-auto pr-2' : ''}`.trim()}>
-                  {byDay.map((item: any) => {
-                    const width = Math.max(
-                      8,
-                      Math.round((Number(item.total_duration || 0) / Math.max(1, ...byDay.map((entry: any) => Number(entry.total_duration || 0)))) * 100)
-                    );
-                    return (
-                      <div key={item.date} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-slate-600">{item.date}</span>
-                          <span className="font-medium text-slate-950">{formatDuration(item.total_duration || 0)}</span>
-                        </div>
-                        <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-                          <div className="h-full rounded-full bg-sky-500" style={{ width: `${width}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="mt-5">
+                  <ResponsiveContainer width="100%" height={Math.max(120, byDay.length * 36)}>
+                    <BarChart data={byDay} layout="vertical" margin={{ top: 4, right: 64, left: 80, bottom: 4 }} barCategoryGap="25%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => formatDuration(v)} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="date" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={75} />
+                        <Tooltip
+                          content={({ active, payload }: any) => {
+                            if (!active || !payload?.length) return null;
+                            const row = payload[0].payload;
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                                <p className="text-xs font-bold text-slate-900">{row.date}</p>
+                                <p className="mt-1 text-xs text-slate-500">Tracked: <span className="font-semibold text-slate-700">{formatDuration(row.total_duration || 0)}</span></p>
+                              </div>
+                            );
+                          }}
+                          cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                          offset={28}
+                        />
+                      <Bar dataKey="total_duration" name="Tracked Time" radius={[0, 4, 4, 0]} barSize={18}>
+                        {byDay.map((item: any) => {
+                          const maxDuration = Math.max(1, ...byDay.map((e: any) => Number(e.total_duration || 0)));
+                          const ratio = Number(item.total_duration || 0) / maxDuration;
+                          return <Cell key={item.date} fill={ratio >= 0.75 ? '#0ea5e9' : ratio >= 0.4 ? '#38bdf8' : '#bae6fd'} />;
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               )}
             </SurfaceCard>

@@ -39,7 +39,7 @@ import {
   userApi,
 } from '@/services/api';
 import { SelectInput } from '@/components/ui/FormField';
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 type DashboardEmployee = {
   id: number;
@@ -481,7 +481,7 @@ const DepartmentWorkIdleChart = ({ data }: { data: Array<{ department: string; w
             }}
             width={48}
           />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }} />
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }} offset={16} />
           <Bar dataKey="workedSeconds" name="Worked" stackId="a" radius={[0, 0, 0, 0]} barSize={40}>
             {chartData.map((_entry, index) => (
               <Cell key={`cell-work-${index}`} fill="#2563eb" />
@@ -541,18 +541,69 @@ const DonutChart = ({ items }: { items: Array<{ label: string; value: number; co
     return <EmptyInline>No leave data yet</EmptyInline>;
   }
 
-  let cursor = 0;
-  const gradient = items.map((item) => {
-    const start = cursor;
-    const end = cursor + (item.value / total) * 100;
-    cursor = end;
-    return `${item.color} ${start}% ${end}%`;
-  }).join(', ');
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const data = payload[0];
+    const value = data.payload?.value ?? data.value ?? 0;
+    const pct = total > 0 ? Math.round(value / total * 100) : 0;
+    const label = data.name || data.payload?.label || '';
+    const color = data.payload?.color || '';
+    if (!label) return null;
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-2xl">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+          <p className="text-sm font-bold text-slate-900">{label}</p>
+        </div>
+        <div className="mt-2.5 space-y-1.5">
+          <div className="flex items-center justify-between gap-6">
+            <span className="text-xs text-slate-500">Days</span>
+            <span className="text-xs font-semibold text-slate-900">{value}</span>
+          </div>
+          <div className="flex items-center justify-between gap-6">
+            <span className="text-xs text-slate-500">Share</span>
+            <span className="text-xs font-semibold text-slate-900">{pct}%</span>
+          </div>
+          <div className="border-t border-slate-100 pt-1.5">
+            <div className="flex items-center justify-between gap-6">
+              <span className="text-xs text-slate-500">Total Days</span>
+              <span className="text-xs font-semibold text-slate-900">{total}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="flex items-center gap-6">
-      <div className="relative h-36 w-36 rounded-full" style={{ background: `conic-gradient(${gradient})` }}>
-        <div className="absolute inset-7 flex flex-col items-center justify-center rounded-full bg-white">
+      <div className="relative">
+        <ResponsiveContainer width={144} height={144}>
+          <PieChart>
+            <Pie
+              data={items}
+              cx="50%"
+              cy="50%"
+              innerRadius={40}
+              outerRadius={68}
+              paddingAngle={2}
+              dataKey="value"
+              nameKey="label"
+              stroke="none"
+              isAnimationActive={false}
+            >
+              {items.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip
+              content={<CustomTooltip />}
+              position={{ x: 200, y: 72 }}
+              offset={10}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
           <span className="text-2xl font-semibold text-slate-950">{total}</span>
           <span className="text-xs text-slate-500">Days</span>
         </div>
@@ -569,61 +620,78 @@ const DonutChart = ({ items }: { items: Array<{ label: string; value: number; co
   );
 };
 
-const piePoint = (cx: number, cy: number, r: number, angle: number) => {
-  const radians = (angle - 90) * Math.PI / 180;
-  return {
-    x: cx + r * Math.cos(radians),
-    y: cy + r * Math.sin(radians),
-  };
-};
-
-const pieArcPath = (cx: number, cy: number, r: number, startAngle: number, endAngle: number) => {
-  const start = piePoint(cx, cy, r, endAngle);
-  const end = piePoint(cx, cy, r, startAngle);
-  const largeArcFlag = endAngle - startAngle > 180 ? '1' : '0';
-  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
-};
-
 const AttendancePieChart = ({ items }: { items: Array<{ label: string; value: number; color: string; bgClass: string }> }) => {
   const total = items.reduce((sum, item) => sum + Math.max(0, Number(item.value || 0)), 0);
   if (total <= 0) {
     return <EmptyInline>No attendance data yet</EmptyInline>;
   }
 
-  let startAngle = 0;
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const data = payload[0];
+    const value = data.payload?.value ?? data.value ?? 0;
+    const pct = total > 0 ? Math.round(value / total * 100) : 0;
+    const label = data.name || data.payload?.label || '';
+    const color = data.payload?.color || '';
+    if (!label) return null;
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-2xl">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
+          <p className="text-sm font-bold text-slate-900">{label}</p>
+        </div>
+        <div className="mt-2.5 space-y-1.5">
+          <div className="flex items-center justify-between gap-6">
+            <span className="text-xs text-slate-500">Count</span>
+            <span className="text-xs font-semibold text-slate-900">{value}</span>
+          </div>
+          <div className="flex items-center justify-between gap-6">
+            <span className="text-xs text-slate-500">Share</span>
+            <span className="text-xs font-semibold text-slate-900">{pct}%</span>
+          </div>
+          <div className="border-t border-slate-100 pt-1.5">
+            <div className="flex items-center justify-between gap-6">
+              <span className="text-xs text-slate-500">Total</span>
+              <span className="text-xs font-semibold text-slate-900">{total}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
-      <div className="flex justify-center">
-        <svg viewBox="0 0 220 220" className="h-44 w-44" aria-label="Attendance overview pie chart">
-          {items.map((item) => {
-            const value = Math.max(0, Number(item.value || 0));
-            if (value <= 0) return null;
-            const sweep = (value / total) * 360;
-            const pct = Math.round((value / total) * 100);
-
-            if (sweep >= 359.999) {
-              startAngle += sweep;
-              return (
-                <circle key={item.label} cx="110" cy="110" r="92" fill={item.color} className="transition-opacity hover:opacity-80">
-                  <title>{`${item.label}: ${value} (${pct}%)`}</title>
-                </circle>
-              );
-            }
-
-            const path = pieArcPath(110, 110, 92, startAngle, startAngle + sweep);
-            startAngle += sweep;
-
-            return (
-              <path key={item.label} d={path} fill={item.color} className="transition-opacity hover:opacity-80">
-                <title>{`${item.label}: ${value} (${pct}%)`}</title>
-              </path>
-            );
-          })}
-          <circle cx="110" cy="110" r="54" fill="white" />
-          <text x="110" y="106" textAnchor="middle" fill="#0f172a" fontSize="28" fontWeight="700">{total}</text>
-          <text x="110" y="128" textAnchor="middle" fill="#64748b" fontSize="12">Total</text>
-        </svg>
+      <div className="relative flex justify-center">
+        <ResponsiveContainer width={176} height={176}>
+          <PieChart>
+            <Pie
+              data={items}
+              cx="50%"
+              cy="50%"
+              outerRadius={88}
+              innerRadius={52}
+              paddingAngle={2}
+              dataKey="value"
+              nameKey="label"
+              stroke="none"
+              isAnimationActive={false}
+            >
+              {items.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip
+              content={<CustomTooltip />}
+              position={{ x: 240, y: 88 }}
+              offset={10}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-2xl font-bold text-slate-950">{total}</span>
+          <span className="text-xs text-slate-500">Total</span>
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-2 text-xs">
         {items.map((item) => {
@@ -634,7 +702,7 @@ const AttendancePieChart = ({ items }: { items: Array<{ label: string; value: nu
                 <span className={`h-2.5 w-2.5 rounded-sm ${item.bgClass}`} />
                 {item.label}
               </span>
-              <span className="font-semibold text-slate-950">{item.value}</span>
+              <span className="text-slate-500">{item.value} ({pct}%)</span>
             </div>
           );
         })}
@@ -1913,20 +1981,33 @@ export default function AdminDashboard() {
         <Card id="department-distribution" className="scroll-mt-24 p-4">
           <SectionTitle title="Department Distribution" action={<Link to="/employees/teams" className="text-xs font-medium text-blue-600">All Departments</Link>} />
           {departmentCounts.length ? (
-            <div className="space-y-3">
-              {departmentCounts.map((item, index) => {
-                const max = Math.max(1, ...departmentCounts.map((entry) => entry.count));
-                return (
-                  <div key={item.department} className="grid grid-cols-[86px_1fr_30px] items-center gap-3 text-xs">
-                    <span className="truncate text-slate-600">{item.department}</span>
-                    <span className="h-1.5 rounded-full bg-slate-100">
-                      <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(8, (item.count / max) * 100)}%`, background: departmentPalette[index % departmentPalette.length] }} />
-                    </span>
-                    <span className="text-right text-slate-500">{item.count}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <ResponsiveContainer width="100%" height={Math.max(60, departmentCounts.length * 36)}>
+              <BarChart data={departmentCounts} layout="vertical" margin={{ top: 4, right: 40, left: 80, bottom: 4 }} barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="department" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={80} />
+                <Tooltip
+                  content={({ active, payload }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const row = payload[0].payload;
+                    return (
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                        <p className="text-xs font-bold text-slate-900">{row.department}</p>
+                        <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.count}</span></p>
+                      </div>
+                    );
+                  }}
+                  cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                  offset={28}
+                />
+                <Bar dataKey="count" name="Employees" radius={[0, 4, 4, 0]} barSize={16}>
+                  {departmentCounts.map((item, index) => (
+                    <Cell key={item.department} fill={departmentPalette[index % departmentPalette.length]} />
+                  ))}
+                  <LabelList dataKey="count" position="right" style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           ) : <EmptyInline>No departments found</EmptyInline>}
         </Card>
       </section>
@@ -1999,17 +2080,45 @@ export default function AdminDashboard() {
                   <span className="font-semibold text-slate-700">Productivity</span>
                   <span className="text-slate-500">{formatPercent(employeeProductiveShare)} productive</span>
                 </div>
-                {[
-                  ['Productive', Number(employeeStats.productive_duration || 0), 'bg-emerald-500'],
-                  ['Unproductive', Number(employeeStats.unproductive_duration || 0), 'bg-rose-500'],
-                  ['Neutral', Number(employeeStats.neutral_duration || 0), 'bg-slate-400'],
-                  ['Context', Number(employeeStats.context_dependent_duration || 0), 'bg-amber-500'],
-                ].map(([label, seconds, color]) => (
-                  <div key={String(label)} className="mb-3 last:mb-0">
-                    <div className="mb-1 flex justify-between text-xs"><span className="text-slate-600">{label}</span><span className="text-slate-500">{formatDuration(Number(seconds))}</span></div>
-                    <div className="h-2 rounded-full bg-slate-100"><span className={`block h-2 rounded-full ${color}`} style={{ width: `${Math.max(Number(seconds) ? 8 : 0, (Number(seconds) / employeeActivityTotal) * 100)}%` }} /></div>
-                  </div>
-                ))}
+                {(() => {
+                  const productivityData = [
+                    { label: 'Productive', value: Number(employeeStats.productive_duration || 0) },
+                    { label: 'Unproductive', value: Number(employeeStats.unproductive_duration || 0) },
+                    { label: 'Neutral', value: Number(employeeStats.neutral_duration || 0) },
+                    { label: 'Context', value: Number(employeeStats.context_dependent_duration || 0) },
+                  ];
+                  return (
+                    <ResponsiveContainer width="100%" height={140}>
+                      <BarChart data={productivityData} layout="vertical" margin={{ top: 4, right: 80, left: 80, bottom: 4 }} barCategoryGap="20%">
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                        <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={75} />
+                        <Tooltip
+                          content={({ active, payload }: any) => {
+                            if (!active || !payload?.length) return null;
+                            const row = payload[0].payload;
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                                <p className="text-xs font-bold text-slate-900">{row.label}</p>
+                                <p className="mt-1 text-xs text-slate-500">Duration: <span className="font-semibold text-slate-700">{formatDuration(row.value)}</span></p>
+                                <p className="text-xs text-slate-500">Share: <span className="font-semibold text-slate-700">{employeeActivityTotal > 0 ? Math.round((row.value / employeeActivityTotal) * 100) : 0}%</span></p>
+                              </div>
+                            );
+                          }}
+                          cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                          offset={28}
+                        />
+                        <Bar dataKey="value" name="Duration" radius={[0, 4, 4, 0]} barSize={16}>
+                          <Cell fill="#10b981" />
+                          <Cell fill="#f43f5e" />
+                          <Cell fill="#94a3b8" />
+                          <Cell fill="#f59e0b" />
+                          <LabelList dataKey="value" position="right" formatter={(val: number) => formatDuration(val)} style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
               </div>
 
               <div className="rounded-lg border border-slate-100 p-3">
@@ -2107,17 +2216,38 @@ export default function AdminDashboard() {
                 <span className="text-slate-400">{scopeDepartmentFilter === 'All' ? 'All departments' : scopeDepartmentFilter}</span>
               </div>
               {departmentCounts.length ? (
-                <div className="space-y-3">
-                  {departmentCounts.slice(0, 5).map((item, index) => (
-                    <div key={item.department} className="flex items-center justify-between gap-3 text-xs">
-                      <span className="truncate text-slate-600">{item.department}</span>
-                      <span className="h-1.5 flex-1 rounded-full bg-slate-100">
-                        <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(8, (item.count / Math.max(1, totalEmployees)) * 100)}%`, background: departmentPalette[index % departmentPalette.length] }} />
-                      </span>
-                      <span className="text-slate-500">{item.count}</span>
-                    </div>
-                  ))}
-                </div>
+                (() => {
+                  const scopeData = departmentCounts.slice(0, 5);
+                  return (
+                    <ResponsiveContainer width="100%" height={Math.max(60, scopeData.length * 36)}>
+                      <BarChart data={scopeData} layout="vertical" margin={{ top: 4, right: 40, left: 80, bottom: 4 }} barCategoryGap="20%">
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                        <YAxis type="category" dataKey="department" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={80} />
+                        <Tooltip
+                          content={({ active, payload }: any) => {
+                            if (!active || !payload?.length) return null;
+                            const row = payload[0].payload;
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                                <p className="text-xs font-bold text-slate-900">{row.department}</p>
+                                <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.count}</span> / {totalEmployees}</p>
+                              </div>
+                            );
+                          }}
+                          cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                          offset={28}
+                        />
+                        <Bar dataKey="count" name="Employees" radius={[0, 4, 4, 0]} barSize={16}>
+                          {scopeData.map((item: any, index: number) => (
+                            <Cell key={item.department} fill={departmentPalette[index % departmentPalette.length]} />
+                          ))}
+                          <LabelList dataKey="count" position="right" style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  );
+                })()
               ) : <EmptyInline>No people match this scope</EmptyInline>}
             </div>
           </div>
@@ -2488,18 +2618,36 @@ export default function AdminDashboard() {
 
         <Card id="attendance-health" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Health" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <div className="space-y-4">
-            {attendanceHealth.map((item) => (
-              <div key={item.label}>
-                <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="font-medium text-slate-700">{item.label}</span>
-                  <span className="text-slate-500">{item.value}</span>
-                </div>
-                <div className="h-2 rounded-full bg-slate-100">
-                  <span className={`block h-2 rounded-full ${item.color}`} style={{ width: `${Math.max(item.value ? 8 : 0, (item.value / Math.max(1, totalEmployees)) * 100)}%` }} />
-                </div>
-              </div>
-            ))}
+          <div className="-ml-1">
+            <div className="w-full max-w-sm">
+              <ResponsiveContainer width="100%" height={attendanceHealth.length * 40}>
+                <BarChart data={attendanceHealth} layout="vertical" margin={{ top: 8, right: 40, left: 110, bottom: 8 }} barCategoryGap="25%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={[0, totalEmployees]} />
+                  <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={100} />
+                  <Tooltip
+                    content={({ active, payload }: any) => {
+                      if (!active || !payload?.length) return null;
+                      const row = payload[0].payload;
+                      return (
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                          <p className="text-xs font-bold text-slate-900">{row.label}</p>
+                          <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.value}</span></p>
+                        </div>
+                      );
+                    }}
+                    cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                    offset={28}
+                  />
+                  <Bar dataKey="value" name="Employees" radius={[0, 4, 4, 0]} barSize={24}>
+                    {attendanceHealth.map((item: any) => (
+                      <Cell key={item.label} fill={item.color === 'bg-emerald-500' ? '#10b981' : item.color === 'bg-slate-400' ? '#94a3b8' : item.color === 'bg-rose-500' ? '#f43f5e' : item.color === 'bg-amber-500' ? '#f59e0b' : item.color === 'bg-red-500' ? '#ef4444' : '#94a3b8'} />
+                    ))}
+                    <LabelList dataKey="value" position="right" style={{ fontSize: '12px', fill: '#64748b', fontWeight: 600 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
           <div className="mt-5 rounded-lg border border-slate-100 bg-slate-50 p-3">
             <p className="text-xs font-semibold text-slate-700">Quick insight</p>
@@ -2599,17 +2747,38 @@ export default function AdminDashboard() {
               <span className="text-slate-400">{totalEmployees} people</span>
             </div>
             {departmentCounts.length ? (
-              <div className="space-y-2">
-                {departmentCounts.slice(0, 3).map((item, index) => (
-                  <div key={item.department} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="truncate text-slate-600">{item.department}</span>
-                    <span className="h-1.5 flex-1 rounded-full bg-slate-100">
-                      <span className="block h-1.5 rounded-full" style={{ width: `${Math.max(8, (item.count / Math.max(1, totalEmployees)) * 100)}%`, background: departmentPalette[index % departmentPalette.length] }} />
-                    </span>
-                    <span className="text-slate-500">{item.count}</span>
-                  </div>
-                ))}
-              </div>
+              (() => {
+                const largestDeptData = departmentCounts.slice(0, 3);
+                return (
+                  <ResponsiveContainer width="100%" height={largestDeptData.length * 36}>
+                    <BarChart data={largestDeptData} layout="vertical" margin={{ top: 4, right: 40, left: 80, bottom: 4 }} barCategoryGap="20%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="department" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={80} />
+                      <Tooltip
+                        content={({ active, payload }: any) => {
+                          if (!active || !payload?.length) return null;
+                          const row = payload[0].payload;
+                          return (
+                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                              <p className="text-xs font-bold text-slate-900">{row.department}</p>
+                              <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.count}</span></p>
+                            </div>
+                          );
+                        }}
+                        cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                        offset={28}
+                      />
+                      <Bar dataKey="count" name="Employees" radius={[0, 4, 4, 0]} barSize={16}>
+                        {largestDeptData.map((item: any, index: number) => (
+                          <Cell key={item.department} fill={departmentPalette[index % departmentPalette.length]} />
+                        ))}
+                        <LabelList dataKey="count" position="right" style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                );
+              })()
             ) : <EmptyInline>No employees found</EmptyInline>}
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -2623,16 +2792,38 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card id="task-pipeline" className="scroll-mt-24 p-4">
             <SectionTitle title="Task Pipeline" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">Manage</Link>} />
-            <div className="space-y-4">
-              {Object.entries(taskStatusCounts).map(([label, count]) => (
-                <div key={label}>
-                  <div className="mb-1 flex justify-between text-xs"><span className="font-medium text-slate-700">{label}</span><span className="text-slate-500">{count}</span></div>
-                  <div className="h-2 rounded-full bg-slate-100">
-                    <span className={`block h-2 rounded-full ${label === 'Done' ? 'bg-emerald-500' : label === 'In Progress' ? 'bg-blue-600' : 'bg-amber-500'}`} style={{ width: `${Math.max(8, (count / taskTotal) * 100)}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
+            {(() => {
+              const taskPipelineData = Object.entries(taskStatusCounts).map(([label, count]) => ({ label, count }));
+              return (
+                <ResponsiveContainer width="100%" height={taskPipelineData.length * 40}>
+                  <BarChart data={taskPipelineData} layout="vertical" margin={{ top: 4, right: 40, left: 80, bottom: 4 }} barCategoryGap="25%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={[0, taskTotal]} />
+                    <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={75} />
+                    <Tooltip
+                      content={({ active, payload }: any) => {
+                        if (!active || !payload?.length) return null;
+                        const row = payload[0].payload;
+                        return (
+                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
+                            <p className="text-xs font-bold text-slate-900">{row.label}</p>
+                            <p className="mt-1 text-xs text-slate-500">Tasks: <span className="font-semibold text-slate-700">{row.count}</span> / {taskTotal}</p>
+                          </div>
+                        );
+                      }}
+                      cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+                      offset={28}
+                    />
+                    <Bar dataKey="count" name="Tasks" radius={[0, 4, 4, 0]} barSize={16}>
+                      <Cell fill="#f59e0b" />
+                      <Cell fill="#2563eb" />
+                      <Cell fill="#10b981" />
+                      <LabelList dataKey="count" position="right" style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              );
+            })()}
         </Card>
         <Card id="payroll-snapshot" className="scroll-mt-24 p-4">
             <SectionTitle title="Payroll Snapshot" action={<Link to="/payroll" className="text-xs text-blue-600">{selectedStartDate.slice(0, 7)}</Link>} />

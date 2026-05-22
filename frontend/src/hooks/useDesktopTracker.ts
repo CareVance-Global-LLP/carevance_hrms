@@ -1080,7 +1080,18 @@ export const useDesktopTracker = () => {
       }
 
       if (typeof desktopApi?.revealWindow === 'function') {
-        await desktopApi.revealWindow();
+        let isCurrentlyLocked = systemLockedAtMsRef.current !== null;
+        if (!isCurrentlyLocked && typeof desktopApi?.getSystemLockState === 'function') {
+          try {
+            const lockState = await desktopApi.getSystemLockState();
+            isCurrentlyLocked = Boolean(lockState?.locked || lockState?.state === 'locked' || lockState?.state === 'suspended');
+          } catch {}
+        }
+        if (isCurrentlyLocked) {
+          lockScreenAutoStopRevealPendingRef.current = true;
+        } else {
+          await desktopApi.revealWindow();
+        }
       }
 
       return true;
@@ -1351,6 +1362,22 @@ export const useDesktopTracker = () => {
       }
       systemLockedAtMsRef.current = null;
       clearLockAutoStopTimeout();
+
+      if (lockScreenAutoStopRevealPendingRef.current) {
+        lockScreenAutoStopRevealPendingRef.current = false;
+        if (typeof desktopApi?.revealWindow === 'function') {
+          await desktopApi.revealWindow();
+        }
+        if (typeof desktopApi?.showNotification === 'function') {
+          await desktopApi.showNotification({
+            id: Date.now(),
+            title: 'Timer Stopped - Idle Detected',
+            body: IDLE_AUTO_STOP_MESSAGE,
+            route: '/dashboard',
+            type: 'idle_stop',
+          });
+        }
+      }
     };
 
     const captureScreenshotOnInterval = async () => {
@@ -1450,6 +1477,11 @@ export const useDesktopTracker = () => {
         void handleBrowserTrackingEvent(payload);
       })
       : undefined;
+    const removeSystemLockStateListener = desktopApi && typeof desktopApi.onSystemLockState === 'function'
+      ? desktopApi.onSystemLockState((payload) => {
+        void applySystemLockState(payload);
+      })
+      : undefined;
 
     activityIntervalRef.current = setInterval(() => {
       void tick();
@@ -1519,6 +1551,9 @@ export const useDesktopTracker = () => {
       }
       if (typeof removeBrowserTrackingEventListener === 'function') {
         removeBrowserTrackingEventListener();
+      }
+      if (typeof removeSystemLockStateListener === 'function') {
+        removeSystemLockStateListener();
       }
       window.removeEventListener(DESKTOP_TIMER_STARTED_EVENT, handleTimerStarted as EventListener);
       window.removeEventListener(DESKTOP_TIMER_STOPPED_EVENT, handleTimerStopped as EventListener);

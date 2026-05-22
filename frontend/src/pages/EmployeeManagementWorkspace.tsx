@@ -268,16 +268,61 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     enabled: mode === 'invitations' && allowedRoles.length > 0,
   });
 
+  const users = usersQuery.data || [];
+  const groups = groupsQuery.data || [];
+  const members = membersQuery.data || [];
+  const invitations = invitationsQuery.data || [];
+  const managerManagedDepartment = useMemo(() => {
+    if (user?.role !== 'manager') {
+      return null;
+    }
+
+    // Strategy 1: Find a group where the manager is listed as a member with role 'manager'
+    const managedGroup = groups.find((group: any) =>
+      Array.isArray(group?.users)
+      && group.users.some((member: any) => Number(member?.id) === Number(user.id) && member?.role === 'manager')
+    );
+    if (managedGroup?.name) {
+      return String(managedGroup.name).trim();
+    }
+
+    // Strategy 2: Use the auth user's own groups (loaded from login response)
+    if (user.groups && user.groups.length > 0) {
+      const groupName = user.groups[0].name?.trim();
+      if (groupName) {
+        return groupName;
+      }
+    }
+
+    // Strategy 3: Fallback to manager's own department from their user record
+    const fallbackDepartment = resolveEmployeeDepartment(user);
+    return fallbackDepartment !== 'Unassigned' ? fallbackDepartment : null;
+  }, [groups, user]);
+  const departmentOptions = useMemo(
+    () => {
+      if (user?.role === 'manager') {
+        if (managerManagedDepartment) {
+          return [managerManagedDepartment];
+        }
+        const departments = Array.from(new Set(users.map((item: any) => resolveEmployeeDepartment(item)).filter(Boolean)));
+        return departments.length > 0 ? departments : ['Unassigned'];
+      }
+
+      return ['All departments', ...Array.from(new Set(users.map((item: any) => resolveEmployeeDepartment(item)).filter(Boolean)))];
+    },
+    [managerManagedDepartment, user?.role, users]
+  );
+
   const settingsTargetUser = useMemo(
-    () => (usersQuery.data || []).find((item: any) => item.id === settingsUserId) || null,
-    [settingsUserId, usersQuery.data]
+    () => users.find((item: any) => item.id === settingsUserId) || null,
+    [settingsUserId, users]
   );
 
   useEffect(() => {
-    if (!selectedUserId && (usersQuery.data || []).length > 0) {
-      setSelectedUserId(usersQuery.data![0].id);
+    if (!selectedUserId && users.length > 0) {
+      setSelectedUserId(users[0].id);
     }
-  }, [selectedUserId, usersQuery.data]);
+  }, [selectedUserId, users]);
 
   useEffect(() => {
     if (mode !== 'employees') {
@@ -286,12 +331,15 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
     const params = new URLSearchParams(location.search);
     const nextDepartment = String(params.get('department') || '').trim();
-    if (!nextDepartment) {
+    if (nextDepartment) {
+      setDirectoryDepartmentFilter(nextDepartment);
       return;
     }
 
-    setDirectoryDepartmentFilter(nextDepartment);
-  }, [location.search, mode]);
+    if (user?.role === 'manager' && managerManagedDepartment) {
+      setDirectoryDepartmentFilter(managerManagedDepartment);
+    }
+  }, [location.search, mode, user?.role, managerManagedDepartment]);
 
   useEffect(() => {
     if (allowedRoles.length === 0) {
@@ -410,39 +458,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const isLoading = usersQuery.isLoading || groupsQuery.isLoading || membersQuery.isLoading || invitationsQuery.isLoading;
   const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
-  const users = usersQuery.data || [];
-  const groups = groupsQuery.data || [];
-  const members = membersQuery.data || [];
-  const invitations = invitationsQuery.data || [];
-  const managerManagedDepartment = useMemo(() => {
-    if (user?.role !== 'manager') {
-      return null;
-    }
-
-    const managedGroup = groups.find((group: any) =>
-      Array.isArray(group?.users)
-      && group.users.some((member: any) => Number(member?.id) === Number(user.id) && member?.role === 'manager')
-    );
-
-    const managedGroupName = String(managedGroup?.name || '').trim();
-    if (managedGroupName) {
-      return managedGroupName;
-    }
-
-    const currentUserRecord = users.find((item: any) => Number(item.id) === Number(user.id));
-    const fallbackDepartment = resolveEmployeeDepartment(currentUserRecord);
-    return fallbackDepartment === 'Unassigned' ? null : fallbackDepartment;
-  }, [groups, user, users]);
-  const departmentOptions = useMemo(
-    () => {
-      if (user?.role === 'manager' && managerManagedDepartment) {
-        return ['All departments', managerManagedDepartment];
-      }
-
-      return ['All departments', ...Array.from(new Set(users.map((item: any) => resolveEmployeeDepartment(item)).filter(Boolean)))];
-    },
-    [managerManagedDepartment, user?.role, users]
-  );
   const employeeDirectoryRows = useMemo(() => {
     const filteredRows = directoryFilterUserId === ''
       ? [...users]
