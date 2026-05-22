@@ -31,7 +31,7 @@ export interface Organization {
   plan_code?: string | null;
   billing_cycle?: 'monthly' | 'yearly' | null;
   subscription_status?: 'trial' | 'active' | 'inactive' | 'past_due' | 'cancelled' | 'expired';
-  subscription_intent?: 'trial' | 'paid' | 'upgrade' | null;
+  subscription_intent?: 'trial' | 'paid' | 'upgrade' | 'add_seats' | null;
   trial_starts_at?: string | null;
   trial_ends_at?: string;
   max_users?: number;
@@ -464,7 +464,7 @@ export interface BillingSnapshot {
     description?: string | null;
     status: string;
     billing_cycle?: 'monthly' | 'yearly' | null;
-    subscription_intent?: 'trial' | 'paid' | 'upgrade' | null;
+    subscription_intent?: 'trial' | 'paid' | 'upgrade' | 'add_seats' | null;
     is_trial?: boolean;
     trial_end_date?: string | null;
     renewal_date?: string | null;
