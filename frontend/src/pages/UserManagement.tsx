@@ -8,6 +8,7 @@ import { resolvePersistedDateRange } from '@/lib/dateRange';
 import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
+import { formatDuration } from '@/lib/formatters';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import Button from '@/components/ui/Button';
 import { SelectInput } from '@/components/ui/FormField';
@@ -334,13 +335,6 @@ export default function UserManagement() {
     if (!confirm('Delete this group?')) return;
     setFeedback(null);
     await deleteGroupMutation.mutateAsync(id);
-  };
-
-  const formatDuration = (seconds?: number) => {
-    const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-    const hours = Math.floor(safe / 3600);
-    const minutes = Math.floor((safe % 3600) / 60);
-    return `${hours}h ${minutes}m`;
   };
 
   const getRoleColor = (role: OrgUser['role']) => {

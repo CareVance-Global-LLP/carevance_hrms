@@ -61,14 +61,28 @@ export function FeedbackBanner({
   tone,
   message,
   className,
+  onDismiss,
 }: {
   tone: 'success' | 'error';
   message: string;
   className?: string;
+  onDismiss?: () => void;
 }) {
   const styles = tone === 'success'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
     : 'border-rose-200 bg-rose-50 text-rose-700';
 
-  return <div className={`rounded-lg border px-4 py-3 text-sm shadow-sm ${styles} ${className || ''}`}>{message}</div>;
+  return (
+    <div className={`rounded-lg border px-4 py-3 text-sm shadow-sm flex items-center justify-between ${styles} ${className || ''}`}>
+      <span>{message}</span>
+      {onDismiss && (
+        <button 
+          onClick={onDismiss}
+          className="ml-4 p-1 hover:bg-white/50 rounded transition-colors"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
 }

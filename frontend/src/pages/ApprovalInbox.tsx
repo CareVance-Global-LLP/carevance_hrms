@@ -7,6 +7,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
+import { formatDuration } from '@/lib/formatters';
 import { BarChart3, Building2, CheckCircle2, Clock3, History, Inbox, TrendingUp, UserRound, Users, XCircle } from 'lucide-react';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -48,13 +49,6 @@ const formatDateLabel = (value: Date) =>
 
 const inclusiveDayDiff = (startDate: Date, endDate: Date) =>
   Math.floor((startOfDay(endDate).getTime() - startOfDay(startDate).getTime()) / DAY_MS) + 1;
-
-const formatDuration = (seconds: number) => {
-  const safe = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  return `${hours}h ${minutes}m`;
-};
 
 const hasActiveAttendance = (row: any) =>
   Boolean(row?.is_checked_in || row?.check_in_at || row?.open_punch_in_at || row?.last_check_in_at);

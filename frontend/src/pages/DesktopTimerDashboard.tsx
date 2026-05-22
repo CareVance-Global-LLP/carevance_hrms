@@ -21,6 +21,7 @@ import {
   suppressAutoStart,
 } from '@/lib/desktopTimerSession';
 import { isTrackedTimerUser } from '@/lib/permissions';
+import { formatDuration } from '@/lib/formatters';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { SelectInput } from '@/components/ui/FormField';
 import {
@@ -763,13 +764,6 @@ export default function DesktopTimerDashboard() {
     } finally {
       setIsSubmittingOvertime(false);
     }
-  };
-
-  const formatDuration = (seconds: number) => {
-    const safeSeconds = Number.isFinite(Number(seconds)) ? Number(seconds) : 0;
-    const hours = Math.floor(safeSeconds / 3600);
-    const minutes = Math.floor((safeSeconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
   };
 
   const formatTime = (seconds: number) => {

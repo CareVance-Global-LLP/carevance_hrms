@@ -66,12 +66,18 @@ const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/Emp
 const EmployeePersonalDetailsPage = lazyWithChunkRetry(() => import('@/pages/EmployeePersonalDetailsPage'));
 const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
 const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
+const ResignationPage = lazyWithChunkRetry(() => import('@/pages/ResignationPage'));
+const MyResignationStatusPage = lazyWithChunkRetry(() => import('@/pages/MyResignationStatusPage'));
 const AddUserPage = lazyWithChunkRetry(() => import('@/pages/AddUserPage'));
 const BillingSettingsPage = lazyWithChunkRetry(() => import('@/pages/BillingSettingsPage'));
 const SuperAdminDashboard = lazyWithChunkRetry(() => import('@/pages/super-admin/SuperAdminDashboard'));
 const SuperAdminOrganizations = lazyWithChunkRetry(() => import('@/pages/super-admin/Organizations'));
 const SuperAdminCompanies = lazyWithChunkRetry(() => import('@/pages/super-admin/Companies'));
 const SuperAdminCompanyDetail = lazyWithChunkRetry(() => import('@/pages/super-admin/CompanyDetail'));
+const SuperAdminOrganizationDetail = lazyWithChunkRetry(() => import('@/pages/super-admin/OrganizationDetail'));
+const SuperAdminCreateOrganization = lazyWithChunkRetry(() => import('@/pages/super-admin/CreateOrganization'));
+const SuperAdminUsers = lazyWithChunkRetry(() => import('@/pages/super-admin/Users'));
+const SuperAdminBilling = lazyWithChunkRetry(() => import('@/pages/super-admin/Billing'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
 const isChunkLoadFailure = (error: unknown) => {
@@ -471,6 +477,8 @@ function App() {
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />
             <Route path="new-hires" element={<AdminRoute><NewHiresPage /></AdminRoute>} />
             <Route path="resignations" element={<AdminRoute><ResignationsPage /></AdminRoute>} />
+            <Route path="resignation" element={<ResignationPage />} />
+            <Route path="resignation/status" element={<MyResignationStatusPage />} />
             <Route path="audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
             <Route path="add-user" element={<StrictAdminRoute><AddUserPage /></StrictAdminRoute>} />
             <Route path="users/add-user" element={<StrictAdminRoute><AddUserPage /></StrictAdminRoute>} />
@@ -482,8 +490,12 @@ function App() {
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />
+            <Route path="super-admin/organizations/:organizationId" element={<SuperAdminRoute><SuperAdminOrganizationDetail /></SuperAdminRoute>} />
+            <Route path="super-admin/organizations/create" element={<SuperAdminRoute><SuperAdminCreateOrganization /></SuperAdminRoute>} />
             <Route path="super-admin/companies" element={<SuperAdminRoute><SuperAdminCompanies /></SuperAdminRoute>} />
             <Route path="super-admin/companies/:companyId" element={<SuperAdminRoute><SuperAdminCompanyDetail /></SuperAdminRoute>} />
+            <Route path="super-admin/users" element={<SuperAdminRoute><SuperAdminUsers /></SuperAdminRoute>} />
+            <Route path="super-admin/billing" element={<SuperAdminRoute><SuperAdminBilling /></SuperAdminRoute>} />
             <Route path="legacy/reports" element={<AdminRoute><Reports /></AdminRoute>} />
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
             <Route path="legacy/user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />

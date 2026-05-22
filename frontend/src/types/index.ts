@@ -392,6 +392,18 @@ export interface OwnerSignupRequest {
   billing_cycle?: 'monthly' | 'yearly';
   seats?: number;
   terms_accepted?: boolean;
+  // Organization profile fields
+  description?: string;
+  website?: string;
+  industry?: string;
+  size?: string;
+  phone?: string;
+  org_email?: string;
+  address_line?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
 }
 
 export interface AuthResponse {

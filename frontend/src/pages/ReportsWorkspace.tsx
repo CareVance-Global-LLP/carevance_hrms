@@ -29,6 +29,7 @@ import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson }
 import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
+import { formatDurationSmart as formatDuration, formatPercent } from '@/lib/formatters';
 import {
   Activity,
   AlertTriangle,
@@ -192,94 +193,7 @@ const shouldReuseReportPlaceholderData = (
   && previousQueryKey[1] === mode
 );
 
-const formatDuration = (seconds: number) => {
-  const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const remainingSeconds = safe % 60;
 
-  if (hours > 0) {
-    return remainingSeconds > 0 ? `${hours}h ${minutes}m ${remainingSeconds}s` : `${hours}h ${minutes}m`;
-  }
-
-  if (minutes > 0) {
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-  }
-
-  return `${remainingSeconds}s`;
-};
-const formatTimelineDuration = (seconds: number) => {
-  const safe = Math.max(0, Math.floor(Number.isFinite(Number(seconds)) ? Number(seconds) : 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const remainingSeconds = safe % 60;
-
-  if (hours > 0) {
-    return remainingSeconds > 0 ? `${hours}h ${minutes}m ${remainingSeconds}s` : `${hours}h ${minutes}m`;
-  }
-
-  if (minutes > 0) {
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-  }
-
-  return `${remainingSeconds}s`;
-};
-const formatAttendanceDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
-  formatDateTimeForTimezone(value, timezone, 'en-US', '--');
-const shouldPreferWindowTitleForSoftwareRow = (row: any) => {
-  const appName = String(row?.app_name || '').trim().toLowerCase();
-  const windowTitle = String(row?.window_title || '').trim();
-
-  if (!windowTitle) {
-    return false;
-  }
-
-  return ['explorer.exe', 'windows explorer', 'file explorer'].some((keyword) => appName.includes(keyword));
-};
-
-const formatTimelineSoftwareLabel = (row: any) => (
-  shouldPreferWindowTitleForSoftwareRow(row)
-  ? row?.window_title
-  : row?.app_name
-  || row?.name
-  || row?.window_title
-  || row?.software_name
-  || row?.normalized_label
-  || 'Unknown app'
-);
-const formatTimelineToolLabel = (row: any) => {
-  if (row?.type === 'idle') {
-    return row?.name || 'Idle';
-  }
-
-  if (row?.tool_type === 'website') {
-    return row?.normalized_domain || row?.normalized_label || row?.name || 'Unknown site';
-  }
-
-  if (row?.tool_type === 'software') {
-    return formatTimelineSoftwareLabel(row);
-  }
-
-  return row?.normalized_label || formatTimelineSoftwareLabel(row) || row?.normalized_domain || row?.name || 'Unknown';
-};
-const timelineProductivityTone = (classification?: string | null) =>
-  classification === 'productive'
-    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-    : classification === 'unproductive'
-      ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
-      : classification === 'context_dependent'
-        ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
-        : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200';
-const formatPreviewList = (items: unknown[], emptyLabel: string, limit = 3) => {
-  const normalizedItems = Array.from(new Set(items.map((item) => String(item || '').trim()).filter(Boolean)));
-  if (!normalizedItems.length) {
-    return emptyLabel;
-  }
-
-  const preview = normalizedItems.slice(0, limit).join(', ');
-  return normalizedItems.length > limit ? `${preview} +${normalizedItems.length - limit} more` : preview;
-};
-const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
 const clampPercent = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 const resolveAttendanceDepartment = (row: any) =>
   row?.department
