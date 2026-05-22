@@ -45,12 +45,6 @@ export default defineConfig({
           if (id.includes('date-fns')) {
             return 'date-vendor';
           }
-
-          if (id.includes('react') || id.includes('scheduler')) {
-            return 'react-vendor';
-          }
-
-          return 'vendor';
         },
       },
     },
