@@ -42,7 +42,9 @@ class PasswordResetController extends Controller
         $status = Password::broker()->reset(
             $request->validated(),
             function (User $user, #[\SensitiveParameter] string $password) {
-                $user->forceFill([
+                // Use fill() instead of forceFill() to ensure the 'password' cast
+                // (hashed) is applied via Eloquent mutators.
+                $user->fill([
                     'password' => $password,
                     'remember_token' => Str::random(60),
                 ])->save();
