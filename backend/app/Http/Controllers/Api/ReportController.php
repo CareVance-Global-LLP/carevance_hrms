@@ -1204,24 +1204,7 @@ class ReportController extends Controller
 
     private function summarizeIdleDurationsForUsers(iterable $userIds, Carbon $startDate, Carbon $endDate): array
     {
-        $ids = collect($userIds)
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->unique()
-            ->values();
-
-        if ($ids->isEmpty()) {
-            return [
-                'total_idle_time' => 0,
-                'idle_segments_count' => 0,
-                'by_user' => [],
-                'by_user_day' => [],
-            ];
-        }
-
-        $activities = $this->activityFeedService->forUsersInRangeForIdle($ids->all(), $startDate, $endDate);
-
-        return $this->usageProcessingService->summarizeIdleDurations($activities);
+        return $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
     }
 
     private function groupActivitiesByUserAndDay(Collection $activities): Collection

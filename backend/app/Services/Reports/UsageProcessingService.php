@@ -506,13 +506,15 @@ class UsageProcessingService
 
         $combined = $this->combineUsageSummaries($reports, $includeProcessedLogs);
 
-        // Re-run idle detection once on ALL days together so that
-        // day-boundary gaps are handled consistently with the dashboard
-        // (which also processes all data at once).
-        $allNormalized = $this->normalizeUsageLogs($logs);
-        $globalIdleResult = $this->detectAndFilterIdleTime($allNormalized, $activityEvents);
-        $combined['metrics']['idle_time'] = (int) $globalIdleResult['idle_logs']->sum('duration');
-        $combined['idle_segments_count'] = $globalIdleResult['idle_logs']->count();
+        // Use fast idle summary to match dashboard lite behaviour.
+        // Explicit idle DB records already account for the desktop-app
+        // threshold (e.g. 3 min), whereas detectAndFilterIdleTime infers
+        // full gap duration and overlaps with explicit records, inflating
+        // the idle total. Reading raw idle records keeps the two views
+        // consistent.
+        $fastIdleSummary = $this->summarizeIdleDurationsFastForUsers([$userId], $startDate, $endDate);
+        $combined['metrics']['idle_time'] = (int) ($fastIdleSummary['by_user'][$userId] ?? 0);
+        $combined['idle_segments_count'] = (int) ($fastIdleSummary['idle_segments_count'] ?? 0);
 
         return $combined;
     }
