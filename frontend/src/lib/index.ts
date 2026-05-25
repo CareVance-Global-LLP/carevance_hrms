@@ -20,4 +20,4 @@ export * from './timeEntryDisplay';
 export * from './activityProductivity';
 
 // Query keys
-export { default as queryKeys } from './queryKeys';
+export { queryKeys } from './queryKeys';

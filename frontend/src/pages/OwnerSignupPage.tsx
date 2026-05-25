@@ -366,6 +366,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     />
                   </div>
                 {fieldErrors.password_confirmation ? <p className="mt-2 text-sm text-red-600">{fieldErrors.password_confirmation[0]}</p> : null}
+                </div>
 
                 {/* Organization Details Toggle */}
                 <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70">

@@ -53,6 +53,36 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
 
+const formatAttendanceDateTime = (dateStr: string | null | undefined, tz: string): string => {
+  if (!dateStr) return '—';
+  try {
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'short', timeStyle: 'short', timeZone: tz }).format(new Date(dateStr));
+  } catch { return String(dateStr).slice(0, 16); }
+};
+
+const formatPreviewList = (items: string[] | null | undefined, fallback: string): string => {
+  if (!items || items.length === 0) return fallback;
+  return items.length <= 3 ? items.join(', ') : `${items.slice(0, 3).join(', ')} +${items.length - 3}`;
+};
+
+const formatTimelineToolLabel = (row: any): string => row?.window_title || row?.name || row?.tool_type || row?.software_name || 'Unknown';
+
+const timelineProductivityTone = (classification?: string): string => {
+  switch (classification) {
+    case 'productive': return 'bg-emerald-100 text-emerald-700';
+    case 'unproductive': return 'bg-rose-100 text-rose-700';
+    default: return 'bg-slate-100 text-slate-600';
+  }
+};
+
+const formatTimelineDuration = (seconds: number): string => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${seconds}s`;
+};
+
 type ReportsWorkspaceMode =
   | 'reports-hub'
   | 'analytics-hub'

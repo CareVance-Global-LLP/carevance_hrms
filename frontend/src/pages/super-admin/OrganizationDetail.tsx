@@ -44,10 +44,13 @@ interface OrganizationDetail {
   state?: string;
   postal_code?: string;
   country?: string;
+  plan_code?: string;
   subscription_status: string;
   subscription_plan?: string;
   subscription_start_date?: string;
   subscription_end_date?: string;
+  trial_starts_at?: string;
+  trial_ends_at?: string;
   created_at: string;
   updated_at: string;
   owner?: {
@@ -168,29 +171,33 @@ export default function SuperAdminOrganizationDetailPage() {
 
   if (orgError) {
     return (
-      <PageErrorState
-        message="Failed to load organization details"
-        action={
+      <div>
+        <PageErrorState
+          message="Failed to load organization details"
+        />
+        <div className="mt-4 text-center">
           <Button variant="secondary" onClick={() => navigate('/super-admin/organizations')}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Organizations
           </Button>
-        }
-      />
+        </div>
+      </div>
     );
   }
 
   if (!organization) {
     return (
-      <PageErrorState
-        message="Organization not found"
-        action={
+      <div>
+        <PageErrorState
+          message="Organization not found"
+        />
+        <div className="mt-4 text-center">
           <Button variant="secondary" onClick={() => navigate('/super-admin/organizations')}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Organizations
           </Button>
-        }
-      />
+        </div>
+      </div>
     );
   }
 
