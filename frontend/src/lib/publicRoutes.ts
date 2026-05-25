@@ -1,6 +1,5 @@
 const authenticatedPrefixes = [
   '/dashboard',
-  '/org-hierarchy',
   '/projects',
   '/tasks',
   '/chat',

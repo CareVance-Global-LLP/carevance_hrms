@@ -44,8 +44,8 @@ const ResetPasswordPage = lazyWithChunkRetry(() => import('@/pages/ResetPassword
 const VerifyEmailPage = lazyWithChunkRetry(() => import('@/pages/VerifyEmailPage'));
 const ProfileOnboardingPage = lazyWithChunkRetry(() => import('@/pages/ProfileOnboardingPage'));
 const Dashboard = lazyWithChunkRetry(() => import('@/pages/Dashboard'));
+const OrganizationTree = lazyWithChunkRetry(() => import('@/pages/OrganizationTree'));
 const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
-const OrgHierarchy = lazyWithChunkRetry(() => import('@/pages/OrgHierarchy'));
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
 const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
 const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
@@ -432,7 +432,7 @@ function App() {
             }
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
-            <Route path="org-hierarchy" element={<AdminRoute><OrgHierarchy /></AdminRoute>} />
+            <Route path="organization-tree" element={<AdminRoute><OrganizationTree /></AdminRoute>} />
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<PlanFeatureRoute feature="project_tracking"><Projects /></PlanFeatureRoute>} />
             <Route path="tasks" element={<PlanFeatureRoute feature="task_tracking"><Tasks /></PlanFeatureRoute>} />

@@ -1,0 +1,1 @@
+const o=i=>Number(i?.working_duration??i?.working_time??i?.billable_duration??i?.billable_time??0);export{o as g};

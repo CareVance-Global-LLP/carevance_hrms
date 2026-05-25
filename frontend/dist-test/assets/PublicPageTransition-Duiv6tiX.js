@@ -1,0 +1,1 @@
+import{j as t}from"./query-vendor-Dp02JtRU.js";import{m as r}from"./motion-vendor-DkgPKco6.js";function n({children:i}){return t.jsx(r.div,{initial:{opacity:0,y:28,filter:"blur(10px)"},animate:{opacity:1,y:0,filter:"blur(0px)"},transition:{duration:.52,ease:[.22,1,.36,1]},children:i})}export{n as P};

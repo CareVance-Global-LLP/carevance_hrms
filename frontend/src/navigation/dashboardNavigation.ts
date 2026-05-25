@@ -63,8 +63,8 @@ export const topNavigation: NavGroup[] = [
     icon: LayoutDashboard,
   },
   {
-    label: 'Org.Hierarchy',
-    to: '/org-hierarchy',
+    label: 'Organization',
+    to: '/organization-tree',
     icon: Network,
     adminOnly: true,
   },

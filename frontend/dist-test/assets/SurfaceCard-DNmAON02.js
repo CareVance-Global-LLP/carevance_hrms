@@ -1,0 +1,1 @@
+import{j as t}from"./query-vendor-Dp02JtRU.js";import{A as a}from"./index-B80djKie.js";function d({children:r,className:o="",...e}){return t.jsx(a,{...e,className:`rounded-lg border border-slate-200 bg-white shadow-sm ${o}`.trim(),tone:"light",backgroundColor:"#ffffff",children:r})}export{d as S};

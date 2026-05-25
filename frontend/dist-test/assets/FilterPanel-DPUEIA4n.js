@@ -1,0 +1,1 @@
+import{j as s}from"./query-vendor-Dp02JtRU.js";import{S as t}from"./SurfaceCard-DNmAON02.js";function o({children:r,className:e=""}){return s.jsx(t,{className:`relative z-20 overflow-visible p-4 sm:p-5 ${e}`.trim(),children:r})}export{o as F};
