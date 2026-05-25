@@ -1284,15 +1284,15 @@ export const billingApi = {
   current: () =>
     api.get<BillingSnapshot>('/billing/current'),
   mockPay: () =>
-    api.post<{ subscription_status: string; subscription_expires_at: string }>('/billing/mock-pay'),
+    api.post<{ success: boolean; message?: string; subscription_status: string; subscription_expires_at: string }>('/billing/mock-pay'),
   upgradePlan: (data: { target_plan_code: string; billing_cycle: string; seats?: number }) =>
-    api.post<{ amount: number; currency: string; proration_details: any; current_plan: string; target_plan: string }>('/billing/upgrade', data),
+    api.post<{ success: boolean; message?: string; amount: number; currency: string; proration_details: any; current_plan: string; target_plan: string }>('/billing/upgrade', data),
   confirmUpgrade: (data: { payment_intent_id: string }) =>
-    api.post<{ subscription_status: string; plan_code: string; subscription_expires_at: string }>('/billing/confirm-upgrade', data),
+    api.post<{ success: boolean; message?: string; subscription_status: string; plan_code: string; subscription_expires_at: string }>('/billing/confirm-upgrade', data),
   addSeats: (data: { seats: number; billing_cycle: string }) =>
     api.post<{ amount: number; currency: string; seats_to_add: number; new_total_seats: number; price_per_user: number; months: number }>('/billing/add-seats', data),
   confirmAddSeats: (data: { payment_intent_id: string }) =>
-    api.post<{ subscription_status: string; max_seats: number }>('/billing/confirm-add-seats', data),
+    api.post<{ success: boolean; message?: string; subscription_status: string; max_seats: number }>('/billing/confirm-add-seats', data),
 };
 
 export const companyApi = {
