@@ -1890,7 +1890,7 @@ export default function AdminDashboard() {
           <SectionTitle title="Department Distribution" action={<Link to="/employees/teams" className="text-xs font-medium text-blue-600">All Departments</Link>} />
           {departmentCounts.length ? (
             <ResponsiveContainer width="100%" height={Math.max(60, departmentCounts.length * 36)}>
-              <BarChart data={departmentCounts} layout="vertical" margin={{ top: 4, right: 40, left: 80, bottom: 4 }} barCategoryGap="20%">
+              <BarChart data={departmentCounts} layout="vertical" margin={{ top: 4, right: 40, left: 5, bottom: 4 }} barCategoryGap="20%">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="department" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={80} />
@@ -2128,7 +2128,7 @@ export default function AdminDashboard() {
                   const scopeData = departmentCounts.slice(0, 5);
                   return (
                     <ResponsiveContainer width="100%" height={Math.max(60, scopeData.length * 36)}>
-                      <BarChart data={scopeData} layout="vertical" margin={{ top: 4, right: 40, left: 80, bottom: 4 }} barCategoryGap="20%">
+                      <BarChart data={scopeData} layout="vertical" margin={{ top: 4, right: 40, left: 5, bottom: 4 }} barCategoryGap="20%">
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                         <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                         <YAxis type="category" dataKey="department" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={80} />
@@ -2527,9 +2527,9 @@ export default function AdminDashboard() {
         <Card id="attendance-health" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Health" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
           <div className="-ml-1">
-            <div className="w-full max-w-sm">
+            <div className="w-full">
               <ResponsiveContainer width="100%" height={attendanceHealth.length * 40}>
-                <BarChart data={attendanceHealth} layout="vertical" margin={{ top: 8, right: 40, left: 110, bottom: 8 }} barCategoryGap="25%">
+                <BarChart data={attendanceHealth} layout="vertical" margin={{ top: 8, right: 40, left: 5, bottom: 8 }} barCategoryGap="25%">
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={[0, totalEmployees]} />
                   <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={100} />

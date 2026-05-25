@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 const { NsisUpdater } = require('electron-updater');
 const { createBrowserTrackingBridge } = require('./browser-tracking-bridge.cjs');
 const { setupStrongAutoStart } = require('./auto-start.cjs');
@@ -13,6 +14,7 @@ const {
 } = require('./browser-tracking-install-guide.cjs');
 let activeWindowGetter = null;
 let activeWindowModulePromise = null;
+let retryAfterMsRef = { current: 0 };
 
 const DEFAULT_APP_URL = 'http://localhost:5173';
 const readConfiguredAppConfig = () => {
@@ -254,17 +256,29 @@ const loadActiveWindowGetter = async () => {
     return activeWindowGetter;
   }
 
-  if (!activeWindowModulePromise) {
-    activeWindowModulePromise = import('get-windows')
-      .then((module) => {
-        const getter = typeof module?.activeWindow === 'function' ? module.activeWindow : null;
-        activeWindowGetter = getter;
-        return getter;
-      })
-      .catch(() => {
-        activeWindowGetter = null;
-        return null;
-      });
+  const now = Date.now();
+  if (retryAfterMsRef.current === 0 || now >= retryAfterMsRef.current) {
+    if (!activeWindowModulePromise) {
+      activeWindowModulePromise = import('get-windows')
+        .then((module) => {
+          const getter = typeof module?.activeWindow === 'function' ? module.activeWindow : null;
+          activeWindowGetter = getter;
+          if (!getter) {
+            console.warn('[Tracker] get-windows module loaded but no activeWindow function found');
+          }
+          return getter;
+        })
+        .catch((err) => {
+          console.warn('[Tracker] get-windows import failed, will retry in 30s:', err?.message || err);
+          activeWindowGetter = null;
+          retryAfterMsRef.current = now + 30000;
+          activeWindowModulePromise = null;
+          return null;
+        });
+    }
+  } else {
+    // Still within retry cooldown period
+    return null;
   }
 
   return activeWindowModulePromise;
@@ -568,6 +582,46 @@ const stopForegroundWindowWatcher = () => {
   lastForegroundWindowSignature = null;
 };
 
+// Cache for process metadata (description, product name) keyed by process name
+const processMetadataCache = new Map();
+
+const getProcessDescription = async (processName) => {
+  const key = String(processName || '').trim().toLowerCase();
+  if (!key) return null;
+  if (processMetadataCache.has(key)) return processMetadataCache.get(key);
+
+  try {
+    const result = execSync(
+      `powershell -NoProfile -NonInteractive -Command "& {Get-Process -Name '${key.replace(/'/g, "''")}' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Description}"`,
+      { timeout: 2000, encoding: 'utf8' }
+    ).trim();
+    if (result && result.length > 0 && result.length < 200) {
+      processMetadataCache.set(key, result);
+      return result;
+    }
+  } catch {
+    // PowerShell failed, fall through
+  }
+  processMetadataCache.set(key, null);
+  return null;
+};
+
+const getAllProcessesWithWindows = async () => {
+  try {
+    // Simple fallback: get all running processes with window titles
+    const result = execSync(
+      `powershell -NoProfile -NonInteractive -Command "& {Get-Process | Where-Object { $_.MainWindowTitle -ne '' } | Select-Object Name, Description, Product, Company, MainWindowTitle, Id | ConvertTo-Json -Compress}"`,
+      { timeout: 5000, encoding: 'utf8' }
+    ).trim();
+    if (result && result.startsWith('[') || result.startsWith('{')) {
+      return JSON.parse(result);
+    }
+  } catch {
+    // Not critical
+  }
+  return [];
+};
+
 const getForegroundWindowPayload = async () => {
   const getActiveWindow = await loadActiveWindowGetter();
   if (!getActiveWindow) {
@@ -576,10 +630,14 @@ const getForegroundWindowPayload = async () => {
 
   try {
     const context = await getActiveWindow();
+    const app = context?.owner?.name || null;
+    // Lookup process description asynchronously (non-blocking)
+    const description = app ? await getProcessDescription(app) : null;
     return {
-      app: context?.owner?.name || null,
+      app: app,
       title: context?.title || null,
       url: context?.url || null,
+      description: description,
       captured_at: new Date().toISOString(),
     };
   } catch {
@@ -587,6 +645,7 @@ const getForegroundWindowPayload = async () => {
       app: null,
       title: null,
       url: null,
+      description: null,
       captured_at: new Date().toISOString(),
     };
   }
@@ -606,6 +665,7 @@ const emitForegroundWindowChange = async () => {
     app: payload.app || null,
     title: payload.title || null,
     url: payload.url || null,
+    description: payload.description || null,
   });
 
   if (signature === lastForegroundWindowSignature) {
@@ -1196,14 +1256,24 @@ ipcMain.handle('desktop:get-active-window-context', async () => {
     const context = await getActiveWindow();
     if (!context) return null;
 
+    const app = context.owner?.name || null;
+    const description = app ? await getProcessDescription(app) : null;
+
     return {
-      app: context.owner?.name || null,
+      app: app,
       title: context.title || null,
       url: context.url || null,
+      description: description,
+      captured_at: new Date().toISOString(),
     };
   } catch {
     return null;
   }
+});
+
+ipcMain.handle('desktop:get-all-window-contexts', async () => {
+  const processes = await getAllProcessesWithWindows();
+  return processes;
 });
 
 ipcMain.handle('desktop:reveal-window', async () => {

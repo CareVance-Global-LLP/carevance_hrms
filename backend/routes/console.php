@@ -14,7 +14,6 @@ use App\Models\AttendanceRecord;
 use App\Models\BrowserTrackingConnection;
 use App\Models\TimeEntry;
 use App\Services\Monitoring\ProductivityClassifier;
-use Database\Seeders\ProductivityRuleSeeder;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -113,13 +112,6 @@ Artisan::command('idle:health-check', function () {
 
     return 0;
 })->purpose('Validate idle auto-stop configuration and dependencies');
-
-Artisan::command('monitoring:seed-productivity-rules', function () {
-    $this->call('db:seed', ['--class' => ProductivityRuleSeeder::class, '--force' => true]);
-    $this->info('Default productivity rules seeded successfully.');
-
-    return 0;
-})->purpose('Seed default productivity rules used by monitoring classification');
 
 Artisan::command('monitoring:reclassify-activities {--user_id=} {--from_id=} {--chunk=500}', function (ProductivityClassifier $classifier) {
     $chunkSize = max(50, (int) $this->option('chunk'));

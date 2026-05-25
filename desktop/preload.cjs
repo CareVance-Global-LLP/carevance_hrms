@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   getSystemIdleSeconds: () => ipcRenderer.invoke('desktop:get-system-idle-seconds'),
   getSystemLockState: () => ipcRenderer.invoke('desktop:get-system-lock-state'),
   getActiveWindowContext: () => ipcRenderer.invoke('desktop:get-active-window-context'),
+  getAllWindowContexts: () => ipcRenderer.invoke('desktop:get-all-window-contexts'),
   revealWindow: () => ipcRenderer.invoke('desktop:reveal-window'),
   showNotification: (payload) => ipcRenderer.invoke('desktop:show-notification', payload),
   getUpdateState: () => ipcRenderer.invoke('desktop:get-update-state'),

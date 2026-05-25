@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { buildTrackedContextName } from '@/lib/activityProductivity';
+import { buildTrackedContextName, resolveExeDisplayName } from '@/lib/activityProductivity';
 import {
   buildBrowserTrackingEventSignature,
   buildExactWebsiteDisplayName,
@@ -34,7 +34,7 @@ const SCREENSHOT_UPLOAD_TIMEOUT_MS = 30 * 1000;
 const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
 const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, IDLE_THRESHOLD_SECONDS);
 const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
-const RELIABLE_CONTEXT_REUSE_WINDOW_MS = ACTIVITY_TRACK_INTERVAL_MS * 2;
+const RELIABLE_CONTEXT_REUSE_WINDOW_MS = 30000;
 const MAX_PENDING_TRACKED_SECONDS = Math.max(1, Math.round(ACTIVITY_TRACK_INTERVAL_MS / 1000));
 const EXACT_BROWSER_TRACKING_HEALTH_WINDOW_MS = 45 * 1000;
 const BROWSER_TRACKING_HEALTH_SYNC_DEBOUNCE_MS = 5 * 1000;
@@ -207,7 +207,7 @@ const isReliableDesktopAppForegroundContext = (payload: DesktopForegroundWindowP
     return false;
   }
 
-  return Boolean(String(payload.app || '').trim() || String(payload.title || '').trim());
+  return Boolean(String(payload.app || '').trim() || String(payload.title || '').trim() || String(payload.description || '').trim());
 };
 
 const resolveForegroundCapturedAt = (payload: DesktopForegroundWindowPayload) => {
@@ -244,12 +244,18 @@ const shouldPreferWindowTitleForDesktopApp = (appName?: string | null, windowTit
 const resolveDesktopSessionDisplayName = (payload: DesktopForegroundWindowPayload) => {
   const appName = String(payload.app || '').trim();
   const windowTitle = String(payload.title || '').trim();
+  const description = String(payload.description || '').trim();
+
+  // Prefer description (from PowerShell process metadata) for a human-readable name
+  if (description) return description;
+
+  const resolvedDisplayName = resolveExeDisplayName(appName);
 
   if (shouldPreferWindowTitleForDesktopApp(appName, windowTitle)) {
     return windowTitle;
   }
 
-  return appName || windowTitle || 'Unknown App';
+  return resolvedDisplayName || appName || windowTitle || 'Unknown App';
 };
 
 const resolveLatestBrowserTrackingSignalAt = (state?: BrowserTrackingState | null) => {
@@ -1128,9 +1134,14 @@ export const useDesktopTracker = () => {
           0,
           Math.round((trackedWindowEnd - previousTickAt) / 1000)
         );
-        const activeContext = typeof desktopApi?.getActiveWindowContext === 'function'
-          ? await desktopApi.getActiveWindowContext()
-          : null;
+        let activeContext = null;
+        try {
+          if (typeof desktopApi?.getActiveWindowContext === 'function') {
+            activeContext = await desktopApi.getActiveWindowContext();
+          }
+        } catch (err) {
+          console.warn('[usage] desktop active context fetch failed:', err);
+        }
         const fallbackTitle = typeof document !== 'undefined' ? document.title : '';
         const recordedAt = new Date(now).toISOString();
         const rawAppName = String(activeContext?.app || '').trim();
@@ -1155,7 +1166,7 @@ export const useDesktopTracker = () => {
 
         const isSelfTrackerRawContext = isSelfTrackerContext({
           app: rawAppName,
-          title: fallbackTitle,
+          title: String(activeContext?.title || '').trim(),
           url: rawUrl,
         });
         const isGenericBrowserSurface = isGenericBrowserContext(rawContextName || fallbackTitle, rawActivityType);
@@ -1196,7 +1207,7 @@ export const useDesktopTracker = () => {
         const activityType: 'app' | 'url' = resolvedTrackingContext?.activityType || 'app';
         const currentForegroundPayload: DesktopForegroundWindowPayload = {
           app: rawAppName || null,
-          title: String(activeContext?.title || fallbackTitle || contextName || '').trim() || null,
+          title: String(activeContext?.title || '').trim() || null,
           url: rawUrl || null,
           captured_at: recordedAt,
         };
@@ -1275,6 +1286,8 @@ export const useDesktopTracker = () => {
             name: contextName,
             duration: attributedTrackedSeconds,
             recorded_at: recordedAt,
+            app_name: rawAppName || undefined,
+            window_title: String(activeContext?.title || '').trim() || undefined,
           };
           const signature = `${payload.time_entry_id}:${payload.type}:${payload.name}`;
           const currentSegment = activeSegmentRef.current;

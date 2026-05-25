@@ -20,7 +20,7 @@ import type {
   ActivitySession,
   BrowserTrackingConnectionSyncRecord,
   BrowserTrackingConnectionSyncRequest,
-  ProductivityRule,
+  ProductivityClassificationItem,
   Invoice,
   DailyReport,
   WeeklyReport,
@@ -574,17 +574,17 @@ export const browserTrackingConnectionApi = {
     api.post<{ data: BrowserTrackingConnectionSyncRecord[] }>('/browser-tracking/connections/sync', data),
 };
 
-export const productivityRuleApi = {
-  list: () =>
-    api.get<{ data: ProductivityRule[]; meta: Record<string, string[]> }>('/settings/productivity-rules'),
-  create: (data: Partial<ProductivityRule>) =>
-    api.post<ProductivityRule>('/settings/productivity-rules', data),
-  update: (id: number, data: Partial<ProductivityRule>) =>
-    api.put<ProductivityRule>(`/settings/productivity-rules/${id}`, data),
+export const productivityClassificationApi = {
+  history: (params?: { search?: string; classification?: string; target_type?: string; days?: number; page?: number; per_page?: number }) =>
+    api.get<{ data: ProductivityClassificationItem[]; meta: Record<string, any> }>('/settings/productivity/history', { params }),
+  create: (data: { target_type: string; target_value: string; classification: string }) =>
+    api.post<ProductivityClassificationItem>('/settings/productivity/classifications', data),
+  update: (id: number, data: { classification: string }) =>
+    api.put<ProductivityClassificationItem>(`/settings/productivity/classifications/${id}`, data),
   remove: (id: number) =>
-    api.delete<{ message: string }>(`/settings/productivity-rules/${id}`),
-  test: (data: { name?: string; type?: string; window_title?: string; app_name?: string; url?: string }) =>
-    api.post<Record<string, any>>('/settings/productivity-rules/test', data),
+    api.delete<{ message: string }>(`/settings/productivity/classifications/${id}`),
+  batchUpdate: (data: { classification: string; items: Array<{ target_type: string; target_value: string }> }) =>
+    api.post<{ message: string }>('/settings/productivity/classifications/batch', data),
 };
 
 // Invoice API

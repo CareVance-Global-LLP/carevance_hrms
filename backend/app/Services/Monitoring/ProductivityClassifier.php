@@ -3,8 +3,10 @@
 namespace App\Services\Monitoring;
 
 use App\Models\Activity;
-use App\Models\ProductivityRule;
+use App\Models\ProductivityClassification;
 use App\Models\User;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class ProductivityClassifier
@@ -63,14 +65,14 @@ class ProductivityClassifier
             );
         }
 
-        $rule = $this->resolveMatchingRule($normalized, $context);
-        if ($rule) {
-            return $this->buildResult(
-                $normalized,
-                (string) $rule->classification,
-                (string) ($rule->reason ?: 'Matched configured productivity rule.'),
-                $rule
-            );
+        $override = $this->resolveAdminOverride($normalized, $context);
+        if ($override) {
+            return $this->buildResult($normalized, $override['classification'], $override['reason'], $override);
+        }
+
+        $defaultRule = $this->matchDefaultRule($normalized, $context);
+        if ($defaultRule) {
+            return $this->buildResult($normalized, $defaultRule['classification'], $defaultRule['reason'] ?: 'Matched configured productivity rule.', $defaultRule);
         }
 
         if (($normalized['tool_type'] ?? null) === 'website' && ! ($normalized['normalized_domain'] ?? null)) {
@@ -114,74 +116,144 @@ class ProductivityClassifier
         $activity->classifier_version = $classification['classifier_version'];
     }
 
-    private function resolveMatchingRule(array $normalized, array $context): ?ProductivityRule
+    private function resolveAdminOverride(array $normalized, array $context): ?array
     {
         $organizationId = (int) ($context['organization_id'] ?? 0);
-        $userId = (int) ($context['user_id'] ?? 0);
-        $groupIds = collect((array) ($context['group_ids'] ?? []))
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->values();
+        if ($organizationId <= 0) {
+            $user = Auth::user();
+            if ($user) {
+                $organizationId = (int) ($user->organization_id ?? 0);
+            }
+        }
+        if ($organizationId <= 0 || ! Schema::hasTable('productivity_classifications')) {
+            return null;
+        }
 
-        $rules = Schema::hasTable('productivity_rules')
-            ? ProductivityRule::query()
-                ->where('is_active', true)
-                ->when(
-                    $organizationId > 0,
-                    fn ($query) => $query->where(function ($inner) use ($organizationId) {
-                        $inner->whereNull('organization_id')
-                            ->orWhere('organization_id', $organizationId);
-                    }),
-                    fn ($query) => $query->whereNull('organization_id')
-                )
-                ->get()
-            : collect();
+        $domain = (string) ($normalized['normalized_domain'] ?? '');
+        $softwareName = (string) ($normalized['software_name'] ?? '');
+        $isWebsite = ($normalized['tool_type'] ?? null) === 'website';
 
-        $scopeBuckets = [
-            ['scope_type' => 'workspace', 'scope_ids' => [$organizationId]],
-            ['scope_type' => 'group', 'scope_ids' => $groupIds->all()],
-            ['scope_type' => 'user', 'scope_ids' => [$userId]],
-            ['scope_type' => 'global', 'scope_ids' => [null]],
-        ];
+        if ($domain !== '') {
+            $override = ProductivityClassification::where('organization_id', $organizationId)
+                ->where('target_type', 'domain')
+                ->where('target_value', mb_strtolower($domain))
+                ->first();
 
-        foreach ($scopeBuckets as $bucket) {
-            $bucketRules = $rules
-                ->filter(function (ProductivityRule $rule) use ($bucket) {
-                    if ($rule->scope_type !== $bucket['scope_type']) {
-                        return false;
+            if ($override) {
+                Log::info('Classifier: domain direct match for ' . $domain . ' -> ' . $override->classification);
+                return $this->formatOverrideRule($override, "Admin domain override: {$domain} is classified as {$override->classification}");
+            }
+
+            Log::info('Classifier: no domain override found for ' . $domain . ' (org=' . $organizationId . ')');
+        }
+
+        // When no explicit domain was extracted but activity is browser-based, match
+        // admin domain overrides by checking if the override's name appears in the title
+        if ($domain === '' && $isWebsite) {
+            $rawName = mb_strtolower(trim((string) ($context['raw_name'] ?? '')));
+            $windowTitle = mb_strtolower(trim((string) ($context['window_title'] ?? '')));
+            $haystack = $rawName . ' ' . $windowTitle;
+
+            if ($haystack !== '') {
+                $domainOverrides = ProductivityClassification::where('organization_id', $organizationId)
+                    ->where('target_type', 'domain')
+                    ->get();
+
+                foreach ($domainOverrides as $override) {
+                    $parts = explode('.', mb_strtolower(trim($override->target_value)));
+                    $mainName = $parts[0] ?? '';
+                    if ($mainName !== '' && str_contains($haystack, $mainName)) {
+                        return $this->formatOverrideRule($override, "Admin domain override: {$override->target_value} matched via title keyword");
                     }
-
-                    if ($rule->scope_type === 'global') {
-                        return true;
-                    }
-
-                    return in_array((int) $rule->scope_id, array_map('intval', $bucket['scope_ids']), true);
-                })
-                ->sort(function (ProductivityRule $left, ProductivityRule $right) use ($bucket) {
-                    $leftExactRank = $bucket['scope_type'] === 'global' && $left->match_mode === 'exact' ? 0 : 1;
-                    $rightExactRank = $bucket['scope_type'] === 'global' && $right->match_mode === 'exact' ? 0 : 1;
-
-                    return [$leftExactRank, -1 * (int) $left->priority, (int) $left->id]
-                        <=> [$rightExactRank, -1 * (int) $right->priority, (int) $right->id];
-                })
-                ->values();
-
-            foreach ($bucketRules as $rule) {
-                if ($this->ruleMatches($rule, $normalized, $context)) {
-                    return $rule;
                 }
             }
         }
 
-        return $this->matchDefaultRule($normalized, $context);
+        if ($softwareName !== '') {
+            $override = ProductivityClassification::where('organization_id', $organizationId)
+                ->where('target_type', 'app')
+                ->where('target_value', mb_strtolower($softwareName))
+                ->first();
+
+            if ($override) {
+                $browserApps = collect((array) config('productivity_monitoring.browser_apps', []))
+                    ->map(fn ($v) => mb_strtolower(trim($v)))
+                    ->values();
+
+                $isBrowser = $browserApps->contains(mb_strtolower($softwareName));
+
+                if ($isWebsite && $isBrowser) {
+                    return $this->formatOverrideRule($override, "Browser rule: {$softwareName} is classified as {$override->classification}, inherited by all URLs");
+                }
+
+                return $this->formatOverrideRule($override, "Admin app override: {$softwareName} is classified as {$override->classification}");
+            }
+
+            // When software_name doesn't match, check if any app override's target_value
+            // appears in the activity name/title/URL (handles sessions where software_name
+            // is the browser name but the override is for the actual site name)
+            $rawName = mb_strtolower(trim((string) ($context['raw_name'] ?? '')));
+            $windowTitle = mb_strtolower(trim((string) ($context['window_title'] ?? '')));
+            $url = mb_strtolower(trim((string) ($context['url'] ?? '')));
+            $appHaystack = $rawName . ' ' . $windowTitle . ' ' . $url;
+
+            if ($appHaystack !== '') {
+                $appOverrides = ProductivityClassification::where('organization_id', $organizationId)
+                    ->where('target_type', 'app')
+                    ->get();
+
+                foreach ($appOverrides as $appOverride) {
+                    $overrideValue = mb_strtolower(trim($appOverride->target_value));
+                    if ($overrideValue !== '' && str_contains($appHaystack, $overrideValue)) {
+                        return $this->formatOverrideRule($appOverride, "Admin app override: {$appOverride->target_value} matched via title/URL keyword");
+                    }
+                }
+            }
+
+            if ($isWebsite && $domain !== '') {
+                $browserApps = collect((array) config('productivity_monitoring.browser_apps', []))
+                    ->map(fn ($v) => mb_strtolower(trim($v)))
+                    ->values();
+
+                $isBrowser = $browserApps->contains(mb_strtolower($softwareName));
+
+                if ($isBrowser) {
+                    $browserOverride = ProductivityClassification::where('organization_id', $organizationId)
+                        ->where('target_type', 'app')
+                        ->whereIn('target_value', $browserApps->toArray())
+                        ->first();
+
+                    if ($browserOverride) {
+                        return $this->formatOverrideRule($browserOverride, "Browser rule: {$browserOverride->target_value} is classified as {$browserOverride->classification}, inherited by all URLs");
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
-    private function matchDefaultRule(array $normalized, array $context): ?ProductivityRule
+    private function formatOverrideRule(ProductivityClassification $override, string $reason): array
+    {
+        return [
+            'id' => $override->id,
+            'name' => $override->target_value,
+            'target_type' => $override->target_type,
+            'match_mode' => 'contains',
+            'target_value' => $override->target_value,
+            'scope_type' => 'global',
+            'scope_id' => null,
+            'priority' => 999,
+            'classification' => $override->classification,
+            'reason' => $reason,
+        ];
+    }
+
+    private function matchDefaultRule(array $normalized, array $context): ?array
     {
         $defaults = collect((array) config('productivity_monitoring.default_rules', []))
             ->map(function (array $rule, int $index) {
-                $model = new ProductivityRule();
-                $model->forceFill([
+                return [
                     'id' => -1 * ($index + 1),
                     'organization_id' => null,
                     'name' => $rule['name'] ?? null,
@@ -195,16 +267,14 @@ class ProductivityClassifier
                     'is_active' => true,
                     'reason' => $rule['reason'] ?? null,
                     'notes' => 'Default seeded fallback rule',
-                ]);
-
-                return $model;
+                ];
             })
-            ->sort(function (ProductivityRule $left, ProductivityRule $right) {
-                $leftExactRank = $left->match_mode === 'exact' ? 0 : 1;
-                $rightExactRank = $right->match_mode === 'exact' ? 0 : 1;
+            ->sort(function (array $left, array $right) {
+                $leftExactRank = $left['match_mode'] === 'exact' ? 0 : 1;
+                $rightExactRank = $right['match_mode'] === 'exact' ? 0 : 1;
 
-                return [$leftExactRank, -1 * (int) $left->priority, (int) $left->id]
-                    <=> [$rightExactRank, -1 * (int) $right->priority, (int) $right->id];
+                return [$leftExactRank, -1 * (int) $left['priority'], (int) $left['id']]
+                    <=> [$rightExactRank, -1 * (int) $right['priority'], (int) $right['id']];
             })
             ->values();
 
@@ -264,9 +334,9 @@ class ProductivityClassifier
         return null;
     }
 
-    private function ruleMatches(ProductivityRule $rule, array $normalized, array $context): bool
+    private function ruleMatches(array $rule, array $normalized, array $context): bool
     {
-        $haystack = match ($rule->target_type) {
+        $haystack = match ($rule['target_type']) {
             'app' => (string) ($normalized['software_name'] ?? ''),
             'domain' => (string) ($normalized['normalized_domain'] ?? ''),
             'title_pattern' => mb_strtolower((string) ($normalized['clean_window_title'] ?? '')),
@@ -274,22 +344,22 @@ class ProductivityClassifier
             default => '',
         };
 
-        $needle = mb_strtolower(trim((string) $rule->target_value));
+        $needle = mb_strtolower(trim((string) ($rule['target_value'] ?? '')));
         if ($haystack === '' || $needle === '') {
             return false;
         }
 
-        return match ($rule->match_mode) {
+        return match ($rule['match_mode']) {
             'exact' => $haystack === $needle,
             'contains' => str_contains($haystack, $needle),
             'starts_with' => str_starts_with($haystack, $needle),
             'ends_with' => str_ends_with($haystack, $needle),
-            'regex' => @preg_match($rule->target_value, $haystack) === 1,
+            'regex' => @preg_match((string) $rule['target_value'], $haystack) === 1,
             default => false,
         };
     }
 
-    private function buildResult(array $normalized, string $classification, string $reason, ?ProductivityRule $rule): array
+    private function buildResult(array $normalized, string $classification, string $reason, ?array $rule): array
     {
         return [
             'normalized_label' => $normalized['normalized_label'] ?? null,
@@ -299,14 +369,14 @@ class ProductivityClassifier
             'classification' => $classification,
             'classification_reason' => $reason,
             'matched_rule' => $rule ? [
-                'id' => (int) $rule->id,
-                'name' => $rule->name,
-                'target_type' => $rule->target_type,
-                'match_mode' => $rule->match_mode,
-                'target_value' => $rule->target_value,
-                'scope_type' => $rule->scope_type,
-                'scope_id' => $rule->scope_id,
-                'priority' => (int) $rule->priority,
+                'id' => (int) ($rule['id'] ?? 0),
+                'name' => $rule['name'] ?? null,
+                'target_type' => $rule['target_type'] ?? null,
+                'match_mode' => $rule['match_mode'] ?? null,
+                'target_value' => $rule['target_value'] ?? null,
+                'scope_type' => $rule['scope_type'] ?? null,
+                'scope_id' => $rule['scope_id'] ?? null,
+                'priority' => (int) ($rule['priority'] ?? 0),
             ] : null,
             'classifier_version' => (string) config('productivity_monitoring.classifier_version'),
         ];

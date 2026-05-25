@@ -4,8 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
-import { employeeWorkspaceApi, productivityRuleApi, settingsApi, supportApi, organizationApi } from '@/services/api';
-import type { ProductivityRule as ProductivityRuleType } from '@/types';
+import { employeeWorkspaceApi, productivityClassificationApi, settingsApi, supportApi, organizationApi } from '@/services/api';
+import type { ProductivityClassificationItem } from '@/types';
 import { ArrowRight, User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy, Trash2, AlertTriangle } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -133,24 +133,17 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [canManageOrg, setCanManageOrg] = useState(false);
   const [billingPlan, setBillingPlan] = useState<{ name: string; status: string; renewal_date?: string | null } | null>(null);
-  const [productivityRules, setProductivityRules] = useState<any[]>([]);
-  const [productivityMeta, setProductivityMeta] = useState<Record<string, string[]>>({});
-  const [ruleForm, setRuleForm] = useState({
-    id: 0,
-    name: '',
-    target_type: 'app',
-    match_mode: 'contains',
-    target_value: '',
-    classification: 'productive',
-    priority: '100',
-    scope_type: 'global',
-    scope_id: '',
-    is_active: true,
-    reason: '',
-    notes: '',
-  });
-  const [ruleTest, setRuleTest] = useState({ name: '', type: 'app', window_title: '', app_name: '', url: '' });
-  const [ruleTestResult, setRuleTestResult] = useState<Record<string, any> | null>(null);
+
+  const [prodItems, setProdItems] = useState<ProductivityClassificationItem[]>([]);
+  const [prodMeta, setProdMeta] = useState<Record<string, any>>({});
+  const [prodLoading, setProdLoading] = useState(false);
+  const [prodSearch, setProdSearch] = useState('');
+  const [prodFilter, setProdFilter] = useState('');
+  const [prodDays, setProdDays] = useState(7);
+  const [prodPage, setProdPage] = useState(1);
+  const [prodSelected, setProdSelected] = useState<Set<string>>(new Set());
+  const [prodBulkClassification, setProdBulkClassification] = useState('productive');
+  const [prodSaving, setProdSaving] = useState(false);
 
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileEmail, setProfileEmail] = useState(user?.email || '');
@@ -264,10 +257,9 @@ export default function SettingsPage() {
       setIsLoading(true);
       setError('');
       try {
-        const [meResult, billingResult, rulesResult] = await Promise.allSettled([
+        const [meResult, billingResult] = await Promise.allSettled([
           settingsApi.me(),
           settingsApi.billing(),
-          hasStrictAdminAccess(user) ? productivityRuleApi.list() : Promise.resolve({ data: { data: [], meta: {} } }),
         ]);
 
         if (meResult.status === 'fulfilled') {
@@ -308,11 +300,6 @@ export default function SettingsPage() {
           setBillingPlan((billingResult.value.data as any)?.plan || null);
         } else {
           setBillingPlan(null);
-        }
-
-        if (rulesResult.status === 'fulfilled') {
-          setProductivityRules((rulesResult.value.data as any)?.data || []);
-          setProductivityMeta((rulesResult.value.data as any)?.meta || {});
         }
 
         if (meResult.status === 'rejected' && billingResult.status === 'rejected') {
@@ -662,50 +649,37 @@ export default function SettingsPage() {
     }
   };
 
-  const saveRule = async () => {
+  const loadProductivityHistory = async (p?: number) => {
+    setProdLoading(true);
     setError('');
-    setMessage('');
     try {
-      const payload: Partial<ProductivityRuleType> = {
-        name: ruleForm.name || null,
-        target_type: ruleForm.target_type as ProductivityRuleType['target_type'],
-        match_mode: ruleForm.match_mode as ProductivityRuleType['match_mode'],
-        target_value: ruleForm.target_value,
-        classification: ruleForm.classification as ProductivityRuleType['classification'],
-        priority: Number(ruleForm.priority || 100),
-        scope_type: ruleForm.scope_type as ProductivityRuleType['scope_type'],
-        scope_id: ruleForm.scope_type === 'global' ? null : Number(ruleForm.scope_id || 0) || null,
-        is_active: ruleForm.is_active,
-        reason: ruleForm.reason || null,
-        notes: ruleForm.notes || null,
-      };
-
-      if (ruleForm.id) {
-        await productivityRuleApi.update(ruleForm.id, payload);
-        setMessage('Productivity rule updated.');
-      } else {
-        await productivityRuleApi.create(payload);
-        setMessage('Productivity rule created.');
-      }
-
-      const refreshed = await productivityRuleApi.list();
-      setProductivityRules(refreshed.data.data || []);
-      setProductivityMeta((refreshed.data as any)?.meta || {});
-      setRuleForm({ id: 0, name: '', target_type: 'app', match_mode: 'contains', target_value: '', classification: 'productive', priority: '100', scope_type: 'global', scope_id: '', is_active: true, reason: '', notes: '' });
+      const res = await productivityClassificationApi.history({
+        search: prodSearch || undefined,
+        classification: prodFilter || undefined,
+        days: prodDays,
+        page: p ?? prodPage,
+        per_page: 25,
+      });
+      setProdItems(res.data.data || []);
+      setProdMeta(res.data.meta || {});
     } catch (e: any) {
-      setError(e?.response?.data?.message || 'Failed to save productivity rule');
+      setError(e?.response?.data?.message || 'Failed to load productivity history');
+    } finally {
+      setProdLoading(false);
     }
   };
 
-  const runRuleTest = async () => {
-    setError('');
-    try {
-      const res = await productivityRuleApi.test(ruleTest);
-      setRuleTestResult(res.data);
-    } catch (e: any) {
-      setError(e?.response?.data?.message || 'Failed to test rule');
+  useEffect(() => {
+    if (activeTab === 'productivity') {
+      loadProductivityHistory();
     }
-  };
+  }, [activeTab, prodFilter, prodDays]);
+
+  useEffect(() => {
+    if (activeTab === 'productivity' && prodSearch === '') {
+      loadProductivityHistory();
+    }
+  }, [prodPage]);
 
   if (isLoading) {
     return <PageLoadingState label="Loading settings..." />;
@@ -1171,67 +1145,149 @@ export default function SettingsPage() {
 
           {activeTab === 'browser-tracking' && hasDesktopBrowserTracking && (
             <div className="space-y-6">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Browser Tracking</h2>
-                <p className="mt-2 text-sm text-slate-500">
-                  Install once, pair once, and let the desktop app keep the browser connected across restarts. Published desktop builds can open direct browser install pages, while local builds still provide the unpacked extension folder.
-                </p>
-              </div>
               <DesktopBrowserTrackingPanel />
             </div>
           )}
 
           {activeTab === 'productivity' && hasStrictAdminAccess(user) && (
-            <div className="space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900">Productivity Rule Engine</h2>
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div><FieldLabel>Name</FieldLabel><TextInput type="text" value={ruleForm.name} onChange={(e) => setRuleForm((current) => ({ ...current, name: e.target.value }))} /></div>
-                    <div><FieldLabel>Target Value</FieldLabel><TextInput type="text" value={ruleForm.target_value} onChange={(e) => setRuleForm((current) => ({ ...current, target_value: e.target.value }))} /></div>
-                    <div><FieldLabel>Target Type</FieldLabel><SelectInput value={ruleForm.target_type} onChange={(e) => setRuleForm((current) => ({ ...current, target_type: e.target.value }))}>{(productivityMeta.target_types || ['app', 'domain', 'title_pattern', 'url_pattern']).map((option) => <option key={option} value={option}>{option}</option>)}</SelectInput></div>
-                    <div><FieldLabel>Match Mode</FieldLabel><SelectInput value={ruleForm.match_mode} onChange={(e) => setRuleForm((current) => ({ ...current, match_mode: e.target.value }))}>{(productivityMeta.match_modes || ['exact', 'contains', 'starts_with', 'ends_with', 'regex']).map((option) => <option key={option} value={option}>{option}</option>)}</SelectInput></div>
-                    <div><FieldLabel>Classification</FieldLabel><SelectInput value={ruleForm.classification} onChange={(e) => setRuleForm((current) => ({ ...current, classification: e.target.value }))}>{(productivityMeta.classifications || ['productive', 'unproductive', 'neutral', 'context_dependent']).map((option) => <option key={option} value={option}>{option}</option>)}</SelectInput></div>
-                    <div><FieldLabel>Priority</FieldLabel><TextInput type="number" value={ruleForm.priority} onChange={(e) => setRuleForm((current) => ({ ...current, priority: e.target.value }))} /></div>
-                    <div><FieldLabel>Scope Type</FieldLabel><SelectInput value={ruleForm.scope_type} onChange={(e) => setRuleForm((current) => ({ ...current, scope_type: e.target.value }))}>{(productivityMeta.scope_types || ['global', 'workspace', 'group', 'user']).map((option) => <option key={option} value={option}>{option}</option>)}</SelectInput></div>
-                    <div><FieldLabel>Scope Id</FieldLabel><TextInput type="number" value={ruleForm.scope_id} onChange={(e) => setRuleForm((current) => ({ ...current, scope_id: e.target.value }))} disabled={ruleForm.scope_type === 'global'} /></div>
-                  </div>
-                  <div><FieldLabel>Reason</FieldLabel><TextInput type="text" value={ruleForm.reason} onChange={(e) => setRuleForm((current) => ({ ...current, reason: e.target.value }))} /></div>
-                  <div><FieldLabel>Notes</FieldLabel><TextInput type="text" value={ruleForm.notes} onChange={(e) => setRuleForm((current) => ({ ...current, notes: e.target.value }))} /></div>
-                  <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3"><span className="text-sm text-slate-700">Rule enabled</span><ToggleInput checked={ruleForm.is_active} onChange={(checked) => setRuleForm((current) => ({ ...current, is_active: checked }))} /></div>
-                  <div className="flex gap-3">
-                    <Button onClick={saveRule}>{ruleForm.id ? 'Update Rule' : 'Create Rule'}</Button>
-                    <Button variant="secondary" onClick={() => setRuleForm({ id: 0, name: '', target_type: 'app', match_mode: 'contains', target_value: '', classification: 'productive', priority: '100', scope_type: 'global', scope_id: '', is_active: true, reason: '', notes: '' })}>Reset</Button>
-                  </div>
-                </div>
-                <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <h3 className="font-semibold text-slate-900">Test Classification</h3>
-                  <div><FieldLabel>Name</FieldLabel><TextInput type="text" value={ruleTest.name} onChange={(e) => setRuleTest((current) => ({ ...current, name: e.target.value }))} /></div>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div><FieldLabel>Type</FieldLabel><SelectInput value={ruleTest.type} onChange={(e) => setRuleTest((current) => ({ ...current, type: e.target.value }))}><option value="app">app</option><option value="url">url</option><option value="idle">idle</option></SelectInput></div>
-                    <div><FieldLabel>App Name</FieldLabel><TextInput type="text" value={ruleTest.app_name} onChange={(e) => setRuleTest((current) => ({ ...current, app_name: e.target.value }))} /></div>
-                  </div>
-                  <div><FieldLabel>Window Title</FieldLabel><TextInput type="text" value={ruleTest.window_title} onChange={(e) => setRuleTest((current) => ({ ...current, window_title: e.target.value }))} /></div>
-                  <div><FieldLabel>URL</FieldLabel><TextInput type="text" value={ruleTest.url} onChange={(e) => setRuleTest((current) => ({ ...current, url: e.target.value }))} /></div>
-                  <Button variant="secondary" onClick={runRuleTest}>Run Test</Button>
-                  {ruleTestResult ? <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700"><p><strong>Classification:</strong> {String(ruleTestResult.classification || 'neutral')}</p><p><strong>Label:</strong> {String(ruleTestResult.normalized_label || 'n/a')}</p><p><strong>Reason:</strong> {String(ruleTestResult.classification_reason || 'n/a')}</p></div> : null}
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Productivity Classification</h2>
+                  <p className="mt-1 text-sm text-slate-500">Review visited domains and apps, then classify them as productive, unproductive, or neutral.</p>
                 </div>
               </div>
-              <div className="space-y-3">
-                {productivityRules.map((rule) => (
-                  <div key={rule.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-4 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="font-medium text-slate-950">{rule.name || rule.target_value}</p>
-                      <p className="text-sm text-slate-500">{rule.scope_type} • {rule.target_type} • {rule.match_mode} • {rule.classification}</p>
-                      <p className="text-xs text-slate-500">priority {rule.priority}{rule.reason ? ` • ${rule.reason}` : ''}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => setRuleForm({ id: rule.id, name: rule.name || '', target_type: rule.target_type, match_mode: rule.match_mode, target_value: rule.target_value, classification: rule.classification, priority: String(rule.priority || 100), scope_type: rule.scope_type, scope_id: rule.scope_id ? String(rule.scope_id) : '', is_active: !!rule.is_active, reason: rule.reason || '', notes: rule.notes || '' })}>Edit</Button>
-                      <Button variant="secondary" size="sm" onClick={async () => { await productivityRuleApi.update(rule.id, { is_active: !rule.is_active }); const refreshed = await productivityRuleApi.list(); setProductivityRules(refreshed.data.data || []); }}>{rule.is_active ? 'Disable' : 'Enable'}</Button>
-                    </div>
-                  </div>
-                ))}
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1 sm:max-w-xs">
+                  <TextInput type="text" placeholder="Search domains or apps..." value={prodSearch} onChange={(e) => { setProdSearch(e.target.value); setProdPage(1); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); loadProductivityHistory(); } }} />
+                </div>
+                <SelectInput value={prodFilter} onChange={(e) => { setProdFilter(e.target.value); setProdPage(1); }}>
+                  <option value="">All classifications</option>
+                  <option value="productive">Productive</option>
+                  <option value="unproductive">Unproductive</option>
+                  <option value="neutral">Neutral</option>
+                </SelectInput>
+                <SelectInput value={prodDays} onChange={(e) => { setProdDays(Number(e.target.value)); setProdPage(1); }}>
+                  <option value={1}>Today</option>
+                  <option value={3}>Last 3 days</option>
+                  <option value={7}>Last 7 days</option>
+                  <option value={14}>Last 14 days</option>
+                  <option value={30}>Last 30 days</option>
+                  <option value={90}>Last 90 days</option>
+                </SelectInput>
+                <Button variant="secondary" size="sm" onClick={() => loadProductivityHistory()}>Search</Button>
+                <div className="text-xs text-slate-400">
+                  {prodMeta?.total != null ? `${prodMeta.total} item${prodMeta.total === 1 ? '' : 's'}` : ''}
+                  {prodMeta?.classifications ? ` · ${prodMeta.classifications.productive}P / ${prodMeta.classifications.unproductive}U / ${prodMeta.classifications.neutral}N` : ''}
+                </div>
               </div>
+
+              {prodSelected.size > 0 && (
+                <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                  <span className="text-sm font-medium text-blue-800">{prodSelected.size} selected</span>
+                  <SelectInput value={prodBulkClassification} onChange={(e) => setProdBulkClassification(e.target.value)}>
+                    <option value="productive">Productive</option>
+                    <option value="unproductive">Unproductive</option>
+                    <option value="neutral">Neutral</option>
+                  </SelectInput>
+                  <Button size="sm" disabled={prodSaving} onClick={async () => {
+                    setProdSaving(true);
+                    setError('');
+                    try {
+                      const items = prodItems.filter((item) => prodSelected.has(item.id)).map((item) => ({ target_type: item.target_type, target_value: item.target_value }));
+                      await productivityClassificationApi.batchUpdate({ classification: prodBulkClassification, items });
+                      setProdSelected(new Set());
+                      await loadProductivityHistory();
+                      setMessage(`${items.length} item(s) updated to ${prodBulkClassification}`);
+                    } catch (e: any) {
+                      setError(e?.response?.data?.message || 'Failed to update');
+                    } finally {
+                      setProdSaving(false);
+                    }
+                  }}>Apply</Button>
+                  <Button variant="secondary" size="sm" onClick={() => setProdSelected(new Set())}>Clear</Button>
+                </div>
+              )}
+
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                {prodLoading ? (
+                  <div className="p-8 text-center text-sm text-slate-400">Loading...</div>
+                ) : prodItems.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-slate-400">No items found for the selected period.</div>
+                ) : (
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="w-10 px-3 py-3">
+                          <input type="checkbox" className="rounded border-slate-300" checked={prodSelected.size === prodItems.length && prodItems.length > 0} onChange={() => {
+                            if (prodSelected.size === prodItems.length) {
+                              setProdSelected(new Set());
+                            } else {
+                              setProdSelected(new Set(prodItems.map((i) => i.id)));
+                            }
+                          }} />
+                        </th>
+                        <th className="px-3 py-3 font-medium">Name</th>
+                        <th className="px-3 py-3 font-medium">Type</th>
+                        <th className="px-3 py-3 font-medium">Classification</th>
+                        <th className="px-3 py-3 font-medium">Users</th>
+                        <th className="px-3 py-3" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {prodItems.map((item) => (
+                        <tr key={item.id} className={prodSelected.has(item.id) ? 'bg-blue-50' : 'hover:bg-slate-50'}>
+                          <td className="px-3 py-2.5">
+                            <input type="checkbox" className="rounded border-slate-300" checked={prodSelected.has(item.id)} onChange={() => {
+                              const next = new Set(prodSelected);
+                              if (next.has(item.id)) { next.delete(item.id); } else { next.add(item.id); }
+                              setProdSelected(next);
+                            }} />
+                          </td>
+                          <td className="max-w-[200px] truncate px-3 py-2.5 font-medium text-slate-900" title={item.display_label}>{item.display_label}</td>
+                          <td className="px-3 py-2.5 text-slate-500">
+                            <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${item.target_type === 'domain' ? 'bg-sky-50 text-sky-700' : 'bg-purple-50 text-purple-700'}`}>{item.target_type}</span>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${item.current_classification === 'productive' ? 'bg-emerald-50 text-emerald-700' : item.current_classification === 'unproductive' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
+                              {item.current_classification}
+                            </span>
+                            {item.override_classification ? null : null}
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-600">{item.user_count}</td>
+                          <td className="px-3 py-2.5">
+                            <SelectInput value={item.override_classification || ''} onChange={async (e) => {
+                              const val = e.target.value;
+                              if (!val) return;
+                              try {
+                                await productivityClassificationApi.create({ target_type: item.target_type, target_value: item.target_value, classification: val });
+                                setMessage(`${item.target_value} classified as ${val}`);
+                                await loadProductivityHistory();
+                              } catch (err: any) {
+                                setError(err?.response?.data?.message || 'Failed to update');
+                              }
+                            }}>
+                              <option value="">Change...</option>
+                              <option value="productive">Productive</option>
+                              <option value="unproductive">Unproductive</option>
+                              <option value="neutral">Neutral</option>
+                            </SelectInput>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {prodMeta.total_pages > 1 && (
+                <div className="flex items-center justify-center gap-2">
+                  <Button variant="secondary" size="sm" disabled={prodPage <= 1} onClick={() => setProdPage((p) => Math.max(1, p - 1))}>Previous</Button>
+                  <span className="text-xs text-slate-500">Page {prodMeta.page} of {prodMeta.total_pages}</span>
+                  <Button variant="secondary" size="sm" disabled={prodPage >= (prodMeta.total_pages || 1)} onClick={() => setProdPage((p) => p + 1)}>Next</Button>
+                </div>
+              )}
             </div>
           )}
 

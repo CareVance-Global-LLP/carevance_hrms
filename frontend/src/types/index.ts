@@ -278,24 +278,6 @@ export interface BrowserTrackingHealthSummary {
   is_exact_tracking_active: boolean;
 }
 
-export interface ProductivityRule {
-  id: number;
-  organization_id?: number | null;
-  name?: string | null;
-  target_type: 'app' | 'domain' | 'title_pattern' | 'url_pattern';
-  match_mode: 'exact' | 'contains' | 'starts_with' | 'ends_with' | 'regex';
-  target_value: string;
-  classification: 'productive' | 'unproductive' | 'neutral' | 'context_dependent';
-  priority: number;
-  scope_type: 'global' | 'workspace' | 'group' | 'user';
-  scope_id?: number | null;
-  is_active: boolean;
-  reason?: string | null;
-  notes?: string | null;
-  created_at?: string;
-  updated_at?: string;
-}
-
 // Invoice Types
 export interface Invoice {
   id: number;
@@ -1247,4 +1229,17 @@ export interface EmployeeWorkspacePayload {
     departments: Array<{ id: number; name: string }>;
     managers: Array<{ id: number; name: string; email: string }>;
   };
+}
+
+export interface ProductivityClassificationItem {
+  id: string;
+  target_type: 'domain' | 'app';
+  target_value: string;
+  display_label: string;
+  current_classification: 'productive' | 'unproductive' | 'neutral';
+  override_classification: string | null;
+  override_id: number | null;
+  user_count: number;
+  total_duration_seconds: number;
+  last_seen_at: string;
 }

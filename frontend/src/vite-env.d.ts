@@ -18,6 +18,7 @@ declare global {
     app: string | null;
     title: string | null;
     url: string | null;
+    description?: string | null;
     captured_at?: string;
   }
 
@@ -36,7 +37,17 @@ declare global {
       app: string | null;
       title: string | null;
       url: string | null;
+      description?: string | null;
+      captured_at?: string;
     } | null>;
+    getAllWindowContexts?: () => Promise<Array<{
+      Name: string;
+      Description: string | null;
+      Product: string | null;
+      Company: string | null;
+      MainWindowTitle: string;
+      Id: number;
+    }>>;
     revealWindow: () => Promise<boolean>;
     showNotification?: (payload: {
       id?: number;
