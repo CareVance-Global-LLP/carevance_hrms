@@ -1,6 +1,6 @@
 {
   "name": "carevance-desktop",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "CareVance Tracker desktop timer and activity tracker",
   "private": true,
   "author": "CareVance",
@@ -20,6 +20,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "auto-start.cjs",
       "browser-tracking-bridge.cjs",
       "browser-tracking-install-guide.cjs",
       "app-config.json",
@@ -57,7 +58,8 @@
       "deleteAppDataOnUninstall": true,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
-      "installerHeaderIcon": "assets/icon.ico"
+      "installerHeaderIcon": "assets/icon.ico",
+      "runAfterFinish": false
     }
   },
   "devDependencies": {

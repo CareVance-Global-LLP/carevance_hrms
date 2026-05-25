@@ -164,7 +164,7 @@ if (!hasSingleInstanceLock) {
 
 app.on('second-instance', () => {
   // If the app is still initializing, mainWindow may be null.
-  // Do NOT create a duplicate here — app.whenReady will create it.
+  // Do NOT create a duplicate here G�� app.whenReady will create it.
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
@@ -762,12 +762,28 @@ const renderRendererLoadError = async (details) => {
   }
 };
 
+let showMainWindowTimeout = null;
+
+const showMainWindow = () => {
+  if (showMainWindowTimeout) {
+    clearTimeout(showMainWindowTimeout);
+    showMainWindowTimeout = null;
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+  }
+};
+
 const createWindow = async () => {
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 860,
     minWidth: 1024,
     minHeight: 720,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#f8fafc',
+    title: 'CareVance Tracker',
     icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -777,6 +793,10 @@ const createWindow = async () => {
       backgroundThrottling: false,
     },
   });
+
+  let failRetryCount = 0;
+  const MAX_FAIL_RETRIES = 5;
+  const FAIL_RETRY_DELAY = 3000;
 
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || String(validatedURL || '').startsWith('data:text/html')) {
@@ -789,6 +809,17 @@ const createWindow = async () => {
       errorCode,
       errorDescription,
     });
+
+    if (failRetryCount < MAX_FAIL_RETRIES) {
+      failRetryCount++;
+      console.log(`[desktop] retrying load (${failRetryCount}/${MAX_FAIL_RETRIES}) in ${FAIL_RETRY_DELAY}ms...`);
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.loadURL(APP_URL).catch(() => {});
+        }
+      }, FAIL_RETRY_DELAY);
+      return;
+    }
 
     void renderRendererLoadError({
       appUrl: APP_URL,
@@ -835,12 +866,17 @@ const createWindow = async () => {
     });
   }
 
+  showMainWindowTimeout = setTimeout(() => {
+    showMainWindow();
+  }, 15000);
+
   mainWindow.webContents.on('did-finish-load', () => {
     const loadedUrl = String(mainWindow?.webContents?.getURL() || '');
     if (!/^https?:\/\//i.test(loadedUrl)) {
       return;
     }
 
+    showMainWindow();
     broadcastUpdateState();
     broadcastBrowserTrackingState();
     startForegroundWindowWatcher();
