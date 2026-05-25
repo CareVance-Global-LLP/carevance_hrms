@@ -70,31 +70,53 @@ const cleanupLegacyAutoStart = () => {
     execSync(`schtasks /delete /tn "${TASK_NAME}" /f`, { stdio: 'ignore' });
     console.log('[auto-start] Removed legacy Task Scheduler task');
   } catch {}
+};
 
-  // Remove Electron login item (we now use Registry exclusively on Windows)
+/**
+ * Clean up the manual Registry Run key used by previous versions.
+ * This key uses a different name from the Electron-managed login item,
+ * so we remove it explicitly to avoid duplicate startup entries.
+ */
+const cleanupRegistryRunKey = () => {
   try {
-    app.setLoginItemSettings({ openAtLogin: false });
+    execSync(`reg delete "${REGISTRY_RUN_KEY}" /v "${REGISTRY_RUN_VALUE}" /f`, { stdio: 'ignore' });
+    console.log('[auto-start] Removed old Registry Run key');
   } catch {}
 };
 
 /**
  * Single, reliable auto-start implementation for Windows.
- * Uses the Registry Run key with the correct command.
+ * Uses Electron's built-in login item API (handles quoting/encoding correctly).
+ * Falls back to the Registry Run key if the Electron API fails.
  * Cleans up any legacy redundant entries first.
  */
 const setupStrongAutoStart = () => {
   if (process.platform !== 'win32') return;
 
-  // Remove old duplicate mechanisms first so we don't get 3 popups
+  // Remove old duplicate mechanisms first so we don't get duplicate popups
   cleanupLegacyAutoStart();
 
-  const launchCommand = resolveLaunchCommand();
+  // Remove old Registry Run key from previous versions to prevent duplicates
+  cleanupRegistryRunKey();
 
-  // Single method: Windows Registry Run key
+  // Method 1: Electron's built-in login item API (handles path quoting correctly)
   try {
-    const registryCommand = `reg add "${REGISTRY_RUN_KEY}" /v "${REGISTRY_RUN_VALUE}" /t REG_SZ /d "${launchCommand}" /f`;
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: process.execPath,
+    });
+    console.log('[auto-start] Auto-start set via Electron API');
+    return;
+  } catch (error) {
+    console.warn('[auto-start] Electron API failed:', error.message);
+  }
+
+  // Method 2: Windows Registry Run key (fallback)
+  try {
+    const launchCommand = resolveLaunchCommand();
+    const registryCommand = `reg add "${REGISTRY_RUN_KEY}" /v "${REGISTRY_RUN_VALUE}" /t REG_SZ /d ${launchCommand} /f`;
     execSync(registryCommand, { stdio: 'ignore' });
-    console.log('[auto-start] Registry Run key set successfully');
+    console.log('[auto-start] Registry Run key set successfully (fallback)');
   } catch (error) {
     console.warn('[auto-start] Failed to set Registry Run key:', error.message);
   }
@@ -125,10 +147,13 @@ const isAutoStartEnabled = () => {
 const disableAutoStart = () => {
   if (process.platform !== 'win32') return;
 
-  // Remove Registry key
+  // Disable Electron login item
   try {
-    execSync(`reg delete "${REGISTRY_RUN_KEY}" /v "${REGISTRY_RUN_VALUE}" /f`, { stdio: 'ignore' });
+    app.setLoginItemSettings({ openAtLogin: false });
   } catch {}
+
+  // Remove legacy Registry key
+  cleanupRegistryRunKey();
 
   cleanupLegacyAutoStart();
 
