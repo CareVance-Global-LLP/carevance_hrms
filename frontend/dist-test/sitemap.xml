@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>http://localhost:5173/</loc>
+  </url>
+  <url>
+    <loc>http://localhost:5173/pricing</loc>
+  </url>
+  <url>
+    <loc>http://localhost:5173/contact-sales</loc>
+  </url>
+  <url>
+    <loc>http://localhost:5173/support</loc>
+  </url>
+  <url>
+    <loc>http://localhost:5173/privacy</loc>
+  </url>
+  <url>
+    <loc>http://localhost:5173/terms</loc>
+  </url>
+  <url>
+    <loc>http://localhost:5173/signup-owner</loc>
+  </url>
+  <url>
+    <loc>http://localhost:5173/start-trial</loc>
+  </url>
+</urlset>

@@ -1,0 +1,1 @@
+const e=t=>{const i=t?.trim();return i||null},o=t=>e(t.task?.title)||e(t.project?.name)||"No task selected",s=(t,i="No description provided")=>e(t.task?.description)||e(t.description)||e(t.task?.group?.name)||i;export{s as a,o as g};

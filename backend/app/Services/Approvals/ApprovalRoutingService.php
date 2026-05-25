@@ -96,7 +96,7 @@ class ApprovalRoutingService
 
         return User::query()
             ->where('organization_id', $requester->organization_id)
-            ->whereRaw('LOWER(TRIM(role)) = ?', ['manager'])
+            ->whereRaw('LOWER(TRIM(role)) IN (?, ?)', ['manager', 'admin'])
             ->where('id', '!=', (int) $requester->id)
             ->where('id', $reportingManagerId)
             ->pluck('id')
