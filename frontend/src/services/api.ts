@@ -1264,6 +1264,7 @@ export const settingsApi = {
     slug: string;
     office_start_time?: string | null;
     late_after_time?: string | null;
+    timezone?: string;
     leave_categories?: Array<{ code: string; name: string; annual_quota: number }>;
   }) => {
     if (data instanceof FormData) {

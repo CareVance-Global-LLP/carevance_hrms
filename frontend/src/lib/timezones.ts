@@ -27,6 +27,15 @@ export const resolveTimeZone = (value?: string | null) => {
   }
 };
 
+export const COMMON_TIMEZONES = [
+  DEFAULT_APP_TIMEZONE,
+  'UTC',
+  'America/New_York',
+  'Europe/London',
+  'Asia/Dubai',
+  'Australia/Sydney',
+];
+
 export const getSupportedTimezones = () => {
   const supportedValuesOf = (Intl as typeof Intl & {
     supportedValuesOf?: (key: string) => string[];
