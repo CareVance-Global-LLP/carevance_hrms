@@ -2,31 +2,55 @@ import Navbar from '@/components/landing/Navbar';
 import Footer from '@/components/landing/Footer';
 import CTA from '@/components/landing/CTA';
 import PricingSection from '@/components/landing/PricingSection';
+import FeatureComparison from '@/components/landing/FeatureComparison';
 import FAQSection from '@/components/landing/FAQSection';
+
+const trustMetrics = [
+  { label: 'Active users', value: '10,000+' },
+  { label: 'Workspaces onboarded', value: '500+' },
+  { label: 'Avg productivity lift', value: '32%' },
+  { label: 'Avg rating', value: '4.8/5' },
+];
 
 export default function PricingPage() {
   return (
-    <div className="relative overflow-x-clip bg-[linear-gradient(180deg,#fcfdff_0%,#f2f8ff_24%,#eef5ff_48%,#f8fafc_100%)] text-slate-950">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.35),transparent_58%)]" />
-      <div className="pointer-events-none absolute left-[-8%] top-[16%] h-80 w-80 rounded-full bg-sky-200/30 blur-3xl" />
-      <div className="pointer-events-none absolute right-[-6%] top-[38%] h-[26rem] w-[26rem] rounded-full bg-cyan-200/20 blur-3xl" />
-
+    <div className="text-slate-950">
       <Navbar />
 
-      <section className="px-4 pb-6 pt-16 sm:px-6 sm:pb-10 sm:pt-22 lg:px-8">
+      <section className="bg-white px-4 pb-8 pt-20 sm:px-6 sm:pb-10 sm:pt-28 lg:px-8">
         <div className="mx-auto max-w-5xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-700">Plans & onboarding</p>
-          <h1 className="mt-5 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-[4.6rem] sm:leading-[0.94]">
-            Pricing that fits trial setup now and billing activation later
+          <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">
+            Plans & pricing
+          </span>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
+            Find the right plan for your team
           </h1>
-          <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-slate-600 sm:text-[1.08rem]">
-            Compare Starter, Growth, and Enterprise, then start a workspace owner signup flow with the plan and trial mode already selected.
+          <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-slate-500">
+            Start with a 14-day free trial — no credit card required. Upgrade, downgrade, or cancel at any time.
           </p>
+        </div>
+
+        {/* Trust metrics */}
+        <div className="mx-auto mt-8 grid max-w-3xl gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 shadow-sm sm:grid-cols-4">
+          {trustMetrics.map((metric) => (
+            <div key={metric.label} className="flex flex-col items-center bg-white px-4 py-5 text-center">
+              <p className="text-xl font-bold text-slate-900">{metric.value}</p>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">{metric.label}</p>
+            </div>
+          ))}
         </div>
       </section>
 
       <PricingSection standalone />
-      <FAQSection />
+
+      <div className="bg-white">
+        <FeatureComparison />
+      </div>
+
+      <div className="bg-[#f3f6fb]">
+        <FAQSection />
+      </div>
+
       <CTA />
       <Footer />
     </div>

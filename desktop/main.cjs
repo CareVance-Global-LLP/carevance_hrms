@@ -163,8 +163,9 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on('second-instance', () => {
+  // If the app is still initializing, mainWindow may be null.
+  // Do NOT create a duplicate here — app.whenReady will create it.
   if (!mainWindow || mainWindow.isDestroyed()) {
-    void createWindow();
     return;
   }
 

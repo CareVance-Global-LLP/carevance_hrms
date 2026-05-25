@@ -1,73 +1,92 @@
 import { motion } from 'framer-motion';
-import {
-  Activity,
-  AppWindow,
-  BarChart3,
-  Clock3,
-  Receipt,
-  Users,
-} from 'lucide-react';
+import { Activity, AppWindow, BarChart3, Bell, CalendarCheck, Clock3, FolderKanban, Gift, MapPin, MessageSquare, Receipt, Users } from 'lucide-react';
 import SectionHeading from './SectionHeading';
+import { fadeSlideUp, staggerContainer, viewportOptions, getItemDelay } from './animations';
 
-const features = [
+const groups = [
   {
-    icon: AppWindow,
-    title: 'Employee Activity Monitoring',
-    description: 'The desktop tracker records active app or URL context, idle periods, and screenshots against the running timer.',
+    title: 'Time & Activity',
+    items: [
+      { icon: Clock3, title: 'Timer-Based Tracking', description: 'Start/stop timers with attendance and optional project or task context. Overtime calculated automatically.' },
+      { icon: AppWindow, title: 'Desktop Monitoring', description: 'Windows tracker records active app names and URLs. Idle detection and auto-stop prevent time inflation.' },
+      { icon: Activity, title: 'Productivity Classification', description: 'Activities classified as productive, unproductive, or neutral based on tool and domain rules.' },
+    ],
   },
   {
-    icon: BarChart3,
-    title: 'Productive vs Unproductive Analysis',
-    description: 'Monitoring reports classify tracked tools and websites into productive, unproductive, and neutral buckets.',
+    title: 'Workforce & Attendance',
+    items: [
+      { icon: CalendarCheck, title: 'Attendance & Leave', description: 'Daily check-in/out, leave requests, overtime edits, and manager approval workflows.' },
+      { icon: MapPin, title: 'Geo-Fencing', description: 'Restrict attendance check-in to designated geographic boundaries for field and hybrid teams.' },
+      { icon: Bell, title: 'Notifications & Alerts', description: 'Real-time alerts for approvals, leave updates, chat messages, and system events.' },
+    ],
   },
   {
-    icon: Clock3,
-    title: 'Attendance, Leave, and Time Edit Requests',
-    description: 'Employees can punch in or out, request leave, and submit overtime or manual time adjustments for approval.',
+    title: 'Management & Finance',
+    items: [
+      { icon: BarChart3, title: 'Dashboards & Reports', description: 'Daily, weekly, and monthly reports with CSV export. Employee insights, rankings, and productivity trends.' },
+      { icon: FolderKanban, title: 'Projects & Tasks', description: 'Organize work into projects and tasks. Track time against specific deliverables for accurate billing.' },
+      { icon: Receipt, title: 'Payroll & Invoices', description: 'Generate payroll records, process payouts, issue payslips, and manage invoices from tracked hours.' },
+    ],
   },
   {
-    icon: Users,
-    title: 'User and Report Group Management',
-    description: 'Admins and managers can create users, assign roles, review live status, and organize teams into report groups.',
-  },
-  {
-    icon: Activity,
-    title: 'Reporting and Monitoring Dashboards',
-    description: 'The app includes dashboard summaries, attendance reports, employee insights, team rankings, and CSV export.',
-  },
-  {
-    icon: Receipt,
-    title: 'Payroll, Payslips, and Invoices',
-    description: 'Managers can generate payroll records, process payouts, issue payslips, and manage invoice records inside the app.',
+    title: 'Collaboration & Admin',
+    items: [
+      { icon: MessageSquare, title: 'Team Chat', description: 'Built-in messaging within the workspace. Messages respect role and org boundaries.' },
+      { icon: Users, title: 'User & Role Management', description: 'Admins create users, assign roles (admin/manager/employee), and organize into report groups.' },
+      { icon: Gift, title: 'Onboarding & Invites', description: 'Streamlined workspace onboarding with email invites and auto-role assignment.' },
+    ],
   },
 ];
 
 export default function Features() {
   return (
-    <section id="features" className="px-4 py-12 sm:px-6 sm:py-20 lg:px-8">
+    <section id="features" className="bg-white px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Features"
-          title="Core features implemented in the repository"
-          description="These cards reflect the modules and workflows that are present in the current frontend and backend code."
+          title="Everything you need to run your workforce"
+          description="Time tracking, monitoring, attendance, payroll, communication — all in one platform."
         />
 
-        <div className="mt-10 grid gap-4 sm:mt-12 sm:gap-5 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-3">
-          {features.map((feature, index) => (
+        <div className="mt-10 space-y-10">
+          {groups.map((group, gi) => (
             <motion.div
-              key={feature.title}
-              initial={{ opacity: 0, y: 24 }}
+              key={group.title}
+              initial={{ opacity: 0, y: 16 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.25 }}
-              transition={{ duration: 0.5, delay: index * 0.06 }}
-              whileHover={{ y: -8 }}
-              className="glass-panel group rounded-[28px] p-5 sm:p-6"
+              viewport={viewportOptions}
+              transition={{ duration: 0.5, delay: gi * 0.08 }}
             >
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#0f172a,#0ea5e9)] text-white shadow-lg shadow-sky-950/15 transition duration-300 group-hover:scale-105">
-                <feature.icon className="h-6 w-6" />
+              <div className="mb-4 flex items-center gap-3">
+                <span className="h-px flex-1 bg-slate-200" />
+                <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">
+                  {group.title}
+                </span>
+                <span className="h-px flex-1 bg-slate-200" />
               </div>
-              <h3 className="mt-6 text-xl font-semibold tracking-tight text-slate-950">{feature.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-slate-600">{feature.description}</p>
+
+              <motion.div
+                variants={staggerContainer}
+                initial="hidden"
+                whileInView="visible"
+                viewport={viewportOptions}
+                className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+              >
+                {group.items.map((item, fi) => (
+                  <motion.div
+                    key={item.title}
+                    variants={fadeSlideUp}
+                    transition={getItemDelay(fi)}
+                    className="rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                      <item.icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="mt-4 text-sm font-semibold text-slate-900">{item.title}</h3>
+                    <p className="mt-1.5 text-sm leading-6 text-slate-500">{item.description}</p>
+                  </motion.div>
+                ))}
+              </motion.div>
             </motion.div>
           ))}
         </div>

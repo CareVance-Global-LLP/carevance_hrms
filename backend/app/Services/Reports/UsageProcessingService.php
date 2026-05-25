@@ -504,7 +504,17 @@ class UsageProcessingService
             $reports[] = $this->buildCachedDailySummary($userId, $day, $dayLogs, $activityEvents, 'web-app-usage', $includeProcessedLogs);
         }
 
-        return $this->combineUsageSummaries($reports, $includeProcessedLogs);
+        $combined = $this->combineUsageSummaries($reports, $includeProcessedLogs);
+
+        // Re-run idle detection once on ALL days together so that
+        // day-boundary gaps are handled consistently with the dashboard
+        // (which also processes all data at once).
+        $allNormalized = $this->normalizeUsageLogs($logs);
+        $globalIdleResult = $this->detectAndFilterIdleTime($allNormalized, $activityEvents);
+        $combined['metrics']['idle_time'] = (int) $globalIdleResult['idle_logs']->sum('duration');
+        $combined['idle_segments_count'] = $globalIdleResult['idle_logs']->count();
+
+        return $combined;
     }
 
     public function combineUsageSummaries(iterable $reports, bool $includeProcessedLogs = true): array
@@ -1080,7 +1090,7 @@ class UsageProcessingService
                     continue;
                 }
 
-                $idleStart = $left->copy()->addSeconds($threshold);
+                $idleStart = $left->copy();
                 $idleEnd = $right->copy();
                 if ($idleEnd->lessThanOrEqualTo($idleStart)) {
                     continue;
@@ -1126,7 +1136,7 @@ class UsageProcessingService
                     continue;
                 }
 
-                $idleStart = max((int) ($activeLog['start_timestamp'] ?? 0), $left + $threshold);
+                $idleStart = max((int) ($activeLog['start_timestamp'] ?? 0), $left);
                 $idleEnd = min((int) ($activeLog['end_timestamp'] ?? 0), $right);
                 if ($idleEnd <= $idleStart) {
                     continue;
@@ -1165,7 +1175,7 @@ class UsageProcessingService
                     continue;
                 }
 
-                $idleStart = $currentEnd + $threshold;
+                $idleStart = $currentEnd;
                 $idleEnd = $nextStart;
                 if ($idleEnd <= $idleStart) {
                     continue;

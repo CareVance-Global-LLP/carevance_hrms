@@ -1,33 +1,72 @@
-import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronDown } from 'lucide-react';
+import SectionHeading from './SectionHeading';
 import { pricingFaqs } from '@/constants/pricing';
+import { staggerContainer, viewportOptions, fadeSlideUp, getItemDelay, easeOut } from './animations';
 
 export default function FAQSection() {
-  return (
-    <section id="faq" className="px-4 py-18 sm:px-6 sm:py-24 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-700">FAQ</p>
-          <h2 className="mt-4 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-[3.15rem] sm:leading-[0.95]">
-            Answers for trials, billing, onboarding, and invites
-          </h2>
-          <p className="mt-5 text-base leading-8 text-slate-600">
-            Straightforward answers for the first questions teams ask while setting up a new HRMS workspace.
-          </p>
-        </div>
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const toggle = (i: number) => setOpenIndex(openIndex === i ? null : i);
 
-        <div className="mt-12 grid gap-5 lg:grid-cols-2">
-          {pricingFaqs.map((item) => (
-            <AdaptiveSurface
-              key={item.question}
-              className="rounded-[28px] border border-white/80 bg-white/88 p-6 shadow-[0_28px_70px_-42px_rgba(15,23,42,0.26)]"
-              tone="light"
-              backgroundColor="rgba(255,255,255,0.88)"
-            >
-              <h3 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">{item.question}</h3>
-              <p className="mt-3 text-sm leading-7 text-slate-600">{item.answer}</p>
-            </AdaptiveSurface>
-          ))}
-        </div>
+  return (
+    <section id="faq" className="bg-[#f3f6fb] px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+      <div className="mx-auto max-w-3xl">
+        <SectionHeading
+          eyebrow="FAQ"
+          title="Frequently asked questions"
+          description="Quick answers about trials, billing, onboarding, and team management."
+        />
+
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          whileInView="visible"
+          viewport={viewportOptions}
+          className="mt-10 space-y-2"
+        >
+          {pricingFaqs.map((item, index) => {
+            const isOpen = openIndex === index;
+            return (
+              <motion.div
+                key={item.question}
+                variants={fadeSlideUp}
+                transition={getItemDelay(index)}
+                className={`overflow-hidden rounded-lg border transition-all ${
+                  isOpen ? 'border-blue-200 bg-white shadow-sm' : 'border-slate-200 bg-white shadow-sm hover:border-slate-300'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggle(index)}
+                  className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+                  aria-expanded={isOpen}
+                >
+                  <span className="text-sm font-semibold text-slate-900">{item.question}</span>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                <AnimatePresence initial={false}>
+                  {isOpen && (
+                    <motion.div
+                      key="answer"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3, ease: easeOut }}
+                      className="overflow-hidden"
+                    >
+                      <div className="border-t border-slate-100 px-5 pb-5 pt-3">
+                        <p className="text-sm leading-7 text-slate-500">{item.answer}</p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
+        </motion.div>
       </div>
     </section>
   );

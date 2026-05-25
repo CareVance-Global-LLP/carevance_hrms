@@ -1,60 +1,49 @@
 import { motion } from 'framer-motion';
-import { Briefcase, Eye, Rocket, UsersRound } from 'lucide-react';
+import { BarChart3, Brain, Clock, Shield, TrendingUp, Users } from 'lucide-react';
 import SectionHeading from './SectionHeading';
+import { fadeSlideUp, staggerContainer, viewportOptions, getItemDelay } from './animations';
 
-const benefits = [
-  {
-    icon: Rocket,
-    title: 'See who is working right now',
-    description: 'User management, monitoring, and reports all expose live working status and current activity context.',
-  },
-  {
-    icon: Eye,
-    title: 'Review idle time and tool usage',
-    description: 'Managers can inspect idle events, app or URL breakdowns, and recent screenshots for monitored employees.',
-  },
-  {
-    icon: UsersRound,
-    title: 'Run attendance and leave operations from one place',
-    description: 'Attendance summaries, monthly calendars, leave approvals, and overtime or time-edit requests are part of the same app.',
-  },
-  {
-    icon: Briefcase,
-    title: 'Connect HR and finance workflows',
-    description: 'The product also includes payroll records, payslips, payout tracking, invoices, projects, tasks, chat, and notifications.',
-  },
+const items = [
+  { icon: Brain, title: 'Automatic productivity insights', description: 'No manual timesheets. The tracker captures activity data and classifies it as productive or unproductive.' },
+  { icon: TrendingUp, title: 'Reduce time theft', description: 'Idle detection, auto-stop timers, and screenshot verification ensure every minute reflects real work.' },
+  { icon: Shield, title: 'Stay compliant', description: 'Attendance records, overtime, leave approvals, and payroll data in one auditable system with CSV export.' },
+  { icon: Clock, title: 'Save hours on admin', description: 'Automated attendance, approval workflows, and payroll generation replace spreadsheets and emails.' },
+  { icon: Users, title: 'Scale from 10 to 1,000+', description: 'Multi-role access, report groups, and org-scoped data make it easy to manage teams of any size.' },
+  { icon: BarChart3, title: 'Data-driven decisions', description: 'Dashboards, employee rankings, efficiency scores, and trends give you the numbers to make informed decisions.' },
 ];
 
 export default function Benefits() {
   return (
-    <section className="px-4 py-12 sm:px-6 sm:py-20 lg:px-8">
+    <section className="bg-white px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <div className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-start">
-          <SectionHeading
-            eyebrow="Benefits"
-            title="What the current product helps teams manage"
-            description="The system is positioned more as an operational HRMS and monitoring workspace than a pure marketing-site SaaS shell."
-            align="left"
-          />
-          <div className="grid gap-4 sm:gap-5 sm:grid-cols-2">
-            {benefits.map((benefit, index) => (
-              <motion.div
-                key={benefit.title}
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.25 }}
-                transition={{ duration: 0.5, delay: index * 0.06 }}
-                className="rounded-[28px] border border-slate-200/70 bg-white/85 p-5 shadow-[0_24px_60px_-40px_rgba(15,23,42,0.75)] backdrop-blur sm:p-6"
-              >
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white">
-                  <benefit.icon className="h-6 w-6" />
-                </div>
-                <h3 className="mt-5 text-xl font-semibold tracking-tight text-slate-950">{benefit.title}</h3>
-                <p className="mt-3 text-sm leading-7 text-slate-600">{benefit.description}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
+        <SectionHeading
+          eyebrow="Benefits"
+          title="Why teams choose this platform"
+          description="Real visibility into your team's work without adding complexity."
+        />
+
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          whileInView="visible"
+          viewport={viewportOptions}
+          className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
+          {items.map((item, index) => (
+            <motion.div
+              key={item.title}
+              variants={fadeSlideUp}
+              transition={getItemDelay(index)}
+              className="rounded-lg border border-slate-200 bg-white px-5 py-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <item.icon className="h-5 w-5" />
+              </div>
+              <h3 className="mt-4 text-sm font-semibold text-slate-900">{item.title}</h3>
+              <p className="mt-1.5 text-sm leading-6 text-slate-500">{item.description}</p>
+            </motion.div>
+          ))}
+        </motion.div>
       </div>
     </section>
   );

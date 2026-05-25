@@ -40,4 +40,12 @@ trait InteractsWithApiResponses
     {
         return $this->successResponse($payload, $message);
     }
+
+    protected function errorResponse(string $message, int $status = 400): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+        ], $status);
+    }
 }

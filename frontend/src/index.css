@@ -296,3 +296,42 @@ input:focus, select:focus, textarea:focus {
     opacity: 0;
   }
 }
+
+/* Performance-optimized landing animations (GPU-composited, no layout thrash) */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes bounce-x {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(4px); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(4deg); }
+  75% { transform: rotate(-4deg); }
+}
+
+@keyframes bar-grow {
+  from { height: 0px; }
+  to { height: var(--bar-height); }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2.5s ease-in-out infinite;
+}
+
+.animate-bounce-x {
+  animation: bounce-x 1.5s ease-in-out infinite;
+}
+
+.animate-wiggle {
+  animation: wiggle 4s ease-in-out infinite;
+}
+
+.animate-bar-grow {
+  animation: bar-grow 0.8s ease-out forwards;
+  animation-delay: var(--bar-delay, 0.4s);
+}

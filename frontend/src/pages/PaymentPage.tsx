@@ -79,6 +79,12 @@ export default function PaymentPage() {
       if (isPendingUpgrade) {
         const response = await billingApi.confirmUpgrade({ payment_intent_id: 'upi_pending' });
 
+        if (response.data?.success === false) {
+          setPaymentError(response.data?.message || 'Upgrade failed. Please try again.');
+          setPaymentStatus('error');
+          return;
+        }
+
         const updatedOrg = {
           ...organization,
           subscription_status: 'active' as const,
@@ -96,6 +102,12 @@ export default function PaymentPage() {
       } else if (isPendingAddSeats) {
         const response = await billingApi.confirmAddSeats({ payment_intent_id: 'upi_pending' });
 
+        if (response.data?.success === false) {
+          setPaymentError(response.data?.message || 'Failed to add seats. Please try again.');
+          setPaymentStatus('error');
+          return;
+        }
+
         const updatedOrg = {
           ...organization,
           max_seats: response.data.max_seats || seats,
@@ -106,7 +118,13 @@ export default function PaymentPage() {
         };
         updateOrganization(updatedOrg);
       } else {
-        await billingApi.mockPay();
+        const response = await billingApi.mockPay();
+
+        if (response?.data?.success === false) {
+          setPaymentError(response.data?.message || 'Payment failed. Please try again.');
+          setPaymentStatus('error');
+          return;
+        }
 
         const updatedOrg = { ...organization, subscription_status: 'active' as const };
         updateOrganization(updatedOrg);

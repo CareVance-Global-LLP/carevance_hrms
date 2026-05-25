@@ -54,6 +54,55 @@ export const advancedFeatures = [
   ...advancedOnlyFeatures,
 ];
 
+export const featureCategories = [
+  {
+    category: 'Time Tracking',
+    features: [
+      { name: 'Desktop timer app', basic: true, advanced: true, enterprise: true },
+      { name: 'Check-in / check-out', basic: true, advanced: true, enterprise: true },
+      { name: 'Idle detection and auto-stop', basic: true, advanced: true, enterprise: true },
+      { name: 'Overtime calculation and history', basic: true, advanced: true, enterprise: true },
+      { name: 'Project tracking', basic: false, advanced: true, enterprise: true },
+      { name: 'Task tracking', basic: false, advanced: true, enterprise: true },
+    ],
+  },
+  {
+    category: 'Monitoring & Screenshots',
+    features: [
+      { name: 'Screenshot capture and viewer history', basic: true, advanced: true, enterprise: true },
+      { name: 'Employee timeline', basic: false, advanced: true, enterprise: true },
+      { name: 'Geo-fencing', basic: false, advanced: true, enterprise: true },
+    ],
+  },
+  {
+    category: 'Reports & Analytics',
+    features: [
+      { name: 'Reports module with CSV export', basic: true, advanced: true, enterprise: true },
+      { name: 'Custom reports and dashboards', basic: false, advanced: false, enterprise: true },
+    ],
+  },
+  {
+    category: 'Workforce Management',
+    features: [
+      { name: 'User and role management', basic: true, advanced: true, enterprise: true },
+      { name: 'Approval workflow', basic: true, advanced: true, enterprise: true },
+      { name: 'Workspace onboarding and invites', basic: true, advanced: true, enterprise: true },
+      { name: 'Multi-role access', basic: true, advanced: true, enterprise: true },
+      { name: 'Chat module', basic: false, advanced: true, enterprise: true },
+      { name: 'Leave application and approval workflow', basic: false, advanced: true, enterprise: true },
+    ],
+  },
+  {
+    category: 'Support & Onboarding',
+    features: [
+      { name: 'Email support', basic: true, advanced: true, enterprise: true },
+      { name: 'Priority support', basic: false, advanced: true, enterprise: true },
+      { name: 'Custom rollout and onboarding support', basic: false, advanced: false, enterprise: true },
+      { name: 'Flexible billing and procurement support', basic: false, advanced: false, enterprise: true },
+    ],
+  },
+];
+
 export const pricingPlans: PricingPlan[] = [
   {
     code: 'basic',
@@ -63,7 +112,6 @@ export const pricingPlans: PricingPlan[] = [
     yearlyPrice: '₹270',
     features: basicFeatures,
     ctaLabel: 'Buy Now',
-    badge: 'Most popular',
     enterpriseContactOnly: false,
     trialAvailable: true,
     minSeats: MIN_SEATS,
@@ -76,6 +124,7 @@ export const pricingPlans: PricingPlan[] = [
     yearlyPrice: '₹400',
     features: advancedFeatures,
     ctaLabel: 'Buy Now',
+    badge: 'Most popular',
     enterpriseContactOnly: false,
     trialAvailable: false,
     minSeats: MIN_SEATS,
@@ -145,6 +194,14 @@ export function getPricePerUserPerMonth(plan: PricingPlan, billingCycle: Pricing
   return parseInt(priceStr.replace(/[^0-9]/g, ''), 10) || 0;
 }
 
+export function getAnnualSavingsPercent(plan: PricingPlan): number {
+  if (!plan.monthlyPrice || !plan.yearlyPrice) return 0;
+  const monthly = parseInt(plan.monthlyPrice.replace(/[^0-9]/g, ''), 10) || 0;
+  const yearlyPerMonth = parseInt(plan.yearlyPrice.replace(/[^0-9]/g, ''), 10) || 0;
+  if (monthly === 0) return 0;
+  return Math.round(((monthly - yearlyPerMonth) / monthly) * 100);
+}
+
 export function calculateTotal(plan: PricingPlan, seats: number, billingCycle: PricingBillingCycle): number {
   const monthly = getPricePerUserPerMonth(plan, billingCycle) * seats;
   return billingCycle === 'yearly' ? monthly * 12 : monthly;
@@ -182,13 +239,13 @@ export function calculateUpgradeCost(
   const currentPrice = getPricePerUserPerMonth(currentPlan, billingCycle);
   const targetPrice = getPricePerUserPerMonth(targetPlan, billingCycle);
   const diffPerUserPerMonth = targetPrice - currentPrice;
-  
+
   const existingSeats = Math.min(seats, currentMaxSeats);
   const newSeats = Math.max(0, seats - currentMaxSeats);
-  
+
   const existingSeatsCost = diffPerUserPerMonth * existingSeats * monthsRemaining;
   const newSeatsCost = targetPrice * newSeats * monthsRemaining;
-  
+
   return existingSeatsCost + newSeatsCost;
 }
 

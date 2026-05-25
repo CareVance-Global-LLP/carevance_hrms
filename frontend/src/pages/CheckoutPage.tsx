@@ -80,11 +80,16 @@ export default function CheckoutPage() {
     setUpgradeError('');
 
     try {
-      await billingApi.upgradePlan({
+      const response = await billingApi.upgradePlan({
         target_plan_code: selectedPlanCode,
         billing_cycle: billingCycle,
         seats,
       });
+
+      if (response.data?.success === false) {
+        setUpgradeError(response.data?.message || 'Failed to initiate upgrade. Please try again.');
+        return;
+      }
 
       navigate('/payment?upgrade=true', { replace: true });
     } catch (err: any) {
