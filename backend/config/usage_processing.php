@@ -4,7 +4,7 @@ return [
     'normalization' => [
         'merge_gap_seconds' => 5,
         'noise_threshold_seconds' => 1,
-        'idle_threshold_seconds' => 60,
+        'idle_threshold_seconds' => 180,
         'max_log_duration_seconds' => 14400,
     ],
 

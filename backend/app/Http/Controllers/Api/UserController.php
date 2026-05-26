@@ -422,6 +422,7 @@ class UserController extends Controller
         }
 
         $activities = $activityQuery->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $activityTotalDuration = (int) $activities->sum('duration');
         $manualAdjustmentDuration = (int) AttendanceRecord::query()
             ->where('user_id', $user->id)
             ->when($request->start_date, fn ($query, $startDate) => $query->whereDate('attendance_date', '>=', $startDate))
@@ -429,7 +430,8 @@ class UserController extends Controller
             ->sum('manual_adjustment_seconds');
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow) + $manualAdjustmentDuration,
-            $this->usageProcessingService->calculateIdleTime($activities)
+            $this->usageProcessingService->calculateIdleTime($activities),
+            $activityTotalDuration,
         );
 
         return response()->json([
@@ -624,10 +626,12 @@ class UserController extends Controller
             ->where('user_id', $user->id)
             ->whereBetween('recorded_at', [$startDate, $endDate])
             ->get(['id', 'user_id', 'time_entry_id', 'type', 'name', 'duration', 'recorded_at']);
+        $activityTotalDuration = (int) $activities->sum('duration');
         $manualAdjustmentDuration = (int) $attendanceSummaryRecords->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow) + $manualAdjustmentDuration,
-            $this->usageProcessingService->calculateIdleTime($activities)
+            $this->usageProcessingService->calculateIdleTime($activities),
+            $activityTotalDuration,
         );
         $presentAttendanceDays = (int) $attendanceSummaryRecords
             ->filter(fn (AttendanceRecord $record) => !empty($record->check_in_at) || (int) ($record->worked_seconds ?? 0) > 0 || (int) ($record->manual_adjustment_seconds ?? 0) > 0)

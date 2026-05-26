@@ -4,9 +4,17 @@ namespace App\Services\Reports;
 
 class TimeBreakdownService
 {
-    public function build(int $trackedDuration, int $idleDuration): array
+    public function build(int $trackedDuration, int $idleDuration, int $totalActivityDuration = 0): array
     {
         $totalDuration = max(0, $trackedDuration);
+
+        // When activities span a wider range than the time entries (e.g. full-day
+        // activities vs. per-timer tracking), pro-rata idle to the tracked period
+        // so that idle from outside the timer windows doesn't erase tracked work.
+        if ($totalActivityDuration > $totalDuration && $totalActivityDuration > 0) {
+            $idleDuration = (int) round($idleDuration * ($totalDuration / $totalActivityDuration));
+        }
+
         $normalizedIdleDuration = min(max(0, $idleDuration), $totalDuration);
         $workingDuration = max($totalDuration - $normalizedIdleDuration, 0);
 

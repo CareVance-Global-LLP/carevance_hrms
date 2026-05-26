@@ -704,13 +704,14 @@ class ReportController extends Controller
                 ->whereDate('attendance_date', '<=', $endDate->toDateString())
                 ->sum('manual_adjustment_seconds');
         $activities = $this->activityFeedService->forUsersInRangeForIdle([$user->id], $startDate, $endDate);
+        $activityTotalDuration = (int) $activities->sum('duration');
         $idleDuration = $this->safeCalculateIdleTime($activities, [
             'report' => 'productivity',
             'user_id' => $user->id,
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
         ]);
-        $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration);
+        $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration, $activityTotalDuration);
         $score = $this->timeBreakdownService->productivityScore($trackedDuration, $idleDuration);
 
         return response()->json([
@@ -2095,7 +2096,11 @@ class ReportController extends Controller
         $selectedMetrics = (array) ($selectedUsageSummary['metrics'] ?? []);
         $totalIdle = (int) ($selectedMetrics['idle_time'] ?? 0);
         $selectedTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow);
-        $selectedTimeBreakdown = $this->timeBreakdownService->build($selectedTrackedDuration, $totalIdle);
+        $selectedTimeBreakdown = $this->timeBreakdownService->build(
+            $selectedTrackedDuration,
+            $totalIdle,
+            (int) ($selectedMetrics['total_time'] ?? 0),
+        );
         $idleCount = max(1, (int) ($selectedUsageSummary['idle_segments_count'] ?? 0));
         $avgIdle = (float) round(((int) ($selectedTimeBreakdown['idle_duration'] ?? 0)) / $idleCount, 2);
         $activityBreakdown = collect($selectedUsageSummary['activity_breakdown'] ?? [])->values();
@@ -2140,11 +2145,12 @@ class ReportController extends Controller
                 $organizationEntriesByUser->get($userId, collect()),
                 $resolvedNow,
             );
+            $activityTotalDuration = (int) ($userMetrics['total_time'] ?? 0);
             $userTimeBreakdown = $this->timeBreakdownService->build(
                 $userTrackedDuration,
                 (int) ($userMetrics['idle_time'] ?? 0),
+                $activityTotalDuration,
             );
-            $activityTotalDuration = (int) ($userMetrics['total_time'] ?? 0);
 
             $perUserScore[$userId] = [
                 'user' => [
@@ -2540,6 +2546,7 @@ class ReportController extends Controller
         Carbon $resolvedNow,
     ): array {
         $activities = $this->activityFeedService->forUsersInRangeForIdle([$selectedUser->id], $startDate, $endDate);
+        $activityTotalDuration = (int) collect($activities)->sum('duration');
         $idleDuration = $this->safeCalculateIdleTime($activities, [
             'report' => 'dashboard_selected_employee',
             'user_id' => $selectedUser->id,
@@ -2548,7 +2555,8 @@ class ReportController extends Controller
         ]);
         $timeBreakdown = $this->timeBreakdownService->build(
             $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-            $idleDuration
+            $idleDuration,
+            $activityTotalDuration
         );
         $isWorking = TimeEntry::query()
             ->where('user_id', $selectedUser->id)

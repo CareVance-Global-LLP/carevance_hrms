@@ -1111,10 +1111,7 @@ class UsageProcessingService
 
     private function resolveIdleThresholdSeconds(): int
     {
-        $legacyThreshold = (int) config('usage_processing.normalization.idle_threshold_seconds', 180);
-        $trackingThreshold = (int) config('time_tracking.idle_track_threshold_seconds', $legacyThreshold);
-
-        return max(30, $trackingThreshold);
+        return max(30, (int) config('usage_processing.normalization.idle_threshold_seconds', 180));
     }
 
     private function inferIdleFromSourceSilence(Collection $activeLogs): Collection
