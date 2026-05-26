@@ -870,6 +870,12 @@ const createWindow = async () => {
       errorDescription,
     });
 
+    // ERR_ABORTED (-3) is caused by SPA client-side routing (pushState/replaceState)
+    // during initial page load. The page still loads fine — don't retry or error.
+    if (errorCode === -3) {
+      return;
+    }
+
     if (failRetryCount < MAX_FAIL_RETRIES) {
       failRetryCount++;
       console.log(`[desktop] retrying load (${failRetryCount}/${MAX_FAIL_RETRIES}) in ${FAIL_RETRY_DELAY}ms...`);
@@ -914,16 +920,23 @@ const createWindow = async () => {
   try {
     await mainWindow.loadURL(APP_URL);
   } catch (error) {
-    const errorDescription = error?.message || 'Unknown renderer load error';
-    console.error('[desktop] initial renderer load failed', {
-      appUrl: APP_URL,
-      errorDescription,
-    });
-    await renderRendererLoadError({
-      appUrl: APP_URL,
-      errorDescription,
-      failedUrl: APP_URL,
-    });
+    const errMsg = (error?.message || '').toLowerCase();
+    const isAborted = errMsg.includes('err_aborted') || error?.errno === -3;
+
+    if (!isAborted) {
+      const errorDescription = error?.message || 'Unknown renderer load error';
+      console.error('[desktop] initial renderer load failed', {
+        appUrl: APP_URL,
+        errorDescription,
+      });
+      await renderRendererLoadError({
+        appUrl: APP_URL,
+        errorDescription,
+        failedUrl: APP_URL,
+      });
+    } else {
+      console.warn('[desktop] initial loadURL aborted by SPA routing — waiting for did-finish-load...');
+    }
   }
 
   showMainWindowTimeout = setTimeout(() => {
