@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
-import { DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
+import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
 import { employeeWorkspaceApi, productivityClassificationApi, settingsApi, supportApi, organizationApi } from '@/services/api';
 import type { ProductivityClassificationItem } from '@/types';
 import { ArrowRight, User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy, Trash2, AlertTriangle } from 'lucide-react';
@@ -160,6 +160,7 @@ export default function SettingsPage() {
   const [orgLogoPreview, setOrgLogoPreview] = useState(extractOrganizationLogoUrl(organization));
   const [officeStartTime, setOfficeStartTime] = useState('');
   const [lateAfterTime, setLateAfterTime] = useState('');
+  const [orgTimezone, setOrgTimezone] = useState(DEFAULT_APP_TIMEZONE);
   const [leaveCategories, setLeaveCategories] = useState<LeaveCategorySetting[]>(() => readLeaveCategories(organization));
 
   const [notifyEmail, setNotifyEmail] = useState(true);
@@ -249,6 +250,7 @@ export default function SettingsPage() {
     setOrgLogoPreview(logoUrl);
     setOfficeStartTime(toTimeInputValue((organization?.settings as any)?.attendance?.office_start_time));
     setLateAfterTime(toTimeInputValue((organization?.settings as any)?.attendance?.late_after_time));
+    setOrgTimezone(resolveTimeZone((organization?.settings as any)?.timezone));
     setLeaveCategories(readLeaveCategories(organization));
   }, [organization]);
 
@@ -283,6 +285,7 @@ export default function SettingsPage() {
           setOrgLogoPreview(fetchedOrgLogo);
           setOfficeStartTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.office_start_time));
           setLateAfterTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.late_after_time));
+          setOrgTimezone(resolveTimeZone((fetchedOrg?.settings as any)?.timezone));
           setLeaveCategories(readLeaveCategories(fetchedOrg));
           setTimezone(resolveTimeZone(settings.timezone || DEFAULT_APP_TIMEZONE));
           setNotifyEmail(notifications.email ?? true);
@@ -482,6 +485,7 @@ export default function SettingsPage() {
             if (lateAfterTime) {
               formData.append('late_after_time', lateAfterTime);
             }
+            formData.append('timezone', orgTimezone);
             if (isStrictAdminUser) {
               formData.append('leave_categories_json', JSON.stringify(normalizedLeaveCategories));
             }
@@ -493,6 +497,7 @@ export default function SettingsPage() {
             slug,
             office_start_time: officeStartTime || null,
             late_after_time: lateAfterTime || null,
+            timezone: orgTimezone,
             ...(isStrictAdminUser ? { leave_categories: normalizedLeaveCategories } : {}),
           };
 
@@ -846,6 +851,22 @@ export default function SettingsPage() {
                     className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''}
                   />
                   <p className="mt-2 text-sm text-gray-500">Check-ins after this time are marked late (for example 09:15).</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel>Timezone</FieldLabel>
+                  <SelectInput
+                    value={orgTimezone}
+                    onChange={(e) => setOrgTimezone(e.target.value)}
+                    disabled={!isOrgEditable}
+                    className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''}
+                  >
+                    {COMMON_TIMEZONES.map((tz) => (
+                      <option key={tz} value={tz}>{tz}</option>
+                    ))}
+                  </SelectInput>
+                  <p className="mt-2 text-sm text-gray-500">Organization-wide timezone used for attendance and reports.</p>
                 </div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
