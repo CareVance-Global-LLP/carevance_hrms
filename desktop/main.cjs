@@ -1215,7 +1215,7 @@ const initializeAutoUpdater = () => {
 
   setTimeout(() => {
     void checkForDesktopUpdates();
-  }, 15000);
+  }, 3000);
 
   updateCheckInterval = setInterval(() => {
     void checkForDesktopUpdates();
