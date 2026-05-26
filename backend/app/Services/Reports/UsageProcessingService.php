@@ -71,7 +71,11 @@ class UsageProcessingService
         $normalizedLogs = collect($logs)->values();
         $activeLogs = $normalizedLogs->reject(fn (array $row) => $row['type'] === 'idle')->values();
         $explicitIdleLogs = $normalizedLogs->where('type', 'idle')->values();
-        $inferredIdleLogs = $this->inferIdleIntervals($activeLogs, $activityEvents);
+
+        $inferredIdleLogs = collect();
+        if ($explicitIdleLogs->isEmpty()) {
+            $inferredIdleLogs = $this->inferIdleIntervals($activeLogs, $activityEvents);
+        }
 
         $idleLogs = $this->mergeIntervals(
             $explicitIdleLogs->concat($inferredIdleLogs)->values(),
