@@ -6,7 +6,7 @@ import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotificat
 import { buildSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 import { usePlan } from '@/hooks/usePlan';
-import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
 import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
@@ -79,6 +79,7 @@ export default function Layout() {
   const isAdminView = hasAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
   const isSuperAdminView = hasSuperAdminAccess(user);
+  const isEmployeeOrManagerView = hasEmployeeOrManagerAccess(user);
   const canAccessAttendance = isAdminView || user?.settings?.attendance_monitoring !== false;
   const canAccessEditTime = isAdminView || user?.settings?.can_edit_time !== false;
   const isDesktopShell = Boolean(window.desktopTracker) && !isSuperAdminView;
@@ -233,6 +234,7 @@ export default function Layout() {
           if (group.strictAdminOnly) return isStrictAdminView;
           if (group.superAdminOnly) return isSuperAdminView;
           if (group.adminOnly) return isAdminView;
+          if (group.employeeAndManagerOnly) return isEmployeeOrManagerView;
           return true;
         })
         .map((group) => {
@@ -243,6 +245,7 @@ export default function Layout() {
             if (item.strictAdminOnly) return isStrictAdminView;
             if (item.superAdminOnly) return isSuperAdminView;
             if (item.adminOnly) return isAdminView;
+            if (item.employeeAndManagerOnly) return isEmployeeOrManagerView;
             return true;
           });
 
@@ -295,7 +298,7 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, pendingApprovals, unreadChatMessages, hasFeature]
+    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, isEmployeeOrManagerView, pendingApprovals, unreadChatMessages, hasFeature]
   );
 
   const globalSuggestions = useMemo<GlobalSuggestion[]>(

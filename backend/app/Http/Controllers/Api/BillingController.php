@@ -79,7 +79,7 @@ class BillingController extends Controller
 
         $isTrial = $organization->subscription_status === 'trial';
         $usedSeats = $organization->users()->count();
-        $minSeats = 10;
+        $minSeats = $isTrial ? 5 : 10;
 
         if ($isTrial) {
             $seats = max($requestedSeats > 0 ? $requestedSeats : $minSeats, $minSeats);
@@ -109,13 +109,7 @@ class BillingController extends Controller
             }
 
             $expiresAt = $organization->subscription_expires_at;
-            $now = now();
-            $monthsRemaining = 1;
-
-            if ($expiresAt) {
-                $diffDays = $now->diffInDays($expiresAt, false);
-                $monthsRemaining = max(1, (int) ceil($diffDays / 30));
-            }
+            $monthsRemaining = $billingCycle === 'yearly' ? 12 : 1;
 
             $currentMaxSeats = $organization->max_seats ?? 10;
             $existingSeats = min($seats, $currentMaxSeats);
@@ -289,5 +283,71 @@ class BillingController extends Controller
             'subscription_status' => 'active',
             'max_seats' => $seats,
         ], 'Seats added successfully. Your workspace now has ' . $seats . ' seats.');
+    }
+
+    public function cancelPlan(Request $request)
+    {
+        $user = $request->user();
+        $organization = $user?->organization;
+
+        if (!$organization) {
+            return $this->errorResponse('No organization found.', 404);
+        }
+
+        if ($organization->subscription_status === 'trial') {
+            return $this->errorResponse('Cannot cancel a trial subscription.', 400);
+        }
+
+        if ($organization->plan_code === 'basic') {
+            return $this->errorResponse('Cannot cancel the Basic plan.', 400);
+        }
+
+        // Shift to 14-day Basic trial
+        $trialDays = (int) config('carevance.trial_days', 14);
+        $trialEndsAt = now()->addDays($trialDays)->toDateString();
+
+        $organization->update([
+            'plan_code' => 'basic',
+            'subscription_status' => 'trial',
+            'subscription_intent' => 'trial',
+            'max_seats' => 5,
+            'trial_starts_at' => now()->toDateString(),
+            'trial_ends_at' => $trialEndsAt,
+            'subscription_expires_at' => $trialEndsAt,
+            'billing_cycle' => 'monthly',
+            'pending_plan_code' => null,
+            'pending_billing_cycle' => null,
+            'pending_seats' => null,
+            'pending_upgrade_amount' => null,
+        ]);
+
+        return $this->successResponse([
+            'subscription_status' => 'trial',
+            'plan_code' => 'basic',
+            'trial_ends_at' => $trialEndsAt,
+            'max_seats' => 5,
+        ], 'Plan cancelled successfully. Your workspace has been shifted to a 14-day Basic trial.');
+    }
+
+    public function cancelPendingUpgrade(Request $request)
+    {
+        $user = $request->user();
+        $organization = $user?->organization;
+
+        if (!$organization) {
+            return $this->errorResponse('No organization found.', 404);
+        }
+
+        $organization->update([
+            'subscription_intent' => 'paid',
+            'pending_plan_code' => null,
+            'pending_billing_cycle' => null,
+            'pending_seats' => null,
+            'pending_upgrade_amount' => null,
+        ]);
+
+        return $this->successResponse([
+            'subscription_intent' => 'paid',
+        ], 'Pending upgrade cancelled successfully.');
     }
 }

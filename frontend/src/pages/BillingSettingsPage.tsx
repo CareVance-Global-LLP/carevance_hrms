@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, CalendarClock, CreditCard, Mail, Users, Plus, X, Loader2, Minus } from 'lucide-react';
+import { ArrowRight, CalendarClock, CreditCard, Mail, Users, Plus, X, Loader2, Minus, AlertTriangle } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -20,6 +20,7 @@ export default function BillingSettingsPage() {
   const navigate = useNavigate();
 
   const [showAddSeatsModal, setShowAddSeatsModal] = useState(false);
+  const [showCancelPlanModal, setShowCancelPlanModal] = useState(false);
   const [seatsToAdd, setSeatsToAdd] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingError, setProcessingError] = useState('');
@@ -74,6 +75,21 @@ export default function BillingSettingsPage() {
       navigate('/payment?add-seats=true', { replace: true });
     } catch (err: any) {
       setProcessingError(err?.response?.data?.message || 'Failed to add seats. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleCancelPlan = async () => {
+    setIsProcessing(true);
+    setProcessingError('');
+
+    try {
+      await billingApi.cancelPlan();
+      setShowCancelPlanModal(false);
+      window.location.reload();
+    } catch (err: any) {
+      setProcessingError(err?.response?.data?.message || 'Failed to cancel plan. Please try again.');
     } finally {
       setIsProcessing(false);
     }
@@ -203,6 +219,13 @@ export default function BillingSettingsPage() {
                       Contact sales
                       <Mail className="h-4 w-4" />
                     </a>
+                    <button
+                      onClick={() => setShowCancelPlanModal(true)}
+                      className="flex items-center justify-between rounded-[22px] border border-red-200/90 bg-red-50/80 px-4 py-4 text-sm font-semibold text-red-800 transition hover:-translate-y-0.5 hover:border-red-600"
+                    >
+                      Cancel Plan
+                      <AlertTriangle className="h-4 w-4" />
+                    </button>
                   </>
                 )}
               </div>
@@ -311,6 +334,69 @@ export default function BillingSettingsPage() {
                 </>
               )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {showCancelPlanModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.3)] sm:p-8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold tracking-[-0.04em]">Cancel Plan</h2>
+              <button
+                onClick={() => {
+                  setShowCancelPlanModal(false);
+                  setProcessingError('');
+                }}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-start gap-3 rounded-lg bg-amber-50 p-4">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+              <div className="text-sm">
+                <p className="font-semibold text-amber-900">Important Notice</p>
+                <p className="mt-1 text-amber-800">
+                  Cancelling your plan will immediately shift your workspace to a 14-day Basic trial. You will lose access to Advanced Tracker and Enterprise features.
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-sm text-slate-600">
+              Are you sure you want to cancel your {selectedPlan.label} plan? This action cannot be undone.
+            </p>
+
+            {processingError && (
+              <p className="mt-3 text-center text-sm text-red-600">{processingError}</p>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowCancelPlanModal(false);
+                  setProcessingError('');
+                }}
+                disabled={isProcessing}
+                className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+              >
+                Keep Plan
+              </button>
+              <button
+                onClick={handleCancelPlan}
+                disabled={isProcessing}
+                className="flex-1 rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-70"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Cancelling...
+                  </>
+                ) : (
+                  'Cancel Plan'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

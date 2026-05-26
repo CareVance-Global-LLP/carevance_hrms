@@ -12,6 +12,7 @@ import {
   getPricingPlan,
   getPricePerUserPerMonth,
   MIN_SEATS,
+  TRIAL_SEATS,
   PRICE_CURRENCY,
   PricingBillingCycle,
   buildSignupQuery,
@@ -45,8 +46,8 @@ export default function CheckoutPage() {
 
   const usedSeats = snapshotData?.plan?.used_seats ?? snapshotData?.plan?.users_count ?? 0;
   const currentMaxSeats = organization?.max_seats ?? MIN_SEATS;
-  const minSeats = isTrial ? Math.max(MIN_SEATS - usedSeats, 1) : Math.max(currentMaxSeats, MIN_SEATS);
-  const defaultSeats = isTrial ? Math.max(usedSeats, MIN_SEATS) : currentMaxSeats;
+  const minSeats = isTrial ? Math.max(TRIAL_SEATS - usedSeats, 1) : Math.max(currentMaxSeats, MIN_SEATS);
+  const defaultSeats = isTrial ? Math.max(usedSeats, TRIAL_SEATS) : currentMaxSeats;
   const [seats, setSeats] = useState(defaultSeats);
 
   const total = isUpgradeMode && currentPlan
@@ -65,7 +66,7 @@ export default function CheckoutPage() {
         const uSeats = res.data?.plan?.used_seats ?? res.data?.plan?.users_count ?? 0;
         const orgMaxSeats = organization?.max_seats ?? MIN_SEATS;
         if (isTrial) {
-          setSeats(Math.max(uSeats, MIN_SEATS));
+          setSeats(Math.max(uSeats, TRIAL_SEATS));
         } else {
           setSeats(orgMaxSeats);
         }

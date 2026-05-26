@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlan } from '@/hooks/usePlan';
 import { timeEntryApi, attendanceApi, geofenceApi, employeeDashboardApi, selfieApi } from '@/services/api';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { formatTimerClock, formatDuration } from '@/lib/formatters';
@@ -44,6 +45,7 @@ const MONTHS = [
 
 export default function EmployeeMobileDashboard() {
   const { user, logout } = useAuth();
+  const { hasFeature } = usePlan();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [month, setMonth] = useState(() => {
     const d = new Date();
@@ -57,7 +59,7 @@ export default function EmployeeMobileDashboard() {
   const [selfieChecked, setSelfieChecked] = useState(false);
   const [selfiePending, setSelfiePending] = useState(true);
 
-  const zone = dashboard?.geofence_zone;
+  const zone = hasFeature('geo_fencing') ? dashboard?.geofence_zone : null;
   const geo = useGeolocation(
     zone?.latitude,
     zone?.longitude,
