@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
+import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { MapPin } from 'lucide-react';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -52,7 +53,10 @@ export default function SelfieMapView() {
       const params: any = { start_date: startDate, end_date: endDate };
       if (selectedUserId) params.user_id = selectedUserId;
       const res = await selfieApi.mapData(params);
-      const data = res.data.data || [];
+      const data = (res.data.data || []).map((item) => ({
+        ...item,
+        image_url: resolveMediaUrl(item.image_url),
+      }));
       setSelfies(data);
       updateMapMarkers(data);
     } catch {
@@ -84,10 +88,12 @@ export default function SelfieMapView() {
 
     valid.forEach((s) => {
       const marker = L.marker([s.latitude!, s.longitude!]).addTo(map);
+      const popupImageUrl = (s.image_url || '').replace(/'/g, "\\'");
+      const popupUserName = (s.user?.name || 'Unknown').replace(/'/g, "\\'");
       const popupContent = `
         <div style="min-width:180px;text-align:center;">
-          <img src="${s.image_url}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;margin-bottom:8px;cursor:pointer;"
-               onclick="document.getElementById('lightbox-img')?.setAttribute('src','${s.image_url}');document.getElementById('lightbox-name')?.textContent='${s.user?.name || 'Unknown'}';document.getElementById('lightbox')?.classList.remove('hidden');" />
+          <img src="${popupImageUrl}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;margin-bottom:8px;cursor:pointer;"
+               onclick="(function(){var img=document.getElementById('lightbox-img');if(img){img.setAttribute('src','${popupImageUrl}');}var name=document.getElementById('lightbox-name');if(name){name.textContent='${popupUserName}';}var lightbox=document.getElementById('lightbox');if(lightbox){lightbox.classList.remove('hidden');}})();" />
           <p style="font-weight:600;font-size:13px;margin:0;">${s.user?.name || 'Unknown'}</p>
           <p style="font-size:11px;color:#64748b;margin:2px 0;">${s.attendance_date}</p>
           <p style="font-size:10px;color:#94a3b8;margin:0;">${s.latitude?.toFixed(6)}, ${s.longitude?.toFixed(6)}</p>

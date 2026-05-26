@@ -37,7 +37,7 @@ class SettingsController extends Controller
             abort(404);
         }
 
-        if (! Str::startsWith($normalizedPath, ['avatars/', 'organizations/'])) {
+        if (! Str::startsWith($normalizedPath, ['avatars/', 'organizations/', 'selfies/'])) {
             abort(404);
         }
 

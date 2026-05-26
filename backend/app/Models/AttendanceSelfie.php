@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 class AttendanceSelfie extends Model
 {
@@ -34,6 +33,10 @@ class AttendanceSelfie extends Model
 
     public function getImageUrlAttribute(): string
     {
-        return Storage::disk('public')->url($this->image_path);
+        if (! $this->image_path) {
+            return '';
+        }
+
+        return '/api/media/public/'.$this->image_path;
     }
 }

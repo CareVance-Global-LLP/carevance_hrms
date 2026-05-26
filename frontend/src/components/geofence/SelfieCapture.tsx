@@ -15,33 +15,51 @@ export default function SelfieCapture({ latitude, longitude, accuracy, onComplet
   const [captured, setCaptured] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cameraStarted, setCameraStarted] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const start = async () => {
+
+    const startCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         });
+
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          stream.getTracks().forEach((track) => track.stop());
           return;
         }
+
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+
+        const video = videoRef.current;
+        if (!video) {
+          setError('Unable to start camera preview. Please reopen the selfie popup.');
+          return;
         }
-        setCameraStarted(true);
-      } catch {
-        setError('Camera access denied. Please allow camera permissions to continue.');
+
+        video.srcObject = stream;
+        await video.play();
+
+        if (!cancelled) {
+          setIsReady(true);
+          setError(null);
+        }
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        setError('Camera access denied. Please allow camera permissions.');
       }
     };
-    start();
+
+    startCamera();
+
     return () => {
       cancelled = true;
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
     };
@@ -51,10 +69,12 @@ export default function SelfieCapture({ latitude, longitude, accuracy, onComplet
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
     ctx.drawImage(video, 0, 0);
     setCaptured(canvas.toDataURL('image/jpeg', 0.8));
   };
@@ -62,12 +82,14 @@ export default function SelfieCapture({ latitude, longitude, accuracy, onComplet
   const handleRetake = () => {
     setCaptured(null);
     setError(null);
+    // Camera stays running, just clear the captured image
   };
 
   const handleUpload = async () => {
     if (!captured) return;
     setUploading(true);
     setError(null);
+
     try {
       await selfieApi.upload({
         image: captured,
@@ -76,7 +98,7 @@ export default function SelfieCapture({ latitude, longitude, accuracy, onComplet
         accuracy: accuracy ?? undefined,
       });
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
       onComplete();
@@ -98,16 +120,57 @@ export default function SelfieCapture({ latitude, longitude, accuracy, onComplet
         </div>
       )}
 
-      {!cameraStarted && !error ? (
-        <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
-          Starting camera...
+      <div className="space-y-3">
+        <div className="relative rounded-lg overflow-hidden bg-black" style={{ minHeight: '256px' }}>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-64 object-cover"
+          />
+          {captured && (
+            <img
+              src={captured}
+              alt="Captured selfie"
+              className="absolute inset-0 w-full h-64 object-cover"
+            />
+          )}
+          {!isReady && !error && (
+            <div className="absolute inset-0 flex items-center justify-center text-slate-300 text-sm bg-black/30">
+              Starting camera...
+            </div>
+          )}
+          <canvas ref={canvasRef} className="hidden" />
         </div>
-      ) : !captured ? (
-        <div className="space-y-3">
-          <div className="relative rounded-lg overflow-hidden bg-black">
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-64 object-cover" />
-            <canvas ref={canvasRef} className="hidden" />
-          </div>
+
+        {captured ? (
+          <>
+            {latitude && longitude && (
+              <p className="text-xs text-slate-400 text-center">
+                📍 {latitude.toFixed(6)}, {longitude.toFixed(6)}
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleRetake}
+                disabled={uploading}
+                className="flex-1 rounded-lg border border-slate-300 bg-white text-slate-700 py-3 font-medium hover:bg-slate-50 transition disabled:opacity-50"
+              >
+                🔄 Retake
+              </button>
+              <button
+                type="button"
+                onClick={handleUpload}
+                disabled={uploading}
+                className="flex-1 rounded-lg bg-green-600 text-white py-3 font-semibold hover:bg-green-700 transition disabled:opacity-50"
+              >
+                {uploading ? 'Uploading...' : '✅ Save Selfie'}
+              </button>
+            </div>
+          </>
+        ) : (
           <button
             type="button"
             onClick={handleCapture}
@@ -115,37 +178,8 @@ export default function SelfieCapture({ latitude, longitude, accuracy, onComplet
           >
             📸 Capture
           </button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="rounded-lg overflow-hidden bg-slate-100">
-            <img src={captured} alt="Captured selfie" className="w-full h-64 object-cover" />
-          </div>
-          {latitude && longitude && (
-            <p className="text-xs text-slate-400 text-center">
-              📍 {latitude.toFixed(6)}, {longitude.toFixed(6)}
-            </p>
-          )}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={handleRetake}
-              disabled={uploading}
-              className="flex-1 rounded-lg border border-slate-300 bg-white text-slate-700 py-3 font-medium hover:bg-slate-50 transition disabled:opacity-50"
-            >
-              🔄 Retake
-            </button>
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={uploading}
-              className="flex-1 rounded-lg bg-green-600 text-white py-3 font-semibold hover:bg-green-700 transition disabled:opacity-50"
-            >
-              {uploading ? 'Uploading...' : '✅ Save Selfie'}
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
