@@ -209,20 +209,34 @@ export default function OrganizationTree() {
 
     for (const e of employees) {
       const mgrId = e.reporting_manager_id;
+      const empDept = deptLabel(e.department);
+
       if (mgrId && mgrById.has(mgrId)) {
-        // 1. Explicit reporting_manager_id
-        addToMgr(mgrId, e);
-      } else {
-        // 2. Fallback: match by department
-        const empDept = deptLabel(e.department);
-        if (empDept !== 'Unassigned') {
-          const deptMgrs = deptMap.get(empDept) ?? [];
-          const target = leastLoaded(deptMgrs);
-          if (target) { addToMgr(target.id, e); continue; }
+        // 1. Explicit reporting_manager_id (only when department is compatible)
+        const explicitMgr = mgrById.get(mgrId)!;
+        const mgrDept = deptLabel(explicitMgr.department);
+        const isDeptCompatible =
+          empDept === 'Unassigned'
+          || mgrDept === 'Unassigned'
+          || empDept.toLowerCase() === mgrDept.toLowerCase();
+
+        if (isDeptCompatible) {
+          addToMgr(mgrId, e);
+          continue;
         }
-        // 3. No match — truly unassigned
-        unassignedEmps.push(e);
       }
+
+      // 2. Fallback: match by department
+      if (empDept !== 'Unassigned') {
+        const deptMgrs = deptMap.get(empDept) ?? [];
+        const target = leastLoaded(deptMgrs);
+        if (target) { addToMgr(target.id, e); continue; }
+      } else {
+        // Unassigned department with no compatible explicit manager
+      }
+
+      // 3. No match — truly unassigned
+      unassignedEmps.push(e);
     }
 
     // Build department groups
