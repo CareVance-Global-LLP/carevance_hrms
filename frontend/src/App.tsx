@@ -270,7 +270,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (requiresOnboarding && onboardingCompleted && isOnboardingRoute) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={mobile ? '/mobile/dashboard' : '/dashboard'} replace />;
   }
 
   if (mobile && !hasSuperAdminAccess(user) && location.pathname !== '/mobile/dashboard') {
@@ -282,6 +282,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user, organization, isAuthenticated, isLoading } = useAuth();
+  const mobile = isLikelyMobile();
 
   if (isLoading) {
     return (
@@ -296,7 +297,10 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
     if (needsPayment) {
       return <Navigate to="/payment" replace />;
     }
-    return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin' : '/dashboard'} replace />;
+    if (hasSuperAdminAccess(user)) {
+      return <Navigate to="/super-admin" replace />;
+    }
+    return <Navigate to={mobile ? '/mobile/dashboard' : '/dashboard'} replace />;
   }
 
   return <>{children}</>;
