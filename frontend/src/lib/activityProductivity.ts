@@ -557,6 +557,19 @@ const APP_TITLE_PATTERNS = [
   { pattern: /\s*[-–—|]\s*(Krita)\s*$/i, appName: 'Krita' },
 ];
 
+const formatUniversalAppName = (appName: string): string => {
+  const cleaned = appName
+    .replace(/\.exe$/i, '')
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
 const resolveExeDisplayName = (appName: string): string | null => {
   const key = String(appName || '').trim().toLowerCase();
   if (!key) return null;
@@ -579,7 +592,8 @@ const resolveExeDisplayName = (appName: string): string | null => {
   const matchWithExe = APP_NAME_ALIASES[withExe];
   if (matchWithExe) return matchWithExe;
 
-  return null;
+  // Universal fallback: format any unknown app name nicely
+  return formatUniversalAppName(appName);
 };
 
 export const guessToolType = (activityType: string) =>
