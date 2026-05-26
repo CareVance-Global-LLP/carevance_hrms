@@ -527,7 +527,7 @@ export const useDesktopTracker = () => {
         ? Math.max(activeDesktopSession.startedAtMs, parsedEndedAtMs)
         : Date.now();
       const resolvedEndedAt = new Date(endedAtMs).toISOString();
-      const durationSeconds = Math.max(0, Math.round((endedAtMs - activeDesktopSession.startedAtMs) / 1000));
+      const durationSeconds = Math.max(1, Math.round((endedAtMs - activeDesktopSession.startedAtMs) / 1000));
 
       try {
         await activitySessionApi.update(activeDesktopSession.sessionId, {
@@ -664,7 +664,7 @@ export const useDesktopTracker = () => {
         ? Math.max(activeBrowserSession.startedAtMs, parsedEndedAtMs)
         : Date.now();
       const resolvedEndedAt = new Date(endedAtMs).toISOString();
-      const durationSeconds = Math.max(0, Math.round((endedAtMs - activeBrowserSession.startedAtMs) / 1000));
+      const durationSeconds = Math.max(1, Math.round((endedAtMs - activeBrowserSession.startedAtMs) / 1000));
 
       try {
         await activitySessionApi.update(activeBrowserSession.sessionId, {
@@ -1276,6 +1276,9 @@ export const useDesktopTracker = () => {
             );
             return;
           }
+
+          // Close any orphaned desktop session when foreground is no longer a reliable desktop context
+          await closeActiveDesktopSession(recordedAt);
 
           const attributedTrackedSeconds = trackedSecondsThisTick + pendingTrackedSecondsRef.current;
           pendingTrackedSecondsRef.current = 0;
