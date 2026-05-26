@@ -466,7 +466,7 @@ export const timeEntryApi = {
   delete: (id: number) => 
     api.delete(`/time-entries/${id}`),
   
-  start: (data?: { project_id?: number | null; task_id?: number | null; description?: string; billable?: boolean; timer_slot?: 'primary' | 'secondary' }) => 
+  start: (data?: { project_id?: number | null; task_id?: number | null; description?: string; billable?: boolean; timer_slot?: 'primary' | 'secondary'; latitude?: number; longitude?: number; accuracy?: number }) => 
     api.post<TimeEntry>('/time-entries/start', data || {}),
   
   stop: (data?: {
@@ -474,6 +474,9 @@ export const timeEntryApi = {
     auto_stopped_for_idle?: boolean;
     idle_seconds?: number;
     last_activity_at?: string;
+    latitude?: number;
+    longitude?: number;
+    accuracy?: number;
   }) => 
     api.post<TimeEntry>('/time-entries/stop', data || {}),
   
@@ -482,6 +485,30 @@ export const timeEntryApi = {
   
   today: () => 
     api.get<{ time_entries: TimeEntry[]; total_duration: number }>('/time-entries/today'),
+};
+
+// Geofence API
+export const geofenceApi = {
+  zones: () =>
+    api.get<{ data: Array<{ id: number; name: string; latitude: number; longitude: number; radius_meters: number; is_active: boolean }> }>('/geofence/zones'),
+
+  verify: (data: { latitude: number; longitude: number; accuracy?: number }) =>
+    api.post<{ inside_zone: boolean; zone: { id: number; name: string; latitude: number; longitude: number; radius_meters: number } | null }>('/geofence/verify', data),
+
+  create: (data: { name: string; latitude: number; longitude: number; radius_meters: number; is_active?: boolean }) =>
+    api.post('/geofence/zones', data),
+
+  update: (id: number, data: { name?: string; latitude?: number; longitude?: number; radius_meters?: number; is_active?: boolean }) =>
+    api.put(`/geofence/zones/${id}`, data),
+
+  delete: (id: number) =>
+    api.delete(`/geofence/zones/${id}`),
+};
+
+// Employee Dashboard API
+export const employeeDashboardApi = {
+  dashboard: (month?: string) =>
+    api.get('/employee/dashboard', { params: { month } }),
 };
 
 // Screenshot API

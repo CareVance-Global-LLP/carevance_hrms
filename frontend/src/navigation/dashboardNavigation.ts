@@ -13,6 +13,7 @@ import {
   Gauge,
   LayoutDashboard,
   LineChart,
+  MapPin,
   MessageSquare,
   Network,
   Play,
@@ -135,6 +136,7 @@ export const topNavigation: NavGroup[] = [
     items: [
       { label: 'Settings', to: '/settings', icon: Settings, adminOnly: true },
       { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true },
+      { label: 'Geofence Zones', to: '/settings/geofence', icon: MapPin, adminOnly: true },
     ],
   },
   {

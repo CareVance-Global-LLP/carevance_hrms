@@ -114,7 +114,7 @@ class AttendanceService
         ];
     }
 
-    public function checkIn(?User $user): array
+    public function checkIn(?User $user, ?float $latitude = null, ?float $longitude = null): array
     {
         if (!$user || !$user->organization_id) {
             return ['status' => 422, 'payload' => ['message' => 'Organization is required.']];
@@ -158,6 +158,8 @@ class AttendanceService
             'user_id' => $user->id,
             'attendance_record_id' => $record->id,
             'punch_in_at' => $checkInAt,
+            'punch_in_latitude' => $latitude,
+            'punch_in_longitude' => $longitude,
         ]);
 
         $this->closeRunningPrimaryTimers((int) $user->id, $checkInAt);
@@ -172,7 +174,7 @@ class AttendanceService
         ];
     }
 
-    public function checkOut(?User $user): array
+    public function checkOut(?User $user, ?float $latitude = null, ?float $longitude = null): array
     {
         if (!$user || !$user->organization_id) {
             return ['status' => 422, 'payload' => ['message' => 'Organization is required.']];
@@ -198,6 +200,8 @@ class AttendanceService
         $openPunch->update([
             'punch_out_at' => $checkOutAt,
             'worked_seconds' => (int) $sessionWorkedSeconds,
+            'punch_out_latitude' => $latitude,
+            'punch_out_longitude' => $longitude,
         ]);
 
         $record = $record->fresh('punches');

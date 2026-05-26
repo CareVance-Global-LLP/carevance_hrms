@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { isLikelyMobile } from '@/lib/mobile';
 import {
   AlertCircle,
   ArrowRight,
@@ -64,7 +65,7 @@ export default function Login() {
       } else {
         window.localStorage.removeItem(REMEMBERED_EMAIL_KEY);
       }
-      navigate('/dashboard');
+      navigate(isLikelyMobile() ? '/mobile/dashboard' : '/dashboard');
     } catch (err: any) {
       const errorCode = err.response?.data?.error_code;
       const responseEmail = err.response?.data?.email || submittedEmail;
