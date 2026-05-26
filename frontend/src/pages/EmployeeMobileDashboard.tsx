@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { timeEntryApi, attendanceApi, geofenceApi, employeeDashboardApi } from '@/services/api';
+import { timeEntryApi, attendanceApi, geofenceApi, employeeDashboardApi, selfieApi } from '@/services/api';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { formatTimerClock, formatDuration } from '@/lib/formatters';
+import SelfieCapture from '@/components/geofence/SelfieCapture';
 
 interface GeofenceZone {
   id: number;
@@ -52,6 +53,9 @@ export default function EmployeeMobileDashboard() {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSelfieModal, setShowSelfieModal] = useState(false);
+  const [selfieChecked, setSelfieChecked] = useState(false);
+  const [selfiePending, setSelfiePending] = useState(true);
 
   const zone = dashboard?.geofence_zone;
   const geo = useGeolocation(
@@ -84,6 +88,21 @@ export default function EmployeeMobileDashboard() {
   }, [month, fetchDashboard]);
 
   useEffect(() => {
+    if (selfieChecked) return;
+    selfieApi.todayStatus().then((res) => {
+      if (!res.data.uploaded) {
+        setShowSelfieModal(true);
+        setSelfiePending(true);
+      } else {
+        setSelfiePending(false);
+      }
+    }).catch(() => {
+      setSelfiePending(false);
+    });
+    setSelfieChecked(true);
+  }, [selfieChecked]);
+
+  useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (dashboard?.active_timer) {
       interval = setInterval(() => {
@@ -96,6 +115,10 @@ export default function EmployeeMobileDashboard() {
   }, [dashboard?.active_timer]);
 
   const handleStart = async () => {
+    if (selfiePending) {
+      setError('Please complete your daily selfie first.');
+      return;
+    }
     if (!geo.latitude || !geo.longitude) {
       setError('Waiting for GPS location...');
       return;
@@ -356,6 +379,34 @@ export default function EmployeeMobileDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Selfie Modal — blocking, no dismiss */}
+      {showSelfieModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+            {zone && !geo.isInsideZone && !geo.loading ? (
+              <div className="text-center space-y-4 py-6">
+                <span className="text-4xl">🚫</span>
+                <h3 className="text-lg font-semibold text-slate-800">Outside Allowed Zone</h3>
+                <p className="text-sm text-slate-500">
+                  You are currently outside <strong>{zone.name}</strong>.
+                  Move inside the geofence zone to take your selfie and start the timer.
+                </p>
+                <p className="text-xs text-slate-400">
+                  Current location: {geo.latitude?.toFixed(6)}, {geo.longitude?.toFixed(6)}
+                </p>
+              </div>
+            ) : (
+              <SelfieCapture
+                latitude={geo.latitude}
+                longitude={geo.longitude}
+                accuracy={geo.accuracy}
+                onComplete={() => { setShowSelfieModal(false); setSelfiePending(false); }}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
