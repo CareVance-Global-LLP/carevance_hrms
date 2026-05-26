@@ -557,12 +557,6 @@ const AttendancePieChart = ({ items }: { items: Array<{ label: string; value: nu
             <span className="text-xs text-slate-500">Share</span>
             <span className="text-xs font-semibold text-slate-900">{pct}%</span>
           </div>
-          <div className="border-t border-slate-100 pt-1.5">
-            <div className="flex items-center justify-between gap-6">
-              <span className="text-xs text-slate-500">Total</span>
-              <span className="text-xs font-semibold text-slate-900">{total}</span>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -596,10 +590,6 @@ const AttendancePieChart = ({ items }: { items: Array<{ label: string; value: nu
             />
           </PieChart>
         </ResponsiveContainer>
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-2xl font-bold text-slate-950">{total}</span>
-          <span className="text-xs text-slate-500">Total</span>
-        </div>
       </div>
       <div className="grid grid-cols-1 gap-2 text-xs">
         {items.map((item) => {
