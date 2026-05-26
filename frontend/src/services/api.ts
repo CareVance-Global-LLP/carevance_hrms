@@ -511,6 +511,27 @@ export const employeeDashboardApi = {
     api.get('/employee/dashboard', { params: { month } }),
 };
 
+// Selfie API
+export const selfieApi = {
+  upload: (data: { image: string; latitude?: number; longitude?: number; accuracy?: number }) =>
+    api.post('/attendance/selfie', data),
+
+  todayStatus: () =>
+    api.get<{ uploaded: boolean; selfie?: { id: number; image_url: string; created_at: string } }>('/attendance/selfies/today'),
+
+  mapData: (params?: { user_id?: number; start_date?: string; end_date?: string }) =>
+    api.get<{ data: Array<{
+      id: number;
+      user: { id: number; name: string } | null;
+      image_url: string;
+      latitude: number | null;
+      longitude: number | null;
+      accuracy_meters: number | null;
+      attendance_date: string;
+      created_at: string;
+    }> }>('/attendance/selfies/map', { params }),
+};
+
 // Screenshot API
 export const screenshotApi = {
   getAll: (params?: { user_id?: number; time_entry_id?: number; start_date?: string; end_date?: string; page?: number; per_page?: number }) => 

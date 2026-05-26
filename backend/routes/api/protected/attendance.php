@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AttendanceHolidayController;
+use App\Http\Controllers\Api\AttendanceSelfieController;
 use App\Http\Controllers\Api\AttendanceTimeEditRequestController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use Illuminate\Support\Facades\Route;
@@ -10,6 +11,9 @@ Route::get('/attendance/today', [AttendanceController::class, 'today']);
 Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
 Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut']);
 Route::get('/attendance/calendar', [AttendanceController::class, 'calendar']);
+Route::post('/attendance/selfie', [AttendanceSelfieController::class, 'upload']);
+Route::get('/attendance/selfies/today', [AttendanceSelfieController::class, 'todayStatus']);
+Route::get('/attendance/selfies/map', [AttendanceSelfieController::class, 'mapData'])->middleware('role:admin,manager');
 Route::get('/attendance/holidays', [AttendanceHolidayController::class, 'index']);
 Route::get('/attendance/summary', [AttendanceController::class, 'summary'])->middleware('role:admin,manager');
 

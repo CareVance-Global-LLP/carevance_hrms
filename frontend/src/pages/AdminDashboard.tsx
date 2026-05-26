@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { isLikelyMobile } from '@/lib/mobile';
+import { hasSuperAdminAccess } from '@/lib/permissions';
 import {
   Bell,
   Briefcase,
@@ -662,6 +664,13 @@ export default function AdminDashboard() {
   const selectedRangePresetLabel = datePresetOptions.find((option) => option.value === datePreset)?.label || 'Custom';
   const now = new Date();
   const dateLabel = selectedRangeLabel;
+
+  useEffect(() => {
+    if (isLikelyMobile() && !hasSuperAdminAccess(user)) {
+      navigate('/mobile/dashboard', { replace: true });
+      return;
+    }
+  }, [navigate, user]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

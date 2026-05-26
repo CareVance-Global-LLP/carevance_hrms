@@ -92,6 +92,7 @@ export const topNavigation: NavGroup[] = [
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
       { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true, planFeature: 'monitoring' },
       { label: 'Screenshots', to: '/monitoring/screenshots', icon: Camera, adminOnly: true },
+      { label: 'Selfies Map', to: '/attendance/selfies-map', icon: MapPin, adminOnly: true },
       { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true },
     ],
   },

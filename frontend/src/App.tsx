@@ -40,6 +40,7 @@ const SupportPage = lazyWithChunkRetry(() => import('@/pages/SupportPage'));
 const AcceptInvitePage = lazyWithChunkRetry(() => import('@/pages/AcceptInvitePage'));
 const EmployeeMobileDashboard = lazyWithChunkRetry(() => import('@/pages/EmployeeMobileDashboard'));
 const GeofenceSettings = lazyWithChunkRetry(() => import('@/pages/GeofenceSettings'));
+const SelfieMapView = lazyWithChunkRetry(() => import('@/pages/SelfieMapView'));
 const Layout = lazyWithChunkRetry(() => import('@/components/Layout'));
 const Login = lazyWithChunkRetry(() => import('@/pages/Login'));
 const ForgotPasswordPage = lazyWithChunkRetry(() => import('@/pages/ForgotPasswordPage'));
@@ -207,6 +208,7 @@ function HomeRoute() {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, organization, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
+  const mobile = isLikelyMobile();
 
   const hasOnboardingProfile = (candidate: any) => {
     if (!candidate || typeof candidate !== 'object') return false;
@@ -269,6 +271,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (requiresOnboarding && onboardingCompleted && isOnboardingRoute) {
     return <Navigate to="/dashboard" replace />;
+  }
+
+  if (mobile && !hasSuperAdminAccess(user) && location.pathname !== '/mobile/dashboard') {
+    return <Navigate to="/mobile/dashboard" replace />;
   }
 
   return <>{children}</>;
@@ -458,6 +464,7 @@ function App() {
             <Route path="tasks" element={<PlanFeatureRoute feature="task_tracking"><Tasks /></PlanFeatureRoute>} />
             <Route path="chat" element={<PlanFeatureRoute feature="chat"><Chat /></PlanFeatureRoute>} />
             <Route path="attendance" element={<Attendance />} />
+            <Route path="attendance/selfies-map" element={<AdminRoute><SelfieMapView /></AdminRoute>} />
             <Route path="leave" element={<PlanFeatureRoute feature="leave_management"><Attendance mode="leave" /></PlanFeatureRoute>} />
             <Route path="edit-time" element={<Attendance mode="time-edit" />} />
             <Route path="team" element={<Navigate to="/user-management" replace />} />

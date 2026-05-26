@@ -165,16 +165,11 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on('second-instance', () => {
-  // If the app is still initializing, mainWindow may be null.
-  // Do NOT create a duplicate here G�� app.whenReady will create it.
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
 
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
-  mainWindow.focus();
+  revealMainWindow();
 });
 
 if (process.platform === 'win32') {
@@ -941,7 +936,7 @@ const createWindow = async () => {
 
   showMainWindowTimeout = setTimeout(() => {
     showMainWindow();
-  }, 15000);
+  }, 5000);
 
   mainWindow.webContents.on('did-finish-load', () => {
     const loadedUrl = String(mainWindow?.webContents?.getURL() || '');
@@ -976,6 +971,9 @@ const createWindow = async () => {
     event.preventDefault();
 
     if (closePreparationInProgress) {
+      // Second click — force close immediately
+      allowWindowClose = true;
+      mainWindow.close();
       return;
     }
 
@@ -990,7 +988,7 @@ const createWindow = async () => {
 
     closePreparationTimeout = setTimeout(() => {
       proceedToCloseWindow();
-    }, 10000);
+    }, 3000);
   });
 
   mainWindow.on('closed', () => {
