@@ -681,9 +681,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   );
 
   const pieSegments = useMemo(() => {
-    const values = teamInsights.map((team) => (team.employeeCount > 0 ? team.employeeCount : Math.max(1, team.membersCount)));
+    const values = teamInsights.map((team) => team.membersCount);
     const total = values.reduce((sum, value) => sum + value, 0);
-    if (total <= 0) return [];
+    if (total <= 0) {
+      return teamInsights.map((team) => ({
+        ...team,
+        startAngle: 0,
+        endAngle: 0,
+        percentage: 0,
+      }));
+    }
 
     let currentAngle = 0;
     return teamInsights.map((team, index) => {
