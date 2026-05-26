@@ -250,13 +250,6 @@ export function calculateUpgradeCost(
 }
 
 export function getMonthsRemaining(subscriptionExpiresAt: string | null, billingCycle: PricingBillingCycle): number {
-  if (!subscriptionExpiresAt) return 1;
-  const expires = new Date(subscriptionExpiresAt);
-  const now = new Date();
-  const diffMs = expires.getTime() - now.getTime();
-  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-  if (billingCycle === 'yearly') {
-    return Math.max(1, Math.ceil(diffDays / 30));
-  }
-  return Math.max(1, Math.ceil(diffDays / 30));
+  if (billingCycle === 'monthly') return 1;
+  return 12;
 }

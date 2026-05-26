@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\GeofenceZone;
 use App\Models\TimeEntry;
+use App\Services\Billing\PlanService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -30,7 +31,10 @@ class EmployeeDashboardController extends Controller
             ->with('punches')
             ->first();
 
-        $zone = GeofenceZone::activeForOrg((int) $user->organization_id)->first();
+        $zone = null;
+        if (PlanService::hasFeature($user->organization, 'geo_fencing')) {
+            $zone = GeofenceZone::activeForOrg((int) $user->organization_id)->first();
+        }
 
         $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $monthEnd = $monthStart->copy()->endOfMonth();

@@ -1340,6 +1340,10 @@ export const billingApi = {
     api.post<{ success: boolean; message?: string; subscription_status: string; plan_code: string; subscription_expires_at: string }>('/billing/confirm-upgrade', data),
   addSeats: (data: { seats: number; billing_cycle: string }) =>
     api.post<{ amount: number; currency: string; seats_to_add: number; new_total_seats: number; price_per_user: number; months: number }>('/billing/add-seats', data),
+  cancelPlan: () =>
+    api.post<{ success: boolean; message?: string }>('/billing/cancel-plan'),
+  cancelPendingUpgrade: () =>
+    api.post<{ success: boolean; message?: string }>('/billing/cancel-pending-upgrade'),
   confirmAddSeats: (data: { payment_intent_id: string }) =>
     api.post<{ success: boolean; message?: string; subscription_status: string; max_seats: number }>('/billing/confirm-add-seats', data),
 };

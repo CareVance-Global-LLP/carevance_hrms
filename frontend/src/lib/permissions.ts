@@ -50,6 +50,9 @@ export const isEmployeeUser = (user: User | null | undefined): boolean =>
 export const isTrackedTimerUser = (user: User | null | undefined): boolean =>
   Boolean(user && (user.role === 'employee' || user.role === 'manager'));
 
+export const hasEmployeeOrManagerAccess = (user: User | null | undefined): boolean =>
+  Boolean(user && (user.role === 'employee' || user.role === 'manager'));
+
 export const getAssignableRoles = (
   user: User | null | undefined,
   organization: Organization | null | undefined

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { ShieldCheck, CreditCard, CheckCircle, Loader2, ArrowUpRight, RefreshCw } from 'lucide-react';
+import { ShieldCheck, CreditCard, CheckCircle, Loader2, ArrowUpRight, RefreshCw, X } from 'lucide-react';
 import { getPricingPlan, PRICE_CURRENCY, PricingBillingCycle } from '@/constants/pricing';
 import { apiUrl } from '@/lib/runtimeConfig';
 import { billingApi } from '@/services/api';
@@ -148,6 +148,28 @@ export default function PaymentPage() {
     setPaymentError('');
   };
 
+  const handleCancel = async () => {
+    setIsProcessing(true);
+    try {
+      await billingApi.cancelPendingUpgrade();
+      // Clear pending upgrade by updating organization
+      const updatedOrg = {
+        ...organization,
+        subscription_intent: 'paid' as const,
+        pending_plan_code: null,
+        pending_billing_cycle: null,
+        pending_seats: null,
+        pending_upgrade_amount: null,
+      };
+      updateOrganization(updatedOrg);
+      navigate('/settings/billing', { replace: true });
+    } catch (err) {
+      console.error('Failed to cancel:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg p-8">
@@ -217,43 +239,54 @@ export default function PaymentPage() {
             <p className="text-center text-sm text-red-600">{paymentError}</p>
             <div className="flex gap-3">
               <button
-                onClick={handleRetry}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                onClick={handleCancel}
+                disabled={isProcessing}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
               >
-                <RefreshCw className="h-4 w-4" /> Go Back
+                <X className="h-4 w-4" /> Cancel
               </button>
               <button
                 onClick={handlePayNow}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-sky-700"
+                disabled={isProcessing}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:opacity-70"
               >
                 Retry Payment <ShieldCheck className="h-4 w-4" />
               </button>
             </div>
           </div>
         ) : (
-          <button
-            onClick={handlePayNow}
-            disabled={isProcessing || paymentStatus === 'success'}
-            className={`mt-6 w-full flex items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-semibold text-white transition disabled:opacity-70 ${
-              paymentStatus === 'success'
-                ? 'bg-emerald-600'
-                : 'bg-sky-600 hover:bg-sky-700'
-            }`}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Processing...
-              </>
-            ) : paymentStatus === 'success' ? (
-              <>
-                <CheckCircle className="h-4 w-4" /> Payment Successful
-              </>
-            ) : (
-              <>
-                {isTrial ? 'Pay & Activate' : isPendingAddSeats ? 'Pay & Add Seats' : 'Pay & Upgrade'} <ShieldCheck className="h-4 w-4" />
-              </>
-            )}
-          </button>
+          <>
+            <button
+              onClick={handlePayNow}
+              disabled={isProcessing || paymentStatus === 'success'}
+              className={`mt-6 w-full flex items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-semibold text-white transition disabled:opacity-70 ${
+                paymentStatus === 'success'
+                  ? 'bg-emerald-600'
+                  : 'bg-sky-600 hover:bg-sky-700'
+              }`}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Processing...
+                </>
+              ) : paymentStatus === 'success' ? (
+                <>
+                  <CheckCircle className="h-4 w-4" /> Payment Successful
+                </>
+              ) : (
+                <>
+                  {isTrial ? 'Pay & Activate' : isPendingAddSeats ? 'Pay & Add Seats' : 'Pay & Upgrade'} <ShieldCheck className="h-4 w-4" />
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleCancel}
+              disabled={isProcessing || paymentStatus === 'success'}
+              className="mt-3 w-full flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-70"
+            >
+              Cancel and go back to billing
+            </button>
+          </>
         )}
 
         <p className="mt-4 text-center text-xs text-slate-500">

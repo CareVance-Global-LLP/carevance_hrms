@@ -37,6 +37,7 @@ export type NavLinkItem = {
   adminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
+  employeeAndManagerOnly?: boolean;
   planFeature?: string;
   external?: boolean;
   externalPath?: string;
@@ -50,6 +51,7 @@ export type NavGroup = {
   adminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
+  employeeAndManagerOnly?: boolean;
   planFeature?: string;
   payroll?: boolean;
   items?: NavLinkItem[];
@@ -87,12 +89,12 @@ export const topNavigation: NavGroup[] = [
     icon: CalendarClock,
     items: [
       { label: 'Attendance', to: '/attendance', icon: CalendarClock },
-      { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management' },
+      { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management', employeeAndManagerOnly: true },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
       { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true, planFeature: 'monitoring' },
       { label: 'Screenshots', to: '/monitoring/screenshots', icon: Camera, adminOnly: true },
-      { label: 'Selfies Map', to: '/attendance/selfies-map', icon: MapPin, adminOnly: true },
+      { label: 'Selfies Map', to: '/attendance/selfies-map', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing' },
       { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true },
     ],
   },
@@ -137,12 +139,13 @@ export const topNavigation: NavGroup[] = [
     items: [
       { label: 'Settings', to: '/settings', icon: Settings, adminOnly: true },
       { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true },
-      { label: 'Geofence Zones', to: '/settings/geofence', icon: MapPin, adminOnly: true },
+      { label: 'Geofence Zones', to: '/settings/geofence', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing' },
     ],
   },
   {
     label: 'Resignation',
     icon: UserMinus,
+    employeeAndManagerOnly: true,
     items: [
       { label: 'Submit Resignation', to: '/resignation', icon: UserMinus },
       { label: 'My Resignation', to: '/resignation/status', icon: FileClock },

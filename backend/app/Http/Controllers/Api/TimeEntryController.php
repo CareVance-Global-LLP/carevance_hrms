@@ -15,6 +15,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use App\Support\ExternalTimestamp;
 use App\Services\Authorization\GroupAccessService;
+use App\Services\Billing\PlanService;
 use App\Services\TimeEntries\IdleAutoStopMailService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
@@ -795,6 +796,10 @@ class TimeEntryController extends Controller
             return null;
         }
 
+        if (! PlanService::hasFeature($user->organization, 'geo_fencing')) {
+            return null;
+        }
+
         $zone = GeofenceZone::activeForOrg((int) $user->organization_id)->first();
         if (! $zone) {
             return null;
@@ -813,6 +818,10 @@ class TimeEntryController extends Controller
     private function logGeofenceAction(User $user, string $action, Request $request): void
     {
         if (! $request->filled('latitude') || ! $request->filled('longitude')) {
+            return;
+        }
+
+        if (! PlanService::hasFeature($user->organization, 'geo_fencing')) {
             return;
         }
 
