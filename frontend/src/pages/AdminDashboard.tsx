@@ -939,12 +939,44 @@ export default function AdminDashboard() {
 
   const departmentCounts = departments
     .filter((department) => department !== 'All')
-    .map((department) => ({
-      department,
-      count: employees.filter((employee) => employee.department === department).length,
-    }))
+    .map((department) => {
+      const count = employees.filter((employee) => employee.department === department).length;
+      return {
+        department,
+        count,
+      };
+    })
     .sort((a, b) => b.count - a.count)
-    .slice(0, 7);
+    .slice(0, 7)
+    .map((item) => {
+      const percentage = totalEmployees > 0 ? (item.count / totalEmployees) * 100 : 0;
+      return {
+        ...item,
+        percentage,
+      };
+    });
+
+  // Distribute rounding errors to ensure percentages sum to exactly 100%
+  if (totalEmployees > 0 && departmentCounts.length > 0) {
+    const basePercentages = departmentCounts.map(d => Math.floor(d.percentage));
+    const remainder = 100 - basePercentages.reduce((sum, p) => sum + p, 0);
+    
+    // Sort by fractional part (descending) to distribute remainder to those with largest fractions
+    const sortedByFraction = departmentCounts
+      .map((d, i) => ({ index: i, fraction: d.percentage - Math.floor(d.percentage) }))
+      .sort((a, b) => b.fraction - a.fraction);
+    
+    // Add 1% to the top 'remainder' departments
+    for (let i = 0; i < remainder && i < sortedByFraction.length; i++) {
+      const idx = sortedByFraction[i].index;
+      departmentCounts[idx].percentage = Math.floor(departmentCounts[idx].percentage) + 1;
+    }
+    
+    // Set final rounded percentages
+    departmentCounts.forEach(d => {
+      d.percentage = Math.round(d.percentage);
+    });
+  }
 
   const weeklyEntries = safeArray<any>(weeklyReport.time_entries || weeklyReport.entries)
     .filter((entry: any) => {
@@ -1892,6 +1924,7 @@ export default function AdminDashboard() {
                       <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
                         <p className="text-xs font-bold text-slate-900">{row.department}</p>
                         <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.count}</span></p>
+                        <p className="mt-1 text-xs text-slate-500">Percentage: <span className="font-semibold text-slate-700">{row.percentage}%</span></p>
                       </div>
                     );
                   }}
@@ -2129,7 +2162,8 @@ export default function AdminDashboard() {
                             return (
                               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
                                 <p className="text-xs font-bold text-slate-900">{row.department}</p>
-                                <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.count}</span> / {totalEmployees}</p>
+                                <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.count}</span></p>
+                                <p className="mt-1 text-xs text-slate-500">Percentage: <span className="font-semibold text-slate-700">{row.percentage}%</span></p>
                               </div>
                             );
                           }}
@@ -2661,6 +2695,7 @@ export default function AdminDashboard() {
                             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
                               <p className="text-xs font-bold text-slate-900">{row.department}</p>
                               <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.count}</span></p>
+                              <p className="mt-1 text-xs text-slate-500">Percentage: <span className="font-semibold text-slate-700">{row.percentage}%</span></p>
                             </div>
                           );
                         }}

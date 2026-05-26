@@ -124,13 +124,49 @@ class ActivityFeedService
             return collect();
         }
 
-        $activities = Activity::query()
+        $activityColumns = [
+            'id',
+            'user_id',
+            'time_entry_id',
+            'type',
+            'name',
+            'duration',
+            'recorded_at',
+            'normalized_label',
+            'normalized_domain',
+            'software_name',
+            'tool_type',
+            'classification',
+            'classification_reason',
+        ];
+
+        // Always fetch ALL explicit idle activities (typically few per user) so the
+        // timeline includes idle periods even when there are many other events.
+        $idleActivities = Activity::query()
             ->whereIn('user_id', $userIdCollection)
+            ->where('type', 'idle')
             ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
-            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
-            ->get()
+            ->orderBy('recorded_at')
+            ->orderBy('id')
+            ->get($activityColumns)
             ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        // Non-idle activities are bounded; used for gap inference + classification.
+        $nonIdleActivities = Activity::query()
+            ->whereIn('user_id', $userIdCollection)
+            ->where(function ($query) {
+                $query->where('type', '!=', 'idle')->orWhereNull('type');
+            })
+            ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id')
+            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
+            ->get($activityColumns)
+            ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        $activities = $idleActivities->concat($nonIdleActivities)->values();
 
         $sessionModels = ActivitySession::query()
             ->whereIn('user_id', $userIdCollection)
@@ -242,24 +278,61 @@ class ActivityFeedService
         $windowSize = $offset + $perPage + ($includeTotal ? $perPage : 1);
         $windowSize = min($windowSize, self::MAX_ACTIVITIES_PER_QUERY);
 
-        $activitiesQuery = Activity::query()
+        $activityColumns = [
+            'id',
+            'user_id',
+            'time_entry_id',
+            'type',
+            'name',
+            'duration',
+            'recorded_at',
+            'normalized_label',
+            'normalized_domain',
+            'software_name',
+            'tool_type',
+            'classification',
+            'classification_reason',
+        ];
+
+        // Always fetch ALL explicit idle activities (typically few per user) so the
+        // timeline includes idle periods even when there are many other events.
+        $idleActivitiesQuery = Activity::query()
             ->whereIn('user_id', $userIdCollection)
+            ->where('type', 'idle')
             ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate));
-        $this->applyActivityFilters($activitiesQuery, $type, $classification, $toolType);
+        $this->applyActivityFilters($idleActivitiesQuery, $type, $classification, $toolType);
+
+        $idleActivities = $idleActivitiesQuery
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id')
+            ->get($activityColumns)
+            ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        // Non-idle activities are bounded; used for gap inference + classification.
+        $nonIdleActivitiesQuery = Activity::query()
+            ->whereIn('user_id', $userIdCollection)
+            ->where(function ($query) {
+                $query->where('type', '!=', 'idle')->orWhereNull('type');
+            })
+            ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate));
+        $this->applyActivityFilters($nonIdleActivitiesQuery, $type, $classification, $toolType);
 
         // Use approximate count for large datasets (much faster)
         $activityTotal = null;
         if ($includeTotal) {
-            $activityTotal = $this->getApproximateCount($activitiesQuery);
+            $activityTotal = $this->getApproximateCount($nonIdleActivitiesQuery) + $idleActivities->count();
         }
         
-        $activities = (clone $activitiesQuery)
+        $nonIdleActivities = $nonIdleActivitiesQuery
             ->orderByDesc('recorded_at')
             ->orderByDesc('id')
             ->limit($windowSize)
-            ->get()
+            ->get($activityColumns)
             ->map(fn (Activity $activity) => $this->mapActivity($activity));
+
+        $activities = $idleActivities->concat($nonIdleActivities)->values();
 
         $sessionsQuery = ActivitySession::query()
             ->whereIn('user_id', $userIdCollection)
