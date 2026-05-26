@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\Activity;
+use App\Models\GeofenceLog;
+use App\Models\GeofenceZone;
 use App\Models\LeaveRequest;
 use App\Models\Project;
 use App\Models\Task;
@@ -210,11 +212,19 @@ class TimeEntryController extends Controller
             'project_id' => 'nullable|exists:projects,id',
             'task_id' => 'nullable|exists:tasks,id',
             'timer_slot' => 'nullable|in:primary,secondary',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'accuracy' => 'nullable|numeric|min:0',
         ]);
 
         $user = $request->user();
         if (!$user) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $geofenceGuard = $this->checkGeofenceZone($user, $request);
+        if ($geofenceGuard) {
+            return $geofenceGuard;
         }
 
         $assignment = $this->resolveProjectAndTask($request, $user);
@@ -234,6 +244,8 @@ class TimeEntryController extends Controller
                 return $attendanceGuard;
             }
         }
+
+        $this->logGeofenceAction($user, 'timer_start', $request);
 
         $startedAt = now();
         $runningEntries = $this->runningEntriesQuery((int) $user->id, $slot)
@@ -262,6 +274,9 @@ class TimeEntryController extends Controller
             'auto_stopped_for_idle' => 'nullable|boolean',
             'idle_seconds' => 'nullable|integer|min:1|max:86400',
             'last_activity_at' => 'nullable|date',
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'accuracy' => 'nullable|numeric|min:0',
         ]);
 
         $user = $request->user();
@@ -269,6 +284,8 @@ class TimeEntryController extends Controller
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
         $slot = $request->get('timer_slot', 'primary');
+
+        $this->logGeofenceAction($user, 'timer_stop', $request);
         $this->closeStalePrimaryRunningEntries((int) $user->id, now()->startOfDay(), $slot);
 
         $runningEntries = $this->runningEntriesQuery((int) $user->id, $slot)
@@ -770,5 +787,44 @@ class TimeEntryController extends Controller
         if ($task->status !== 'in_progress') {
             $task->update(['status' => 'in_progress']);
         }
+    }
+
+    private function checkGeofenceZone(User $user, Request $request): ?JsonResponse
+    {
+        if (! $request->filled('latitude') || ! $request->filled('longitude')) {
+            return null;
+        }
+
+        $zone = GeofenceZone::activeForOrg((int) $user->organization_id)->first();
+        if (! $zone) {
+            return null;
+        }
+
+        if (! $zone->isWithinZone((float) $request->latitude, (float) $request->longitude)) {
+            return response()->json([
+                'message' => 'You are outside the allowed geofence zone. Timer cannot start.',
+                'error_code' => 'OUTSIDE_GEOFENCE',
+            ], 403);
+        }
+
+        return null;
+    }
+
+    private function logGeofenceAction(User $user, string $action, Request $request): void
+    {
+        if (! $request->filled('latitude') || ! $request->filled('longitude')) {
+            return;
+        }
+
+        $zone = GeofenceZone::activeForOrg((int) $user->organization_id)->first();
+
+        GeofenceLog::create([
+            'user_id' => $user->id,
+            'geofence_zone_id' => $zone?->id,
+            'action' => $action,
+            'latitude' => $request->latitude,
+            'longitude' => $request->longitude,
+            'accuracy_meters' => $request->filled('accuracy') ? (int) $request->accuracy : null,
+        ]);
     }
 }

@@ -33,14 +33,22 @@ class AttendanceController extends Controller
 
     public function checkIn(Request $request)
     {
-        $result = $this->attendanceService->checkIn($request->user());
+        $result = $this->attendanceService->checkIn(
+            $request->user(),
+            $request->filled('latitude') ? (float) $request->latitude : null,
+            $request->filled('longitude') ? (float) $request->longitude : null,
+        );
 
         return response()->json($result['payload'], $result['status']);
     }
 
     public function checkOut(Request $request)
     {
-        $result = $this->attendanceService->checkOut($request->user());
+        $result = $this->attendanceService->checkOut(
+            $request->user(),
+            $request->filled('latitude') ? (float) $request->latitude : null,
+            $request->filled('longitude') ? (float) $request->longitude : null,
+        );
 
         return response()->json($result['payload'], $result['status']);
     }

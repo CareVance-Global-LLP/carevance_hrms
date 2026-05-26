@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, dashboardApi, notificationApi } from '@/services/api';
+import { isLikelyMobile } from '@/lib/mobile';
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
@@ -85,6 +86,11 @@ export default function Dashboard() {
   const { user } = useAuth();
   const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const navigate = useNavigate();
+  useEffect(() => {
+    if (isLikelyMobile()) {
+      navigate('/mobile/dashboard', { replace: true });
+    }
+  }, [navigate]);
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [clockTick, setClockTick] = useState(() => Date.now());
   const [searchQuery, setSearchQuery] = useState('');

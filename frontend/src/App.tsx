@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
 import { usePlan } from '@/hooks/usePlan';
+import { isLikelyMobile } from '@/lib/mobile';
 
 const lazyWithChunkRetry = <T extends { default: React.ComponentType<any> }>(
   importer: () => Promise<T>
@@ -37,6 +38,8 @@ const InviteSignupPage = lazyWithChunkRetry(() => import('@/pages/InviteSignupPa
 const ContactSalesPage = lazyWithChunkRetry(() => import('@/pages/ContactSalesPage'));
 const SupportPage = lazyWithChunkRetry(() => import('@/pages/SupportPage'));
 const AcceptInvitePage = lazyWithChunkRetry(() => import('@/pages/AcceptInvitePage'));
+const EmployeeMobileDashboard = lazyWithChunkRetry(() => import('@/pages/EmployeeMobileDashboard'));
+const GeofenceSettings = lazyWithChunkRetry(() => import('@/pages/GeofenceSettings'));
 const Layout = lazyWithChunkRetry(() => import('@/components/Layout'));
 const Login = lazyWithChunkRetry(() => import('@/pages/Login'));
 const ForgotPasswordPage = lazyWithChunkRetry(() => import('@/pages/ForgotPasswordPage'));
@@ -164,6 +167,7 @@ function PayrollReturnBridge() {
 
 function HomeRoute() {
   const { user, isAuthenticated, isLoading } = useAuth();
+  const mobile = isLikelyMobile();
 
   if (window.desktopTracker) {
     if (isLoading) {
@@ -181,7 +185,23 @@ function HomeRoute() {
     return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin' : '/dashboard'} replace />;
   }
 
-  return <LandingPage />;
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LandingPage />;
+  }
+
+  if (mobile && !hasSuperAdminAccess(user)) {
+    return <Navigate to="/mobile/dashboard" replace />;
+  }
+
+  return <Navigate to={hasSuperAdminAccess(user) ? '/super-admin' : '/dashboard'} replace />;
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -487,6 +507,7 @@ function App() {
             <Route path="settings/integrations" element={<Settings />} />
             <Route path="settings/custom-fields" element={<Settings />} />
             <Route path="settings/billing" element={<AdminRoute><BillingSettingsPage /></AdminRoute>} />
+            <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />
@@ -500,6 +521,14 @@ function App() {
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
             <Route path="legacy/user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />
           </Route>
+          <Route
+            path="mobile/dashboard"
+            element={
+              <ProtectedRoute>
+                <EmployeeMobileDashboard />
+              </ProtectedRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </>

@@ -14,6 +14,10 @@ class AttendancePunch extends Model
         'punch_in_at',
         'punch_out_at',
         'worked_seconds',
+        'punch_in_latitude',
+        'punch_in_longitude',
+        'punch_out_latitude',
+        'punch_out_longitude',
     ];
 
     protected function casts(): array
