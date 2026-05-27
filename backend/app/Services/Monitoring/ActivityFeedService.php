@@ -54,7 +54,7 @@ class ActivityFeedService
                 ->get($activityColumns)
                 ->map(fn (Activity $activity) => $this->mapActivity($activity));
 
-            // Non-idle activities are bounded; used for gap inference + classification.
+            // Non-idle activities — no row cap for accurate reporting.
             $nonIdleActivities = Activity::query()
                 ->whereIn('user_id', $userIdCollection)
                 ->where(function ($query) {
@@ -64,18 +64,8 @@ class ActivityFeedService
                 ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
                 ->orderByDesc('recorded_at')
                 ->orderByDesc('id')
-                ->limit(self::MAX_ACTIVITIES_PER_QUERY)
                 ->get($activityColumns)
                 ->map(fn (Activity $activity) => $this->mapActivity($activity));
-
-            if ($nonIdleActivities->count() >= self::MAX_ACTIVITIES_PER_QUERY) {
-                Log::warning('ActivityFeedService::forUsersInRangeForIdle non-idle row cap hit', [
-                    'users_count' => $userIdCollection->count(),
-                    'cap' => self::MAX_ACTIVITIES_PER_QUERY,
-                    'start' => $startDate?->toDateTimeString(),
-                    'end' => $endDate?->toDateTimeString(),
-                ]);
-            }
 
             $activities = $idleActivities->concat($nonIdleActivities)->values();
 
@@ -88,7 +78,6 @@ class ActivityFeedService
                 ->orderBy('source')
                 ->orderBy('started_at')
                 ->orderBy('id')
-                ->limit(self::MAX_ACTIVITIES_PER_QUERY)
                 ->get([
                     'id',
                     'user_id',
@@ -152,7 +141,7 @@ class ActivityFeedService
             ->get($activityColumns)
             ->map(fn (Activity $activity) => $this->mapActivity($activity));
 
-        // Non-idle activities are bounded; used for gap inference + classification.
+        // Non-idle activities — no row cap for accurate reporting.
         $nonIdleActivities = Activity::query()
             ->whereIn('user_id', $userIdCollection)
             ->where(function ($query) {
@@ -162,7 +151,6 @@ class ActivityFeedService
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
             ->orderByDesc('recorded_at')
             ->orderByDesc('id')
-            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get($activityColumns)
             ->map(fn (Activity $activity) => $this->mapActivity($activity));
 
@@ -177,7 +165,6 @@ class ActivityFeedService
             ->orderBy('source')
             ->orderBy('started_at')
             ->orderBy('id')
-            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get();
 
         $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
@@ -199,7 +186,6 @@ class ActivityFeedService
             ->whereIn('time_entry_id', $timeEntryIdCollection)
             ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
-            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get([
                 'id',
                 'user_id',
@@ -226,7 +212,6 @@ class ActivityFeedService
             ->orderBy('source')
             ->orderBy('started_at')
             ->orderBy('id')
-            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get([
                 'id',
                 'user_id',
@@ -400,7 +385,6 @@ class ActivityFeedService
             ->whereIn('time_entry_id', $timeEntryIdCollection)
             ->when($startDate, fn ($query) => $query->where('recorded_at', '>=', $startDate))
             ->when($endDate, fn ($query) => $query->where('recorded_at', '<=', $endDate))
-            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get()
             ->map(fn (Activity $activity) => $this->mapActivity($activity));
 
@@ -413,7 +397,6 @@ class ActivityFeedService
             ->orderBy('source')
             ->orderBy('started_at')
             ->orderBy('id')
-            ->limit(self::MAX_ACTIVITIES_PER_QUERY)
             ->get();
 
         $sessions = $this->mapSessions($sessionModels, $startDate, $endDate);
