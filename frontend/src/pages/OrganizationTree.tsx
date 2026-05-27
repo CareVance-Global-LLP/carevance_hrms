@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  AlertTriangle,
   ChevronDown,
   ChevronRight,
   Crown,
@@ -248,62 +247,42 @@ export default function OrganizationTree() {
       return { admin: null as OrgUser | null, childrenMap: new Map<number, OrgUser[]>(), allIds: [] as number[] };
     }
 
-    // Build parent-child map based on reporting manager AND department.
-    // Only show employees under managers in the same department OR with explicit reporting_manager_id
+    // Build parent-child map purely by hierarchy level.
+    // Each person reports to the nearest higher-ranked person
+    // (same department preferred), creating the visual chain.
     const childrenMap = new Map<number, OrgUser[]>();
-    const unassignedEmployees: OrgUser[] = [];
 
     for (const u of raw) {
       if (u.id === admin.id) continue;
 
-      // Check if employee has an explicit reporting manager set
-      if (u.reporting_manager_id) {
-        // Verify the reporting manager exists in our data
-        const reportingManager = raw.find(v => v.id === u.reporting_manager_id);
-        if (reportingManager) {
-          // Only assign if they're in the same department OR if the manager is admin
-          const sameDept = deptLabel(u.department).toLowerCase() === deptLabel(reportingManager.department).toLowerCase();
-          const isManagerAdmin = reportingManager.hierarchy_level <= 10;
-          
-          if (sameDept || isManagerAdmin) {
-            if (!childrenMap.has(reportingManager.id)) childrenMap.set(reportingManager.id, []);
-            childrenMap.get(reportingManager.id)!.push(u);
-            continue;
-          }
-        }
-      }
-
-      // Find all people with a lower hierarchy_level (higher rank) in the SAME department
-      const userDept = deptLabel(u.department).toLowerCase();
+      // Find all people with a lower hierarchy_level (higher rank)
       const candidates = raw.filter((v) =>
         v.id !== u.id &&
-        v.hierarchy_level < u.hierarchy_level &&
-        deptLabel(v.department).toLowerCase() === userDept
+        v.hierarchy_level < u.hierarchy_level
       );
 
       if (candidates.length === 0) {
-        // No manager in the same department — mark as unassigned
-        unassignedEmployees.push(u);
+        // No one higher ranked — report directly to admin
+        if (!childrenMap.has(admin.id)) childrenMap.set(admin.id, []);
+        childrenMap.get(admin.id)!.push(u);
         continue;
       }
 
       // Sort candidates by hierarchy_level descending (nearest to user first)
       candidates.sort((a, b) => b.hierarchy_level - a.hierarchy_level);
 
-      // Assign to the first candidate (nearest rank in same department)
-      const parent = candidates[0];
+      // Prefer same department
+      const userDept = deptLabel(u.department).toLowerCase();
+      const sameDept = candidates.find((v) =>
+        deptLabel(v.department).toLowerCase() === userDept
+      );
+
+      const parent = sameDept ?? candidates[0];
       if (!childrenMap.has(parent.id)) childrenMap.set(parent.id, []);
       childrenMap.get(parent.id)!.push(u);
     }
 
-    // Add unassigned employees directly under admin with a special marker
-    if (unassignedEmployees.length > 0) {
-      if (!childrenMap.has(admin.id)) childrenMap.set(admin.id, []);
-      // We'll handle unassigned display separately
-    }
-
-    return { admin, childrenMap, unassignedEmployees, allIds: raw.map((u) => u.id) };
-  }, [currentUser, raw]) as { admin: OrgUser | null; childrenMap: Map<number, OrgUser[]>; unassignedEmployees: OrgUser[]; allIds: number[] };
+    return { admin, childrenMap, allIds: raw.map((u) => u.id) };
 
   /* ── Auto-collapse large branches ── */
   useEffect(() => {
@@ -508,35 +487,6 @@ export default function OrganizationTree() {
                 onToggle={toggle}
                 q={q}
               />
-
-              {/* Unassigned employees section */}
-              {tree.unassignedEmployees && tree.unassignedEmployees.length > 0 && (
-                <div className="mt-8 w-full">
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <AlertTriangle className="h-5 w-5 text-amber-500" />
-                      <h3 className="text-sm font-semibold text-amber-800">
-                        Employees Not Assigned to Any Department Manager
-                      </h3>
-                    </div>
-                    <p className="text-xs text-amber-700 mb-3">
-                      These employees are not showing in the hierarchy because they either:
-                      <br />• Don't have a reporting manager in their department
-                      <br />• Are not assigned to any department
-                    </p>
-                    <div className="flex flex-wrap gap-3">
-                      {tree.unassignedEmployees.map((u) => (
-                        <TreeNodeCard
-                          key={u.id}
-                          user={u}
-                          tone={getNodeTone(u)}
-                          matched={q ? matchUser(u, q) : undefined}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
