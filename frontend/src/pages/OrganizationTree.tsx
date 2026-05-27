@@ -283,6 +283,7 @@ export default function OrganizationTree() {
     }
 
     return { admin, childrenMap, allIds: raw.map((u) => u.id) };
+  }, [currentUser, raw]);
 
   /* ── Auto-collapse large branches ── */
   useEffect(() => {
