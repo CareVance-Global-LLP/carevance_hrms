@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlan } from '@/hooks/usePlan';
 import { timeEntryApi, attendanceApi, geofenceApi, employeeDashboardApi, selfieApi } from '@/services/api';
@@ -52,6 +52,7 @@ export default function EmployeeMobileDashboard() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [timerSeconds, setTimerSeconds] = useState(0);
+  const startTimeRef = useRef<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,11 +74,11 @@ export default function EmployeeMobileDashboard() {
       setDashboard(data);
 
       if (data.active_timer) {
-        const elapsed = Math.floor(
-          (Date.now() - new Date(data.active_timer.start_time).getTime()) / 1000
-        );
-        setTimerSeconds(Math.max(0, elapsed));
+        startTimeRef.current = new Date(data.active_timer.start_time).getTime();
+        const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+        setTimerSeconds(Math.max(1, elapsed));
       } else {
+        startTimeRef.current = null;
         setTimerSeconds(0);
       }
     } catch {
@@ -105,15 +106,16 @@ export default function EmployeeMobileDashboard() {
   }, [selfieChecked]);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    if (dashboard?.active_timer) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
+    if (!dashboard?.active_timer || !startTimeRef.current) return;
+
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - startTimeRef.current!) / 1000);
+      setTimerSeconds(Math.max(1, elapsed));
     };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
   }, [dashboard?.active_timer]);
 
   const handleStart = async () => {
