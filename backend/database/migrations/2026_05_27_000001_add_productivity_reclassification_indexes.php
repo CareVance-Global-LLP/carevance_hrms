@@ -9,26 +9,26 @@ return new class extends Migration
     public function up(): void
     {
         if (Schema::hasTable('activities')) {
-            try { DB::statement('ALTER TABLE activities ADD INDEX idx_activities_reclassify (user_id, normalized_domain(50), software_name(50))'); } catch (\Throwable) {}
-            try { DB::statement('ALTER TABLE activities ADD INDEX idx_activities_name_lookup (user_id, name(50))'); } catch (\Throwable) {}
+            try { DB::statement('CREATE INDEX IF NOT EXISTS idx_activities_reclassify ON activities (user_id, normalized_domain, software_name)'); } catch (\Throwable $e) {}
+            try { DB::statement('CREATE INDEX IF NOT EXISTS idx_activities_name_lookup ON activities (user_id, name)'); } catch (\Throwable $e) {}
         }
 
         if (Schema::hasTable('activity_sessions')) {
-            try { DB::statement('ALTER TABLE activity_sessions ADD INDEX idx_sessions_reclassify (user_id, normalized_domain(50), software_name(50))'); } catch (\Throwable) {}
-            try { DB::statement('ALTER TABLE activity_sessions ADD INDEX idx_sessions_name_lookup (user_id, display_name(50))'); } catch (\Throwable) {}
+            try { DB::statement('CREATE INDEX IF NOT EXISTS idx_sessions_reclassify ON activity_sessions (user_id, normalized_domain, software_name)'); } catch (\Throwable $e) {}
+            try { DB::statement('CREATE INDEX IF NOT EXISTS idx_sessions_name_lookup ON activity_sessions (user_id, display_name)'); } catch (\Throwable $e) {}
         }
     }
 
     public function down(): void
     {
         if (Schema::hasTable('activities')) {
-            try { DB::statement('ALTER TABLE activities DROP INDEX idx_activities_reclassify'); } catch (\Throwable) {}
-            try { DB::statement('ALTER TABLE activities DROP INDEX idx_activities_name_lookup'); } catch (\Throwable) {}
+            try { DB::statement('DROP INDEX IF EXISTS idx_activities_reclassify'); } catch (\Throwable) {}
+            try { DB::statement('DROP INDEX IF EXISTS idx_activities_name_lookup'); } catch (\Throwable) {}
         }
 
         if (Schema::hasTable('activity_sessions')) {
-            try { DB::statement('ALTER TABLE activity_sessions DROP INDEX idx_sessions_reclassify'); } catch (\Throwable) {}
-            try { DB::statement('ALTER TABLE activity_sessions DROP INDEX idx_sessions_name_lookup'); } catch (\Throwable) {}
+            try { DB::statement('DROP INDEX IF EXISTS idx_sessions_reclassify'); } catch (\Throwable) {}
+            try { DB::statement('DROP INDEX IF EXISTS idx_sessions_name_lookup'); } catch (\Throwable) {}
         }
     }
 };

@@ -240,7 +240,7 @@ class AuthController extends Controller
                 ->whereNull('end_time')
                 ->update([
                     'end_time' => now(),
-                    'duration' => DB::raw('TIMESTAMPDIFF(SECOND, start_time, NOW())'),
+                    'duration' => DB::raw("EXTRACT(EPOCH FROM (NOW() - start_time))::integer"),
                     'auto_stopped_for_idle' => false,
                 ]);
         }
