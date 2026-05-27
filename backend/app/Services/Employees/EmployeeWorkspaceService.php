@@ -44,7 +44,10 @@ class EmployeeWorkspaceService
         $payrollProfile = $employee->payrollProfile;
         $fallbackReportingManager = User::query()
             ->where('organization_id', $employee->organization_id)
-            ->where('role', 'manager')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<', 100)->where('hierarchy_level', '>', 10))
+                    ->orWhereIn('role', ['admin', 'manager']);
+            })
             ->whereHas('groups', fn ($query) => $query->whereIn('groups.id', $employee->groups->pluck('id')))
             ->orderBy('name')
             ->first(['id', 'name', 'email']);
@@ -140,7 +143,10 @@ class EmployeeWorkspaceService
                     ->get(['id', 'name']),
                 'managers' => User::query()
                     ->where('organization_id', $employee->organization_id)
-                    ->whereIn('role', ['admin', 'manager'])
+                    ->where(function ($q) {
+                        $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<', 100))
+                            ->orWhereIn('role', ['admin', 'manager']);
+                    })
                     ->orderBy('name')
                     ->get(['id', 'name', 'email']),
             ],
@@ -193,7 +199,10 @@ class EmployeeWorkspaceService
 
         return User::query()
             ->where('organization_id', $organizationId)
-            ->where('role', 'manager')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<', 100)->where('hierarchy_level', '>', 10))
+                    ->orWhereIn('role', ['admin', 'manager']);
+            })
             ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
             ->orderBy('name')
             ->value('id');

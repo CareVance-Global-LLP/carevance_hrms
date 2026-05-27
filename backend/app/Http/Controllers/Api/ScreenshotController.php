@@ -29,17 +29,18 @@ class ScreenshotController extends Controller
 
     private function canViewAll(?User $user): bool
     {
-        return $user && in_array($user->role, ['admin', 'manager'], true);
+        return $user && $user->getHierarchyLevel() < 100;
     }
 
     private function canDeleteScreenshots(?User $user): bool
     {
-        return $user?->role === 'admin';
+        return $user?->getHierarchyLevel() <= 10;
     }
 
     private function restrictMonitoringToEmployees(?User $user): bool
     {
-        return $user?->role === 'manager';
+        $level = $user?->getHierarchyLevel() ?? 999;
+        return $level > 10 && $level < 100;
     }
 
     private function managerGroupIds(User $user): array
@@ -513,12 +514,15 @@ class ScreenshotController extends Controller
             return false;
         }
 
-        if ($viewer->role === 'admin') {
+        $viewerLevel = $viewer->getHierarchyLevel();
+        $subjectLevel = $subject->getHierarchyLevel();
+
+        if ($viewerLevel <= 10) {
             return true;
         }
 
-        if ($viewer->role === 'manager') {
-            if ($subject->role !== 'employee') {
+        if ($viewerLevel < 100) {
+            if ($subjectLevel <= $viewerLevel) {
                 return false;
             }
 
@@ -555,12 +559,17 @@ class ScreenshotController extends Controller
                 $query->where('organization_id', $user->organization_id);
                 if ($this->restrictMonitoringToEmployees($user)) {
                     $visibleGroupIds = $this->managerGroupIds($user);
+                    $userLevel = $user->getHierarchyLevel();
                     if (empty($visibleGroupIds)) {
                         $query->whereRaw('1 = 0');
                         return;
                     }
 
-                    $query->where('role', 'employee')
+                    $query->where(function ($q) use ($userLevel) {
+                            $q->whereHas('customRole', fn ($q2) => $q2->where('hierarchy_level', '>', $userLevel))
+                                ->orWhere(fn ($q2) => $q2->whereNull('role_id')
+                                    ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]));
+                        })
                         ->whereHas('groups', fn ($groupQuery) => $groupQuery->whereIn('groups.id', $visibleGroupIds));
                 }
             })

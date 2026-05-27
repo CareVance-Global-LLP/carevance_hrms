@@ -155,9 +155,12 @@ class PayrollWorkspaceController extends Controller
         return response()->json([
             'employees' => User::query()
                 ->where('organization_id', $user->organization_id)
-                ->where('role', 'employee')
+                ->where(function ($q) {
+                    $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                        ->orWhere('role', 'employee');
+                })
                 ->orderBy('name')
-                ->get(['id', 'name', 'email', 'role']),
+                ->get(['id', 'name', 'email', 'role', 'role_id']),
             'templates' => SalaryTemplate::query()
                 ->where('organization_id', $user->organization_id)
                 ->with('components.component')
@@ -284,7 +287,10 @@ class PayrollWorkspaceController extends Controller
         }
 
         return response()->json([
-            'employees' => User::query()->where('organization_id', $user->organization_id)->where('role', 'employee')->orderBy('name')->get(['id', 'name', 'email', 'role']),
+            'employees' => User::query()->where('organization_id', $user->organization_id)->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                    ->orWhere('role', 'employee');
+            })->orderBy('name')->get(['id', 'name', 'email', 'role', 'role_id']),
             'adjustments' => PayrollAdjustment::query()
                 ->where('organization_id', $user->organization_id)
                 ->with(['user', 'reimbursement', 'approvedBy', 'appliedBy', 'rejectedBy', 'appliedRun'])

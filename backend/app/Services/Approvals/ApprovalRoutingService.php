@@ -8,9 +8,15 @@ use Illuminate\Support\Collection;
 
 class ApprovalRoutingService
 {
-    private function normalizeRole(?string $role): string
+    private function userHierarchyLevel(User $user): int
     {
-        return strtolower(trim((string) $role));
+        return $user->customRole?->hierarchy_level ?? match ($user->role) {
+            'super_admin' => 0,
+            'admin' => 10,
+            'manager' => 50,
+            'employee' => 100,
+            default => 999,
+        };
     }
 
     /**
@@ -22,12 +28,23 @@ class ApprovalRoutingService
             return collect();
         }
 
-        return match ($this->normalizeRole($requester->role)) {
-            'employee' => $this->employeeGroupManagerReviewerUserIds($requester),
-            'manager' => $this->organizationRoleIds($requester, 'admin', (int) $requester->id),
-            'admin' => collect(),
-            default => $this->organizationRoleIds($requester, 'admin', (int) $requester->id),
-        };
+        $requesterLevel = $this->userHierarchyLevel($requester);
+
+        // Admins can self-review (no external reviewer needed)
+        if ($requesterLevel <= 10) {
+            return collect();
+        }
+
+        // Find direct reporting manager first (if they are the nearest superior)
+        $directManagerIds = $this->employeeReportingManagerReviewerUserIds($requester);
+
+        // Then find the nearest higher-ranked person in the same department(s)
+        $nearestReviewerIds = $this->nearestHigherRankedReviewerIds($requester, $requesterLevel);
+
+        return $directManagerIds
+            ->concat($nearestReviewerIds)
+            ->unique()
+            ->values();
     }
 
     public function canReview(User $reviewer, User $requester): bool
@@ -36,48 +53,71 @@ class ApprovalRoutingService
             ! $reviewer->organization_id
             || ! $requester->organization_id
             || (int) $reviewer->organization_id !== (int) $requester->organization_id
-            || ! in_array($this->normalizeRole($reviewer->role), ['admin', 'manager'], true)
         ) {
             return false;
         }
 
+        $reviewerLevel = $this->userHierarchyLevel($reviewer);
+        $requesterLevel = $this->userHierarchyLevel($requester);
+
+        // Self-review allowed for admins
         if (
-            $this->normalizeRole($reviewer->role) === 'admin'
-            && $this->normalizeRole($requester->role) === 'admin'
+            $requesterLevel <= 10
             && (int) $reviewer->id === (int) $requester->id
         ) {
             return true;
+        }
+
+        // Reviewer must be higher rank (lower hierarchy_level) than requester
+        if ($reviewerLevel >= $requesterLevel) {
+            return false;
         }
 
         return $this->reviewerUserIds($requester)->contains((int) $reviewer->id);
     }
 
     /**
+     * Find the nearest higher-ranked person in the requester's department(s).
+     * Strict escalation: Employee → Team Lead → Manager → Admin.
      * @return Collection<int, int>
      */
-    private function employeeGroupManagerReviewerUserIds(User $requester): Collection
+    private function nearestHigherRankedReviewerIds(User $requester, int $requesterLevel): Collection
     {
-        $directManagerIds = $this->employeeReportingManagerReviewerUserIds($requester);
         $groupIds = $this->requesterGroupIds($requester);
 
         if ($groupIds->isEmpty()) {
-            return $directManagerIds;
+            return collect();
         }
 
-        $groupManagerIds = User::query()
+        $candidates = User::query()
             ->where('organization_id', $requester->organization_id)
-            ->whereRaw('LOWER(TRIM(role)) = ?', ['manager'])
             ->where('id', '!=', (int) $requester->id)
             ->whereHas('groups', fn ($query) => $query->whereIn('groups.id', $groupIds))
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->unique()
+            ->with('customRole')
+            ->get()
+            ->map(function (User $candidate) {
+                return [
+                    'id' => (int) $candidate->id,
+                    'level' => $this->userHierarchyLevel($candidate),
+                ];
+            })
+            ->filter(fn ($c) => $c['level'] < $requesterLevel)
+            ->sortByDesc('level')
             ->values();
 
-        return $directManagerIds
-            ->concat($groupManagerIds)
-            ->unique()
+        if ($candidates->isEmpty()) {
+            return collect();
+        }
+
+        // Only the nearest superior (highest level that is still below requester)
+        $nearestLevel = $candidates->first()['level'];
+        $nearestIds = $candidates
+            ->filter(fn ($c) => $c['level'] === $nearestLevel)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
             ->values();
+
+        return $nearestIds;
     }
 
     /**
@@ -94,14 +134,24 @@ class ApprovalRoutingService
             return collect();
         }
 
-        return User::query()
+        $manager = User::query()
             ->where('organization_id', $requester->organization_id)
-            ->whereRaw('LOWER(TRIM(role)) IN (?, ?)', ['manager', 'admin'])
-            ->where('id', '!=', (int) $requester->id)
             ->where('id', $reportingManagerId)
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->values();
+            ->with('customRole')
+            ->first();
+
+        if (! $manager) {
+            return collect();
+        }
+
+        $managerLevel = $this->userHierarchyLevel($manager);
+        $requesterLevel = $this->userHierarchyLevel($requester);
+
+        if ($managerLevel >= $requesterLevel) {
+            return collect();
+        }
+
+        return collect([(int) $manager->id]);
     }
 
     /**
@@ -139,7 +189,9 @@ class ApprovalRoutingService
 
     public function hasEligibleReviewer(User $requester): bool
     {
-        if ($this->normalizeRole($requester->role) === 'admin') {
+        $requesterLevel = $this->userHierarchyLevel($requester);
+
+        if ($requesterLevel <= 10) {
             return true;
         }
 
@@ -148,11 +200,64 @@ class ApprovalRoutingService
 
     public function missingReviewerMessage(User $requester): string
     {
-        return match ($this->normalizeRole($requester->role)) {
-            'employee' => 'No manager is assigned to your department yet. Please contact an admin.',
-            'manager' => 'No admin is available to review this request yet. Please contact an admin owner.',
-            default => 'No eligible reviewer is configured for this request.',
-        };
+        $requesterLevel = $this->userHierarchyLevel($requester);
+
+        if ($requesterLevel >= 100) {
+            return 'No team lead is assigned to your department yet. Please contact an admin.';
+        }
+
+        if ($requesterLevel > 50) {
+            return 'No manager is available to review this request yet. Please contact an admin.';
+        }
+
+        if ($requesterLevel > 10) {
+            return 'No admin is available to review this request yet. Please contact an admin owner.';
+        }
+
+        return 'No eligible reviewer is configured for this request.';
+    }
+
+    /**
+     * Return a human label for who will review the requester's submissions.
+     * Strict escalation: Employee → Team Lead → Manager → Admin.
+     */
+    public function reviewerLabel(User $requester, int $reviewerCount = 1): string
+    {
+        $requesterLevel = $this->userHierarchyLevel($requester);
+
+        if ($requesterLevel >= 100) {
+            return $reviewerCount === 1 ? 'your team lead' : 'your team leads';
+        }
+
+        if ($requesterLevel > 50) {
+            return $reviewerCount === 1 ? 'your manager' : 'your managers';
+        }
+
+        if ($requesterLevel > 10) {
+            return $reviewerCount === 1 ? 'an admin' : 'admins';
+        }
+
+        return 'the reviewer';
+    }
+
+    /**
+     * Return hierarchy_levels the reviewer can potentially approve (all levels above their own).
+     * The strict nearest-superior rule is enforced dynamically by reviewerUserIds/canReview.
+     * @return array<int>
+     */
+    public function reviewerHierarchyLevels(User $reviewer): array
+    {
+        $reviewerLevel = $this->userHierarchyLevel($reviewer);
+
+        if ($reviewerLevel <= 10) {
+            return [50, 100, 999];
+        }
+
+        if ($reviewerLevel < 100) {
+            return [100, 999];
+        }
+
+        return [];
     }
 
     /**
@@ -160,14 +265,21 @@ class ApprovalRoutingService
      */
     public function reviewableRequesterIds(User $reviewer): Collection
     {
-        if (! $reviewer->organization_id || ! in_array($this->normalizeRole($reviewer->role), ['admin', 'manager'], true)) {
+        if (! $reviewer->organization_id) {
+            return collect();
+        }
+
+        $reviewerLevel = $this->userHierarchyLevel($reviewer);
+
+        // Only people higher than the reviewer (lower level) can review, not peers or self
+        if ($reviewerLevel >= 100) {
             return collect();
         }
 
         return User::query()
             ->with(['employeeWorkInfo', 'groups:id'])
             ->where('organization_id', $reviewer->organization_id)
-            ->get(['id', 'organization_id', 'role'])
+            ->get(['id', 'organization_id', 'role', 'role_id'])
             ->filter(fn (User $candidate) => $this->canReview($reviewer, $candidate))
             ->pluck('id')
             ->map(fn ($id) => (int) $id)

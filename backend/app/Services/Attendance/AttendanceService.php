@@ -26,28 +26,31 @@ class AttendanceService
             ->all();
     }
 
-    private function visibleUsersQuery(User $user, bool $employeesOnlyForManager = false): Builder
+    private function visibleUsersQuery(User $user, bool $excludeHigherOrEqualRank = false): Builder
     {
         $query = User::query()->where('organization_id', $user->organization_id);
+        $userLevel = $user->getHierarchyLevel();
 
-        if ($user->role === 'admin') {
+        if ($userLevel <= 10) {
             return $query;
         }
 
-        if ($user->role === 'manager') {
-            $groupIds = $this->managerGroupIds($user);
-            if (empty($groupIds)) {
-                return User::query()->whereRaw('1 = 0');
-            }
-
-            if ($employeesOnlyForManager) {
-                $query->where('role', 'employee');
-            }
-
-            return $query->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds));
+        $groupIds = $this->managerGroupIds($user);
+        if (empty($groupIds)) {
+            return User::query()->whereRaw('1 = 0');
         }
 
-        return $query->whereKey($user->id);
+        if ($excludeHigherOrEqualRank) {
+            $query->where(function (Builder $q) use ($userLevel) {
+                $q->whereHas('customRole', fn (Builder $q2) => $q2->where('hierarchy_level', '>', $userLevel))
+                    ->orWhere(function (Builder $q2) use ($userLevel) {
+                        $q2->whereNull('role_id')
+                            ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]);
+                    });
+            });
+        }
+
+        return $query->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds));
     }
 
     public function todayPayload(?User $user, ?int $targetUserId = null): array
@@ -74,7 +77,7 @@ class AttendanceService
                 ];
             }
 
-            $targetUser = $this->visibleUsersQuery($user, $user->role === 'manager')
+            $targetUser = $this->visibleUsersQuery($user, $user->getHierarchyLevel() > 10 && $user->getHierarchyLevel() < 100)
                 ->whereKey($targetUserId)
                 ->first();
 
@@ -244,7 +247,7 @@ class AttendanceService
             return ['status' => 403, 'payload' => ['message' => 'Forbidden']];
         }
 
-        $targetUser = $this->visibleUsersQuery($currentUser, $currentUser->role === 'manager')
+        $targetUser = $this->visibleUsersQuery($currentUser, $currentUser->getHierarchyLevel() > 10 && $currentUser->getHierarchyLevel() < 100)
             ->where('id', $targetUserId)
             ->first();
         if (!$targetUser) {
@@ -405,7 +408,7 @@ class AttendanceService
     {
         $countryFilter = AttendanceHoliday::normalizeCountry((string) $request->get('country', 'ALL'));
 
-        $users = $this->visibleUsersQuery($currentUser, $currentUser->role === 'manager')
+        $users = $this->visibleUsersQuery($currentUser, $currentUser->getHierarchyLevel() > 10 && $currentUser->getHierarchyLevel() < 100)
             ->get(['id', 'settings']);
 
         if ($countryFilter !== 'ALL') {
@@ -624,7 +627,7 @@ class AttendanceService
             [$start, $end] = [$end->copy()->startOfDay(), $start->copy()->endOfDay()];
         }
 
-        $usersQuery = $this->visibleUsersQuery($currentUser, $currentUser->role === 'manager');
+        $usersQuery = $this->visibleUsersQuery($currentUser, $currentUser->getHierarchyLevel() > 10 && $currentUser->getHierarchyLevel() < 100);
         if ($this->canManage($currentUser) && $request->filled('q')) {
             $term = trim((string) $request->q);
             $usersQuery->where(function ($q) use ($term) {
@@ -633,7 +636,7 @@ class AttendanceService
             });
         }
 
-        $users = $usersQuery->orderBy('name')->get(['id', 'name', 'email', 'role']);
+        $users = $usersQuery->orderBy('name')->get(['id', 'name', 'email', 'role', 'role_id']);
         $today = now()->toDateString();
         $approvedLeaveTodayByUserId = LeaveRequest::query()
             ->where('organization_id', $currentUser->organization_id)
@@ -701,7 +704,7 @@ class AttendanceService
     private function resolveTargetUserId(User $currentUser, Request $request): ?int
     {
         if ($this->canManage($currentUser) && $request->filled('user_id')) {
-            $target = $this->visibleUsersQuery($currentUser, $currentUser->role === 'manager')
+            $target = $this->visibleUsersQuery($currentUser, $currentUser->getHierarchyLevel() > 10 && $currentUser->getHierarchyLevel() < 100)
                 ->where('id', (int) $request->user_id)
                 ->first();
 
@@ -713,7 +716,7 @@ class AttendanceService
 
     private function canManage(User $user): bool
     {
-        return in_array($user->role, ['admin', 'manager'], true);
+        return $user->getHierarchyLevel() < 100;
     }
 
     private function decorateRecord(?AttendanceRecord $record, ?LeaveRequest $leaveForDate = null): ?array

@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { deriveDateRangeFromPreset, getDateRangePresetLabel, isDateRangePreset, type DateRangePreset } from '@/lib/dateRange';
 import { resolvePersistedDateRange } from '@/lib/dateRange';
 import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
-import { hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { formatDuration } from '@/lib/formatters';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
@@ -440,7 +440,7 @@ export default function UserManagement() {
                 <h3 className="font-semibold text-gray-900">{u.name}</h3>
                 <p className="text-sm text-gray-500">{u.email}</p>
               </div>
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(u.role)}`}>{u.role}</span>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(u.role)}`}>{resolveUserRoleLabel(u)}</span>
             </div>
             <div className="mt-3 flex items-center justify-between">
               <span className={`text-xs ${u.is_working ? 'text-green-600' : 'text-gray-500'}`}>
@@ -518,7 +518,7 @@ export default function UserManagement() {
               <div className="rounded-lg border border-slate-200 p-4">
                 <h3 className="text-sm font-semibold text-slate-950">Current status</h3>
                 <div className="mt-3 space-y-2 text-sm text-slate-600">
-                  <p>Role: <span className="font-medium text-slate-950">{profile360Query.data.user.role}</span></p>
+                  <p>Role: <span className="font-medium text-slate-950">{resolveUserRoleLabel(profile360Query.data.user)}</span></p>
                   <p>Working now: <span className="font-medium text-slate-950">{profile360Query.data.status.is_working ? 'Yes' : 'No'}</span></p>
                   <p>Current project: <span className="font-medium text-slate-950">{profile360Query.data.status.current_project || 'No active timer'}</span></p>
                   <p>Last seen: <span className="font-medium text-slate-950">{profile360Query.data.status.last_seen_at ? new Date(profile360Query.data.status.last_seen_at).toLocaleString() : 'Unavailable'}</span></p>
@@ -684,7 +684,7 @@ export default function UserManagement() {
         <div className="space-y-2">
           {users.map((u) => (
             <div key={u.id} className="flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2">
-              <div className="text-sm">{u.name} ({u.email}) <span className="text-gray-500">[{u.role}]</span></div>
+              <div className="text-sm">{u.name} ({u.email}) <span className="text-gray-500">[{resolveUserRoleLabel(u)}]</span></div>
               <div className="flex gap-2">
                 <button onClick={() => editUser(u)} className="px-2 py-1 text-xs border border-gray-300 rounded">Edit</button>
                 {isStrictAdmin ? <button onClick={() => removeUser(u.id)} className="px-2 py-1 text-xs border border-red-300 text-red-700 rounded">Delete</button> : null}

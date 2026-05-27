@@ -52,7 +52,7 @@ export const getNotificationSoundType = (notification: AppNotificationItem): Not
 
 export const formatNotificationTitle = (
   notification: AppNotificationItem,
-  user: Pick<User, 'role'> | null | undefined
+  user: Pick<User, 'role' | 'hierarchy_level'> | null | undefined
 ): string => {
   if (isChatNotification(notification)) {
     const senderName = notification.sender?.name || notification.meta?.sender_name || notification.meta?.employee_name;
@@ -72,7 +72,8 @@ export const formatNotificationTitle = (
       notification.title?.toLowerCase().includes('time edit');
 
     const requestType = isLeaveRequest ? 'Leave' : isTimeEdit ? 'Time Edit' : 'Approval';
-    const actionRequired = (user?.role === 'admin' || user?.role === 'manager') ? 'Action Required' : 'Submitted';
+    const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
+    const actionRequired = userLevel < 100 ? 'Action Required' : 'Submitted';
     
     if (senderName) {
       return `${requestType} Request from ${senderName}`;

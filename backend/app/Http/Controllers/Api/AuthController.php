@@ -213,7 +213,17 @@ class AuthController extends Controller
         $user->load('organization');
         $user->loadMissing(['groups', 'employeeProfile']);
 
-        return $this->successResponse($user->toArray());
+        $data = $user->toArray();
+        $data['permissions'] = $this->getUserPermissions($user);
+        $data['role_name'] = $user->customRole?->name ?? ucfirst($user->role ?? 'employee');
+
+        return $this->successResponse($data);
+    }
+
+    private function getUserPermissions(\App\Models\User $user): array
+    {
+        $allPerms = \App\Models\Permission::pluck('key')->all();
+        return array_values(array_filter($allPerms, fn($key) => $user->hasPermission($key)));
     }
 
     public function logout(Request $request)

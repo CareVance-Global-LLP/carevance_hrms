@@ -63,19 +63,26 @@ class UserController extends Controller
                 'groups:id,name,slug',
                 'employeeProfile',
                 'employeeWorkInfo.department:id,name,slug',
+                'customRole',
             ])
-            ->when($currentUser->role === 'manager', function ($query) use ($currentUser) {
+            ->when($currentUser->getHierarchyLevel() > 10 && $currentUser->getHierarchyLevel() < 100, function ($query) use ($currentUser) {
                 $visibleGroupIds = $this->groupIdsForUser($currentUser);
+                $userLevel = $currentUser->getHierarchyLevel();
 
-                return $query->where(function ($scopedQuery) use ($currentUser, $visibleGroupIds) {
+                return $query->where(function ($scopedQuery) use ($currentUser, $visibleGroupIds, $userLevel) {
                     $scopedQuery->where('id', $currentUser->id)
-                        ->orWhere(function ($employeeQuery) use ($visibleGroupIds) {
-                            $employeeQuery->where('role', 'employee')
-                                ->whereHas('groups', fn ($groupQuery) => $groupQuery->whereIn('groups.id', $visibleGroupIds));
+                        ->orWhere(function ($employeeQuery) use ($visibleGroupIds, $userLevel) {
+                            $employeeQuery->where(function ($q) use ($userLevel) {
+                                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>', $userLevel))
+                                    ->orWhere(function ($q2) use ($userLevel) {
+                                        $q2->whereNull('role_id')
+                                            ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]);
+                                    });
+                            })->whereHas('groups', fn ($groupQuery) => $groupQuery->whereIn('groups.id', $visibleGroupIds));
                         });
                 });
             })
-            ->when(!in_array($currentUser->role, ['admin', 'manager'], true), fn ($query) => $query->where('id', $currentUser->id))
+            ->when($currentUser->getHierarchyLevel() >= 100, fn ($query) => $query->where('id', $currentUser->id))
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -92,6 +99,14 @@ class UserController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'role' => $user->role,
+                    'role_id' => $user->role_id,
+                    'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
+                    'hierarchy_level' => $user->customRole?->hierarchy_level ?? match ($user->role) {
+                        'admin' => 10,
+                        'manager' => 50,
+                        'employee' => 100,
+                        default => 100,
+                    },
                     'reporting_manager_id' => $user->employeeWorkInfo?->reporting_manager_id
                         ? (int) $user->employeeWorkInfo->reporting_manager_id
                         : null,
@@ -160,6 +175,13 @@ class UserController extends Controller
                 'total_elapsed_duration' => $storedTotalDuration + (int) $currentDuration,
                 'department' => trim($departmentName),
                 'timezone' => $timezone,
+                'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
+                'hierarchy_level' => $user->customRole?->hierarchy_level ?? match ($user->role) {
+                    'admin' => 10,
+                    'manager' => 50,
+                    'employee' => 100,
+                    default => 100,
+                },
             ]);
         });
 
@@ -277,6 +299,7 @@ class UserController extends Controller
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|string|email|max:255|unique:users,email,' . $user->id,
             'role' => 'sometimes|in:admin,manager,employee,client',
+            'role_id' => 'nullable|integer|exists:roles,id',
             'settings' => 'nullable|array',
             'settings.monitoring_interval_minutes' => 'nullable|integer|in:1,3,5,10,15,30',
             'settings.can_edit_time' => 'nullable|boolean',
@@ -291,13 +314,16 @@ class UserController extends Controller
             $actor = $request->user();
             $isSelfRoleChange = $actor && (int) $actor->id === (int) $user->id;
 
-            if ($actor?->role === 'manager') {
+            // When assigning a default string role, clear any custom role_id
+            $validated['role_id'] = null;
+
+            if ($actor?->getHierarchyLevel() > 10 && $actor?->getHierarchyLevel() < 100) {
                 throw ValidationException::withMessages([
                     'role' => ['Managers are not allowed to change user roles.'],
                 ]);
             }
 
-            if ($isSelfRoleChange && $actor->role === 'admin' && $validated['role'] !== 'admin') {
+            if ($isSelfRoleChange && $actor->getHierarchyLevel() <= 10 && $validated['role'] !== 'admin') {
                 throw ValidationException::withMessages([
                     'role' => ['Admin users cannot demote themselves.'],
                 ]);
@@ -497,7 +523,10 @@ class UserController extends Controller
         $workInfo = $user->employeeWorkInfo;
         $fallbackReportingManager = User::query()
             ->where('organization_id', $currentUser->organization_id)
-            ->where('role', 'manager')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<', 100)->where('hierarchy_level', '>', 10))
+                    ->orWhere('role', 'manager');
+            })
             ->whereHas('groups', fn ($query) => $query->whereIn('groups.id', $groupMembershipModels->pluck('id')))
             ->orderBy('name')
             ->first(['id', 'name', 'email']);
@@ -725,7 +754,7 @@ class UserController extends Controller
             return false;
         }
 
-        if ($currentUser->role === 'admin') {
+        if ($currentUser->getHierarchyLevel() <= 10) {
             return true;
         }
 
@@ -733,8 +762,8 @@ class UserController extends Controller
             return true;
         }
 
-        if ($currentUser->role === 'manager') {
-            return $user->role === 'employee' && $this->usersShareAGroup($currentUser, $user);
+        if ($currentUser->getHierarchyLevel() < 100) {
+            return $user->getHierarchyLevel() > $currentUser->getHierarchyLevel() && $this->usersShareAGroup($currentUser, $user);
         }
 
         return false;
@@ -742,12 +771,12 @@ class UserController extends Controller
 
     private function canManageUsers(User $user): bool
     {
-        return in_array($user->role, ['admin', 'manager'], true);
+        return $user->getHierarchyLevel() < 100;
     }
 
     private function canDeleteUsers(?User $user): bool
     {
-        return $user?->role === 'admin';
+        return $user?->getHierarchyLevel() <= 10;
     }
 
     /**
@@ -769,7 +798,7 @@ class UserController extends Controller
             'can_edit_time' => array_key_exists('can_edit_time', $settings)
                 ? filter_var($settings['can_edit_time'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false
                 : true,
-            'payroll_visibility' => $role === 'employee'
+            'payroll_visibility' => $role !== 'admin' && $role !== 'manager'
                 ? false
                 : (
                     array_key_exists('payroll_visibility', $settings)
@@ -785,7 +814,7 @@ class UserController extends Controller
     private function syncPrimaryGroup(User $user, array $groupIds, array $previousGroupIds = []): void
     {
         $primaryGroupId = $groupIds[0] ?? null;
-        $reportingManagerId = $user->role === 'employee'
+        $reportingManagerId = $user->getHierarchyLevel() >= 100
             ? $this->resolveGroupManagerId($user->organization_id, $primaryGroupId)
             : null;
 
@@ -800,7 +829,7 @@ class UserController extends Controller
             ]
         );
 
-        if ($user->role === 'manager') {
+        if ($user->getHierarchyLevel() < 100) {
             collect(array_merge($previousGroupIds, $groupIds))
                 ->filter(fn ($groupId) => (int) $groupId > 0)
                 ->unique()
@@ -810,7 +839,7 @@ class UserController extends Controller
 
     private function assertSingleGroupMembershipLimit(string $role, array $groupIds): void
     {
-        if (in_array($role, ['employee', 'manager'], true) && count($groupIds) > 1) {
+        if ($role !== 'admin' && count($groupIds) > 1) {
             throw ValidationException::withMessages([
                 'group_ids' => ['Managers and employees can belong to only one department at a time.'],
             ]);
@@ -846,7 +875,10 @@ class UserController extends Controller
 
         return User::query()
             ->where('organization_id', $organizationId)
-            ->where('role', 'manager')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<', 100)->where('hierarchy_level', '>', 10))
+                    ->orWhere('role', 'manager');
+            })
             ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
             ->orderBy('name')
             ->value('id');
@@ -857,7 +889,10 @@ class UserController extends Controller
         $managerId = $this->resolveGroupManagerId($organizationId, $groupId);
         $employeeIds = User::query()
             ->where('organization_id', $organizationId)
-            ->where('role', 'employee')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                    ->orWhere('role', 'employee');
+            })
             ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
             ->pluck('id');
 

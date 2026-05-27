@@ -894,7 +894,7 @@ export const leaveApi = {
       }>;
       approval_scope: {
         can_manage: boolean;
-        can_approve_roles: string[];
+        can_approve_levels: number[];
       };
     }>('/leave-requests/balances'),
 
@@ -1240,7 +1240,15 @@ export const reportGroupApi = {
         id: number;
         organization_id: number;
         name: string;
-        users: Array<{ id: number; name?: string; email?: string; role?: string }>;
+        users: Array<{
+          id: number;
+          name?: string;
+          email?: string;
+          role?: string;
+          role_id?: number | null;
+          role_name?: string;
+          hierarchy_level?: number;
+        }>;
       }>;
     }>('/report-groups', { params }),
 
@@ -1389,6 +1397,64 @@ export const auditApi = {
         total: number;
       } | null;
     }>('/audit-logs', { params }),
+};
+
+// Roles & Permissions API
+export const roleApi = {
+  list: () =>
+    api.get<{ data: Array<{
+      id: number;
+      name: string;
+      slug: string;
+      description: string | null;
+      hierarchy_level: number;
+      is_system: boolean;
+      is_active: boolean;
+      users_count: number;
+      permissions: string[];
+      created_at: string;
+      updated_at: string;
+    }> }>('/roles'),
+
+  show: (id: number) =>
+    api.get<{ data: {
+      id: number;
+      name: string;
+      slug: string;
+      description: string | null;
+      hierarchy_level: number;
+      is_system: boolean;
+      is_active: boolean;
+      users_count: number;
+      permissions: string[];
+      created_at: string;
+      updated_at: string;
+    } }>(`/roles/${id}`),
+
+  create: (data: { name: string; description?: string; hierarchy_level: number; permissions?: string[] }) =>
+    api.post<{ data: any }>('/roles', data),
+
+  update: (id: number, data: { name?: string; description?: string; hierarchy_level?: number; is_active?: boolean; permissions?: string[] }) =>
+    api.put<{ data: any }>(`/roles/${id}`, data),
+
+  delete: (id: number) =>
+    api.delete(`/roles/${id}`),
+
+  assignUser: (data: { user_id: number; role_id: number | null }) =>
+    api.post('/roles/assign-user', data),
+};
+
+export const permissionApi = {
+  list: () =>
+    api.get<{ data: Array<{
+      group: string;
+      permissions: Array<{
+        key: string;
+        name: string;
+        description: string | null;
+        plan_feature: string | null;
+      }>;
+    }> }>('/permissions'),
 };
 
 export default api;

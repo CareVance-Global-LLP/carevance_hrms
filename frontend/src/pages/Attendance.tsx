@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { canReviewApprovalRequest, hasAdminAccess } from '@/lib/permissions';
+import { canReviewApprovalRequest, hasAdminAccess, resolveUserHierarchyLevel, resolveUserRoleLabel } from '@/lib/permissions';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -996,6 +996,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
   const selectedRow = rows.find((row) => row.user.id === selectedUserId) || rows[0];
   const employeePanelUser = employeeProfile?.user || user;
+  const employeePanelRoleLabel = employeePanelUser ? resolveUserRoleLabel(employeePanelUser) : '';
   const attendancePanelUser = isAdmin ? selectedRow?.user : employeePanelUser;
   const monitoringUserId = canSeeAttendanceMonitoring ? selectedUserId : null;
   const canReviewLeaveRequest = (item: any) => canReviewApprovalRequest(user, item?.user);
@@ -1019,8 +1020,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const leaveTeamRows = useMemo(
     () => leaveTeamBalances
       .filter((row: any) => {
-        const role = String(row?.user?.role || '').toLowerCase();
-        return role === 'employee' || role === 'manager';
+        const level = resolveUserHierarchyLevel(row?.user);
+        return level !== null && level >= 50;
       })
       .sort((left: any, right: any) => String(left?.user?.name || '').localeCompare(String(right?.user?.name || ''))),
     [leaveTeamBalances]
@@ -1282,7 +1283,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         .map((category: any) => `${category.name}: ${Number(category.remaining || 0).toFixed(1)}`)
                         .join(' | ');
                       const managerName = row.user?.reporting_manager?.name || 'Unassigned';
-                      const role = String(row.user?.role || 'employee');
+                      const role = resolveUserRoleLabel(row.user) || 'Employee';
 
                       return (
                         <tr key={row.user?.id}>
@@ -1643,7 +1644,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
                   {employeePanelUser?.email || 'No email available'}
-                  {employeePanelUser?.role ? <span className="ml-2 capitalize">• {employeePanelUser.role}</span> : null}
+                  {employeePanelRoleLabel ? <span className="ml-2 capitalize">• {employeePanelRoleLabel}</span> : null}
                 </p>
                 <p className="mt-2 text-sm text-slate-600">
                   {organization?.name || 'Organization workspace'}

@@ -24,11 +24,6 @@ class LeaveRequestController extends Controller
     ) {
     }
 
-    private function normalizeRole(?string $role): string
-    {
-        return strtolower(trim((string) $role));
-    }
-
     public function index(Request $request)
     {
         $request->validate([
@@ -46,7 +41,12 @@ class LeaveRequestController extends Controller
 
         LeaveRequest::expirePendingRequestsForOrganization((int) $currentUser->organization_id);
 
-        $query = LeaveRequest::with(['user:id,name,email,role,organization_id', 'reviewer:id,name,email', 'revokeReviewer:id,name,email'])
+        $query = LeaveRequest::with([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'revokeReviewer:id,name,email',
+            ])
             ->where('organization_id', $currentUser->organization_id)
             ->orderByDesc('created_at');
 
@@ -108,20 +108,22 @@ class LeaveRequestController extends Controller
         if ($this->canManage($currentUser)) {
             $teamUsersQuery = User::query()
                 ->where('organization_id', $currentUser->organization_id)
-                ->whereRaw('LOWER(TRIM(role)) IN (?, ?)', ['employee', 'manager'])
+                ->where('id', '!=', (int) $currentUser->id)
                 ->with(['groups:id,name', 'employeeWorkInfo.department:id,name', 'employeeWorkInfo.reportingManager:id,name,email'])
                 ->orderBy('name');
 
-            if ($this->normalizeRole($currentUser->role) === 'manager') {
-                $reviewableUserIds = $this->approvalRoutingService
-                    ->reviewableRequesterIds($currentUser)
-                    ->unique()
-                    ->values();
+            $reviewableUserIds = $this->approvalRoutingService
+                ->reviewableRequesterIds($currentUser)
+                ->unique()
+                ->values();
 
+            if ($reviewableUserIds->isNotEmpty()) {
                 $teamUsersQuery->whereIn('id', $reviewableUserIds);
+            } else {
+                $teamUsersQuery->whereRaw('0 = 1');
             }
 
-            $teamUsers = $teamUsersQuery->get(['id', 'name', 'email', 'role', 'organization_id']);
+            $teamUsers = $teamUsersQuery->get(['id', 'name', 'email', 'role', 'role_id', 'organization_id']);
 
             $teamBalances = $teamUsers->map(function (User $teamUser) use ($policyCategories) {
                 $departmentName = (string) (
@@ -163,9 +165,7 @@ class LeaveRequestController extends Controller
             'team' => $teamBalances,
             'approval_scope' => [
                 'can_manage' => $this->canManage($currentUser),
-                'can_approve_roles' => $this->normalizeRole($currentUser->role) === 'manager'
-                    ? ['employee']
-                    : ($this->normalizeRole($currentUser->role) === 'admin' ? ['manager'] : []),
+                'can_approve_levels' => $this->approvalRoutingService->reviewerHierarchyLevels($currentUser),
             ],
         ]);
     }
@@ -247,7 +247,12 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave request submitted.',
-            'data' => $this->withApprovalDestination($leave->load(['user:id,name,email,role,organization_id', 'reviewer:id,name,email', 'revokeReviewer:id,name,email'])),
+            'data' => $this->withApprovalDestination($leave->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'revokeReviewer:id,name,email',
+            ])),
         ], 201);
     }
 
@@ -325,11 +330,19 @@ class LeaveRequestController extends Controller
             request: $request
         );
 
-        $this->sendReviewNotification($leave->fresh()->load(['user:id,name,email,role']), $currentUser, 'approved');
+        $this->sendReviewNotification($leave->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+            ]), $currentUser, 'approved');
 
         return response()->json([
             'message' => 'Leave request approved.',
-            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+            'data' => $leave->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'revokeReviewer:id,name,email',
+            ]),
         ]);
     }
 
@@ -383,11 +396,19 @@ class LeaveRequestController extends Controller
             request: $request
         );
 
-        $this->sendReviewNotification($leave->fresh()->load(['user:id,name,email,role']), $currentUser, 'rejected');
+        $this->sendReviewNotification($leave->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+            ]), $currentUser, 'rejected');
 
         return response()->json([
             'message' => 'Leave request rejected.',
-            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+            'data' => $leave->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'revokeReviewer:id,name,email',
+            ]),
         ]);
     }
 
@@ -438,7 +459,12 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave revoke request submitted.',
-            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+            'data' => $leave->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'revokeReviewer:id,name,email',
+            ]),
         ]);
     }
 
@@ -490,7 +516,12 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave revoke request approved.',
-            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+            'data' => $leave->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'revokeReviewer:id,name,email',
+            ]),
         ]);
     }
 
@@ -539,7 +570,12 @@ class LeaveRequestController extends Controller
 
         return response()->json([
             'message' => 'Leave revoke request rejected.',
-            'data' => $leave->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email', 'revokeReviewer:id,name,email']),
+            'data' => $leave->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'revokeReviewer:id,name,email',
+            ]),
         ]);
     }
 
@@ -593,7 +629,7 @@ class LeaveRequestController extends Controller
 
     private function canManage(User $user): bool
     {
-        return in_array($this->normalizeRole($user->role), ['admin', 'manager'], true);
+        return ! empty($this->approvalRoutingService->reviewerHierarchyLevels($user));
     }
 
     private function sendSubmissionNotification(LeaveRequest $leave, User $requester): void
@@ -645,11 +681,7 @@ class LeaveRequestController extends Controller
             ->filter()
             ->values();
 
-        $reviewerLabel = match ($this->normalizeRole($leave->user->role)) {
-            'employee' => $reviewerNames->count() === 1 ? 'your department manager' : 'your department managers',
-            'manager' => $reviewerNames->count() === 1 ? 'an admin' : 'admins',
-            default => 'the reviewer',
-        };
+        $reviewerLabel = $this->approvalRoutingService->reviewerLabel($leave->user, $reviewerNames->count());
 
         $leave->setAttribute(
             'approval_destination',

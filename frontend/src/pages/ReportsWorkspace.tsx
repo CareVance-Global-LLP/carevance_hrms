@@ -558,8 +558,14 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     },
   });
   const users = useMemo(
-    () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
-    [user?.role, usersQuery.data]
+    () => {
+      const currentUserLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
+      return (usersQuery.data || []).filter((employee: any) => {
+        const employeeLevel = employee.hierarchy_level ?? (employee.role === 'admin' ? 10 : employee.role === 'manager' ? 50 : 100);
+        return currentUserLevel <= 10 || Number(employee.id) === Number(user?.id) || employeeLevel > currentUserLevel;
+      });
+    },
+    [user, usersQuery.data]
   );
   const groups = groupsQuery.data || [];
   const canUseGroupFilters = groupsQuery.isSuccess;

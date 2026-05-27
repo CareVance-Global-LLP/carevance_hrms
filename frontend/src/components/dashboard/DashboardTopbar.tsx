@@ -8,6 +8,7 @@ import type { NavGroup } from '@/navigation/dashboardNavigation';
 import BrandLogo from '@/components/branding/BrandLogo';
 import { cn } from '@/utils/cn';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
+import { resolveUserRoleLabel } from '@/lib/permissions';
 
 interface DashboardTopbarProps {
   user?: User | null;
@@ -183,7 +184,7 @@ export default function DashboardTopbar({
                   ) : null}
                   <div className="min-w-0 text-left">
                     <p className="max-w-[7rem] truncate text-sm font-semibold contrast-text-primary sm:max-w-[9rem]">{user?.name || 'Admin'}</p>
-                    <p className="hidden text-xs capitalize contrast-text-muted sm:block">{user?.role || 'user'}</p>
+                    <p className="hidden text-xs capitalize contrast-text-muted sm:block">{resolveUserRoleLabel(user)}</p>
                   </div>
                 </button>
                 {profilePanel}

@@ -437,7 +437,7 @@ class TimeEntryController extends Controller
 
     private function canViewOrganizationEntries(User $user): bool
     {
-        return (bool) $user->organization_id && in_array($user->role, ['admin', 'manager'], true);
+        return (bool) $user->organization_id && $user->getHierarchyLevel() < 100;
     }
 
     private function ensureAttendanceCheckedIn($user)
@@ -604,7 +604,7 @@ class TimeEntryController extends Controller
         $taskId = $request->exists('task_id')
             ? ($request->task_id ? (int) $request->task_id : null)
             : ($existingEntry?->task_id ? (int) $existingEntry->task_id : null);
-        $assignedProjectIds = $user->role === 'employee'
+        $assignedProjectIds = $user->getHierarchyLevel() >= 100
             ? $user->assignedProjects()
                 ->pluck('projects.id')
                 ->map(fn ($id) => (int) $id)
@@ -777,7 +777,7 @@ class TimeEntryController extends Controller
             return;
         }
 
-        if ($user->role === 'employee') {
+        if ($user->getHierarchyLevel() >= 100) {
             if ($task->status !== 'todo') {
                 $task->update(['status' => 'todo']);
             }

@@ -273,6 +273,10 @@ class ProductivityClassificationController extends Controller
             return response()->json(['message' => 'No organization found'], 400);
         }
 
+        if (!$user->hasPermission('productivity.manage')) {
+            return response()->json(['message' => 'Forbidden: productivity.manage permission required'], 403);
+        }
+
         $validated = $request->validate([
             'target_type' => 'required|in:domain,app',
             'target_value' => 'required|string|max:255',
@@ -316,6 +320,10 @@ class ProductivityClassificationController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        if (!$user->hasPermission('productivity.manage')) {
+            return response()->json(['message' => 'Forbidden: productivity.manage permission required'], 403);
+        }
+
         $validated = $request->validate([
             'classification' => 'required|in:productive,unproductive,neutral',
         ]);
@@ -336,6 +344,10 @@ class ProductivityClassificationController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        if (!$user->hasPermission('productivity.manage')) {
+            return response()->json(['message' => 'Forbidden: productivity.manage permission required'], 403);
+        }
+
         $targetType = $classification->target_type;
         $targetValue = $classification->target_value;
         $organizationId = (int) $classification->organization_id;
@@ -353,6 +365,10 @@ class ProductivityClassificationController extends Controller
         $organizationId = (int) ($user->organization_id ?? 0);
         if ($organizationId <= 0) {
             return response()->json(['message' => 'No organization found'], 400);
+        }
+
+        if (!$user->hasPermission('productivity.manage')) {
+            return response()->json(['message' => 'Forbidden: productivity.manage permission required'], 403);
         }
 
         $validated = $request->validate([

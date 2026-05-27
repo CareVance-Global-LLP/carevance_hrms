@@ -70,9 +70,12 @@ class PayrollController extends Controller
         }
 
         $users = User::where('organization_id', $currentUser->organization_id)
-            ->where('role', 'employee')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                    ->orWhere('role', 'employee');
+            })
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'role']);
+            ->get(['id', 'name', 'email', 'role', 'role_id']);
 
         return response()->json(['data' => $users]);
     }
@@ -126,7 +129,10 @@ class PayrollController extends Controller
 
         $periodStart = Carbon::createFromFormat('Y-m', $request->payroll_month)->startOfMonth();
         $employees = User::where('organization_id', $currentUser->organization_id)
-            ->where('role', 'employee')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                    ->orWhere('role', 'employee');
+            })
             ->when($request->filled('user_id'), fn ($q) => $q->where('id', (int) $request->user_id))
             ->orderBy('name')
             ->get();

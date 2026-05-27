@@ -40,6 +40,7 @@ const SupportPage = lazyWithChunkRetry(() => import('@/pages/SupportPage'));
 const AcceptInvitePage = lazyWithChunkRetry(() => import('@/pages/AcceptInvitePage'));
 const EmployeeMobileDashboard = lazyWithChunkRetry(() => import('@/pages/EmployeeMobileDashboard'));
 const GeofenceSettings = lazyWithChunkRetry(() => import('@/pages/GeofenceSettings'));
+const RoleManagement = lazyWithChunkRetry(() => import('@/pages/RoleManagement'));
 const SelfieMapView = lazyWithChunkRetry(() => import('@/pages/SelfieMapView'));
 const Layout = lazyWithChunkRetry(() => import('@/components/Layout'));
 const Login = lazyWithChunkRetry(() => import('@/pages/Login'));
@@ -235,7 +236,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   const requiresOnboarding = Boolean(
     user
-    && ['admin', 'manager', 'employee'].includes(String(user.role || '').toLowerCase())
+    && (user.hierarchy_level ?? (user.role === 'admin' ? 10 : user.role === 'manager' ? 50 : user.role === 'employee' ? 100 : 999)) < 999
     && user.organization_id
   );
   const onboardingCompleted = Boolean(
@@ -519,6 +520,7 @@ function App() {
             <Route path="settings/custom-fields" element={<Settings />} />
             <Route path="settings/billing" element={<AdminRoute><BillingSettingsPage /></AdminRoute>} />
             <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
+            <Route path="settings/roles" element={<AdminRoute><RoleManagement /></AdminRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />

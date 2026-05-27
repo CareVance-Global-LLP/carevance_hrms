@@ -5,6 +5,9 @@ export interface User {
   email: string;
   email_verified_at?: string | null;
   role: 'admin' | 'manager' | 'employee' | 'client' | 'super_admin';
+  role_id?: number | null;
+  role_name?: string | null;
+  hierarchy_level?: number | null;
   organization_id: number | null;
   invited_by?: number | null;
   avatar?: string | null;
@@ -18,6 +21,7 @@ export interface User {
   settings?: Record<string, any>;
   employee_profile?: EmployeeProfileDetails | null;
   groups?: Group[];
+  permissions?: string[];
   created_at: string;
   updated_at: string;
 }

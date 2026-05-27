@@ -22,11 +22,6 @@ class AttendanceTimeEditRequestController extends Controller
     ) {
     }
 
-    private function normalizeRole(?string $role): string
-    {
-        return strtolower(trim((string) $role));
-    }
-
     public function index(Request $request)
     {
         $request->validate([
@@ -39,7 +34,11 @@ class AttendanceTimeEditRequestController extends Controller
             return response()->json(['data' => []]);
         }
 
-        $query = AttendanceTimeEditRequest::with(['user:id,name,email,role,organization_id', 'reviewer:id,name,email'])
+        $query = AttendanceTimeEditRequest::with([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+            ])
             ->where('organization_id', $currentUser->organization_id)
             ->orderByDesc('created_at');
 
@@ -182,7 +181,11 @@ class AttendanceTimeEditRequestController extends Controller
 
         return response()->json([
             'message' => $this->submissionMessage($currentUser, $reviewers->pluck('name')->all()),
-            'data' => $this->withApprovalDestination($created->load(['user:id,name,email,role,organization_id', 'reviewer:id,name,email'])),
+            'data' => $this->withApprovalDestination($created->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+            ])),
         ], 201);
     }
 
@@ -225,7 +228,11 @@ class AttendanceTimeEditRequestController extends Controller
         $record->save();
 
         $this->sendReviewNotification(
-            item: $item->fresh(['user:id,name,email,role', 'reviewer:id,name,email']),
+            item: $item->fresh([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+            ]),
             reviewer: $currentUser,
             status: 'approved'
         );
@@ -244,7 +251,11 @@ class AttendanceTimeEditRequestController extends Controller
 
         return response()->json([
             'message' => 'Time edit request approved and applied.',
-            'data' => $item->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+            'data' => $item->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+            ]),
         ]);
     }
 
@@ -279,7 +290,11 @@ class AttendanceTimeEditRequestController extends Controller
         ]);
 
         $this->sendReviewNotification(
-            item: $item->fresh(['user:id,name,email,role', 'reviewer:id,name,email']),
+            item: $item->fresh([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+            ]),
             reviewer: $currentUser,
             status: 'rejected'
         );
@@ -298,13 +313,17 @@ class AttendanceTimeEditRequestController extends Controller
 
         return response()->json([
             'message' => 'Time edit request rejected.',
-            'data' => $item->fresh()->load(['user:id,name,email,role', 'reviewer:id,name,email']),
+            'data' => $item->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+            ]),
         ]);
     }
 
     private function canManage(User $user): bool
     {
-        return in_array($this->normalizeRole($user->role), ['admin', 'manager'], true);
+        return ! empty($this->approvalRoutingService->reviewerHierarchyLevels($user));
     }
 
     private function shiftTargetSeconds(): int
@@ -330,11 +349,7 @@ class AttendanceTimeEditRequestController extends Controller
             ->filter()
             ->values();
 
-        $reviewerLabel = match ($this->normalizeRole($requester->role)) {
-            'employee' => $names->count() === 1 ? 'your department manager' : 'your department managers',
-            'manager' => $names->count() === 1 ? 'an admin' : 'admins',
-            default => 'the reviewer',
-        };
+        $reviewerLabel = $this->approvalRoutingService->reviewerLabel($requester, $names->count());
 
         if ($names->isEmpty()) {
             return sprintf('Time edit request submitted and sent to %s.', $reviewerLabel);
@@ -362,11 +377,7 @@ class AttendanceTimeEditRequestController extends Controller
             ->filter()
             ->values();
 
-        $reviewerLabel = match ($this->normalizeRole($item->user->role)) {
-            'employee' => $reviewerNames->count() === 1 ? 'your department manager' : 'your department managers',
-            'manager' => $reviewerNames->count() === 1 ? 'an admin' : 'admins',
-            default => 'the reviewer',
-        };
+        $reviewerLabel = $this->approvalRoutingService->reviewerLabel($item->user, $reviewerNames->count());
 
         $item->setAttribute(
             'approval_destination',

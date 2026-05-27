@@ -332,7 +332,7 @@ class TaskController extends Controller
     {
         $query = Task::query();
         $this->groupAccessService->applyTaskVisibilityScope($query, $user);
-        if ($user->role === 'employee') {
+        if ($user->getHierarchyLevel() >= 100) {
             $assignedProjectIds = $this->assignedProjectIds($user);
 
             if (!empty($assignedProjectIds)) {

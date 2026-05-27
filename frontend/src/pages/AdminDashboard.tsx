@@ -265,7 +265,7 @@ const normalizeEmployee = (item: any): DashboardEmployee => {
     name: profile?.display_name || item?.name || 'Unnamed employee',
     email: item?.email || '',
     department,
-    position: workInfo?.designation || item?.position || item?.designation || item?.job_title || item?.role || 'Not set',
+    position: workInfo?.designation || item?.position || item?.designation || item?.job_title || item?.role_name || item?.role || 'Not set',
     status: item?.is_active === false || ['inactive', 'exited', 'terminated'].includes(employmentStatus) ? 'Inactive' : 'Active',
     is_working: Boolean(item?.is_working),
     current_duration: Number(item?.current_duration || 0),

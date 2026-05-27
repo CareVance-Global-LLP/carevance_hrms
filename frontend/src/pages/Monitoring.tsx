@@ -86,7 +86,7 @@ const readPersistedMonitoringFilters = (): PersistedMonitoringFilters => {
 };
 export default function Monitoring() {
   const { user } = useAuth();
-  const canDeleteScreenshots = user?.role === 'admin';
+  const canDeleteScreenshots = (user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : 999)) <= 10;
   const [query, setQuery] = useState(() => readPersistedMonitoringFilters().query);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringFilters().datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedMonitoringFilters().startDate);

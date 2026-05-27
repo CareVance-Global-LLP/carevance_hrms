@@ -400,7 +400,8 @@ class InvitationService
             }
         }
 
-        if ($role === 'employee') {
+        $lowerRole = strtolower(trim($role));
+        if (in_array($lowerRole, ['employee', 'contractor'], true)) {
             $normalized['payroll_visibility'] = false;
         }
 

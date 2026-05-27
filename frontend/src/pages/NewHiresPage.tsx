@@ -9,6 +9,7 @@ import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/u
 import { Search, UserPlus, Calendar, Mail, Building2, Clock, ArrowLeft, Download } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { formatDate } from '@/lib/dateTime';
+import { resolveUserRoleLabel } from '@/lib/permissions';
 
 interface HireRecord {
   id: number;
@@ -263,7 +264,7 @@ export default function NewHiresPage() {
                         </td>
                         <td className="px-4 py-3">
                           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 capitalize">
-                            {employee.role}
+                            {resolveUserRoleLabel(employee)}
                           </span>
                         </td>
                         <td className="px-4 py-3">

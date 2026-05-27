@@ -19,10 +19,19 @@ class RoleMiddleware
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        $rolesArray = explode(',', $roles);
-        $rolesArray = array_map('trim', $rolesArray);
+        $rolesArray = array_map('trim', explode(',', $roles));
+        $userLevel = $user->getHierarchyLevel();
 
-        if (!in_array($user->role, $rolesArray)) {
+        $hasAccess = collect($rolesArray)->contains(function (string $allowedRole) use ($userLevel) {
+            return match (strtolower($allowedRole)) {
+                'admin' => $userLevel <= 10,
+                'manager' => $userLevel < 100,
+                'employee' => $userLevel >= 100,
+                default => false,
+            };
+        });
+
+        if (!$hasAccess) {
             return response()->json([
                 'message' => 'Access denied. Required roles: ' . $roles
             ], 403);

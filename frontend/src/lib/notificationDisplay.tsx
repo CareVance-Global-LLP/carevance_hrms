@@ -78,9 +78,10 @@ export const isApprovalNotification = (notification: AppNotificationItem | null 
 
 export const resolveNotificationRoute = (
   notification: AppNotificationItem,
-  user: Pick<User, 'role'> | null | undefined
+  user: Pick<User, 'role' | 'hierarchy_level'> | null | undefined
 ): string => {
-  if ((user?.role === 'admin' || user?.role === 'manager') && isApprovalNotification(notification)) {
+  const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
+  if (userLevel < 100 && isApprovalNotification(notification)) {
     const type = String(notification?.type || '').trim().toLowerCase();
     const title = String(notification?.title || '').trim().toLowerCase();
 
@@ -96,5 +97,8 @@ export const resolveNotificationRoute = (
 
 export const canOpenNotificationFromCenter = (
   notification: AppNotificationItem,
-  user: Pick<User, 'role'> | null | undefined
-): boolean => (user?.role === 'admin' || user?.role === 'manager') && isApprovalNotification(notification);
+  user: Pick<User, 'role' | 'hierarchy_level'> | null | undefined
+): boolean => {
+  const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
+  return userLevel < 100 && isApprovalNotification(notification);
+};

@@ -19,3 +19,12 @@ Route::post('/settings/productivity/classifications', [ProductivityClassificatio
 Route::put('/settings/productivity/classifications/{classification}', [ProductivityClassificationController::class, 'update'])->middleware('role:admin');
 Route::delete('/settings/productivity/classifications/{classification}', [ProductivityClassificationController::class, 'destroy'])->middleware('role:admin');
 Route::post('/settings/productivity/classifications/batch', [ProductivityClassificationController::class, 'batchUpdate'])->middleware('role:admin');
+
+Route::get('/roles', [\App\Http\Controllers\Api\RoleController::class, 'index'])->middleware('role:admin,manager');
+Route::post('/roles', [\App\Http\Controllers\Api\RoleController::class, 'store'])->middleware('role:admin');
+Route::post('/roles/assign-user', [\App\Http\Controllers\Api\RoleController::class, 'assignUser'])->middleware('role:admin,manager');
+Route::get('/roles/{role}', [\App\Http\Controllers\Api\RoleController::class, 'show'])->middleware('role:admin,manager');
+Route::put('/roles/{role}', [\App\Http\Controllers\Api\RoleController::class, 'update'])->middleware('role:admin');
+Route::delete('/roles/{role}', [\App\Http\Controllers\Api\RoleController::class, 'destroy'])->middleware('role:admin');
+
+Route::get('/permissions', [\App\Http\Controllers\Api\PermissionController::class, 'index'])->middleware('role:admin,manager');

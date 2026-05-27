@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
 import { employeeWorkspaceApi, productivityClassificationApi, settingsApi, supportApi, organizationApi } from '@/services/api';
@@ -187,22 +187,26 @@ export default function SettingsPage() {
   const [isDeletingOrg, setIsDeletingOrg] = useState(false);
 
   const isEmployee = isEmployeeUser(user);
-  const isOrgEditable = canManageOrg && hasStrictAdminAccess(user);
+  // Use permission-based checks for custom roles support
+  const canViewSettings = canAccess(user, 'settings.view') || hasStrictAdminAccess(user);
+  const canManageSettings = canAccess(user, 'settings.manage') || hasStrictAdminAccess(user);
+  const canManageProductivity = canAccess(user, 'productivity.manage') || hasStrictAdminAccess(user);
+  const isOrgEditable = canManageOrg && (canManageSettings || hasStrictAdminAccess(user));
   const isStrictAdminUser = hasStrictAdminAccess(user);
   const canEditEmail = hasStrictAdminAccess(user);
   const hasDesktopBrowserTracking = Boolean(window.desktopTracker);
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
-    ...(hasStrictAdminAccess(user) ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
+    ...(canViewSettings ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
     { id: 'help', name: 'Help', icon: LifeBuoy },
-    ...(hasStrictAdminAccess(user) ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
-    ...(hasStrictAdminAccess(user) ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
+    ...(canManageSettings ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
+    ...(canManageSettings ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
     { id: 'billing', name: 'Billing', icon: CreditCard },
     ...(hasDesktopBrowserTracking ? [{ id: 'browser-tracking', name: 'Browser Tracking', icon: Link2 }] : []),
-    ...(hasStrictAdminAccess(user) ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
+    ...(canManageProductivity ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
   ];
   const allowedTabIds = useMemo(() => new Set(tabs.map((tab) => tab.id)), [tabs]);
 
@@ -758,7 +762,7 @@ export default function SettingsPage() {
                 <div>
                   <FieldLabel>Role</FieldLabel>
                   <div className="flex min-h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3.5">
-                    <StatusBadge tone="info">{user?.role || 'Unknown'}</StatusBadge>
+                    <StatusBadge tone="info">{resolveUserRoleLabel(user)}</StatusBadge>
                   </div>
                 </div>
               </div>

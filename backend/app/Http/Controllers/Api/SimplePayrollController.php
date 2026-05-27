@@ -78,9 +78,12 @@ class SimplePayrollController extends Controller
 
         $employees = User::query()
             ->where('organization_id', $actor->organization_id)
-            ->where('role', 'employee')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                    ->orWhere('role', 'employee');
+            })
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'role'])
+            ->get(['id', 'name', 'email', 'role', 'role_id'])
             ->map(fn (User $employee) => $this->profileRow($employee, $profiles->get($employee->id)))
             ->values();
 
@@ -96,7 +99,10 @@ class SimplePayrollController extends Controller
 
         $employee = User::query()
             ->where('organization_id', $actor->organization_id)
-            ->where('role', 'employee')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                    ->orWhere('role', 'employee');
+            })
             ->findOrFail($userId);
 
         $data = $request->validate([
@@ -218,7 +224,10 @@ class SimplePayrollController extends Controller
 
             $employees = User::query()
                 ->where('organization_id', $actor->organization_id)
-                ->where('role', 'employee')
+                ->where(function ($q) {
+                    $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                        ->orWhere('role', 'employee');
+                })
                 ->orderBy('name')
                 ->get();
 
@@ -345,7 +354,10 @@ class SimplePayrollController extends Controller
         }
 
         $month = $this->month($request->get('month'));
-        $employees = User::query()->where('organization_id', $actor->organization_id)->where('role', 'employee')->orderBy('name')->get(['id', 'name', 'email']);
+        $employees = User::query()->where('organization_id', $actor->organization_id)->where(function ($q) {
+            $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                ->orWhere('role', 'employee');
+        })->orderBy('name')->get(['id', 'name', 'email']);
         $adjustments = PayrollAdjustment::query()
             ->where('organization_id', $actor->organization_id)
             ->where('effective_month', $month)
@@ -371,7 +383,10 @@ class SimplePayrollController extends Controller
             'reason' => 'required|string|max:500',
         ]);
 
-        $employee = User::query()->where('organization_id', $actor->organization_id)->where('role', 'employee')->findOrFail((int) $data['user_id']);
+        $employee = User::query()->where('organization_id', $actor->organization_id)->where(function ($q) {
+            $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                ->orWhere('role', 'employee');
+        })->findOrFail((int) $data['user_id']);
         $kind = $data['type'] === 'lop_correction' ? 'manual_deduction' : $data['type'];
 
         $adjustment = PayrollAdjustment::query()->create([
@@ -493,7 +508,7 @@ class SimplePayrollController extends Controller
 
     private function canManage(?User $user): bool
     {
-        return $user && in_array($user->role, ['admin', 'manager', 'owner', 'hr', 'super_admin'], true);
+        return $user && $user->getHierarchyLevel() < 100;
     }
 
     private function month(mixed $value): string

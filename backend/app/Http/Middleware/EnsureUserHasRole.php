@@ -21,11 +21,25 @@ class EnsureUserHasRole
             ->filter()
             ->values();
 
-        if (
-            !$user
-            || $normalizedAllowedRoles->isEmpty()
-            || !$normalizedAllowedRoles->contains($this->normalizeRole($user->role))
-        ) {
+        if (!$user || $normalizedAllowedRoles->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden',
+                'error_code' => 'FORBIDDEN',
+            ], 403);
+        }
+
+        $userLevel = $user->getHierarchyLevel();
+        $hasAccess = $normalizedAllowedRoles->some(function (string $allowedRole) use ($userLevel) {
+            return match ($allowedRole) {
+                'admin' => $userLevel <= 10,
+                'manager' => $userLevel < 100,
+                'employee' => $userLevel >= 100,
+                default => false,
+            };
+        });
+
+        if (!$hasAccess) {
             return response()->json([
                 'success' => false,
                 'message' => 'Forbidden',

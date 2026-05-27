@@ -23,7 +23,10 @@ class CheckTimeCoverage extends Command
 
         $users = $userId
             ? User::where('id', $userId)->get()
-            : User::where('role', 'employee')->orderBy('name')->get();
+            : User::where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                    ->orWhere('role', 'employee');
+            })->orderBy('name')->get();
 
         if ($users->isEmpty()) {
             $this->error('No users found');
