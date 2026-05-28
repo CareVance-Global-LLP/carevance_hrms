@@ -243,7 +243,7 @@ const SCREENSHOT_REFRESH_INTERVAL_MS = 60_000;
 
 export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspaceMode }) {
   const { user } = useAuth();
-  const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
+  const viewOnly = !hasStrictAdminAccess(user);
   const canDeleteScreenshots = hasStrictAdminAccess(user);
   const navigate = useNavigate();
   const location = useLocation();
@@ -443,6 +443,15 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     () => new Map(users.map((employee: any) => [Number(employee.id), employee])),
     [users]
   );
+  const displayTimezone = useMemo(() => {
+    const viewerTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
+    if (!effectiveSelectedUserId) {
+      return viewerTimezone;
+    }
+    const targetUser = usersById.get(Number(effectiveSelectedUserId));
+    const targetTimezone = targetUser?.settings?.timezone;
+    return targetTimezone ? resolveTimeZone(targetTimezone) : viewerTimezone;
+  }, [effectiveSelectedUserId, user, usersById]);
   const pageTitle = modeCopy[mode];
   const selectedEmployeeLabel = effectiveSelectedUserId
     ? users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId))?.name || 'Selected employee'

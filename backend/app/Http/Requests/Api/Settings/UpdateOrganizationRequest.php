@@ -19,6 +19,7 @@ class UpdateOrganizationRequest extends ApiFormRequest
             'leave_categories.*.name' => 'required_with:leave_categories|string|max:120',
             'leave_categories.*.annual_quota' => 'required_with:leave_categories|numeric|min:0|max:366',
             'leave_categories_json' => 'nullable|string',
+            'timezone' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)+$/'],
         ];
     }
 }

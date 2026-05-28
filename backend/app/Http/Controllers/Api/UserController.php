@@ -306,6 +306,9 @@ class UserController extends Controller
             'settings.attendance_monitoring' => 'nullable|boolean',
             'settings.payroll_visibility' => 'nullable|boolean',
             'settings.task_assignment_access' => 'nullable|boolean',
+            'employee_work_info' => 'nullable|array',
+            'employee_work_info.expected_start_time' => 'nullable|date_format:H:i',
+            'employee_work_info.expected_timezone' => 'nullable|string|max:255|timezone',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
         ]);
@@ -346,9 +349,17 @@ class UserController extends Controller
         }
 
         $updatable = collect($validated)
-            ->except(['group_ids'])
+            ->except(['group_ids', 'employee_work_info'])
             ->all();
         $user->update($updatable);
+
+        if (array_key_exists('employee_work_info', $validated)) {
+            $workInfoData = $validated['employee_work_info'];
+            $user->employeeWorkInfo()->updateOrCreate(
+                ['user_id' => $user->id],
+                $workInfoData
+            );
+        }
 
         if (array_key_exists('group_ids', $validated)) {
             $this->organizationRoleService->assertCanAssignRole($request->user(), $user->role, 'group_ids');

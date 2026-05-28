@@ -9,6 +9,8 @@ import { readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPer
 import { hasAdminAccess, hasStrictAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
 import { queryKeys } from '@/lib/queryKeys';
 import { formatDuration } from '@/lib/formatters';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import Button from '@/components/ui/Button';
 import { SelectInput } from '@/components/ui/FormField';
@@ -90,6 +92,7 @@ export default function UserManagement() {
   const queryClient = useQueryClient();
   const isAdmin = hasAdminAccess(user);
   const isStrictAdmin = hasStrictAdminAccess(user);
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedUserManagementFilters(defaultTimezone).datePreset);
@@ -521,7 +524,7 @@ export default function UserManagement() {
                   <p>Role: <span className="font-medium text-slate-950">{resolveUserRoleLabel(profile360Query.data.user)}</span></p>
                   <p>Working now: <span className="font-medium text-slate-950">{profile360Query.data.status.is_working ? 'Yes' : 'No'}</span></p>
                   <p>Current project: <span className="font-medium text-slate-950">{profile360Query.data.status.current_project || 'No active timer'}</span></p>
-                  <p>Last seen: <span className="font-medium text-slate-950">{profile360Query.data.status.last_seen_at ? new Date(profile360Query.data.status.last_seen_at).toLocaleString() : 'Unavailable'}</span></p>
+                  <p>Last seen: <span className="font-medium text-slate-950">{profile360Query.data.status.last_seen_at ? formatDateTime(profile360Query.data.status.last_seen_at, viewerTimezone) : 'Unavailable'}</span></p>
                 </div>
               </div>
 
@@ -543,7 +546,7 @@ export default function UserManagement() {
                   <div className="mt-3 space-y-2 text-sm text-slate-600">
                     <p className="font-medium text-slate-950">{profile360Query.data.status.latest_notification.title}</p>
                     <p>{profile360Query.data.status.latest_notification.message}</p>
-                    <p className="text-xs text-slate-500">{new Date(profile360Query.data.status.latest_notification.created_at).toLocaleString()}</p>
+                    <p className="text-xs text-slate-500">{formatDateTime(profile360Query.data.status.latest_notification.created_at, viewerTimezone)}</p>
                   </div>
                 ) : <p className="mt-3 text-sm text-slate-500">No recent notification.</p>}
               </div>

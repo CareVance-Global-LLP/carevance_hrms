@@ -190,7 +190,7 @@ export const authApi = {
   me: () => 
     api.get<ApiResponse<User> | User>('/auth/me'),
 
-  googleLogin: (credential: string) =>
+  googleLogin: (credential: string, timezone?: string) =>
     api.post<{
       success: boolean;
       token: string;
@@ -198,7 +198,7 @@ export const authApi = {
       organization?: Organization;
       has_workspace: boolean;
       google_data?: { name: string; email: string };
-    }>('/auth/google/login', { credential }),
+    }>('/auth/google/login', { credential, ...(timezone ? { timezone } : {}) }),
 
   completeGoogleRegistration: (data: {
     name: string;
@@ -208,6 +208,7 @@ export const authApi = {
     billing_cycle?: string;
     seats?: number;
     signup_mode?: string;
+    timezone?: string;
     description?: string;
     website?: string;
     industry?: string;
@@ -288,7 +289,7 @@ export const invitationApi = {
   getByToken: (token: string) =>
     api.get<{ invitation: InvitationSummary }>(`/invitations/${token}`),
 
-  accept: (token: string, data: { name: string; password: string; password_confirmation: string }) =>
+  accept: (token: string, data: { name: string; password: string; password_confirmation: string; timezone?: string }) =>
     api.post<AuthResponse>(`/invitations/${token}/accept`, data),
 };
 
@@ -781,6 +782,7 @@ export const attendanceApi = {
       } | null;
       late_after: string;
       office_start?: string;
+      timezone?: string;
       shift_target_seconds: number;
       has_approved_leave_today: boolean;
     }>('/attendance/today', { params }),
@@ -1403,6 +1405,12 @@ export const billingApi = {
     api.post<{ success: boolean; message?: string }>('/billing/cancel-pending-upgrade'),
   confirmAddSeats: (data: { payment_intent_id: string }) =>
     api.post<{ success: boolean; message?: string; subscription_status: string; max_seats: number }>('/billing/confirm-add-seats', data),
+  
+  // Razorpay payment methods
+  createRazorpayOrder: (data: { amount: number; currency?: string; payment_type?: string }) =>
+    api.post<{ success: boolean; order_id: string; amount: number; currency: string; key_id: string; mock_mode?: boolean; message?: string }>('/billing/razorpay/create-order', data),
+  verifyRazorpayPayment: (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
+    api.post<{ success: boolean; payment_id: string; subscription_status: string; subscription_expires_at: string; message?: string }>('/billing/razorpay/verify-payment', data),
 };
 
 export const companyApi = {

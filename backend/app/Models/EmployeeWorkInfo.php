@@ -23,6 +23,8 @@ class EmployeeWorkInfo extends Model
         'employment_status',
         'exit_date',
         'work_mode',
+        'expected_start_time',
+        'expected_timezone',
         'meta',
     ];
 

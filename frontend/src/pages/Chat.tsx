@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { useAuth } from '@/contexts/AuthContext';
 import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue, rankSearchSuggestions } from '@/lib/searchSuggestions';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { chatApi } from '@/services/api';
 import type { ChatConversation, ChatGroup, ChatGroupMessage, ChatMessage, ChatTypingUser } from '@/types';
 
@@ -110,6 +112,7 @@ const isSameThread = (left: ThreadSelection, right: ThreadSelection) => (
 export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [availableUsers, setAvailableUsers] = useState<Array<{ id: number; name: string; email: string; role: string }>>([]);
@@ -1215,7 +1218,7 @@ export default function Chat() {
 
   const renderMessageTimestamp = (message: ChatFeedMessage, mine: boolean, groupMessage: boolean) => (
     <div className={`mt-1 flex items-center gap-2 text-[10px] ${mine ? 'text-primary-100' : 'text-gray-400'}`}>
-      <span>{new Date(message.created_at).toLocaleString()}</span>
+      <span>{formatDateTime(message.created_at, viewerTimezone)}</span>
       {message.is_edited ? <span>Edited</span> : null}
       {!groupMessage && mine ? <span>{(message as ChatMessage).read_at ? 'Read' : 'Sent'}</span> : null}
     </div>
@@ -1405,7 +1408,7 @@ export default function Chat() {
               <p className="text-xs text-gray-500">
                 {selectedConversation.other_user?.email}
                 {!selectedConversation.other_user?.is_online && selectedConversation.other_user?.last_seen_at
-                  ? ` • Last seen ${new Date(selectedConversation.other_user.last_seen_at).toLocaleString()}`
+                  ? ` • Last seen ${formatDateTime(selectedConversation.other_user.last_seen_at, viewerTimezone)}`
                   : ''}
               </p>
             </>

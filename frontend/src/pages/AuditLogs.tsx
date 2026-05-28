@@ -7,6 +7,9 @@ import Button from '@/components/ui/Button';
 import { PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
+import { useAuth } from '@/contexts/AuthContext';
 import { auditApi } from '@/services/api';
 
 const prettifyAction = (value: string) =>
@@ -18,6 +21,8 @@ const prettifyAction = (value: string) =>
 type AuditLogsResponse = Awaited<ReturnType<typeof auditApi.list>>['data'];
 
 export default function AuditLogs() {
+  const { user } = useAuth();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const [action, setAction] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -163,7 +168,7 @@ export default function AuditLogs() {
                   {data.data.map((log) => (
                     <tr key={log.id} className="border-b border-slate-100 align-top">
                       <td className="px-4 py-3 text-slate-600">
-                        {new Date(log.created_at).toLocaleString()}
+                        {formatDateTime(log.created_at, viewerTimezone)}
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge tone="info" className="normal-case tracking-normal">

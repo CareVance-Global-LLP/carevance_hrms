@@ -71,10 +71,12 @@ export default function AcceptInvitePage() {
       analytics.trackEvent('invite_accept_started', {
         source: 'accept-invite-page',
       });
+      const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const result = await acceptInvitation(token, {
         name: name.trim(),
         password,
         password_confirmation: passwordConfirmation,
+        timezone: browserTimezone,
       });
 
       analytics.trackEvent('invite_accept_completed', {

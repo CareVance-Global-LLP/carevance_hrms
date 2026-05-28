@@ -40,3 +40,6 @@ Route::post('/support/bug-reports', [SupportController::class, 'storeBugReport']
 
 // Google OAuth routes
 Route::post('/auth/google/login', [OAuthController::class, 'verifyGoogleToken'])->middleware('throttle:auth.login');
+
+// Razorpay webhook (public endpoint for payment callbacks)
+Route::post('/webhooks/razorpay', [\App\Http\Controllers\Api\BillingController::class, 'razorpayWebhook']);

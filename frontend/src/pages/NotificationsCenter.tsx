@@ -5,6 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
 import { canOpenNotificationFromCenter, getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { hasAdminAccess } from '@/lib/permissions';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import type { AppNotificationItem } from '@/types';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -19,6 +21,7 @@ import { BellRing, Send } from 'lucide-react';
 export default function NotificationsCenter() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const isAdmin = hasAdminAccess(user);
   const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
   const [users, setUsers] = useState<Array<{ id: number; name: string; email: string }>>([]);
@@ -369,7 +372,7 @@ export default function NotificationsCenter() {
                         {!item.is_read ? (
                           <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700">Unread</span>
                         ) : null}
-                        <span className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</span>
+                        <span className="text-xs text-slate-500">{formatDateTime(item.created_at, viewerTimezone)}</span>
                       </div>
                     );
                   })()}

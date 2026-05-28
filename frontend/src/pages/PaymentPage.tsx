@@ -5,6 +5,7 @@ import { ShieldCheck, CheckCircle, Loader2, ArrowUpRight, X } from 'lucide-react
 import { getPricingPlan, PRICE_CURRENCY, PricingBillingCycle, calculateTotal } from '@/constants/pricing';
 import { apiUrl } from '@/lib/runtimeConfig';
 import { billingApi } from '@/services/api';
+import { RazorpayPaymentButton } from '@/components/payment/RazorpayPaymentButton';
 
 export default function PaymentPage() {
   const { organization, updateOrganization, isLoading } = useAuth();
@@ -280,34 +281,57 @@ export default function PaymentPage() {
               </button>
             </div>
           </div>
+        ) : paymentStatus === 'success' ? (
+          <button
+            className="mt-6 w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-4 text-sm font-semibold text-white"
+          >
+            <CheckCircle className="h-4 w-4" /> Payment Successful
+          </button>
         ) : (
           <>
-            <button
-              onClick={handlePayNow}
-              disabled={isProcessing || paymentStatus === 'success'}
-              className={`mt-6 w-full flex items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-semibold text-white transition disabled:opacity-70 ${
-                paymentStatus === 'success'
-                  ? 'bg-emerald-600'
-                  : 'bg-sky-600 hover:bg-sky-700'
-              }`}
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Processing...
-                </>
-              ) : paymentStatus === 'success' ? (
-                <>
-                  <CheckCircle className="h-4 w-4" /> Payment Successful
-                </>
-              ) : (
-                <>
-                  {isTrial ? 'Pay & Activate' : isPendingAddSeats ? 'Pay & Add Seats' : isNewPaidSignup ? 'Pay & Activate' : 'Pay & Upgrade'} <ShieldCheck className="h-4 w-4" />
-                </>
-              )}
-            </button>
+            <RazorpayPaymentButton
+              amount={total}
+              currency="INR"
+              planCode={planCode}
+              billingCycle={billingCycle}
+              seats={seats}
+              paymentType={isPendingUpgrade ? 'upgrade' : isPendingAddSeats ? 'add_seats' : 'subscription'}
+              organizationName={organization?.name}
+              userEmail={snapshotData?.workspace?.email}
+              userName={snapshotData?.workspace?.name}
+              isTrial={isTrial}
+              isPendingAddSeats={isPendingAddSeats}
+              isNewPaidSignup={isNewPaidSignup}
+              isPendingUpgrade={isPendingUpgrade}
+              onSuccess={() => {
+                setPaymentStatus('success');
+                
+                // Update organization to active status
+                const updatedOrg = {
+                  ...organization,
+                  subscription_status: 'active' as const,
+                  subscription_intent: 'paid' as const,
+                  subscription_expires_at: billingCycle === 'yearly'
+                    ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                    : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                  pending_plan_code: null,
+                  pending_billing_cycle: null,
+                  pending_seats: null,
+                  pending_upgrade_amount: null,
+                };
+                updateOrganization(updatedOrg);
+                
+                setTimeout(() => navigate('/dashboard', { replace: true }), 1500);
+              }}
+              onError={(error) => {
+                setPaymentError(error);
+                setPaymentStatus('error');
+              }}
+              disabled={isProcessing}
+            />
             <button
               onClick={handleCancel}
-              disabled={isProcessing || paymentStatus === 'success'}
+              disabled={isProcessing}
               className="mt-3 w-full flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-70"
             >
               {isTrial || isNewPaidSignup || isPendingUpgrade ? 'Change plan' : 'Cancel and go back to billing'}

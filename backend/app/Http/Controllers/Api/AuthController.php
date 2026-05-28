@@ -68,6 +68,11 @@ class AuthController extends Controller
                 ]);
             }
 
+            $orgSettings = [];
+            if (!empty($validated['timezone'])) {
+                $orgSettings['timezone'] = $validated['timezone'];
+            }
+
             $organization = Organization::create([
                 'name' => $organizationName,
                 'slug' => $this->generateUniqueOrganizationSlug($organizationName),
@@ -90,7 +95,13 @@ class AuthController extends Controller
                 'trial_ends_at' => $signupMode === 'trial' ? now()->addDays($trialDays) : null,
                 'subscription_expires_at' => $signupMode === 'trial' ? now()->addDays($trialDays)->toDateString() : null,
                 'max_seats' => $seats,
+                'settings' => !empty($orgSettings) ? $orgSettings : null,
             ]);
+
+            $userSettings = [];
+            if (!empty($validated['timezone'])) {
+                $userSettings['timezone'] = $validated['timezone'];
+            }
 
             $user = User::create([
                 'name' => $validated['name'],
@@ -98,6 +109,7 @@ class AuthController extends Controller
                 'password' => Hash::make($validated['password']),
                 'role' => 'admin',
                 'organization_id' => $organization->id,
+                'settings' => !empty($userSettings) ? $userSettings : null,
             ]);
 
             // Track trial usage per user (prevents deleting org + re-signup for another trial)
@@ -176,6 +188,24 @@ class AuthController extends Controller
                 'subscription_expires_at' => now()->toDateString(),
             ]);
             $user->organization->refresh();
+        }
+
+        if ($request->filled('timezone')) {
+            $settings = is_array($user->settings) ? $user->settings : [];
+            $settings['timezone'] = $request->input('timezone');
+            $user->settings = $settings;
+            $user->save();
+        }
+
+        // Check if user has an organization
+        $user->load('organization');
+        
+        if (!$user->organization) {
+            return $this->errorResponse(
+                'You do not have an active workspace. Please sign up to start your free trial.',
+                403,
+                ['error_code' => 'NO_ORGANIZATION']
+            );
         }
 
         $token = $this->apiTokenService->issue(

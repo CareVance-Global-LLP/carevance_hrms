@@ -28,7 +28,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string, options?: { remember?: boolean }) => Promise<void>;
   signupOwner: (payload: OwnerSignupRequest) => Promise<{ requiresVerification: boolean; email: string }>;
-  acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string }) => Promise<{ requiresVerification: boolean; email: string }>;
+  acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string; timezone?: string }) => Promise<{ requiresVerification: boolean; email: string }>;
   register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => Promise<void>;
   logout: () => Promise<void>;
   googleLogin: (credential: string) => Promise<GoogleAuthResponse>;
@@ -40,6 +40,7 @@ interface AuthContextType {
     billing_cycle?: string;
     seats?: number;
     signup_mode?: string;
+    timezone?: string;
     description?: string;
     website?: string;
     industry?: string;
@@ -210,24 +211,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      if (storedOrg) {
-        try {
-          const parsedOrg = JSON.parse(storedOrg);
-          // Validate org has real data (not an empty/placeholder object)
-          if (parsedOrg && parsedOrg.id && parsedOrg.name) {
-            if (isActiveRef.current) {
-              setOrganization(parsedOrg);
-            }
-          } else {
-            removeStoredAuthValue('organization');
-          }
-        } catch {
-          removeStoredAuthValue('organization');
-        }
-      }
+      // Don't set organization from localStorage initially
+      // Let fetchUser validate and set it from the server
+      // This prevents users with deleted organizations from accessing protected routes
 
       if (!DEMO_MODE && (storedToken || storedUser || storedOrg)) {
         await fetchUser();
+      }
+      
+      // After fetchUser, if we still have no organization but had one in storage,
+      // clear the stored org since it's no longer valid
+      if (storedOrg && !organization) {
+        removeStoredAuthValue('organization');
       }
 
       if (isActiveRef.current) {
@@ -316,9 +311,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken((currentToken) => currentToken || COOKIE_AUTH_STATE_TOKEN);
       setUser(nextUser);
       setStoredAuthValue('user', JSON.stringify(nextUser));
+      
+      // Update organization - if null, clear it from storage
       if (nextOrganization) {
         setOrganization(nextOrganization);
         setStoredAuthValue('organization', JSON.stringify(nextOrganization));
+      } else {
+        // User no longer has an organization - clear it
+        setOrganization(null);
+        removeStoredAuthValue('organization');
       }
     } catch (error) {
       console.error('Failed to fetch user:', error);
@@ -354,10 +355,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
     const response = await authApi.login({
       email: normalizedEmail,
       password,
       remember: Boolean(options?.remember),
+      timezone: browserTimezone,
     });
 
     const responseData = response.data as any;
@@ -412,7 +416,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const acceptInvitation = async (
     tokenValue: string,
-    payload: { name: string; password: string; password_confirmation: string }
+    payload: { name: string; password: string; password_confirmation: string; timezone?: string }
   ) => {
     if (DEMO_MODE) {
       return { requiresVerification: false, email: payload.name };
@@ -476,7 +480,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const googleLogin = async (credential: string): Promise<GoogleAuthResponse> => {
-    const response = await authApi.googleLogin(credential);
+    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const response = await authApi.googleLogin(credential, browserTimezone);
     const responseData = response.data;
 
     console.log('Google login response:', responseData);
@@ -499,6 +504,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     billing_cycle?: string;
     seats?: number;
     signup_mode?: string;
+    timezone?: string;
     description?: string;
     website?: string;
     industry?: string;

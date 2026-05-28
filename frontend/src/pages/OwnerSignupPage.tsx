@@ -84,6 +84,9 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
 
+  // Check if user was redirected because they have no organization
+  const noOrgMessage = searchParams.get('message') === 'no-organization';
+
   // Organization profile fields
   const [description, setDescription] = useState('');
   const [website, setWebsite] = useState('');
@@ -154,6 +157,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
       });
 
       if (isGoogleMode) {
+        const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         await completeGoogleRegistration({
           name: name.trim(),
           company_name: companyName.trim(),
@@ -162,6 +166,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
           billing_cycle: billingCycle,
           seats,
           signup_mode: signupMode,
+          timezone: browserTimezone,
           description: description.trim() || undefined,
           website: website.trim() || undefined,
           industry: industry || undefined,
@@ -182,6 +187,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
         return;
       }
 
+      const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const result = await signupOwner({
         company_name: companyName.trim(),
         name: name.trim(),
@@ -192,6 +198,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
         signup_mode: signupMode,
         billing_cycle: billingCycle,
         seats,
+        timezone: browserTimezone,
         ...(termsAccepted ? { terms_accepted: true } : {}),
         // Organization profile fields (only include if provided)
         ...(description.trim() ? { description: description.trim() } : {}),
@@ -267,6 +274,16 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                   </p>
                 )}
               </div>
+
+              {noOrgMessage ? (
+                <div className="mb-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div className="text-sm text-amber-800">
+                    <p className="font-semibold">No workspace found</p>
+                    <p className="mt-1">You don't have an active workspace. Create one below to start your free trial.</p>
+                  </div>
+                </div>
+              ) : null}
 
               {error ? (
                 <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/90 p-4">

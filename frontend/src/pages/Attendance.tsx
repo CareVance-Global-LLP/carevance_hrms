@@ -236,6 +236,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   }>(null);
   const [hasApprovedLeaveToday, setHasApprovedLeaveToday] = useState(false);
   const [lateAfter, setLateAfter] = useState('10:30:00');
+  const [officeStart, setOfficeStart] = useState('09:00:00');
+  const [userTimezone, setUserTimezone] = useState('');
   const [isPunchLoading, setIsPunchLoading] = useState(false);
 
   const [calendarMonth, setCalendarMonth] = useState(formatMonth(new Date()));
@@ -457,6 +459,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       });
       setTodayRecord(res.data.record);
       setLateAfter(res.data.late_after || '10:30:00');
+      setOfficeStart(res.data.office_start || '09:00:00');
+      setUserTimezone(res.data.timezone || '');
       setHasApprovedLeaveToday(Boolean((res.data as any).has_approved_leave_today));
       setHasHalfDayLeaveToday(Boolean((res.data as any).has_half_day_leave_today));
       setLeaveToday((res.data as any).leave_today || null);
@@ -1819,7 +1823,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-3">
-            Late threshold: {lateAfter}
+            Office start: {officeStart} | Late threshold: {lateAfter} {userTimezone && `(${userTimezone})`}
           </p>
           {todayRecord?.punches?.length ? (
             <div className="mt-2 flex flex-wrap gap-2">

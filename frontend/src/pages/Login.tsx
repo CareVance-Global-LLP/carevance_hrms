@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { isLikelyMobile } from '@/lib/mobile';
@@ -38,7 +38,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(() => getRememberedEmail() !== '');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<React.ReactNode>('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -73,6 +73,19 @@ export default function Login() {
 
       if (errorCode === 'EMAIL_NOT_VERIFIED') {
         navigate(`/verify-email?email=${encodeURIComponent(responseEmail)}&status=pending-login`);
+        return;
+      }
+
+      if (errorCode === 'NO_ORGANIZATION') {
+        setError(
+          <>
+            You don't have an active workspace.{' '}
+            <Link to="/signup-owner" className="font-semibold text-sky-700 underline">
+              Sign up for a free trial
+            </Link>{' '}
+            to get started.
+          </>
+        );
         return;
       }
 
@@ -121,7 +134,7 @@ export default function Login() {
               {error && (
                 <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/90 p-4">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                  <p className="text-sm text-red-700">{error}</p>
+                  <div className="text-sm text-red-700">{error}</div>
                 </div>
               )}
 

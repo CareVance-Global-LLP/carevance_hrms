@@ -29,6 +29,8 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { PageLoadingState, PageErrorState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 
 interface StatsData {
   total_organizations: number;
@@ -67,6 +69,7 @@ interface SearchResult {
 export default function SuperAdminDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -663,7 +666,7 @@ export default function SuperAdminDashboard() {
         {/* Footer Info */}
         <div className="mt-8 text-center text-sm text-slate-400">
           <p>System Status: <span className="text-emerald-500 font-medium">Operational</span></p>
-          <p className="mt-1">Last updated: {new Date().toLocaleString()}</p>
+          <p className="mt-1">Last updated: {formatDateTime(new Date(), viewerTimezone)}</p>
         </div>
       </div>
     </div>

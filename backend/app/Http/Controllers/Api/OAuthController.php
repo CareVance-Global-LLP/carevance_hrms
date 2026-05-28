@@ -31,6 +31,7 @@ class OAuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'credential' => 'required|string',
+            'timezone' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)+$/'],
         ]);
 
         if ($validator->fails()) {
@@ -93,6 +94,14 @@ class OAuthController extends Controller
             if ($user) {
                 // Existing user - link google_id and load org
                 $user = $this->handleExistingUser($user, $googleId);
+
+                // Save timezone if provided
+                if ($request->filled('timezone')) {
+                    $settings = is_array($user->settings) ? $user->settings : [];
+                    $settings['timezone'] = $request->input('timezone');
+                    $user->settings = $settings;
+                    $user->save();
+                }
                 $hasWorkspace = $user->organization_id !== null && $user->organization !== null;
 
                 // Clean up orphaned organization reference if org was deleted
@@ -116,6 +125,7 @@ class OAuthController extends Controller
                     'id' => $googleId,
                     'name' => $name,
                     'email' => $email,
+                    'timezone' => $request->input('timezone'),
                 ]);
                 $hasWorkspace = false;
             }
@@ -179,6 +189,11 @@ class OAuthController extends Controller
      */
     private function createPendingUser(array $googleUser): User
     {
+        $settings = null;
+        if (!empty($googleUser['timezone'])) {
+            $settings = ['timezone' => $googleUser['timezone']];
+        }
+
         return User::create([
             'name' => $googleUser['name'],
             'email' => $googleUser['email'],
@@ -187,6 +202,7 @@ class OAuthController extends Controller
             'email_verified_at' => now(), // Email already verified by Google
             'password' => Hash::make(Str::random(32)), // Random password
             'organization_id' => null, // Will be set after completion
+            'settings' => $settings,
         ]);
     }
 
@@ -231,6 +247,7 @@ class OAuthController extends Controller
             'state' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:20',
             'country' => 'nullable|string|max:100',
+            'timezone' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)+$/'],
         ]);
 
         if ($validator->fails()) {
@@ -261,6 +278,14 @@ class OAuthController extends Controller
                 $seats = $signupMode === 'trial' ? 5 : max(10, (int) ($request->input('seats') ?? 10));
                 $trialDays = max(1, (int) config('carevance.trial_days', 14));
 
+                $orgTimezone = $request->input('timezone');
+                if ($orgTimezone) {
+                    $userSettings = is_array($user->settings) ? $user->settings : [];
+                    $userSettings['timezone'] = $orgTimezone;
+                    $user->settings = $userSettings;
+                    $user->save();
+                }
+
                 $organizationData = [
                     'name' => $request->input('company_name'),
                     'slug' => $this->generateUniqueOrganizationSlug($request->input('company_name')),
@@ -284,6 +309,7 @@ class OAuthController extends Controller
                     'trial_ends_at' => $signupMode === 'trial' ? now()->addDays($trialDays) : null,
                     'subscription_expires_at' => $signupMode === 'trial' ? now()->addDays($trialDays)->toDateString() : null,
                     'max_seats' => $seats,
+                    'settings' => $orgTimezone ? ['timezone' => $orgTimezone] : null,
                     'pending_plan_code' => null,
                     'pending_billing_cycle' => null,
                     'pending_seats' => null,

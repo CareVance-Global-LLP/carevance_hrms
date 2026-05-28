@@ -11,6 +11,7 @@ class AcceptInvitationRequest extends ApiFormRequest
         return [
             'name' => 'required|string|max:255',
             'password' => 'required|string|min:8|confirmed',
+            'timezone' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)+$/'],
         ];
     }
 }

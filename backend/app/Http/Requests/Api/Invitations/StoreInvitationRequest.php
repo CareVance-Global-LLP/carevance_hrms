@@ -53,6 +53,7 @@ class StoreInvitationRequest extends ApiFormRequest
             'settings.attendance_monitoring' => 'nullable|boolean',
             'settings.payroll_visibility' => 'nullable|boolean',
             'settings.task_assignment_access' => 'nullable|boolean',
+            'settings.timezone' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)+$/'],
         ];
     }
 

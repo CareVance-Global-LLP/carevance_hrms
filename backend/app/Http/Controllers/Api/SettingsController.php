@@ -349,6 +349,10 @@ class SettingsController extends Controller
             $leavePolicySettings['categories'] = $this->normalizeLeaveCategories($leaveCategoriesInput);
         }
 
+        if (array_key_exists('timezone', $validated)) {
+            $existingSettings['timezone'] = $validated['timezone'];
+        }
+
         $updatedSettings = array_merge($existingSettings, [
             'attendance' => $attendanceSettings,
             'branding' => $brandingSettings,

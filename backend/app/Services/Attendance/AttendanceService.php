@@ -70,6 +70,7 @@ class AttendanceService
                     'record' => null,
                     'late_after' => $this->lateAfterTimeForUser($user),
                     'office_start' => $this->officeStartTimeForUser($user),
+                    'timezone' => $this->expectedTimezoneForUser($user),
                     'shift_target_seconds' => $this->shiftTargetSeconds(),
                     'has_approved_leave_today' => false,
                     'has_half_day_leave_today' => false,
@@ -86,6 +87,7 @@ class AttendanceService
                     'record' => null,
                     'late_after' => $this->lateAfterTimeForUser($user),
                     'office_start' => $this->officeStartTimeForUser($user),
+                    'timezone' => $this->expectedTimezoneForUser($user),
                     'shift_target_seconds' => $this->shiftTargetSeconds(),
                     'has_approved_leave_today' => false,
                     'has_half_day_leave_today' => false,
@@ -106,6 +108,7 @@ class AttendanceService
             'record' => $this->decorateRecord($record, $leaveForToday),
             'late_after' => $this->lateAfterTimeForUser($targetUser),
             'office_start' => $this->officeStartTimeForUser($targetUser),
+            'timezone' => $this->expectedTimezoneForUser($targetUser),
             'shift_target_seconds' => $shiftTarget,
             'has_approved_leave_today' => $leaveForToday && !$leaveForToday->isHalfDay(),
             'has_half_day_leave_today' => (bool) ($leaveForToday?->isHalfDay()),
@@ -145,8 +148,35 @@ class AttendanceService
             return ['status' => 422, 'payload' => ['message' => 'You are already checked in for today']];
         }
 
-        $lateThreshold = Carbon::parse($today.' '.$this->lateAfterTimeForUser($user));
-        $lateMinutes = max(0, $lateThreshold->diffInMinutes($checkInAt, false));
+        // Calculate late threshold in the employee's local timezone
+        $employeeTimezone = $this->expectedTimezoneForUser($user);
+        $lateAfterTime = $this->lateAfterTimeForUser($user);
+        $officeStartTime = $this->officeStartTimeForUser($user);
+
+        // Get today's date in the employee's timezone
+        $todayInEmployeeTz = Carbon::now($employeeTimezone)->toDateString();
+
+        // Create the late threshold datetime in employee's timezone
+        $lateThresholdInEmployeeTz = Carbon::parse($todayInEmployeeTz.' '.$lateAfterTime, $employeeTimezone);
+
+        // Convert the check-in time to employee's timezone for comparison
+        $checkInAtInEmployeeTz = $checkInAt->copy()->setTimezone($employeeTimezone);
+
+        // Calculate late minutes: if check-in is after late threshold, calculate difference
+        $lateMinutes = max(0, $lateThresholdInEmployeeTz->diffInMinutes($checkInAtInEmployeeTz, false));
+
+        // Log timezone info for debugging (can be removed in production)
+        \Log::debug('Attendance check-in timezone calculation', [
+            'user_id' => $user->id,
+            'employee_timezone' => $employeeTimezone,
+            'office_start_time' => $officeStartTime,
+            'late_after_time' => $lateAfterTime,
+            'today_in_employee_tz' => $todayInEmployeeTz,
+            'check_in_utc' => $checkInAt->toDateTimeString(),
+            'check_in_employee_tz' => $checkInAtInEmployeeTz->toDateTimeString(),
+            'late_threshold_employee_tz' => $lateThresholdInEmployeeTz->toDateTimeString(),
+            'late_minutes' => $lateMinutes,
+        ]);
 
         $record->organization_id = $user->organization_id;
         $record->status = 'present';
@@ -788,6 +818,16 @@ class AttendanceService
 
     private function officeStartTimeForUser(User $user): string
     {
+        // First check employee's personal expected_start_time from employee_work_infos
+        $employeeWorkInfo = $user->employeeWorkInfo;
+        if ($employeeWorkInfo && $employeeWorkInfo->expected_start_time) {
+            return $this->normalizeTimeString(
+                $employeeWorkInfo->expected_start_time,
+                self::DEFAULT_OFFICE_START
+            );
+        }
+
+        // Fall back to organization attendance settings
         $attendanceSettings = $this->attendanceSettingsForUser($user);
 
         return $this->normalizeTimeString(
@@ -798,12 +838,53 @@ class AttendanceService
 
     private function lateAfterTimeForUser(User $user): string
     {
+        // First check employee's personal expected_start_time from employee_work_infos
+        $employeeWorkInfo = $user->employeeWorkInfo;
+        if ($employeeWorkInfo && $employeeWorkInfo->expected_start_time) {
+            // Use expected_start_time + 1.5 hours as late threshold (same logic as org settings)
+            $expectedStart = $this->normalizeTimeString(
+                $employeeWorkInfo->expected_start_time,
+                self::DEFAULT_OFFICE_START
+            );
+
+            // Add 1.5 hours to expected start time for late threshold
+            $startTime = Carbon::parse($expectedStart);
+            $lateTime = $startTime->copy()->addMinutes(90);
+
+            return $lateTime->format('H:i:s');
+        }
+
+        // Fall back to organization attendance settings
         $attendanceSettings = $this->attendanceSettingsForUser($user);
 
         return $this->normalizeTimeString(
             $attendanceSettings['late_after_time'] ?? null,
             config('attendance.late_after', self::DEFAULT_LATE_AFTER)
         );
+    }
+
+    private function expectedTimezoneForUser(User $user): string
+    {
+        // First check employee's personal expected_timezone from employee_work_infos
+        $employeeWorkInfo = $user->employeeWorkInfo;
+        if ($employeeWorkInfo && $employeeWorkInfo->expected_timezone) {
+            return $employeeWorkInfo->expected_timezone;
+        }
+
+        // Fall back to user's personal timezone from settings
+        $userSettings = is_array($user->settings) ? $user->settings : [];
+        if (!empty($userSettings['timezone'])) {
+            return $userSettings['timezone'];
+        }
+
+        // Fall back to organization's timezone from settings
+        $orgSettings = is_array($user->organization?->settings) ? $user->organization->settings : [];
+        if (!empty($orgSettings['timezone'])) {
+            return $orgSettings['timezone'];
+        }
+
+        // Final fallback to application default
+        return config('app.timezone', 'Asia/Kolkata');
     }
 
     private function attendanceSettingsForUser(User $user): array

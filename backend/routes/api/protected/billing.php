@@ -11,3 +11,7 @@ Route::post('/billing/add-seats', [BillingController::class, 'addSeats']);
 Route::post('/billing/confirm-add-seats', [BillingController::class, 'confirmAddSeats']);
 Route::post('/billing/cancel-plan', [BillingController::class, 'cancelPlan']);
 Route::post('/billing/cancel-pending-upgrade', [BillingController::class, 'cancelPendingUpgrade']);
+
+// Razorpay payment routes
+Route::post('/billing/razorpay/create-order', [BillingController::class, 'createRazorpayOrder']);
+Route::post('/billing/razorpay/verify-payment', [BillingController::class, 'verifyRazorpayPayment']);

@@ -21,6 +21,7 @@ export interface AdditionalInviteSettings {
   attendanceMonitoring: boolean;
   payrollVisibility: boolean;
   taskAssignmentAccess: boolean;
+  timezone?: string;
 }
 
 export interface InviteSubmissionPayload {
@@ -63,6 +64,8 @@ export interface CsvParseRow {
   role: InviteUserRole;
   groupIds: number[];
   projectIds: number[];
+  timezone?: string;
+  jobTitle?: string;
   skippedRoleLabel?: string;
 }
 
@@ -78,6 +81,7 @@ interface BulkInviteRowPayload {
   department_ids?: number[];
   project_ids?: number[];
   job_title?: string;
+  settings?: Record<string, any>;
 }
 
 type TabularRow = unknown[];
@@ -317,6 +321,7 @@ export const addUserService = {
         attendance_monitoring: payload.settings.attendanceMonitoring,
         payroll_visibility: payload.settings.payrollVisibility,
         task_assignment_access: payload.settings.taskAssignmentAccess,
+        ...(payload.settings.timezone ? { timezone: payload.settings.timezone } : {}),
       },
     });
 
@@ -355,6 +360,7 @@ export const addUserService = {
         attendance_monitoring: payload.settings.attendanceMonitoring,
         payroll_visibility: payload.settings.payrollVisibility,
         task_assignment_access: payload.settings.taskAssignmentAccess,
+        ...(payload.settings.timezone ? { timezone: payload.settings.timezone } : {}),
       },
     });
 
@@ -418,6 +424,8 @@ export const addUserService = {
     const roleIndex = accessRoleIndex >= 0 ? accessRoleIndex : getHeaderIndex(headers, ['role']);
     const groupIndex = getHeaderIndex(headers, ['groups', 'group', 'group ids', 'group id', 'team', 'teams', 'department', 'departments']);
     const projectIndex = getHeaderIndex(headers, ['projects', 'project', 'project ids', 'project id']);
+    const timezoneIndex = getHeaderIndex(headers, ['timezone', 'time zone', 'tz']);
+    const jobTitleIndex = getHeaderIndex(headers, ['job title', 'job_title', 'job role', 'designation', 'position']);
 
     if (emailIndex < 0) {
       return { rows: [], errors: ['Import file must include an email column.'] };
@@ -439,12 +447,17 @@ export const addUserService = {
         return;
       }
 
+      const rawTimezone = timezoneIndex >= 0 ? (columns[timezoneIndex] || '').trim() : '';
+      const rawJobTitle = jobTitleIndex >= 0 ? (columns[jobTitleIndex] || '').trim() : '';
+
       rows.push({
         email,
         name: (columns[nameIndex] || '').trim() || deriveDisplayName(email),
         role: role || 'employee',
         groupIds: mapOptionNamesToIds(parseMultiValueField(columns[groupIndex] || ''), groups),
         projectIds: mapOptionNamesToIds(parseMultiValueField(columns[projectIndex] || ''), projects),
+        timezone: rawTimezone || undefined,
+        jobTitle: rawJobTitle || (rawRole && !role ? rawRole : undefined),
         skippedRoleLabel: rawRole && !role ? rawRole : undefined,
       });
     });
@@ -528,7 +541,8 @@ export const addUserService = {
       role: row.role,
       department_ids: row.groupIds,
       project_ids: row.projectIds,
-      job_title: row.skippedRoleLabel || undefined,
+      job_title: row.jobTitle || row.skippedRoleLabel || undefined,
+      ...(row.timezone ? { settings: { timezone: row.timezone } } : {}),
     }));
     const rowChunks = chunkItems<BulkInviteRowPayload>(rows, 250);
 
@@ -544,6 +558,7 @@ export const addUserService = {
             attendance_monitoring: basePayload.settings.attendanceMonitoring,
             payroll_visibility: basePayload.settings.payrollVisibility,
             task_assignment_access: basePayload.settings.taskAssignmentAccess,
+            ...(basePayload.settings.timezone ? { timezone: basePayload.settings.timezone } : {}),
           },
         });
 
@@ -582,9 +597,9 @@ export const addUserService = {
   
   downloadCsvTemplate() {
     const template = [
-      'email,name,role,access_role,departments,projects',
-      'alex@example.com,Alex Johnson,Software Engineer,employee,"Operations|Night Shift","CareVance HRMS"',
-      'jordan@example.com,Jordan Lee,Team Lead,manager,"Operations","Implementation"',
+      'email,name,role,access_role,departments,projects,job_title,timezone',
+      'alex@example.com,Alex Johnson,Software Engineer,employee,"Operations|Night Shift","CareVance HRMS",,Asia/Kolkata',
+      'jordan@example.com,Jordan Lee,Team Lead,manager,"Operations","Implementation",,America/New_York',
     ].join('\n');
 
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });

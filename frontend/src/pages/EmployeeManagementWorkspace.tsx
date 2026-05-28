@@ -12,6 +12,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasAdminAccess, hasStrictAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
 import { formatDuration } from '@/lib/formatters';
 import { ArrowRightLeft, Building2, KeyRound, MailPlus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserPlus, UserPlus2, UserRound, Users } from 'lucide-react';
+import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
+import { formatDateTime } from '@/lib/dateTime';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 type EmployeeDirectorySort = 'default' | 'name_asc' | 'tracked_desc' | 'working_first';
@@ -121,6 +123,9 @@ const resolveEmployeeDepartment = (user: any) =>
     || 'Unassigned'
   ).trim() || 'Unassigned';
 
+const resolveEmployeeTimezone = (user: any) =>
+  resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
+
 const piePalette = ['#2563eb', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6'];
 
 const polarToCartesian = (cx: number, cy: number, radius: number, angleInDegrees: number) => {
@@ -203,9 +208,11 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const { organization, user } = useAuth();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [directoryFilterUserId, setDirectoryFilterUserId] = useState<number | ''>('');
   const [directoryDepartmentFilter, setDirectoryDepartmentFilter] = useState('All departments');
+  const [directoryTimezoneFilter, setDirectoryTimezoneFilter] = useState('All timezones');
   const [directorySort, setDirectorySort] = useState<EmployeeDirectorySort>('default');
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupDirectoryQuery, setGroupDirectoryQuery] = useState('');
@@ -344,6 +351,11 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       return ['All departments', ...Array.from(new Set(users.map((item: any) => resolveEmployeeDepartment(item)).filter(Boolean)))];
     },
     [managerManagedDepartment, currentUserLevel, users]
+  );
+
+  const timezoneOptions = useMemo(
+    () => ['All timezones', ...Array.from(new Set(users.map((item: any) => resolveEmployeeTimezone(item)).filter(Boolean))).sort()],
+    [users]
   );
 
   const settingsTargetUser = useMemo(
@@ -505,17 +517,21 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       ? filteredRows
       : filteredRows.filter((item: any) => resolveEmployeeDepartment(item) === directoryDepartmentFilter);
 
+    const timezoneFilteredRows = directoryTimezoneFilter === 'All timezones'
+      ? departmentFilteredRows
+      : departmentFilteredRows.filter((item: any) => resolveEmployeeTimezone(item) === directoryTimezoneFilter);
+
     switch (directorySort) {
       case 'name_asc':
-        return departmentFilteredRows.sort((left: any, right: any) =>
+        return timezoneFilteredRows.sort((left: any, right: any) =>
           String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })
         );
       case 'tracked_desc':
-        return departmentFilteredRows.sort((left: any, right: any) =>
+        return timezoneFilteredRows.sort((left: any, right: any) =>
           Number(right.total_elapsed_duration || right.total_duration || 0) - Number(left.total_elapsed_duration || left.total_duration || 0)
         );
       case 'working_first':
-        return departmentFilteredRows.sort((left: any, right: any) => {
+        return timezoneFilteredRows.sort((left: any, right: any) => {
           const workingDifference = Number(Boolean(right.is_working)) - Number(Boolean(left.is_working));
           if (workingDifference !== 0) {
             return workingDifference;
@@ -524,9 +540,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           return String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
         });
       default:
-        return departmentFilteredRows;
+        return timezoneFilteredRows;
     }
-  }, [directoryDepartmentFilter, directoryFilterUserId, directorySort, users]);
+  }, [directoryDepartmentFilter, directoryFilterUserId, directoryTimezoneFilter, directorySort, users]);
   const roleCards = useMemo(() => {
     const allRoles = [...(customRolesQuery.data || [])].sort((a: any, b: any) => a.hierarchy_level - b.hierarchy_level);
     return allRoles.map((role: any, idx: number) => {
@@ -813,6 +829,12 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
   }, [departmentOptions, directoryDepartmentFilter]);
 
+  useEffect(() => {
+    if (!timezoneOptions.includes(directoryTimezoneFilter)) {
+      setDirectoryTimezoneFilter('All timezones');
+    }
+  }, [timezoneOptions, directoryTimezoneFilter]);
+
   const getRoleDropdownOptions = (row: any): Array<{ value: string; label: string; isCustom: boolean; roleId?: number }> => {
     const currentRole = row?.role as string;
     const currentRoleId = row?.role_id as number | null;
@@ -954,7 +976,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             emptyMessage="No employees found."
             bodyClassName="max-h-[34rem] overflow-auto"
             headerAction={(
-              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
                 <div className="min-w-[13rem]">
                   <FieldLabel>Specific employee</FieldLabel>
                   <EmployeeSelect
@@ -987,6 +1009,18 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                   </SelectInput>
                 </div>
                 <div className="min-w-[13rem]">
+                  <FieldLabel>Timezone</FieldLabel>
+                  <SelectInput
+                    aria-label="Employee timezone filter"
+                    value={directoryTimezoneFilter}
+                    onChange={(event) => setDirectoryTimezoneFilter(event.target.value)}
+                  >
+                    {timezoneOptions.map((tz) => (
+                      <option key={tz} value={tz}>{tz}</option>
+                    ))}
+                  </SelectInput>
+                </div>
+                <div className="min-w-[13rem]">
                   <FieldLabel>Sort list</FieldLabel>
                   <SelectInput
                     aria-label="Employee directory sort"
@@ -1005,6 +1039,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
               { key: 'role', header: 'Role', render: (row: any) => resolveUserRoleLabel(row, customRolesQuery.data || []) },
               { key: 'department', header: 'Department', render: (row: any) => resolveEmployeeDepartment(row) },
+              { key: 'timezone', header: 'Timezone', render: (row: any) => resolveEmployeeTimezone(row) },
               { key: 'working', header: 'Working', render: (row: any) => (row.is_working ? 'Yes' : 'No') },
               { key: 'project', header: 'Current Task', render: (row: any) => row.current_task || row.current_project || 'No active timer' },
               { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.total_elapsed_duration || row.total_duration || 0) },
@@ -1558,7 +1593,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                 { key: 'email', header: 'Email', render: (row: any) => row.email },
                 { key: 'role', header: 'Role', render: (row: any) => row.role ? row.role.charAt(0).toUpperCase() + row.role.slice(1) : 'Employee' },
                 { key: 'status', header: 'Status', render: (row: any) => row.status },
-                { key: 'expires_at', header: 'Expires', render: (row: any) => row.expires_at ? new Date(row.expires_at).toLocaleString() : 'n/a' },
+                { key: 'expires_at', header: 'Expires', render: (row: any) => row.expires_at ? formatDateTime(row.expires_at, viewerTimezone) : 'n/a' },
               ]}
             />
             <DataTable

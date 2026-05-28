@@ -13,11 +13,13 @@ import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
 import InviteLinkPanel from '@/components/add-user/InviteLinkPanel';
 import CsvUploadPanel from '@/components/add-user/CsvUploadPanel';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
+import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import {
   addUserService,
   AdditionalInviteSettings,
   InviteUserRole,
 } from '@/services/addUser';
+
 
 type AddUserTab = 'email' | 'link' | 'csv';
 
@@ -36,12 +38,15 @@ const extractInviteError = (error: any, fallback: string) => {
   return firstFieldError || error?.response?.data?.message || error?.message || fallback;
 };
 
+const browserTimezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+
 const defaultSettings: AdditionalInviteSettings = {
   monitoringInterval: 10,
   canEditTime: false,
   attendanceMonitoring: true,
   payrollVisibility: false,
   taskAssignmentAccess: true,
+  timezone: browserTimezone && COMMON_TIMEZONES.includes(browserTimezone) ? browserTimezone : DEFAULT_APP_TIMEZONE,
 };
 
 const monitoringIntervalOptions: Array<{ value: AdditionalInviteSettings['monitoringInterval']; label: string }> = [
@@ -449,6 +454,18 @@ export default function AddUserDrawer({
                     >
                       {monitoringIntervalOptions.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Timezone</FieldLabel>
+                    <SelectInput
+                      value={settings.timezone || ''}
+                      onChange={(event) => setSettings((current) => ({ ...current, timezone: event.target.value || undefined }))}
+                    >
+                      <option value="">Auto-detect on accept</option>
+                      {COMMON_TIMEZONES.map((tz) => (
+                        <option key={tz} value={tz}>{tz}</option>
                       ))}
                     </SelectInput>
                   </div>

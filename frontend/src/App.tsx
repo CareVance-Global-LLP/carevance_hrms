@@ -259,6 +259,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
 
+  // Check if user has no organization - redirect to signup
+  if (!organization?.id) {
+    return <Navigate to="/signup-owner?message=no-organization" replace />;
+  }
+
   const needsPayment = organization?.subscription_intent === 'paid' && organization?.subscription_status !== 'active';
   const isOnboardingRoute = location.pathname === onboardingPath;
   const isPaymentRoute = location.pathname === '/payment';
@@ -296,9 +301,19 @@ function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNo
   }
 
   if (isAuthenticated) {
+    // Check if user has no organization - redirect to signup
+    if (!organization?.id) {
+      // Allow access to signup-owner page to create organization
+      if (location.pathname === '/signup-owner') {
+        return <>{children}</>;
+      }
+      // Redirect to signup page with message
+      return <Navigate to="/signup-owner?message=no-organization" replace />;
+    }
+    
     // Allow authenticated users to access workspace creation when explicitly in fresh signup flow
     const isFreshSignupFlow = new URLSearchParams(location.search).get('fresh') === 'true';
-    if (allowAuthenticated && (!organization?.id || isFreshSignupFlow)) {
+    if (allowAuthenticated && isFreshSignupFlow) {
       return <>{children}</>;
     }
     const needsPayment = organization?.subscription_intent === 'paid' && organization?.subscription_status !== 'active';

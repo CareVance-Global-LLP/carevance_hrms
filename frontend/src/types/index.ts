@@ -356,6 +356,7 @@ export interface LoginRequest {
   email: string;
   password: string;
   remember?: boolean;
+  timezone?: string;
 }
 
 export interface RegisterRequest {
@@ -378,6 +379,7 @@ export interface OwnerSignupRequest {
   billing_cycle?: 'monthly' | 'yearly';
   seats?: number;
   terms_accepted?: boolean;
+  timezone?: string;
   // Organization profile fields
   description?: string;
   website?: string;
@@ -1119,6 +1121,8 @@ export interface EmployeeWorkInfo {
   employment_status?: 'active' | 'inactive' | 'notice' | 'exited' | null;
   exit_date?: string | null;
   work_mode?: 'office' | 'remote' | 'hybrid' | null;
+  expected_start_time?: string | null;
+  expected_timezone?: string | null;
   department?: { id: number; name: string } | null;
   reporting_manager?: { id: number; name: string; email: string } | null;
 }
