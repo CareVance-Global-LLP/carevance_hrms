@@ -76,6 +76,9 @@ api.interceptors.request.use((config) => {
   const token = getStoredAuthValue('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+    console.log('API Request with token to:', config.url);
+  } else {
+    console.log('API Request without token to:', config.url);
   }
   
   // Add request timeout for better error handling
@@ -114,6 +117,15 @@ api.interceptors.response.use(
     // Handle forbidden errors
     if (status === 403 || errorCode === 'FORBIDDEN') {
       console.error('Access forbidden:', (error.response?.data as any)?.message || 'You do not have permission to perform this action');
+      return Promise.reject(error);
+    }
+
+    // Handle trial expired
+    if (errorCode === 'TRIAL_EXPIRED') {
+      console.error('Trial expired:', (error.response?.data as any)?.message || 'Your free trial has expired');
+      if (typeof window !== 'undefined' && window.location.pathname !== '/payment') {
+        window.location.href = '/payment';
+      }
       return Promise.reject(error);
     }
     
@@ -177,6 +189,43 @@ export const authApi = {
   
   me: () => 
     api.get<ApiResponse<User> | User>('/auth/me'),
+
+  googleLogin: (credential: string) =>
+    api.post<{
+      success: boolean;
+      token: string;
+      user: User;
+      organization?: Organization;
+      has_workspace: boolean;
+      google_data?: { name: string; email: string };
+    }>('/auth/google/login', { credential }),
+
+  completeGoogleRegistration: (data: {
+    name: string;
+    company_name: string;
+    company_description?: string;
+    plan_code?: string;
+    billing_cycle?: string;
+    seats?: number;
+    signup_mode?: string;
+    description?: string;
+    website?: string;
+    industry?: string;
+    size?: string;
+    phone?: string;
+    org_email?: string;
+    address_line?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
+  }) =>
+    api.post<{
+      success: boolean;
+      token: string;
+      user: User;
+      organization: Organization;
+    }>('/auth/google/complete', data),
 };
 
 // Organization API

@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\DesktopDownloadController;
 use App\Http\Controllers\Api\HealthCheckController;
 use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\InvitationController;
+use App\Http\Controllers\Api\OAuthController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\ScreenshotController;
@@ -36,3 +37,6 @@ Route::get('/screenshots/{screenshot}/file', [ScreenshotController::class, 'file
     ->middleware('signed:relative')
     ->name('screenshots.file');
 Route::post('/support/bug-reports', [SupportController::class, 'storeBugReport'])->middleware('throttle:support.bug-report');
+
+// Google OAuth routes
+Route::post('/auth/google/login', [OAuthController::class, 'verifyGoogleToken'])->middleware('throttle:auth.login');

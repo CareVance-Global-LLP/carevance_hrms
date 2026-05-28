@@ -520,15 +520,21 @@ export default function SettingsPage() {
   };
 
   const deleteOrganization = async () => {
-    if (deleteConfirmText !== organization?.name) {
+    const expectedName = orgName || organization?.name || '';
+    if (!expectedName || deleteConfirmText !== expectedName) {
       setError('Organization name does not match. Please type the exact name to confirm.');
+      return;
+    }
+
+    if (!organization?.id) {
+      setError('Organization ID is missing. Please refresh the page and try again.');
       return;
     }
 
     setIsDeletingOrg(true);
     setError('');
     try {
-      await organizationApi.delete(organization!.id);
+      await organizationApi.delete(organization.id);
       localStorage.clear();
       window.location.href = '/';
     } catch (e: any) {
@@ -938,64 +944,82 @@ export default function SettingsPage() {
                   <p className="mt-3 text-xs text-slate-500">Only admin can edit leave policy categories.</p>
                 ) : null}
               </div>
-              {isOrgEditable ? (
-                <Button onClick={saveOrganization}>Save Changes</Button>
-              ) : (
-                <p className="text-sm text-gray-500">Only admin/manager can update organization settings.</p>
-              )}
-
-              {isStrictAdminUser && (
-                <div className="mt-8 pt-8 border-t border-red-200">
-                  <h3 className="text-lg font-semibold text-red-700 flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5" />
-                    Danger Zone
-                  </h3>
-                  <p className="mt-2 text-sm text-gray-600">
-                    Once you delete your organization, there is no going back. This will permanently delete your organization, all users, projects, tasks, time entries, and all associated data.
-                  </p>
-
-                  {!showDeleteConfirm ? (
-                    <Button
-                      variant="danger"
-                      className="mt-4"
-                      onClick={() => setShowDeleteConfirm(true)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Organization
-                    </Button>
+              {organization?.id ? (
+                <>
+                  {isOrgEditable ? (
+                    <Button onClick={saveOrganization}>Save Changes</Button>
                   ) : (
-                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                      <p className="text-sm font-medium text-red-800 mb-3">
-                        Type <span className="font-bold">"{organization?.name}"</span> to confirm deletion:
+                    <p className="text-sm text-gray-500">Only admin/manager can update organization settings.</p>
+                  )}
+
+                  {isStrictAdminUser && (
+                    <div className="mt-8 pt-8 border-t border-red-200">
+                      <h3 className="text-lg font-semibold text-red-700 flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5" />
+                        Danger Zone
+                      </h3>
+                      <p className="mt-2 text-sm text-gray-600">
+                        Once you delete your organization, there is no going back. This will permanently delete your organization, all users, projects, tasks, time entries, and all associated data.
                       </p>
-                      <div className="flex gap-3">
-                        <input
-                          type="text"
-                          value={deleteConfirmText}
-                          onChange={(e) => setDeleteConfirmText(e.target.value)}
-                          placeholder="Type organization name"
-                          className="flex-1 px-3 py-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                        />
+
+                      {!showDeleteConfirm ? (
                         <Button
                           variant="danger"
-                          onClick={deleteOrganization}
-                          disabled={isDeletingOrg || deleteConfirmText !== organization?.name}
+                          className="mt-4"
+                          onClick={() => setShowDeleteConfirm(true)}
                         >
-                          {isDeletingOrg ? 'Deleting...' : 'Confirm Delete'}
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete Organization
                         </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setShowDeleteConfirm(false);
-                            setDeleteConfirmText('');
-                            setError('');
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
+                      ) : (
+                        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm font-medium text-red-800 mb-3">
+                            Type <span className="font-bold">"{orgName || organization?.name || 'your organization name'}"</span> to confirm deletion:
+                          </p>
+                          <div className="flex gap-3">
+                            <input
+                              type="text"
+                              value={deleteConfirmText}
+                              onChange={(e) => setDeleteConfirmText(e.target.value)}
+                              placeholder="Type organization name"
+                              className="flex-1 px-3 py-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                            />
+                            <Button
+                              variant="danger"
+                              onClick={deleteOrganization}
+                              disabled={isDeletingOrg || deleteConfirmText !== (orgName || organization?.name || '')}
+                            >
+                              {isDeletingOrg ? 'Deleting...' : 'Confirm Delete'}
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                setShowDeleteConfirm(false);
+                                setDeleteConfirmText('');
+                                setError('');
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
+                </>
+              ) : (
+                <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50/85 px-6 py-6">
+                  <h3 className="text-base font-semibold text-amber-900">No Organization Found</h3>
+                  <p className="mt-2 text-sm text-amber-700 leading-6">
+                    Your account is not linked to an organization. Create a workspace to start using CareVance.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/signup-owner')}
+                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Create Workspace
+                  </button>
                 </div>
               )}
             </div>

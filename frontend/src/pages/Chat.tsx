@@ -121,7 +121,9 @@ export default function Chat() {
   const [groupName, setGroupName] = useState('');
   const [groupMemberIds, setGroupMemberIds] = useState<number[]>([]);
   const [messageText, setMessageText] = useState('');
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -167,13 +169,17 @@ export default function Chat() {
     [availableUsers]
   );
   const persistedQuickReactions = NORMALIZED_QUICK_REACTIONS;
-  const attachmentPreviewUrl = useMemo(() => {
-    if (!attachmentFile || !attachmentFile.type.startsWith('image/')) {
-      return null;
-    }
+  const previewUrlsRef = useRef<Map<File, string>>(new Map());
 
-    return URL.createObjectURL(attachmentFile);
-  }, [attachmentFile]);
+  const getFilePreviewUrl = (file: File) => {
+    if (!file.type.startsWith('image/')) return null;
+    let url = previewUrlsRef.current.get(file);
+    if (!url) {
+      url = URL.createObjectURL(file);
+      previewUrlsRef.current.set(file, url);
+    }
+    return url;
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -415,7 +421,7 @@ export default function Chat() {
 
     activeThreadKeyRef.current = getThreadKey(selectedThread);
     shouldStickToBottomRef.current = true;
-    setAttachmentFile(null);
+    setAttachmentFiles([]);
     setEditingMessageId(null);
     setEditingMessageText('');
     setIsSavingEdit(false);
@@ -637,12 +643,12 @@ export default function Chat() {
   }, [imageViewer]);
 
   useEffect(() => {
+    const urls = Array.from(previewUrlsRef.current.values());
     return () => {
-      if (attachmentPreviewUrl) {
-        URL.revokeObjectURL(attachmentPreviewUrl);
-      }
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      previewUrlsRef.current.clear();
     };
-  }, [attachmentPreviewUrl]);
+  }, [attachmentFiles]);
 
   useEffect(() => {
     if (editingMessageId && !messages.some((message) => message.id === editingMessageId)) {
@@ -734,19 +740,41 @@ export default function Chat() {
     }
   };
 
-  const applyAttachmentFile = (nextFile: File | null) => {
-    if (!nextFile) {
-      setAttachmentFile(null);
+  const applyAttachmentFiles = (nextFiles: FileList | null) => {
+    if (!nextFiles || nextFiles.length === 0) {
       return;
     }
 
-    if (nextFile.size > MAX_CHAT_ATTACHMENT_BYTES) {
-      setError('Attachment must be 200 MB or smaller.');
-      return;
+    const valid: File[] = [];
+    for (const file of Array.from(nextFiles)) {
+      if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        setError(`"${file.name}" exceeds the 200 MB limit and was skipped.`);
+        continue;
+      }
+      valid.push(file);
     }
 
-    setAttachmentFile(nextFile);
+    if (valid.length === 0) return;
+
+    setAttachmentFiles((prev) => [...prev, ...valid]);
     setError('');
+  };
+
+  const removeAttachmentFile = (index: number) => {
+    setAttachmentFiles((prev) => {
+      const file = prev[index];
+      if (file && previewUrlsRef.current.has(file)) {
+        URL.revokeObjectURL(previewUrlsRef.current.get(file)!);
+        previewUrlsRef.current.delete(file);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const clearAttachmentFiles = () => {
+    previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    previewUrlsRef.current.clear();
+    setAttachmentFiles([]);
   };
 
   const handleComposerPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -767,27 +795,80 @@ export default function Chat() {
     }
 
     event.preventDefault();
-    applyAttachmentFile(pastedFile);
+    if (pastedFile.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      setError('Pasted image exceeds the 200 MB limit.');
+      return;
+    }
+    setAttachmentFiles((prev) => [...prev, pastedFile!]);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    setIsDragOver(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    dragCounterRef.current = 0;
+
+    if (!selectedThread) {
+      setError('Select a chat first before attaching files.');
+      return;
+    }
+
+    const droppedFiles = e.dataTransfer?.files;
+    if (droppedFiles && droppedFiles.length > 0) {
+      applyAttachmentFiles(droppedFiles);
+    }
   };
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!selectedThread || (!messageText.trim() && !attachmentFile)) return;
+    if (!selectedThread || (!messageText.trim() && attachmentFiles.length === 0)) return;
+
+    const body = messageText.trim();
+    const filesToSend = attachmentFiles.length > 0 ? attachmentFiles : [];
+    const responses: ChatFeedMessage[] = [];
 
     try {
-      const response = selectedThread.type === 'direct'
-        ? await chatApi.sendMessage(selectedThread.id, {
-            body: messageText.trim(),
-            attachment: attachmentFile,
-          })
-        : await chatApi.sendGroupMessage(selectedThread.id, {
-            body: messageText.trim(),
-            attachment: attachmentFile,
-          });
+      if (filesToSend.length === 0) {
+        const response = selectedThread.type === 'direct'
+          ? await chatApi.sendMessage(selectedThread.id, { body })
+          : await chatApi.sendGroupMessage(selectedThread.id, { body });
+        responses.push(response.data);
+      } else {
+        for (let i = 0; i < filesToSend.length; i++) {
+          const file = filesToSend[i];
+          const messageBody = i === 0 ? body : '';
+          const response = selectedThread.type === 'direct'
+            ? await chatApi.sendMessage(selectedThread.id, { body: messageBody, attachment: file })
+            : await chatApi.sendGroupMessage(selectedThread.id, { body: messageBody, attachment: file });
+          responses.push(response.data);
+        }
+      }
 
       setMessageText('');
-      applyAttachmentFile(null);
+      clearAttachmentFiles();
 
       if (selectedThread.type === 'direct') {
         await chatApi.setTyping(selectedThread.id, false);
@@ -795,7 +876,7 @@ export default function Chat() {
         await chatApi.setGroupTyping(selectedThread.id, false);
       }
 
-      setMessages((prev) => [...prev, response.data]);
+      setMessages((prev) => [...prev, ...responses]);
       await loadThreads();
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not send message');
@@ -945,11 +1026,51 @@ export default function Chat() {
       const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'application/octet-stream';
       const blob = new Blob([response.data], { type: contentType });
       const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not open attachment');
     }
+  };
+
+  const downloadAttachment = async (message: ChatFeedMessage) => {
+    try {
+      const response = isGroupMessage(message)
+        ? await chatApi.getGroupAttachment(message.id)
+        : await chatApi.getAttachment(message.id);
+
+      const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'application/octet-stream';
+      const blob = new Blob([response.data], { type: contentType });
+      const objectUrl = URL.createObjectURL(blob);
+
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = message.attachment_name || `attachment-${message.id}`;
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not download attachment');
+    }
+  };
+
+  const getFileExtension = (filename?: string | null) => {
+    if (!filename) return '?';
+    const parts = filename.split('.');
+    const ext = parts.length > 1 ? parts.pop() : '';
+    return ext ? ext.substring(0, 4).toUpperCase() : '?';
   };
 
   const toggleGroupMember = (userId: number) => {
@@ -1306,8 +1427,19 @@ export default function Chat() {
         <div
           ref={messagesContainerRef}
           onScroll={handleMessagesScroll}
-          className="flex-1 min-h-0 space-y-3 overflow-y-auto bg-gray-50 p-4"
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className="relative flex-1 min-h-0 space-y-3 overflow-y-auto bg-gray-50 p-4"
         >
+          {isDragOver ? (
+            <div className="absolute inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-primary-400 bg-primary-50/80">
+              <p className="rounded-xl bg-white px-6 py-3 text-sm font-medium text-primary-700 shadow-lg">
+                Drop files here to attach
+              </p>
+            </div>
+          ) : null}
           {!selectedThread ? (
             <p className="text-sm text-gray-500">Choose or start a private chat, or create a group.</p>
           ) : messages.length === 0 ? (
@@ -1414,14 +1546,57 @@ export default function Chat() {
                           ) : null}
 
                           {message.has_attachment && !messageHasImageAttachment ? (
-                            <button
-                              onClick={() => openAttachment(message)}
-                              type="button"
-                              className={`mt-2 inline-flex items-center gap-1 text-xs underline ${mine ? 'text-primary-100' : 'text-primary-700'}`}
-                            >
-                              Open attachment
-                              {message.attachment_name ? ` (${message.attachment_name}${message.attachment_size ? `, ${formatBytes(message.attachment_size)}` : ''})` : ''}
-                            </button>
+                            <div className={`mt-2 flex items-center gap-2 rounded-lg border p-2 ${
+                              mine
+                                ? 'border-primary-400/40 bg-primary-500/20'
+                                : 'border-gray-200 bg-gray-50'
+                            }`}>
+                              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[11px] font-bold ${
+                                mine
+                                  ? 'bg-primary-500 text-white'
+                                  : 'bg-primary-100 text-primary-700'
+                              }`}>
+                                {getFileExtension(message.attachment_name)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className={`truncate text-xs font-medium ${
+                                  mine ? 'text-primary-100' : 'text-gray-800'
+                                }`}>
+                                  {message.attachment_name || 'Attachment'}
+                                </p>
+                                {message.attachment_size ? (
+                                  <p className={`text-[10px] ${
+                                    mine ? 'text-primary-200' : 'text-gray-500'
+                                  }`}>
+                                    {formatBytes(message.attachment_size)}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="flex shrink-0 gap-1">
+                                <button
+                                  onClick={() => openAttachment(message)}
+                                  type="button"
+                                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                                    mine
+                                      ? 'bg-primary-500 text-white hover:bg-primary-400'
+                                      : 'bg-primary-100 text-primary-700 hover:bg-primary-200'
+                                  }`}
+                                >
+                                  Open
+                                </button>
+                                <button
+                                  onClick={() => downloadAttachment(message)}
+                                  type="button"
+                                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
+                                    mine
+                                      ? 'bg-white/20 text-white hover:bg-white/30'
+                                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                  }`}
+                                >
+                                  Download
+                                </button>
+                              </div>
+                            </div>
                           ) : null}
                         </>
                       )}
@@ -1565,34 +1740,48 @@ export default function Chat() {
           </div>
         ) : null}
 
-        <form onSubmit={handleSendMessage} className="border-t border-gray-200 p-3">
+        <form
+          onSubmit={handleSendMessage}
+          onDragEnter={handleDragEnter}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className="border-t border-gray-200 p-3"
+        >
           <div className="space-y-3">
-            {attachmentFile && (
-              <div className="rounded-xl border border-gray-200 bg-white p-2">
-                <div className="relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                  {attachmentPreviewUrl ? (
-                    <img
-                      src={attachmentPreviewUrl}
-                      alt="Pasted screenshot preview"
-                      className="max-h-80 w-full object-contain"
-                    />
-                  ) : (
-                    <div className="flex h-36 items-center justify-center text-xs text-gray-500">
-                      {attachmentFile.name || 'Attachment selected'}
+            {attachmentFiles.length > 0 && (
+              <div className="space-y-2">
+                {attachmentFiles.map((file, fileIndex) => {
+                  const previewUrl = getFilePreviewUrl(file);
+                  return (
+                    <div key={`${file.name}-${file.size}-${fileIndex}`} className="rounded-xl border border-gray-200 bg-white p-2">
+                      <div className="relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                        {previewUrl ? (
+                          <img
+                            src={previewUrl}
+                            alt={file.name}
+                            className="max-h-40 w-full object-contain"
+                          />
+                        ) : (
+                          <div className="flex h-12 items-center gap-2 px-3 text-xs text-gray-500">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary-100 text-[10px] font-bold text-primary-700">
+                              {getFileExtension(file.name)}
+                            </span>
+                            <span className="truncate">{file.name}</span>
+                            {file.size ? <span className="shrink-0 text-gray-400">({formatBytes(file.size)})</span> : null}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeAttachmentFile(fileIndex)}
+                          className="absolute right-2 top-2 rounded-full bg-black/65 px-2 py-1 text-xs font-medium text-white hover:bg-black/75"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => applyAttachmentFile(null)}
-                    className="absolute right-2 top-2 rounded-full bg-black/65 px-2 py-1 text-xs font-medium text-white hover:bg-black/75"
-                  >
-                    Remove
-                  </button>
-                </div>
-                <p className="mt-2 truncate text-xs text-gray-600">
-                  {attachmentFile.name || 'Pasted screenshot'}
-                  {attachmentFile.size ? ` (${formatBytes(attachmentFile.size)})` : ''}
-                </p>
+                  );
+                })}
               </div>
             )}
 
@@ -1602,18 +1791,18 @@ export default function Chat() {
                 onChange={(e) => handleMessageChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handleComposerPaste}
-                placeholder={attachmentFile
+                placeholder={attachmentFiles.length > 0
                   ? 'Add a caption (optional)'
                   : selectedThread
                     ? `Type a message to this ${selectedThreadLabel}...`
                     : 'Select chat first'}
                 disabled={!selectedThread}
-                rows={attachmentFile ? 2 : 2}
+                rows={attachmentFiles.length > 0 ? 2 : 2}
                 className="w-full resize-y rounded-2xl border border-gray-300 px-4 py-2.5 text-sm disabled:bg-gray-100"
               />
               <button
                 type="submit"
-                disabled={!selectedThread || (!messageText.trim() && !attachmentFile)}
+                disabled={!selectedThread || (!messageText.trim() && attachmentFiles.length === 0)}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-primary-600 text-base font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
                 aria-label="Send message"
               >
@@ -1624,8 +1813,9 @@ export default function Chat() {
             <div className="flex items-center gap-2">
               <input
                 type="file"
+                multiple
                 disabled={!selectedThread}
-                onChange={(e) => applyAttachmentFile(e.target.files?.[0] || null)}
+                onChange={(e) => applyAttachmentFiles(e.target.files)}
                 className="block w-full text-xs text-gray-600 file:mr-2 file:rounded-full file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:font-medium"
               />
               <span className="text-[11px] text-gray-500">Max 200 MB</span>

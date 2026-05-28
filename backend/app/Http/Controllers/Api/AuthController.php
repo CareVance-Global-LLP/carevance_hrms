@@ -57,6 +57,12 @@ class AuthController extends Controller
 
                 DB::table('personal_access_tokens')->where('tokenable_id', $existingUser->id)->delete();
             } elseif ($existingUser) {
+                // Existing user trying to sign up again — check trial abuse
+                if ($signupMode === 'trial' && $existingUser->hasConsumedTrial()) {
+                    throw ValidationException::withMessages([
+                        'email' => ['You have already used your free trial. Please sign in or choose a paid plan.'],
+                    ]);
+                }
                 throw ValidationException::withMessages([
                     'email' => ['This email is already registered. Please sign in or use a different email.'],
                 ]);
@@ -93,6 +99,11 @@ class AuthController extends Controller
                 'role' => 'admin',
                 'organization_id' => $organization->id,
             ]);
+
+            // Track trial usage per user (prevents deleting org + re-signup for another trial)
+            if ($signupMode === 'trial') {
+                $user->markTrialUsed();
+            }
 
             $organization->forceFill([
                 'owner_user_id' => $user->id,
@@ -148,6 +159,25 @@ class AuthController extends Controller
         $this->clearLoginRateLimits($request, (string) $user->email);
 
         $remember = $request->boolean('remember');
+
+        // Clean up orphaned organization reference if org was deleted
+        if ($user->organization_id !== null) {
+            $user->load('organization');
+            if ($user->organization === null) {
+                $user->organization_id = null;
+                $user->save();
+            }
+        }
+
+        // Enforce trial expiry: if user's trial has expired, mark org as expired
+        if ($user->organization && $user->organization->subscription_status === 'trial' && $user->isTrialExpired()) {
+            $user->organization->update([
+                'subscription_status' => 'expired',
+                'subscription_expires_at' => now()->toDateString(),
+            ]);
+            $user->organization->refresh();
+        }
+
         $token = $this->apiTokenService->issue(
             $user,
             'auth-token',

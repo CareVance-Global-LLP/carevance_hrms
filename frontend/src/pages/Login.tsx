@@ -21,6 +21,7 @@ import BrandLogo from '@/components/branding/BrandLogo';
 import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import { desktopDownloadLabel, desktopDownloadUrl } from '@/lib/runtimeConfig';
 import { analytics } from '@/lib/analytics';
+import GoogleLoginButton from '@/components/auth/GoogleLoginButton';
 
 const REMEMBERED_EMAIL_KEY = 'carevance.rememberedEmail';
 
@@ -123,6 +124,19 @@ export default function Login() {
                   <p className="text-sm text-red-700">{error}</p>
                 </div>
               )}
+
+              <div className="mb-6">
+                <GoogleLoginButton type="login" />
+              </div>
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-white px-2 text-sm text-slate-500">Or sign in with email</span>
+                </div>
+              </div>
 
               <form className="space-y-5" onSubmit={handleSubmit}>
                 <div>

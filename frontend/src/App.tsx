@@ -83,6 +83,7 @@ const SuperAdminOrganizationDetail = lazyWithChunkRetry(() => import('@/pages/su
 const SuperAdminCreateOrganization = lazyWithChunkRetry(() => import('@/pages/super-admin/CreateOrganization'));
 const SuperAdminUsers = lazyWithChunkRetry(() => import('@/pages/super-admin/Users'));
 const SuperAdminBilling = lazyWithChunkRetry(() => import('@/pages/super-admin/Billing'));
+const GoogleSignupCompletion = lazyWithChunkRetry(() => import('@/pages/GoogleSignupCompletion'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
 const isChunkLoadFailure = (error: unknown) => {
@@ -266,7 +267,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/payment" replace />;
   }
 
-  if (!needsPayment && requiresOnboarding && !onboardingCompleted && !onboardingSkipped && !isOnboardingRoute) {
+  if (!needsPayment && requiresOnboarding && !onboardingCompleted && !onboardingSkipped && !isOnboardingRoute && !isPaymentRoute) {
     return <Navigate to={onboardingPath} replace />;
   }
 
@@ -281,8 +282,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function PublicRoute({ children }: { children: React.ReactNode }) {
+function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNode; allowAuthenticated?: boolean }) {
   const { user, organization, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
   const mobile = isLikelyMobile();
 
   if (isLoading) {
@@ -294,6 +296,11 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
+    // Allow authenticated users to access workspace creation when explicitly in fresh signup flow
+    const isFreshSignupFlow = new URLSearchParams(location.search).get('fresh') === 'true';
+    if (allowAuthenticated && (!organization?.id || isFreshSignupFlow)) {
+      return <>{children}</>;
+    }
     const needsPayment = organization?.subscription_intent === 'paid' && organization?.subscription_status !== 'active';
     if (needsPayment) {
       return <Navigate to="/payment" replace />;
@@ -441,7 +448,7 @@ function App() {
           <Route
             path="/signup-owner"
             element={
-              <PublicRoute>
+              <PublicRoute allowAuthenticated>
                 <OwnerSignupPage />
               </PublicRoute>
             }
@@ -451,6 +458,14 @@ function App() {
             element={
               <PublicRoute>
                 <OwnerSignupPage defaultMode="trial" />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/google-signup-completion"
+            element={
+              <PublicRoute>
+                <GoogleSignupCompletion />
               </PublicRoute>
             }
           />

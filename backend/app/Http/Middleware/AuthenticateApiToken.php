@@ -35,6 +35,30 @@ class AuthenticateApiToken
             return $this->unauthorizedResponse();
         }
 
+        // Enforce trial expiry on every API call
+        $organization = $user->organization;
+        if ($organization && $organization->subscription_status === 'trial' && $user->isTrialExpired()) {
+            $organization->update([
+                'subscription_status' => 'expired',
+                'subscription_expires_at' => now()->toDateString(),
+            ]);
+        }
+
+        // Block API access if subscription is expired (allow billing/settings endpoints)
+        if ($organization && $organization->subscription_status === 'expired') {
+            $allowedPaths = ['billing', 'settings', 'auth', 'logout', 'payment'];
+            $path = $request->path();
+            $isAllowed = collect($allowedPaths)->some(fn ($allowed) => str_contains($path, $allowed));
+            if (!$isAllowed) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Your free trial has expired. Please upgrade to continue using CareVance.',
+                    'error_code' => 'TRIAL_EXPIRED',
+                    'subscription_status' => 'expired',
+                ], 403);
+            }
+        }
+
         Auth::setUser($user);
         $request->setUserResolver(fn () => $user);
         $request->attributes->set('access_token', $tokenRecord);

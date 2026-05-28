@@ -12,6 +12,14 @@ import { ACTIVE_TIMER_KEY, armAutoStart, canUseDesktopAutoStart, clearDesktopTim
 import { apiUrl } from '@/lib/runtimeConfig';
 import { isTrackedTimerUser } from '@/lib/permissions';
 
+interface GoogleAuthResponse {
+  token: string;
+  user: User;
+  organization?: Organization;
+  has_workspace: boolean;
+  google_data?: { name: string; email: string };
+}
+
 interface AuthContextType {
   user: User | null;
   organization: Organization | null;
@@ -23,6 +31,27 @@ interface AuthContextType {
   acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string }) => Promise<{ requiresVerification: boolean; email: string }>;
   register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => Promise<void>;
   logout: () => Promise<void>;
+  googleLogin: (credential: string) => Promise<GoogleAuthResponse>;
+  completeGoogleRegistration: (data: {
+    name: string;
+    company_name: string;
+    company_description?: string;
+    plan_code?: string;
+    billing_cycle?: string;
+    seats?: number;
+    signup_mode?: string;
+    description?: string;
+    website?: string;
+    industry?: string;
+    size?: string;
+    phone?: string;
+    org_email?: string;
+    address_line?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
+  }) => Promise<GoogleAuthResponse>;
   updateUser: (user: User) => void;
   updateOrganization: (organization: Organization | null) => void;
 }
@@ -183,8 +212,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (storedOrg) {
         try {
-          if (isActiveRef.current) {
-            setOrganization(JSON.parse(storedOrg));
+          const parsedOrg = JSON.parse(storedOrg);
+          // Validate org has real data (not an empty/placeholder object)
+          if (parsedOrg && parsedOrg.id && parsedOrg.name) {
+            if (isActiveRef.current) {
+              setOrganization(parsedOrg);
+            }
+          } else {
+            removeStoredAuthValue('organization');
           }
         } catch {
           removeStoredAuthValue('organization');
@@ -440,6 +475,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAuthState();
   };
 
+  const googleLogin = async (credential: string): Promise<GoogleAuthResponse> => {
+    const response = await authApi.googleLogin(credential);
+    const responseData = response.data;
+
+    console.log('Google login response:', responseData);
+
+    if (!responseData.success) {
+      throw new Error('Google login failed');
+    }
+
+    // Store auth state so pending users can call protected completeRegistration
+    storeAuthState(responseData.token, responseData.user, responseData.organization);
+
+    return responseData;
+  };
+
+  const completeGoogleRegistration = async (data: {
+    name: string;
+    company_name: string;
+    company_description?: string;
+    plan_code?: string;
+    billing_cycle?: string;
+    seats?: number;
+    signup_mode?: string;
+    description?: string;
+    website?: string;
+    industry?: string;
+    size?: string;
+    phone?: string;
+    org_email?: string;
+    address_line?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
+  }): Promise<GoogleAuthResponse> => {
+    const response = await authApi.completeGoogleRegistration(data);
+    const responseData = response.data;
+
+    if (!responseData.success) {
+      throw new Error('Failed to complete registration');
+    }
+
+    storeAuthState(responseData.token, responseData.user, responseData.organization);
+
+    return {
+      ...responseData,
+      has_workspace: true,
+    };
+  };
+
   const updateUser = (updatedUser: User) => {
     setUser(updatedUser);
     setStoredAuthValue('user', JSON.stringify(updatedUser));
@@ -473,6 +559,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         acceptInvitation,
         register,
         logout,
+        googleLogin,
+        completeGoogleRegistration,
         updateUser,
         updateOrganization,
       }}

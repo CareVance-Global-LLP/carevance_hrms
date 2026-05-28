@@ -78,10 +78,12 @@ class BillingController extends Controller
         }
 
         $isTrial = $organization->subscription_status === 'trial';
+        $isNewPaidSignup = $organization->subscription_status === 'inactive' && $organization->subscription_intent === 'paid';
+        $isFreeChange = $isTrial || $isNewPaidSignup;
         $usedSeats = $organization->users()->count();
         $minSeats = $isTrial ? 5 : 10;
 
-        if ($isTrial) {
+        if ($isFreeChange) {
             $seats = max($requestedSeats > 0 ? $requestedSeats : $minSeats, $minSeats);
         } else {
             $seats = max($requestedSeats > 0 ? $requestedSeats : $organization->max_seats, $minSeats, $usedSeats);
@@ -90,12 +92,14 @@ class BillingController extends Controller
         $currentPricePerUser = (int) ($currentPlanConfig[$billingCycle === 'yearly' ? 'yearly_price' : 'monthly_price'] ?? 0);
         $targetPricePerUser = (int) ($targetPlanConfig[$billingCycle === 'yearly' ? 'yearly_price' : 'monthly_price'] ?? 0);
 
-        if ($isTrial) {
+        if ($isFreeChange) {
             $totalMonths = $billingCycle === 'yearly' ? 12 : 1;
             $amount = $targetPricePerUser * $seats * $totalMonths;
             $prorationDetails = [
                 'type' => 'full_payment',
-                'reason' => 'Trial user purchasing full plan',
+                'reason' => $isNewPaidSignup
+                    ? 'New paid signup selecting plan'
+                    : 'Trial user purchasing full plan',
                 'target_price_per_user' => $targetPricePerUser,
                 'seats' => $seats,
                 'used_seats' => $usedSeats,
@@ -183,9 +187,9 @@ class BillingController extends Controller
             return $this->errorResponse('Invalid pending plan.', 400);
         }
 
-        $isTrial = $organization->subscription_status === 'trial' || $organization->subscription_status === 'inactive';
+        $isFreeChange = $organization->subscription_status === 'trial' || $organization->subscription_status === 'inactive';
 
-        $newExpiresAt = $isTrial
+        $newExpiresAt = $isFreeChange
             ? ($billingCycle === 'yearly' ? now()->addYear()->toDateString() : now()->addMonth()->toDateString())
             : $organization->subscription_expires_at;
 

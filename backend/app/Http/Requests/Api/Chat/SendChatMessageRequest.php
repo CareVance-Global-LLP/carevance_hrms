@@ -14,7 +14,7 @@ class SendChatMessageRequest extends ApiFormRequest
                 'nullable',
                 'file',
                 'max:204800',
-                'mimetypes:application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp',
+                'mimetypes:application/pdf,text/plain,text/csv,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp,application/zip,application/x-zip-compressed,application/x-rar-compressed,application/x-tar,application/gzip,application/vnd.rar',
             ],
         ];
     }

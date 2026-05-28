@@ -25,8 +25,11 @@ export default function CheckoutPage() {
   const navigate = useNavigate();
   const { organization } = useAuth();
 
-  const isUpgradeMode = searchParams.get('mode') === 'upgrade' && !!organization;
-  const isTrial = organization?.subscription_status === 'trial';
+  const isFreshSignup = searchParams.get('fresh') === 'true';
+  const isModeUpgrade = searchParams.get('mode') === 'upgrade';
+  const isAlreadySignedUp = isFreshSignup && !!organization;
+  const isUpgradeMode = !!(isModeUpgrade || isAlreadySignedUp || organization);
+  const isTrial = !isFreshSignup && organization?.subscription_status === 'trial';
 
   const initialPlanCode = searchParams.get('plan') || 'basic';
   const initialInterval = (searchParams.get('interval') as PricingBillingCycle | null) || 'monthly';
@@ -37,6 +40,7 @@ export default function CheckoutPage() {
   const [upgradeError, setUpgradeError] = useState('');
   const [snapshotData, setSnapshotData] = useState<any>(null);
 
+  const isNewPaidSignup = organization?.subscription_status === 'inactive' && organization?.subscription_intent === 'paid';
   const currentPlan = organization ? getPricingPlan(organization.plan_code || 'basic') : null;
   const monthsRemaining = organization?.subscription_expires_at
     ? getMonthsRemaining(organization.subscription_expires_at, billingCycle)
@@ -45,34 +49,34 @@ export default function CheckoutPage() {
   const pricePerUser = getPricePerUserPerMonth(plan, billingCycle);
 
   const usedSeats = snapshotData?.plan?.used_seats ?? snapshotData?.plan?.users_count ?? 0;
-  const currentMaxSeats = organization?.max_seats ?? MIN_SEATS;
+  const currentMaxSeats = isFreshSignup ? MIN_SEATS : (organization?.max_seats ?? MIN_SEATS);
   const minSeats = isTrial ? Math.max(TRIAL_SEATS - usedSeats, 1) : Math.max(currentMaxSeats, MIN_SEATS);
   const defaultSeats = isTrial ? Math.max(usedSeats, TRIAL_SEATS) : currentMaxSeats;
   const [seats, setSeats] = useState(defaultSeats);
 
-  const total = isUpgradeMode && currentPlan
+  const shouldProrate = isUpgradeMode && currentPlan && !isTrial && !isNewPaidSignup;
+  const total = shouldProrate
     ? calculateUpgradeCost(currentPlan, plan, seats, billingCycle, isTrial, monthsRemaining, currentMaxSeats)
     : calculateTotal(plan, seats, billingCycle);
 
   const seatIncrement = () => setSeats((s) => s + 1);
   const seatDecrement = () => setSeats((s) => Math.max(minSeats, s - 1));
 
-  const signupQuery = buildSignupQuery(selectedPlanCode, 'paid', billingCycle, seats);
+  const signupQuery = (() => {
+    const params = new URLSearchParams(buildSignupQuery(selectedPlanCode, 'paid', billingCycle, seats));
+    if (isFreshSignup) {
+      params.set('fresh', 'true');
+    }
+    return params.toString();
+  })();
 
   useEffect(() => {
     if (isUpgradeMode) {
       billingApi.current().then((res) => {
         setSnapshotData(res.data);
-        const uSeats = res.data?.plan?.used_seats ?? res.data?.plan?.users_count ?? 0;
-        const orgMaxSeats = organization?.max_seats ?? MIN_SEATS;
-        if (isTrial) {
-          setSeats(Math.max(uSeats, TRIAL_SEATS));
-        } else {
-          setSeats(orgMaxSeats);
-        }
       }).catch(() => {});
     }
-  }, [isUpgradeMode, isTrial, organization?.max_seats]);
+  }, [isUpgradeMode]);
 
   const handleUpgrade = async () => {
     if (!isUpgradeMode || !organization) return;
@@ -130,13 +134,22 @@ export default function CheckoutPage() {
           </Link>
 
           <h1 className="text-4xl font-semibold tracking-[-0.06em] sm:text-[3.2rem] sm:leading-[0.94]">
-            {isUpgradeMode ? (isTrial ? 'Choose your plan' : 'Upgrade your plan') : 'Complete your purchase'}
+            {isUpgradeMode
+              ? isTrial
+                ? 'Choose your plan'
+                : isNewPaidSignup
+                  ? 'Change your plan'
+                  : 'Upgrade your plan'
+              : 'Complete your purchase'
+            }
           </h1>
           <p className="mt-4 text-base leading-8 text-slate-600">
             {isUpgradeMode
               ? isTrial
                 ? 'Your trial is active. Select a plan to continue with full features.'
-                : `Upgrading from ${currentPlan?.label || 'Basic'} to ${plan.label}`
+                : isNewPaidSignup
+                  ? `Select your ${plan.label} plan`
+                  : `Upgrading from ${currentPlan?.label || 'Basic'} to ${plan.label}`
               : `${plan.label} plan · ${PRICE_CURRENCY}${pricePerUser}/user/month`
             }
           </p>
@@ -147,7 +160,7 @@ export default function CheckoutPage() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {pricingPlans.filter((p) => {
                 if (p.enterpriseContactOnly) return false;
-                if (isUpgradeMode && !isTrial && currentPlan && p.code === currentPlan.code) return false;
+                if (isUpgradeMode && !isTrial && !isNewPaidSignup && currentPlan && p.code === currentPlan.code) return false;
                 return true;
               }).map((p) => {
                 const active = p.code === selectedPlanCode;
@@ -230,7 +243,7 @@ export default function CheckoutPage() {
             {isUpgradeMode && (
               <div className="mt-3 rounded-2xl bg-slate-50 px-5 py-3">
                 <p className="text-xs text-slate-500">
-                  {isTrial
+                  {isTrial || isNewPaidSignup
                     ? `Full plan price: ${PRICE_CURRENCY}${calculateTotal(plan, seats, billingCycle).toLocaleString('en-IN')} (${billingCycle === 'yearly' ? '12' : '1'} months at ${PRICE_CURRENCY}${pricePerUser}/user/month × ${seats} seats)`
                     : currentPlan
                       ? (() => {

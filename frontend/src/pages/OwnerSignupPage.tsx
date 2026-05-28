@@ -19,6 +19,7 @@ import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import { useAuth } from '@/contexts/AuthContext';
 import { analytics } from '@/lib/analytics';
 import { apiUrl } from '@/lib/runtimeConfig';
+import GoogleLoginButton from '@/components/auth/GoogleLoginButton';
 import {
   calculateTotal,
   getPlanPrice,
@@ -54,7 +55,11 @@ const formatError = (error: any) => {
 export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode?: SignupMode }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { signupOwner } = useAuth();
+  const { signupOwner, completeGoogleRegistration } = useAuth();
+
+  const googleName = searchParams.get('google_name') || '';
+  const googleEmail = searchParams.get('google_email') || '';
+  const isGoogleMode = Boolean(googleEmail);
 
   const initialPlanCode = searchParams.get('plan');
   const explicitMode = searchParams.get('mode') as SignupMode | null;
@@ -64,8 +69,8 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
   const modeLocked = explicitMode !== null;
 
   const [companyName, setCompanyName] = useState('');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [name, setName] = useState(googleName);
+  const [email, setEmail] = useState(googleEmail);
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [planCode, setPlanCode] = useState(initialMode === 'trial' ? 'basic' : getPricingPlan(initialPlanCode).code);
@@ -101,6 +106,16 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
     }
   }, [signupMode]);
 
+  // Sync name/email from Google query params when they change (e.g. redirect from Google login)
+  useEffect(() => {
+    if (googleName) {
+      setName(googleName);
+    }
+    if (googleEmail) {
+      setEmail(googleEmail);
+    }
+  }, [googleName, googleEmail]);
+
   const selectedPlan = useMemo(() => getPricingPlan(planCode), [planCode]);
   const selectedPlanPrice = getPlanPrice(selectedPlan, billingCycle);
 
@@ -118,7 +133,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
     setError('');
     setFieldErrors({});
 
-    if (password !== passwordConfirmation) {
+    if (!isGoogleMode && password !== passwordConfirmation) {
       setError('Passwords do not match.');
       setFieldErrors({ password_confirmation: ['Passwords do not match.'] });
       return;
@@ -137,6 +152,36 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
         plan_code: planCode,
         signup_mode: signupMode,
       });
+
+      if (isGoogleMode) {
+        await completeGoogleRegistration({
+          name: name.trim(),
+          company_name: companyName.trim(),
+          company_description: description.trim() || undefined,
+          plan_code: planCode,
+          billing_cycle: billingCycle,
+          seats,
+          signup_mode: signupMode,
+          description: description.trim() || undefined,
+          website: website.trim() || undefined,
+          industry: industry || undefined,
+          size: size || undefined,
+          phone: phone.trim() || undefined,
+          org_email: orgEmail.trim() || undefined,
+          address_line: addressLine.trim() || undefined,
+          city: city.trim() || undefined,
+          state: state.trim() || undefined,
+          postal_code: postalCode.trim() || undefined,
+          country: country.trim() || undefined,
+        });
+        analytics.trackEvent('google_signup_completed', {
+          plan_code: planCode,
+          signup_mode: signupMode,
+        });
+        navigate('/dashboard');
+        return;
+      }
+
       const result = await signupOwner({
         company_name: companyName.trim(),
         name: name.trim(),
@@ -203,20 +248,24 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                 </div>
                 <BrandLogo variant="full" size="sm" className="mb-5 max-w-[16rem]" />
                 <h1 className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-[3.1rem] sm:leading-[0.95]">
-                  Start your CareVance workspace
+                  {isGoogleMode ? 'Complete your workspace setup' : 'Start your CareVance workspace'}
                 </h1>
                 <p className="mt-4 text-base leading-8 text-slate-600">
-                  Create the first workspace owner account, set your plan intent, and land directly in the dashboard with onboarding-ready billing state.
+                  {isGoogleMode
+                    ? 'Your Google account is connected. Just add your company details to finish setting up your workspace.'
+                    : 'Create the first workspace owner account, set your plan intent, and land directly in the dashboard with onboarding-ready billing state.'}
                 </p>
-                <p className="mt-3 text-sm text-slate-500">
-                  Already have an account?{' '}
-                  <Link
-                    to="/login"
-                    className="font-semibold text-sky-700 underline-offset-4 transition hover:text-slate-950 hover:underline"
-                  >
-                    Sign in
-                  </Link>
-                </p>
+                {!isGoogleMode && (
+                  <p className="mt-3 text-sm text-slate-500">
+                    Already have an account?{' '}
+                    <Link
+                      to="/login"
+                      className="font-semibold text-sky-700 underline-offset-4 transition hover:text-slate-950 hover:underline"
+                    >
+                      Sign in
+                    </Link>
+                  </p>
+                )}
               </div>
 
               {error ? (
@@ -225,6 +274,23 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                   <p className="text-sm text-red-700">{error}</p>
                 </div>
               ) : null}
+
+              {!isGoogleMode && (
+                <>
+              <div className="mb-6">
+                <GoogleLoginButton type="signup" />
+              </div>
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-white px-2 text-sm text-slate-500">Or sign up with email</span>
+                </div>
+              </div>
+                </>
+              )}
 
               <form className="space-y-5" onSubmit={handleSubmit}>
                 {isPaidMode && initialPlanCode ? (
@@ -313,13 +379,19 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                       autoComplete="email"
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
-                      className="block w-full rounded-[22px] border border-slate-200/90 bg-white/85 py-4 pl-12 pr-4 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                      disabled={isGoogleMode}
+                      className="block w-full rounded-[22px] border border-slate-200/90 bg-white/85 py-4 pl-12 pr-4 text-sm text-slate-950 placeholder-slate-400 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition duration-300 focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30 disabled:bg-slate-100 disabled:text-slate-500"
                       placeholder="you@company.com"
                     />
                   </div>
+                  {isGoogleMode && (
+                    <p className="mt-2 text-xs text-slate-500">This email is verified through Google and cannot be changed.</p>
+                  )}
                   {fieldErrors.email ? <p className="mt-2 text-sm text-red-600">{fieldErrors.email[0]}</p> : null}
                 </div>
 
+                {!isGoogleMode && (
+                  <>
                 <div>
                   <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-800">
                     Password
@@ -367,6 +439,8 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                   </div>
                 {fieldErrors.password_confirmation ? <p className="mt-2 text-sm text-red-600">{fieldErrors.password_confirmation[0]}</p> : null}
                 </div>
+                  </>
+                )}
 
                 {/* Organization Details Toggle */}
                 <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70">
