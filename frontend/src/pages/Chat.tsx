@@ -109,6 +109,42 @@ const isSameThread = (left: ThreadSelection, right: ThreadSelection) => (
   left?.type === right?.type && left?.id === right?.id
 );
 
+// Helper function to format date separators like WhatsApp
+const formatDateSeparator = (dateString: string): string => {
+  const date = new Date(dateString);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  // Check if it's today
+  if (date.toDateString() === today.toDateString()) {
+    return 'Today';
+  }
+
+  // Check if it's yesterday
+  if (date.toDateString() === yesterday.toDateString()) {
+    return 'Yesterday';
+  }
+
+  // Check if it's within this week
+  const daysDiff = Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysDiff < 7) {
+    return date.toLocaleDateString('en-US', { weekday: 'long' });
+  }
+
+  // Otherwise show full date
+  return date.toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+// Helper to get date key for grouping
+const getDateKey = (dateString: string): string => {
+  return new Date(dateString).toDateString();
+};
+
 export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
@@ -1448,7 +1484,10 @@ export default function Chat() {
           ) : messages.length === 0 ? (
             <p className="text-sm text-gray-500">No messages yet.</p>
           ) : (
-            messages.map((message) => {
+            messages.map((message, index) => {
+              // Check if we need to show a date separator
+              const showDateSeparator = index === 0 || 
+                getDateKey(message.created_at) !== getDateKey(messages[index - 1].created_at);
               const mine = Number(message.sender_id) === Number(user?.id);
               const groupMessage = isGroupMessage(message);
               const hasReactions = (message.reactions || []).length > 0;
@@ -1457,11 +1496,18 @@ export default function Chat() {
               const hasBodyText = Boolean((message.body || '').trim());
 
               return (
-                <div
-                  key={`${groupMessage ? 'group' : 'direct'}-${message.id}`}
-                  className={`group flex ${mine ? 'justify-end' : 'justify-start'} ${hasReactions ? 'pt-6' : 'pt-4'}`}
-                >
-                  <div className="relative max-w-[70%]" onContextMenu={(event) => openMessageContextMenu(event, message, mine)}>
+                <Fragment key={`${groupMessage ? 'group' : 'direct'}-${message.id}`}>
+                  {showDateSeparator ? (
+                    <div className="flex justify-center py-4">
+                      <span className="rounded-full bg-gray-200 px-4 py-1 text-xs font-medium text-gray-600">
+                        {formatDateSeparator(message.created_at)}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div
+                    className={`group flex ${mine ? 'justify-end' : 'justify-start'} ${hasReactions ? 'pt-6' : 'pt-4'}`}
+                  >
+                    <div className="relative max-w-[70%]" onContextMenu={(event) => openMessageContextMenu(event, message, mine)}>
                     {hasReactions ? (
                       <div
                         className={`pointer-events-none absolute z-10 flex max-w-full flex-wrap gap-1 ${
@@ -1607,6 +1653,7 @@ export default function Chat() {
                     </div>
                   </div>
                 </div>
+                </Fragment>
               );
             })
           )}
