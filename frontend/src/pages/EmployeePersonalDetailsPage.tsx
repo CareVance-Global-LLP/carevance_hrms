@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
+import { canAccess } from '@/lib/permissions';
 import { employeeWorkspaceApi, userApi } from '@/services/api';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
 
@@ -20,8 +21,9 @@ export default function EmployeePersonalDetailsPage() {
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [aboutForm, setAboutForm] = useState<Record<string, string>>({});
   const [workForm, setWorkForm] = useState<Record<string, any>>({});
+  
+  // Only the profile owner can edit their personal info
   const canEditOwnProfile = user?.id === id;
-  const canEditWorkInfo = user?.role === 'admin' || user?.role === 'manager';
 
   const workspaceQuery = useQuery({
     queryKey: ['employee-workspace', id],
@@ -98,6 +100,12 @@ export default function EmployeePersonalDetailsPage() {
   }
 
   const data = workspaceQuery.data;
+  
+  // Admins, managers who are the direct reporting manager, or custom roles with employee.edit permission can edit work info
+  const canEditWorkInfo = canAccess(user, 'employee.edit') || 
+                          user?.role === 'admin' || 
+                          (user?.role === 'manager' && (data.employee as any)?.reporting_manager_id === user?.id);
+  
   const aboutSummaryFields = [
     { label: 'First Name', value: data.about?.first_name },
     { label: 'Last Name', value: data.about?.last_name },
@@ -139,51 +147,51 @@ export default function EmployeePersonalDetailsPage() {
         <h1 className="mt-2 text-2xl font-semibold text-slate-950">{data.employee?.name || 'Employee'}</h1>
         <p className="mt-1 text-sm text-slate-500">{data.employee?.email || ''}</p>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {aboutSummaryFields.map((field) => (
-            <div key={field.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{field.label}</p>
-              <p className="mt-2 text-sm font-medium text-slate-950">{field.value || 'Not added yet'}</p>
+        {canEditOwnProfile ? (
+          // Editable form for profile owner
+          <>
+            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {Object.keys(aboutForm).map((key) => (
+                <div key={key}>
+                  <FieldLabel>{labelize(key)}</FieldLabel>
+                  {key === 'gender' ? (
+                    <SelectInput
+                      value={aboutForm[key] || ''}
+                      onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
+                    >
+                      <option value="">Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                    </SelectInput>
+                  ) : (
+                    <TextInput
+                      type={key.includes('date') ? 'date' : key.includes('email') ? 'email' : 'text'}
+                      value={aboutForm[key] || ''}
+                      onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Object.keys(aboutForm).map((key) => (
-            <div key={key}>
-              <FieldLabel>{labelize(key)}</FieldLabel>
-              {key === 'gender' ? (
-                <SelectInput
-                  value={aboutForm[key] || ''}
-                  disabled={!canEditOwnProfile}
-                  onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
-                >
-                  <option value="">Select gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                  <option value="prefer_not_to_say">Prefer not to say</option>
-                </SelectInput>
-              ) : (
-                <TextInput
-                  type={key.includes('date') ? 'date' : key.includes('email') ? 'email' : 'text'}
-                  value={aboutForm[key] || ''}
-                  disabled={!canEditOwnProfile}
-                  onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
-                />
-              )}
+            <div className="mt-6">
+              <Button onClick={() => saveAboutMutation.mutate()} disabled={saveAboutMutation.isPending}>
+                {saveAboutMutation.isPending ? 'Saving...' : 'Save Personal Info'}
+              </Button>
             </div>
-          ))}
-        </div>
-
-        <div className="mt-6">
-          {!canEditOwnProfile ? (
-            <p className="text-sm text-slate-500">Only the profile owner can edit these details.</p>
-          ) : null}
-          <Button onClick={() => saveAboutMutation.mutate()} disabled={saveAboutMutation.isPending || !canEditOwnProfile}>
-            {saveAboutMutation.isPending ? 'Saving...' : 'Save Personal Info'}
-          </Button>
-        </div>
+          </>
+        ) : (
+          // Read-only view for others (admins, managers, etc.)
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {aboutSummaryFields.map((field) => (
+              <div key={field.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{field.label}</p>
+                <p className="mt-2 text-sm font-medium text-slate-950">{field.value || 'Not added yet'}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Work Information Section */}
@@ -204,8 +212,8 @@ export default function EmployeePersonalDetailsPage() {
           ))}
         </div>
 
-        {/* Work Info Edit Form - Only for Admin/Manager */}
-        {canEditWorkInfo && (
+        {/* Work Info Edit Form - Only for Admin/Manager with permissions */}
+        {canEditWorkInfo ? (
           <>
             <div className="mt-6 border-t border-slate-200 pt-6">
               <p className="text-sm font-medium text-slate-900">Edit Work Schedule</p>
@@ -238,6 +246,14 @@ export default function EmployeePersonalDetailsPage() {
               </Button>
             </div>
           </>
+        ) : (
+          <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-sm text-slate-500">
+              {user?.role === 'manager' 
+                ? 'Only admins or the direct reporting manager can edit work information.'
+                : 'Only admins or managers with edit permissions can modify work information.'}
+            </p>
+          </div>
         )}
       </section>
     </div>

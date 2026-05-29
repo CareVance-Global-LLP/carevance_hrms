@@ -702,27 +702,9 @@ export default function Layout() {
     }
   }, [desktopPushEnabled]);
 
-  useEffect(() => {
-    if (!notificationsOpen || unreadNotifications <= 0) {
-      return;
-    }
-
-    let active = true;
-
-    setUnreadNotifications(0);
-    setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
-
-    notificationApi.markAllRead().catch(() => {
-      if (active) {
-        setUnreadNotifications(notifications.filter((item) => !item.is_read).length);
-        setNotifications(notifications);
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [notificationsOpen, unreadNotifications, notifications]);
+  // Note: Removed auto-mark-as-read when opening notification dropdown
+  // Notifications should only be marked as read when user actually clicks on them
+  // This prevents notifications from disappearing just by opening the dropdown
 
   const isRouteActive = (to?: string) => {
     if (!to) return false;

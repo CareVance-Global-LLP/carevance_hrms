@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\Auth;
 
 use App\Http\Requests\Api\ApiFormRequest;
+use App\Rules\ValidTimezone;
 
 class LoginRequest extends ApiFormRequest
 {
@@ -19,7 +20,7 @@ class LoginRequest extends ApiFormRequest
             'email' => 'required|email',
             'password' => 'required|string',
             'remember' => 'sometimes|boolean',
-            'timezone' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z][A-Za-z0-9_+\-]*(\/[A-Za-z0-9_+\-]+)+$/'],
+            'timezone' => ['nullable', 'string', 'max:255', new ValidTimezone],
         ];
     }
 }

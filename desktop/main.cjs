@@ -1,3 +1,6 @@
+console.log('[Desktop] Starting main.cjs...');
+console.log('[Desktop] __dirname:', __dirname);
+
 const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage, Tray, Menu } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
@@ -160,7 +163,9 @@ app.disableHardwareAcceleration();
 app.setName('CareVance Tracker');
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+console.log('[Desktop] Single instance lock:', hasSingleInstanceLock);
 if (!hasSingleInstanceLock) {
+  console.log('[Desktop] Another instance is already running, quitting...');
   app.quit();
 }
 

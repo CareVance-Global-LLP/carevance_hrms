@@ -1765,7 +1765,7 @@ class ReportController extends Controller
             return $organizationTimezone;
         }
 
-        return 'Asia/Kolkata';
+        return config('app.timezone');
     }
 
     private function resolveExportDepartment(User $user): string

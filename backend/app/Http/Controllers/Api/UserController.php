@@ -14,6 +14,7 @@ use App\Models\Payslip;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeEntry;
+use App\Models\Organization;
 use App\Models\User;
 use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Audit\AuditLogService;
@@ -65,7 +66,7 @@ class UserController extends Controller
                 'employeeWorkInfo.department:id,name,slug',
                 'customRole',
             ])
-            ->when($currentUser->getHierarchyLevel() > 10 && $currentUser->getHierarchyLevel() < 100, function ($query) use ($currentUser) {
+            ->when($currentUser->getHierarchyLevel() > Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'] && $currentUser->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], function ($query) use ($currentUser) {
                 $visibleGroupIds = $this->groupIdsForUser($currentUser);
                 $userLevel = $currentUser->getHierarchyLevel();
 
@@ -76,13 +77,18 @@ class UserController extends Controller
                                 $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>', $userLevel))
                                     ->orWhere(function ($q2) use ($userLevel) {
                                         $q2->whereNull('role_id')
-                                            ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]);
+                                            ->whereRaw("CASE role WHEN 'admin' THEN ? WHEN 'manager' THEN ? WHEN 'employee' THEN ? ELSE 999 END > ?", [
+                                            Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'],
+                                            Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['manager'],
+                                            Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'],
+                                            $userLevel
+                                        ]);
                                     });
                             })->whereHas('groups', fn ($groupQuery) => $groupQuery->whereIn('groups.id', $visibleGroupIds));
                         });
                 });
             })
-            ->when($currentUser->getHierarchyLevel() >= 100, fn ($query) => $query->where('id', $currentUser->id))
+            ->when($currentUser->getHierarchyLevel() >= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], fn ($query) => $query->where('id', $currentUser->id))
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -121,9 +127,9 @@ class UserController extends Controller
         }
 
         $period = $request->get('period', 'all');
-        $timezone = (string) $request->get('timezone', 'Asia/Kolkata');
+        $timezone = (string) $request->get('timezone', config('app.timezone'));
         if (!in_array($timezone, timezone_identifiers_list(), true)) {
-            $timezone = 'Asia/Kolkata';
+            $timezone = config('app.timezone');
         }
         $range = $this->resolvePeriodRange(
             $period,
@@ -320,13 +326,13 @@ class UserController extends Controller
             // When assigning a default string role, clear any custom role_id
             $validated['role_id'] = null;
 
-            if ($actor?->getHierarchyLevel() > 10 && $actor?->getHierarchyLevel() < 100) {
+            if ($actor?->getHierarchyLevel() > Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'] && $actor?->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee']) {
                 throw ValidationException::withMessages([
                     'role' => ['Managers are not allowed to change user roles.'],
                 ]);
             }
 
-            if ($isSelfRoleChange && $actor->getHierarchyLevel() <= 10 && $validated['role'] !== 'admin') {
+            if ($isSelfRoleChange && $actor->getHierarchyLevel() <= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'] && $validated['role'] !== 'admin') {
                 throw ValidationException::withMessages([
                     'role' => ['Admin users cannot demote themselves.'],
                 ]);
@@ -765,7 +771,7 @@ class UserController extends Controller
             return false;
         }
 
-        if ($currentUser->getHierarchyLevel() <= 10) {
+        if ($currentUser->getHierarchyLevel() <= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin']) {
             return true;
         }
 
@@ -773,7 +779,7 @@ class UserController extends Controller
             return true;
         }
 
-        if ($currentUser->getHierarchyLevel() < 100) {
+        if ($currentUser->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee']) {
             return $user->getHierarchyLevel() > $currentUser->getHierarchyLevel() && $this->usersShareAGroup($currentUser, $user);
         }
 
@@ -782,12 +788,12 @@ class UserController extends Controller
 
     private function canManageUsers(User $user): bool
     {
-        return $user->getHierarchyLevel() < 100;
+        return $user->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'];
     }
 
     private function canDeleteUsers(?User $user): bool
     {
-        return $user?->getHierarchyLevel() <= 10;
+        return $user?->getHierarchyLevel() <= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'];
     }
 
     /**
@@ -825,7 +831,7 @@ class UserController extends Controller
     private function syncPrimaryGroup(User $user, array $groupIds, array $previousGroupIds = []): void
     {
         $primaryGroupId = $groupIds[0] ?? null;
-        $reportingManagerId = $user->getHierarchyLevel() >= 100
+        $reportingManagerId = $user->getHierarchyLevel() >= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee']
             ? $this->resolveGroupManagerId($user->organization_id, $primaryGroupId)
             : null;
 
@@ -840,7 +846,7 @@ class UserController extends Controller
             ]
         );
 
-        if ($user->getHierarchyLevel() < 100) {
+        if ($user->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee']) {
             collect(array_merge($previousGroupIds, $groupIds))
                 ->filter(fn ($groupId) => (int) $groupId > 0)
                 ->unique()

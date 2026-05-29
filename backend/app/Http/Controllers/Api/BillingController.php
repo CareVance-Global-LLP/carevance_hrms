@@ -474,8 +474,8 @@ class BillingController extends Controller
         $razorpayPaymentId = $request->input('razorpay_payment_id');
         $razorpaySignature = $request->input('razorpay_signature');
 
-        // Check if this is a mock payment
-        if (str_starts_with($razorpayOrderId, 'mock_order_')) {
+        // Check if this is a mock payment (only allowed in local/testing environments)
+        if (str_starts_with($razorpayOrderId, 'mock_order_') && app()->environment('local', 'testing')) {
             \Illuminate\Support\Facades\Log::info('Processing mock payment verification', [
                 'order_id' => $razorpayOrderId,
                 'organization_id' => $organization->id,

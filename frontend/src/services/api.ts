@@ -58,6 +58,14 @@ import type {
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
+// Define API error response structure
+interface ApiErrorResponse {
+  message?: string;
+  error_code?: string;
+  errors?: Record<string, string[]>;
+  request_id?: string;
+}
+
 const api = axios.create({
   baseURL: apiUrl,
   withCredentials: true,
@@ -92,19 +100,19 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => {
     const status = Number(response?.status || 0);
-    const errorCode = (response?.data as any)?.error_code;
+    const errorCode = (response?.data as ApiErrorResponse)?.error_code;
 
     if (status === 401 || errorCode === 'UNAUTHORIZED') {
       clearAuthStorage();
       window.dispatchEvent(new Event('app:auth-cleared'));
-      return Promise.reject(new Error((response?.data as any)?.message || 'Unauthorized'));
+      return Promise.reject(new Error((response?.data as ApiErrorResponse)?.message || 'Unauthorized'));
     }
 
     return response;
   },
   (error: AxiosError) => {
     const status = error.response?.status;
-    const errorCode = (error.response?.data as any)?.error_code;
+    const errorCode = (error.response?.data as ApiErrorResponse)?.error_code;
     
     // Handle authentication errors
     if (status === 401 || errorCode === 'UNAUTHORIZED') {
@@ -116,13 +124,13 @@ api.interceptors.response.use(
     
     // Handle forbidden errors
     if (status === 403 || errorCode === 'FORBIDDEN') {
-      console.error('Access forbidden:', (error.response?.data as any)?.message || 'You do not have permission to perform this action');
+      console.error('Access forbidden:', (error.response?.data as ApiErrorResponse)?.message || 'You do not have permission to perform this action');
       return Promise.reject(error);
     }
 
     // Handle trial expired
     if (errorCode === 'TRIAL_EXPIRED') {
-      console.error('Trial expired:', (error.response?.data as any)?.message || 'Your free trial has expired');
+      console.error('Trial expired:', (error.response?.data as ApiErrorResponse)?.message || 'Your free trial has expired');
       if (typeof window !== 'undefined' && window.location.pathname !== '/payment') {
         window.location.href = '/payment';
       }
@@ -144,7 +152,7 @@ api.interceptors.response.use(
     // Handle server errors
     if (status && status >= 500) {
       console.error('Server error. Please try again later.');
-      const requestId = (error.response?.data as any)?.request_id;
+      const requestId = (error.response?.data as ApiErrorResponse)?.request_id;
       if (requestId) {
         console.error('Request ID:', requestId);
       }

@@ -19,7 +19,6 @@ Route::get('/groups/{id}', [ReportGroupController::class, 'show']);
 
 Route::middleware('role:admin,manager')->group(function () {
     Route::get('/employees/{id}/workspace', [EmployeeWorkspaceController::class, 'show']);
-    Route::put('/employees/{id}/profile', [EmployeeWorkspaceController::class, 'updateProfile']);
     Route::put('/employees/{id}/work-info', [EmployeeWorkspaceController::class, 'updateWorkInfo']);
     Route::post('/employees/{id}/government-ids', [EmployeeWorkspaceController::class, 'storeGovernmentId']);
     Route::post('/employees/{id}/bank-accounts', [EmployeeWorkspaceController::class, 'storeBankAccount']);
@@ -34,3 +33,6 @@ Route::middleware('role:admin,manager')->group(function () {
     Route::match(['put', 'patch'], '/report-groups/{id}', [ReportGroupController::class, 'update']);
     Route::delete('/report-groups/{id}', [ReportGroupController::class, 'destroy']);
 });
+
+// Employees can update their own profile (controller's canEditProfile enforces owner-only)
+Route::put('/employees/{id}/profile', [EmployeeWorkspaceController::class, 'updateProfile']);

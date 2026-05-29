@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasStrictAdminAccess } from '@/lib/permissions';
 import { roleApi, permissionApi } from '@/services/api';
@@ -38,6 +38,8 @@ export default function RoleManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const formRef = useRef<HTMLDivElement>(null);
 
   const [editingRole, setEditingRole] = useState<Partial<Role> & { permissions: string[] } | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -72,6 +74,7 @@ export default function RoleManagement() {
       ? Math.max(...roles.map(r => r.hierarchy_level)) + 10
       : 60;
     setIsCreating(true);
+    setFieldErrors({});
     setEditingRole({
       name: '',
       description: '',
@@ -107,6 +110,7 @@ export default function RoleManagement() {
     }
     setSaving(true);
     setFeedback(null);
+    setFieldErrors({});
     try {
       if (isCreating) {
         await roleApi.create({
@@ -129,7 +133,23 @@ export default function RoleManagement() {
       closeForm();
       await loadData();
     } catch (err: any) {
-      setFeedback({ tone: 'error', message: err?.response?.data?.message || 'Failed to save role' });
+      const apiErrors = err?.response?.data?.errors;
+      if (apiErrors && typeof apiErrors === 'object') {
+        setFieldErrors(apiErrors as Record<string, string[]>);
+        const firstField = Object.keys(apiErrors)[0];
+        const firstMsg = (Object.values(apiErrors).flat().find(Boolean) as string) || 'The given data was invalid.';
+        setFeedback({ tone: 'error', message: firstMsg || 'The given data was invalid.' });
+        setTimeout(() => {
+          if (firstField) {
+            const el = document.querySelector(`[data-field="${firstField}"]`);
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else {
+            formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 100);
+      } else {
+        setFeedback({ tone: 'error', message: err?.response?.data?.message || 'Failed to save role' });
+      }
     } finally {
       setSaving(false);
     }
@@ -252,6 +272,7 @@ export default function RoleManagement() {
       )}
 
       {editingRole && (
+        <div ref={formRef}>
         <SurfaceCard className="p-6">
           <div className="mb-6 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-950">
@@ -263,19 +284,22 @@ export default function RoleManagement() {
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2">
-            <div>
+            <div data-field="name">
               <label className="block text-sm font-medium text-slate-700 mb-1">Role Name</label>
               <input
                 type="text"
                 value={editingRole.name || ''}
                 onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })}
                 placeholder="e.g. Team Lead"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className={`w-full rounded-lg border px-3 py-2 text-sm ${fieldErrors.name?.length ? 'border-red-300 bg-red-50/30' : 'border-slate-200'}`}
                 disabled={saving}
               />
+              {fieldErrors.name?.map((msg) => (
+                <p key={msg} className="mt-1 text-sm text-red-600">{msg}</p>
+              ))}
             </div>
             {!editingRole.is_system && (
-              <div>
+              <div data-field="hierarchy_level">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Hierarchy Level</label>
                 <p className="mb-2 text-xs text-slate-400">Lower = higher rank (Admin=10, Manager=50, Employee=100)</p>
                 
@@ -321,9 +345,12 @@ export default function RoleManagement() {
                       setEditingRole({ ...editingRole, hierarchy_level: 60 });
                     }
                   }}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  className={`w-full rounded-lg border px-3 py-2 text-sm ${fieldErrors.hierarchy_level?.length ? 'border-red-300 bg-red-50/30' : 'border-slate-200'}`}
                   disabled={saving}
                 />
+                {fieldErrors.hierarchy_level?.map((msg) => (
+                  <p key={msg} className="mt-1 text-sm text-red-600">{msg}</p>
+                ))}
                 
                 {/* Warning for duplicate level */}
                 {editingRole.hierarchy_level && 
@@ -336,16 +363,19 @@ export default function RoleManagement() {
             )}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4" data-field="description">
             <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
             <input
               type="text"
               value={editingRole.description || ''}
               onChange={(e) => setEditingRole({ ...editingRole, description: e.target.value })}
               placeholder="What this role can do"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              className={`w-full rounded-lg border px-3 py-2 text-sm ${fieldErrors.description?.length ? 'border-red-300 bg-red-50/30' : 'border-slate-200'}`}
               disabled={saving}
             />
+            {fieldErrors.description?.map((msg) => (
+              <p key={msg} className="mt-1 text-sm text-red-600">{msg}</p>
+            ))}
           </div>
 
           {!editingRole.is_system && (
@@ -368,13 +398,16 @@ export default function RoleManagement() {
             </div>
           )}
 
-          <div className="mt-8">
+          <div className="mt-8" data-field="permissions">
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-slate-700">Permissions</h3>
               <p className="text-xs text-slate-500 mt-1">
                 Select what actions this role can perform. Hover over each permission to see more details.
               </p>
             </div>
+            {fieldErrors.permissions?.map((msg) => (
+              <p key={msg} className="mb-2 text-sm text-red-600">{msg}</p>
+            ))}
             {permGroups.length === 0 ? (
               <p className="text-sm text-slate-400">No permissions available for your plan</p>
             ) : (
@@ -438,6 +471,7 @@ export default function RoleManagement() {
             </Button>
           </div>
         </SurfaceCard>
+        </div>
       )}
     </div>
   );
