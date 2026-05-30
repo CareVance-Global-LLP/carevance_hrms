@@ -265,3 +265,18 @@ Artisan::command('timestamps:repair-local
 
     return 0;
 })->purpose('Shift affected telemetry timestamps into the correct local time window after a bad deployment');
+
+// Schedule: send task reminders every 5 minutes
+Artisan::command('schedule:tasks-reminders', function () {
+    $this->call('tasks:process-reminders');
+})->everyFiveMinutes();
+
+// Schedule: send overdue task notifications daily
+Artisan::command('schedule:tasks-overdue', function () {
+    $this->call('tasks:process-overdue');
+})->dailyAt('08:00');
+
+// Schedule: generate recurring tasks daily at midnight
+Artisan::command('schedule:tasks-recurrences', function () {
+    $this->call('tasks:process-recurrences');
+})->dailyAt('00:00');

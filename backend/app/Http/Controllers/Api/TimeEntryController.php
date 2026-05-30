@@ -777,15 +777,10 @@ class TimeEntryController extends Controller
             return;
         }
 
-        if ($user->getHierarchyLevel() >= 100) {
-            if ($task->status !== 'todo') {
-                $task->update(['status' => 'todo']);
-            }
-
-            return;
-        }
-
-        if ($task->status !== 'in_progress') {
+        // Regular employees (level >= 100) start tracking time on a task →
+        // move it to in_progress. Admins/managers (level < 100) may be
+        // setting up tasks for others, so leave the status unchanged.
+        if ($user->getHierarchyLevel() >= 100 && $task->status !== 'in_progress') {
             $task->update(['status' => 'in_progress']);
         }
     }

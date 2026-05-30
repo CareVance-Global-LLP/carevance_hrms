@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react';
 import type { AppNotificationItem, User } from '@/types';
 import {
+  AlertTriangle,
   Bell,
   Briefcase,
   CalendarClock,
+  CheckCircle2,
+  ClipboardList,
   CreditCard,
   MessageSquare,
   Newspaper,
@@ -52,13 +55,26 @@ export const getNotificationDisplay = (type: string): NotificationDisplay => {
         tone: 'warning',
         icon: createIcon(<CalendarClock className="h-4 w-4" />),
       };
+    case 'task_assigned':
+      return {
+        label: 'Task',
+        tone: 'info',
+        icon: createIcon(<ClipboardList className="h-4 w-4" />),
+      };
+    case 'task_completed':
+      return {
+        label: 'Task Done',
+        tone: 'success',
+        icon: createIcon(<CheckCircle2 className="h-4 w-4" />),
+      };
+    case 'task_overdue':
+      return {
+        label: 'Overdue Task',
+        tone: 'danger',
+        icon: createIcon(<AlertTriangle className="h-4 w-4" />),
+      };
     case 'announcement':
     default:
-      return {
-        label: 'Announcement',
-        tone: 'info',
-        icon: createIcon(<Bell className="h-4 w-4" />),
-      };
   }
 };
 

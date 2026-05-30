@@ -546,6 +546,15 @@ export default function DesktopTimerDashboard() {
       setWorkedBaseSeconds(resumedWorkedSeconds);
       setWorkedBaselineSnapshot(userId, resumedWorkedSeconds, attendanceToday?.attendance_date);
       syncTimerEntryLocally(response.data);
+
+      // Sync the task status locally — the backend start endpoint already
+      // moves it to in_progress via syncTaskStatusForTimer for employees.
+      if (!isAutoStart && selectedTaskId) {
+        setAllowedTasks((current) =>
+          current.map((t) => (t.id === selectedTaskId ? { ...t, status: 'in_progress' } : t))
+        );
+      }
+
       setAttendanceToday((prev: any) => ({
         ...(prev || {}),
         attendance_date: prev?.attendance_date || getLocalDateString(),
@@ -694,29 +703,53 @@ export default function DesktopTimerDashboard() {
       return;
     }
 
+    // If the task hasn't changed, no action needed
+    if (activeTimer.task_id === taskId) {
+      return;
+    }
+
     setIsUpdatingTimerContext(true);
     setNotice('');
 
     try {
       const nextTask = taskId ? allowedTasks.find((task) => task.id === taskId) || null : null;
-      const response = await timeEntryApi.update(activeTimer.id, {
+
+      // Stop the current running entry and start a fresh one with the new task.
+      // This resets the timer so elapsed time doesn't carry over from the old task.
+      const response = await timeEntryApi.start({
         project_id: nextTask?.project_id ?? null,
         task_id: taskId,
+        timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary',
       });
 
-      if (nextTask && nextTask.status !== 'in_progress') {
-        await taskApi.updateStatus(nextTask.id, 'in_progress');
+      // Sync the task status locally — the backend start endpoint already
+      // moves it to in_progress via syncTaskStatusForTimer for employees.
+      if (nextTask) {
         setAllowedTasks((current) =>
-          current.map((task) => (task.id === nextTask.id ? { ...task, status: 'in_progress' } : task))
+          current.map((t) => (t.id === nextTask.id ? { ...t, status: 'in_progress' } : t))
         );
       }
 
+      setTimerBaseSeconds(0);
       syncTimerEntryLocally(response.data);
-      setNotice(taskId ? 'Task updated for the running timer and moved to In Progress.' : 'Task cleared from the running timer.');
+
+      localStorage.setItem(
+        ACTIVE_TIMER_KEY,
+        JSON.stringify({
+          id: response.data.id,
+          start_time: response.data.start_time,
+          duration: response.data.duration ?? 0,
+          description: response.data.description ?? '',
+          project_id: response.data.project_id ?? null,
+          task_id: response.data.task_id ?? null,
+        })
+      );
+
+      setNotice(taskId ? 'Task switched. Timer reset for the new task.' : 'Task cleared. Timer reset.');
     } catch (error: any) {
-      console.error('Error updating timer task:', error);
+      console.error('Error switching timer task:', error);
       setSelectedTaskId(activeTimer.task_id || null);
-      setNotice(error?.response?.data?.message || 'Failed to update the running timer task.');
+      setNotice(error?.response?.data?.message || 'Failed to switch task for the running timer.');
     } finally {
       setIsUpdatingTimerContext(false);
     }

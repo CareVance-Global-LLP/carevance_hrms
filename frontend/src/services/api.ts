@@ -55,6 +55,13 @@ import type {
   PayrollTransaction,
   SalaryComponentMaster,
   SalaryTemplate,
+  TaskActivity,
+  TaskAttachment,
+  TaskChecklistItem,
+  TaskComment,
+  TaskDependency,
+  TaskLabel,
+  TaskRecurrence,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
@@ -498,6 +505,93 @@ export const taskApi = {
   
   getTimeEntries: (id: number) => 
     api.get(`/tasks/${id}/time-entries`),
+
+  getActivities: (id: number) =>
+    api.get<TaskActivity[]>(`/tasks/${id}/activities`),
+
+  watch: (id: number) =>
+    api.post<{ message: string; watching: boolean; watchers_count: number }>(`/tasks/${id}/watch`),
+
+  unwatch: (id: number) =>
+    api.post<{ message: string; watching: boolean; watchers_count: number }>(`/tasks/${id}/unwatch`),
+
+  watchStatus: (id: number) =>
+    api.get<{ watching: boolean; watchers_count: number }>(`/tasks/${id}/watch-status`),
+
+  getComments: (id: number) =>
+    api.get<TaskComment[]>(`/tasks/${id}/comments`),
+
+  createComment: (id: number, data: { content: string }) =>
+    api.post<TaskComment>(`/tasks/${id}/comments`, data),
+
+  deleteComment: (commentId: number) =>
+    api.delete(`/tasks/comments/${commentId}`),
+
+  getAttachments: (id: number) =>
+    api.get<TaskAttachment[]>(`/tasks/${id}/attachments`),
+
+  createAttachment: (id: number, data: FormData) =>
+    api.post<TaskAttachment>(`/tasks/${id}/attachments`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+
+  deleteAttachment: (attachmentId: number) =>
+    api.delete(`/tasks/attachments/${attachmentId}`),
+
+  addLabel: (id: number, labelId: number) =>
+    api.post<Task>(`/tasks/${id}/labels`, { label_id: labelId }),
+
+  removeLabel: (id: number, labelId: number) =>
+    api.delete<Task>(`/tasks/${id}/labels/${labelId}`),
+
+  getChecklistItems: (id: number) =>
+    api.get<TaskChecklistItem[]>(`/tasks/${id}/checklist-items`),
+
+  createChecklistItem: (id: number, data: { title: string }) =>
+    api.post<TaskChecklistItem>(`/tasks/${id}/checklist-items`, data),
+
+  updateChecklistItem: (itemId: number, data: { title?: string; is_completed?: boolean; position?: number }) =>
+    api.patch<TaskChecklistItem>(`/tasks/checklist-items/${itemId}`, data),
+
+  deleteChecklistItem: (itemId: number) =>
+    api.delete(`/tasks/checklist-items/${itemId}`),
+
+  getDependencies: (id: number) =>
+    api.get<TaskDependency[]>(`/tasks/${id}/dependencies`),
+
+  createDependency: (id: number, dependsOnTaskId: number) =>
+    api.post<TaskDependency>(`/tasks/${id}/dependencies`, { depends_on_task_id: dependsOnTaskId }),
+
+  deleteDependency: (dependencyId: number) =>
+    api.delete(`/tasks/dependencies/${dependencyId}`),
+
+  storeRecurrence: (id: number, data: {
+    frequency: string; interval_value?: number; days_of_week?: number[]; day_of_month?: number; end_date?: string;
+  }) => api.post<TaskRecurrence>(`/tasks/${id}/recurrence`, data),
+
+  getRecurrence: (id: number) =>
+    api.get<TaskRecurrence | null>(`/tasks/${id}/recurrence`),
+
+  updateRecurrence: (recurrenceId: number, data: { is_active?: boolean; end_date?: string; next_run_date?: string }) =>
+    api.put<TaskRecurrence>(`/tasks/recurrence/${recurrenceId}`, data),
+
+  deleteRecurrence: (recurrenceId: number) =>
+    api.delete(`/tasks/recurrence/${recurrenceId}`),
+
+  updateReminder: (id: number, remindAt: string | null) =>
+    api.patch<Task>(`/tasks/${id}/remind`, { remind_at: remindAt }),
+};
+
+// Task Label API
+export const taskLabelApi = {
+  getAll: () =>
+    api.get<TaskLabel[]>('/task-labels'),
+
+  create: (data: { name: string; color?: string }) =>
+    api.post<TaskLabel>('/task-labels', data),
+
+  delete: (id: number) =>
+    api.delete(`/task-labels/${id}`),
 };
 
 // Time Entry API

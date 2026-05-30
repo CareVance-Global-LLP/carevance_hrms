@@ -54,6 +54,7 @@ const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard')
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
 const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
 const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
+const TaskTimeReports = lazyWithChunkRetry(() => import('@/pages/TimeReports'));
 const Reports = lazyWithChunkRetry(() => import('@/pages/Reports'));
 const Invoices = lazyWithChunkRetry(() => import('@/pages/Invoices'));
 const Settings = lazyWithChunkRetry(() => import('@/pages/Settings'));
@@ -497,6 +498,7 @@ function App() {
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<PlanFeatureRoute feature="project_tracking"><Projects /></PlanFeatureRoute>} />
             <Route path="tasks" element={<PlanFeatureRoute feature="task_tracking"><Tasks /></PlanFeatureRoute>} />
+            <Route path="tasks/time-reports" element={<PlanFeatureRoute feature="task_tracking"><TaskTimeReports /></PlanFeatureRoute>} />
             <Route path="chat" element={<PlanFeatureRoute feature="chat"><Chat /></PlanFeatureRoute>} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="attendance/selfies-map" element={<AdminRoute><SelfieMapView /></AdminRoute>} />

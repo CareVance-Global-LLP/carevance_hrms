@@ -122,6 +122,7 @@ export const topNavigation: NavGroup[] = [
       { label: 'Timesheets', to: '/reports/hours-tracked', icon: FileClock, adminOnly: true, permission: 'reports.view' },
       { label: 'Projects', to: '/projects', icon: FolderKanban, planFeature: 'project_tracking' },
       { label: 'Tasks', to: '/tasks', icon: SquareKanban, planFeature: 'task_tracking' },
+      { label: 'Time Reports', to: '/tasks/time-reports', icon: BarChart3, planFeature: 'task_tracking', adminOnly: true, permission: 'reports.view' },
     ],
   },
   {
