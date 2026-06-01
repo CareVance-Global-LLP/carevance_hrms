@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { resolveNotificationRoute } from '@/lib/notificationDisplay';
+import { getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
+
+describe('getNotificationDisplay', () => {
+  it('returns a display object for announcement type', () => {
+    const display = getNotificationDisplay('announcement');
+    expect(display).toBeDefined();
+    expect(display.label).toBeTruthy();
+    expect(display.icon).toBeDefined();
+  });
+
+  it('returns a display object for unknown types', () => {
+    const display = getNotificationDisplay('mystery_type');
+    expect(display).toBeDefined();
+    expect(display.icon).toBeDefined();
+    expect(display.label).toBeTruthy();
+  });
+
+  it('returns a display object for empty type', () => {
+    const display = getNotificationDisplay('');
+    expect(display).toBeDefined();
+    expect(display.icon).toBeDefined();
+  });
+});
 
 describe('resolveNotificationRoute', () => {
   it('routes leave approval notifications to the leave approval section', () => {

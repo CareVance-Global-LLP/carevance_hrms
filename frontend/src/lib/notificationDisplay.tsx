@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ClipboardList,
   CreditCard,
+  Megaphone,
   MessageSquare,
   Newspaper,
 } from 'lucide-react';
@@ -74,7 +75,17 @@ export const getNotificationDisplay = (type: string): NotificationDisplay => {
         icon: createIcon(<AlertTriangle className="h-4 w-4" />),
       };
     case 'announcement':
+      return {
+        label: 'Announcement',
+        tone: 'info',
+        icon: createIcon(<Megaphone className="h-4 w-4" />),
+      };
     default:
+      return {
+        label: 'Notification',
+        tone: 'neutral',
+        icon: createIcon(<Bell className="h-4 w-4" />),
+      };
   }
 };
 
