@@ -835,6 +835,18 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
   }, [timezoneOptions, directoryTimezoneFilter]);
 
+  const resolveRoleValue = (row: any, roleOptions: Array<{ value: string }>): string => {
+    const customCandidate = row.role_id ? `custom_${row.role_id}` : null;
+    const candidates = [customCandidate, row.role].filter(Boolean);
+    for (const candidate of candidates) {
+      if (roleOptions.some((o) => o.value === candidate)) {
+        return candidate;
+      }
+    }
+    const fallback = roleOptions.find((o) => o.value === 'employee') ? 'employee' : roleOptions[0]?.value;
+    return fallback || row.role || 'employee';
+  };
+
   const getRoleDropdownOptions = (row: any): Array<{ value: string; label: string; isCustom: boolean; roleId?: number }> => {
     const currentRole = row?.role as string;
     const currentRoleId = row?.role_id as number | null;
@@ -858,9 +870,12 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         { value: 'employee', label: 'Employee', isCustom: false },
       );
 
+      const seenValues = new Set(['admin', 'manager', 'employee']);
       for (const cr of customRoles) {
-        if (!cr.is_system) {
-          options.push({ value: `custom_${cr.id}`, label: cr.name, isCustom: true, roleId: cr.id });
+        const value = cr.is_system ? cr.slug : `custom_${cr.id}`;
+        if (!seenValues.has(value)) {
+          seenValues.add(value);
+          options.push({ value, label: cr.name, isCustom: !cr.is_system, roleId: cr.is_system ? undefined : cr.id });
         }
       }
 
@@ -1075,7 +1090,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     header: 'Promote',
                     render: (row: any) => {
                       const roleOptions = getRoleDropdownOptions(row);
-                      const currentValue = row.role_id ? `custom_${row.role_id}` : row.role;
+                      const currentValue = resolveRoleValue(row, roleOptions);
 
                       return (
                         <SelectInput
@@ -1666,7 +1681,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               ) : (
                 filteredRoleUsers.map((targetUser: any) => {
                   const roleOptions = getRoleDropdownOptions(targetUser);
-                  const currentValue = targetUser.role_id ? `custom_${targetUser.role_id}` : targetUser.role;
+                  const currentValue = resolveRoleValue(targetUser, roleOptions);
                   return (
                     <div key={targetUser.id} className="flex flex-col gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
                       <div>
