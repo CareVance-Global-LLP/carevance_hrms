@@ -675,18 +675,71 @@ export default function DesktopTimerDashboard() {
       return;
     }
 
+    // If the project hasn't changed, no action needed
+    if (activeTimer.project_id === projectId) {
+      return;
+    }
+
     setIsUpdatingTimerContext(true);
     setNotice('');
 
     try {
-      const response = await timeEntryApi.update(activeTimer.id, {
+      // Calculate the time worked on the current timer before switching
+      const currentTimerDuration = Math.max(0, liveDuration - timerBaseSeconds);
+      const nextWorkedSeconds = workedBaseSeconds + currentTimerDuration;
+
+      // First, explicitly stop the current timer to create a completed entry
+      // This ensures the time worked without a project is saved as a separate entry
+      const stoppedResponse = await timeEntryApi.stop({
+        timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary'
+      });
+
+      // Add the stopped entry to todayEntries so it shows in the list
+      // This entry will display "No task selected" since it had no project/task
+      if (stoppedResponse.data) {
+        setTodayEntries((prev) => {
+          const withoutCurrent = prev.filter((entry) => entry.id !== activeTimer.id);
+          return [stoppedResponse.data, ...withoutCurrent];
+        });
+      }
+
+      // Update attendance state to reflect the stopped timer
+      setAttendanceToday((prev: any) => prev ? {
+        ...prev,
+        worked_seconds: Math.max(Number(prev?.worked_seconds || 0), nextWorkedSeconds),
+      } : prev);
+
+      // Start a fresh timer with the new project
+      const response = await timeEntryApi.start({
         project_id: projectId,
         task_id: null,
+        timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary',
       });
 
       setSelectedTaskId(null);
+
+      // Update worked base to include the time from the previous timer
+      // This ensures shift remaining calculation is accurate
+      setWorkedBaseSeconds(nextWorkedSeconds);
+      setTodayTotal((current) => Math.max(current, nextWorkedSeconds));
+      setWorkedBaselineSnapshot(userId, nextWorkedSeconds, attendanceToday?.attendance_date);
+
+      setTimerBaseSeconds(0);
       syncTimerEntryLocally(response.data);
-      setNotice(projectId ? 'Project updated for the running timer.' : 'Project cleared from the running timer.');
+
+      localStorage.setItem(
+        ACTIVE_TIMER_KEY,
+        JSON.stringify({
+          id: response.data.id,
+          start_time: response.data.start_time,
+          duration: response.data.duration ?? 0,
+          description: response.data.description ?? '',
+          project_id: response.data.project_id ?? null,
+          task_id: response.data.task_id ?? null,
+        })
+      );
+
+      setNotice(projectId ? 'Project selected. Timer reset for the new project.' : 'Project cleared. Timer reset.');
     } catch (error: any) {
       console.error('Error updating timer project:', error);
       setSelectedProjectId(activeTimer.project_id || null);
@@ -714,38 +767,85 @@ export default function DesktopTimerDashboard() {
     try {
       const nextTask = taskId ? allowedTasks.find((task) => task.id === taskId) || null : null;
 
-      // Stop the current running entry and start a fresh one with the new task.
-      // This resets the timer so elapsed time doesn't carry over from the old task.
-      const response = await timeEntryApi.start({
-        project_id: nextTask?.project_id ?? null,
-        task_id: taskId,
-        timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary',
-      });
+      // If no project is selected, stop the current timer and start fresh
+      // This preserves the "No task selected" time as a separate entry
+      if (!activeTimer.project_id) {
+        // Calculate the time worked on the current timer before switching
+        const currentTimerDuration = Math.max(0, liveDuration - timerBaseSeconds);
+        const nextWorkedSeconds = workedBaseSeconds + currentTimerDuration;
 
-      // Sync the task status locally — the backend start endpoint already
-      // moves it to in_progress via syncTaskStatusForTimer for employees.
-      if (nextTask) {
-        setAllowedTasks((current) =>
-          current.map((t) => (t.id === nextTask.id ? { ...t, status: 'in_progress' } : t))
+        // Stop the current timer to create a completed entry
+        const stoppedResponse = await timeEntryApi.stop({
+          timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary'
+        });
+
+        // Add the stopped entry to todayEntries so it shows in the list
+        if (stoppedResponse.data) {
+          setTodayEntries((prev) => {
+            const withoutCurrent = prev.filter((entry) => entry.id !== activeTimer.id);
+            return [stoppedResponse.data, ...withoutCurrent];
+          });
+        }
+
+        // Update attendance state
+        setAttendanceToday((prev: any) => prev ? {
+          ...prev,
+          worked_seconds: Math.max(Number(prev?.worked_seconds || 0), nextWorkedSeconds),
+        } : prev);
+
+        // Start a fresh timer with the new task
+        const response = await timeEntryApi.start({
+          project_id: nextTask?.project_id ?? null,
+          task_id: taskId,
+          timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary',
+        });
+
+        // Sync the task status locally
+        if (nextTask) {
+          setAllowedTasks((current) =>
+            current.map((t) => (t.id === nextTask.id ? { ...t, status: 'in_progress' } : t))
+          );
+        }
+
+        // Update worked base
+        setWorkedBaseSeconds(nextWorkedSeconds);
+        setTodayTotal((current) => Math.max(current, nextWorkedSeconds));
+        setWorkedBaselineSnapshot(userId, nextWorkedSeconds, attendanceToday?.attendance_date);
+
+        setTimerBaseSeconds(0);
+        syncTimerEntryLocally(response.data);
+
+        localStorage.setItem(
+          ACTIVE_TIMER_KEY,
+          JSON.stringify({
+            id: response.data.id,
+            start_time: response.data.start_time,
+            duration: response.data.duration ?? 0,
+            description: response.data.description ?? '',
+            project_id: response.data.project_id ?? null,
+            task_id: response.data.task_id ?? null,
+          })
         );
+
+        setNotice(taskId ? 'Task switched. Timer reset for the new task.' : 'Task cleared. Timer reset.');
+      } else {
+        // Project is already selected, just update the task on the SAME entry
+        // This keeps the timer running without resetting
+        const response = await timeEntryApi.update(activeTimer.id, {
+          project_id: activeTimer.project_id,
+          task_id: taskId,
+        });
+
+        // Sync the task status locally
+        if (nextTask) {
+          setAllowedTasks((current) =>
+            current.map((t) => (t.id === nextTask.id ? { ...t, status: 'in_progress' } : t))
+          );
+        }
+
+        syncTimerEntryLocally(response.data);
+        setNotice(taskId ? 'Task updated for the running timer.' : 'Task cleared from the running timer.');
       }
-
-      setTimerBaseSeconds(0);
-      syncTimerEntryLocally(response.data);
-
-      localStorage.setItem(
-        ACTIVE_TIMER_KEY,
-        JSON.stringify({
-          id: response.data.id,
-          start_time: response.data.start_time,
-          duration: response.data.duration ?? 0,
-          description: response.data.description ?? '',
-          project_id: response.data.project_id ?? null,
-          task_id: response.data.task_id ?? null,
-        })
-      );
-
-      setNotice(taskId ? 'Task switched. Timer reset for the new task.' : 'Task cleared. Timer reset.');
     } catch (error: any) {
       console.error('Error switching timer task:', error);
       setSelectedTaskId(activeTimer.task_id || null);
