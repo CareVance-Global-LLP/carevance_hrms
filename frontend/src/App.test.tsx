@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import { Routes, Route, MemoryRouter, Outlet } from 'react-router-dom';
 import App from '@/App';
@@ -46,7 +46,6 @@ vi.mock('@/pages/Settings', () => ({ default: () => <div>Settings Page</div> }))
 vi.mock('@/pages/Monitoring', () => ({ default: () => <div>Monitoring Page</div> }));
 vi.mock('@/pages/Attendance', () => ({ default: () => <div>Attendance Page</div> }));
 vi.mock('@/pages/Chat', () => ({ default: () => <div>Chat Page</div> }));
-vi.mock('@/pages/PayrollWorkspace', () => ({ default: () => <div>Payroll Workspace Page</div> }));
 vi.mock('@/pages/UserManagement', () => ({ default: () => <div>User Management Page</div> }));
 vi.mock('@/pages/AuditLogs', () => ({ default: () => <div>Audit Logs Page</div> }));
 

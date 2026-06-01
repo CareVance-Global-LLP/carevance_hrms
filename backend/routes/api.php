@@ -9,7 +9,6 @@ Route::middleware('api.token')->group(function () {
     require base_path('routes/api/protected/users.php');
     require base_path('routes/api/protected/attendance.php');
     require base_path('routes/api/protected/monitoring.php');
-    require base_path('routes/api/protected/payroll.php');
     require base_path('routes/api/protected/reports.php');
     require base_path('routes/api/protected/chat.php');
     require base_path('routes/api/protected/invoices.php');

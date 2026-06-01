@@ -207,15 +207,7 @@ export default function Layout() {
               externalPath: '/dashboard',
               external: true,
               icon: LayoutDashboard,
-            },
-            {
-              label: 'Payroll',
-              to: '/desktop-web-payroll',
-              externalPath: '/payroll',
-              external: true,
-              icon: Wallet,
-              adminOnly: true,
-            },
+            },
             {
               label: 'Chat',
               to: '/chat',
@@ -226,7 +218,6 @@ export default function Layout() {
 
       return navigationGroups
         .filter((group) => {
-          if (group.payroll && !payrollEnabled) return false;
           if (group.planFeature && !hasFeature(group.planFeature)) return false;
           if (group.permission && !canAccess(user, group.permission)) return false;
           if (group.strictAdminOnly) return isStrictAdminView;

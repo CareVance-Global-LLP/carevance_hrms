@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+﻿import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
@@ -61,7 +61,6 @@ const Settings = lazyWithChunkRetry(() => import('@/pages/Settings'));
 const Monitoring = lazyWithChunkRetry(() => import('@/pages/Monitoring'));
 const Attendance = lazyWithChunkRetry(() => import('@/pages/Attendance'));
 const Chat = lazyWithChunkRetry(() => import('@/pages/Chat'));
-const PayrollWorkspace = lazyWithChunkRetry(() => import('@/pages/PayrollWorkspace'));
 const UserManagement = lazyWithChunkRetry(() => import('@/pages/UserManagement'));
 const AuditLogs = lazyWithChunkRetry(() => import('@/pages/AuditLogs'));
 const ApprovalInbox = lazyWithChunkRetry(() => import('@/pages/ApprovalInbox'));
@@ -522,17 +521,6 @@ function App() {
             <Route path="reports/productivity" element={<AdminRoute><ReportsWorkspace key="productivity" mode="productivity" /></AdminRoute>} />
             <Route path="reports/custom-export" element={<AdminRoute><ReportsWorkspace key="custom-export" mode="custom-export" /></AdminRoute>} />
             <Route path="invoices" element={<AdminRoute><Invoices /></AdminRoute>} />
-            <Route path="payroll" element={<PayrollWorkspace mode="overview" />} />
-            <Route path="payroll/runs" element={<PayrollWorkspace mode="runs" />} />
-            <Route path="payroll/employees" element={<PayrollWorkspace mode="employees" />} />
-            <Route path="payroll/employees/:employeeId" element={<PayrollWorkspace mode="employee-detail" />} />
-            <Route path="payroll/components" element={<Navigate to="/payroll/settings" replace />} />
-            <Route path="payroll/structures" element={<Navigate to="/payroll/settings" replace />} />
-            <Route path="payroll/adjustments" element={<PayrollWorkspace mode="adjustments" />} />
-            <Route path="payroll/reimbursements" element={<Navigate to="/payroll/adjustments" replace />} />
-            <Route path="payroll/payslips" element={<PayrollWorkspace mode="payslips" />} />
-            <Route path="payroll/reports" element={<PayrollWorkspace mode="reports" />} />
-            <Route path="payroll/settings" element={<PayrollWorkspace mode="settings" />} />
             <Route path="user-management" element={<Navigate to="/employees" replace />} />
             <Route path="employees" element={<AdminRoute><EmployeeManagementWorkspace mode="employees" /></AdminRoute>} />
             <Route path="employees/:employeeId" element={<AdminRoute><EmployeePersonalDetailsPage /></AdminRoute>} />

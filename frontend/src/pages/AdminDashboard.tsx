@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
@@ -33,7 +33,6 @@ import {
   auditApi,
   leaveApi,
   notificationApi,
-  payrollSimpleApi,
   projectApi,
   reportApi,
   reportGroupApi,
@@ -726,7 +725,6 @@ export default function AdminDashboard() {
         overallResponse,
         tasksResponse,
         projectsResponse,
-        payrollResponse,
         notificationsResponse,
         groupsResponse,
         auditResponse,
@@ -738,7 +736,6 @@ export default function AdminDashboard() {
         reportApi.overall(reportScopeParams),
         taskApi.getAll({ timer_only: true }),
         projectApi.getAll(),
-        payrollSimpleApi.runs(selectedStartDate.slice(0, 7)),
         notificationApi.list({ limit: 8 }),
         reportGroupApi.list(),
         auditApi.list({ per_page: 8 }),
@@ -762,7 +759,6 @@ export default function AdminDashboard() {
         summary: {},
         tasks: tasksResponse.status === 'fulfilled' ? safeArray<any>(tasksResponse.value.data) : [],
         projects: projectsResponse.status === 'fulfilled' ? safeArray<any>(projectsResponse.value.data) : [],
-        payrollRecords: payrollResponse.status === 'fulfilled' ? safeArray<any>(payrollResponse.value.data?.data) : [],
         notifications: notificationsResponse.status === 'fulfilled' ? safeArray<any>(notificationsResponse.value.data?.data) : [],
         groups: groupsResponse.status === 'fulfilled' ? safeArray<any>(groupsResponse.value.data?.data) : [],
         auditLogs: auditResponse.status === 'fulfilled' ? safeArray<any>(auditResponse.value.data?.data) : [],
@@ -781,7 +777,6 @@ export default function AdminDashboard() {
     summary: {},
     tasks: [],
     projects: [],
-    payrollRecords: [],
     notifications: [],
     groups: [],
     auditLogs: [],
@@ -1040,8 +1035,6 @@ export default function AdminDashboard() {
         : Math.min(100, Math.round((Number(item.total_time || 0) / Math.max(1, weeklyTotal)) * 100)),
     }));
 
-  const payrollTotal = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.net_pay || record.gross_pay || 0), 0);
-  const payrollDeductions = data.payrollRecords.reduce((sum: number, record: any) => sum + Number(record.deductions || record.tax || 0), 0);
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
   const absentPercent = totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0;
   const presentLatePercent = totalEmployees ? Math.round((presentLateInRange / totalEmployees) * 100) : 0;
@@ -1568,12 +1561,10 @@ export default function AdminDashboard() {
     { id: 'communication-hub', label: 'Communication Hub', description: 'Birthdays, activity, and announcements', category: 'Section', sectionId: 'communication-hub', keywords: ['communication', 'birthdays', 'activity', 'announcements'] },
     { id: 'people-summary', label: 'People Summary', description: 'Active accounts, departments, hires, and leave', category: 'Section', sectionId: 'people-summary', keywords: ['people', 'employees', 'summary'] },
     { id: 'projects-section', label: 'Projects', description: 'Project progress and time distribution', category: 'Section', sectionId: 'projects-section', keywords: ['projects', 'project progress'] },
-    { id: 'reports-section', label: 'Reports', description: 'Quick report shortcuts', category: 'Section', sectionId: 'reports-section', keywords: ['reports', 'export', 'attendance report', 'payroll report'] },
     { id: 'employees-page', label: 'Employees Panel', description: 'Open employee management', category: 'Panel', route: '/employees', keywords: ['employee', 'employees', 'directory', 'management'] },
     { id: 'attendance-page', label: 'Attendance Panel', description: 'Open attendance records', category: 'Panel', route: '/attendance', keywords: ['attendance', 'calendar', 'punch'] },
     { id: 'leave-page', label: 'Approval Inbox', description: 'Open leave approvals', category: 'Panel', route: '/approval-inbox?section=leave&view=pending&leave_window=today', keywords: ['leave', 'approval', 'approval inbox'] },
     { id: 'monitoring-page', label: 'Monitoring Panel', description: 'Open screenshots, timeline, web and app usage', category: 'Panel', route: '/monitoring', keywords: ['monitoring', 'screenshots', 'timeline', 'web usage', 'app usage'] },
-    { id: 'payroll-page', label: 'Payroll Panel', description: 'Open payroll workspace', category: 'Panel', route: '/payroll', keywords: ['payroll', 'salary', 'pay'] },
     { id: 'tasks-page', label: 'Tasks Panel', description: 'Open task management', category: 'Panel', route: '/tasks', keywords: ['tasks', 'task', 'work'] },
     { id: 'projects-page', label: 'Projects Panel', description: 'Open project workspace', category: 'Panel', route: '/projects', keywords: ['projects', 'project'] },
     { id: 'chat-page', label: 'Chat Panel', description: 'Open organization chat', category: 'Panel', route: '/chat', keywords: ['chat', 'messages'] },
@@ -2797,15 +2788,6 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               );
             })()}
-        </Card>
-        <Card id="payroll-snapshot" className="scroll-mt-24 p-4">
-            <SectionTitle title="Payroll Snapshot" action={<Link to="/payroll" className="text-xs text-blue-600">{selectedStartDate.slice(0, 7)}</Link>} />
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Payroll Cost</p><p className="mt-2 font-semibold">{formatCurrency(payrollTotal + payrollDeductions)}</p></div>
-              <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Net Pay</p><p className="mt-2 font-semibold text-emerald-700">{formatCurrency(payrollTotal)}</p></div>
-              <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Deductions</p><p className="mt-2 font-semibold text-rose-600">{formatCurrency(payrollDeductions)}</p></div>
-              <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Employees Paid</p><p className="mt-2 font-semibold">{data.payrollRecords.length}</p></div>
-            </div>
         </Card>
       </section>
 
