@@ -484,8 +484,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await authApi.googleLogin(credential, browserTimezone);
     const responseData = response.data;
 
-    console.log('Google login response:', responseData);
-
     if (!responseData.success) {
       throw new Error('Google login failed');
     }

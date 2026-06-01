@@ -34,10 +34,6 @@ export default function GoogleSignupCompletion() {
     setFieldErrors({});
     setIsLoading(true);
 
-    // Debug: Check if token exists
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-    console.log('Token before complete registration:', token ? 'Found' : 'Not found');
-
     try {
       analytics.trackEvent('google_signup_completion_started', {
         has_company_name: !!companyName,

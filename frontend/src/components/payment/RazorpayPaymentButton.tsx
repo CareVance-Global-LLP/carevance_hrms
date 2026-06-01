@@ -94,7 +94,6 @@ export function RazorpayPaymentButton({
 
       // If mock mode, simulate successful payment immediately
       if (mock_mode) {
-        console.log('Mock payment mode - simulating successful payment');
         // Simulate payment success after 1 second
         setTimeout(() => {
           onSuccess?.();

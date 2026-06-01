@@ -165,11 +165,8 @@ export default function Layout() {
     }
 
     if (!('Notification' in window) || Notification.permission !== 'granted') {
-      console.log('[Notify] Permission not granted:', Notification.permission);
       return;
     }
-
-    console.log('[Notify] Showing:', notification.type, formattedTitle);
     const systemNotification = new Notification(formattedTitle, {
       body: formattedMessage,
       tag: `app-notification-${notification.id}`,
@@ -637,10 +634,6 @@ export default function Layout() {
           return !item.is_read && !seenNotificationIdsRef.current.has(id);
         });
 
-        if (newNonChat.length > 0 || newChat.length > 0) {
-          console.log('[Notify] New notifications:', { nonChat: newNonChat.length, chat: newChat.length });
-        }
-
         newNonChat.forEach((item) => showDesktopNotification(item));
         newChat.forEach((item) => showDesktopNotification(item));
 
@@ -697,8 +690,7 @@ export default function Layout() {
     }
 
     if (Notification.permission === 'default') {
-      console.log('Requesting notification permission (current state):', Notification.permission);
-        void Notification.requestPermission();
+      void Notification.requestPermission();
     }
   }, [desktopPushEnabled]);
 

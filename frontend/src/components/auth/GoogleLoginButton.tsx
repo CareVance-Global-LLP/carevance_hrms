@@ -24,9 +24,7 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
         const currentSearch = window.location.search;
         sessionStorage.setItem('google_signup_fallback_params', currentSearch);
 
-        console.log('Google credential received, calling googleLogin...');
         const result = await googleLogin(credentialResponse.credential);
-        console.log('googleLogin result:', result);
 
         // Support both new backend (has_workspace) and old backend (needs_completion)
         const hasWorkspace = (result as any).has_workspace === true ||
@@ -34,8 +32,6 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
         const needsCompletion = (result as any).has_workspace === false ||
           (result as any).needs_completion === true ||
           (result as any).is_new_user === true;
-
-        console.log('hasWorkspace:', hasWorkspace, 'needsCompletion:', needsCompletion);
 
         if (hasWorkspace && !needsCompletion) {
           navigate('/dashboard');

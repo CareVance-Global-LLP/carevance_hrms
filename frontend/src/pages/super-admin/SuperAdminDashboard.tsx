@@ -90,10 +90,8 @@ export default function SuperAdminDashboard() {
     const delayDebounce = setTimeout(async () => {
       if (searchQuery.length >= 2) {
         setIsSearching(true);
-        console.log('Searching for:', searchQuery);
         try {
           const response = await superAdminApi.searchGlobal(searchQuery);
-          console.log('Search response:', response.data);
           setSearchResults(response.data.data || []);
         } catch (err) {
           console.error('Search error:', err);

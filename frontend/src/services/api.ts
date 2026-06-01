@@ -91,9 +91,6 @@ api.interceptors.request.use((config) => {
   const token = getStoredAuthValue('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-    console.log('API Request with token to:', config.url);
-  } else {
-    console.log('API Request without token to:', config.url);
   }
   
   // Add request timeout for better error handling

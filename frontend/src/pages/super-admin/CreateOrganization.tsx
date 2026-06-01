@@ -140,15 +140,6 @@ export default function CreateOrganizationPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Form submitted - starting mutation...');
-    console.log('Form data:', {
-      orgName,
-      planCode,
-      seats,
-      adminName,
-      adminEmail,
-      subscriptionStatus,
-    });
     
     if (!orgName || !adminName || !adminEmail || !adminPassword) {
       setError('Please fill in all required fields');
@@ -644,7 +635,6 @@ export default function CreateOrganizationPage() {
               type="submit"
               disabled={createMutation.isPending}
               className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              onClick={() => console.log('Create button clicked')}
             >
               {createMutation.isPending ? (
                 <>
