@@ -19,6 +19,7 @@ import {
   Play,
   Receipt,
   Settings,
+  Shield,
   ShieldCheck,
   SlidersHorizontal,
   SquareKanban,
@@ -39,6 +40,7 @@ export type NavLinkItem = {
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
   planFeature?: string;
+  permission?: string;
   external?: boolean;
   externalPath?: string;
 };
@@ -54,6 +56,7 @@ export type NavGroup = {
   employeeAndManagerOnly?: boolean;
   planFeature?: string;
   payroll?: boolean;
+  permission?: string;
   items?: NavLinkItem[];
   external?: boolean;
   externalPath?: string;
@@ -92,10 +95,10 @@ export const topNavigation: NavGroup[] = [
       { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management', employeeAndManagerOnly: true },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
-      { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true, planFeature: 'monitoring' },
-      { label: 'Screenshots', to: '/monitoring/screenshots', icon: Camera, adminOnly: true },
-      { label: 'Selfies Map', to: '/attendance/selfies-map', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing' },
-      { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true },
+      { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true, planFeature: 'monitoring', permission: 'monitoring.view' },
+      { label: 'Screenshots', to: '/monitoring/screenshots', icon: Camera, adminOnly: true, permission: 'screenshots.view' },
+      { label: 'Selfies Map', to: '/attendance/selfies-map', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing', permission: 'selfies.view' },
+      { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true, permission: 'reports.view' },
     ],
   },
   {
@@ -116,30 +119,34 @@ export const topNavigation: NavGroup[] = [
     label: 'Work',
     icon: FolderKanban,
     items: [
-      { label: 'Timesheets', to: '/reports/hours-tracked', icon: FileClock, adminOnly: true },
+      { label: 'Timesheets', to: '/reports/hours-tracked', icon: FileClock, adminOnly: true, permission: 'reports.view' },
       { label: 'Projects', to: '/projects', icon: FolderKanban, planFeature: 'project_tracking' },
       { label: 'Tasks', to: '/tasks', icon: SquareKanban, planFeature: 'task_tracking' },
+      { label: 'Time Reports', to: '/tasks/time-reports', icon: BarChart3, planFeature: 'task_tracking', adminOnly: true, permission: 'reports.view' },
     ],
   },
   {
     label: 'Reports',
     icon: BarChart3,
     adminOnly: true,
+    permission: 'reports.view',
     items: [
-      { label: 'Reports', to: '/reports', icon: BarChart3, adminOnly: true },
-      { label: 'Analytics', to: '/analytics', icon: LineChart, adminOnly: true },
-      { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true, planFeature: 'employee_timeline' },
-      { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true, planFeature: 'monitoring' },
+      { label: 'Reports', to: '/reports', icon: BarChart3, adminOnly: true, permission: 'reports.view' },
+      { label: 'Analytics', to: '/analytics', icon: LineChart, adminOnly: true, permission: 'reports.view' },
+      { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true, planFeature: 'employee_timeline', permission: 'reports.view' },
+      { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true, planFeature: 'monitoring', permission: 'monitoring.view' },
     ],
   },
   {
     label: 'Settings',
     icon: Settings,
     adminOnly: true,
+    permission: 'settings.view',
     items: [
-      { label: 'Settings', to: '/settings', icon: Settings, adminOnly: true },
-      { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true },
-      { label: 'Geofence Zones', to: '/settings/geofence', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing' },
+      { label: 'Settings', to: '/settings', icon: Settings, adminOnly: true, permission: 'settings.view' },
+      { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true, permission: 'audit.view' },
+      { label: 'Geofence Zones', to: '/settings/geofence', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing', permission: 'geofence.manage' },
+      { label: 'Roles', to: '/settings/roles', icon: Shield, adminOnly: true, planFeature: 'multi_role_access', permission: 'roles.manage' },
     ],
   },
   {

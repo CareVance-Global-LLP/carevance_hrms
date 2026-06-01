@@ -153,12 +153,18 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'role_id',
         'organization_id',
         'invited_by',
         'avatar',
         'settings',
         'last_seen_at',
         'email_verified_at',
+        'google_id',
+        'google_token',
+        'google_refresh_token',
+        'trial_used_at',
+        'trial_ended_at',
     ];
 
     /**
@@ -183,6 +189,8 @@ class User extends Authenticatable
             'password' => 'hashed',
             'settings' => 'array',
             'last_seen_at' => 'datetime',
+            'trial_used_at' => 'datetime',
+            'trial_ended_at' => 'datetime',
         ];
     }
 
@@ -211,6 +219,49 @@ class User extends Authenticatable
     public function getIsActiveAttribute(): bool
     {
         return true;
+    }
+
+    /**
+     * Check if this user has already consumed their free trial.
+     */
+    public function hasConsumedTrial(): bool
+    {
+        return $this->trial_used_at !== null;
+    }
+
+    /**
+     * Check if the user's trial is still active (within 14 days of trial_used_at).
+     */
+    public function isTrialActive(): bool
+    {
+        if ($this->trial_used_at === null) {
+            return false;
+        }
+        $trialDays = max(1, (int) config('carevance.trial_days', 14));
+        return now()->lt($this->trial_used_at->copy()->addDays($trialDays));
+    }
+
+    /**
+     * Check if the user's trial has expired.
+     */
+    public function isTrialExpired(): bool
+    {
+        if ($this->trial_used_at === null) {
+            return false;
+        }
+        $trialDays = max(1, (int) config('carevance.trial_days', 14));
+        return now()->gte($this->trial_used_at->copy()->addDays($trialDays));
+    }
+
+    /**
+     * Mark trial as used and set end date.
+     */
+    public function markTrialUsed(): void
+    {
+        $trialDays = max(1, (int) config('carevance.trial_days', 14));
+        $this->trial_used_at = now();
+        $this->trial_ended_at = now()->addDays($trialDays);
+        $this->save();
     }
 
     public function getIsOnlineAttribute(): bool
@@ -256,5 +307,72 @@ class User extends Authenticatable
         ]);
 
         Mail::to($this->email)->queue(new PasswordResetMail($this, $resetUrl));
+    }
+
+    public function customRole(): BelongsTo
+    {
+        return $this->belongsTo(Role::class, 'role_id');
+    }
+
+    private const PERMISSIONS_ADMIN = [
+        'dashboard.view', 'attendance.view', 'selfies.view',
+        'employees.view', 'employees.manage', 'groups.view', 'groups.manage',
+        'reports.view', 'monitoring.view', 'screenshots.view',
+        'payroll.view', 'invoices.view', 'leave.view', 'leave.manage',
+        'overtime.view', 'overtime.approve', 'tasks.view', 'tasks.manage',
+        'projects.view', 'settings.view', 'settings.manage',
+        'productivity.manage', 'roles.manage', 'notifications.publish',
+        'audit.view', 'geofence.manage', 'chat.use',
+    ];
+
+    private const PERMISSIONS_MANAGER = [
+        'dashboard.view', 'attendance.view', 'selfies.view',
+        'employees.view', 'employees.manage', 'groups.view', 'groups.manage',
+        'reports.view', 'monitoring.view', 'screenshots.view',
+        'payroll.view', 'invoices.view', 'leave.view', 'leave.manage',
+        'overtime.view', 'overtime.approve', 'tasks.view', 'tasks.manage',
+        'projects.view', 'settings.view', 'notifications.publish',
+        'audit.view', 'chat.use',
+    ];
+
+    private const PERMISSIONS_EMPLOYEE = [
+        'dashboard.view', 'timer.use', 'chat.use',
+    ];
+
+    public function hasPermission(string $key): bool
+    {
+        if ($this->role_id !== null) {
+            $customRole = $this->relationLoaded('customRole')
+                ? $this->customRole
+                : $this->customRole()->first();
+
+            if ($customRole) {
+                return $customRole->hasPermission($key);
+            }
+        }
+
+        return match ($this->role) {
+            'super_admin' => true,
+            'admin' => in_array($key, self::PERMISSIONS_ADMIN, true),
+            'manager' => in_array($key, self::PERMISSIONS_MANAGER, true),
+            'employee' => in_array($key, self::PERMISSIONS_EMPLOYEE, true),
+            default => false,
+        };
+    }
+
+    public function canAccess(string $key): bool
+    {
+        return $this->hasPermission($key);
+    }
+
+    public function getHierarchyLevel(): int
+    {
+        return $this->customRole?->hierarchy_level ?? match ($this->role) {
+            'super_admin' => 0,
+            'admin' => 10,
+            'manager' => 50,
+            'employee' => 100,
+            default => 999,
+        };
     }
 }

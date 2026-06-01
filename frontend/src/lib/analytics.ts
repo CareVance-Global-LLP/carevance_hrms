@@ -11,7 +11,10 @@ export type AnalyticsEventName =
   | 'invite_accept_started'
   | 'invite_accept_completed'
   | 'contact_support_clicked'
-  | 'bug_report_submitted';
+  | 'bug_report_submitted'
+  | 'google_signup_completion_started'
+  | 'google_signup_completed'
+  | 'google_signup_failed';
 
 export interface AnalyticsPagePayload {
   path: string;

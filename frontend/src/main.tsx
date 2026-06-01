@@ -2,6 +2,7 @@ import React, { type ErrorInfo, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
+import { GoogleOAuthProvider } from '@react-oauth/google'
 import App from './App'
 import { AuthProvider } from './contexts/AuthContext'
 import { ConsentProvider } from './contexts/ConsentContext'
@@ -11,6 +12,9 @@ import CookieConsentBanner from './components/public/CookieConsentBanner'
 import RouteViewportManager from './components/router/RouteViewportManager'
 import { installDesktopTrackerCompatibilityMarkers } from './lib/desktopTrackerCompatibility'
 import './index.css'
+
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+const isGoogleOAuthEnabled = import.meta.env.VITE_GOOGLE_OAUTH_ENABLED === 'true' && googleClientId
 
 const routerFuture = {
   v7_startTransition: true,
@@ -130,23 +134,42 @@ function RuntimeGuard({ children }: { children: React.ReactNode }) {
 
 installDesktopTrackerCompatibilityMarkers()
 
+function AppProviders({ children }: { children: React.ReactNode }) {
+  const appContent = (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter future={routerFuture}>
+        <ConsentProvider>
+          <AuthProvider>
+            <RouteViewportManager />
+            <AppMetadataManager />
+            <AnalyticsRouteTracker />
+            <CookieConsentBanner />
+            {children}
+          </AuthProvider>
+        </ConsentProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
+  )
+
+  // Wrap with GoogleOAuthProvider only if enabled and configured
+  if (isGoogleOAuthEnabled) {
+    return (
+      <GoogleOAuthProvider clientId={googleClientId}>
+        {appContent}
+      </GoogleOAuthProvider>
+    )
+  }
+
+  return appContent
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <RootErrorBoundary>
       <RuntimeGuard>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter future={routerFuture}>
-            <ConsentProvider>
-              <AuthProvider>
-                <RouteViewportManager />
-                <AppMetadataManager />
-                <AnalyticsRouteTracker />
-                <CookieConsentBanner />
-                <App />
-              </AuthProvider>
-            </ConsentProvider>
-          </BrowserRouter>
-        </QueryClientProvider>
+        <AppProviders>
+          <App />
+        </AppProviders>
       </RuntimeGuard>
     </RootErrorBoundary>
   </React.StrictMode>,

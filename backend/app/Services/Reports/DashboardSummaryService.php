@@ -292,7 +292,7 @@ class DashboardSummaryService
     {
         $query = User::query()->where('organization_id', $user->organization_id);
 
-        if ($user->role === 'admin') {
+        if ($user->getHierarchyLevel() <= 10) {
             return $query;
         }
 

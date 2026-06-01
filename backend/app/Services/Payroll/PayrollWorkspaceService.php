@@ -300,7 +300,10 @@ class PayrollWorkspaceService
     {
         return User::query()
             ->where('organization_id', $organizationId)
-            ->where('role', 'employee')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
+                    ->orWhere('role', 'employee');
+            })
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'organization_id'])
             ->map(function (User $employee) use ($organizationId, $payrollMonth) {

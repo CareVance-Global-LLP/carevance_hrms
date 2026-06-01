@@ -259,7 +259,7 @@ class ProjectController extends Controller
 
     private function hasRestrictedAssignedProjects(User $user): bool
     {
-        return $user->role === 'employee' && !empty($this->assignedProjectIds($user));
+        return $user->getHierarchyLevel() >= 100 && !empty($this->assignedProjectIds($user));
     }
 
     private function resolveManageableGroup(User $user, int $groupId): ?Group

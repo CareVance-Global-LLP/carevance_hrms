@@ -28,9 +28,9 @@ export default function CsvUploadPanel({
           <p className="mt-4 text-base font-semibold text-slate-950">
             {file ? 'Replace import file' : 'Upload CSV or XLSX'}
           </p>
-          <p className="mt-2 text-sm text-slate-500">
-            Expected columns: email, name, role, departments, projects. Job titles in role are imported as employees; use access_role only when you need employee, manager, or admin.
-          </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Expected columns: email, name, role, access_role, departments, projects, job_title, timezone. Job titles in role are imported as employees; use access_role for employee, manager, or admin.
+            </p>
           <p className="mt-2 text-xs font-medium uppercase tracking-[0.18em] text-sky-700">
             Supported formats: .csv, .xlsx
           </p>

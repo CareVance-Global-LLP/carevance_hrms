@@ -127,13 +127,15 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
 };
 
 export const setStoredAuthValue = (key: AuthStorageKey, value: string) => {
-  if (key === 'token') {
+    if (key === 'token') {
     inMemoryAuthToken = value;
     // Persist token to sessionStorage for web app persistence across reloads
     // Use sessionStorage (not localStorage) for security - cleared when browser closes
     if (typeof window !== 'undefined') {
-      setStorageItem(getPreferredAuthStorage(), 'token', value);
-      setStorageItem(getSecondaryAuthStorage(), 'token', value);
+      const preferred = getPreferredAuthStorage();
+      const secondary = getSecondaryAuthStorage();
+      setStorageItem(preferred, 'token', value);
+      setStorageItem(secondary, 'token', value);
     }
     return;
   }

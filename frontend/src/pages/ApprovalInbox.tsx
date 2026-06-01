@@ -8,6 +8,8 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { formatDuration } from '@/lib/formatters';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { BarChart3, Building2, CheckCircle2, Clock3, History, Inbox, TrendingUp, UserMinus, UserRound, Users, XCircle } from 'lucide-react';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -172,6 +174,7 @@ export default function ApprovalInbox() {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
 
   const [pendingLeaveRequests, setPendingLeaveRequests] = useState<any[]>([]);
   const [leaveHistory, setLeaveHistory] = useState<any[]>([]);
@@ -1144,11 +1147,11 @@ export default function ApprovalInbox() {
                       {String(item.status || '').replace(/_/g, ' ')}
                     </span>
                     <span className="text-xs text-slate-500">
-                      Submitted {new Date(item.submittedAt).toLocaleString()}
+                      Submitted {formatDateTime(item.submittedAt, viewerTimezone)}
                     </span>
                     {item.reviewedAt ? (
                       <span className="text-xs text-slate-500">
-                        Reviewed {new Date(item.reviewedAt).toLocaleString()}
+                        Reviewed {formatDateTime(item.reviewedAt, viewerTimezone)}
                       </span>
                     ) : null}
                   </div>

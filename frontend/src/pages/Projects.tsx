@@ -13,7 +13,8 @@ const defaultColors = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#
 export default function Projects() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const canManageProjects = user?.role === 'admin' || user?.role === 'manager';
+  const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
+  const canManageProjects = userLevel < 100;
   const [showModal, setShowModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
@@ -52,7 +53,7 @@ export default function Projects() {
     queryFn: async () => (await groupApi.getAll()).data?.data || [],
   });
   const groups = groupsQuery.data || [];
-  const isManagerWithSingleGroup = user?.role === 'manager' && groups.length === 1;
+  const isManagerWithSingleGroup = userLevel > 10 && userLevel < 100 && groups.length === 1;
   const managerGroupId = isManagerWithSingleGroup ? String(groups[0].id) : '';
 
   useEffect(() => {

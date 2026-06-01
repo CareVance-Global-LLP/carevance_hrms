@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react';
 import type { AppNotificationItem, User } from '@/types';
 import {
+  AlertTriangle,
   Bell,
   Briefcase,
   CalendarClock,
+  CheckCircle2,
+  ClipboardList,
   CreditCard,
+  Megaphone,
   MessageSquare,
   Newspaper,
 } from 'lucide-react';
@@ -52,11 +56,34 @@ export const getNotificationDisplay = (type: string): NotificationDisplay => {
         tone: 'warning',
         icon: createIcon(<CalendarClock className="h-4 w-4" />),
       };
+    case 'task_assigned':
+      return {
+        label: 'Task',
+        tone: 'info',
+        icon: createIcon(<ClipboardList className="h-4 w-4" />),
+      };
+    case 'task_completed':
+      return {
+        label: 'Task Done',
+        tone: 'success',
+        icon: createIcon(<CheckCircle2 className="h-4 w-4" />),
+      };
+    case 'task_overdue':
+      return {
+        label: 'Overdue Task',
+        tone: 'danger',
+        icon: createIcon(<AlertTriangle className="h-4 w-4" />),
+      };
     case 'announcement':
-    default:
       return {
         label: 'Announcement',
         tone: 'info',
+        icon: createIcon(<Megaphone className="h-4 w-4" />),
+      };
+    default:
+      return {
+        label: 'Notification',
+        tone: 'neutral',
         icon: createIcon(<Bell className="h-4 w-4" />),
       };
   }
@@ -78,9 +105,10 @@ export const isApprovalNotification = (notification: AppNotificationItem | null 
 
 export const resolveNotificationRoute = (
   notification: AppNotificationItem,
-  user: Pick<User, 'role'> | null | undefined
+  user: Pick<User, 'role' | 'hierarchy_level'> | null | undefined
 ): string => {
-  if ((user?.role === 'admin' || user?.role === 'manager') && isApprovalNotification(notification)) {
+  const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
+  if (userLevel < 100 && isApprovalNotification(notification)) {
     const type = String(notification?.type || '').trim().toLowerCase();
     const title = String(notification?.title || '').trim().toLowerCase();
 
@@ -96,5 +124,8 @@ export const resolveNotificationRoute = (
 
 export const canOpenNotificationFromCenter = (
   notification: AppNotificationItem,
-  user: Pick<User, 'role'> | null | undefined
-): boolean => (user?.role === 'admin' || user?.role === 'manager') && isApprovalNotification(notification);
+  user: Pick<User, 'role' | 'hierarchy_level'> | null | undefined
+): boolean => {
+  const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
+  return userLevel < 100 && isApprovalNotification(notification);
+};

@@ -2,16 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { invitationApi, organizationApi, reportGroupApi, userApi } from '@/services/api';
+import { invitationApi, organizationApi, reportGroupApi, roleApi, userApi } from '@/services/api';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
-import { getAssignableRoles, hasAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
+import { getAssignableRoles, hasAdminAccess, hasStrictAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
 import { formatDuration } from '@/lib/formatters';
 import { ArrowRightLeft, Building2, KeyRound, MailPlus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserPlus, UserPlus2, UserRound, Users } from 'lucide-react';
+import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
+import { formatDateTime } from '@/lib/dateTime';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 type EmployeeDirectorySort = 'default' | 'name_asc' | 'tracked_desc' | 'working_first';
@@ -121,6 +123,9 @@ const resolveEmployeeDepartment = (user: any) =>
     || 'Unassigned'
   ).trim() || 'Unassigned';
 
+const resolveEmployeeTimezone = (user: any) =>
+  resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
+
 const piePalette = ['#2563eb', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6'];
 
 const polarToCartesian = (cx: number, cy: number, radius: number, angleInDegrees: number) => {
@@ -171,7 +176,7 @@ const resolveEmployeeSettings = (targetUser: any): EmployeeSettingsDraft => {
       : 10,
     canEditTime: settings.can_edit_time !== false,
     attendanceMonitoring: settings.attendance_monitoring !== false,
-    payrollVisibility: targetUser?.role === 'employee' ? false : settings.payroll_visibility !== false,
+    payrollVisibility: (targetUser?.hierarchy_level ?? (targetUser?.role === 'employee' ? 100 : 50)) >= 100 ? false : settings.payroll_visibility !== false,
     taskAssignmentAccess: settings.task_assignment_access !== false,
   };
 };
@@ -203,9 +208,11 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const { organization, user } = useAuth();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [directoryFilterUserId, setDirectoryFilterUserId] = useState<number | ''>('');
   const [directoryDepartmentFilter, setDirectoryDepartmentFilter] = useState('All departments');
+  const [directoryTimezoneFilter, setDirectoryTimezoneFilter] = useState('All timezones');
   const [directorySort, setDirectorySort] = useState<EmployeeDirectorySort>('default');
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupDirectoryQuery, setGroupDirectoryQuery] = useState('');
@@ -234,6 +241,15 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       const response = await userApi.getAll({ period: 'all' });
       return response.data || [];
     },
+  });
+
+  const customRolesQuery = useQuery({
+    queryKey: ['employee-workspace-custom-roles'],
+    queryFn: async () => {
+      const response = await roleApi.list();
+      return response.data.data || [];
+    },
+    enabled: !!user?.organization_id,
   });
 
   const groupsQuery = useQuery({
@@ -267,35 +283,64 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const groups = groupsQuery.data || [];
   const members = membersQuery.data || [];
   const invitations = invitationsQuery.data || [];
+
+  const getHierarchyLevel = (u: any): number => {
+    if (u?.hierarchy_level !== undefined && u.hierarchy_level !== null) return Number(u.hierarchy_level);
+    if (u?.role_id && customRolesQuery.data) {
+      const cr = customRolesQuery.data.find((r: any) => r.id === u.role_id);
+      if (cr) return cr.hierarchy_level;
+    }
+    const role = String(u?.role || '').toLowerCase();
+    if (role === 'admin') return 10;
+    if (role === 'manager') return 50;
+    if (role === 'employee') return 100;
+    return 999;
+  };
+
+  const getRoleName = (u: any): string => {
+    if (u?.role_name) return u.role_name;
+    if (u?.role_id && customRolesQuery.data) {
+      const cr = customRolesQuery.data.find((r: any) => r.id === u.role_id);
+      if (cr) return cr.name;
+    }
+    const role = String(u?.role || '').toLowerCase();
+    return role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Employee';
+  };
+
+  const currentUserLevel = useMemo(() => getHierarchyLevel(user), [user, customRolesQuery.data]);
+
   const managerManagedDepartment = useMemo(() => {
-    if (user?.role !== 'manager') {
+    if (currentUserLevel > 50) {
       return null;
     }
 
-    // Strategy 1: Find a group where the manager is listed as a member with role 'manager'
-    const managedGroup = groups.find((group: any) =>
-      Array.isArray(group?.users)
-      && group.users.some((member: any) => Number(member?.id) === Number(user.id) && member?.role === 'manager')
-    );
+    // Strategy 1: Find a group where the user is the highest-ranked member
+    const managedGroup = groups.find((group: any) => {
+      if (!Array.isArray(group?.users)) return false;
+      const members = group.users.map((m: any) => ({ ...m, level: getHierarchyLevel(m) }));
+      const lead = members.sort((a: any, b: any) => a.level - b.level)[0];
+      return lead && Number(lead.id) === Number(user.id);
+    });
     if (managedGroup?.name) {
       return String(managedGroup.name).trim();
     }
 
-    // Strategy 2: Use the auth user's own groups (loaded from login response)
-    if (user.groups && user.groups.length > 0) {
+    // Strategy 2: Use the auth user's own groups
+    if (user?.groups && user.groups.length > 0) {
       const groupName = user.groups[0].name?.trim();
       if (groupName) {
         return groupName;
       }
     }
 
-    // Strategy 3: Fallback to manager's own department from their user record
+    // Strategy 3: Fallback to user's own department
     const fallbackDepartment = resolveEmployeeDepartment(user);
     return fallbackDepartment !== 'Unassigned' ? fallbackDepartment : null;
-  }, [groups, user]);
+  }, [groups, user, currentUserLevel, customRolesQuery.data]);
+
   const departmentOptions = useMemo(
     () => {
-      if (user?.role === 'manager') {
+      if (currentUserLevel > 50) {
         if (managerManagedDepartment) {
           return [managerManagedDepartment];
         }
@@ -305,7 +350,12 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
       return ['All departments', ...Array.from(new Set(users.map((item: any) => resolveEmployeeDepartment(item)).filter(Boolean)))];
     },
-    [managerManagedDepartment, user?.role, users]
+    [managerManagedDepartment, currentUserLevel, users]
+  );
+
+  const timezoneOptions = useMemo(
+    () => ['All timezones', ...Array.from(new Set(users.map((item: any) => resolveEmployeeTimezone(item)).filter(Boolean))).sort()],
+    [users]
   );
 
   const settingsTargetUser = useMemo(
@@ -331,10 +381,10 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       return;
     }
 
-    if (user?.role === 'manager' && managerManagedDepartment) {
+    if (currentUserLevel > 50 && managerManagedDepartment) {
       setDirectoryDepartmentFilter(managerManagedDepartment);
     }
-  }, [location.search, mode, user?.role, managerManagedDepartment]);
+  }, [location.search, mode, currentUserLevel, managerManagedDepartment]);
 
   useEffect(() => {
     if (allowedRoles.length === 0) {
@@ -398,12 +448,17 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   });
 
   const updateRoleMutation = useMutation({
-    mutationFn: async ({ userId, role }: { userId: number; role: 'admin' | 'manager' | 'employee' }) => {
-      await userApi.update(userId, { role });
+    mutationFn: async ({ userId, role, roleId }: { userId: number; role?: string; roleId?: number | null }) => {
+      if (roleId !== undefined) {
+        await roleApi.assignUser({ user_id: userId, role_id: roleId });
+      } else if (role) {
+        await userApi.update(userId, { role: role as 'admin' | 'manager' | 'employee' });
+      }
     },
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Role updated successfully.' });
       await queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] });
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace-custom-roles'] });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to update role.' });
@@ -418,7 +473,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           monitoring_interval_minutes: draft.monitoringInterval,
           can_edit_time: draft.canEditTime,
           attendance_monitoring: draft.attendanceMonitoring,
-          payroll_visibility: targetUser.role === 'employee' ? false : draft.payrollVisibility,
+          payroll_visibility: (targetUser?.hierarchy_level ?? (targetUser?.role === 'employee' ? 100 : 50)) >= 100 ? false : draft.payrollVisibility,
           task_assignment_access: draft.taskAssignmentAccess,
         },
       });
@@ -462,17 +517,21 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       ? filteredRows
       : filteredRows.filter((item: any) => resolveEmployeeDepartment(item) === directoryDepartmentFilter);
 
+    const timezoneFilteredRows = directoryTimezoneFilter === 'All timezones'
+      ? departmentFilteredRows
+      : departmentFilteredRows.filter((item: any) => resolveEmployeeTimezone(item) === directoryTimezoneFilter);
+
     switch (directorySort) {
       case 'name_asc':
-        return departmentFilteredRows.sort((left: any, right: any) =>
+        return timezoneFilteredRows.sort((left: any, right: any) =>
           String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })
         );
       case 'tracked_desc':
-        return departmentFilteredRows.sort((left: any, right: any) =>
+        return timezoneFilteredRows.sort((left: any, right: any) =>
           Number(right.total_elapsed_duration || right.total_duration || 0) - Number(left.total_elapsed_duration || left.total_duration || 0)
         );
       case 'working_first':
-        return departmentFilteredRows.sort((left: any, right: any) => {
+        return timezoneFilteredRows.sort((left: any, right: any) => {
           const workingDifference = Number(Boolean(right.is_working)) - Number(Boolean(left.is_working));
           if (workingDifference !== 0) {
             return workingDifference;
@@ -481,23 +540,43 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           return String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
         });
       default:
-        return departmentFilteredRows;
+        return timezoneFilteredRows;
     }
-  }, [directoryDepartmentFilter, directoryFilterUserId, directorySort, users]);
+  }, [directoryDepartmentFilter, directoryFilterUserId, directoryTimezoneFilter, directorySort, users]);
+  const roleCards = useMemo(() => {
+    const allRoles = [...(customRolesQuery.data || [])].sort((a: any, b: any) => a.hierarchy_level - b.hierarchy_level);
+    return allRoles.map((role: any, idx: number) => {
+      const count = role.is_system
+        ? users.filter((u: any) => u.role_id === role.id || (!u.role_id && u.role === role.slug)).length
+        : users.filter((u: any) => u.role_id === role.id).length;
+      const isLast = idx === allRoles.length - 1;
+      const isFirst = idx === 0;
+      return {
+        key: `role-card-${role.id}`,
+        label: role.name,
+        value: count,
+        hint: role.is_system ? `System role \u2022 Level ${role.hierarchy_level}` : `Custom role \u2022 Level ${role.hierarchy_level}`,
+        icon: isFirst ? ShieldCheck : isLast ? Users : KeyRound,
+        accent: isFirst ? 'sky' as const : isLast ? 'violet' as const : 'amber' as const,
+      };
+    });
+  }, [customRolesQuery.data, users]);
+
   const filteredRoleUsers = useMemo(() => {
     const normalizedQuery = roleSearchQuery.trim().toLowerCase();
     if (!normalizedQuery) {
       return users;
     }
 
-    return users.filter((item: any) =>
-      [item.name, item.email, item.role, resolveEmployeeDepartment(item)]
-        .some((value) => String(value || '').toLowerCase().includes(normalizedQuery))
-    );
-  }, [roleSearchQuery, users]);
+    return users.filter((item: any) => {
+      const roleLabel = resolveUserRoleLabel(item, customRolesQuery.data || []);
+      return [item.name, item.email, item.role, roleLabel, resolveEmployeeDepartment(item)]
+        .some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
+    });
+  }, [roleSearchQuery, users, customRolesQuery.data]);
 
-  const canCreateGroups = user?.role === 'admin';
-  const canManageDepartments = user?.role === 'admin' || user?.role === 'manager';
+  const canCreateGroups = currentUserLevel <= 10;
+  const canManageDepartments = currentUserLevel <= 50;
   const internalUsers = useMemo(
     () => users.filter((member: any) => member.role !== 'client'),
     [users]
@@ -528,7 +607,10 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   }, [groupDirectoryFilter, groupDirectoryQuery, groups, shouldShowDirectoryResults]);
 
   const findUserById = (userId: number) => users.find((candidate: any) => Number(candidate.id) === Number(userId));
-  const canManageGroupMember = (member: any) => member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
+  const canManageGroupMember = (member: any) => {
+    const memberLevel = getHierarchyLevel(member);
+    return memberLevel >= 100 || (memberLevel <= 50 && currentUserLevel <= 10);
+  };
   const isEligibleForDirectGroupAdd = (member: any) => canManageGroupMember(member) && (member.groups || []).length === 0;
 
   const syncMembershipMutation = useMutation({
@@ -647,25 +729,33 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const teamInsights = useMemo(() => {
     return groups.map((group: any, index: number) => {
       const teamUsers = Array.isArray(group?.users) ? group.users : [];
-      const employeeCount = teamUsers.filter((member: any) => String(member?.role || '').toLowerCase() === 'employee').length;
-      const manager = teamUsers.find((member: any) => {
-        const role = String(member?.role || '').toLowerCase();
-        return role === 'manager' || role === 'admin';
-      }) || null;
+      const enrichedUsers = teamUsers.map((member: any) => ({
+        ...member,
+        level: getHierarchyLevel(member),
+        displayRole: getRoleName(member),
+      }));
+
+      // Find lead: highest rank (lowest hierarchy_level)
+      const sortedByRank = [...enrichedUsers].sort((a, b) => a.level - b.level);
+      const lead = sortedByRank[0] ?? null;
+      const leadLabel = lead?.displayRole || 'Lead';
+      const memberCount = enrichedUsers.length;
 
       return {
         id: Number(group.id),
         name: String(group.name || 'Department'),
         description: String(group.description || '').trim(),
-        users: teamUsers,
-        employeeCount,
-        membersCount: teamUsers.length,
-        managerName: manager?.name || 'Not assigned',
-        managerEmail: manager?.email || null,
+        users: enrichedUsers,
+        employeeCount: memberCount - (lead ? 1 : 0),
+        membersCount: memberCount,
+        leadName: lead?.name || 'Not assigned',
+        leadLabel,
+        leadEmail: lead?.email || null,
+        managerName: lead?.name || 'Not assigned', // keep for backward compat in UI refs
         color: piePalette[index % piePalette.length],
       };
     });
-  }, [groups]);
+  }, [groups, customRolesQuery.data]);
 
   const totalDepartmentEmployees = useMemo(
     () => teamInsights.reduce((sum, team) => sum + team.employeeCount, 0),
@@ -739,27 +829,74 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
   }, [departmentOptions, directoryDepartmentFilter]);
 
-  const getPromoteRoleOptions = (row: any): Array<'admin' | 'manager' | 'employee'> => {
-    const currentRole = row?.role as 'admin' | 'manager' | 'employee';
+  useEffect(() => {
+    if (!timezoneOptions.includes(directoryTimezoneFilter)) {
+      setDirectoryTimezoneFilter('All timezones');
+    }
+  }, [timezoneOptions, directoryTimezoneFilter]);
 
-    if (user?.role === 'admin') {
+  const resolveRoleValue = (row: any, roleOptions: Array<{ value: string }>): string => {
+    const customCandidate = row.role_id ? `custom_${row.role_id}` : null;
+    const candidates = [customCandidate, row.role].filter(Boolean);
+    for (const candidate of candidates) {
+      if (roleOptions.some((o) => o.value === candidate)) {
+        return candidate;
+      }
+    }
+    const fallback = roleOptions.find((o) => o.value === 'employee') ? 'employee' : roleOptions[0]?.value;
+    return fallback || row.role || 'employee';
+  };
+
+  const getRoleDropdownOptions = (row: any): Array<{ value: string; label: string; isCustom: boolean; roleId?: number }> => {
+    const currentRole = row?.role as string;
+    const currentRoleId = row?.role_id as number | null;
+    const customRoles = customRolesQuery.data || [];
+    const options: Array<{ value: string; label: string; isCustom: boolean; roleId?: number }> = [];
+
+    if (currentUserLevel <= 10) {
       if (Number(row?.id) === Number(user.id)) {
-        return ['admin'];
+        if (currentRoleId) {
+          const cr = customRoles.find((r: any) => r.id === currentRoleId);
+          options.push({ value: `custom_${currentRoleId}`, label: cr?.name || 'Custom Role', isCustom: true, roleId: currentRoleId });
+        } else {
+          options.push({ value: currentRole, label: currentRole.charAt(0).toUpperCase() + currentRole.slice(1), isCustom: false });
+        }
+        return options;
       }
 
-      const roleOptions: Array<'admin' | 'manager' | 'employee'> = ['admin', 'manager', 'employee'];
-      if (!roleOptions.includes(currentRole)) {
-        roleOptions.unshift(currentRole);
+      options.push(
+        { value: 'admin', label: 'Admin', isCustom: false },
+        { value: 'manager', label: 'Manager', isCustom: false },
+        { value: 'employee', label: 'Employee', isCustom: false },
+      );
+
+      const seenValues = new Set(['admin', 'manager', 'employee']);
+      for (const cr of customRoles) {
+        const value = cr.is_system ? cr.slug : `custom_${cr.id}`;
+        if (!seenValues.has(value)) {
+          seenValues.add(value);
+          options.push({ value, label: cr.name, isCustom: !cr.is_system, roleId: cr.is_system ? undefined : cr.id });
+        }
       }
 
-      return roleOptions;
+      return options;
     }
 
-    if (user?.role === 'manager') {
-      return currentRole ? [currentRole] : ['employee'];
+    if (currentUserLevel <= 50) {
+      const val = currentRoleId ? `custom_${currentRoleId}` : currentRole;
+      const label = currentRoleId
+        ? (customRoles.find((r: any) => r.id === currentRoleId)?.name || 'Custom Role')
+        : (currentRole.charAt(0).toUpperCase() + currentRole.slice(1));
+      options.push({ value: val, label, isCustom: !!currentRoleId, roleId: currentRoleId || undefined });
+      return options;
     }
 
-    return currentRole ? [currentRole] : ['employee'];
+    const val = currentRoleId ? `custom_${currentRoleId}` : currentRole;
+    const label = currentRoleId
+      ? (customRoles.find((r: any) => r.id === currentRoleId)?.name || 'Custom Role')
+      : (currentRole.charAt(0).toUpperCase() + currentRole.slice(1));
+    options.push({ value: val, label, isCustom: !!currentRoleId, roleId: currentRoleId || undefined });
+    return options;
   };
 
   const handleDeleteUser = (targetUser: any) => {
@@ -843,7 +980,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard label="Employees" value={users.length} hint="Current organization users" icon={Users} accent="sky" />
             <MetricCard label="Working Now" value={users.filter((user: any) => user.is_working).length} hint="Active timers right now" icon={ShieldCheck} accent="emerald" />
-            <MetricCard label="Managers / Admins" value={users.filter((user: any) => user.role !== 'employee').length} hint="Elevated roles" icon={KeyRound} accent="violet" />
+            <MetricCard label="Managers / Admins" value={users.filter((u: any) => getHierarchyLevel(u) < 100).length} hint="Elevated roles" icon={KeyRound} accent="violet" />
             <MetricCard label="Tracked Time" value={formatDuration(users.reduce((sum: number, user: any) => sum + Number(user.total_elapsed_duration || user.total_duration || 0), 0))} hint="Visible across users" icon={Users} accent="amber" />
           </div>
 
@@ -854,7 +991,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             emptyMessage="No employees found."
             bodyClassName="max-h-[34rem] overflow-auto"
             headerAction={(
-              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
                 <div className="min-w-[13rem]">
                   <FieldLabel>Specific employee</FieldLabel>
                   <EmployeeSelect
@@ -887,6 +1024,18 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                   </SelectInput>
                 </div>
                 <div className="min-w-[13rem]">
+                  <FieldLabel>Timezone</FieldLabel>
+                  <SelectInput
+                    aria-label="Employee timezone filter"
+                    value={directoryTimezoneFilter}
+                    onChange={(event) => setDirectoryTimezoneFilter(event.target.value)}
+                  >
+                    {timezoneOptions.map((tz) => (
+                      <option key={tz} value={tz}>{tz}</option>
+                    ))}
+                  </SelectInput>
+                </div>
+                <div className="min-w-[13rem]">
                   <FieldLabel>Sort list</FieldLabel>
                   <SelectInput
                     aria-label="Employee directory sort"
@@ -903,8 +1052,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             )}
             columns={[
               { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
-              { key: 'role', header: 'Role', render: (row: any) => row.role },
+              { key: 'role', header: 'Role', render: (row: any) => resolveUserRoleLabel(row, customRolesQuery.data || []) },
               { key: 'department', header: 'Department', render: (row: any) => resolveEmployeeDepartment(row) },
+              { key: 'timezone', header: 'Timezone', render: (row: any) => resolveEmployeeTimezone(row) },
               { key: 'working', header: 'Working', render: (row: any) => (row.is_working ? 'Yes' : 'No') },
               { key: 'project', header: 'Current Task', render: (row: any) => row.current_task || row.current_project || 'No active timer' },
               { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.total_elapsed_duration || row.total_duration || 0) },
@@ -939,23 +1089,27 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     key: 'promote',
                     header: 'Promote',
                     render: (row: any) => {
-                      const roleOptions = getPromoteRoleOptions(row);
+                      const roleOptions = getRoleDropdownOptions(row);
+                      const currentValue = resolveRoleValue(row, roleOptions);
 
                       return (
                         <SelectInput
-                          value={row.role}
-                          onChange={(event) =>
-                            updateRoleMutation.mutate({
-                              userId: row.id,
-                              role: event.target.value as 'admin' | 'manager' | 'employee',
-                            })
-                          }
+                          value={currentValue}
+                          onChange={(event) => {
+                            const val = event.target.value;
+                            if (val.startsWith('custom_')) {
+                              const roleId = parseInt(val.replace('custom_', ''));
+                              updateRoleMutation.mutate({ userId: row.id, roleId });
+                            } else {
+                              updateRoleMutation.mutate({ userId: row.id, role: val });
+                            }
+                          }}
                           disabled={updateRoleMutation.isPending || roleOptions.length <= 1}
                           className="min-w-[10rem]"
                         >
-                          {roleOptions.map((role) => (
-                            <option key={role} value={role}>
-                              {role.charAt(0).toUpperCase() + role.slice(1)}
+                          {roleOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
                             </option>
                           ))}
                         </SelectInput>
@@ -974,7 +1128,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">Additional settings</p>
                     <h2 className="mt-2 text-lg font-semibold text-slate-950">{settingsTargetUser.name}</h2>
                     <p className="mt-1 text-sm text-slate-500">
-                      Update monitoring interval and permission toggles for this {settingsTargetUser.role}. Screenshot capture uses this monitoring interval after the user refreshes or signs in again.
+                      Update monitoring interval and permission toggles for this {resolveUserRoleLabel(settingsTargetUser, customRolesQuery.data || [])}. Screenshot capture uses this monitoring interval after the user refreshes or signs in again.
                     </p>
                   </div>
                   <Button
@@ -1033,14 +1187,14 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                       <div>
                         <p className="text-sm font-semibold text-slate-950">Payroll visibility</p>
                         <p className="mt-1 text-sm text-slate-500">
-                          {settingsTargetUser.role === 'employee'
+                          {(settingsTargetUser?.hierarchy_level ?? (settingsTargetUser?.role === 'employee' ? 100 : 50)) >= 100
                             ? 'Employees do not receive payroll reporting access.'
                             : 'Allow payroll and reporting visibility for this user.'}
                         </p>
                       </div>
                       <ToggleInput
                         checked={settingsDraft.payrollVisibility}
-                        disabled={settingsTargetUser.role === 'employee'}
+                        disabled={(settingsTargetUser?.hierarchy_level ?? (settingsTargetUser?.role === 'employee' ? 100 : 50)) >= 100}
                         onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, payrollVisibility: checked }) : current)}
                       />
                     </div>
@@ -1198,7 +1352,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                           ) : (
                             membersInGroup.map((member: any) => {
                               const moveKey = `${group.id}:${member.id}`;
-                              const canManageMembership = member.role === 'employee' || (member.role === 'manager' && user?.role === 'admin');
+                              const canManageMembership = getHierarchyLevel(member) >= 100 || (getHierarchyLevel(member) <= 50 && currentUserLevel <= 10);
 
                               return (
                                 <div key={moveKey} className="rounded-lg border border-slate-200 bg-white p-4">
@@ -1206,7 +1360,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                                     <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <p className="font-semibold text-slate-950">{member.name}</p>
-                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{String(member.role || '').replace('_', ' ')}</span>
+                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{resolveUserRoleLabel(member, customRolesQuery.data || [])}</span>
                                       </div>
                                       <p className="mt-1 truncate text-sm text-slate-500">{member.email}</p>
                                       <p className="mt-2 text-xs text-slate-500">
@@ -1325,7 +1479,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                         <div className="mt-2 text-sm text-slate-700">
                           <p className="font-semibold text-slate-900">{highlightedTeam.name}</p>
                           <p className="mt-1">Employees: {highlightedTeam.employeeCount}</p>
-                          <p>Manager: {highlightedTeam.managerName}</p>
+                          <p>{highlightedTeam.leadLabel || 'Lead'}: {highlightedTeam.leadName}</p>
                         </div>
                       ) : (
                         <p className="mt-2 text-sm text-slate-500">Hover a department slice to preview details.</p>
@@ -1390,8 +1544,8 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                       </div>
 
                       <div className="mt-3 grid grid-cols-1 gap-3 text-sm text-slate-600 md:grid-cols-2">
-                        <p><span className="font-semibold text-slate-900">Manager:</span> {team.managerName}</p>
-                        <p><span className="font-semibold text-slate-900">Contact:</span> {team.managerEmail || 'Not available'}</p>
+                        <p><span className="font-semibold text-slate-900">{team.leadLabel || 'Lead'}:</span> {team.leadName}</p>
+                        <p><span className="font-semibold text-slate-900">Contact:</span> {team.leadEmail || 'Not available'}</p>
                       </div>
 
                       <div className="mt-3 border-t border-slate-200 pt-3">
@@ -1452,9 +1606,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               emptyMessage="No invitations found."
               columns={[
                 { key: 'email', header: 'Email', render: (row: any) => row.email },
-                { key: 'role', header: 'Role', render: (row: any) => row.role },
+                { key: 'role', header: 'Role', render: (row: any) => row.role ? row.role.charAt(0).toUpperCase() + row.role.slice(1) : 'Employee' },
                 { key: 'status', header: 'Status', render: (row: any) => row.status },
-                { key: 'expires_at', header: 'Expires', render: (row: any) => row.expires_at ? new Date(row.expires_at).toLocaleString() : 'n/a' },
+                { key: 'expires_at', header: 'Expires', render: (row: any) => row.expires_at ? formatDateTime(row.expires_at, viewerTimezone) : 'n/a' },
               ]}
             />
             <DataTable
@@ -1465,7 +1619,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               columns={[
                 { key: 'name', header: 'Name', render: (row: any) => row.name },
                 { key: 'email', header: 'Email', render: (row: any) => row.email },
-                { key: 'role', header: 'Role', render: (row: any) => row.role },
+                { key: 'role', header: 'Role', render: (row: any) => resolveUserRoleLabel(row, customRolesQuery.data || []) },
                 { key: 'status', header: 'Status', render: (row: any) => (row.is_active ? 'Active' : 'Inactive') },
               ]}
             />
@@ -1476,10 +1630,18 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       {mode === 'roles' && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Admins" value={users.filter((user: any) => user.role === 'admin').length} hint="Organization admins" icon={ShieldCheck} accent="sky" />
-            <MetricCard label="Managers" value={users.filter((user: any) => user.role === 'manager').length} hint="Managers" icon={ShieldCheck} accent="emerald" />
-            <MetricCard label="Employees" value={users.filter((user: any) => user.role === 'employee').length} hint="Employee users" icon={Users} accent="violet" />
-            <MetricCard label="Permission Model" value="Role-based" hint="Using current user.role field" icon={KeyRound} accent="amber" />
+            {roleCards.length > 0
+              ? roleCards.map((card: any) => (
+                  <MetricCard key={card.key} label={card.label} value={card.value} hint={card.hint} icon={card.icon} accent={card.accent} />
+                ))
+              : (
+                <>
+                  <MetricCard label="Admins" value={users.filter((u: any) => getHierarchyLevel(u) <= 10).length} hint="Organization admins" icon={ShieldCheck} accent="sky" />
+                  <MetricCard label="Managers" value={users.filter((u: any) => getHierarchyLevel(u) === 50 && !u.role_id).length} hint="Managers" icon={ShieldCheck} accent="emerald" />
+                  <MetricCard label="Employees" value={users.filter((u: any) => getHierarchyLevel(u) >= 100 && !u.role_id).length} hint="Default role users" icon={Users} accent="violet" />
+                  <MetricCard label="Custom Roles" value={users.filter((u: any) => u.role_id).length} hint="Users with custom job roles" icon={KeyRound} accent="amber" />
+                </>
+              )}
           </div>
 
           <SurfaceCard className="p-5">
@@ -1517,32 +1679,41 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               ) : filteredRoleUsers.length === 0 ? (
                 <PageEmptyState title="No matching users" description="Try a different search term to find the role assignment you need." />
               ) : (
-                filteredRoleUsers.map((user: any) => (
-                  <div key={user.id} className="flex flex-col gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="font-medium text-slate-950">{user.name}</p>
-                      <p className="text-sm text-slate-500">{user.email}</p>
-                      <p className="mt-1 text-xs text-slate-500">{resolveEmployeeDepartment(user)} department</p>
+                filteredRoleUsers.map((targetUser: any) => {
+                  const roleOptions = getRoleDropdownOptions(targetUser);
+                  const currentValue = resolveRoleValue(targetUser, roleOptions);
+                  return (
+                    <div key={targetUser.id} className="flex flex-col gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="font-medium text-slate-950">{targetUser.name}</p>
+                        <p className="text-sm text-slate-500">{targetUser.email}</p>
+                        <p className="mt-1 text-xs text-slate-500">{resolveEmployeeDepartment(targetUser)} department</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <SelectInput
+                          value={currentValue}
+                          onChange={(event) => {
+                            const val = event.target.value;
+                            if (val.startsWith('custom_')) {
+                              const roleId = parseInt(val.replace('custom_', ''));
+                              updateRoleMutation.mutate({ userId: targetUser.id, roleId });
+                            } else {
+                              updateRoleMutation.mutate({ userId: targetUser.id, role: val });
+                            }
+                          }}
+                          disabled={!isStrictAdmin || updateRoleMutation.isPending}
+                          className="min-w-[11rem]"
+                        >
+                          {roleOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <SelectInput
-                        value={user.role}
-                        onChange={(event) =>
-                          updateRoleMutation.mutate({
-                            userId: user.id,
-                            role: event.target.value as 'admin' | 'manager' | 'employee',
-                          })
-                        }
-                        disabled={!isStrictAdmin || updateRoleMutation.isPending}
-                        className="min-w-[11rem]"
-                      >
-                        <option value="employee">Employee</option>
-                        <option value="manager">Manager</option>
-                        <option value="admin">Admin</option>
-                      </SelectInput>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </SurfaceCard>

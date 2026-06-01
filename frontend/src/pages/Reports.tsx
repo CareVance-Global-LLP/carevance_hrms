@@ -17,16 +17,16 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { SelectInput } from '@/components/ui/FormField';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import { formatDurationSmart as formatDuration } from '@/lib/formatters';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { BarChart3, Calendar, Clock, Download, TrendingUp, Users } from 'lucide-react';
 
 type OrgUser = { id: number; name: string; email: string; role: string };
 type Group = { id: number; name: string; users: OrgUser[] };
 
-const formatLastActivity = (value?: string | null) => {
+const formatLastActivity = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) => {
   if (!value) return 'No activity';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'No activity';
-  return parsed.toLocaleString();
+  return formatDateTime(value, timezone, 'en-US', 'No activity');
 };
 
 type PersistedReportsPageFilters = {
@@ -80,6 +80,7 @@ const readPersistedReportsPageFilters = (isAdmin: boolean): PersistedReportsPage
 
 export default function Reports() {
   const { user } = useAuth();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const isAdmin = hasAdminAccess(user);
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedReportsPageFilters(isAdmin).datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedReportsPageFilters(isAdmin).startDate);
@@ -407,7 +408,7 @@ export default function Reports() {
             { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
             { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
             { key: 'idle_percentage', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
-            { key: 'activity', header: 'Last Activity', render: (row: any) => formatLastActivity(row.last_activity_at) },
+            { key: 'activity', header: 'Last Activity', render: (row: any) => formatLastActivity(row.last_activity_at, viewerTimezone) },
             {
               key: 'working',
               header: 'Working',

@@ -57,9 +57,20 @@ class AuthController extends Controller
 
                 DB::table('personal_access_tokens')->where('tokenable_id', $existingUser->id)->delete();
             } elseif ($existingUser) {
+                // Existing user trying to sign up again — check trial abuse
+                if ($signupMode === 'trial' && $existingUser->hasConsumedTrial()) {
+                    throw ValidationException::withMessages([
+                        'email' => ['You have already used your free trial. Please sign in or choose a paid plan.'],
+                    ]);
+                }
                 throw ValidationException::withMessages([
                     'email' => ['This email is already registered. Please sign in or use a different email.'],
                 ]);
+            }
+
+            $orgSettings = [];
+            if (!empty($validated['timezone'])) {
+                $orgSettings['timezone'] = $validated['timezone'];
             }
 
             $organization = Organization::create([
@@ -84,7 +95,13 @@ class AuthController extends Controller
                 'trial_ends_at' => $signupMode === 'trial' ? now()->addDays($trialDays) : null,
                 'subscription_expires_at' => $signupMode === 'trial' ? now()->addDays($trialDays)->toDateString() : null,
                 'max_seats' => $seats,
+                'settings' => !empty($orgSettings) ? $orgSettings : null,
             ]);
+
+            $userSettings = [];
+            if (!empty($validated['timezone'])) {
+                $userSettings['timezone'] = $validated['timezone'];
+            }
 
             $user = User::create([
                 'name' => $validated['name'],
@@ -92,7 +109,13 @@ class AuthController extends Controller
                 'password' => Hash::make($validated['password']),
                 'role' => 'admin',
                 'organization_id' => $organization->id,
+                'settings' => !empty($userSettings) ? $userSettings : null,
             ]);
+
+            // Track trial usage per user (prevents deleting org + re-signup for another trial)
+            if ($signupMode === 'trial') {
+                $user->markTrialUsed();
+            }
 
             $organization->forceFill([
                 'owner_user_id' => $user->id,
@@ -148,6 +171,43 @@ class AuthController extends Controller
         $this->clearLoginRateLimits($request, (string) $user->email);
 
         $remember = $request->boolean('remember');
+
+        // Clean up orphaned organization reference if org was deleted
+        if ($user->organization_id !== null) {
+            $user->load('organization');
+            if ($user->organization === null) {
+                $user->organization_id = null;
+                $user->save();
+            }
+        }
+
+        // Enforce trial expiry: if user's trial has expired, mark org as expired
+        if ($user->organization && $user->organization->subscription_status === 'trial' && $user->isTrialExpired()) {
+            $user->organization->update([
+                'subscription_status' => 'expired',
+                'subscription_expires_at' => now()->toDateString(),
+            ]);
+            $user->organization->refresh();
+        }
+
+        if ($request->filled('timezone')) {
+            $settings = is_array($user->settings) ? $user->settings : [];
+            $settings['timezone'] = $request->input('timezone');
+            $user->settings = $settings;
+            $user->save();
+        }
+
+        // Check if user has an organization
+        $user->load('organization');
+        
+        if (!$user->organization) {
+            return $this->errorResponse(
+                'You do not have an active workspace. Please sign up to start your free trial.',
+                403,
+                ['error_code' => 'NO_ORGANIZATION']
+            );
+        }
+
         $token = $this->apiTokenService->issue(
             $user,
             'auth-token',
@@ -213,7 +273,17 @@ class AuthController extends Controller
         $user->load('organization');
         $user->loadMissing(['groups', 'employeeProfile']);
 
-        return $this->successResponse($user->toArray());
+        $data = $user->toArray();
+        $data['permissions'] = $this->getUserPermissions($user);
+        $data['role_name'] = $user->customRole?->name ?? ucfirst($user->role ?? 'employee');
+
+        return $this->successResponse($data);
+    }
+
+    private function getUserPermissions(\App\Models\User $user): array
+    {
+        $allPerms = \App\Models\Permission::pluck('key')->all();
+        return array_values(array_filter($allPerms, fn($key) => $user->hasPermission($key)));
     }
 
     public function logout(Request $request)
@@ -240,7 +310,7 @@ class AuthController extends Controller
                 ->whereNull('end_time')
                 ->update([
                     'end_time' => now(),
-                    'duration' => DB::raw('TIMESTAMPDIFF(SECOND, start_time, NOW())'),
+                    'duration' => DB::raw("EXTRACT(EPOCH FROM (NOW() - start_time))::integer"),
                     'auto_stopped_for_idle' => false,
                 ]);
         }

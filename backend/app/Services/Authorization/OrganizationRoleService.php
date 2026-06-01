@@ -2,8 +2,10 @@
 
 namespace App\Services\Authorization;
 
-use App\Models\User;
-use Illuminate\Validation\ValidationException;
+    use App\Models\Role;
+    use App\Models\User;
+    use Illuminate\Database\Eloquent\Collection;
+    use Illuminate\Validation\ValidationException;
 
 class OrganizationRoleService
 {
@@ -26,17 +28,36 @@ class OrganizationRoleService
             return [];
         }
 
-        if ($this->isOwner($user)) {
+        if ($this->isOwner($user) || $user->hasPermission('employees.manage')) {
             return ['admin', 'manager', 'employee', 'client'];
         }
 
-        return match ($user->role) {
-            'admin' => ['admin', 'manager', 'employee', 'client'],
-            'manager' => config('carevance.manager_can_invite_employees', true)
-                ? ['employee']
-                : [],
-            default => [],
-        };
+        if ($user->hasPermission('employees.edit') && config('carevance.manager_can_invite_employees', true)) {
+            return ['employee'];
+        }
+
+        return [];
+    }
+
+    public function allowedAssignableRoleIds(User $user): Collection
+    {
+        if ($this->isOwner($user) || $user->hasPermission('employees.manage')) {
+            return Role::where('organization_id', $user->organization_id)
+                ->where('is_active', true)
+                ->whereIn('slug', ['admin', 'manager', 'employee', 'client'])
+                ->orderBy('hierarchy_level')
+                ->get();
+        }
+
+        if ($user->hasPermission('employees.edit') && config('carevance.manager_can_invite_employees', true)) {
+            return Role::where('organization_id', $user->organization_id)
+                ->where('is_active', true)
+                ->where('slug', 'employee')
+                ->orderBy('hierarchy_level')
+                ->get();
+        }
+
+        return new Collection();
     }
 
     public function assertCanAssignRole(User $actor, string $role, string $field = 'role'): void

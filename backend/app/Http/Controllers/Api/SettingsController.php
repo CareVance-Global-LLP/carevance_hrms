@@ -181,7 +181,7 @@ class SettingsController extends Controller
             $this->deleteManagedPublicFile($existingAvatarUrl, "avatars/{$user->id}/");
         }
 
-        if ($user->role === 'admin' && array_key_exists('email', $validated)) {
+        if ($user->getHierarchyLevel() <= 10 && array_key_exists('email', $validated)) {
             $profileUpdates['email'] = $validated['email'];
             $changedFields[] = 'email';
         }
@@ -243,7 +243,7 @@ class SettingsController extends Controller
 
         $existing = is_array($user->settings) ? $user->settings : [];
         $user->settings = array_merge($existing, [
-            'timezone' => $validated['timezone'] ?? ($existing['timezone'] ?? 'Asia/Kolkata'),
+            'timezone' => $validated['timezone'] ?? ($existing['timezone'] ?? config('app.timezone')),
             'notifications' => array_merge(
                 [
                     'email' => true,
@@ -265,7 +265,7 @@ class SettingsController extends Controller
             actor: $user,
             target: $user,
             metadata: [
-                'timezone' => $user->settings['timezone'] ?? 'Asia/Kolkata',
+                'timezone' => $user->settings['timezone'] ?? config('app.timezone'),
                 'notification_keys' => array_keys($user->settings['notifications'] ?? []),
             ],
             request: $request
@@ -342,11 +342,15 @@ class SettingsController extends Controller
             : [];
         $leaveCategoriesInput = $this->resolveLeaveCategoriesInput($validated);
         if ($leaveCategoriesInput !== null) {
-            if ($user->role !== 'admin') {
+            if ($user->getHierarchyLevel() > 10) {
                 return response()->json(['message' => 'Only admins can update leave policy settings.'], 403);
             }
 
             $leavePolicySettings['categories'] = $this->normalizeLeaveCategories($leaveCategoriesInput);
+        }
+
+        if (array_key_exists('timezone', $validated)) {
+            $existingSettings['timezone'] = $validated['timezone'];
         }
 
         $updatedSettings = array_merge($existingSettings, [
@@ -485,7 +489,14 @@ class SettingsController extends Controller
 
     private function canManageOrg($user): bool
     {
-        return in_array($user->role, ['admin', 'manager'], true);
+        // Check custom role permission first, then fall back to hierarchy level
+        return $user->hasPermission('settings.manage') || $user->getHierarchyLevel() < 100;
+    }
+
+    private function canViewOrg($user): bool
+    {
+        // Check custom role permission first, then fall back to hierarchy level
+        return $user->hasPermission('settings.view') || $user->getHierarchyLevel() < 100;
     }
 
     private function isProfileOnboardingComplete(User $user): bool

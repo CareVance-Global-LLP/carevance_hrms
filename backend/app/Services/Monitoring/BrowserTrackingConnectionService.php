@@ -127,7 +127,10 @@ class BrowserTrackingConnectionService
 
         $adminIds = User::query()
             ->where('organization_id', $user->organization_id)
-            ->where('role', 'admin')
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<=', 10))
+                    ->orWhere('role', 'admin');
+            })
             ->pluck('id');
 
         $deviceLabel = trim((string) ($connection->device_label ?? '')) ?: 'the desktop app';

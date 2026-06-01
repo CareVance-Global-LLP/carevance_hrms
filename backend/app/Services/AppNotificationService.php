@@ -77,6 +77,7 @@ class AppNotificationService
             'chat_direct_message', 'chat_group_message' => (bool) ($notificationSettings['chat_messages'] ?? true),
             'news' => (bool) ($notificationSettings['weekly_summary'] ?? true),
             'announcement' => (bool) ($notificationSettings['project_updates'] ?? true),
+            'task_assigned' => true,
             default => true,
         };
     }
@@ -95,6 +96,15 @@ class AppNotificationService
                     : '/chat',
                 'browser_tracking_disconnected' => '/monitoring/website-usage',
                 'salary_credited' => '/payroll',
+                'task_assigned' => ! empty($resolvedMeta['route'])
+                    ? (string) $resolvedMeta['route']
+                    : '/tasks',
+                'task_completed' => ! empty($resolvedMeta['route'])
+                    ? (string) $resolvedMeta['route']
+                    : '/tasks',
+                'task_overdue' => ! empty($resolvedMeta['route'])
+                    ? (string) $resolvedMeta['route']
+                    : '/tasks',
                 default => '/notifications',
             };
         }

@@ -1,5 +1,5 @@
 {
-  "appUrl": "https://carevancetracker.duckdns.org",
+  "appUrl": "http://localhost:5173",
   "update": {
     "provider": "github",
     "owner": "Igrisssssss",

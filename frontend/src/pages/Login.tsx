@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { isLikelyMobile } from '@/lib/mobile';
@@ -21,6 +21,7 @@ import BrandLogo from '@/components/branding/BrandLogo';
 import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import { desktopDownloadLabel, desktopDownloadUrl } from '@/lib/runtimeConfig';
 import { analytics } from '@/lib/analytics';
+import GoogleLoginButton from '@/components/auth/GoogleLoginButton';
 
 const REMEMBERED_EMAIL_KEY = 'carevance.rememberedEmail';
 
@@ -37,7 +38,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(() => getRememberedEmail() !== '');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<React.ReactNode>('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -72,6 +73,19 @@ export default function Login() {
 
       if (errorCode === 'EMAIL_NOT_VERIFIED') {
         navigate(`/verify-email?email=${encodeURIComponent(responseEmail)}&status=pending-login`);
+        return;
+      }
+
+      if (errorCode === 'NO_ORGANIZATION') {
+        setError(
+          <>
+            You don't have an active workspace.{' '}
+            <Link to="/signup-owner" className="font-semibold text-sky-700 underline">
+              Sign up for a free trial
+            </Link>{' '}
+            to get started.
+          </>
+        );
         return;
       }
 
@@ -120,9 +134,22 @@ export default function Login() {
               {error && (
                 <div className="mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50/90 p-4">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                  <p className="text-sm text-red-700">{error}</p>
+                  <div className="text-sm text-red-700">{error}</div>
                 </div>
               )}
+
+              <div className="mb-6">
+                <GoogleLoginButton type="login" />
+              </div>
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-200" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-white px-2 text-sm text-slate-500">Or sign in with email</span>
+                </div>
+              </div>
 
               <form className="space-y-5" onSubmit={handleSubmit}>
                 <div>

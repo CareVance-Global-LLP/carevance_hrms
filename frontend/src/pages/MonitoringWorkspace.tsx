@@ -14,6 +14,7 @@ import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
 import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
+import { hasStrictAdminAccess } from '@/lib/permissions';
 import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
 import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
@@ -242,8 +243,8 @@ const SCREENSHOT_REFRESH_INTERVAL_MS = 60_000;
 
 export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspaceMode }) {
   const { user } = useAuth();
-  const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
-  const canDeleteScreenshots = user?.role === 'admin';
+  const viewOnly = !hasStrictAdminAccess(user);
+  const canDeleteScreenshots = hasStrictAdminAccess(user);
   const navigate = useNavigate();
   const location = useLocation();
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringWorkspaceFilters(mode).datePreset);
@@ -331,8 +332,14 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     },
   });
   const users = useMemo(
-    () => (usersQuery.data || []).filter((employee: any) => user?.role !== 'manager' || employee.role === 'employee'),
-    [user?.role, usersQuery.data]
+    () => {
+      const currentUserLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
+      return (usersQuery.data || []).filter((employee: any) => {
+        const employeeLevel = employee.hierarchy_level ?? (employee.role === 'admin' ? 10 : employee.role === 'manager' ? 50 : 100);
+        return currentUserLevel <= 10 || employeeLevel > currentUserLevel;
+      });
+    },
+    [user, usersQuery.data]
   );
   const effectiveSelectedUserId = useMemo<number | ''>(() => {
     if (selectedUserId === '' || !usersQuery.isSuccess) {
@@ -436,6 +443,15 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     () => new Map(users.map((employee: any) => [Number(employee.id), employee])),
     [users]
   );
+  const displayTimezone = useMemo(() => {
+    const viewerTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
+    if (!effectiveSelectedUserId) {
+      return viewerTimezone;
+    }
+    const targetUser = usersById.get(Number(effectiveSelectedUserId));
+    const targetTimezone = targetUser?.settings?.timezone;
+    return targetTimezone ? resolveTimeZone(targetTimezone) : viewerTimezone;
+  }, [effectiveSelectedUserId, user, usersById]);
   const pageTitle = modeCopy[mode];
   const selectedEmployeeLabel = effectiveSelectedUserId
     ? users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId))?.name || 'Selected employee'

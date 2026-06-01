@@ -55,8 +55,23 @@ import type {
   PayrollTransaction,
   SalaryComponentMaster,
   SalaryTemplate,
+  TaskActivity,
+  TaskAttachment,
+  TaskChecklistItem,
+  TaskComment,
+  TaskDependency,
+  TaskLabel,
+  TaskRecurrence,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
+
+// Define API error response structure
+interface ApiErrorResponse {
+  message?: string;
+  error_code?: string;
+  errors?: Record<string, string[]>;
+  request_id?: string;
+}
 
 const api = axios.create({
   baseURL: apiUrl,
@@ -76,6 +91,9 @@ api.interceptors.request.use((config) => {
   const token = getStoredAuthValue('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+    console.log('API Request with token to:', config.url);
+  } else {
+    console.log('API Request without token to:', config.url);
   }
   
   // Add request timeout for better error handling
@@ -89,19 +107,19 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => {
     const status = Number(response?.status || 0);
-    const errorCode = (response?.data as any)?.error_code;
+    const errorCode = (response?.data as ApiErrorResponse)?.error_code;
 
     if (status === 401 || errorCode === 'UNAUTHORIZED') {
       clearAuthStorage();
       window.dispatchEvent(new Event('app:auth-cleared'));
-      return Promise.reject(new Error((response?.data as any)?.message || 'Unauthorized'));
+      return Promise.reject(new Error((response?.data as ApiErrorResponse)?.message || 'Unauthorized'));
     }
 
     return response;
   },
   (error: AxiosError) => {
     const status = error.response?.status;
-    const errorCode = (error.response?.data as any)?.error_code;
+    const errorCode = (error.response?.data as ApiErrorResponse)?.error_code;
     
     // Handle authentication errors
     if (status === 401 || errorCode === 'UNAUTHORIZED') {
@@ -113,7 +131,16 @@ api.interceptors.response.use(
     
     // Handle forbidden errors
     if (status === 403 || errorCode === 'FORBIDDEN') {
-      console.error('Access forbidden:', (error.response?.data as any)?.message || 'You do not have permission to perform this action');
+      console.error('Access forbidden:', (error.response?.data as ApiErrorResponse)?.message || 'You do not have permission to perform this action');
+      return Promise.reject(error);
+    }
+
+    // Handle trial expired
+    if (errorCode === 'TRIAL_EXPIRED') {
+      console.error('Trial expired:', (error.response?.data as ApiErrorResponse)?.message || 'Your free trial has expired');
+      if (typeof window !== 'undefined' && window.location.pathname !== '/payment') {
+        window.location.href = '/payment';
+      }
       return Promise.reject(error);
     }
     
@@ -132,7 +159,7 @@ api.interceptors.response.use(
     // Handle server errors
     if (status && status >= 500) {
       console.error('Server error. Please try again later.');
-      const requestId = (error.response?.data as any)?.request_id;
+      const requestId = (error.response?.data as ApiErrorResponse)?.request_id;
       if (requestId) {
         console.error('Request ID:', requestId);
       }
@@ -177,6 +204,44 @@ export const authApi = {
   
   me: () => 
     api.get<ApiResponse<User> | User>('/auth/me'),
+
+  googleLogin: (credential: string, timezone?: string) =>
+    api.post<{
+      success: boolean;
+      token: string;
+      user: User;
+      organization?: Organization;
+      has_workspace: boolean;
+      google_data?: { name: string; email: string };
+    }>('/auth/google/login', { credential, ...(timezone ? { timezone } : {}) }),
+
+  completeGoogleRegistration: (data: {
+    name: string;
+    company_name: string;
+    company_description?: string;
+    plan_code?: string;
+    billing_cycle?: string;
+    seats?: number;
+    signup_mode?: string;
+    timezone?: string;
+    description?: string;
+    website?: string;
+    industry?: string;
+    size?: string;
+    phone?: string;
+    org_email?: string;
+    address_line?: string;
+    city?: string;
+    state?: string;
+    postal_code?: string;
+    country?: string;
+  }) =>
+    api.post<{
+      success: boolean;
+      token: string;
+      user: User;
+      organization: Organization;
+    }>('/auth/google/complete', data),
 };
 
 // Organization API
@@ -239,7 +304,7 @@ export const invitationApi = {
   getByToken: (token: string) =>
     api.get<{ invitation: InvitationSummary }>(`/invitations/${token}`),
 
-  accept: (token: string, data: { name: string; password: string; password_confirmation: string }) =>
+  accept: (token: string, data: { name: string; password: string; password_confirmation: string; timezone?: string }) =>
     api.post<AuthResponse>(`/invitations/${token}/accept`, data),
 };
 
@@ -440,6 +505,93 @@ export const taskApi = {
   
   getTimeEntries: (id: number) => 
     api.get(`/tasks/${id}/time-entries`),
+
+  getActivities: (id: number) =>
+    api.get<TaskActivity[]>(`/tasks/${id}/activities`),
+
+  watch: (id: number) =>
+    api.post<{ message: string; watching: boolean; watchers_count: number }>(`/tasks/${id}/watch`),
+
+  unwatch: (id: number) =>
+    api.post<{ message: string; watching: boolean; watchers_count: number }>(`/tasks/${id}/unwatch`),
+
+  watchStatus: (id: number) =>
+    api.get<{ watching: boolean; watchers_count: number }>(`/tasks/${id}/watch-status`),
+
+  getComments: (id: number) =>
+    api.get<TaskComment[]>(`/tasks/${id}/comments`),
+
+  createComment: (id: number, data: { content: string }) =>
+    api.post<TaskComment>(`/tasks/${id}/comments`, data),
+
+  deleteComment: (commentId: number) =>
+    api.delete(`/tasks/comments/${commentId}`),
+
+  getAttachments: (id: number) =>
+    api.get<TaskAttachment[]>(`/tasks/${id}/attachments`),
+
+  createAttachment: (id: number, data: FormData) =>
+    api.post<TaskAttachment>(`/tasks/${id}/attachments`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+
+  deleteAttachment: (attachmentId: number) =>
+    api.delete(`/tasks/attachments/${attachmentId}`),
+
+  addLabel: (id: number, labelId: number) =>
+    api.post<Task>(`/tasks/${id}/labels`, { label_id: labelId }),
+
+  removeLabel: (id: number, labelId: number) =>
+    api.delete<Task>(`/tasks/${id}/labels/${labelId}`),
+
+  getChecklistItems: (id: number) =>
+    api.get<TaskChecklistItem[]>(`/tasks/${id}/checklist-items`),
+
+  createChecklistItem: (id: number, data: { title: string }) =>
+    api.post<TaskChecklistItem>(`/tasks/${id}/checklist-items`, data),
+
+  updateChecklistItem: (itemId: number, data: { title?: string; is_completed?: boolean; position?: number }) =>
+    api.patch<TaskChecklistItem>(`/tasks/checklist-items/${itemId}`, data),
+
+  deleteChecklistItem: (itemId: number) =>
+    api.delete(`/tasks/checklist-items/${itemId}`),
+
+  getDependencies: (id: number) =>
+    api.get<TaskDependency[]>(`/tasks/${id}/dependencies`),
+
+  createDependency: (id: number, dependsOnTaskId: number) =>
+    api.post<TaskDependency>(`/tasks/${id}/dependencies`, { depends_on_task_id: dependsOnTaskId }),
+
+  deleteDependency: (dependencyId: number) =>
+    api.delete(`/tasks/dependencies/${dependencyId}`),
+
+  storeRecurrence: (id: number, data: {
+    frequency: string; interval_value?: number; days_of_week?: number[]; day_of_month?: number; end_date?: string;
+  }) => api.post<TaskRecurrence>(`/tasks/${id}/recurrence`, data),
+
+  getRecurrence: (id: number) =>
+    api.get<TaskRecurrence | null>(`/tasks/${id}/recurrence`),
+
+  updateRecurrence: (recurrenceId: number, data: { is_active?: boolean; end_date?: string; next_run_date?: string }) =>
+    api.put<TaskRecurrence>(`/tasks/recurrence/${recurrenceId}`, data),
+
+  deleteRecurrence: (recurrenceId: number) =>
+    api.delete(`/tasks/recurrence/${recurrenceId}`),
+
+  updateReminder: (id: number, remindAt: string | null) =>
+    api.patch<Task>(`/tasks/${id}/remind`, { remind_at: remindAt }),
+};
+
+// Task Label API
+export const taskLabelApi = {
+  getAll: () =>
+    api.get<TaskLabel[]>('/task-labels'),
+
+  create: (data: { name: string; color?: string }) =>
+    api.post<TaskLabel>('/task-labels', data),
+
+  delete: (id: number) =>
+    api.delete(`/task-labels/${id}`),
 };
 
 // Time Entry API
@@ -732,6 +884,7 @@ export const attendanceApi = {
       } | null;
       late_after: string;
       office_start?: string;
+      timezone?: string;
       shift_target_seconds: number;
       has_approved_leave_today: boolean;
     }>('/attendance/today', { params }),
@@ -894,7 +1047,7 @@ export const leaveApi = {
       }>;
       approval_scope: {
         can_manage: boolean;
-        can_approve_roles: string[];
+        can_approve_levels: number[];
       };
     }>('/leave-requests/balances'),
 
@@ -1240,7 +1393,15 @@ export const reportGroupApi = {
         id: number;
         organization_id: number;
         name: string;
-        users: Array<{ id: number; name?: string; email?: string; role?: string }>;
+        users: Array<{
+          id: number;
+          name?: string;
+          email?: string;
+          role?: string;
+          role_id?: number | null;
+          role_name?: string;
+          hierarchy_level?: number;
+        }>;
       }>;
     }>('/report-groups', { params }),
 
@@ -1346,6 +1507,12 @@ export const billingApi = {
     api.post<{ success: boolean; message?: string }>('/billing/cancel-pending-upgrade'),
   confirmAddSeats: (data: { payment_intent_id: string }) =>
     api.post<{ success: boolean; message?: string; subscription_status: string; max_seats: number }>('/billing/confirm-add-seats', data),
+  
+  // Razorpay payment methods
+  createRazorpayOrder: (data: { amount: number; currency?: string; payment_type?: string }) =>
+    api.post<{ success: boolean; order_id: string; amount: number; currency: string; key_id: string; mock_mode?: boolean; message?: string }>('/billing/razorpay/create-order', data),
+  verifyRazorpayPayment: (data: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
+    api.post<{ success: boolean; payment_id: string; subscription_status: string; subscription_expires_at: string; message?: string }>('/billing/razorpay/verify-payment', data),
 };
 
 export const companyApi = {
@@ -1389,6 +1556,64 @@ export const auditApi = {
         total: number;
       } | null;
     }>('/audit-logs', { params }),
+};
+
+// Roles & Permissions API
+export const roleApi = {
+  list: () =>
+    api.get<{ data: Array<{
+      id: number;
+      name: string;
+      slug: string;
+      description: string | null;
+      hierarchy_level: number;
+      is_system: boolean;
+      is_active: boolean;
+      users_count: number;
+      permissions: string[];
+      created_at: string;
+      updated_at: string;
+    }> }>('/roles'),
+
+  show: (id: number) =>
+    api.get<{ data: {
+      id: number;
+      name: string;
+      slug: string;
+      description: string | null;
+      hierarchy_level: number;
+      is_system: boolean;
+      is_active: boolean;
+      users_count: number;
+      permissions: string[];
+      created_at: string;
+      updated_at: string;
+    } }>(`/roles/${id}`),
+
+  create: (data: { name: string; description?: string; hierarchy_level: number; permissions?: string[] }) =>
+    api.post<{ data: any }>('/roles', data),
+
+  update: (id: number, data: { name?: string; description?: string; hierarchy_level?: number; is_active?: boolean; permissions?: string[] }) =>
+    api.put<{ data: any }>(`/roles/${id}`, data),
+
+  delete: (id: number) =>
+    api.delete(`/roles/${id}`),
+
+  assignUser: (data: { user_id: number; role_id: number | null }) =>
+    api.post('/roles/assign-user', data),
+};
+
+export const permissionApi = {
+  list: () =>
+    api.get<{ data: Array<{
+      group: string;
+      permissions: Array<{
+        key: string;
+        name: string;
+        description: string | null;
+        plan_feature: string | null;
+      }>;
+    }> }>('/permissions'),
 };
 
 export default api;

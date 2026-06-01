@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { notificationApi, userApi } from '@/services/api';
+import { groupApi, notificationApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
 import { canOpenNotificationFromCenter, getNotificationDisplay, resolveNotificationRoute } from '@/lib/notificationDisplay';
 import { hasAdminAccess } from '@/lib/permissions';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import type { AppNotificationItem } from '@/types';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -19,9 +21,12 @@ import { BellRing, Send } from 'lucide-react';
 export default function NotificationsCenter() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const isAdmin = hasAdminAccess(user);
   const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
-  const [users, setUsers] = useState<Array<{ id: number; name: string; email: string }>>([]);
+  const [users, setUsers] = useState<Array<{ id: number; name: string; email: string; groups?: Array<{ id: number; name: string }> }>>([]);
+  const [groups, setGroups] = useState<Array<{ id: number; name: string; slug: string }>>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [typeFilter, setTypeFilter] = useState('');
@@ -38,7 +43,7 @@ export default function NotificationsCenter() {
   const load = async () => {
     setIsLoading(true);
     try {
-      const [notificationResponse, usersResponse] = await Promise.all([
+      const [notificationResponse, usersResponse, groupsResponse] = await Promise.all([
         notificationApi.list({
           limit: 100,
           type: typeFilter || undefined,
@@ -46,6 +51,7 @@ export default function NotificationsCenter() {
           unread_only: statusFilter === 'unread' ? true : undefined,
         }),
         isAdmin ? userApi.getAll({ period: 'all' }) : Promise.resolve({ data: [] }),
+        isAdmin ? groupApi.getAll() : Promise.resolve({ data: [] }),
       ]);
 
       let nextNotifications = (notificationResponse.data?.data || []).filter((item: AppNotificationItem) => !isChatNotification(item));
@@ -54,7 +60,17 @@ export default function NotificationsCenter() {
       }
 
       setNotifications(nextNotifications);
-      setUsers((usersResponse.data || []).map((item: any) => ({ id: item.id, name: item.name, email: item.email })));
+      setUsers((usersResponse.data || []).map((item: any) => ({ 
+        id: item.id, 
+        name: item.name, 
+        email: item.email,
+        groups: item.groups || []
+      })));
+      setGroups(((groupsResponse as any).data?.data || []).map((item: any) => ({ 
+        id: item.id, 
+        name: item.name, 
+        slug: item.slug 
+      })));
     } catch (error: any) {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to load notifications.' });
     } finally {
@@ -90,13 +106,23 @@ export default function NotificationsCenter() {
     [notifications]
   );
   const filteredRecipients = useMemo(() => {
-    const normalizedQuery = recipientSearchQuery.trim();
-    if (!normalizedQuery) {
-      return users;
+    let filtered = users;
+    
+    // Filter by selected group/department
+    if (selectedGroupId) {
+      filtered = filtered.filter((recipient) => 
+        recipient.groups?.some((group) => group.id === selectedGroupId)
+      );
     }
-
-    return users.filter((recipient) => matchesSearchFilter(normalizedQuery, [recipient.name, recipient.email]));
-  }, [recipientSearchQuery, users]);
+    
+    // Filter by search query
+    const normalizedQuery = recipientSearchQuery.trim();
+    if (normalizedQuery) {
+      filtered = filtered.filter((recipient) => matchesSearchFilter(normalizedQuery, [recipient.name, recipient.email]));
+    }
+    
+    return filtered;
+  }, [recipientSearchQuery, users, selectedGroupId]);
   const selectedRecipientCount = selectedRecipientIds.length;
 
   const markRead = async (id: number) => {
@@ -109,8 +135,12 @@ export default function NotificationsCenter() {
   };
 
   const openNotification = async (item: AppNotificationItem) => {
-    await markRead(item.id);
+    // Navigate first, then mark as read (notification will remain visible)
     navigate(resolveNotificationRoute(item, user));
+    // Optionally mark as read after navigation (if not already read)
+    if (!item.is_read) {
+      await markRead(item.id);
+    }
   };
 
   const markAllRead = async () => {
@@ -280,11 +310,32 @@ export default function NotificationsCenter() {
           <div className="mt-4">
             <FieldLabel>Recipients</FieldLabel>
             <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              {/* Department/Group Selector */}
+              {groups.length > 0 && (
+                <div>
+                  <SelectInput 
+                    value={selectedGroupId || ''} 
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSelectedGroupId(value ? Number(value) : null);
+                    }}
+                  >
+                    <option value="">All departments</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>{group.name}</option>
+                    ))}
+                  </SelectInput>
+                </div>
+              )}
+              
+              {/* Search Input */}
               <TextInput
                 value={recipientSearchQuery}
                 onChange={(event) => setRecipientSearchQuery(event.target.value)}
                 placeholder="Search recipient by name or email"
               />
+              
+              {/* Stats and Actions */}
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <span className="rounded-full bg-slate-100 px-3 py-1">
                   Showing <span className="font-semibold text-slate-700">{filteredRecipients.length}</span> of {users.length}
@@ -313,14 +364,21 @@ export default function NotificationsCenter() {
                   </button>
                 ) : null}
               </div>
+              
+              {/* Recipients List - Only show when filtering */}
               <div className="max-h-44 overflow-auto">
               {users.length === 0 ? (
                 <p className="text-sm text-slate-500">All users in your organization will receive this update.</p>
+              ) : !selectedGroupId && !recipientSearchQuery ? (
+                <p className="text-sm text-slate-500 text-center py-4">
+                  Select a department or search by name/email to see recipients.<br />
+                  <span className="text-xs">Leave empty to publish to the entire organization.</span>
+                </p>
               ) : filteredRecipients.length === 0 ? (
-                <p className="text-sm text-slate-500">No recipients match this search. Leave the list empty to publish to everyone.</p>
+                <p className="text-sm text-slate-500">No recipients match your filters. Try a different department or search term.</p>
               ) : (
                 filteredRecipients.map((recipient) => (
-                  <label key={recipient.id} className="flex items-center gap-2 py-1 text-sm text-slate-700">
+                  <label key={recipient.id} className="flex items-center gap-2 py-1 text-sm text-slate-700 hover:bg-slate-50 px-2 rounded cursor-pointer">
                     <input
                       type="checkbox"
                       checked={selectedRecipientIds.includes(recipient.id)}
@@ -330,13 +388,22 @@ export default function NotificationsCenter() {
                         );
                       }}
                     />
-                    {recipient.name} ({recipient.email})
+                    <span className="flex-1">{recipient.name}</span>
+                    <span className="text-xs text-slate-400">{recipient.email}</span>
+                    {recipient.groups && recipient.groups.length > 0 && (
+                      <span className="text-xs text-slate-400">{recipient.groups.map(g => g.name).join(', ')}</span>
+                    )}
                   </label>
                 ))
               )}
               </div>
             </div>
-            <p className="mt-2 text-xs text-slate-500">Leave recipients empty to publish to the full organization.</p>
+            <p className="mt-2 text-xs text-slate-500">
+              {selectedRecipientCount > 0 
+                ? `Will be sent to ${selectedRecipientCount} selected recipient${selectedRecipientCount === 1 ? '' : 's'}.`
+                : 'Will be sent to all users in your organization.'
+              }
+            </p>
           </div>
         </SurfaceCard>
       ) : null}
@@ -369,7 +436,7 @@ export default function NotificationsCenter() {
                         {!item.is_read ? (
                           <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700">Unread</span>
                         ) : null}
-                        <span className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</span>
+                        <span className="text-xs text-slate-500">{formatDateTime(item.created_at, viewerTimezone)}</span>
                       </div>
                     );
                   })()}

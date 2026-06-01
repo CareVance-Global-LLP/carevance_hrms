@@ -10,14 +10,27 @@ use Illuminate\Database\Eloquent\Builder;
 
 class GroupAccessService
 {
+    private function userHierarchyLevel(User $user): int
+    {
+        return $user->customRole?->hierarchy_level ?? match ($user->role) {
+            'super_admin' => 0,
+            'admin' => 10,
+            'manager' => 50,
+            'employee' => 100,
+            default => 999,
+        };
+    }
+
     public function canManageGroups(?User $user): bool
     {
-        return $user?->role === 'admin';
+        if (!$user) return false;
+        return $this->userHierarchyLevel($user) <= 10;
     }
 
     public function canManageTasks(?User $user): bool
     {
-        return in_array($user?->role, ['admin', 'manager'], true);
+        if (!$user) return false;
+        return $this->userHierarchyLevel($user) <= 50;
     }
 
     public function visibleGroupsQuery(?User $user): Builder
@@ -32,24 +45,18 @@ class GroupAccessService
             ->where('organization_id', $user->organization_id)
             ->where('is_active', true);
 
-        if ($user->role === 'admin') {
+        $level = $this->userHierarchyLevel($user);
+
+        if ($level <= 10) {
             return $query;
         }
 
-        if ($user->role === 'manager') {
-            $managedGroupIds = $this->managedGroupIds($user);
-            if (!empty($managedGroupIds)) {
-                return $query->whereIn('id', $managedGroupIds);
-            }
-
-            return $query->whereHas('users', fn (Builder $builder) => $builder->whereKey($user->id));
+        $managedGroupIds = $this->managedGroupIds($user);
+        if (!empty($managedGroupIds)) {
+            return $query->whereIn('id', $managedGroupIds);
         }
 
-        if ($user->role === 'employee') {
-            return $query->whereHas('users', fn (Builder $builder) => $builder->whereKey($user->id));
-        }
-
-        return Group::query()->whereRaw('1 = 0');
+        return $query->whereHas('users', fn (Builder $builder) => $builder->whereKey($user->id));
     }
 
     public function manageableGroupsQuery(?User $user): Builder
@@ -58,30 +65,20 @@ class GroupAccessService
             return Group::query()->whereRaw('1 = 0');
         }
 
-        if ($user->role === 'admin') {
+        $level = $this->userHierarchyLevel($user);
+
+        if ($level <= 10) {
             return Group::query()
                 ->where('organization_id', $user->organization_id)
                 ->where('is_active', true);
         }
 
-        if ($user->role === 'manager') {
-            $managedGroupIds = $this->managedGroupIds($user);
-            if (!empty($managedGroupIds)) {
-                return Group::query()
-                    ->where('organization_id', $user->organization_id)
-                    ->where('is_active', true)
-                    ->whereIn('id', $managedGroupIds);
-            }
-        }
-
-        if ($user->role === 'manager') {
-            $managedGroupIds = $this->managedGroupIds($user);
-            if (!empty($managedGroupIds)) {
-                return Group::query()
-                    ->where('organization_id', $user->organization_id)
-                    ->where('is_active', true)
-                    ->whereIn('id', $managedGroupIds);
-            }
+        $managedGroupIds = $this->managedGroupIds($user);
+        if (!empty($managedGroupIds)) {
+            return Group::query()
+                ->where('organization_id', $user->organization_id)
+                ->where('is_active', true)
+                ->whereIn('id', $managedGroupIds);
         }
 
         return Group::query()->whereRaw('1 = 0');
@@ -93,7 +90,7 @@ class GroupAccessService
             return [];
         }
 
-        if ($user->role === 'admin') {
+        if ($this->userHierarchyLevel($user) <= 10) {
             return null;
         }
 
@@ -109,7 +106,7 @@ class GroupAccessService
             return false;
         }
 
-        if ($user->role === 'admin') {
+        if ($this->userHierarchyLevel($user) <= 10) {
             return true;
         }
 
@@ -124,7 +121,7 @@ class GroupAccessService
             return false;
         }
 
-        if ($user->role === 'admin') {
+        if ($this->userHierarchyLevel($user) <= 10) {
             return true;
         }
 
@@ -165,7 +162,7 @@ class GroupAccessService
             return $query->whereRaw('1 = 0');
         }
 
-        if ($user->role === 'admin') {
+        if ($this->userHierarchyLevel($user) <= 10) {
             return $query->where(function (Builder $builder) use ($user) {
                 $builder->whereHas('group', fn (Builder $groupQuery) => $groupQuery->where('organization_id', $user->organization_id))
                     ->orWhere(function (Builder $legacyQuery) use ($user) {
@@ -185,7 +182,7 @@ class GroupAccessService
             $query->whereIn('group_id', $visibleGroupIds);
         }
 
-        if ($user->role === 'employee') {
+        if ($this->userHierarchyLevel($user) >= 100) {
             $query->where(function (Builder $builder) use ($user) {
                 $builder->whereNull('assignee_id')
                     ->orWhere('assignee_id', $user->id)
@@ -204,7 +201,7 @@ class GroupAccessService
             return false;
         }
 
-        if ($user->role === 'admin') {
+        if ($this->userHierarchyLevel($user) <= 10) {
             return (
                 $task->group && (int) $task->group->organization_id === (int) $user->organization_id
             ) || (
@@ -216,7 +213,7 @@ class GroupAccessService
             return false;
         }
 
-        if ($user->role === 'employee') {
+        if ($this->userHierarchyLevel($user) >= 100) {
             return $task->assignee_id === null
                 || (int) $task->assignee_id === (int) $user->id
                 || $task->assignees()->where('users.id', $user->id)->exists();

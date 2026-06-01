@@ -96,8 +96,8 @@ class ResignationController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is admin or manager
-        if (!in_array($user->role, ['admin', 'manager'], true)) {
+        // Check if user can manage resignations
+        if ($user->getHierarchyLevel() >= 100) {
             return response()->json([
                 'message' => 'Unauthorized. Only managers and admins can view all resignations.',
             ], 403);
@@ -111,11 +111,11 @@ class ResignationController extends Controller
             $query->where('status', $request->status);
         }
 
-        // If manager, show all resignations in the organization
-        // (Managers can see all employees' resignations for approval)
-        if ($user->role === 'manager') {
-            // No additional filter - manager sees all resignations in org
-            // This allows managers to approve/reject any resignation
+        // If manager/lead, show all resignations in the organization
+        // (They can see all employees' resignations for approval)
+        if ($user->getHierarchyLevel() < 100) {
+            // No additional filter - manager/lead sees all resignations in org
+            // This allows them to approve/reject any resignation
         }
 
         $resignations = $query->orderBy('created_at', 'desc')->get();
@@ -132,8 +132,8 @@ class ResignationController extends Controller
     {
         $user = Auth::user();
 
-        // Check if user is admin or manager
-        if (!in_array($user->role, ['admin', 'manager'], true)) {
+        // Check if user can manage resignations
+        if ($user->getHierarchyLevel() >= 100) {
             return response()->json([
                 'message' => 'Unauthorized. Only managers and admins can approve resignations.',
             ], 403);
@@ -170,8 +170,8 @@ class ResignationController extends Controller
 
         $user = Auth::user();
 
-        // Check if user is admin or manager
-        if (!in_array($user->role, ['admin', 'manager'], true)) {
+        // Check if user can manage resignations
+        if ($user->getHierarchyLevel() >= 100) {
             return response()->json([
                 'message' => 'Unauthorized. Only managers and admins can reject resignations.',
             ], 403);
@@ -234,7 +234,10 @@ class ResignationController extends Controller
 
         // Get admins and managers
         $managersAndAdmins = User::where('organization_id', $organization->id)
-            ->whereIn('role', ['admin', 'manager'])
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<', 100))
+                    ->orWhereIn('role', ['admin', 'manager']);
+            })
             ->get();
 
         // TODO: Implement actual notification logic

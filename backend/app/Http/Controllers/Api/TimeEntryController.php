@@ -437,7 +437,7 @@ class TimeEntryController extends Controller
 
     private function canViewOrganizationEntries(User $user): bool
     {
-        return (bool) $user->organization_id && in_array($user->role, ['admin', 'manager'], true);
+        return (bool) $user->organization_id && $user->getHierarchyLevel() < 100;
     }
 
     private function ensureAttendanceCheckedIn($user)
@@ -604,7 +604,7 @@ class TimeEntryController extends Controller
         $taskId = $request->exists('task_id')
             ? ($request->task_id ? (int) $request->task_id : null)
             : ($existingEntry?->task_id ? (int) $existingEntry->task_id : null);
-        $assignedProjectIds = $user->role === 'employee'
+        $assignedProjectIds = $user->getHierarchyLevel() >= 100
             ? $user->assignedProjects()
                 ->pluck('projects.id')
                 ->map(fn ($id) => (int) $id)
@@ -777,15 +777,10 @@ class TimeEntryController extends Controller
             return;
         }
 
-        if ($user->role === 'employee') {
-            if ($task->status !== 'todo') {
-                $task->update(['status' => 'todo']);
-            }
-
-            return;
-        }
-
-        if ($task->status !== 'in_progress') {
+        // Regular employees (level >= 100) start tracking time on a task →
+        // move it to in_progress. Admins/managers (level < 100) may be
+        // setting up tasks for others, so leave the status unchanged.
+        if ($user->getHierarchyLevel() >= 100 && $task->status !== 'in_progress') {
             $task->update(['status' => 'in_progress']);
         }
     }

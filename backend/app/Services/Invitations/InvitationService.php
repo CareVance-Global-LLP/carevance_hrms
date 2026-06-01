@@ -214,6 +214,11 @@ class InvitationService
         }
 
         return DB::transaction(function () use ($invitation, $payload) {
+            $userSettings = is_array($invitation->settings) ? $invitation->settings : [];
+            if (!empty($payload['timezone'])) {
+                $userSettings['timezone'] = $payload['timezone'];
+            }
+
             $user = User::create([
                 'name' => $payload['name'],
                 'email' => $invitation->email,
@@ -221,7 +226,7 @@ class InvitationService
                 'role' => $invitation->role,
                 'organization_id' => $invitation->organization_id,
                 'invited_by' => $invitation->invited_by,
-                'settings' => $invitation->settings,
+                'settings' => !empty($userSettings) ? $userSettings : null,
             ]);
 
             $groupIds = collect($invitation->metadata['group_ids'] ?? [])
@@ -400,7 +405,12 @@ class InvitationService
             }
         }
 
-        if ($role === 'employee') {
+        if (!empty($settings['timezone'])) {
+            $normalized['timezone'] = $settings['timezone'];
+        }
+
+        $lowerRole = strtolower(trim($role));
+        if (in_array($lowerRole, ['employee', 'contractor'], true)) {
             $normalized['payroll_visibility'] = false;
         }
 

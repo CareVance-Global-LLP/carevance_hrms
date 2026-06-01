@@ -60,6 +60,7 @@ type DashboardEmployee = {
   date_of_birth?: string | null;
   joining_date?: string | null;
   exit_date?: string | null;
+  timezone?: string;
 };
 
 type DashboardActivity = {
@@ -265,7 +266,7 @@ const normalizeEmployee = (item: any): DashboardEmployee => {
     name: profile?.display_name || item?.name || 'Unnamed employee',
     email: item?.email || '',
     department,
-    position: workInfo?.designation || item?.position || item?.designation || item?.job_title || item?.role || 'Not set',
+    position: workInfo?.designation || item?.position || item?.designation || item?.job_title || item?.role_name || item?.role || 'Not set',
     status: item?.is_active === false || ['inactive', 'exited', 'terminated'].includes(employmentStatus) ? 'Inactive' : 'Active',
     is_working: Boolean(item?.is_working),
     current_duration: Number(item?.current_duration || 0),
@@ -276,6 +277,7 @@ const normalizeEmployee = (item: any): DashboardEmployee => {
     date_of_birth: profile?.date_of_birth || null,
     joining_date: workInfo?.joining_date || null,
     exit_date: workInfo?.exit_date || null,
+    timezone: resolveTimeZone(item?.settings?.timezone || DEFAULT_APP_TIMEZONE),
   };
 };
 
@@ -619,6 +621,10 @@ export default function AdminDashboard() {
   const formatDate = (value?: string | null) => formatDateForTimezone(value, displayTimezone);
   const formatTime = (value?: string | null) => formatTimeForTimezone(value, displayTimezone);
   const formatDateTime = (value?: string | null) => formatDateTimeForTimezone(value, displayTimezone);
+  const resolveEmployeeTimezone = (employee?: DashboardEmployee | null) =>
+    employee?.timezone || displayTimezone;
+  const formatDateTimeForEmployee = (value?: string | null, employee?: DashboardEmployee | null) =>
+    formatDateTimeForTimezone(value, viewInMyTimezone ? displayTimezone : resolveEmployeeTimezone(employee));
   const persistedFilters = useMemo(readPersistedDashboardFilters, []);
   const [universalSearch, setUniversalSearch] = useState('');
   const [isUniversalSearchOpen, setIsUniversalSearchOpen] = useState(false);
@@ -629,6 +635,7 @@ export default function AdminDashboard() {
   const [workSearch, setWorkSearch] = useState('');
   const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
+  const [viewInMyTimezone, setViewInMyTimezone] = useState(false);
   const [selectedKpiStatus, setSelectedKpiStatus] = useState<RangeStatusFilter | null>(null);
   const [rangeStatusFilter, setRangeStatusFilter] = useState<RangeStatusFilter>('all');
   const [dashboardScope, setDashboardScope] = useState<DashboardScope>(() =>
@@ -1194,7 +1201,7 @@ export default function AdminDashboard() {
       lateMinutes: Number(attendance?.late_minutes || 0),
       checkInAt,
       checkOutAt,
-      lastSeen: isWorking ? 'Checked in now' : checkOutAt ? `Checked out ${formatTime(checkOutAt)}` : attendance ? 'Seen in range' : 'No punch in range',
+      lastSeen: isWorking ? 'Checked in now' : checkOutAt ? `Checked out ${checkOutAt}` : attendance ? 'Seen in range' : 'No punch in range',
     };
   });
   const filteredWorkStatusRows = workStatusRows.filter((row) => {
@@ -2209,7 +2216,7 @@ export default function AdminDashboard() {
               <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-700"><p className="font-semibold">{onLeave}</p><p>On leave</p></div>
             </div>
           </div>
-          <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_170px]">
+          <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_170px_auto]">
             <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
               <Search className="h-4 w-4 shrink-0" />
               <input
@@ -2236,6 +2243,15 @@ export default function AdminDashboard() {
             >
               {['All', 'Present', 'Present Late', 'Absent', 'Working', 'Not working', 'On Leave'].map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
+            <label className="flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 select-none">
+              <input
+                type="checkbox"
+                checked={viewInMyTimezone}
+                onChange={(e) => setViewInMyTimezone(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-sky-600"
+              />
+              View all in my timezone
+            </label>
           </div>
           <div className="overflow-x-auto rounded-lg border border-slate-100">
             <table className="min-w-[900px] w-full text-left text-xs">
@@ -2269,7 +2285,16 @@ export default function AdminDashboard() {
                     <td className="px-4 py-3">
                       <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${row.status === 'Working' ? 'bg-emerald-50 text-emerald-700' : row.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{row.status}</span>
                     </td>
-                    <td className="px-4 py-3 text-slate-500">{row.lastSeen}</td>
+                    <td className="px-4 py-3 text-slate-500">
+                      {row.status === 'Working'
+                        ? 'Checked in now'
+                        : row.checkOutAt
+                          ? `Checked out ${formatDateTimeForEmployee(row.checkOutAt, row.employee)}`
+                          : row.presentDays > 0
+                            ? 'Seen in range'
+                            : 'No punch in range'}
+                      {!viewInMyTimezone && row.checkOutAt ? <span className="ml-1 text-[10px] text-slate-400">({resolveEmployeeTimezone(row.employee)})</span> : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -2528,8 +2553,14 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{formatDateTime(row.checkInAt)}</td>
-                    <td className="px-4 py-3 text-slate-600">{row.status === 'Working' ? 'Still checked in' : formatDateTime(row.checkOutAt)}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatDateTimeForEmployee(row.checkInAt, row.employee)}
+                      {!viewInMyTimezone && row.checkInAt ? <span className="ml-1 text-[10px] text-slate-400">({resolveEmployeeTimezone(row.employee)})</span> : null}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {row.status === 'Working' ? 'Still checked in' : formatDateTimeForEmployee(row.checkOutAt, row.employee)}
+                      {!viewInMyTimezone && row.checkOutAt ? <span className="ml-1 text-[10px] text-slate-400">({resolveEmployeeTimezone(row.employee)})</span> : null}
+                    </td>
                     <td className="px-4 py-3 font-medium text-slate-900">{row.status === 'Working' ? 'Working now' : formatDuration(row.todaySeconds)}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${!row.checkInAt ? 'bg-slate-100 text-slate-600' : (row.lateDays > 0 || (isRangeIncludingToday && row.lateMinutes > 0)) ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>

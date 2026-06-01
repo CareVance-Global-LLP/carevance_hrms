@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
 import { settingsApi } from '@/services/api';
+import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import type { EmployeeProfileDetails } from '@/types';
 
 type ProfileForm = {
@@ -61,8 +62,8 @@ export default function ProfileOnboardingPage() {
   const navigate = useNavigate();
   const { user, updateUser } = useAuth();
   const [form, setForm] = useState<ProfileForm>(createEmptyForm());
+  const [timezone, setTimezone] = useState(DEFAULT_APP_TIMEZONE);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
-
   const meQuery = useQuery({
     queryKey: ['settings-me-onboarding'],
     queryFn: async () => (await settingsApi.me()).data,
@@ -72,7 +73,17 @@ export default function ProfileOnboardingPage() {
     const profile = meQuery.data?.employee_profile || user?.employee_profile;
     if (profile) {
       setForm(normalizeProfile(profile));
-      return;
+    }
+
+    // Set timezone from user settings if available, fallback to browser detection
+    const userTimezone = (user?.settings as any)?.timezone;
+    if (userTimezone && COMMON_TIMEZONES.includes(userTimezone)) {
+      setTimezone(userTimezone);
+    } else {
+      const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (COMMON_TIMEZONES.includes(browserTimezone)) {
+        setTimezone(browserTimezone);
+      }
     }
 
     if (user?.name) {
@@ -84,29 +95,34 @@ export default function ProfileOnboardingPage() {
         personal_email: current.personal_email || String(user.email || ''),
       }));
     }
-  }, [meQuery.data?.employee_profile, user?.email, user?.employee_profile, user?.name]);
+  }, [meQuery.data?.employee_profile, user?.email, user?.employee_profile, user?.name, user?.settings]);
 
   const isValid = useMemo(
     () => Object.values(form).every((value) => String(value).trim() !== ''),
     [form]
   );
 
-  const totalFields = Object.keys(form).length;
+  const totalFields = Object.keys(form).length + 1; // +1 for timezone
   const completedFields = useMemo(
-    () => Object.values(form).filter((value) => String(value).trim() !== '').length,
-    [form]
+    () => Object.values(form).filter((value) => String(value).trim() !== '').length + (timezone ? 1 : 0),
+    [form, timezone]
   );
   const progressPercentage = Math.round((completedFields / Math.max(1, totalFields)) * 100);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      return settingsApi.updateOnboardingProfile(form);
+      // Save profile and timezone preferences
+      const [profileRes, prefsRes] = await Promise.all([
+        settingsApi.updateOnboardingProfile(form),
+        settingsApi.updatePreferences({ timezone }),
+      ]);
+      return { profile: profileRes.data, preferences: prefsRes.data };
     },
-    onSuccess: (response) => {
-      updateUser(response.data.user);
-      setFeedback({ tone: 'success', message: 'Profile details saved successfully.' });
-      navigate('/dashboard', { replace: true });
-    },
+      onSuccess: (response) => {
+        updateUser(response.profile.user);
+        setFeedback({ tone: 'success', message: 'Profile details saved successfully.' });
+        navigate('/dashboard', { replace: true });
+      },
     onError: (error: any) => {
       setFeedback({
         tone: 'error',
@@ -192,6 +208,27 @@ export default function ProfileOnboardingPage() {
                 <div><FieldLabel>Emergency Contact Number</FieldLabel><TextInput value={form.emergency_contact_number} onChange={(event) => setForm((current) => ({ ...current, emergency_contact_number: event.target.value }))} required /></div>
                 <div><FieldLabel>Emergency Contact Relationship</FieldLabel><TextInput value={form.emergency_contact_relationship} onChange={(event) => setForm((current) => ({ ...current, emergency_contact_relationship: event.target.value }))} required /></div>
               </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1">
+          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Preferences</p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <FieldLabel>Timezone</FieldLabel>
+                <SelectInput
+                  value={timezone}
+                  onChange={(event) => setTimezone(event.target.value)}
+                  required
+                >
+                  {Array.from(new Set([...COMMON_TIMEZONES, (meQuery.data?.organization as any)?.settings?.timezone].filter(Boolean))).map((tz) => (
+                    <option key={tz} value={tz}>{tz}</option>
+                  ))}
+                </SelectInput>
+                <p className="mt-2 text-xs text-slate-500">Your local timezone for attendance tracking and notifications.</p>
+              </div>
+            </div>
           </div>
         </div>
 

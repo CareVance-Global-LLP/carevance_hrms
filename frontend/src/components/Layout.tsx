@@ -6,7 +6,7 @@ import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotificat
 import { buildSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 import { usePlan } from '@/hooks/usePlan';
-import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
 import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
@@ -231,6 +231,7 @@ export default function Layout() {
         .filter((group) => {
           if (group.payroll && !payrollEnabled) return false;
           if (group.planFeature && !hasFeature(group.planFeature)) return false;
+          if (group.permission && !canAccess(user, group.permission)) return false;
           if (group.strictAdminOnly) return isStrictAdminView;
           if (group.superAdminOnly) return isSuperAdminView;
           if (group.adminOnly) return isAdminView;
@@ -240,6 +241,7 @@ export default function Layout() {
         .map((group) => {
           let filteredItems = group.items?.filter((item) => {
             if (item.planFeature && !hasFeature(item.planFeature)) return false;
+            if (item.permission && !canAccess(user, item.permission)) return false;
             if (item.to === '/attendance' && !canAccessAttendance) return false;
             if (item.to === '/edit-time' && !canAccessEditTime) return false;
             if (item.strictAdminOnly) return isStrictAdminView;
@@ -298,7 +300,7 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, isEmployeeOrManagerView, pendingApprovals, unreadChatMessages, hasFeature]
+    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, isEmployeeOrManagerView, pendingApprovals, unreadChatMessages, hasFeature, user]
   );
 
   const globalSuggestions = useMemo<GlobalSuggestion[]>(
@@ -700,27 +702,9 @@ export default function Layout() {
     }
   }, [desktopPushEnabled]);
 
-  useEffect(() => {
-    if (!notificationsOpen || unreadNotifications <= 0) {
-      return;
-    }
-
-    let active = true;
-
-    setUnreadNotifications(0);
-    setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
-
-    notificationApi.markAllRead().catch(() => {
-      if (active) {
-        setUnreadNotifications(notifications.filter((item) => !item.is_read).length);
-        setNotifications(notifications);
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [notificationsOpen, unreadNotifications, notifications]);
+  // Note: Removed auto-mark-as-read when opening notification dropdown
+  // Notifications should only be marked as read when user actually clicks on them
+  // This prevents notifications from disappearing just by opening the dropdown
 
   const isRouteActive = (to?: string) => {
     if (!to) return false;
@@ -997,7 +981,7 @@ export default function Layout() {
                   )}
                   <div className="min-w-0 text-left">
                     <p className="max-w-[7rem] truncate text-sm font-semibold text-slate-900 sm:max-w-[9rem]">{user?.name || 'Admin'}</p>
-                    <p className="hidden text-xs capitalize text-slate-500 sm:block">{user?.role || 'user'}</p>
+                    <p className="hidden text-xs capitalize text-slate-500 sm:block">{resolveUserRoleLabel(user)}</p>
                   </div>
                 </button>
 
@@ -1009,7 +993,7 @@ export default function Layout() {
                   >
                     <div className="border-b border-slate-100 px-3 py-3">
                       <p className="text-sm font-semibold text-slate-900">{user?.name || 'Admin'}</p>
-                      <p className="text-xs capitalize text-slate-500">{user?.role || 'user'}</p>
+                      <p className="text-xs capitalize text-slate-500">{resolveUserRoleLabel(user)}</p>
                     </div>
                     <div className="space-y-1 p-2">
                       <Link
@@ -1160,7 +1144,7 @@ export default function Layout() {
                 >
                   <div className="border-b border-slate-100 px-3 py-3">
                     <p className="text-sm font-semibold contrast-text-primary">{user?.name || 'Admin'}</p>
-                    <p className="text-xs capitalize contrast-text-muted">{user?.role || 'user'}</p>
+                    <p className="text-xs capitalize contrast-text-muted">{resolveUserRoleLabel(user)}</p>
                   </div>
                   <div className="space-y-1 p-2">
                     <Link

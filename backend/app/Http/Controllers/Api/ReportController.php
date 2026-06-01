@@ -131,12 +131,12 @@ class ReportController extends Controller
 
     private function canViewAll(?User $user): bool
     {
-        return $user && in_array($user->role, ['admin', 'manager'], true);
+        return $user && $user->getHierarchyLevel() < 100;
     }
 
     private function hasManagerRole(User $user): bool
     {
-        return $user->role === 'manager';
+        return $user->getHierarchyLevel() <= 50 && $user->getHierarchyLevel() > 10;
     }
 
     private function normalizeDepartmentIdsFilter(Request $request): void
@@ -165,7 +165,8 @@ class ReportController extends Controller
 
     private function restrictMonitoringToEmployees(?User $user): bool
     {
-        return $user?->role === 'manager';
+        $level = $user?->getHierarchyLevel() ?? 999;
+        return $level > 10 && $level < 100;
     }
 
     private function managerGroupIds(User $user): array
@@ -176,28 +177,31 @@ class ReportController extends Controller
             ->all();
     }
 
-    private function visibleUsersQuery(User $user, bool $employeesOnlyForManager = false): Builder
+    private function visibleUsersQuery(User $user, bool $excludeHigherOrEqualRank = false): Builder
     {
         $query = User::query()->where('organization_id', $user->organization_id);
+        $userLevel = $user->getHierarchyLevel();
 
-        if ($user->role === 'admin') {
+        if ($userLevel <= 10) {
             return $query;
         }
 
-        if ($user->role === 'manager') {
-            $groupIds = $this->managerGroupIds($user);
-            if ($groupIds === []) {
-                return User::query()->whereRaw('1 = 0');
-            }
-
-            if ($employeesOnlyForManager) {
-                $query->where('role', 'employee');
-            }
-
-            return $query->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds));
+        $groupIds = $this->managerGroupIds($user);
+        if ($groupIds === []) {
+            return User::query()->whereRaw('1 = 0');
         }
 
-        return $query->whereKey($user->id);
+        if ($excludeHigherOrEqualRank) {
+            $query->where(function (Builder $q) use ($userLevel) {
+                $q->whereHas('customRole', fn (Builder $q2) => $q2->where('hierarchy_level', '>', $userLevel))
+                    ->orWhere(function (Builder $q2) use ($userLevel) {
+                        $q2->whereNull('role_id')
+                            ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]);
+                    });
+            });
+        }
+
+        return $query->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds));
     }
 
     private function visibleUserIds(?User $user, bool $employeesOnlyForManager = false): Collection
@@ -1830,7 +1834,7 @@ class ReportController extends Controller
             return $organizationTimezone;
         }
 
-        return 'Asia/Kolkata';
+        return config('app.timezone');
     }
 
     private function resolveExportDepartment(User $user): string
@@ -2316,7 +2320,7 @@ class ReportController extends Controller
             ->values();
 
         $employeeScores = collect(array_values($perUserScore))
-            ->filter(fn (array $row) => strtolower((string) ($row['user']['role'] ?? '')) === 'employee')
+            ->filter(fn (array $row) => ($row['user']['hierarchy_level'] ?? ($row['user']['role'] === 'admin' ? 10 : ($row['user']['role'] === 'manager' ? 50 : 100))) >= 100)
             ->map(function (array $row) {
                 $activityTotal = max(1, (int) ($row['activity_total_duration'] ?? 0));
                 $row['productive_share'] = (float) round(($row['productive_duration'] / $activityTotal) * 100, 2);
@@ -2370,14 +2374,14 @@ class ReportController extends Controller
                 ->unique();
 
         $userScoreById = collect($perUserScore);
-        $orgGroups = ReportGroup::with(['users:id,name,email,role'])
+        $orgGroups = ReportGroup::with(['users:id,name,email,role,role_id', 'users.customRole:id,hierarchy_level'])
             ->where('organization_id', $currentUser->organization_id)
             ->orderBy('name')
             ->get();
 
         $teamEfficiency = $orgGroups->map(function (ReportGroup $group) use ($userScoreById, $activeTimeEntryUserIds, $onLeaveUserIds) {
             $memberIds = collect($group->users ?? [])
-                ->filter(fn ($u) => strtolower((string) ($u->role ?? '')) === 'employee')
+                ->filter(fn ($u) => ($u->customRole?->hierarchy_level ?? ($u->role === 'admin' ? 10 : ($u->role === 'manager' ? 50 : 100))) >= 100)
                 ->pluck('id')
                 ->map(fn ($id) => (int) $id)
                 ->values();
@@ -2474,7 +2478,7 @@ class ReportController extends Controller
         })->values();
 
         $employeeLiveRows = $liveMonitoringRows
-            ->filter(fn (array $row) => strtolower((string) ($row['user']['role'] ?? '')) === 'employee')
+            ->filter(fn (array $row) => ($row['user']['hierarchy_level'] ?? ($row['user']['role'] === 'admin' ? 10 : ($row['user']['role'] === 'manager' ? 50 : 100))) >= 100)
             ->values();
 
         $selectedUserLive = $liveMonitoringRows->first(fn ($row) => (int) ($row['user']['id'] ?? 0) === (int) $selectedUser->id);
@@ -2670,7 +2674,7 @@ class ReportController extends Controller
             'is_on_leave' => false,
             'work_status' => $isWorking ? 'active' : 'inactive',
         ];
-        $isEmployee = strtolower((string) $selectedUser->role) === 'employee';
+        $isEmployee = $selectedUser->getHierarchyLevel() >= 100;
 
         return [
             'start_date' => $startDate->toDateString(),

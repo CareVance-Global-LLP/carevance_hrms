@@ -40,7 +40,13 @@ class ReportGroupController extends Controller
             ->orderBy('name')
             ->get();
 
-        return response()->json(['data' => $groups]);
+        if ($simple) {
+            return response()->json(['data' => $groups]);
+        }
+
+        return response()->json([
+            'data' => $groups->map(fn ($group) => $this->serializeGroup($group))->values(),
+        ]);
     }
 
     public function store(StoreReportGroupRequest $request)
@@ -65,7 +71,7 @@ class ReportGroupController extends Controller
 
         $userIds = $this->resolveOrgUserIds($currentUser->organization_id, $request->input('user_ids', []));
         $this->assertAssignableUsersForGroup($currentUser->organization_id, $userIds, null);
-        if ($currentUser->role === 'manager' && !in_array((int) $currentUser->id, $userIds, true)) {
+        if ($currentUser->getHierarchyLevel() > 10 && $currentUser->getHierarchyLevel() < 100 && !in_array((int) $currentUser->id, $userIds, true)) {
             $userIds[] = (int) $currentUser->id;
         }
         $group->users()->sync($userIds);
@@ -226,7 +232,10 @@ class ReportGroupController extends Controller
         $conflictingUser = User::query()
             ->where('organization_id', $organizationId)
             ->whereIn('id', $userIds)
-            ->whereIn('role', ['manager', 'employee'])
+            ->where(function ($q) {
+                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 50))
+                    ->orWhereIn('role', ['manager', 'employee']);
+            })
             ->whereHas('groups', function ($query) use ($currentGroupId) {
                 if ($currentGroupId) {
                     $query->where('groups.id', '!=', $currentGroupId);
@@ -245,7 +254,7 @@ class ReportGroupController extends Controller
             'user_ids' => [sprintf(
                 '%s is already assigned to another department. Move %s instead of adding to multiple departments.',
                 $conflictingUser->name,
-                $conflictingUser->role === 'manager' ? 'this manager' : 'this employee'
+                $conflictingUser->getHierarchyLevel() < 100 ? 'this manager' : 'this employee'
             )],
         ]);
     }
@@ -254,26 +263,32 @@ class ReportGroupController extends Controller
     {
         return User::query()
             ->where('organization_id', $organizationId)
-            ->where('role', 'manager')
             ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
-            ->orderBy('name')
-            ->value('id');
+            ->with('customRole')
+            ->get()
+            ->sortBy(fn ($user) => $user->customRole?->hierarchy_level ?? match ($user->role) {
+                'admin' => 10,
+                'manager' => 50,
+                'employee' => 100,
+                default => 100,
+            })
+            ->first()
+            ?->id;
     }
 
     private function syncEmployeesForGroup(int $organizationId, int $groupId): void
     {
         $managerId = $this->resolveGroupManagerId($organizationId, $groupId);
-        $employeeIds = User::query()
+        $memberIds = User::query()
             ->where('organization_id', $organizationId)
-            ->where('role', 'employee')
             ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
             ->pluck('id');
 
-        foreach ($employeeIds as $employeeId) {
+        foreach ($memberIds as $memberId) {
             EmployeeWorkInfo::query()->updateOrCreate(
                 [
                     'organization_id' => $organizationId,
-                    'user_id' => (int) $employeeId,
+                    'user_id' => (int) $memberId,
                 ],
                 [
                     'report_group_id' => $groupId,
@@ -287,7 +302,12 @@ class ReportGroupController extends Controller
     {
         $query->with([
             'users' => function ($userQuery) use ($simple) {
-                $userQuery->select($simple ? ['users.id'] : ['users.id', 'users.name', 'users.email', 'users.role']);
+                if ($simple) {
+                    $userQuery->select(['users.id']);
+                } else {
+                    $userQuery->select(['users.id', 'users.name', 'users.email', 'users.role', 'users.role_id'])
+                        ->with(['customRole:id,name,hierarchy_level']);
+                }
             },
         ]);
 
@@ -298,15 +318,35 @@ class ReportGroupController extends Controller
         return $query;
     }
 
+    private function serializeUser(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->role,
+            'role_id' => $user->role_id,
+            'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
+            'hierarchy_level' => $user->customRole?->hierarchy_level ?? match ($user->role) {
+                'admin' => 10,
+                'manager' => 50,
+                'employee' => 100,
+                default => 100,
+            },
+        ];
+    }
+
     private function serializeGroup(Group $group): array
     {
-        $loaded = $group->load(['users:id,name,email,role']);
+        $loaded = $group->load(['users:id,name,email,role,role_id', 'users.customRole:id,name,hierarchy_level']);
 
         if ($this->supportsTaskCounts()) {
             $loaded->loadCount('tasks');
         }
 
-        return $loaded->toArray();
+        return array_merge($loaded->toArray(), [
+            'users' => $loaded->users->map(fn ($user) => $this->serializeUser($user))->all(),
+        ]);
     }
 
     private function supportsTaskCounts(): bool

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\Invitations;
 
 use App\Http\Requests\Api\ApiFormRequest;
+use App\Rules\ValidTimezone;
 use Illuminate\Validation\Rule;
 
 class StoreInvitationImportRequest extends ApiFormRequest
@@ -79,6 +80,7 @@ class StoreInvitationImportRequest extends ApiFormRequest
             'rows.*.settings.attendance_monitoring' => 'nullable|boolean',
             'rows.*.settings.payroll_visibility' => 'nullable|boolean',
             'rows.*.settings.task_assignment_access' => 'nullable|boolean',
+            'rows.*.settings.timezone' => ['nullable', 'string', 'max:255', new ValidTimezone],
             'default_group_ids' => 'nullable|array',
             'default_group_ids.*' => 'integer',
             'default_project_ids' => 'nullable|array',
@@ -89,6 +91,7 @@ class StoreInvitationImportRequest extends ApiFormRequest
             'settings.attendance_monitoring' => 'nullable|boolean',
             'settings.payroll_visibility' => 'nullable|boolean',
             'settings.task_assignment_access' => 'nullable|boolean',
+            'settings.timezone' => ['nullable', 'string', 'max:255', new ValidTimezone],
             'expires_in_hours' => 'nullable|integer|min:1|max:720',
         ];
     }

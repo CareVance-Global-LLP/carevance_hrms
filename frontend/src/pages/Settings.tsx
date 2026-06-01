@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
 import { employeeWorkspaceApi, productivityClassificationApi, settingsApi, supportApi, organizationApi } from '@/services/api';
@@ -131,6 +131,7 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [canManageOrg, setCanManageOrg] = useState(false);
   const [billingPlan, setBillingPlan] = useState<{ name: string; status: string; renewal_date?: string | null } | null>(null);
 
@@ -152,6 +153,7 @@ export default function SettingsPage() {
   const [profileAvatarPreview, setProfileAvatarPreview] = useState(user?.avatar || '');
   const [personalDetailsForm, setPersonalDetailsForm] = useState<PersonalDetailsForm>(createEmptyPersonalDetailsForm());
   const [isLoadingPersonalDetails, setIsLoadingPersonalDetails] = useState(false);
+  const personalDetailsRef = useRef<HTMLDivElement>(null);
 
   const [orgName, setOrgName] = useState(organization?.name || '');
   const [orgSlug, setOrgSlug] = useState(organization?.slug || '');
@@ -187,22 +189,27 @@ export default function SettingsPage() {
   const [isDeletingOrg, setIsDeletingOrg] = useState(false);
 
   const isEmployee = isEmployeeUser(user);
-  const isOrgEditable = canManageOrg && hasStrictAdminAccess(user);
+  // Use permission-based checks for custom roles support
+  const canViewSettings = canAccess(user, 'settings.view') || hasStrictAdminAccess(user);
+  const canManageSettings = canAccess(user, 'settings.manage') || hasStrictAdminAccess(user);
+  const canManageProductivity = canAccess(user, 'productivity.manage') || hasStrictAdminAccess(user);
+  const isOrgEditable = canManageOrg && (canManageSettings || hasStrictAdminAccess(user));
+  const canEditTimezone = canManageOrg && (hasAdminAccess(user) || canManageSettings || hasStrictAdminAccess(user));
   const isStrictAdminUser = hasStrictAdminAccess(user);
   const canEditEmail = hasStrictAdminAccess(user);
   const hasDesktopBrowserTracking = Boolean(window.desktopTracker);
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
-    ...(hasStrictAdminAccess(user) ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
+    ...(canViewSettings ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
     { id: 'help', name: 'Help', icon: LifeBuoy },
-    ...(hasStrictAdminAccess(user) ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
-    ...(hasStrictAdminAccess(user) ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
+    ...(canManageSettings ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
+    ...(canManageSettings ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
     { id: 'billing', name: 'Billing', icon: CreditCard },
     ...(hasDesktopBrowserTracking ? [{ id: 'browser-tracking', name: 'Browser Tracking', icon: Link2 }] : []),
-    ...(hasStrictAdminAccess(user) ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
+    ...(canManageProductivity ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
   ];
   const allowedTabIds = useMemo(() => new Set(tabs.map((tab) => tab.id)), [tabs]);
 
@@ -295,6 +302,26 @@ export default function SettingsPage() {
           setNotifyWeekly(notifications.weekly_summary ?? true);
           setNotifyProject(notifications.project_updates ?? true);
           setNotifyTask(notifications.task_assignments ?? true);
+
+          // Populate personal details from employee_profile if available
+          const employeeProfile = payload.employee_profile;
+          if (employeeProfile) {
+            setPersonalDetailsForm({
+              first_name: employeeProfile.first_name || '',
+              last_name: employeeProfile.last_name || '',
+              gender: employeeProfile.gender || '',
+              date_of_birth: String(employeeProfile.date_of_birth || '').slice(0, 10),
+              phone: employeeProfile.phone || '',
+              personal_email: employeeProfile.personal_email || '',
+              address_line: employeeProfile.address_line || '',
+              city: employeeProfile.city || '',
+              state: employeeProfile.state || '',
+              postal_code: employeeProfile.postal_code || '',
+              emergency_contact_name: employeeProfile.emergency_contact_name || '',
+              emergency_contact_number: employeeProfile.emergency_contact_number || '',
+              emergency_contact_relationship: employeeProfile.emergency_contact_relationship || '',
+            });
+          }
         } else {
           setCanManageOrg(Boolean(hasAdminAccess(user) && !isEmployee));
         }
@@ -335,23 +362,24 @@ export default function SettingsPage() {
       try {
         const response = await employeeWorkspaceApi.getWorkspace(currentUserId);
         const about = (response.data as any)?.about || {};
-        setPersonalDetailsForm({
-          first_name: about.first_name || '',
-          last_name: about.last_name || '',
-          gender: about.gender || '',
-          date_of_birth: String(about.date_of_birth || '').slice(0, 10),
-          phone: about.phone || '',
-          personal_email: about.personal_email || '',
-          address_line: about.address_line || '',
-          city: about.city || '',
-          state: about.state || '',
-          postal_code: about.postal_code || '',
-          emergency_contact_name: about.emergency_contact_name || '',
-          emergency_contact_number: about.emergency_contact_number || '',
-          emergency_contact_relationship: about.emergency_contact_relationship || '',
-        });
+        // Merge API data with existing form data (only update non-empty values)
+        setPersonalDetailsForm((prev) => ({
+          first_name: about.first_name ?? prev.first_name ?? '',
+          last_name: about.last_name ?? prev.last_name ?? '',
+          gender: about.gender ?? prev.gender ?? '',
+          date_of_birth: about.date_of_birth ? String(about.date_of_birth).slice(0, 10) : (prev.date_of_birth ?? ''),
+          phone: about.phone ?? prev.phone ?? '',
+          personal_email: about.personal_email ?? prev.personal_email ?? '',
+          address_line: about.address_line ?? prev.address_line ?? '',
+          city: about.city ?? prev.city ?? '',
+          state: about.state ?? prev.state ?? '',
+          postal_code: about.postal_code ?? prev.postal_code ?? '',
+          emergency_contact_name: about.emergency_contact_name ?? prev.emergency_contact_name ?? '',
+          emergency_contact_number: about.emergency_contact_number ?? prev.emergency_contact_number ?? '',
+          emergency_contact_relationship: about.emergency_contact_relationship ?? prev.emergency_contact_relationship ?? '',
+        }));
       } catch {
-        setPersonalDetailsForm(createEmptyPersonalDetailsForm());
+        // Keep existing form data on error instead of resetting to empty
       } finally {
         setIsLoadingPersonalDetails(false);
       }
@@ -405,9 +433,45 @@ export default function SettingsPage() {
     }
   };
 
+  const validatePersonalDetails = (): { valid: boolean; errors: Record<string, string[]> } => {
+    const errors: Record<string, string[]> = {};
+    
+    // Validate email format
+    if (personalDetailsForm.personal_email && personalDetailsForm.personal_email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(personalDetailsForm.personal_email)) {
+        errors.personal_email = ['Please enter a valid email address.'];
+      }
+    }
+    
+    // Validate phone numbers (only digits, spaces, dashes, and + allowed)
+    const phoneFields = ['phone', 'emergency_contact_number'];
+    phoneFields.forEach((field) => {
+      const value = personalDetailsForm[field as keyof PersonalDetailsForm];
+      if (value && value.trim()) {
+        const phoneRegex = /^[0-9\s\-+]+$/;
+        if (!phoneRegex.test(value)) {
+          errors[field] = ['Phone number should only contain digits, spaces, dashes, or + sign.'];
+        }
+      }
+    });
+    
+    return { valid: Object.keys(errors).length === 0, errors };
+  };
+
   const saveProfile = async () => {
     setError('');
     setMessage('');
+    setFieldErrors({});
+    
+    // Client-side validation
+    const validation = validatePersonalDetails();
+    if (!validation.valid) {
+      setFieldErrors(validation.errors);
+      setError('Please fix the validation errors below.');
+      return;
+    }
+    
     try {
       const name = profileName.trim();
       const email = profileEmail.trim();
@@ -429,27 +493,91 @@ export default function SettingsPage() {
             ...(canEditEmail ? { email } : {}),
           };
 
-      const [profileResponse, personalDetailsResponse] = await Promise.all([
+      const results = await Promise.allSettled([
         settingsApi.updateProfile(payload),
         currentUserId > 0
           ? employeeWorkspaceApi.updateProfile(currentUserId, personalDetailsForm)
           : Promise.resolve(null),
+        settingsApi.updatePreferences({ timezone }),
       ]);
 
-      const res = profileResponse;
-      const updated = (res.data as any)?.user;
+      const allFieldErrors: Record<string, string[]> = {};
+      let firstErrorMessage = '';
+      let hasErrors = false;
+
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          hasErrors = true;
+          const err = result.reason;
+          const apiErrors = err?.response?.data?.errors;
+          const msg = err?.response?.data?.message;
+          if (apiErrors && typeof apiErrors === 'object') {
+            for (const [field, msgs] of Object.entries(apiErrors)) {
+              allFieldErrors[field] = [...(allFieldErrors[field] || []), ...(msgs as string[])];
+            }
+          }
+          if (!firstErrorMessage && msg) {
+            firstErrorMessage = msg;
+          }
+        }
+      }
+
+      if (hasErrors) {
+        if (Object.keys(allFieldErrors).length > 0) {
+          setFieldErrors(allFieldErrors);
+        }
+        setError(firstErrorMessage || 'The given data was invalid.');
+        setTimeout(() => {
+          const firstKey = Object.keys(allFieldErrors)[0];
+          if (firstKey) {
+            const el = document.querySelector(`[data-field="${firstKey}"]`);
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else {
+            personalDetailsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 100);
+        return;
+      }
+
+      const res = (results[0] as PromiseFulfilledResult<any>)?.value;
+      const updated = (res?.data as any)?.user;
       if (updated) {
         updateUser(updated);
         setProfileAvatar(resolveMediaUrl(updated.avatar || ''));
         setProfileAvatarPreview(resolveMediaUrl(updated.avatar || ''));
       }
       setProfileAvatarFile(null);
+
+      // Update personal details form with saved values from the second API call
+      const personalDetailsResult = (results[1] as PromiseFulfilledResult<any>)?.value;
+      const savedProfile = personalDetailsResult?.data;
+      if (savedProfile) {
+        setPersonalDetailsForm({
+          first_name: savedProfile.first_name || '',
+          last_name: savedProfile.last_name || '',
+          gender: savedProfile.gender || '',
+          date_of_birth: String(savedProfile.date_of_birth || '').slice(0, 10),
+          phone: savedProfile.phone || '',
+          personal_email: savedProfile.personal_email || '',
+          address_line: savedProfile.address_line || '',
+          city: savedProfile.city || '',
+          state: savedProfile.state || '',
+          postal_code: savedProfile.postal_code || '',
+          emergency_contact_name: savedProfile.emergency_contact_name || '',
+          emergency_contact_number: savedProfile.emergency_contact_number || '',
+          emergency_contact_relationship: savedProfile.emergency_contact_relationship || '',
+        });
+      }
+
       setMessage(
-        (personalDetailsResponse as any)?.data?.message ||
-        (res.data as any)?.message ||
+        (res?.data as any)?.message ||
         'Profile updated'
       );
     } catch (e: any) {
+      const apiErrors = e?.response?.data?.errors;
+      if (apiErrors) {
+        setFieldErrors(apiErrors);
+      }
       setError(e?.response?.data?.message || 'Failed to update profile');
     }
   };
@@ -511,20 +639,30 @@ export default function SettingsPage() {
       setOrgLogoFile(null);
       setMessage((res.data as any)?.message || 'Organization updated');
     } catch (e: any) {
+      const apiErrors = e?.response?.data?.errors;
+      if (apiErrors) {
+        setFieldErrors(apiErrors);
+      }
       setError(e?.response?.data?.message || 'Failed to update organization');
     }
   };
 
   const deleteOrganization = async () => {
-    if (deleteConfirmText !== organization?.name) {
+    const expectedName = orgName || organization?.name || '';
+    if (!expectedName || deleteConfirmText !== expectedName) {
       setError('Organization name does not match. Please type the exact name to confirm.');
+      return;
+    }
+
+    if (!organization?.id) {
+      setError('Organization ID is missing. Please refresh the page and try again.');
       return;
     }
 
     setIsDeletingOrg(true);
     setError('');
     try {
-      await organizationApi.delete(organization!.id);
+      await organizationApi.delete(organization.id);
       localStorage.clear();
       window.location.href = '/';
     } catch (e: any) {
@@ -628,6 +766,10 @@ export default function SettingsPage() {
       }
       setMessage((res.data as any)?.message || 'Preferences updated');
     } catch (e: any) {
+      const apiErrors = e?.response?.data?.errors;
+      if (apiErrors) {
+        setFieldErrors(apiErrors);
+      }
       setError(e?.response?.data?.message || 'Failed to update preferences');
     }
   };
@@ -650,6 +792,10 @@ export default function SettingsPage() {
       setConfirmPassword('');
       setMessage((res.data as any)?.message || 'Password updated');
     } catch (e: any) {
+      const apiErrors = e?.response?.data?.errors;
+      if (apiErrors) {
+        setFieldErrors(apiErrors);
+      }
       setError(e?.response?.data?.message || 'Failed to update password');
     }
   };
@@ -758,12 +904,12 @@ export default function SettingsPage() {
                 <div>
                   <FieldLabel>Role</FieldLabel>
                   <div className="flex min-h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3.5">
-                    <StatusBadge tone="info">{user?.role || 'Unknown'}</StatusBadge>
+                    <StatusBadge tone="info">{resolveUserRoleLabel(user)}</StatusBadge>
                   </div>
                 </div>
               </div>
 
-              <div className="border-t border-slate-200 pt-5">
+              <div className="border-t border-slate-200 pt-5" ref={personalDetailsRef}>
                 <h3 className="text-base font-semibold text-slate-900">Personal Details</h3>
                 <p className="mt-1 text-sm text-slate-500">Add or update your personal information here anytime, even if you skipped details earlier.</p>
 
@@ -772,7 +918,7 @@ export default function SettingsPage() {
                 ) : (
                   <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {Object.keys(personalDetailsForm).map((key) => (
-                      <div key={key}>
+                      <div key={key} data-field={key}>
                         <FieldLabel>{labelize(key)}</FieldLabel>
                         {key === 'gender' ? (
                           <SelectInput
@@ -785,17 +931,59 @@ export default function SettingsPage() {
                             <option value="other">Other</option>
                             <option value="prefer_not_to_say">Prefer not to say</option>
                           </SelectInput>
+                        ) : key.includes('phone') || key.includes('number') ? (
+                          <TextInput
+                            type="tel"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={personalDetailsForm[key as keyof PersonalDetailsForm]}
+                            onChange={(event) => {
+                              // Only allow numbers, spaces, dashes, and plus sign
+                              const value = event.target.value.replace(/[^0-9\s\-+]/g, '');
+                              setPersonalDetailsForm((current) => ({ ...current, [key]: value }));
+                            }}
+                          />
+                        ) : key.includes('email') ? (
+                          <TextInput
+                            type="email"
+                            value={personalDetailsForm[key as keyof PersonalDetailsForm]}
+                            onChange={(event) => setPersonalDetailsForm((current) => ({ ...current, [key]: event.target.value }))}
+                          />
+                        ) : key.includes('date') ? (
+                          <TextInput
+                            type="date"
+                            value={personalDetailsForm[key as keyof PersonalDetailsForm]}
+                            onChange={(event) => setPersonalDetailsForm((current) => ({ ...current, [key]: event.target.value }))}
+                          />
                         ) : (
                           <TextInput
-                            type={key.includes('date') ? 'date' : key.includes('email') ? 'email' : 'text'}
+                            type="text"
                             value={personalDetailsForm[key as keyof PersonalDetailsForm]}
                             onChange={(event) => setPersonalDetailsForm((current) => ({ ...current, [key]: event.target.value }))}
                           />
                         )}
+                        {fieldErrors[key]?.map((msg) => (
+                          <p key={msg} className="mt-1 text-sm text-red-600">{msg}</p>
+                        ))}
                       </div>
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="border-t border-slate-200 pt-5">
+                <h3 className="text-base font-semibold text-slate-900">Preferences</h3>
+                <p className="mt-1 text-sm text-slate-500">Your timezone settings for attendance tracking and notifications.</p>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <FieldLabel>Timezone</FieldLabel>
+                    <SelectInput value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+                      {Array.from(new Set([...COMMON_TIMEZONES, orgTimezone])).map((tz) => (
+                        <option key={tz} value={tz}>{tz}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                </div>
               </div>
 
               <Button onClick={saveProfile} disabled={isLoadingPersonalDetails || !user?.id}>Save Changes</Button>
@@ -859,14 +1047,14 @@ export default function SettingsPage() {
                   <SelectInput
                     value={orgTimezone}
                     onChange={(e) => setOrgTimezone(e.target.value)}
-                    disabled={!isOrgEditable}
-                    className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''}
+                    disabled={!canEditTimezone}
+                    className={!canEditTimezone ? 'bg-slate-50 text-slate-500' : ''}
                   >
                     {COMMON_TIMEZONES.map((tz) => (
                       <option key={tz} value={tz}>{tz}</option>
                     ))}
                   </SelectInput>
-                  <p className="mt-2 text-sm text-gray-500">Organization-wide timezone used for attendance and reports.</p>
+                  <p className="mt-2 text-sm text-gray-500">Organization-wide timezone used for attendance and reports. Managers can also update this.</p>
                 </div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -934,64 +1122,82 @@ export default function SettingsPage() {
                   <p className="mt-3 text-xs text-slate-500">Only admin can edit leave policy categories.</p>
                 ) : null}
               </div>
-              {isOrgEditable ? (
-                <Button onClick={saveOrganization}>Save Changes</Button>
-              ) : (
-                <p className="text-sm text-gray-500">Only admin/manager can update organization settings.</p>
-              )}
-
-              {isStrictAdminUser && (
-                <div className="mt-8 pt-8 border-t border-red-200">
-                  <h3 className="text-lg font-semibold text-red-700 flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5" />
-                    Danger Zone
-                  </h3>
-                  <p className="mt-2 text-sm text-gray-600">
-                    Once you delete your organization, there is no going back. This will permanently delete your organization, all users, projects, tasks, time entries, and all associated data.
-                  </p>
-
-                  {!showDeleteConfirm ? (
-                    <Button
-                      variant="danger"
-                      className="mt-4"
-                      onClick={() => setShowDeleteConfirm(true)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Organization
-                    </Button>
+              {organization?.id ? (
+                <>
+                  {isOrgEditable ? (
+                    <Button onClick={saveOrganization}>Save Changes</Button>
                   ) : (
-                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                      <p className="text-sm font-medium text-red-800 mb-3">
-                        Type <span className="font-bold">"{organization?.name}"</span> to confirm deletion:
+                    <p className="text-sm text-gray-500">Only admin/manager can update organization settings.</p>
+                  )}
+
+                  {isStrictAdminUser && (
+                    <div className="mt-8 pt-8 border-t border-red-200">
+                      <h3 className="text-lg font-semibold text-red-700 flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5" />
+                        Danger Zone
+                      </h3>
+                      <p className="mt-2 text-sm text-gray-600">
+                        Once you delete your organization, there is no going back. This will permanently delete your organization, all users, projects, tasks, time entries, and all associated data.
                       </p>
-                      <div className="flex gap-3">
-                        <input
-                          type="text"
-                          value={deleteConfirmText}
-                          onChange={(e) => setDeleteConfirmText(e.target.value)}
-                          placeholder="Type organization name"
-                          className="flex-1 px-3 py-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
-                        />
+
+                      {!showDeleteConfirm ? (
                         <Button
                           variant="danger"
-                          onClick={deleteOrganization}
-                          disabled={isDeletingOrg || deleteConfirmText !== organization?.name}
+                          className="mt-4"
+                          onClick={() => setShowDeleteConfirm(true)}
                         >
-                          {isDeletingOrg ? 'Deleting...' : 'Confirm Delete'}
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete Organization
                         </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setShowDeleteConfirm(false);
-                            setDeleteConfirmText('');
-                            setError('');
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
+                      ) : (
+                        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm font-medium text-red-800 mb-3">
+                            Type <span className="font-bold">"{orgName || organization?.name || 'your organization name'}"</span> to confirm deletion:
+                          </p>
+                          <div className="flex gap-3">
+                            <input
+                              type="text"
+                              value={deleteConfirmText}
+                              onChange={(e) => setDeleteConfirmText(e.target.value)}
+                              placeholder="Type organization name"
+                              className="flex-1 px-3 py-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                            />
+                            <Button
+                              variant="danger"
+                              onClick={deleteOrganization}
+                              disabled={isDeletingOrg || deleteConfirmText !== (orgName || organization?.name || '')}
+                            >
+                              {isDeletingOrg ? 'Deleting...' : 'Confirm Delete'}
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                setShowDeleteConfirm(false);
+                                setDeleteConfirmText('');
+                                setError('');
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
+                </>
+              ) : (
+                <div className="mt-8 rounded-2xl border border-amber-200 bg-amber-50/85 px-6 py-6">
+                  <h3 className="text-base font-semibold text-amber-900">No Organization Found</h3>
+                  <p className="mt-2 text-sm text-amber-700 leading-6">
+                    Your account is not linked to an organization. Create a workspace to start using CareVance.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/signup-owner')}
+                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Create Workspace
+                  </button>
                 </div>
               )}
             </div>
@@ -1000,14 +1206,6 @@ export default function SettingsPage() {
           {activeTab === 'notifications' && (
             <div className="space-y-6">
               <h2 className="text-lg font-semibold text-gray-900">Notification Preferences</h2>
-              <div>
-                <FieldLabel>Timezone</FieldLabel>
-                <SelectInput value={timezone} onChange={(e) => setTimezone(e.target.value)} className="w-full md:w-72">
-                  {timezoneOptions.map((tz) => (
-                    <option key={tz} value={tz}>{tz}</option>
-                  ))}
-                </SelectInput>
-              </div>
               {[
                 { label: 'Email notifications', value: notifyEmail, set: setNotifyEmail },
                 { label: 'In-app notifications', value: notifyInApp, set: setNotifyInApp },

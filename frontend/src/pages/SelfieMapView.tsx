@@ -88,18 +88,30 @@ export default function SelfieMapView() {
 
     valid.forEach((s) => {
       const marker = L.marker([s.latitude!, s.longitude!]).addTo(map);
-      const popupImageUrl = (s.image_url || '').replace(/'/g, "\\'");
-      const popupUserName = (s.user?.name || 'Unknown').replace(/'/g, "\\'");
       const popupContent = `
-        <div style="min-width:180px;text-align:center;">
-          <img src="${popupImageUrl}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;margin-bottom:8px;cursor:pointer;"
-               onclick="(function(){var img=document.getElementById('lightbox-img');if(img){img.setAttribute('src','${popupImageUrl}');}var name=document.getElementById('lightbox-name');if(name){name.textContent='${popupUserName}';}var lightbox=document.getElementById('lightbox');if(lightbox){lightbox.classList.remove('hidden');}})();" />
+        <div style="min-width:180px;text-align:center;" class="selfie-popup">
+          <img src="${s.image_url}" data-selfie-id="${s.id}" style="width:120px;height:120px;object-fit:cover;border-radius:8px;margin-bottom:8px;cursor:pointer;" />
           <p style="font-weight:600;font-size:13px;margin:0;">${s.user?.name || 'Unknown'}</p>
           <p style="font-size:11px;color:#64748b;margin:2px 0;">${s.attendance_date}</p>
           <p style="font-size:10px;color:#94a3b8;margin:0;">${s.latitude?.toFixed(6)}, ${s.longitude?.toFixed(6)}</p>
         </div>
       `;
       marker.bindPopup(popupContent);
+      
+      // Add click handler to marker to open lightbox
+      marker.on('popupopen', () => {
+        const popupEl = marker.getPopup()?.getElement();
+        if (popupEl) {
+          const img = popupEl.querySelector('img[data-selfie-id]');
+          if (img) {
+            img.addEventListener('click', () => {
+              setLightboxUrl(s.image_url);
+              setLightboxUser(s.user?.name || 'Unknown');
+            });
+          }
+        }
+      });
+      
       markersRef.current.push(marker);
     });
 
@@ -238,27 +250,31 @@ export default function SelfieMapView() {
       </SurfaceCard>
 
       {/* Lightbox */}
-      <div
-        id="lightbox"
-        className={`fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-4 ${lightboxUrl ? '' : 'hidden'}`}
-        onClick={() => setLightboxUrl(null)}
-      >
-        <div className="max-w-lg max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
-          <img id="lightbox-img" src={lightboxUrl || ''} alt="Selfie full" className="max-w-full max-h-[70vh] rounded-lg shadow-2xl" />
-          <p id="lightbox-name" className="text-white text-center mt-2 font-medium">{lightboxUser}</p>
-          <button
-            onClick={() => setLightboxUrl(null)}
-            className="absolute top-4 right-4 text-white text-2xl hover:text-slate-300"
-          >
-            &times;
-          </button>
+      {lightboxUrl && (
+        <div
+          id="lightbox"
+          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div className="relative max-w-3xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+            {/* Close button */}
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute -top-10 right-0 text-white text-3xl hover:text-slate-300 z-50 w-10 h-10 flex items-center justify-center"
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <img
+              id="lightbox-img"
+              src={lightboxUrl}
+              alt="Selfie full"
+              className="max-w-full max-h-[80vh] rounded-lg shadow-2xl mx-auto"
+            />
+            <p id="lightbox-name" className="text-white text-center mt-4 font-medium text-lg">{lightboxUser}</p>
+          </div>
         </div>
-      </div>
-      {/* Hidden elements for popup lightbox triggers */}
-      <div className="hidden">
-        <img id="lightbox-img" alt="" />
-        <span id="lightbox-name" />
-      </div>
+      )}
     </div>
   );
 }

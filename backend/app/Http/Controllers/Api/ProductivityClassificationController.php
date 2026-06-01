@@ -3,25 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Activity;
-use App\Models\ActivitySession;
+use App\Jobs\ReclassifyProductivityJob;
 use App\Models\ProductivityClassification;
 use App\Models\User;
-use App\Services\Monitoring\ProductivityClassifier;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class ProductivityClassificationController extends Controller
 {
-    public function __construct(
-        private readonly ProductivityClassifier $classifier,
-    ) {
-    }
-
     public function history(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -281,6 +273,10 @@ class ProductivityClassificationController extends Controller
             return response()->json(['message' => 'No organization found'], 400);
         }
 
+        if (!$user->hasPermission('productivity.manage')) {
+            return response()->json(['message' => 'Forbidden: productivity.manage permission required'], 403);
+        }
+
         $validated = $request->validate([
             'target_type' => 'required|in:domain,app',
             'target_value' => 'required|string|max:255',
@@ -312,7 +308,7 @@ class ProductivityClassificationController extends Controller
             ]);
         }
 
-        $this->reclassifyMatching($organizationId, $validated['target_type'], $lowerValue);
+        ReclassifyProductivityJob::dispatch($organizationId, $validated['target_type'], $lowerValue);
 
         return response()->json(['data' => $classification], 201);
     }
@@ -324,6 +320,10 @@ class ProductivityClassificationController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        if (!$user->hasPermission('productivity.manage')) {
+            return response()->json(['message' => 'Forbidden: productivity.manage permission required'], 403);
+        }
+
         $validated = $request->validate([
             'classification' => 'required|in:productive,unproductive,neutral',
         ]);
@@ -332,7 +332,7 @@ class ProductivityClassificationController extends Controller
             'classification' => $validated['classification'],
         ]);
 
-        $this->reclassifyMatching((int) $user->organization_id, $classification->target_type, $classification->target_value);
+        ReclassifyProductivityJob::dispatch((int) $user->organization_id, $classification->target_type, $classification->target_value);
 
         return response()->json(['data' => $classification]);
     }
@@ -344,13 +344,17 @@ class ProductivityClassificationController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        if (!$user->hasPermission('productivity.manage')) {
+            return response()->json(['message' => 'Forbidden: productivity.manage permission required'], 403);
+        }
+
         $targetType = $classification->target_type;
         $targetValue = $classification->target_value;
         $organizationId = (int) $classification->organization_id;
 
         $classification->delete();
 
-        $this->reclassifyMatching($organizationId, $targetType, $targetValue);
+        ReclassifyProductivityJob::dispatch($organizationId, $targetType, $targetValue);
 
         return response()->json(['message' => 'Classification override removed']);
     }
@@ -363,6 +367,10 @@ class ProductivityClassificationController extends Controller
             return response()->json(['message' => 'No organization found'], 400);
         }
 
+        if (!$user->hasPermission('productivity.manage')) {
+            return response()->json(['message' => 'Forbidden: productivity.manage permission required'], 403);
+        }
+
         $validated = $request->validate([
             'classification' => 'required|in:productive,unproductive,neutral',
             'items' => 'required|array|min:1|max:100',
@@ -370,12 +378,20 @@ class ProductivityClassificationController extends Controller
             'items.*.target_value' => 'required|string|max:255',
         ]);
 
+        $seen = [];
         $count = 0;
+
         foreach ($validated['items'] as $item) {
             $lowerValue = mb_strtolower(trim($item['target_value']));
             if ($lowerValue === '') {
                 continue;
             }
+
+            $dedupKey = $item['target_type'] . ':' . $lowerValue;
+            if (isset($seen[$dedupKey])) {
+                continue;
+            }
+            $seen[$dedupKey] = true;
 
             $existing = ProductivityClassification::where('organization_id', $organizationId)
                 ->where('target_type', $item['target_type'])
@@ -394,106 +410,10 @@ class ProductivityClassificationController extends Controller
                 ]);
             }
 
-            $this->reclassifyMatching($organizationId, $item['target_type'], $lowerValue);
+            ReclassifyProductivityJob::dispatch($organizationId, $item['target_type'], $lowerValue);
             $count++;
         }
 
         return response()->json(['message' => "{$count} classification(s) updated"]);
-    }
-
-    private function reclassifyMatching(int $organizationId, string $targetType, string $targetValue): void
-    {
-        $scopedUserIds = User::query()
-            ->where('organization_id', $organizationId)
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->values();
-
-        if ($scopedUserIds->isEmpty()) {
-            return;
-        }
-
-        $column = $targetType === 'domain' ? 'normalized_domain' : 'software_name';
-        $lowerValue = mb_strtolower(trim($targetValue));
-
-        Log::info('Reclassify starting: org=' . $organizationId . ' type=' . $targetType . ' value=' . $lowerValue . ' userCount=' . $scopedUserIds->count());
-
-        // Reclassify matching activities — search by ALL relevant text fields
-        $parts = explode('.', $lowerValue);
-        $mainPart = $parts[0] ?? '';
-        $activityQuery = Activity::query()
-            ->whereIn('user_id', $scopedUserIds)
-            ->with('user.groups:id')
-            ->where(function ($q) use ($column, $lowerValue, $mainPart) {
-                $q->whereRaw('LOWER(' . $column . ') = ?', [$lowerValue])
-                  ->orWhereRaw('LOWER(name) LIKE ?', ['%' . $mainPart . '%'])
-                  ->orWhereRaw('LOWER(window_title) LIKE ?', ['%' . $mainPart . '%'])
-                  ->orWhereRaw('LOWER(url) LIKE ?', ['%' . $mainPart . '%'])
-                  ->orWhereRaw('LOWER(app_name) LIKE ?', ['%' . $mainPart . '%']);
-            });
-
-        $activityCount = $activityQuery->count();
-        Log::info('Reclassify: matching ' . $activityCount . ' activities');
-
-        $activityQuery->chunkById(200, function ($activities) {
-            foreach ($activities as $activity) {
-                try {
-                    $oldClass = $activity->classification;
-                    $this->classifier->stampActivity($activity);
-                    $activity->saveQuietly();
-                    Log::info('Reclassify: activity #' . $activity->id . ' (' . $activity->name . '): ' . ($oldClass ?? 'null') . ' -> ' . ($activity->classification ?? 'null'));
-                } catch (\Throwable $e) {
-                    Log::error('Reclassify failed for activity #' . $activity->id . ': ' . $e->getMessage());
-                }
-            }
-        });
-
-        // Reclassify matching activity sessions
-        $parts = explode('.', $lowerValue);
-        $mainPart = $parts[0] ?? '';
-        $sessionQuery = ActivitySession::query()
-            ->whereIn('user_id', $scopedUserIds)
-            ->with('user.groups:id')
-            ->where(function ($q) use ($column, $lowerValue, $mainPart) {
-                $q->whereRaw('LOWER(' . $column . ') = ?', [$lowerValue])
-                  ->orWhere(function ($sub) use ($mainPart) {
-                      $sub->whereRaw('LOWER(display_name) LIKE ?', ['%' . $mainPart . '%'])
-                            ->orWhereRaw('LOWER(window_title) LIKE ?', ['%' . $mainPart . '%'])
-                            ->orWhereRaw('LOWER(url) LIKE ?', ['%' . $mainPart . '%']);
-                  });
-            });
-
-        $sessionQuery->chunkById(200, function ($sessions) {
-            foreach ($sessions as $session) {
-                try {
-                    $oldClass = $session->classification;
-                    $groupIds = $session->user
-                        ? $session->user->groups->pluck('id')->map(fn ($id) => (int) $id)->values()->all()
-                        : [];
-                    $context = [
-                        'activity_type' => $session->activity_kind ?? 'app',
-                        'raw_name' => $session->display_name ?? '',
-                        'window_title' => $session->window_title ?? '',
-                        'app_name' => $session->app_name ?? '',
-                        'url' => $session->url ?? '',
-                        'user_id' => $session->user_id,
-                        'organization_id' => $session->user?->organization_id ?? 0,
-                        'group_ids' => $groupIds,
-                    ];
-                    $classification = $this->classifier->classifyContext($context);
-                    $session->tool_type = $classification['tool_type'];
-                    $session->normalized_label = $classification['normalized_label'];
-                    $session->normalized_domain = $classification['normalized_domain'];
-                    $session->software_name = $classification['software_name'];
-                    $session->classification = $classification['classification'];
-                    $session->classification_reason = $classification['classification_reason'];
-                    $session->saveQuietly();
-                    Log::info('Reclassify: session #' . $session->id . ' (' . $session->display_name . '): ' . ($oldClass ?? 'null') . ' -> ' . ($session->classification ?? 'null'));
-                } catch (\Throwable $e) {
-                    Log::error('Reclassify failed for session #' . $session->id . ': ' . $e->getMessage());
-                }
-            }
-        });
     }
 }

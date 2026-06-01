@@ -72,6 +72,10 @@ class GeofenceController extends Controller
             return response()->json(['message' => 'Organization required'], 422);
         }
 
+        if (!$user->hasPermission('geofence.manage')) {
+            return response()->json(['message' => 'Forbidden: geofence.manage permission required'], 403);
+        }
+
         $zone = GeofenceZone::create([
             'organization_id' => $user->organization_id,
             'name' => $request->name,
@@ -89,6 +93,10 @@ class GeofenceController extends Controller
         $user = $request->user();
         if (!$user || (int) $zone->organization_id !== (int) $user->organization_id) {
             return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if (!$user->hasPermission('geofence.manage')) {
+            return response()->json(['message' => 'Forbidden: geofence.manage permission required'], 403);
         }
 
         $request->validate([
@@ -109,6 +117,10 @@ class GeofenceController extends Controller
         $user = $request->user();
         if (!$user || (int) $zone->organization_id !== (int) $user->organization_id) {
             return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if (!$user->hasPermission('geofence.manage')) {
+            return response()->json(['message' => 'Forbidden: geofence.manage permission required'], 403);
         }
 
         $zone->delete();

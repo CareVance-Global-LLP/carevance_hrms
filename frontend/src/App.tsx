@@ -40,6 +40,7 @@ const SupportPage = lazyWithChunkRetry(() => import('@/pages/SupportPage'));
 const AcceptInvitePage = lazyWithChunkRetry(() => import('@/pages/AcceptInvitePage'));
 const EmployeeMobileDashboard = lazyWithChunkRetry(() => import('@/pages/EmployeeMobileDashboard'));
 const GeofenceSettings = lazyWithChunkRetry(() => import('@/pages/GeofenceSettings'));
+const RoleManagement = lazyWithChunkRetry(() => import('@/pages/RoleManagement'));
 const SelfieMapView = lazyWithChunkRetry(() => import('@/pages/SelfieMapView'));
 const Layout = lazyWithChunkRetry(() => import('@/components/Layout'));
 const Login = lazyWithChunkRetry(() => import('@/pages/Login'));
@@ -53,6 +54,7 @@ const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard')
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
 const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
 const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
+const TaskTimeReports = lazyWithChunkRetry(() => import('@/pages/TimeReports'));
 const Reports = lazyWithChunkRetry(() => import('@/pages/Reports'));
 const Invoices = lazyWithChunkRetry(() => import('@/pages/Invoices'));
 const Settings = lazyWithChunkRetry(() => import('@/pages/Settings'));
@@ -82,6 +84,7 @@ const SuperAdminOrganizationDetail = lazyWithChunkRetry(() => import('@/pages/su
 const SuperAdminCreateOrganization = lazyWithChunkRetry(() => import('@/pages/super-admin/CreateOrganization'));
 const SuperAdminUsers = lazyWithChunkRetry(() => import('@/pages/super-admin/Users'));
 const SuperAdminBilling = lazyWithChunkRetry(() => import('@/pages/super-admin/Billing'));
+const GoogleSignupCompletion = lazyWithChunkRetry(() => import('@/pages/GoogleSignupCompletion'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
 const isChunkLoadFailure = (error: unknown) => {
@@ -235,7 +238,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   const requiresOnboarding = Boolean(
     user
-    && ['admin', 'manager', 'employee'].includes(String(user.role || '').toLowerCase())
+    && (user.hierarchy_level ?? (user.role === 'admin' ? 10 : user.role === 'manager' ? 50 : user.role === 'employee' ? 100 : 999)) < 999
     && user.organization_id
   );
   const onboardingCompleted = Boolean(
@@ -257,6 +260,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
 
+  // Check if user has no organization - redirect to signup
+  if (!organization?.id) {
+    return <Navigate to="/signup-owner?message=no-organization" replace />;
+  }
+
   const needsPayment = organization?.subscription_intent === 'paid' && organization?.subscription_status !== 'active';
   const isOnboardingRoute = location.pathname === onboardingPath;
   const isPaymentRoute = location.pathname === '/payment';
@@ -265,7 +273,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/payment" replace />;
   }
 
-  if (!needsPayment && requiresOnboarding && !onboardingCompleted && !onboardingSkipped && !isOnboardingRoute) {
+  if (!needsPayment && requiresOnboarding && !onboardingCompleted && !onboardingSkipped && !isOnboardingRoute && !isPaymentRoute) {
     return <Navigate to={onboardingPath} replace />;
   }
 
@@ -280,8 +288,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function PublicRoute({ children }: { children: React.ReactNode }) {
+function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNode; allowAuthenticated?: boolean }) {
   const { user, organization, isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
   const mobile = isLikelyMobile();
 
   if (isLoading) {
@@ -293,6 +302,21 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
+    // Check if user has no organization - redirect to signup
+    if (!organization?.id) {
+      // Allow access to signup-owner page to create organization
+      if (location.pathname === '/signup-owner') {
+        return <>{children}</>;
+      }
+      // Redirect to signup page with message
+      return <Navigate to="/signup-owner?message=no-organization" replace />;
+    }
+    
+    // Allow authenticated users to access workspace creation when explicitly in fresh signup flow
+    const isFreshSignupFlow = new URLSearchParams(location.search).get('fresh') === 'true';
+    if (allowAuthenticated && isFreshSignupFlow) {
+      return <>{children}</>;
+    }
     const needsPayment = organization?.subscription_intent === 'paid' && organization?.subscription_status !== 'active';
     if (needsPayment) {
       return <Navigate to="/payment" replace />;
@@ -440,7 +464,7 @@ function App() {
           <Route
             path="/signup-owner"
             element={
-              <PublicRoute>
+              <PublicRoute allowAuthenticated>
                 <OwnerSignupPage />
               </PublicRoute>
             }
@@ -450,6 +474,14 @@ function App() {
             element={
               <PublicRoute>
                 <OwnerSignupPage defaultMode="trial" />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/google-signup-completion"
+            element={
+              <PublicRoute>
+                <GoogleSignupCompletion />
               </PublicRoute>
             }
           />
@@ -466,6 +498,7 @@ function App() {
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<PlanFeatureRoute feature="project_tracking"><Projects /></PlanFeatureRoute>} />
             <Route path="tasks" element={<PlanFeatureRoute feature="task_tracking"><Tasks /></PlanFeatureRoute>} />
+            <Route path="tasks/time-reports" element={<PlanFeatureRoute feature="task_tracking"><TaskTimeReports /></PlanFeatureRoute>} />
             <Route path="chat" element={<PlanFeatureRoute feature="chat"><Chat /></PlanFeatureRoute>} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="attendance/selfies-map" element={<AdminRoute><SelfieMapView /></AdminRoute>} />
@@ -519,6 +552,7 @@ function App() {
             <Route path="settings/custom-fields" element={<Settings />} />
             <Route path="settings/billing" element={<AdminRoute><BillingSettingsPage /></AdminRoute>} />
             <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
+            <Route path="settings/roles" element={<AdminRoute><RoleManagement /></AdminRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />

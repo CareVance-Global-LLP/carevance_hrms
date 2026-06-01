@@ -1,25 +1,15 @@
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopBrowserTracking } from '@/hooks/useDesktopBrowserTracking';
+import { formatDateTime } from '@/lib/dateTime';
+import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { Download, ExternalLink, FolderOpen, Link2, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react';
 
-const formatTimestamp = (value?: string | null) => {
+const formatTimestamp = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) => {
   if (!value) {
     return '';
   }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return '';
-  }
-
-  return parsed.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return formatDateTime(value, timezone, 'en-US', '');
 };
 
 const formatLocalHost = (value?: string | null) => {
@@ -38,6 +28,7 @@ const formatLocalHost = (value?: string | null) => {
 
 export default function DesktopBrowserTrackingPanel() {
   const { user } = useAuth();
+  const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const {
     state,
     isPairingCodePending,
@@ -53,8 +44,8 @@ export default function DesktopBrowserTrackingPanel() {
   const primaryConnection = state.connections[0] || null;
   const isConnected = Boolean(state.ready && primaryConnection);
   const localHost = formatLocalHost(state.local_url);
-  const expiresAtLabel = formatTimestamp(state.pairing_code?.expires_at);
-  const lastSeenLabel = formatTimestamp(primaryConnection?.last_seen_at || primaryConnection?.paired_at || state.last_event_at);
+  const expiresAtLabel = formatTimestamp(state.pairing_code?.expires_at, viewerTimezone);
+  const lastSeenLabel = formatTimestamp(primaryConnection?.last_seen_at || primaryConnection?.paired_at || state.last_event_at, viewerTimezone);
   const statusLabel = isConnected ? `${primaryConnection?.browser_name || 'Browser'} Connected` : 'Extension Not Connected Yet';
   const reconnectButtonLabel = isConnected ? 'Reconnect / Manage Extension' : 'Open Extension Options';
   const statusCopy = state.last_error || pairingError || (

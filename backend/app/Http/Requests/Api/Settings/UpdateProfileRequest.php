@@ -14,7 +14,7 @@ class UpdateProfileRequest extends ApiFormRequest
         $userId = $user?->id;
         $emailRules = ['sometimes', 'required', 'email', 'max:255'];
 
-        if ($user?->role === 'admin') {
+        if ($user?->getHierarchyLevel() <= 10) {
             $emailRules[] = Rule::unique('users', 'email')->ignore($userId);
         }
 
@@ -31,7 +31,7 @@ class UpdateProfileRequest extends ApiFormRequest
         $validator->after(function (Validator $validator): void {
             $user = $this->user();
 
-            if (! $user || $user->role === 'admin' || ! $this->has('email')) {
+            if (! $user || $user->getHierarchyLevel() <= 10 || ! $this->has('email')) {
                 return;
             }
 

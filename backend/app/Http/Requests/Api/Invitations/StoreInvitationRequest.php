@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\Invitations;
 
 use App\Http\Requests\Api\ApiFormRequest;
+use App\Rules\ValidTimezone;
 use Illuminate\Validation\Rule;
 
 class StoreInvitationRequest extends ApiFormRequest
@@ -53,6 +54,7 @@ class StoreInvitationRequest extends ApiFormRequest
             'settings.attendance_monitoring' => 'nullable|boolean',
             'settings.payroll_visibility' => 'nullable|boolean',
             'settings.task_assignment_access' => 'nullable|boolean',
+            'settings.timezone' => ['nullable', 'string', 'max:255', new ValidTimezone],
         ];
     }
 

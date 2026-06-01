@@ -5,6 +5,9 @@ export interface User {
   email: string;
   email_verified_at?: string | null;
   role: 'admin' | 'manager' | 'employee' | 'client' | 'super_admin';
+  role_id?: number | null;
+  role_name?: string | null;
+  hierarchy_level?: number | null;
   organization_id: number | null;
   invited_by?: number | null;
   avatar?: string | null;
@@ -18,6 +21,7 @@ export interface User {
   settings?: Record<string, any>;
   employee_profile?: EmployeeProfileDetails | null;
   groups?: Group[];
+  permissions?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +103,108 @@ export interface Task {
   assignee?: User | null;
   assignees?: User[];
   time_entries_sum_duration?: number;
+  labels?: TaskLabel[];
+  remind_at?: string | null;
+  reminded_at?: string | null;
+  checklist_items?: TaskChecklistItem[];
+  dependencies?: TaskDependency[];
+  recurrence?: TaskRecurrence[];
+}
+
+export interface TaskActivity {
+  id: number;
+  task_id: number;
+  actor_id?: number | null;
+  action: string;
+  description: string;
+  meta?: Record<string, any> | null;
+  created_at: string;
+  actor?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
+}
+
+// Task Comment Types
+export interface TaskComment {
+  id: number;
+  task_id: number;
+  user_id: number;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  user?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
+}
+
+// Task Attachment Types
+export interface TaskAttachment {
+  id: number;
+  task_id: number;
+  user_id: number;
+  filename: string;
+  original_filename: string;
+  mime_type?: string | null;
+  file_size?: number | null;
+  created_at: string;
+  user?: {
+    id: number;
+    name: string;
+    email: string;
+  } | null;
+}
+
+// Task Label Types
+export interface TaskLabel {
+  id: number;
+  organization_id: number;
+  name: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Task Checklist Types
+export interface TaskChecklistItem {
+  id: number;
+  task_id: number;
+  title: string;
+  is_completed: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Task Dependency Types
+export interface TaskDependency {
+  id: number;
+  task_id: number;
+  depends_on_task_id: number;
+  created_at: string;
+  depends_on_task?: Task | null;
+}
+
+// Task Recurrence Types
+export interface TaskRecurrence {
+  id: number;
+  task_id: number | null;
+  template_title: string;
+  template_description?: string | null;
+  template_priority: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval_value: number;
+  days_of_week?: number[] | null;
+  day_of_month?: number | null;
+  start_date: string;
+  end_date?: string | null;
+  next_run_date: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // Time Entry Types
@@ -352,6 +458,7 @@ export interface LoginRequest {
   email: string;
   password: string;
   remember?: boolean;
+  timezone?: string;
 }
 
 export interface RegisterRequest {
@@ -374,6 +481,7 @@ export interface OwnerSignupRequest {
   billing_cycle?: 'monthly' | 'yearly';
   seats?: number;
   terms_accepted?: boolean;
+  timezone?: string;
   // Organization profile fields
   description?: string;
   website?: string;
@@ -985,7 +1093,7 @@ export interface PayrollSettingsPayload {
 
 export interface AppNotificationItem {
   id: number;
-  type: 'announcement' | 'news' | 'salary_credited' | string;
+  type: 'announcement' | 'news' | 'salary_credited' | 'task_assigned' | string;
   title: string;
   message: string;
   is_read: boolean;
@@ -1115,6 +1223,8 @@ export interface EmployeeWorkInfo {
   employment_status?: 'active' | 'inactive' | 'notice' | 'exited' | null;
   exit_date?: string | null;
   work_mode?: 'office' | 'remote' | 'hybrid' | null;
+  expected_start_time?: string | null;
+  expected_timezone?: string | null;
   department?: { id: number; name: string } | null;
   reporting_manager?: { id: number; name: string; email: string } | null;
 }

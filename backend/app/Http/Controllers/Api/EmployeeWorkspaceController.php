@@ -229,7 +229,7 @@ class EmployeeWorkspaceController extends Controller
 
     private function canManage(User $user): bool
     {
-        return in_array($user->role, ['admin', 'manager'], true);
+        return $user->getHierarchyLevel() < 100;
     }
 
     private function canManageEmployee(User $actor, User $employee): bool
@@ -238,8 +238,15 @@ class EmployeeWorkspaceController extends Controller
             return false;
         }
 
-        if ($actor->role === 'admin') {
+        $actorLevel = $actor->getHierarchyLevel();
+        $employeeLevel = $employee->getHierarchyLevel();
+
+        if ($actorLevel <= 10) {
             return true;
+        }
+
+        if ($employeeLevel <= $actorLevel) {
+            return false;
         }
 
         $groupIds = $actor->groups()->pluck('groups.id')->all();
