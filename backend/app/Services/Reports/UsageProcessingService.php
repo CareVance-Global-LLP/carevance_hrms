@@ -224,6 +224,27 @@ class UsageProcessingService
             ];
         }
 
+        // Cache key bucketed by user-set + date range + TTL. The DB query +
+        // interval-merge below is called from 4+ report endpoints (overall,
+        // liteOverall, customExport, employeeInsights) and dominates CPU on
+        // org-wide reports. A short TTL keeps results fresh while collapsing
+        // repeated admin views of the same range into a single computation.
+        $cacheKey = sprintf(
+            'usage_processing.idle_summary:%s:%s:%s',
+            md5($ids->sort()->implode(',')),
+            $startDate->toDateString(),
+            $endDate->toDateString(),
+        );
+        $cacheTtl = (int) config('usage_processing.cache.ttl_seconds', 300);
+        $cacheTtl = max(30, min($cacheTtl, 600));
+
+        return Cache::remember($cacheKey, $cacheTtl, function () use ($ids, $startDate, $endDate) {
+            return $this->computeIdleDurationsFastForUsers($ids, $startDate, $endDate);
+        });
+    }
+
+    private function computeIdleDurationsFastForUsers(Collection $ids, Carbon $startDate, Carbon $endDate): array
+    {
         // Load only idle activities (far fewer rows than full activity load).
         // Each record: recorded_at = window END, duration = window length in seconds.
         // Multiple overlapping records can exist for the same idle period when the

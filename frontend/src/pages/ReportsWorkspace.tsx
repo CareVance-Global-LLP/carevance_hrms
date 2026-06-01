@@ -1135,11 +1135,24 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   };
   const timelineSummary = useMemo(() => {
     if (mode !== 'timeline') return null;
-    return {
-      apps: timelineRows.filter((item: any) => item.type === 'app').length,
-      urls: timelineRows.filter((item: any) => item.type === 'url' || item.tool_type === 'website').length,
-      idle: timelineRows.filter((item: any) => item.type === 'idle').length,
-    };
+    // Single-pass reduce (was 3x O(N) filters).
+    // Idle check covers both `type === 'idle'` and `tool_type === 'idle'`
+    // so the metric matches whatever the backend returns.
+    let apps = 0;
+    let urls = 0;
+    let idle = 0;
+    for (const item of timelineRows) {
+      const itemType = (item as any).type;
+      const toolType = (item as any).tool_type;
+      if (itemType === 'idle' || toolType === 'idle') {
+        idle += 1;
+      } else if (itemType === 'app') {
+        apps += 1;
+      } else if (itemType === 'url' || toolType === 'website') {
+        urls += 1;
+      }
+    }
+    return { apps, urls, idle };
   }, [mode, timelineRows]);
 
   const usageData = dataQuery.data as any;

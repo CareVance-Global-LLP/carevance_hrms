@@ -26,6 +26,7 @@ use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -700,8 +701,7 @@ class ReportController extends Controller
         $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries)
             + (int) AttendanceRecord::query()
                 ->where('user_id', $user->id)
-                ->whereDate('attendance_date', '>=', $startDate->toDateString())
-                ->whereDate('attendance_date', '<=', $endDate->toDateString())
+                ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
                 ->sum('manual_adjustment_seconds');
         $activities = $this->activityFeedService->forUsersInRangeForIdle([$user->id], $startDate, $endDate);
         $activityTotalDuration = (int) $activities->sum('duration');
@@ -870,8 +870,7 @@ class ReportController extends Controller
             ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
         $attendanceAdjustments = AttendanceRecord::query()
             ->whereIn('user_id', $userIds)
-            ->whereDate('attendance_date', '>=', $startDate->toDateString())
-            ->whereDate('attendance_date', '<=', $endDate->toDateString())
+            ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->get(['id', 'user_id', 'attendance_date', 'check_in_at', 'check_out_at', 'manual_adjustment_seconds']);
 
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
@@ -1208,6 +1207,77 @@ class ReportController extends Controller
         return $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
     }
 
+    /**
+     * Cached wrapper around UsageProcessingService::buildWebAppUsageUserRangeSummary.
+     *
+     * employeeInsights() runs this inside a per-user loop (up to ~50 users) and
+     * is the most expensive endpoint in the report suite. The underlying
+     * buildCachedDailySummary call already short-circuits unchanged days
+     * (UsageProcessingService::buildFingerprint), but the per-day grouping,
+     * combineUsageSummaries merge, and tool_breakdown fan-out are re-run for
+     * every request. This cache wraps the whole range result with a short TTL
+     * keyed on user + date range + a fingerprint of the input activity set, so
+     * repeated admin views of the same range within ~2 minutes are free.
+     */
+    private function buildCachedUserRangeSummary(
+        int $userId,
+        iterable $activities,
+        Carbon $startDate,
+        Carbon $endDate,
+        bool $includeProcessedLogs = true,
+    ): array {
+        $fingerprint = $this->fingerprintActivitySet($activities);
+        $cacheKey = sprintf(
+            'employee_insights.user_range:%d:%s:%s:%s:%d',
+            $userId,
+            $startDate->toDateString(),
+            $endDate->toDateString(),
+            $fingerprint,
+            $includeProcessedLogs ? 1 : 0,
+        );
+        $ttl = (int) config('usage_processing.cache.ttl_seconds', 300);
+        $ttl = max(30, min($ttl, 600));
+
+        return Cache::remember(
+            $cacheKey,
+            $ttl,
+            fn () => $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
+                $userId,
+                collect($activities)->values(),
+                $startDate,
+                $endDate,
+                activityEvents: [],
+                includeProcessedLogs: $includeProcessedLogs,
+            )
+        );
+    }
+
+    /**
+     * Stable, short fingerprint for an iterable of activity-like records.
+     * Uses max(id) + count + max(recorded_at) so two requests with the same
+     * underlying data hash identically. Falls back to count-only when ids
+     * are missing (e.g. mocked test data).
+     */
+    private function fingerprintActivitySet(iterable $activities): string
+    {
+        $count = 0;
+        $maxId = 0;
+        $maxRecordedAt = '';
+        foreach ($activities as $activity) {
+            $count++;
+            $id = (int) data_get($activity, 'id', 0);
+            if ($id > $maxId) {
+                $maxId = $id;
+            }
+            $recordedAt = (string) data_get($activity, 'recorded_at', '');
+            if ($recordedAt !== '' && $recordedAt > $maxRecordedAt) {
+                $maxRecordedAt = $recordedAt;
+            }
+        }
+
+        return substr(md5(sprintf('%d|%d|%s', $count, $maxId, $maxRecordedAt)), 0, 16);
+    }
+
     private function groupActivitiesByUserAndDay(Collection $activities): Collection
     {
         return $activities
@@ -1514,8 +1584,7 @@ class ReportController extends Controller
             : AttendanceRecord::query()
                 ->where('organization_id', $currentUser->organization_id)
                 ->whereIn('user_id', $userIds->all())
-                ->whereDate('attendance_date', '>=', $startDate->toDateString())
-                ->whereDate('attendance_date', '<=', $endDate->toDateString())
+                ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
                 ->with('punches')
                 ->get(['id', 'user_id', 'attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds', 'late_minutes']);
         $attendanceByUser = $attendanceRecords->groupBy(fn (AttendanceRecord $record) => (int) $record->user_id);
@@ -1853,6 +1922,32 @@ class ReportController extends Controller
                 ->map(fn ($id) => (int) $id)
                 ->unique();
 
+        // Batch-load attendance records and leave requests once for the whole
+        // user set, then partition in memory. Replaces an N+1 pattern (1 query
+        // per user for records + 1 query per user for leaves + 1 eager-load
+        // for punches) that grew linearly with the user count. For 100 users
+        // this collapses from ~300 queries to 3.
+        $recordsByUser = collect();
+        $leavesByUser = collect();
+        if ($userIds->isNotEmpty()) {
+            $allRecords = AttendanceRecord::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->whereIn('user_id', $userIds)
+                ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
+                ->with(['punches:id,attendance_record_id,punch_in_at,punch_out_at,worked_seconds'])
+                ->get(['id', 'user_id', 'attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds']);
+            $recordsByUser = $allRecords->groupBy(fn (AttendanceRecord $record) => (int) $record->user_id);
+
+            $allLeaves = LeaveRequest::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->whereIn('user_id', $userIds)
+                ->where('status', 'approved')
+                ->whereDate('start_date', '<=', $endDate->toDateString())
+                ->whereDate('end_date', '>=', $startDate->toDateString())
+                ->get(['user_id', 'start_date', 'end_date']);
+            $leavesByUser = $allLeaves->groupBy(fn ($leave) => (int) $leave->user_id);
+        }
+
         $rows = $users->map(function (User $user) use (
             $startDate,
             $endDate,
@@ -1860,30 +1955,20 @@ class ReportController extends Controller
             $workingDaysCount,
             $workingDates,
             $weekendDates,
-            $currentUser,
             $activeTimeEntryUserIds,
             $openAttendanceUserIds,
+            $recordsByUser,
+            $leavesByUser,
         ) {
-            $records = AttendanceRecord::query()
-                ->where('organization_id', $currentUser->organization_id)
-                ->where('user_id', $user->id)
-                ->whereDate('attendance_date', '>=', $startDate->toDateString())
-                ->whereDate('attendance_date', '<=', $endDate->toDateString())
-                ->with('punches')
-                ->get(['id', 'attendance_date', 'check_in_at', 'check_out_at', 'worked_seconds', 'manual_adjustment_seconds']);
+            $records = $recordsByUser->get((int) $user->id, collect());
 
             $recordByDate = $records->keyBy(fn ($record) => Carbon::parse($record->attendance_date)->toDateString());
             $presentDates = $workingDates
                 ->filter(fn (string $date) => (bool) $recordByDate->get($date)?->check_in_at)
                 ->values();
 
-            $approvedLeaveDates = LeaveRequest::query()
-                ->where('organization_id', $currentUser->organization_id)
-                ->where('user_id', $user->id)
-                ->where('status', 'approved')
-                ->whereDate('start_date', '<=', $endDate->toDateString())
-                ->whereDate('end_date', '>=', $startDate->toDateString())
-                ->get(['start_date', 'end_date'])
+            $userLeaves = $leavesByUser->get((int) $user->id, collect());
+            $approvedLeaveDates = $userLeaves
                 ->flatMap(function ($leave) {
                     return collect(CarbonPeriod::create($leave->start_date, $leave->end_date))
                         ->filter(fn ($date) => !$date->isWeekend())
@@ -2133,9 +2218,10 @@ class ReportController extends Controller
             $perUserScore = [];
             foreach ($analyticsUsers as $analyticsUser) {
                 $userId = (int) $analyticsUser->id;
-                $userUsageSummary = $this->usageProcessingService->buildWebAppUsageUserRangeSummary(
+                $userActivities = $organizationActivitiesByUser->get($userId, collect());
+                $userUsageSummary = $this->buildCachedUserRangeSummary(
                     $userId,
-                    $organizationActivitiesByUser->get($userId, collect()),
+                    $userActivities,
                     $startDate,
                     $endDate,
                     includeProcessedLogs: false,

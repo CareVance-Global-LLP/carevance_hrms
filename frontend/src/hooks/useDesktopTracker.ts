@@ -1328,28 +1328,37 @@ export const useDesktopTracker = () => {
 
     const runIdleGuard = async () => {
       if (!isCurrentRun()) return;
+      // Shared inFlight guard prevents the activity tick (1s) and idle guard
+      // (configured interval, e.g. 1s) from racing on the same idle state
+      // snapshot. Without this, both can call getIdleState and
+      // syncIdleActivitySnapshot concurrently, double-emitting idle records.
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const activeEntry = activeEntryRef.current || await getOrLoadActiveEntry();
+        if (!activeEntry?.id) {
+          return;
+        }
 
-      const activeEntry = activeEntryRef.current || await getOrLoadActiveEntry();
-      if (!activeEntry?.id) {
-        return;
+        const now = Date.now();
+        const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName } = await getIdleState(now);
+
+        if (idleSeconds < IDLE_THRESHOLD_SECONDS) {
+          idleStopBlockedUntilMsRef.current = 0;
+          return;
+        }
+
+        if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
+          idleStopBlockedUntilMsRef.current = 0;
+        }
+
+        const recordedAt = new Date(now).toISOString();
+        const idleContextName = idleStateContextName || activeSegmentRef.current?.contextName || 'Active Input';
+        await syncIdleActivitySnapshot(activeEntry, idleSeconds, lastActivityAtMs, recordedAt, idleContextName);
+        await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt);
+      } finally {
+        inFlight = false;
       }
-
-      const now = Date.now();
-      const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName } = await getIdleState(now);
-
-      if (idleSeconds < IDLE_THRESHOLD_SECONDS) {
-        idleStopBlockedUntilMsRef.current = 0;
-        return;
-      }
-
-      if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
-        idleStopBlockedUntilMsRef.current = 0;
-      }
-
-      const recordedAt = new Date(now).toISOString();
-      const idleContextName = idleStateContextName || activeSegmentRef.current?.contextName || 'Active Input';
-      await syncIdleActivitySnapshot(activeEntry, idleSeconds, lastActivityAtMs, recordedAt, idleContextName);
-      await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt);
     };
 
     const applySystemLockState = async (payload?: DesktopSystemLockState | null) => {

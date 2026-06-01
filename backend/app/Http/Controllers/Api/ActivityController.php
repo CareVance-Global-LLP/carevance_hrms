@@ -251,6 +251,14 @@ class ActivityController extends Controller
 
     private function isCareVanceWorkspaceRow(array $row): bool
     {
+        // Idle records must always be visible in the timeline even if their
+        // label/name mentions CareVance HRMS (e.g. "System Idle - CareVance HRMS
+        // Workspace"). Reports correctly count this idle time, so hiding it
+        // here would create the 48-min-report / 0-entries mismatch.
+        if (($row['type'] ?? null) === 'idle' || ($row['tool_type'] ?? null) === 'idle') {
+            return false;
+        }
+
         $label = strtolower(trim((string) ($row['label'] ?? '')));
         $rawName = strtolower(trim((string) ($row['raw_name'] ?? '')));
 

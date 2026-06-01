@@ -59,8 +59,11 @@ const isAllowedExtensionOrigin = (origin, allowedExtensionOrigins = []) => {
   );
 
   if (allowedOrigins.size === 0) {
-    return normalizedOrigin.startsWith('chrome-extension://')
-      || normalizedOrigin.startsWith('extension://');
+    // Fail-secure: when no extension origins are configured (development
+    // or a fresh build), reject all extension connections. Allowing any
+    // chrome-extension:// origin would let any installed extension pair
+    // with the local bridge and emit fake tracking events.
+    return false;
   }
 
   return allowedOrigins.has(normalizedOrigin);

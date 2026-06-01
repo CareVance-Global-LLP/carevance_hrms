@@ -55,7 +55,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "CareVance Tracker",
-      "deleteAppDataOnUninstall": true,
+      "deleteAppDataOnUninstall": false,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
