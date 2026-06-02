@@ -21,6 +21,7 @@ import type {
   BrowserTrackingConnectionSyncRecord,
   BrowserTrackingConnectionSyncRequest,
   ProductivityClassificationItem,
+  TeamHierarchyPayload,
   Invoice,
   DailyReport,
   WeeklyReport,
@@ -192,6 +193,13 @@ export const authApi = {
   
   me: () => 
     api.get<ApiResponse<User> | User>('/auth/me'),
+
+  checkEmail: (email: string) =>
+    api.post<{
+      success: boolean;
+      exists: boolean;
+      has_verified_email: boolean;
+    }>('/auth/check-email', { email }),
 
   googleLogin: (credential: string, timezone?: string) =>
     api.post<{
@@ -1413,6 +1421,11 @@ export const permissionApi = {
         plan_feature: string | null;
       }>;
     }> }>('/permissions'),
+};
+
+export const teamApi = {
+  getHierarchy: () =>
+    api.get<TeamHierarchyPayload>('/me/team-hierarchy'),
 };
 
 export default api;

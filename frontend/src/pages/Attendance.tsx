@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlan } from '@/hooks/usePlan';
 import { canReviewApprovalRequest, hasAdminAccess, resolveUserHierarchyLevel, resolveUserRoleLabel } from '@/lib/permissions';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -197,6 +198,8 @@ const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
 };
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const { user, organization } = useAuth();
+  const { hasFeature } = usePlan();
+  const canAccessLeave = hasFeature('leave_management');
   const location = useLocation();
   const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
   const [selectedFilterUserId, setSelectedFilterUserId] = useState<number | ''>(() => readPersistedAttendanceFilters().selectedFilterUserId);
@@ -813,11 +816,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     if (mode === 'full') {
       fetchToday();
     }
-    if (mode === 'full' || mode === 'leave') {
+    if ((mode === 'full' || mode === 'leave') && canAccessLeave) {
       fetchLeaveRequests();
       fetchLeaveBalances();
     }
-  }, [mode]);
+  }, [mode, canAccessLeave]);
 
   useEffect(() => {
     if (mode !== 'full') return;
@@ -854,12 +857,14 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         void fetchCalendar();
         void fetchToday();
       }
-      void fetchLeaveRequests();
-      void fetchLeaveBalances();
+      if (canAccessLeave) {
+        void fetchLeaveRequests();
+        void fetchLeaveBalances();
+      }
     }, 30000);
 
     return () => window.clearInterval(interval);
-  }, [calendarMonth, calendarScope, countryFilter, endDate, isAdmin, mode, selectedFilterUserId, selectedUserId, startDate]);
+  }, [calendarMonth, calendarScope, countryFilter, endDate, isAdmin, mode, selectedFilterUserId, selectedUserId, startDate, canAccessLeave]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -1312,41 +1317,42 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           </SurfaceCard>
         ) : null}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {leaveFeedback ? (
-            <div className="lg:col-span-2">
-              <FeedbackBanner tone={leaveFeedback.tone} message={leaveFeedback.message} />
-            </div>
-          ) : null}
-          <SurfaceCard className="p-4">
-            <h2 className="font-semibold text-gray-900 mb-3">Request Leave</h2>
-            <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Leave Balance</p>
-                <Button onClick={fetchLeaveBalances} variant="ghost" size="sm" disabled={isLeaveBalanceLoading}>
-                  {isLeaveBalanceLoading ? 'Refreshing...' : 'Refresh'}
-                </Button>
+        {canAccessLeave && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {leaveFeedback ? (
+              <div className="lg:col-span-2">
+                <FeedbackBanner tone={leaveFeedback.tone} message={leaveFeedback.message} />
               </div>
-              {isLeaveBalanceLoading ? (
-                <p className="text-xs text-slate-500">Loading leave balances...</p>
-              ) : selfLeaveCategories.length === 0 ? (
-                <p className="text-xs text-slate-500">No leave policy configured yet.</p>
-              ) : (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {selfLeaveCategories.map((category: any) => (
-                    <div key={category.code} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs">
-                      <p className="font-semibold text-slate-900">{category.name}</p>
-                      <p className="text-slate-600">Remaining: <span className="font-medium text-slate-900">{Number(category.remaining || 0).toFixed(1)}</span> / {Number(category.annual_quota || 0).toFixed(1)}</p>
-                      <p className="text-slate-500">Used: {Number(category.used || 0).toFixed(1)}</p>
-                    </div>
-                  ))}
-                  <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs">
-                    <p className="font-semibold text-rose-800">Unpaid Leave</p>
-                    <p className="text-rose-700">Used: {Number(leaveBalances?.self?.unpaid?.used || 0).toFixed(1)}</p>
-                  </div>
+            ) : null}
+            <SurfaceCard className="p-4">
+              <h2 className="font-semibold text-gray-900 mb-3">Request Leave</h2>
+              <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Leave Balance</p>
+                  <Button onClick={fetchLeaveBalances} variant="ghost" size="sm" disabled={isLeaveBalanceLoading}>
+                    {isLeaveBalanceLoading ? 'Refreshing...' : 'Refresh'}
+                  </Button>
                 </div>
-              )}
-            </div>
+                {isLeaveBalanceLoading ? (
+                  <p className="text-xs text-slate-500">Loading leave balances...</p>
+                ) : selfLeaveCategories.length === 0 ? (
+                  <p className="text-xs text-slate-500">No leave policy configured yet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {selfLeaveCategories.map((category: any) => (
+                      <div key={category.code} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs">
+                        <p className="font-semibold text-slate-900">{category.name}</p>
+                        <p className="text-slate-600">Remaining: <span className="font-medium text-slate-900">{Number(category.remaining || 0).toFixed(1)}</span> / {Number(category.annual_quota || 0).toFixed(1)}</p>
+                        <p className="text-slate-500">Used: {Number(category.used || 0).toFixed(1)}</p>
+                      </div>
+                    ))}
+                    <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs">
+                      <p className="font-semibold text-rose-800">Unpaid Leave</p>
+                      <p className="text-rose-700">Used: {Number(leaveBalances?.self?.unpaid?.used || 0).toFixed(1)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
             <div className="mb-3">
               <FieldLabel>Leave Type</FieldLabel>
               <SelectInput
@@ -1482,6 +1488,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             ) : null}
           </SurfaceCard>
         </div>
+      )}
       </div>
     );
   }
@@ -1770,15 +1777,15 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 {todayRecord?.attendance_date || formatLocalDate(new Date())}
                 {lateLabel ? <span className="ml-2 text-red-600 font-medium">({lateLabel})</span> : null}
               </p>
-              {hasApprovedLeaveToday ? (
+              {canAccessLeave && hasApprovedLeaveToday ? (
                 <p className="text-xs text-red-600 mt-1">Approved leave for today. Punch-in is disabled.</p>
               ) : null}
-              {hasHalfDayLeaveToday ? (
+              {canAccessLeave && hasHalfDayLeaveToday ? (
                 <p className="text-xs text-amber-700 mt-1">
                   Half day leave applied for today. Your shift target is reduced to {formatDuration(todayRecord?.shift_target_seconds || 4 * 3600)}.
                 </p>
               ) : null}
-              {leaveToday && !hasApprovedLeaveToday && !hasHalfDayLeaveToday ? (
+              {canAccessLeave && leaveToday && !hasApprovedLeaveToday && !hasHalfDayLeaveToday ? (
                 <p className="text-xs text-slate-600 mt-1">{leaveToday.label}</p>
               ) : null}
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -1814,7 +1821,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
 
             <div className="flex gap-2">
-              <Button onClick={doCheckIn} disabled={isPunchLoading || !!todayRecord?.is_checked_in || hasApprovedLeaveToday} variant="secondary">
+              <Button onClick={doCheckIn} disabled={isPunchLoading || !!todayRecord?.is_checked_in || (canAccessLeave && hasApprovedLeaveToday)} variant="secondary">
                 Punch In
               </Button>
               <Button onClick={doCheckOut} disabled={isPunchLoading || !todayRecord?.is_checked_in}>
@@ -1974,7 +1981,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                     ? [
                         item.date,
                         `status ${status}`,
-                        item?.leave_units ? `leave units ${item.leave_units}` : null,
+                        (canAccessLeave && item?.leave_units) ? `leave units ${item.leave_units}` : null,
                         item?.holiday?.title ? `holiday ${item.holiday.title}` : null,
                         item?.holiday?.country ? `country ${formatCountryLabel(item.holiday.country)}` : null,
                         `worked ${formatDuration(item.worked_seconds || 0)}`,
@@ -2253,23 +2260,25 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       </div>
 
       {selectedRow && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <SurfaceCard className="p-4">
-            <h2 className="font-semibold text-gray-900 mb-3">
-              {selectedRow.user.name} - Leave Dates (Weekend Excluded)
-            </h2>
-            <div className="max-h-72 overflow-auto flex flex-wrap gap-2">
-              {(selectedRow.leave_dates || []).length === 0 ? (
-                <p className="text-sm text-gray-500">No leave dates in selected range.</p>
-              ) : (
-                selectedRow.leave_dates.map((date: string) => (
-                  <span key={date} className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs text-rose-700">
-                    {date}
-                  </span>
-                ))
-              )}
-            </div>
-          </SurfaceCard>
+        <div className={`grid grid-cols-1 gap-4 ${canAccessLeave ? 'lg:grid-cols-2' : 'lg:grid-cols-1'}`}>
+          {canAccessLeave && (
+            <SurfaceCard className="p-4">
+              <h2 className="font-semibold text-gray-900 mb-3">
+                {selectedRow.user.name} - Leave Dates (Weekend Excluded)
+              </h2>
+              <div className="max-h-72 overflow-auto flex flex-wrap gap-2">
+                {(selectedRow.leave_dates || []).length === 0 ? (
+                  <p className="text-sm text-gray-500">No leave dates in selected range.</p>
+                ) : (
+                  selectedRow.leave_dates.map((date: string) => (
+                    <span key={date} className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs text-rose-700">
+                      {date}
+                    </span>
+                  ))
+                )}
+              </div>
+            </SurfaceCard>
+          )}
           <SurfaceCard className="p-4">
             <h2 className="font-semibold text-gray-900 mb-3">
               {selectedRow.user.name} - Present Dates

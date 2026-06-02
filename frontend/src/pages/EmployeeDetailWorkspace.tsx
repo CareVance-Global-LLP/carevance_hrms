@@ -19,29 +19,6 @@ import { useAuth } from '@/contexts/AuthContext';
 const tabs = ['overview', 'about', 'work', 'government', 'bank', 'documents', 'attendance', 'leave', 'activity'];
 const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const createEmptyBankForm = () => ({ payout_method: 'bank_transfer', verification_status: 'unverified', is_default: true });
-  salary_type: 'fixed_monthly',
-  monthly_salary: 0,
-  hourly_rate: 0,
-  working_days: 30,
-  payroll_start_date: new Date().toISOString().slice(0, 10),
-  status: 'active',
-  overtime_enabled: true,
-  overtime_hourly_rate: 0,
-  productivity_bonus_enabled: false,
-  productivity_bonus_rate: 0,
-  bank_name: '',
-  bank_account_number: '',
-  bank_ifsc_swift: '',
-  notes: '',
-});
-const formatPayrollCurrency = (value?: number | string | null) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(value || 0));
-const formatPayrollDuration = (seconds?: number) => `${Math.round(Number(seconds || 0) / 3600)}h`;
-const payrollStatusTone = (status?: string | null) => {
-  if (status === 'verified' || status === 'paid' || status === 'approved') return 'success' as const;
-  if (status === 'pending' || status === 'draft') return 'warning' as const;
-  if (status === 'rejected' || status === 'failed') return 'danger' as const;
-  return 'neutral' as const;
 };
 
 export default function EmployeeDetailWorkspace() {

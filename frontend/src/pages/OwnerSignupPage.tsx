@@ -59,6 +59,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
 
   const googleName = searchParams.get('google_name') || '';
   const googleEmail = searchParams.get('google_email') || '';
+  const emailParam = searchParams.get('email') || '';
   const isGoogleMode = Boolean(googleEmail);
 
   const initialPlanCode = searchParams.get('plan');
@@ -70,7 +71,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
 
   const [companyName, setCompanyName] = useState('');
   const [name, setName] = useState(googleName);
-  const [email, setEmail] = useState(googleEmail);
+  const [email, setEmail] = useState(googleEmail || emailParam);
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [planCode, setPlanCode] = useState(initialMode === 'trial' ? 'basic' : getPricingPlan(initialPlanCode).code);
@@ -109,15 +110,15 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
     }
   }, [signupMode]);
 
-  // Sync name/email from Google query params when they change (e.g. redirect from Google login)
+  // Sync name/email from Google query params or email param when they change (e.g. redirect from Google login or login page)
   useEffect(() => {
     if (googleName) {
       setName(googleName);
     }
-    if (googleEmail) {
-      setEmail(googleEmail);
+    if (googleEmail || emailParam) {
+      setEmail(googleEmail || emailParam);
     }
-  }, [googleName, googleEmail]);
+  }, [googleName, googleEmail, emailParam]);
 
   const selectedPlan = useMemo(() => getPricingPlan(planCode), [planCode]);
   const selectedPlanPrice = getPlanPrice(selectedPlan, billingCycle);
@@ -294,18 +295,18 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
 
               {!isGoogleMode && (
                 <>
-              <div className="mb-6">
-                <GoogleLoginButton type="signup" />
-              </div>
+                  <div className="mb-6">
+                    <GoogleLoginButton type="signup" />
+                  </div>
 
-              <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-200" />
-                </div>
-                <div className="relative flex justify-center">
-                  <span className="bg-white px-2 text-sm text-slate-500">Or sign up with email</span>
-                </div>
-              </div>
+                  <div className="relative my-6">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-200" />
+                    </div>
+                    <div className="relative flex justify-center">
+                      <span className="bg-white px-2 text-sm text-slate-500">Or sign up with email</span>
+                    </div>
+                  </div>
                 </>
               )}
 

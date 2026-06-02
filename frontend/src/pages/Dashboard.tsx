@@ -1,17 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { attendanceApi, attendanceTimeEditApi, dashboardApi, notificationApi } from '@/services/api';
+import { attendanceApi, attendanceTimeEditApi, dashboardApi, notificationApi, teamApi } from '@/services/api';
 import { isLikelyMobile } from '@/lib/mobile';
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
-import { formatDate as formatDateForTimezone, formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
+import { formatDate as formatDateForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
 import { formatDuration, formatTimerClock } from '@/lib/formatters';
 import {
   Activity,
-  Bell,
   Briefcase,
   CheckCircle2,
   ClipboardCheck,
@@ -21,15 +19,16 @@ import {
   Hourglass,
   LogIn,
   LogOut,
-  Search,
+  Network,
   Settings,
+  Share2,
   TrendingUp,
+  Users,
 } from 'lucide-react';
 import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay';
 import { CHAT_NOTIFICATION_TYPES } from '@/lib/chatNotifications';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
-import type { AppNotificationItem, TimeEntry } from '@/types';
-import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
+import type { AppNotificationItem, TeamHierarchyPayload, TimeEntry } from '@/types';
 
 const Card = ({ children, className = '', id }: { children: ReactNode; className?: string; id?: string }) => (
   <section id={id} className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>
@@ -73,15 +72,6 @@ const EmptyInline = ({ children }: { children: ReactNode }) => (
   </div>
 );
 
-type DashboardSearchPayload = {
-  type: 'route' | 'section';
-  to?: string;
-  sectionId?: string;
-};
-
-const formatNotificationDate = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
-  formatDateTimeForTimezone(value, timezone, 'en-US', 'Just now');
-
 export default function Dashboard() {
   const { user } = useAuth();
   const displayTimezone = resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
@@ -93,7 +83,6 @@ export default function Dashboard() {
   }, [navigate]);
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [clockTick, setClockTick] = useState(() => Date.now());
-  const [searchQuery, setSearchQuery] = useState('');
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
   const [weeklyTotal, setWeeklyTotal] = useState(0);
@@ -112,6 +101,8 @@ export default function Dashboard() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
+  const [teamHierarchy, setTeamHierarchy] = useState<TeamHierarchyPayload | null>(null);
+  const [isTeamLoading, setIsTeamLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -166,6 +157,22 @@ export default function Dashboard() {
     };
 
     fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    const fetchTeam = async () => {
+      try {
+        const response: any = await teamApi.getHierarchy();
+        const payload = (response?.data ?? response) as TeamHierarchyPayload;
+        setTeamHierarchy(payload);
+      } catch (error) {
+        console.error('Error fetching team hierarchy:', error);
+      } finally {
+        setIsTeamLoading(false);
+      }
+    };
+
+    fetchTeam();
   }, []);
 
   useEffect(() => {
@@ -288,51 +295,6 @@ export default function Dashboard() {
     : 'Start your timer when you begin a project or task.';
   const timerProject = activeTimer?.project?.name || activeTimer?.task?.project?.name || 'Not assigned';
   const timerTask = activeTimer?.task?.title || 'Not assigned';
-  const dashboardSearchSuggestions = useMemo<SearchSuggestionOption<DashboardSearchPayload>[]>(() => {
-    const routeSuggestions: SearchSuggestionOption<DashboardSearchPayload>[] = [
-      { id: 'route-dashboard', label: 'Dashboard', description: 'Open the main employee dashboard', keywords: ['home', 'summary'], payload: { type: 'route', to: '/dashboard' } },
-      { id: 'route-attendance', label: 'Attendance', description: 'Open attendance and shift records', keywords: ['check in', 'check out', 'shift'], payload: { type: 'route', to: '/attendance' } },
-      { id: 'route-overtime', label: 'Overtime', description: 'Open overtime requests and proofs', keywords: ['extra time', 'proof'], payload: { type: 'route', to: '/overtime' } },
-      { id: 'route-projects', label: 'Projects', description: 'Open assigned projects', keywords: ['work', 'client'], payload: { type: 'route', to: '/projects' } },
-      { id: 'route-tasks', label: 'Tasks', description: 'Open your task list', keywords: ['todo', 'assigned work'], payload: { type: 'route', to: '/tasks' } },
-      { id: 'route-chat', label: 'Chat', description: 'Open team messages', keywords: ['messages', 'conversation'], payload: { type: 'route', to: '/chat' } },
-      { id: 'route-notifications', label: 'Notifications', description: 'Open the notifications center', keywords: ['alerts', 'announcements'], payload: { type: 'route', to: '/notifications' } },
-      { id: 'route-settings', label: 'Settings', description: 'Open profile and preferences', keywords: ['profile', 'preferences'], payload: { type: 'route', to: '/settings' } },
-    ];
-
-    const sectionSuggestions: SearchSuggestionOption<DashboardSearchPayload>[] = [
-      { id: 'section-shift', label: "Today's shift", description: 'Worked time, remaining time, status, and overtime', keywords: ['worked today', 'remaining'], payload: { type: 'section', sectionId: 'todays-shift' } },
-      { id: 'section-attendance-shift', label: 'Attendance & Shift', description: 'Last check in, check out, late, and overtime', keywords: ['attendance', 'check in', 'check out'], payload: { type: 'section', sectionId: 'attendance-shift' } },
-      { id: 'section-focus', label: 'My Focus', description: 'Current work, tasks, and tracked time', keywords: ['current work', 'task'], payload: { type: 'section', sectionId: 'my-focus' } },
-      { id: 'section-work-log', label: 'My Work Log', description: "Today's time entries and running session", keywords: ['time entries', 'running'], payload: { type: 'section', sectionId: 'work-log' } },
-      { id: 'section-time-tracker', label: 'Time Tracker', description: 'Active timer, project, task, and totals', keywords: ['timer', 'tracked'], payload: { type: 'section', sectionId: 'time-tracker-card' } },
-      { id: 'section-quick-actions', label: 'Quick Actions', description: 'Shortcuts to common employee pages', keywords: ['shortcuts'], payload: { type: 'section', sectionId: 'quick-actions' } },
-    ];
-
-    const entrySuggestions = todayEntries.slice(0, 6).map((entry) => ({
-      id: `entry-${entry.id}`,
-      label: getTimeEntryTitle(entry),
-      description: getTimeEntrySubtitle(entry),
-      keywords: ['work log', 'time entry', entry.project?.name || '', entry.task?.title || ''],
-      payload: { type: 'section' as const, sectionId: 'work-log' },
-    }));
-
-    return [...routeSuggestions, ...sectionSuggestions, ...entrySuggestions];
-  }, [todayEntries]);
-
-  const handleSearchSuggestionSelect = (suggestion: SearchSuggestionOption<DashboardSearchPayload>) => {
-    const payload = suggestion.payload;
-    setSearchQuery('');
-
-    if (payload?.type === 'route' && payload.to) {
-      navigate(payload.to);
-      return;
-    }
-
-    if (payload?.type === 'section' && payload.sectionId) {
-      document.getElementById(payload.sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  };
 
   if (isLoading) {
     return <PageLoadingState label="Loading dashboard..." />;
@@ -360,11 +322,10 @@ export default function Dashboard() {
       </header>
 
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <KpiCard to="/attendance" label="Worked Today" value={formatDuration(effectiveWorkedSeconds)} hint={todayDeltaLabel} icon={Clock} tint="bg-blue-50 text-blue-600" />
-        <KpiCard to="/attendance" label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} tint="bg-violet-50 text-violet-600" />
-        <KpiCard to="/time-tracker" label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} tint="bg-amber-50 text-amber-600" />
+        <KpiCard label="Worked Today" value={formatDuration(effectiveWorkedSeconds)} hint={todayDeltaLabel} icon={Clock} tint="bg-blue-50 text-blue-600" />
+        <KpiCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} tint="bg-violet-50 text-violet-600" />
+        <KpiCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} tint="bg-amber-50 text-amber-600" />
         <KpiCard
-          to={hasHalfDayLeaveToday ? '/attendance' : '/tasks'}
           label={hasHalfDayLeaveToday ? 'Leave Today' : 'Active Tasks'}
           value={hasHalfDayLeaveToday ? 'Half Day' : activeTasksCount}
           hint={hasHalfDayLeaveToday ? 'Attendance target reduced' : `${totalTasksCount} total tasks`}
@@ -459,6 +420,12 @@ export default function Dashboard() {
         </Card>
       </section>
 
+      <TeamHierarchyCard
+        id="my-team-card"
+        data={teamHierarchy}
+        isLoading={isTeamLoading}
+      />
+
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card id="work-log" className="scroll-mt-24 p-4">
           <SectionTitle title="My Work Log" />
@@ -551,5 +518,147 @@ export default function Dashboard() {
         </Card>
       </section>
     </div>
+  );
+}
+
+function TeamPersonRow({ name, role, department, subtitle, highlight }: { name: string; role?: string | null; department?: string | null; subtitle?: string | null; highlight?: boolean }) {
+  const initials = (() => {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  })();
+  return (
+    <div className={`flex items-center gap-3 rounded-lg border p-2.5 ${highlight ? 'border-sky-200 bg-sky-50' : 'border-slate-100 bg-white'}`}>
+      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${highlight ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`}>
+        {initials}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold text-slate-900">{name}</p>
+        <p className="truncate text-[11px] text-slate-500">
+          {[role, department].filter(Boolean).join(' · ') || '—'}
+        </p>
+      </div>
+      {subtitle ? <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{subtitle}</span> : null}
+    </div>
+  );
+}
+
+function TeamHierarchyCard({ id, data, isLoading }: { id: string; data: TeamHierarchyPayload | null; isLoading: boolean }) {
+  return (
+    <Card id={id} className="scroll-mt-24 p-4">
+      <SectionTitle
+        title="My Team & Manager"
+        action={
+          <Link to="/my-team" className="inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-700">
+            <Share2 className="h-3.5 w-3.5" />
+            Open full hierarchy
+          </Link>
+        }
+      />
+      {isLoading ? (
+        <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
+          Loading your team…
+        </p>
+      ) : !data ? (
+        <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
+          Team data isn&apos;t available right now. Try refreshing.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <Network className="h-3.5 w-3.5 text-sky-600" />
+              My Manager
+            </div>
+            <div className="mt-2">
+              {data.manager ? (
+                <TeamPersonRow
+                  name={data.manager.name}
+                  role={data.manager.role_name}
+                  department={data.manager.department}
+                  subtitle={data.manager.email ?? undefined}
+                />
+              ) : (
+                <p className="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                  No reporting manager set yet.
+                </p>
+              )}
+            </div>
+            {data.ancestors.length > 0 ? (
+              <div className="mt-3 space-y-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Chain of command</p>
+                {[...data.ancestors].reverse().slice(0, 3).map((person) => (
+                  <TeamPersonRow
+                    key={`ancestor-${person.id}`}
+                    name={person.name}
+                    role={person.role_name}
+                    department={person.department}
+                  />
+                ))}
+                {data.ancestors.length > 3 ? (
+                  <p className="px-1 text-[10px] text-slate-500">+ {data.ancestors.length - 3} more above</p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <Users className="h-3.5 w-3.5 text-emerald-600" />
+              Direct Reports ({data.direct_reports.length})
+            </div>
+            <div className="mt-2 space-y-1.5">
+              {data.direct_reports.length === 0 ? (
+                <p className="rounded-md border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                  You don&apos;t manage anyone yet.
+                </p>
+              ) : (
+                data.direct_reports.slice(0, 4).map((person) => (
+                  <TeamPersonRow
+                    key={`report-${person.id}`}
+                    name={person.name}
+                    role={person.role_name}
+                    department={person.department}
+                  />
+                ))
+              )}
+              {data.direct_reports.length > 4 ? (
+                <p className="px-1 text-[10px] text-slate-500">+ {data.direct_reports.length - 4} more</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <Network className="h-3.5 w-3.5 text-amber-600" />
+              Department
+            </div>
+            <div className="mt-2 space-y-1.5">
+              <TeamPersonRow
+                name={data.department?.name ?? 'Unassigned'}
+                role={data.scope.is_admin ? 'Admin scope' : data.scope.is_manager ? 'Manager scope' : 'Employee scope'}
+                department={`${data.scope.total_members} member${data.scope.total_members === 1 ? '' : 's'} in your view`}
+                highlight={Boolean(data.department)}
+              />
+              {data.managed_departments.filter((d) => !d.is_primary).slice(0, 3).map((dept) => (
+                <TeamPersonRow
+                  key={`dept-${dept.id}`}
+                  name={dept.name}
+                  role={dept.description ?? 'Department'}
+                />
+              ))}
+            </div>
+            <Link
+              to="/my-team"
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              <Network className="h-3.5 w-3.5" />
+              View department hierarchy
+            </Link>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }

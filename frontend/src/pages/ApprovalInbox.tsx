@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { attendanceApi, attendanceTimeEditApi, leaveApi, userApi, resignationApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePlan } from '@/hooks/usePlan';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -172,6 +173,8 @@ const statusTone = (status: string) => {
 
 export default function ApprovalInbox() {
   const { user } = useAuth();
+  const { hasFeature } = usePlan();
+  const canAccessLeave = hasFeature('leave_management');
   const location = useLocation();
   const navigate = useNavigate();
   const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
@@ -206,8 +209,10 @@ export default function ApprovalInbox() {
     const section = String(params.get('section') || '').trim().toLowerCase();
     if (section === 'time-edit' || section === 'time_edit') return 'time-edit';
     if (section === 'resignation') return 'resignation';
+    // Default to time-edit if user doesn't have leave_management feature
+    if (!canAccessLeave) return 'time-edit';
     return 'leave';
-  }, [params]);
+  }, [params, canAccessLeave]);
   const activeView = useMemo<ApprovalView>(() => {
     const view = String(params.get('view') || '').trim().toLowerCase();
     return view === 'history' ? 'history' : 'pending';
@@ -811,7 +816,7 @@ export default function ApprovalInbox() {
           </div>
           <div className="flex flex-wrap gap-2">
             {[
-              { id: 'leave', label: 'Leave Approval', count: pendingLeaveCards.length },
+              ...(canAccessLeave ? [{ id: 'leave', label: 'Leave Approval', count: pendingLeaveCards.length }] : []),
               { id: 'time-edit', label: 'Edit Time Approval', count: pendingTimeEditCards.length },
               { id: 'resignation', label: 'Resignation', count: pendingResignations.length },
             ].map((section) => (

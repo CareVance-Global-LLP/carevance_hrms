@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { isLikelyMobile } from '@/lib/mobile';
+import { authApi } from '@/services/api';
 import {
   AlertCircle,
   ArrowRight,
@@ -57,6 +58,16 @@ export default function Login() {
     setRememberMe(shouldRemember);
     
     try {
+      // First check if email exists in database
+      const checkResponse = await authApi.checkEmail(submittedEmail);
+      const emailExists = checkResponse.data.exists;
+      
+      // If email doesn't exist, redirect to signup with pre-filled email
+      if (!emailExists) {
+        navigate(`/signup-owner?email=${encodeURIComponent(submittedEmail)}`);
+        return;
+      }
+
       analytics.trackEvent('login_submitted', {
         source: 'login-page',
       });
@@ -70,6 +81,7 @@ export default function Login() {
     } catch (err: any) {
       const errorCode = err.response?.data?.error_code;
       const responseEmail = err.response?.data?.email || submittedEmail;
+      const status = err.response?.status;
 
       if (errorCode === 'EMAIL_NOT_VERIFIED') {
         navigate(`/verify-email?email=${encodeURIComponent(responseEmail)}&status=pending-login`);
@@ -89,9 +101,29 @@ export default function Login() {
         return;
       }
 
-      // Show specific field error if available (e.g., email validation error), otherwise show general message
+      if (status === 500) {
+        setError('The server hit an unexpected error. Please try again in a moment or contact support if it persists.');
+        return;
+      }
+
+      if (status === 429 || errorCode === 'TOO_MANY_REQUESTS') {
+        setError('Too many login attempts. Please wait a minute and try again.');
+        return;
+      }
+
+      if (status && status >= 500) {
+        setError('The server is temporarily unavailable. Please try again shortly.');
+        return;
+      }
+
+      const serverMessage = err.response?.data?.message;
+      if (serverMessage && serverMessage !== 'The given data was invalid.') {
+        setError(serverMessage);
+        return;
+      }
+
       const fieldError = err.response?.data?.errors?.email?.[0] || err.response?.data?.errors?.password?.[0];
-      setError(fieldError || err.response?.data?.message || 'Invalid email or password');
+      setError(fieldError || 'Invalid email or password');
     } finally {
       setIsLoading(false);
     }
