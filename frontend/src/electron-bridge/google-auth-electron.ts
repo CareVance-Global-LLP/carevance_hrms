@@ -1,6 +1,10 @@
 // This file should be added to your Electron desktop app main process
 // File: electron-main/google-auth.ts or similar
 
+// @ts-nocheck
+// This file is only meant for Electron main process, not for web builds
+// It will have type errors when building for web but that's expected
+
 import { BrowserWindow, ipcMain, BrowserWindowConstructorOptions } from 'electron';
 
 interface GoogleAuthResult {
