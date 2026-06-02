@@ -303,25 +303,77 @@ export default function PaymentPage() {
               isPendingAddSeats={isPendingAddSeats}
               isNewPaidSignup={isNewPaidSignup}
               isPendingUpgrade={isPendingUpgrade}
-              onSuccess={() => {
-                setPaymentStatus('success');
+              onSuccess={async () => {
+                setIsProcessing(true);
                 
-                // Update organization to active status
-                const updatedOrg = {
-                  ...organization,
-                  subscription_status: 'active' as const,
-                  subscription_intent: 'paid' as const,
-                  subscription_expires_at: billingCycle === 'yearly'
-                    ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-                    : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                  pending_plan_code: null,
-                  pending_billing_cycle: null,
-                  pending_seats: null,
-                  pending_upgrade_amount: null,
-                };
-                updateOrganization(updatedOrg);
-                
-                setTimeout(() => navigate('/dashboard', { replace: true }), 1500);
+                try {
+                  if (isPendingUpgrade) {
+                    const response = await billingApi.confirmUpgrade({ payment_intent_id: 'upi_pending' });
+                    
+                    if (response.data?.success === false) {
+                      setPaymentError(response.data?.message || 'Upgrade failed. Please try again.');
+                      setPaymentStatus('error');
+                      setIsProcessing(false);
+                      return;
+                    }
+                    
+                    const updatedOrg = {
+                      ...organization,
+                      subscription_status: 'active' as const,
+                      plan_code: response.data.plan_code || planCode,
+                      billing_cycle: organization.pending_billing_cycle || organization.billing_cycle,
+                      max_seats: seats,
+                      subscription_intent: 'paid' as const,
+                      subscription_expires_at: response.data.subscription_expires_at,
+                      pending_plan_code: null,
+                      pending_billing_cycle: null,
+                      pending_seats: null,
+                      pending_upgrade_amount: null,
+                    };
+                    updateOrganization(updatedOrg);
+                  } else if (isPendingAddSeats) {
+                    const response = await billingApi.confirmAddSeats({ payment_intent_id: 'upi_pending' });
+                    
+                    if (response.data?.success === false) {
+                      setPaymentError(response.data?.message || 'Failed to add seats. Please try again.');
+                      setPaymentStatus('error');
+                      setIsProcessing(false);
+                      return;
+                    }
+                    
+                    const updatedOrg = {
+                      ...organization,
+                      max_seats: response.data.max_seats || seats,
+                      subscription_intent: 'paid' as const,
+                      pending_seats: null,
+                      pending_billing_cycle: null,
+                      pending_upgrade_amount: null,
+                    };
+                    updateOrganization(updatedOrg);
+                  } else {
+                    const response = await billingApi.mockPay();
+                    
+                    if (response?.data?.success === false) {
+                      setPaymentError(response.data?.message || 'Payment failed. Please try again.');
+                      setPaymentStatus('error');
+                      setIsProcessing(false);
+                      return;
+                    }
+                    
+                    const updatedOrg = { ...organization, subscription_status: 'active' as const };
+                    updateOrganization(updatedOrg);
+                  }
+                  
+                  setPaymentStatus('success');
+                  setTimeout(() => navigate('/dashboard', { replace: true }), 1500);
+                } catch (err: any) {
+                  const errorMsg = err?.response?.data?.message || err?.response?.data?.error || 'Payment failed. Please try again.';
+                  console.error('Payment confirmation failed:', err, errorMsg);
+                  setPaymentError(errorMsg);
+                  setPaymentStatus('error');
+                } finally {
+                  setIsProcessing(false);
+                }
               }}
               onError={(error) => {
                 setPaymentError(error);
