@@ -24,6 +24,7 @@ class RoleMiddleware
 
         $hasAccess = collect($rolesArray)->contains(function (string $allowedRole) use ($userLevel) {
             return match (strtolower($allowedRole)) {
+                'super_admin' => $userLevel === 0,
                 'admin' => $userLevel <= 10,
                 'manager' => $userLevel < 100,
                 'employee' => $userLevel >= 100,

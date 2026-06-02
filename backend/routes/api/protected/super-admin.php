@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\SuperAdminController;
+use App\Http\Controllers\Api\PlanController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['role:super_admin'])->group(function () {
@@ -26,4 +27,13 @@ Route::middleware(['role:super_admin'])->group(function () {
     // Export & Search
     Route::get('/super-admin/organizations/export', [SuperAdminController::class, 'exportOrganizations']);
     Route::get('/super-admin/search', [SuperAdminController::class, 'globalSearch']);
+    
+    // Plan Management
+    Route::get('/super-admin/plans', [PlanController::class, 'index']);
+    Route::post('/super-admin/plans', [PlanController::class, 'store']);
+    Route::get('/super-admin/plans/{code}', [PlanController::class, 'show']);
+    Route::put('/super-admin/plans/{code}', [PlanController::class, 'update']);
+    Route::delete('/super-admin/plans/{code}', [PlanController::class, 'destroy']);
+    Route::get('/super-admin/plans/comparison', [PlanController::class, 'comparison']);
+    Route::post('/super-admin/plans/{code}/toggle-feature', [PlanController::class, 'toggleFeature']);
 });

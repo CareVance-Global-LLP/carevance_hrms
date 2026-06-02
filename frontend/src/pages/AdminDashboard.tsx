@@ -39,8 +39,11 @@ import {
   screenshotApi,
   taskApi,
   userApi,
+  attendanceTimeEditApi,
+  resignationApi,
 } from '@/services/api';
 import { SelectInput } from '@/components/ui/FormField';
+import PendingApprovalsCard from '@/components/dashboard/PendingApprovalsCard';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 type DashboardEmployee = {
@@ -861,15 +864,44 @@ export default function AdminDashboard() {
     .map((employee) => effectiveLeaveUserIds.has(employee.id) ? { ...employee, status: 'On Leave' as const } : employee);
 
   const totalEmployees = employees.length;
-  const presentLateInRange = attendanceRows.filter((row: any) => Number(row.late_days || row.late_minutes || 0) > 0).length;
+  
+  const userId = user?.id || user?.employee_id || 0;
+  const userAttendanceRow = userId > 0 ? attendanceRows.find((row: any) => Number(row.user?.id || row.user_id || row.employee_id) === userId) : null;
+  const userLateMinutes = Number(userAttendanceRow?.late_days || userAttendanceRow?.late_minutes || 0);
+  const userIsLateFlag = userAttendanceRow?.is_late === true || userAttendanceRow?.is_late === 'true' || userAttendanceRow?.is_late === 1;
+  const userIsLate = userLateMinutes > 0 || userIsLateFlag;
+  const userHasAttendance = userAttendanceRow && (Number(userAttendanceRow?.present_days || 0) > 0 || hasActiveAttendance(userAttendanceRow));
+  const userIsOnLeave = userId > 0 && effectiveLeaveUserIds.has(userId);
+  
+  const managerIsPresentLate = userId > 0 && userIsLate && userHasAttendance;
+  const managerIsPresentOnTime = userId > 0 && !userIsLate && userHasAttendance;
+  const managerIsAbsent = userId > 0 && !userHasAttendance && !userIsOnLeave;
+  const managerIsOnLeave = userId > 0 && userIsOnLeave;
+  
+  const presentLateInRange = attendanceRows.filter((row: any) => {
+    const rowUserId = Number(row.user?.id || row.user_id || row.employee_id);
+    if (rowUserId === userId) return false;
+    const lateMinutes = Number(row.late_days || row.late_minutes || 0);
+    const isLateFlag = row.is_late === true || row.is_late === 'true' || row.is_late === 1;
+    const hasAttendance = Number(row.present_days || 0) > 0 || hasActiveAttendance(row);
+    return lateMinutes > 0 || (isLateFlag && hasAttendance);
+  }).length;
   const presentOnTimeInRange = attendanceRows.filter((row: any) => {
-    const isLate = Number(row.late_days || row.late_minutes || 0) > 0;
+    const rowUserId = Number(row.user?.id || row.user_id || row.employee_id);
+    if (rowUserId === userId) return false;
+    const lateMinutes = Number(row.late_days || row.late_minutes || 0);
+    const isLateFlag = row.is_late === true || row.is_late === 'true' || row.is_late === 1;
+    const isLate = lateMinutes > 0 || isLateFlag;
     return !isLate && (Number(row.present_days || 0) > 0 || hasActiveAttendance(row));
   }).length;
-  const totalPresentInRange = presentOnTimeInRange + presentLateInRange;
+  
+  const finalPresentLateInRange = presentLateInRange + (managerIsPresentLate ? 1 : 0);
+  const finalPresentOnTimeInRange = presentOnTimeInRange + (managerIsPresentOnTime ? 1 : 0);
+  const finalOnLeave = effectiveLeaveUserIds.size + (managerIsOnLeave && !effectiveLeaveUserIds.has(userId) ? 1 : 0);
+  const totalPresentInRange = finalPresentOnTimeInRange + finalPresentLateInRange;
   const presentPercent = totalEmployees ? Math.round((totalPresentInRange / totalEmployees) * 100) : 0;
-  const onLeave = effectiveLeaveUserIds.size;
-  const absentCount = Math.max(0, totalEmployees - presentOnTimeInRange - presentLateInRange - onLeave);
+  const onLeave = finalOnLeave;
+  const absentCount = Math.max(0, totalEmployees - finalPresentOnTimeInRange - finalPresentLateInRange - onLeave + (managerIsAbsent && !effectiveLeaveUserIds.has(userId) ? 1 : 0));
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
   const dashboardSummary = data.summary as any;
@@ -881,11 +913,21 @@ export default function AdminDashboard() {
     .filter((day) => dateInRange(day?.date, selectedRange))
     .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
   const attendanceOnTimeDays = calendarDaysInRange.length
-    ? calendarDaysInRange.filter((day) => ['present', 'checked_in'].includes(String(day.status || '')) && Number(day.late_minutes || 0) <= 0).length
-    : presentOnTimeInRange;
+    ? calendarDaysInRange.filter((day) => {
+        const lateMinutes = Number(day.late_minutes || 0);
+        const isLateFlag = day.is_late === true || day.is_late === 'true' || day.is_late === 1;
+        const isLate = lateMinutes > 0 || isLateFlag;
+        return !isLate && (['present', 'checked_in'].includes(String(day.status || '')) || day.is_checked_in);
+      }).length
+    : finalPresentOnTimeInRange;
   const attendanceLatePresentDays = calendarDaysInRange.length
-    ? calendarDaysInRange.filter((day) => Number(day.late_minutes || 0) > 0).length
-    : presentLateInRange;
+    ? calendarDaysInRange.filter((day) => {
+        const lateMinutes = Number(day.late_minutes || 0);
+        const isLateFlag = day.is_late === true || day.is_late === 'true' || day.is_late === 1;
+        const hasAttendance = ['present', 'checked_in'].includes(String(day.status || '')) || day.is_checked_in;
+        return (lateMinutes > 0 || isLateFlag) && hasAttendance;
+      }).length
+    : finalPresentLateInRange;
   const attendancePresentDays = attendanceOnTimeDays + attendanceLatePresentDays;
   const attendanceLeaveDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => String(day.status || '').includes('leave') || day.is_leave).length
@@ -893,14 +935,33 @@ export default function AdminDashboard() {
   const attendanceAbsentDays = calendarDaysInRange.length
     ? calendarDaysInRange.filter((day) => {
       const dayDate = String(day.date || '').slice(0, 10);
-      return String(day.status || 'none') === 'none' && !day.is_holiday && dayDate <= todayIso();
+      const isWeekend = day.is_weekend === true || day.is_weekend === 'true';
+      const isHoliday = day.is_holiday === true || day.is_holiday === 'true';
+      const isLeave = day.status?.includes('leave') || day.is_leave;
+      const hasAttendance = ['present', 'checked_in'].includes(String(day.status || '')) || day.is_checked_in;
+      return dayDate <= todayIso() && !isWeekend && !isHoliday && !isLeave && !hasAttendance;
     }).length
     : absentCount;
-  const selectedEmployeePieStatus = attendanceLatePresentDays > 0
-    ? { label: 'Present Late', value: 1, color: '#f97316', bgClass: 'bg-orange-500' }
-    : attendancePresentDays > 0
-      ? { label: 'Present', value: 1, color: '#16a34a', bgClass: 'bg-green-600' }
-      : { label: 'Absent', value: 1, color: '#dc2626', bgClass: 'bg-red-600' };
+  const selectedEmployeePieStatus = (() => {
+    // Check if employee is actively working today
+    const todayEmployee = attendanceRows.find((row: any) => {
+      const empId = Number(row.user?.id || row.user_id || row.employee_id);
+      return empId === selectedEmployeeId;
+    });
+    
+    const isCheckedIn = hasActiveAttendance(todayEmployee);
+    const lateMinutes = Number(todayEmployee?.late_days || todayEmployee?.late_minutes || 0);
+    const isLateFlag = todayEmployee?.is_late === true || todayEmployee?.is_late === 'true' || todayEmployee?.is_late === 1;
+    const isLate = lateMinutes > 0 || isLateFlag;
+    
+    if (isCheckedIn && isLate) {
+      return { label: 'Present Late', value: 1, color: '#f97316', bgClass: 'bg-orange-500' };
+    }
+    if (isCheckedIn || attendancePresentDays > 0 || Number(todayEmployee?.present_days || 0) > 0) {
+      return { label: 'Present', value: 1, color: '#16a34a', bgClass: 'bg-green-600' };
+    }
+    return { label: 'Absent', value: 1, color: '#dc2626', bgClass: 'bg-red-600' };
+  })();
   const isSingleEmployeeDay = dashboardScope === 'employee' && selectedStartDate === selectedEndDate;
   const attendancePieItems = dashboardScope === 'employee'
     ? isSingleEmployeeDay
@@ -913,7 +974,7 @@ export default function AdminDashboard() {
     : [
       { label: 'Present', value: totalPresentInRange, color: '#16a34a', bgClass: 'bg-green-600' },
       { label: 'Absent', value: absentCount, color: '#dc2626', bgClass: 'bg-red-600' },
-      { label: 'Present Late', value: presentLateInRange, color: '#f97316', bgClass: 'bg-orange-500' },
+      { label: 'Present Late', value: finalPresentLateInRange, color: '#f97316', bgClass: 'bg-orange-500' },
     ];
 
   const activities: DashboardActivity[] = data.auditLogs.map((item: any, index: number) => ({
@@ -1037,7 +1098,7 @@ export default function AdminDashboard() {
 
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
   const absentPercent = totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0;
-  const presentLatePercent = totalEmployees ? Math.round((presentLateInRange / totalEmployees) * 100) : 0;
+  const presentLatePercent = totalEmployees ? Math.round((finalPresentLateInRange / totalEmployees) * 100) : 0;
   const attendanceByEmployeeId = new Map(attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
   const overallByUserRows = safeArray<any>(data.overall.by_user)
     .filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || 0)));
@@ -1392,7 +1453,7 @@ export default function AdminDashboard() {
   const attendanceHealth = [
     { label: 'Working now', value: workingCount, color: 'bg-emerald-500' },
     { label: 'Not started', value: notWorkingCount, color: 'bg-slate-400' },
-    { label: 'Present late', value: presentLateInRange, color: 'bg-rose-500' },
+    { label: 'Present late', value: finalPresentLateInRange, color: 'bg-rose-500' },
     { label: 'On leave', value: onLeave, color: 'bg-amber-500' },
     { label: 'Absent', value: attendanceAbsentDays, color: 'bg-red-500' },
   ];
@@ -1883,7 +1944,7 @@ export default function AdminDashboard() {
         />
         <KpiCard
           label="Present Late"
-          value={presentLateInRange}
+          value={finalPresentLateInRange}
           hint={`${presentLatePercent}% of total`}
           icon={Clock3}
           tint="bg-rose-50 text-rose-600"
@@ -1915,39 +1976,7 @@ export default function AdminDashboard() {
             ))}
           </div>
         </Card>
-        <Card id="department-distribution" className="scroll-mt-24 p-4">
-          <SectionTitle title="Department Distribution" action={<Link to="/employees/teams" className="text-xs font-medium text-blue-600">All Departments</Link>} />
-          {departmentCounts.length ? (
-            <ResponsiveContainer width="100%" height={Math.max(60, departmentCounts.length * 36)}>
-              <BarChart data={departmentCounts} layout="vertical" margin={{ top: 4, right: 40, left: 5, bottom: 4 }} barCategoryGap="20%">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="department" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={80} />
-                <Tooltip
-                  content={({ active, payload }: any) => {
-                    if (!active || !payload?.length) return null;
-                    const row = payload[0].payload;
-                    return (
-                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
-                        <p className="text-xs font-bold text-slate-900">{row.department}</p>
-                        <p className="mt-1 text-xs text-slate-500">Employees: <span className="font-semibold text-slate-700">{row.count}</span></p>
-                        <p className="mt-1 text-xs text-slate-500">Percentage: <span className="font-semibold text-slate-700">{row.percentage}%</span></p>
-                      </div>
-                    );
-                  }}
-                  cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
-                  offset={28}
-                />
-                <Bar dataKey="count" name="Employees" radius={[0, 4, 4, 0]} barSize={16}>
-                  {departmentCounts.map((item, index) => (
-                    <Cell key={item.department} fill={departmentPalette[index % departmentPalette.length]} />
-                  ))}
-                  <LabelList dataKey="count" position="right" style={{ fontSize: '11px', fill: '#64748b', fontWeight: 500 }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <EmptyInline>No departments found</EmptyInline>}
-        </Card>
+        <PendingApprovalsCard />
       </section>
 
       <Card id="scope-summary" className="scroll-mt-24 p-4">
@@ -2141,11 +2170,11 @@ export default function AdminDashboard() {
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                 <p className="text-[11px] text-slate-500">Present on time</p>
-                <p className="mt-2 text-xl font-semibold text-blue-700">{presentOnTimeInRange}</p>
+                <p className="mt-2 text-xl font-semibold text-blue-700">{finalPresentOnTimeInRange}</p>
               </div>
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
                 <p className="text-[11px] text-slate-500">Present late</p>
-                <p className="mt-2 text-xl font-semibold text-rose-600">{presentLateInRange}</p>
+                <p className="mt-2 text-xl font-semibold text-rose-600">{finalPresentLateInRange}</p>
               </div>
             </div>
             <div className="rounded-lg border border-slate-100 p-4">
@@ -2903,7 +2932,7 @@ export default function AdminDashboard() {
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
               <p className="text-[11px] text-slate-500">Late Today</p>
-              <p className="mt-1 text-xl font-semibold text-orange-700">{presentLateInRange}</p>
+              <p className="mt-1 text-xl font-semibold text-orange-700">{finalPresentLateInRange}</p>
             </div>
           </div>
           <div className="mt-3 rounded-lg border border-slate-100 bg-white p-3 text-xs text-slate-600">

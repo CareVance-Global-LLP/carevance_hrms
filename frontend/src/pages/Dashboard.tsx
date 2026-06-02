@@ -272,10 +272,13 @@ export default function Dashboard() {
   const checkInAt = attendanceToday?.check_in_at || punches[0]?.punch_in_at || null;
   const checkOutAt = attendanceToday?.check_out_at || latestPunch?.punch_out_at || null;
   const lateMinutes = Number(attendanceToday?.late_minutes || 0);
+  const isLate = lateMinutes > 0 || attendanceToday?.is_late === true || attendanceToday?.is_late === 'true' || attendanceToday?.is_late === 1;
   const attendanceLabel = hasHalfDayLeaveToday
     ? 'Half day leave'
     : isCheckedIn
-      ? 'Checked in'
+      ? isLate
+        ? 'Late'
+        : 'Checked in'
       : checkOutAt
         ? 'Checked out'
         : 'Not checked in';
@@ -415,8 +418,8 @@ export default function Dashboard() {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-100 p-3">
                 <p className="text-slate-500">Late</p>
-                <p className={`mt-2 font-semibold ${lateMinutes > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                  {lateMinutes > 0
+                <p className={`mt-2 font-semibold ${isLate ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {isLate
                     ? (() => {
                         const hrs = Math.floor(lateMinutes / 60);
                         const mins = lateMinutes % 60;

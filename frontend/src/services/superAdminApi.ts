@@ -66,4 +66,26 @@ export const superAdminApi = {
   
   searchGlobal: (query: string) =>
     api.get('/super-admin/search', { params: { q: query } }),
+  
+  // Plans
+  getPlans: () =>
+    api.get('/super-admin/plans'),
+  
+  getPlan: (code: string) =>
+    api.get(`/super-admin/plans/${code}`),
+  
+  createPlan: (data: any) =>
+    api.post('/super-admin/plans', data),
+  
+  updatePlan: (code: string, data: any) =>
+    api.put(`/super-admin/plans/${code}`, data),
+  
+  deletePlan: (code: string) =>
+    api.delete(`/super-admin/plans/${code}`),
+  
+  getPlanComparison: () =>
+    api.get('/super-admin/plans/comparison'),
+  
+  togglePlanFeature: (code: string, feature: string, enabled: boolean) =>
+    api.post(`/super-admin/plans/${code}/toggle-feature`, { feature, enabled }),
 };

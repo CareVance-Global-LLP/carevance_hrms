@@ -83,6 +83,7 @@ const SuperAdminOrganizationDetail = lazyWithChunkRetry(() => import('@/pages/su
 const SuperAdminCreateOrganization = lazyWithChunkRetry(() => import('@/pages/super-admin/CreateOrganization'));
 const SuperAdminUsers = lazyWithChunkRetry(() => import('@/pages/super-admin/Users'));
 const SuperAdminBilling = lazyWithChunkRetry(() => import('@/pages/super-admin/Billing'));
+const SuperAdminPlans = lazyWithChunkRetry(() => import('@/pages/super-admin/Plans'));
 const GoogleSignupCompletion = lazyWithChunkRetry(() => import('@/pages/GoogleSignupCompletion'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
@@ -550,6 +551,7 @@ function App() {
             <Route path="super-admin/companies/:companyId" element={<SuperAdminRoute><SuperAdminCompanyDetail /></SuperAdminRoute>} />
             <Route path="super-admin/users" element={<SuperAdminRoute><SuperAdminUsers /></SuperAdminRoute>} />
             <Route path="super-admin/billing" element={<SuperAdminRoute><SuperAdminBilling /></SuperAdminRoute>} />
+            <Route path="super-admin/plans" element={<SuperAdminRoute><SuperAdminPlans /></SuperAdminRoute>} />
             <Route path="legacy/reports" element={<AdminRoute><Reports /></AdminRoute>} />
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
             <Route path="legacy/user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />

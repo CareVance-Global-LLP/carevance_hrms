@@ -729,10 +729,14 @@ export default function Layout() {
     );
   };
 
+  // Hide sidebar for Super Admin users
+  const showSidebar = !isSuperAdminView;
+
   if (!isDesktopShell) {
     return (
-      <div className="min-h-screen bg-[#f5f7fb] lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
-        <aside className="hidden h-screen border-r border-slate-200 bg-white lg:sticky lg:top-0 lg:flex lg:flex-col">
+      <div className={`min-h-screen bg-[#f5f7fb] ${showSidebar ? 'lg:grid lg:grid-cols-[232px_minmax(0,1fr)]' : ''}`}>
+        {showSidebar && (
+          <aside className="hidden h-screen border-r border-slate-200 bg-white lg:sticky lg:top-0 lg:flex lg:flex-col">
           <div className="flex h-16 items-center border-b border-slate-100 px-5">
             <BrandLogo variant="full" size="sm" className="max-w-[9.75rem]" />
           </div>
@@ -769,8 +773,9 @@ export default function Layout() {
             })}
           </nav>
         </aside>
+        )}
 
-        <main className="min-w-0 px-4 py-4 lg:pr-5 lg:py-4 xl:pr-6">
+        <main className={`min-w-0 px-4 py-4 lg:pr-5 lg:py-4 xl:pr-6 ${!showSidebar ? 'lg:col-span-full' : ''}`}>
           <div className="flex items-center justify-between gap-4 mb-5">
             <div className="flex items-center gap-3 shrink-0">
               <BrandLogo variant="full" size="sm" className="max-w-[9.75rem]" />
