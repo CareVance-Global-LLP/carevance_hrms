@@ -957,3 +957,61 @@ export interface ProductivityClassificationItem {
   total_duration_seconds: number;
   last_seen_at: string;
 }
+
+// Team Hierarchy Types
+export interface TeamPerson {
+  id: number;
+  name: string;
+  email?: string | null;
+  avatar?: string | null;
+  role: string | null;
+  role_id: number | null;
+  role_name: string;
+  hierarchy_level: number;
+  designation?: string | null;
+  department: string | null;
+  department_id: number | null;
+}
+
+export interface TeamHierarchyMember {
+  id: number;
+  name: string;
+  email: string | null;
+  avatar: string | null;
+  role: string | null;
+  role_id: number | null;
+  role_name: string;
+  hierarchy_level: number;
+  reporting_manager_id: number | null;
+  designation: string | null;
+  department: string;
+  department_id: number | null;
+  groups: Array<{ id: number; name: string; slug: string | null }>;
+  is_self: boolean;
+}
+
+export interface TeamManagedDepartment {
+  id: number;
+  name: string;
+  slug: string | null;
+  description: string | null;
+  is_active: boolean;
+  is_primary: boolean;
+}
+
+export interface TeamHierarchyPayload {
+  current_user: TeamPerson & { department: { id: number; name: string; slug: string | null } | null };
+  manager: TeamPerson | null;
+  ancestors: TeamPerson[];
+  direct_reports: TeamPerson[];
+  direct_reports_count: number;
+  department: { id: number; name: string; slug: string | null } | null;
+  managed_departments: TeamManagedDepartment[];
+  scope: {
+    is_admin: boolean;
+    is_manager: boolean;
+    level: number;
+    total_members: number;
+  };
+  members: TeamHierarchyMember[];
+}

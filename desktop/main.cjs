@@ -1,11 +1,28 @@
 console.log('[Desktop] Starting main.cjs...');
 console.log('[Desktop] __dirname:', __dirname);
 
+// Load environment variables from frontend .env file
+const path = require('path');
+const fs = require('fs');
+
+// Try to load .env from the frontend directory (where VITE_GOOGLE_CLIENT_ID is defined)
+const dotenv = require('dotenv');
+const frontendEnvPath = path.join(__dirname, '..', 'frontend', '.env');
+const rootEnvPath = path.join(__dirname, '..', '.env');
+
+if (fs.existsSync(frontendEnvPath)) {
+  console.log('[Desktop] Loading environment variables from:', frontendEnvPath);
+  dotenv.config({ path: frontendEnvPath });
+} else if (fs.existsSync(rootEnvPath)) {
+  console.log('[Desktop] Loading environment variables from:', rootEnvPath);
+  dotenv.config({ path: rootEnvPath });
+} else {
+  console.log('[Desktop] No .env file found, using existing environment variables');
+}
+
 const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage, Tray, Menu } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
-const path = require('path');
-const fs = require('fs');
 const { execSync } = require('child_process');
 const { NsisUpdater } = require('electron-updater');
 const { createBrowserTrackingBridge } = require('./browser-tracking-bridge.cjs');
@@ -849,7 +866,6 @@ const createWindow = async () => {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
       backgroundThrottling: false,
     },
   });
@@ -959,11 +975,15 @@ const createWindow = async () => {
     }
   });
 
+  // Allow GIS popups (Google Identity Services) for sign-in
+  // Popup inherits parent webPreferences (no sandbox) so window.opener.postMessage works
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.includes('accounts.google.com') || url.includes('google.com/signin') || url.includes('google.com/o/oauth2')) {
+      return { action: 'allow' };
+    }
+
     if (isAllowedExternalUrl(url, { allowLocalHttp: true })) {
-      void openExternalUrl(url, { allowLocalHttp: true }).catch(() => {
-        // Ignore unsupported or failed external launches initiated by web content.
-      });
+      void openExternalUrl(url, { allowLocalHttp: true }).catch(() => {});
     }
     return { action: 'deny' };
   });

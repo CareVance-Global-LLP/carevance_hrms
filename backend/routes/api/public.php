@@ -22,6 +22,7 @@ Route::get('/auth/email/verify/{id}/{hash}', [VerifyEmailController::class, 'ver
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth.register');
 Route::post('/auth/signup-owner', [AuthController::class, 'signupOwner'])->middleware('throttle:auth.register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth.login');
+Route::post('/auth/check-email', [AuthController::class, 'checkEmail'])->middleware('throttle:auth.login');
 Route::post('/auth/forgot-password', [PasswordResetController::class, 'store'])->middleware('throttle:auth.password.request');
 Route::post('/auth/email/verification-notification/request', [AuthController::class, 'requestVerificationEmail'])
     ->middleware('throttle:auth.verification.resend.public');

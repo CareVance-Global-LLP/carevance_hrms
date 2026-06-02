@@ -2,7 +2,7 @@ import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useState } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle } from 'lucide-react';
 
 interface GoogleLoginButtonProps {
   type?: 'login' | 'signup';
@@ -12,52 +12,65 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
   const navigate = useNavigate();
   const { googleLogin } = useAuth();
   const [error, setError] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const handleSuccess = async (credentialResponse: CredentialResponse) => {
+  const isDesktopApp = typeof window !== 'undefined' &&
+    Boolean((window as any).desktopTracker);
+
+  const handleCredential = async (credential: string) => {
     setError('');
-    setIsLoading(true);
 
     try {
-      if (credentialResponse.credential) {
-        // Save current URL params BEFORE Google API call (in case redirect strips them)
-        const currentSearch = window.location.search;
-        sessionStorage.setItem('google_signup_fallback_params', currentSearch);
+      const currentSearch = window.location.search;
+      sessionStorage.setItem('google_signup_fallback_params', currentSearch);
 
-        const result = await googleLogin(credentialResponse.credential);
+      const result = await googleLogin(credential);
 
-        // Support both new backend (has_workspace) and old backend (needs_completion)
-        const hasWorkspace = (result as any).has_workspace === true ||
-          ((result as any).needs_completion === false && !(result as any).is_new_user);
-        const needsCompletion = (result as any).has_workspace === false ||
-          (result as any).needs_completion === true ||
-          (result as any).is_new_user === true;
+      const hasWorkspace = (result as any).has_workspace === true ||
+        ((result as any).needs_completion === false && !(result as any).is_new_user);
+      const needsCompletion = (result as any).has_workspace === false ||
+        (result as any).needs_completion === true ||
+        (result as any).is_new_user === true;
 
-        if (hasWorkspace && !needsCompletion) {
-          navigate('/dashboard');
+      if (hasWorkspace && !needsCompletion) {
+        if (isDesktopApp) {
+          setShowSuccess(true);
+          setTimeout(() => {
+            navigate('/dashboard');
+          }, 2000);
         } else {
-          // No workspace yet - redirect to owner signup with pre-filled Google data
-          // Restore original params from sessionStorage, fallback to current URL
-          const fallbackParams = sessionStorage.getItem('google_signup_fallback_params') || '';
-          const params = new URLSearchParams(fallbackParams || window.location.search);
-          sessionStorage.removeItem('google_signup_fallback_params');
-
-          const googleData = (result as any).google_data || {};
-          if (googleData.name) params.set('google_name', googleData.name);
-          if (googleData.email) params.set('google_email', googleData.email);
-          navigate(`/signup-owner?${params.toString()}`);
+          navigate('/dashboard');
         }
+      } else {
+        const fallbackParams = sessionStorage.getItem('google_signup_fallback_params') || '';
+        const params = new URLSearchParams(fallbackParams || window.location.search);
+        sessionStorage.removeItem('google_signup_fallback_params');
+
+        const googleData = (result as any).google_data || {};
+        if (googleData.name) params.set('google_name', googleData.name);
+        if (googleData.email) params.set('google_email', googleData.email);
+        navigate(`/signup-owner?${params.toString()}`);
       }
     } catch (err: any) {
       console.error('Google login error:', err);
       setError(err.message || 'Google authentication failed. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const handleError = () => {
-    setError('Google login was cancelled or failed. Please try again.');
+  const handleSuccess = async (credentialResponse: CredentialResponse) => {
+    if (credentialResponse.credential) {
+      await handleCredential(credentialResponse.credential);
+    } else {
+      setError('Authentication succeeded but no credential received. Please try again.');
+    }
+  };
+
+  const handleError = (errorResponse?: any) => {
+    if (!import.meta.env.VITE_GOOGLE_CLIENT_ID) {
+      setError('Google Client ID is not configured. Please check your environment variables.');
+    } else {
+      setError('Google login failed. Check browser console for details.');
+    }
   };
 
   const isEnabled = import.meta.env.VITE_GOOGLE_OAUTH_ENABLED === 'true' &&
@@ -65,6 +78,20 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
 
   if (!isEnabled) {
     return null;
+  }
+
+  if (showSuccess) {
+    return (
+      <div className="w-full rounded-2xl bg-green-50 border border-green-200 p-6 text-center">
+        <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-3" />
+        <h3 className="text-lg font-semibold text-green-800 mb-1">
+          Successfully Signed In!
+        </h3>
+        <p className="text-sm text-green-700">
+          Opening CareVance Desktop...
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -77,15 +104,15 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
       )}
 
       <div className="flex justify-center">
-      <GoogleLogin
-        onSuccess={handleSuccess}
-        onError={handleError}
-        text={type === 'signup' ? 'signup_with' : 'signin_with'}
-        shape="pill"
-        theme="outline"
-        size="large"
-        width={300}
-      />
+        <GoogleLogin
+          onSuccess={handleSuccess}
+          onError={handleError}
+          text={type === 'signup' ? 'signup_with' : 'signin_with'}
+          shape="pill"
+          theme="outline"
+          size="large"
+          width={300}
+        />
       </div>
     </div>
   );

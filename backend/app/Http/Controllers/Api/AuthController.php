@@ -149,9 +149,25 @@ class AuthController extends Controller
         ], 'Account created successfully. Please verify your email before signing in.');
     }
 
+    public function checkEmail(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $email = strtolower(trim($request->input('email')));
+        $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
+
+        return $this->successResponse([
+            'exists' => $user !== null,
+            'has_verified_email' => $user ? $user->hasVerifiedEmail() : false,
+        ]);
+    }
+
     public function login(LoginRequest $request)
     {
-        $user = User::where('email', $request->email)->first();
+        $email = strtolower(trim((string) $request->input('email')));
+        $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
