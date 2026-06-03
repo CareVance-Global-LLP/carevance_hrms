@@ -254,7 +254,9 @@ const hasActiveAttendance = (attendance: any) =>
     attendance?.is_checked_in ||
       attendance?.open_punch_in_at ||
       attendance?.open_punch?.punch_in_at ||
-      (attendance?.check_in_at && !attendance?.check_out_at)
+      (attendance?.check_in_at && !attendance?.check_out_at) ||
+      attendance?.has_active_timer ||
+      attendance?.timer_started_at
   );
 
 const normalizeEmployee = (item: any): DashboardEmployee => {
