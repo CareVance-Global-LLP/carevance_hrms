@@ -192,12 +192,14 @@ class ReportController extends Controller
         }
 
         if ($excludeHigherOrEqualRank) {
-            $query->where(function (Builder $q) use ($userLevel) {
+            $query->where(function (Builder $q) use ($userLevel, $user) {
                 $q->whereHas('customRole', fn (Builder $q2) => $q2->where('hierarchy_level', '>', $userLevel))
                     ->orWhere(function (Builder $q2) use ($userLevel) {
                         $q2->whereNull('role_id')
                             ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]);
-                    });
+                    })
+                    // Always include the current user so they can see themselves in reports
+                    ->orWhere('id', $user->id);
             });
         }
 

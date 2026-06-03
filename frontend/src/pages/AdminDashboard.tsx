@@ -903,7 +903,7 @@ export default function AdminDashboard() {
   const totalPresentInRange = finalPresentOnTimeInRange + finalPresentLateInRange;
   const presentPercent = totalEmployees ? Math.round((totalPresentInRange / totalEmployees) * 100) : 0;
   const onLeave = finalOnLeave;
-  const absentCount = Math.max(0, totalEmployees - finalPresentOnTimeInRange - finalPresentLateInRange - onLeave + (managerIsAbsent && !effectiveLeaveUserIds.has(userId) ? 1 : 0));
+  const absentCount = Math.max(0, totalEmployees - finalPresentOnTimeInRange - finalPresentLateInRange - onLeave);
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
   const dashboardSummary = data.summary as any;

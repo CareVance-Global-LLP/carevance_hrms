@@ -242,7 +242,11 @@ class AuthController extends Controller
         );
 
         return $this->successResponse([
-            'user' => $user,
+            'user' => [
+                ...$user->toArray(),
+                'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
+                'hierarchy_level' => $user->getHierarchyLevel(),
+            ],
             'token' => $token,
             'organization' => $user->organization,
         ], 'Logged in successfully.')
@@ -292,6 +296,7 @@ class AuthController extends Controller
         $data = $user->toArray();
         $data['permissions'] = $this->getUserPermissions($user);
         $data['role_name'] = $user->customRole?->name ?? ucfirst($user->role ?? 'employee');
+        $data['hierarchy_level'] = $user->getHierarchyLevel();
 
         return $this->successResponse($data);
     }

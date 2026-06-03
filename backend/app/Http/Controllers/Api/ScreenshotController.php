@@ -565,10 +565,12 @@ class ScreenshotController extends Controller
                         return;
                     }
 
-                    $query->where(function ($q) use ($userLevel) {
+                    $query->where(function ($q) use ($userLevel, $user) {
                             $q->whereHas('customRole', fn ($q2) => $q2->where('hierarchy_level', '>', $userLevel))
                                 ->orWhere(fn ($q2) => $q2->whereNull('role_id')
-                                    ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]));
+                                    ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]))
+                                // Always include the current user so they can see their own screenshots
+                                ->orWhere('id', $user->id);
                         })
                         ->whereHas('groups', fn ($groupQuery) => $groupQuery->whereIn('groups.id', $visibleGroupIds));
                 }
