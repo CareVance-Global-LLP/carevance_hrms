@@ -19,6 +19,22 @@ import { useAuth } from '@/contexts/AuthContext';
 const tabs = ['overview', 'about', 'work', 'government', 'bank', 'documents', 'attendance', 'leave', 'activity'];
 const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 const createEmptyBankForm = () => ({ payout_method: 'bank_transfer', verification_status: 'unverified', is_default: true });
+const payrollStatusTone = (status: string) => {
+  switch (status) {
+    case 'verified':
+    case 'approved':
+      return 'success';
+    case 'rejected':
+      return 'danger';
+    case 'pending':
+    default:
+      return 'warning';
+  }
+};
+const formatPayrollDuration = (seconds: number) => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
 };
 
 export default function EmployeeDetailWorkspace() {
@@ -36,6 +52,7 @@ export default function EmployeeDetailWorkspace() {
   const [govForm, setGovForm] = useState<Record<string, any>>({ id_type: 'PAN', status: 'pending' });
   const [bankForm, setBankForm] = useState<Record<string, any>>(createEmptyBankForm());
   const [docForm, setDocForm] = useState<Record<string, any>>({ category: 'other', review_status: 'pending' });
+  const [payrollForm, setPayrollForm] = useState<Record<string, any>>({});
 
   const workspaceQuery = useQuery({
     queryKey: ['employee-workspace', id],
@@ -73,22 +90,23 @@ export default function EmployeeDetailWorkspace() {
       verification_status: savedBank.verification_status || 'unverified',
       is_default: Boolean(savedBank.is_default),
     } : createEmptyBankForm());
-    const profile = data.payroll.profile;
-    const meta = profile?.meta || {};
-      salary_type: meta.salary_type || 'fixed_monthly',
-      monthly_salary: Number(meta.monthly_salary || 0),
-      hourly_rate: Number(meta.hourly_rate || 0),
-      working_days: Number(meta.working_days || 30),
-      payroll_start_date: profile?.payroll_start_date || new Date().toISOString().slice(0, 10),
-      status: profile?.payroll_eligible === false || profile?.is_active === false ? 'on_hold' : 'active',
-      overtime_enabled: Boolean(meta.overtime_enabled ?? true),
-      overtime_hourly_rate: Number(meta.overtime_hourly_rate || 0),
-      productivity_bonus_enabled: Boolean(meta.productivity_bonus_enabled ?? false),
-      productivity_bonus_rate: Number(meta.productivity_bonus_rate || 0),
-      bank_name: profile?.bank_name || '',
-      bank_account_number: profile?.bank_account_number || '',
-      bank_ifsc_swift: profile?.bank_ifsc_swift || '',
-      notes: meta.notes || '',
+    // Payroll data not available in EmployeeWorkspacePayload type
+    // Initialize with empty/default values
+    setPayrollForm({
+      salary_type: 'fixed_monthly',
+      monthly_salary: 0,
+      hourly_rate: 0,
+      working_days: 30,
+      payroll_start_date: new Date().toISOString().slice(0, 10),
+      status: 'active',
+      overtime_enabled: true,
+      overtime_hourly_rate: 0,
+      productivity_bonus_enabled: false,
+      productivity_bonus_rate: 0,
+      bank_name: '',
+      bank_account_number: '',
+      bank_ifsc_swift: '',
+      notes: '',
     });
   }, [data]);
 
@@ -101,12 +119,6 @@ export default function EmployeeDetailWorkspace() {
   const saveGov = useMutation({ mutationFn: () => employeeWorkspaceApi.saveGovernmentId(id, govForm), onSuccess: async () => { setGovForm({ id_type: 'PAN', status: 'pending' }); await success('Government ID saved.'); }, onError: (e) => failure('Could not save government ID.', e) });
   const saveBank = useMutation({ mutationFn: () => employeeWorkspaceApi.saveBankAccount(id, bankForm), onSuccess: async () => { setBankForm(createEmptyBankForm()); await success('Bank details saved.'); }, onError: (e) => failure('Could not save bank details.', e) });
   const saveDoc = useMutation({ mutationFn: () => employeeWorkspaceApi.uploadDocument(id, docForm as any), onSuccess: async () => { setDocForm({ category: 'other', review_status: 'pending' }); await success('Document uploaded.'); }, onError: (e) => failure('Could not upload document.', e) });
-    mutationFn: async () => {
-      const payload = {
-        user_id: id,
-      };
-    },
-  });
 
   const initials = useMemo(() => (data?.employee?.name || 'Employee').split(' ').slice(0, 2).map((part) => part[0]?.toUpperCase()).join(''), [data]);
   if (workspaceQuery.isLoading) return <PageLoadingState label="Loading employee workspace..." />;
@@ -132,7 +144,7 @@ export default function EmployeeDetailWorkspace() {
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
       <EmployeeWorkspaceTabs tabs={tabs.map((item) => ({ id: item, label: labelize(item) }))} activeTab={tab} onChange={(next) => setSearchParams({ tab: next })} />
 
-      {tab === 'overview' ? <><div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.15fr_0.85fr]"><SurfaceCard className="p-6"><div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between"><div className="flex items-center gap-4"><div className="flex h-20 w-20 items-center justify-center rounded-lg bg-[linear-gradient(135deg,#e0f2fe_0%,#dbeafe_100%)] text-2xl font-semibold text-sky-800">{initials}</div><div><p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Employee Master</p><h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{data.employee.name}</h1><p className="mt-1 text-sm text-slate-500">{data.employee.email}</p><div className="mt-3 flex flex-wrap gap-2"><StatusBadge tone={data.readiness.payroll_readiness.is_ready ? 'success' : 'warning'}>{data.readiness.payroll_readiness.is_ready ? 'Payroll Ready' : 'Needs Setup'}</StatusBadge><StatusBadge tone={data.readiness.payout_readiness.is_ready ? 'success' : 'warning'}>{data.readiness.payout_readiness.is_ready ? 'Payout Ready' : 'Payout Incomplete'}</StatusBadge></div></div></div><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => setSearchParams({ tab: 'about' })}>Edit employee</Button><Link to="/payroll/payslips"><Button variant="secondary">View payslips</Button></Link><Button variant="secondary" onClick={() => setSearchParams({ tab: 'documents' })}>Upload document</Button></div></div><div className="mt-5">{grid([{ label: 'Employee Code', value: data.work_info?.employee_code }, { label: 'Department', value: data.overview.department }, { label: 'Designation', value: data.overview.designation }, { label: 'Reporting Manager', value: data.overview.reporting_manager?.name }, { label: 'Employment Type', value: data.work_info?.employment_type }, { label: 'Joining Date', value: data.work_info?.joining_date }, { label: 'Work Location', value: data.work_info?.work_location }, { label: 'Expected Start Time', value: data.work_info?.expected_start_time ? `${data.work_info.expected_start_time} (${data.work_info?.expected_timezone || 'Org timezone'})` : 'Not set (using org default)' }, { label: 'Payroll Eligibility', value: data.payroll.profile?.payroll_eligible ? 'Eligible' : 'Pending' }])}</div></SurfaceCard><EmployeeSectionCard title="Profile Readiness" description="Completeness and readiness checks for payroll and payouts."><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950">Overall completeness</p><p className="text-sm text-slate-500">Useful before pay run generation.</p></div><p className="text-3xl font-semibold tracking-[-0.05em] text-slate-950">{data.readiness.overall_percentage}%</p></div><div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-[linear-gradient(90deg,#38bdf8_0%,#0f172a_100%)]" style={{ width: `${data.readiness.overall_percentage}%` }} /></div><div className="mt-4 flex flex-wrap gap-2">{Object.entries(data.readiness.sections).map(([key, value]) => <StatusBadge key={key} tone={value ? 'success' : 'warning'}>{labelize(key)}</StatusBadge>)}</div></div></EmployeeSectionCard></div><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6"><EmployeeStatCard label="Attendance This Month" value={data.attendance.present_days || 0} /><EmployeeStatCard label="Payable Days" value={data.attendance.payable_days || 0} /><EmployeeStatCard label="Salary Template" value={data.overview.salary_template || 'Not assigned'} /><EmployeeStatCard label="Pending Reimbursements" value={data.overview.pending_reimbursements || 0} /><EmployeeStatCard label="Documents Uploaded" value={data.overview.documents_uploaded || 0} /><EmployeeStatCard label="Leave Summary" value={data.leave.approved_count || 0} /></div></> : null}
+      {tab === 'overview' ? <><div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.15fr_0.85fr]"><SurfaceCard className="p-6"><div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between"><div className="flex items-center gap-4"><div className="flex h-20 w-20 items-center justify-center rounded-lg bg-[linear-gradient(135deg,#e0f2fe_0%,#dbeafe_100%)] text-2xl font-semibold text-sky-800">{initials}</div><div><p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Employee Master</p><h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{data.employee.name}</h1><p className="mt-1 text-sm text-slate-500">{data.employee.email}</p><div className="mt-3 flex flex-wrap gap-2"><StatusBadge tone={data.readiness.payroll_readiness.is_ready ? 'success' : 'warning'}>{data.readiness.payroll_readiness.is_ready ? 'Payroll Ready' : 'Needs Setup'}</StatusBadge><StatusBadge tone={data.readiness.payout_readiness.is_ready ? 'success' : 'warning'}>{data.readiness.payout_readiness.is_ready ? 'Payout Ready' : 'Payout Incomplete'}</StatusBadge></div></div></div><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => setSearchParams({ tab: 'about' })}>Edit employee</Button><Link to="/payroll/payslips"><Button variant="secondary">View payslips</Button></Link><Button variant="secondary" onClick={() => setSearchParams({ tab: 'documents' })}>Upload document</Button></div></div><div className="mt-5">{grid([{ label: 'Employee Code', value: data.work_info?.employee_code }, { label: 'Department', value: data.overview.department }, { label: 'Designation', value: data.overview.designation }, { label: 'Reporting Manager', value: data.overview.reporting_manager?.name }, { label: 'Employment Type', value: data.work_info?.employment_type }, { label: 'Joining Date', value: data.work_info?.joining_date }, { label: 'Work Location', value: data.work_info?.work_location }, { label: 'Expected Start Time', value: data.work_info?.expected_start_time ? `${data.work_info.expected_start_time} (${data.work_info?.expected_timezone || 'Org timezone'})` : 'Not set (using org default)' }, { label: 'Payroll Eligibility', value: data.readiness.payroll_readiness.is_ready ? 'Eligible' : 'Pending' }])}</div></SurfaceCard><EmployeeSectionCard title="Profile Readiness" description="Completeness and readiness checks for payroll and payouts."><div className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950">Overall completeness</p><p className="text-sm text-slate-500">Useful before pay run generation.</p></div><p className="text-3xl font-semibold tracking-[-0.05em] text-slate-950">{data.readiness.overall_percentage}%</p></div><div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-[linear-gradient(90deg,#38bdf8_0%,#0f172a_100%)]" style={{ width: `${data.readiness.overall_percentage}%` }} /></div><div className="mt-4 flex flex-wrap gap-2">{Object.entries(data.readiness.sections).map(([key, value]) => <StatusBadge key={key} tone={value ? 'success' : 'warning'}>{labelize(key)}</StatusBadge>)}</div></div></EmployeeSectionCard></div><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6"><EmployeeStatCard label="Attendance This Month" value={data.attendance.present_days || 0} /><EmployeeStatCard label="Payable Days" value={data.attendance.payable_days || 0} /><EmployeeStatCard label="Salary Template" value={data.overview.salary_template || 'Not assigned'} /><EmployeeStatCard label="Pending Reimbursements" value={data.overview.pending_reimbursements || 0} /><EmployeeStatCard label="Documents Uploaded" value={data.overview.documents_uploaded || 0} /><EmployeeStatCard label="Leave Summary" value={data.leave.approved_count || 0} /></div></> : null}
 
       {tab === 'about' ? <EmployeeSectionCard title="About" description="Personal information and emergency contacts.">{grid([{ label: 'First Name', value: data.about?.first_name }, { label: 'Last Name', value: data.about?.last_name }, { label: 'Gender', value: data.about?.gender }, { label: 'Date of Birth', value: data.about?.date_of_birth }, { label: 'Phone', value: data.about?.phone }, { label: 'Personal Email', value: data.about?.personal_email }, { label: 'Address', value: data.about?.address_line }, { label: 'City', value: data.about?.city }, { label: 'State', value: data.about?.state }, { label: 'Postal Code', value: data.about?.postal_code }, { label: 'Emergency Contact', value: data.about?.emergency_contact_name }, { label: 'Emergency Number', value: data.about?.emergency_contact_number }, { label: 'Relationship', value: data.about?.emergency_contact_relationship }])}<div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{Object.keys(aboutForm).map((key) => <div key={key}><FieldLabel>{labelize(key)}</FieldLabel><TextInput type={key.includes('date') ? 'date' : key.includes('email') ? 'email' : 'text'} value={aboutForm[key] || ''} onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))} /></div>)}</div><div className="mt-6"><Button onClick={() => saveAbout.mutate()} disabled={saveAbout.isPending}>Save Personal Info</Button></div></EmployeeSectionCard> : null}
 

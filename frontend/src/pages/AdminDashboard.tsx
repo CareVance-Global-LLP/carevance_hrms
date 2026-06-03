@@ -867,7 +867,7 @@ export default function AdminDashboard() {
 
   const totalEmployees = employees.length;
   
-  const userId = user?.id || user?.employee_id || 0;
+  const userId = user?.id || (user as any)?.employee_id || 0;
   const userAttendanceRow = userId > 0 ? attendanceRows.find((row: any) => Number(row.user?.id || row.user_id || row.employee_id) === userId) : null;
   const userLateMinutes = Number(userAttendanceRow?.late_days || userAttendanceRow?.late_minutes || 0);
   const userIsLateFlag = userAttendanceRow?.is_late === true || userAttendanceRow?.is_late === 'true' || userAttendanceRow?.is_late === 1;
