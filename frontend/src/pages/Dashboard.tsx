@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, dashboardApi, notificationApi, teamApi } from '@/services/api';
 import { isLikelyMobile } from '@/lib/mobile';
+import { isEmployeeUser } from '@/lib/permissions';
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
 import { formatDate as formatDateForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
@@ -420,11 +421,13 @@ export default function Dashboard() {
         </Card>
       </section>
 
-      <TeamHierarchyCard
-        id="my-team-card"
-        data={teamHierarchy}
-        isLoading={isTeamLoading}
-      />
+      {isEmployeeUser(user) && (
+        <TeamHierarchyCard
+          id="my-team-card"
+          data={teamHierarchy}
+          isLoading={isTeamLoading}
+        />
+      )}
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card id="work-log" className="scroll-mt-24 p-4">

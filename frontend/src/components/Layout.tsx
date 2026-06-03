@@ -6,7 +6,7 @@ import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotificat
 import { buildSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 import { usePlan } from '@/hooks/usePlan';
-import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
 import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
@@ -80,6 +80,7 @@ export default function Layout() {
   const isStrictAdminView = hasStrictAdminAccess(user);
   const isSuperAdminView = hasSuperAdminAccess(user);
   const isEmployeeOrManagerView = hasEmployeeOrManagerAccess(user);
+  const isEmployeeView = isEmployeeUser(user);
   const canAccessAttendance = isAdminView || user?.settings?.attendance_monitoring !== false;
   const canAccessEditTime = isAdminView || user?.settings?.can_edit_time !== false;
   const isDesktopShell = Boolean(window.desktopTracker) && !isSuperAdminView;
@@ -224,6 +225,7 @@ export default function Layout() {
           if (group.superAdminOnly) return isSuperAdminView;
           if (group.adminOnly) return isAdminView;
           if (group.employeeAndManagerOnly) return isEmployeeOrManagerView;
+          if (group.employeeOnly) return isEmployeeView;
           return true;
         })
         .map((group) => {
@@ -236,6 +238,7 @@ export default function Layout() {
             if (item.superAdminOnly) return isSuperAdminView;
             if (item.adminOnly) return isAdminView;
             if (item.employeeAndManagerOnly) return isEmployeeOrManagerView;
+            if (item.employeeOnly) return isEmployeeView;
             return true;
           });
 

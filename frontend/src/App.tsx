@@ -1,7 +1,7 @@
 ﻿import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { usePlan } from '@/hooks/usePlan';
 import { isLikelyMobile } from '@/lib/mobile';
 
@@ -403,6 +403,24 @@ function EmployeeOrManagerRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function EmployeeRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!isEmployeeUser(user)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function PlanFeatureRoute({ feature, children }: { feature: string; children: React.ReactNode }) {
   const { hasFeature } = usePlan();
 
@@ -513,7 +531,7 @@ function App() {
             }
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
-            <Route path="my-team" element={<EmployeeOrManagerRoute><MyTeam /></EmployeeOrManagerRoute>} />
+            <Route path="my-team" element={<EmployeeRoute><MyTeam /></EmployeeRoute>} />
             <Route path="organization-tree" element={<AdminRoute><OrganizationTree /></AdminRoute>} />
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<PlanFeatureRoute feature="project_tracking"><Projects /></PlanFeatureRoute>} />

@@ -35,6 +35,7 @@ export type NavLinkItem = {
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
+  employeeOnly?: boolean;
   planFeature?: string;
   permission?: string;
   external?: boolean;
@@ -50,6 +51,7 @@ export type NavGroup = {
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
+  employeeOnly?: boolean;
   planFeature?: string;
   payroll?: boolean;
   permission?: string;
@@ -80,7 +82,7 @@ export const topNavigation: NavGroup[] = [
       { label: 'Departments', to: '/employees/teams', icon: Building2, adminOnly: true },
       { label: 'Roles & Permissions', to: '/employees/roles', icon: ShieldCheck, adminOnly: true },
       { label: 'Announcements', to: '/notifications', icon: Bell, adminOnly: true },
-      { label: 'My Team', to: '/my-team', icon: Share2, employeeAndManagerOnly: true },
+      { label: 'My Team', to: '/my-team', icon: Share2, employeeOnly: true },
       { label: 'Chat', to: '/chat', icon: MessageSquare, planFeature: 'chat' },
     ],
   },
