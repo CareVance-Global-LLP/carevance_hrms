@@ -201,13 +201,13 @@ export default function SettingsPage() {
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: User },
-    ...(canViewSettings ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
+    ...(isStrictAdminUser ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'security', name: 'Security', icon: Lock },
     { id: 'help', name: 'Help', icon: LifeBuoy },
     ...(canManageSettings ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
     ...(canManageSettings ? [{ id: 'custom-fields', name: 'Custom Fields', icon: FileSpreadsheet }] : []),
-    { id: 'billing', name: 'Billing', icon: CreditCard },
+    ...(isStrictAdminUser ? [{ id: 'billing', name: 'Billing', icon: CreditCard }] : []),
     ...(hasDesktopBrowserTracking ? [{ id: 'browser-tracking', name: 'Browser Tracking', icon: Link2 }] : []),
     ...(canManageProductivity ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
   ];

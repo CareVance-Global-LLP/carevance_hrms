@@ -577,7 +577,7 @@ function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="settings/integrations" element={<Settings />} />
             <Route path="settings/custom-fields" element={<Settings />} />
-            <Route path="settings/billing" element={<AdminRoute><BillingSettingsPage /></AdminRoute>} />
+            <Route path="settings/billing" element={<StrictAdminRoute><BillingSettingsPage /></StrictAdminRoute>} />
             <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
             <Route path="settings/roles" element={<AdminRoute><RoleManagement /></AdminRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
