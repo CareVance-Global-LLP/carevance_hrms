@@ -25,6 +25,21 @@ export default function DepartmentComparison({
   onViewDepartment,
   onViewAll
 }: DepartmentComparisonProps) {
+  // Helper function to show alert safely
+  const showAlert = (message: string) => {
+    if (typeof window !== 'undefined' && window.alert) {
+      window.alert(message);
+    }
+  };
+
+  const handleViewAll = () => {
+    if (onViewAll) {
+      onViewAll();
+    } else {
+      showAlert('All departments view coming soon');
+    }
+  };
+
   const formatCurrency = (value: number) => {
     if (value >= 100000) {
       return '₹' + (value / 100000).toFixed(1) + 'L';
@@ -69,7 +84,7 @@ export default function DepartmentComparison({
         <Button 
           variant="secondary" 
           size="sm"
-          onClick={onViewAll || (() => alert('All departments view coming soon'))}
+          onClick={handleViewAll}
         >
           View All
         </Button>

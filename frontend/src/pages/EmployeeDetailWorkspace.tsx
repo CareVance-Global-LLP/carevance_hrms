@@ -75,7 +75,7 @@ export default function EmployeeDetailWorkspace() {
       probation_status: data.work_info?.probation_status || '', employment_status: data.work_info?.employment_status || 'active', exit_date: data.work_info?.exit_date || '', work_mode: data.work_info?.work_mode || '',
       expected_start_time: data.work_info?.expected_start_time || '', expected_timezone: data.work_info?.expected_timezone || '',
     });
-    const savedBank = data.bank_accounts.find((item) => item.is_default) || data.bank_accounts[0];
+    const savedBank = data.bank_accounts?.find((item) => item.is_default) || data.bank_accounts?.[0];
     setBankForm(savedBank ? {
       id: savedBank.id,
       account_holder_name: savedBank.account_holder_name || '',

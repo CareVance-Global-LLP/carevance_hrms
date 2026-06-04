@@ -51,6 +51,29 @@ export default function RecentActivityFeed({
   onViewAll,
   onActivityClick
 }: RecentActivityFeedProps) {
+  // Helper function to show alert safely
+  const showAlert = (message: string) => {
+    if (typeof window !== 'undefined' && window.alert) {
+      window.alert(message);
+    }
+  };
+
+  const handleViewAll = () => {
+    if (onViewAll) {
+      onViewAll();
+    } else {
+      showAlert('Full activity history coming soon');
+    }
+  };
+
+  const handleActivityClick = (activity: Activity) => {
+    if (onActivityClick) {
+      onActivityClick(activity);
+    } else {
+      console.log('Activity clicked:', activity);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-xl p-5 border border-slate-200 animate-pulse">
@@ -93,7 +116,7 @@ export default function RecentActivityFeed({
           <h3 className="text-base font-semibold text-slate-900">Recent Activity</h3>
         </div>
         <button 
-          onClick={onViewAll || (() => alert('Full activity history coming soon'))}
+          onClick={handleViewAll}
           className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
         >
           View All
@@ -110,7 +133,7 @@ export default function RecentActivityFeed({
             <div 
               key={activity.id}
               className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
-              onClick={() => onActivityClick?.(activity) || console.log('Activity clicked:', activity)}
+              onClick={() => handleActivityClick(activity)}
             >
               <div className={`p-2 rounded-lg ${config.bg} flex-shrink-0`}>
                 <IconComponent className={`h-3.5 w-3.5 ${config.color}`} />
@@ -140,7 +163,7 @@ export default function RecentActivityFeed({
       {activities.length > 5 && (
         <div className="mt-3 pt-3 border-t border-slate-100 text-center">
           <button
-            onClick={onViewAll || (() => alert('Full activity history coming soon'))}
+            onClick={handleViewAll}
             className="text-xs text-blue-600 hover:text-blue-700 font-medium"
           >
             +{activities.length - 5} more activities

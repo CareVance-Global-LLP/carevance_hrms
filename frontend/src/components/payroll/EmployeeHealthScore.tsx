@@ -50,6 +50,29 @@ export default function EmployeeHealthScore({
   onViewDetails,
   onFixRecords
 }: EmployeeHealthScoreProps) {
+  // Helper function to show alert safely
+  const showAlert = (message: string) => {
+    if (typeof window !== 'undefined' && window.alert) {
+      window.alert(message);
+    }
+  };
+
+  const handleViewDetails = () => {
+    if (onViewDetails) {
+      onViewDetails();
+    } else {
+      showAlert('Employee health details coming soon');
+    }
+  };
+
+  const handleFixRecords = () => {
+    if (onFixRecords) {
+      onFixRecords();
+    } else {
+      showAlert('Fix incomplete records feature coming soon');
+    }
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-xl p-5 border border-slate-200 animate-pulse">
@@ -86,7 +109,7 @@ export default function EmployeeHealthScore({
           <h3 className="text-base font-semibold text-slate-900">Data Health</h3>
         </div>
         <button 
-          onClick={onViewDetails || (() => alert('Employee health details coming soon'))}
+          onClick={handleViewDetails}
           className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
         >
           Details
@@ -160,7 +183,7 @@ export default function EmployeeHealthScore({
           size="sm"
           className="w-full mt-4"
           iconLeft={<AlertCircle className="h-3.5 w-3.5" />}
-          onClick={onFixRecords || (() => alert('Fix incomplete records feature coming soon'))}
+          onClick={handleFixRecords}
         >
           Fix Incomplete Records
         </Button>

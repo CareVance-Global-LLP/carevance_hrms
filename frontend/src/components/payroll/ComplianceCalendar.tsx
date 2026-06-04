@@ -91,6 +91,29 @@ export default function ComplianceCalendar({
   onViewAll,
   onViewDeadline
 }: ComplianceCalendarProps) {
+  // Helper function to show alert safely
+  const showAlert = (message: string) => {
+    if (typeof window !== 'undefined' && window.alert) {
+      window.alert(message);
+    }
+  };
+
+  const handleViewAll = () => {
+    if (onViewAll) {
+      onViewAll();
+    } else {
+      showAlert('Full compliance calendar coming soon');
+    }
+  };
+
+  const handleViewDeadline = (deadline: ComplianceDeadline) => {
+    if (onViewDeadline) {
+      onViewDeadline(deadline);
+    } else {
+      showAlert(`View ${deadline.title} details coming soon`);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-xl p-5 border border-slate-200 animate-pulse">
@@ -117,7 +140,7 @@ export default function ComplianceCalendar({
           <Calendar className="h-8 w-8 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-500">No upcoming deadlines</p>
           <button
-            onClick={() => alert('Compliance settings coming soon')}
+            onClick={() => showAlert('Compliance settings coming soon')}
             className="mt-3 text-xs text-blue-600 hover:text-blue-700 font-medium"
           >
             Configure deadlines
@@ -141,7 +164,7 @@ export default function ComplianceCalendar({
           <h3 className="text-base font-semibold text-slate-900">Compliance</h3>
         </div>
         <button 
-          onClick={onViewAll || (() => alert('Full compliance calendar coming soon'))}
+          onClick={handleViewAll}
           className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
         >
           View All
@@ -194,7 +217,7 @@ export default function ComplianceCalendar({
 
                 {/* Action Icon */}
                 <button 
-                  onClick={() => onViewDeadline?.(deadline) || alert(`View ${deadline.title} details coming soon`)}
+                  onClick={() => handleViewDeadline(deadline)}
                   className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
                 >
                   <FileText className="h-4 w-4" />
@@ -209,7 +232,7 @@ export default function ComplianceCalendar({
       {deadlines.length > 4 && (
         <div className="mt-3 pt-3 border-t border-slate-100 text-center">
           <button
-            onClick={onViewAll || (() => alert('Full compliance calendar coming soon'))}
+            onClick={handleViewAll}
             className="text-xs text-blue-600 hover:text-blue-700 font-medium"
           >
             +{deadlines.length - 4} more deadlines

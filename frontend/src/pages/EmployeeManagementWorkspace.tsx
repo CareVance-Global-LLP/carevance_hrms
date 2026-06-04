@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, roleApi, userApi } from '@/services/api';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
@@ -11,7 +11,7 @@ import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasAdminAccess, hasStrictAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
 import { formatDuration } from '@/lib/formatters';
-import { ArrowRightLeft, Building2, KeyRound, MailPlus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserPlus, UserPlus2, UserRound, Users } from 'lucide-react';
+import { AlertCircle, ArrowRightLeft, Building2, KeyRound, MailPlus, Search, ShieldCheck, SlidersHorizontal, Trash2, UserPlus, UserPlus2, UserRound, Users } from 'lucide-react';
 import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
 
@@ -207,6 +207,7 @@ const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: stri
 export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWorkspaceMode }) {
   const { organization, user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -223,6 +224,8 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee'>('employee');
   const [roleSearchQuery, setRoleSearchQuery] = useState('');
+  const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
+  const [incompleteFilterType, setIncompleteFilterType] = useState<'all' | 'missing_pan' | 'missing_bank'>('all');
   const [settingsUserId, setSettingsUserId] = useState<number | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<EmployeeSettingsDraft | null>(null);
   const [activeTeamId, setActiveTeamId] = useState<number | null>(null);
@@ -376,6 +379,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
     const params = new URLSearchParams(location.search);
     const nextDepartment = String(params.get('department') || '').trim();
+    const filterParam = String(params.get('filter') || '').trim();
+    
+    if (filterParam === 'incomplete' || filterParam === 'missing_pan' || filterParam === 'missing_bank') {
+      setShowIncompleteOnly(true);
+      setIncompleteFilterType(filterParam === 'incomplete' ? 'all' : filterParam);
+    } else {
+      setShowIncompleteOnly(false);
+      setIncompleteFilterType('all');
+    }
+    
     if (nextDepartment) {
       setDirectoryDepartmentFilter(nextDepartment);
       return;
@@ -508,6 +521,24 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const isLoading = usersQuery.isLoading || groupsQuery.isLoading || membersQuery.isLoading || invitationsQuery.isLoading;
   const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
+
+  const hasIncompleteProfile = (user: any, filterType: 'all' | 'missing_pan' | 'missing_bank' = 'all') => {
+    // Check for missing bank account or PAN details
+    const hasBankDetails = user.bank_accounts && user.bank_accounts.length > 0;
+    const hasPanNumber = user.government_ids?.some((id: any) =>
+      id.id_type?.toLowerCase().includes('pan') && id.id_number
+    );
+    
+    if (filterType === 'missing_pan') {
+      return !hasPanNumber;
+    } else if (filterType === 'missing_bank') {
+      return !hasBankDetails;
+    }
+    
+    // Default 'all' - return true if either is missing
+    return !hasBankDetails || !hasPanNumber;
+  };
+
   const employeeDirectoryRows = useMemo(() => {
     const filteredRows = directoryFilterUserId === ''
       ? [...users]
@@ -521,17 +552,21 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       ? departmentFilteredRows
       : departmentFilteredRows.filter((item: any) => resolveEmployeeTimezone(item) === directoryTimezoneFilter);
 
+    const incompleteFilteredRows = showIncompleteOnly
+      ? timezoneFilteredRows.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType))
+      : timezoneFilteredRows;
+
     switch (directorySort) {
       case 'name_asc':
-        return timezoneFilteredRows.sort((left: any, right: any) =>
+        return incompleteFilteredRows.sort((left: any, right: any) =>
           String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })
         );
       case 'tracked_desc':
-        return timezoneFilteredRows.sort((left: any, right: any) =>
+        return incompleteFilteredRows.sort((left: any, right: any) =>
           Number(right.total_elapsed_duration || right.total_duration || 0) - Number(left.total_elapsed_duration || left.total_duration || 0)
         );
       case 'working_first':
-        return timezoneFilteredRows.sort((left: any, right: any) => {
+        return incompleteFilteredRows.sort((left: any, right: any) => {
           const workingDifference = Number(Boolean(right.is_working)) - Number(Boolean(left.is_working));
           if (workingDifference !== 0) {
             return workingDifference;
@@ -540,9 +575,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           return String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' });
         });
       default:
-        return timezoneFilteredRows;
+        return incompleteFilteredRows;
     }
-  }, [directoryDepartmentFilter, directoryFilterUserId, directoryTimezoneFilter, directorySort, users]);
+  }, [directoryDepartmentFilter, directoryFilterUserId, directoryTimezoneFilter, directorySort, users, showIncompleteOnly, incompleteFilterType]);
   const roleCards = useMemo(() => {
     const allRoles = [...(customRolesQuery.data || [])].sort((a: any, b: any) => a.hierarchy_level - b.hierarchy_level);
     return allRoles.map((role: any, idx: number) => {
@@ -985,13 +1020,52 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           </div>
 
           <DataTable
-            title="Employee Directory"
-            description={canManageDirectoryRoles ? 'Role, department, work state, tracked hours, and promotion controls from the existing users endpoint.' : 'Role, department, work state, and tracked hours from the existing users endpoint.'}
+            title={showIncompleteOnly 
+              ? incompleteFilterType === 'missing_pan' 
+                ? 'Employees Missing PAN Numbers'
+                : incompleteFilterType === 'missing_bank'
+                  ? 'Employees Missing Bank Details'
+                  : 'Employees with Incomplete Profiles'
+              : 'Employee Directory'}
+            description={showIncompleteOnly 
+              ? incompleteFilterType === 'missing_pan'
+                ? 'Showing employees without PAN card details. Click on an employee to update their profile.'
+                : incompleteFilterType === 'missing_bank'
+                  ? 'Showing employees missing bank account information. Click on an employee to update their profile.'
+                  : 'Showing employees missing bank account or PAN details. Click on an employee to complete their profile.' 
+              : canManageDirectoryRoles 
+                ? 'Role, department, work state, tracked hours, and promotion controls from the existing users endpoint.' 
+                : 'Role, department, work state, and tracked hours from the existing users endpoint.'}
             rows={employeeDirectoryRows}
             emptyMessage="No employees found."
             bodyClassName="max-h-[34rem] overflow-auto"
             headerAction={(
               <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
+                {showIncompleteOnly && (
+                  <div className="min-w-[13rem] lg:col-span-4">
+                    <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                      <span className="text-sm text-amber-800 flex-1">
+                        {incompleteFilterType === 'missing_pan' 
+                          ? 'Showing employees without PAN card details'
+                          : incompleteFilterType === 'missing_bank'
+                            ? 'Showing employees missing bank account information'
+                            : 'Showing employees with incomplete profiles (missing bank/PAN details)'}
+                      </span>
+                      <Button 
+                        variant="secondary" 
+                        size="sm"
+                        onClick={() => {
+                          setShowIncompleteOnly(false);
+                          setIncompleteFilterType('all');
+                          navigate('/employees');
+                        }}
+                      >
+                        Clear Filter
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 <div className="min-w-[13rem]">
                   <FieldLabel>Specific employee</FieldLabel>
                   <EmployeeSelect

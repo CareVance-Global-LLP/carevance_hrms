@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Briefcase } from 'lucide-react';
+import { ArrowLeft, Briefcase, FileText, CreditCard, Building2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
@@ -21,6 +21,17 @@ export default function EmployeePersonalDetailsPage() {
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [aboutForm, setAboutForm] = useState<Record<string, string>>({});
   const [workForm, setWorkForm] = useState<Record<string, any>>({});
+  const [govForm, setGovForm] = useState<Record<string, any>>({ id_type: 'AADHAAR', id_number: '', status: 'pending' });
+  const [bankForm, setBankForm] = useState<Record<string, any>>({ 
+    bank_name: '', 
+    account_number: '', 
+    ifsc_swift: '', 
+    branch: '', 
+    account_type: '', 
+    payout_method: 'bank_transfer',
+    is_default: true 
+  });
+  const [docForm, setDocForm] = useState<Record<string, any>>({ title: '', category: 'other', review_status: 'pending', file: null });
   
   // Only the profile owner can edit their personal info
   const canEditOwnProfile = user?.id === id;
@@ -56,6 +67,20 @@ export default function EmployeePersonalDetailsPage() {
       expected_start_time: workspaceQuery.data.work_info?.expected_start_time || '',
       expected_timezone: workspaceQuery.data.work_info?.expected_timezone || '',
     });
+
+    // Initialize government IDs, bank accounts, and documents from workspace data
+    const savedBank = workspaceQuery.data.bank_accounts?.find((item: any) => item.is_default) || workspaceQuery.data.bank_accounts?.[0];
+    if (savedBank) {
+      setBankForm({
+        bank_name: savedBank.bank_name || '',
+        account_number: savedBank.account_number || '',
+        ifsc_swift: savedBank.ifsc_swift || '',
+        branch: savedBank.branch || '',
+        account_type: savedBank.account_type || '',
+        payout_method: savedBank.payout_method || 'bank_transfer',
+        is_default: Boolean(savedBank.is_default),
+      });
+    }
   }, [workspaceQuery.data]);
 
   const saveAboutMutation = useMutation({
@@ -85,6 +110,65 @@ export default function EmployeePersonalDetailsPage() {
       setFeedback({
         tone: 'error',
         message: error?.response?.data?.message || 'Could not save work information.',
+      });
+    },
+  });
+
+  const saveGovMutation = useMutation({
+    mutationFn: async () => employeeWorkspaceApi.saveGovernmentId(id, {
+      ...govForm,
+      proof_file: govForm.proof_file || null,
+    }),
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Government ID saved successfully.' });
+      setGovForm({ id_type: 'AADHAAR', id_number: '', status: 'pending' });
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+    },
+    onError: (error: any) => {
+      setFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || 'Could not save government ID.',
+      });
+    },
+  });
+
+  const saveBankMutation = useMutation({
+    mutationFn: async () => employeeWorkspaceApi.saveBankAccount(id, {
+      ...bankForm,
+      proof_file: bankForm.proof_file || null,
+    }),
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Bank details saved successfully.' });
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+    },
+    onError: (error: any) => {
+      setFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || 'Could not save bank details.',
+      });
+    },
+  });
+
+  const saveDocMutation = useMutation({
+    mutationFn: async () => {
+      const formData = new FormData();
+      formData.append('title', docForm.title);
+      formData.append('category', docForm.category);
+      formData.append('review_status', docForm.review_status);
+      if (docForm.file) {
+        formData.append('file', docForm.file);
+      }
+      return employeeWorkspaceApi.uploadDocument(id, formData as any);
+    },
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Document uploaded successfully.' });
+      setDocForm({ title: '', category: 'other', review_status: 'pending', file: null });
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+    },
+    onError: (error: any) => {
+      setFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || 'Could not upload document.',
       });
     },
   });
@@ -253,6 +337,275 @@ export default function EmployeePersonalDetailsPage() {
                 ? 'Only admins or the direct reporting manager can edit work information.'
                 : 'Only admins or managers with edit permissions can modify work information.'}
             </p>
+          </div>
+        )}
+      </section>
+
+      {/* Government IDs Section */}
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-blue-600" />
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Government IDs</p>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Add Aadhaar, PAN, and other government identification documents.</p>
+
+        {/* Display existing government IDs */}
+        {data.government_ids?.length > 0 && (
+          <div className="mt-5 space-y-3">
+            {data.government_ids.map((item: any) => (
+              <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-950">{item.id_type}</p>
+                    <p className="text-sm text-slate-500">{item.id_number}</p>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    item.status === 'verified' 
+                      ? 'bg-green-100 text-green-800' 
+                      : item.status === 'rejected'
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {item.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add new government ID form */}
+        {(canEditOwnProfile || canEditWorkInfo) && (
+          <div className="mt-6 border-t border-slate-200 pt-6">
+            <p className="text-sm font-medium text-slate-900">Add New Government ID</p>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <FieldLabel>ID Type</FieldLabel>
+                <SelectInput
+                  value={govForm.id_type || 'AADHAAR'}
+                  onChange={(event) => setGovForm((current) => ({ ...current, id_type: event.target.value }))}
+                >
+                  <option value="AADHAAR">Aadhaar</option>
+                  <option value="PAN">PAN</option>
+                  <option value="PASSPORT">Passport</option>
+                  <option value="DRIVING_LICENSE">Driving License</option>
+                  <option value="VOTER_ID">Voter ID</option>
+                </SelectInput>
+              </div>
+              <div>
+                <FieldLabel>ID Number</FieldLabel>
+                <TextInput
+                  value={govForm.id_number || ''}
+                  onChange={(event) => setGovForm((current) => ({ ...current, id_number: event.target.value }))}
+                  placeholder="Enter ID number"
+                />
+              </div>
+              <div>
+                <FieldLabel>Proof Document</FieldLabel>
+                <input
+                  type="file"
+                  className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  onChange={(event) => setGovForm((current) => ({ ...current, proof_file: event.target.files?.[0] || null }))}
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <Button 
+                onClick={() => saveGovMutation.mutate()} 
+                disabled={saveGovMutation.isPending || !govForm.id_number}
+              >
+                {saveGovMutation.isPending ? 'Saving...' : 'Add Government ID'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Bank Accounts Section */}
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <CreditCard className="h-5 w-5 text-blue-600" />
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Bank Account Details</p>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Add bank account for salary payouts.</p>
+
+        {/* Display existing bank accounts */}
+        {data.bank_accounts?.length > 0 && (
+          <div className="mt-5 space-y-3">
+            {data.bank_accounts.map((item: any) => (
+              <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-950">{item.bank_name || 'Bank Account'}</p>
+                    <p className="text-sm text-slate-500">Account: {item.account_number}</p>
+                    <p className="text-sm text-slate-500">IFSC: {item.ifsc_swift}</p>
+                  </div>
+                  {item.is_default && (
+                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                      Default
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add new bank account form */}
+        {(canEditOwnProfile || canEditWorkInfo) && (
+          <div className="mt-6 border-t border-slate-200 pt-6">
+            <p className="text-sm font-medium text-slate-900">Add New Bank Account</p>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <FieldLabel>Bank Name</FieldLabel>
+                <TextInput
+                  value={bankForm.bank_name || ''}
+                  onChange={(event) => setBankForm((current) => ({ ...current, bank_name: event.target.value }))}
+                  placeholder="e.g., State Bank of India"
+                />
+              </div>
+              <div>
+                <FieldLabel>Account Number</FieldLabel>
+                <TextInput
+                  value={bankForm.account_number || ''}
+                  onChange={(event) => setBankForm((current) => ({ ...current, account_number: event.target.value }))}
+                  placeholder="Enter account number"
+                />
+              </div>
+              <div>
+                <FieldLabel>IFSC Code</FieldLabel>
+                <TextInput
+                  value={bankForm.ifsc_swift || ''}
+                  onChange={(event) => setBankForm((current) => ({ ...current, ifsc_swift: event.target.value }))}
+                  placeholder="e.g., SBIN0001234"
+                />
+              </div>
+              <div>
+                <FieldLabel>Branch</FieldLabel>
+                <TextInput
+                  value={bankForm.branch || ''}
+                  onChange={(event) => setBankForm((current) => ({ ...current, branch: event.target.value }))}
+                  placeholder="Branch name"
+                />
+              </div>
+              <div>
+                <FieldLabel>Account Type</FieldLabel>
+                <SelectInput
+                  value={bankForm.account_type || ''}
+                  onChange={(event) => setBankForm((current) => ({ ...current, account_type: event.target.value }))}
+                >
+                  <option value="">Select type</option>
+                  <option value="savings">Savings</option>
+                  <option value="current">Current</option>
+                </SelectInput>
+              </div>
+              <div>
+                <FieldLabel>Proof Document (Optional)</FieldLabel>
+                <input
+                  type="file"
+                  className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  onChange={(event) => setBankForm((current) => ({ ...current, proof_file: event.target.files?.[0] || null }))}
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_default"
+                checked={bankForm.is_default}
+                onChange={(event) => setBankForm((current) => ({ ...current, is_default: event.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600"
+              />
+              <label htmlFor="is_default" className="text-sm text-slate-700">Set as default account</label>
+            </div>
+            <div className="mt-4">
+              <Button 
+                onClick={() => saveBankMutation.mutate()} 
+                disabled={saveBankMutation.isPending || !bankForm.account_number || !bankForm.ifsc_swift}
+              >
+                {saveBankMutation.isPending ? 'Saving...' : 'Add Bank Account'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Documents Section */}
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-blue-600" />
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Documents</p>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Upload and manage employee documents.</p>
+
+        {/* Display existing documents */}
+        {data.documents?.length > 0 && (
+          <div className="mt-5 space-y-3">
+            {data.documents.map((item: any) => (
+              <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-950">{item.title}</p>
+                    <p className="text-sm text-slate-500">{item.category} • {item.file_name}</p>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    item.review_status === 'verified' 
+                      ? 'bg-green-100 text-green-800' 
+                      : item.review_status === 'rejected'
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {item.review_status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Upload new document form */}
+        {(canEditOwnProfile || canEditWorkInfo) && (
+          <div className="mt-6 border-t border-slate-200 pt-6">
+            <p className="text-sm font-medium text-slate-900">Upload New Document</p>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <FieldLabel>Document Title</FieldLabel>
+                <TextInput
+                  value={docForm.title || ''}
+                  onChange={(event) => setDocForm((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="e.g., Experience Certificate"
+                />
+              </div>
+              <div>
+                <FieldLabel>Category</FieldLabel>
+                <SelectInput
+                  value={docForm.category || 'other'}
+                  onChange={(event) => setDocForm((current) => ({ ...current, category: event.target.value }))}
+                >
+                  <option value="education">Education</option>
+                  <option value="experience">Experience</option>
+                  <option value="identity">Identity</option>
+                  <option value="address">Address Proof</option>
+                  <option value="other">Other</option>
+                </SelectInput>
+              </div>
+              <div>
+                <FieldLabel>File</FieldLabel>
+                <input
+                  type="file"
+                  className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  onChange={(event) => setDocForm((current) => ({ ...current, file: event.target.files?.[0] || null }))}
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <Button 
+                onClick={() => saveDocMutation.mutate()} 
+                disabled={saveDocMutation.isPending || !docForm.title || !docForm.file}
+              >
+                {saveDocMutation.isPending ? 'Uploading...' : 'Upload Document'}
+              </Button>
+            </div>
           </div>
         )}
       </section>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Users, 
   Search, 
@@ -51,6 +52,7 @@ export default function PayrollDashboard({
   onOpenReports,
   onOpenSettings
 }: PayrollDashboardProps) {
+  const navigate = useNavigate();
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -97,15 +99,22 @@ export default function PayrollDashboard({
     }
   };
 
-  const handleAlertAction = (alert: any) => {
-    console.log('Alert action triggered:', alert);
+  const handleAlertAction = (alertData: any) => {
+    console.log('Alert action triggered:', alertData);
     // Handle navigation based on alert type
-    if (alert.action_url) {
-      if (alert.action_url.includes('run')) {
+    if (alertData.action_url) {
+      if (alertData.action_url.includes('run')) {
         handleRunPayroll();
+      } else if (alertData.action_url.includes('employees')) {
+        // Navigate to employees page with the specific filter from the alert
+        navigate(alertData.action_url);
       } else {
-        // For other URLs, show alert for now
-        alert(`${alert.action}: ${alert.message}`);
+        // For other URLs, navigate directly or show alert
+        if (alertData.action_url.startsWith('/')) {
+          navigate(alertData.action_url);
+        } else {
+          window.alert(`${alertData.action}: ${alertData.message}`);
+        }
       }
     }
   };
