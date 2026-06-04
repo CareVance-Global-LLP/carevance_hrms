@@ -193,7 +193,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
     return lines.map(line => line.join(',')).join('\n');
   };
 
-  const generateRegisterReport = (stats?: PayrollStats, departments: any[], month?: string): string => {
+  const generateRegisterReport = (stats: PayrollStats | undefined, departments: any[], month?: string): string => {
     const lines = [
       ['CareVance HRMS - Payroll Register'],
       [`Month: ${month}`],

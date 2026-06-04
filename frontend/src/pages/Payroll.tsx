@@ -79,7 +79,7 @@ export default function PayrollPage() {
     <div className="min-h-screen bg-slate-50">
       <PageHeader
         title="Payroll"
-        subtitle="Manage employee salaries and compliance"
+        description="Manage employee salaries and compliance"
       />
 
       <div className="p-6">
