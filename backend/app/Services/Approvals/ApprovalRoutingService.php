@@ -41,8 +41,14 @@ class ApprovalRoutingService
         // Then find the nearest higher-ranked person in the same department(s)
         $nearestReviewerIds = $this->nearestHigherRankedReviewerIds($requester, $requesterLevel);
 
+        // Manager-tier users (level 10-100) also route to all org admins regardless of department
+        $adminIds = $requesterLevel < 100
+            ? $this->organizationAdminIds($requester)
+            : collect();
+
         return $directManagerIds
             ->concat($nearestReviewerIds)
+            ->concat($adminIds)
             ->unique()
             ->values();
     }
@@ -206,10 +212,6 @@ class ApprovalRoutingService
             return 'No team lead is assigned to your department yet. Please contact an admin.';
         }
 
-        if ($requesterLevel > 50) {
-            return 'No manager is available to review this request yet. Please contact an admin.';
-        }
-
         if ($requesterLevel > 10) {
             return 'No admin is available to review this request yet. Please contact an admin owner.';
         }
@@ -295,6 +297,24 @@ class ApprovalRoutingService
             ->where('organization_id', $requester->organization_id)
             ->whereRaw('LOWER(TRIM(role)) = ?', [strtolower(trim($role))])
             ->where('id', '!=', $excludeUserId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+    }
+
+    /**
+     * Get all admin-level users (hierarchy_level <= 10) in the organization.
+     * These are eligible to review manager-tier requests regardless of department.
+     * @return Collection<int, int>
+     */
+    private function organizationAdminIds(User $requester): Collection
+    {
+        return User::query()
+            ->where('organization_id', $requester->organization_id)
+            ->where('id', '!=', (int) $requester->id)
+            ->with('customRole')
+            ->get(['id', 'organization_id', 'role', 'role_id'])
+            ->filter(fn (User $candidate) => $this->userHierarchyLevel($candidate) <= 10)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->values();

@@ -825,9 +825,7 @@ export default function ApprovalInbox() {
                 type="button"
                 onClick={() => {
                   setRouteState({ section: section.id as ApprovalSection });
-                  if (activeView === 'history') {
-                    scrollToHistoryDetails();
-                  }
+                  scrollToHistoryDetails();
                 }}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
                   activeSection === section.id
@@ -847,7 +845,10 @@ export default function ApprovalInbox() {
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <button
             type="button"
-            onClick={() => setRouteState({ section: activeSection, view: 'pending' })}
+            onClick={() => {
+              setRouteState({ section: activeSection, view: 'pending' });
+              scrollToHistoryDetails();
+            }}
             className={`rounded-xl border px-4 py-4 text-left transition ${
               activeView === 'pending' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-100'
             }`}

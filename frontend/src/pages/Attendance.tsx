@@ -649,6 +649,17 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       return;
     }
 
+    if (leaveCategory !== 'birthday' && (!leaveReason || !leaveReason.trim())) {
+      setLeaveFeedback('', 'Reason is required. Please provide a reason for your leave.');
+      return;
+    }
+
+    if (leaveCategory !== 'unpaid' && selectedCategoryRemaining <= 0) {
+      const catLabel = selfLeaveCategories.find((c: any) => String(c.code || '').toLowerCase() === leaveCategory)?.name || leaveCategory;
+      setLeaveFeedback('', `You have already used your ${catLabel} for this year.`);
+      return;
+    }
+
     setIsLeaveSubmitting(true);
     setLeaveFeedback();
     try {
@@ -1022,6 +1033,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     () => ((leaveBalances?.self?.categories || []) as any[]),
     [leaveBalances?.self?.categories]
   );
+  const selectedCategoryRemaining = useMemo(() => {
+    if (leaveCategory === 'unpaid') return Infinity;
+    const cat = selfLeaveCategories.find((c: any) => String(c.code || '').toLowerCase() === leaveCategory);
+    return cat ? Number(cat.remaining || 0) : Infinity;
+  }, [selfLeaveCategories, leaveCategory]);
   const leaveTeamBalances = useMemo(
     () => ((leaveBalances?.team || []) as any[]),
     [leaveBalances?.team]
@@ -1410,7 +1426,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               </p>
             ) : null}
             <div className="mt-3">
-              <FieldLabel>Reason (Optional)</FieldLabel>
+              <FieldLabel>Reason</FieldLabel>
               <TextareaInput
                 value={leaveReason}
                 onChange={(e) => setLeaveReason(e.target.value)}
@@ -1419,9 +1435,14 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               />
             </div>
             <div className="mt-3">
-              <Button onClick={submitLeaveRequest} disabled={isLeaveSubmitting}>
+              <Button onClick={submitLeaveRequest} disabled={isLeaveSubmitting || (leaveCategory !== 'unpaid' && selectedCategoryRemaining <= 0)}>
                 {isLeaveSubmitting ? 'Submitting...' : 'Submit Leave Request'}
               </Button>
+              {leaveCategory !== 'unpaid' && selectedCategoryRemaining <= 0 && (
+                <p className="mt-2 text-xs text-rose-600">
+                  You have no remaining balance for this leave category this year.
+                </p>
+              )}
             </div>
           </SurfaceCard>
 

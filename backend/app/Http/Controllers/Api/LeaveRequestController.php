@@ -53,12 +53,14 @@ class LeaveRequestController extends Controller
         if (!$this->canManage($currentUser)) {
             $query->where('user_id', $currentUser->id);
         } else {
-            $visibleUserIds = $this->approvalRoutingService->reviewableRequesterIds($currentUser)
-                ->push((int) $currentUser->id)
-                ->unique()
-                ->values();
+            $visibleUserIds = $this->approvalRoutingService->reviewableRequesterIds($currentUser);
 
-            $query->whereIn('user_id', $visibleUserIds);
+            // Only admins see their own requests in the approval inbox
+            if ($currentUser->getHierarchyLevel() <= 10) {
+                $visibleUserIds->push((int) $currentUser->id);
+            }
+
+            $query->whereIn('user_id', $visibleUserIds->unique()->values());
 
             if ($request->filled('user_id')) {
                 $query->where('user_id', (int) $request->user_id);
@@ -211,6 +213,49 @@ class LeaveRequestController extends Controller
 
         if ($overlapExists) {
             return response()->json(['message' => 'An overlapping leave request already exists.'], 422);
+        }
+
+        // Check leave balance for non-unpaid categories
+        if ($leaveCategory !== 'unpaid') {
+            $balanceSnapshot = $this->leavePolicyService->buildBalanceSnapshotForUser($currentUser, $policyCategories);
+            $categoryBalance = collect($balanceSnapshot['categories'] ?? [])
+                ->firstWhere('code', $leaveCategory);
+
+            if (! $categoryBalance) {
+                return response()->json([
+                    'message' => "Leave category '{$leaveCategory}' is not available.",
+                ], 422);
+            }
+
+            $categoryName = $categoryBalance['name'];
+            $remaining = (float) $categoryBalance['remaining'];
+
+            if ($remaining <= 0) {
+                return response()->json([
+                    'message' => "You have already used your {$categoryName} for this year.",
+                ], 422);
+            }
+
+            // Calculate requested units using inclusive date range (CarbonPeriod includes both start and end)
+            $requestedUnits = 0.0;
+            $unitPerDay = $leaveType === 'half_day' ? 0.5 : 1.0;
+            foreach (\Carbon\CarbonPeriod::create($startDate->copy()->startOfDay(), $endDate->copy()->startOfDay()) as $date) {
+                if ($date->isWeekday()) {
+                    $requestedUnits += $unitPerDay;
+                }
+            }
+
+            if ($requestedUnits <= 0) {
+                return response()->json([
+                    'message' => 'Leave request covers no working days.',
+                ], 422);
+            }
+
+            if ($requestedUnits > $remaining) {
+                return response()->json([
+                    'message' => "You do not have sufficient {$categoryName} balance. Remaining: {$remaining} day(s), Requested: {$requestedUnits} day(s).",
+                ], 422);
+            }
         }
 
         if (! $this->approvalRoutingService->hasEligibleReviewer($currentUser)) {

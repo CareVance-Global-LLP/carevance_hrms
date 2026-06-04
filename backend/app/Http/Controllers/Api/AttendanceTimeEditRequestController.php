@@ -45,12 +45,14 @@ class AttendanceTimeEditRequestController extends Controller
         if (!$this->canManage($currentUser)) {
             $query->where('user_id', $currentUser->id);
         } else {
-            $visibleUserIds = $this->approvalRoutingService->reviewableRequesterIds($currentUser)
-                ->push((int) $currentUser->id)
-                ->unique()
-                ->values();
+            $visibleUserIds = $this->approvalRoutingService->reviewableRequesterIds($currentUser);
 
-            $query->whereIn('user_id', $visibleUserIds);
+            // Only admins see their own requests in the approval inbox
+            if ($currentUser->getHierarchyLevel() <= 10) {
+                $visibleUserIds->push((int) $currentUser->id);
+            }
+
+            $query->whereIn('user_id', $visibleUserIds->unique()->values());
 
             if ($request->filled('user_id')) {
                 $query->where('user_id', (int) $request->user_id);
