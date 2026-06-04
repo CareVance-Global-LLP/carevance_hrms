@@ -133,7 +133,7 @@ export default function RunPayrollModal({
                 }
                 
                 // Use time tracking data for attendance calculations
-                const timeTracking = employee.time_tracking || {};
+                const timeTracking = (employee as any).time_tracking || {};
                 const workingDays = timeTracking.payroll_attendance_days || 26;
                 const daysPresent = timeTracking.payroll_attendance_days || 26;
                 const lopDays = 0; // Calculate from LOP tracking if available

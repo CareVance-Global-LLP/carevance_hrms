@@ -72,6 +72,7 @@ import type {
   ProcessPaymentResponse,
   PayslipData,
   PayrollSummary,
+  PayrollOrganizationSettings,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 

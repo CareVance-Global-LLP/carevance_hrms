@@ -2,7 +2,6 @@ import {
   Users, 
   TrendingUp, 
   TrendingDown, 
-  TrendingFlat,
   ArrowUpRight,
   ArrowDownRight,
   Minus

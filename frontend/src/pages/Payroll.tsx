@@ -6,7 +6,7 @@ import EmployeePayrollDetail from '@/components/payroll/EmployeePayrollDetail';
 import RunPayrollModal from '@/components/payroll/RunPayrollModal';
 import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
-import type { PayrollOrganizationSettings } from '@/components/payroll/PayrollSettingsModal';
+import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 
 type ViewMode = 'dashboard' | 'department' | 'employee';

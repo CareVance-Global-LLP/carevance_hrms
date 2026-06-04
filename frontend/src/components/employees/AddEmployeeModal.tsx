@@ -180,7 +180,7 @@ export default function AddEmployeeModal({ onClose, onSuccess, departments = [],
                 <p className="font-medium text-sm text-slate-900">Send invitation email</p>
                 <p className="text-xs text-slate-500">Employee will receive an email to set up their account</p>
               </div>
-              <ToggleInput checked={sendInvite} onChange={(e) => setSendInvite(e.target.checked)} />
+              <ToggleInput checked={sendInvite} onChange={(e) => setSendInvite(e.currentTarget.checked)} />
             </div>
 
             {!sendInvite && (
