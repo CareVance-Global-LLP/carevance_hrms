@@ -1201,6 +1201,11 @@ export interface PayrollDepartmentEmployee {
     activity_percentage: number;
     productivity_score: number;
     entry_count: number;
+    payroll_tracked_seconds?: number;
+    payroll_tracked_hours?: number;
+    payroll_payable_hours?: number;
+    payroll_attendance_days?: number;
+    payroll_entry_count?: number;
   };
   payroll_status: {
     is_processed: boolean;
@@ -1211,12 +1216,21 @@ export interface PayrollDepartmentEmployee {
   };
   has_template: boolean;
   template_id: number;
+  annual_ctc?: number | null;
+  basic_percentage?: number;
+  hra_percentage?: number;
+  conveyance_allowance?: number;
+  pf_enabled?: boolean;
+  esi_enabled?: boolean;
+  pt_enabled?: boolean;
+  tds_enabled?: boolean;
 }
 
 export interface EmployeePayrollTemplate {
   id: number;
   user_id: number;
   organization_id: number;
+  annual_ctc?: number | null;
   basic_percentage: number;
   hra_percentage: number;
   conveyance_allowance: number;
@@ -1272,6 +1286,11 @@ export interface EmployeePayrollDetails {
     activity_percentage: number;
     productivity_score: number;
     entry_count: number;
+    payroll_tracked_seconds?: number;
+    payroll_tracked_hours?: number;
+    payroll_payable_hours?: number;
+    payroll_attendance_days?: number;
+    payroll_entry_count?: number;
   };
   template: EmployeePayrollTemplate;
   existing_payroll?: {
@@ -1303,4 +1322,25 @@ export interface ProcessPayrollRequest {
   days_present: number;
   lOP_days?: number;
   overtime_hours?: number;
+}
+
+export interface PayrollOrganizationSettings {
+  defaultBasicPercentage: number;
+  defaultHraPercentage: number;
+  defaultConveyance: number;
+  defaultState: string;
+  defaultTaxRegime: 'new' | 'old';
+  pfWageCap: number;
+  esiThreshold: number;
+  workingDaysPerMonth: number;
+  pfEmployeePercentage: number;
+  pfEmployerPercentage: number;
+  esiEmployeePercentage: number;
+  esiEmployerPercentage: number;
+  pfEnabled: boolean;
+  esiEnabled: boolean;
+  ptEnabled: boolean;
+  tdsEnabled: boolean;
+  lwfEnabled: boolean;
+  isMetroCity: boolean;
 }

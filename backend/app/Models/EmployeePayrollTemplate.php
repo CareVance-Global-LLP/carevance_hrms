@@ -12,6 +12,7 @@ class EmployeePayrollTemplate extends Model
     protected $fillable = [
         'organization_id',
         'user_id',
+        'annual_ctc',
         'basic_percentage',
         'hra_percentage',
         'conveyance_allowance',
@@ -123,11 +124,39 @@ class EmployeePayrollTemplate extends Model
             ->first();
 
         if (!$template) {
+            // Get organization settings
+            $organization = \App\Models\Organization::find($organizationId);
+            $orgSettings = $organization?->settings['payroll'] ?? [];
+            
+            // Merge default settings with organization settings
+            $settings = array_merge(
+                self::getDefaultSettings(),
+                [
+                    'basic_percentage' => $orgSettings['defaultBasicPercentage'] ?? 40.00,
+                    'hra_percentage' => $orgSettings['defaultHraPercentage'] ?? 50.00,
+                    'conveyance_allowance' => $orgSettings['defaultConveyance'] ?? 1600.00,
+                    'pf_employee_percentage' => $orgSettings['pfEmployeePercentage'] ?? 12.00,
+                    'pf_employer_percentage' => $orgSettings['pfEmployerPercentage'] ?? 12.00,
+                    'pf_wage_cap' => $orgSettings['pfWageCap'] ?? 15000.00,
+                    'esi_employee_percentage' => $orgSettings['esiEmployeePercentage'] ?? 0.75,
+                    'esi_employer_percentage' => $orgSettings['esiEmployerPercentage'] ?? 3.25,
+                    'esi_threshold' => $orgSettings['esiThreshold'] ?? 21000.00,
+                    'pt_state' => $orgSettings['defaultState'] ?? 'maharashtra',
+                    'tax_regime' => $orgSettings['defaultTaxRegime'] ?? 'new',
+                    'is_metro_city' => $orgSettings['isMetroCity'] ?? true,
+                    'pf_enabled' => $orgSettings['pfEnabled'] ?? true,
+                    'esi_enabled' => $orgSettings['esiEnabled'] ?? true,
+                    'pt_enabled' => $orgSettings['ptEnabled'] ?? true,
+                    'tds_enabled' => $orgSettings['tdsEnabled'] ?? true,
+                    'lwf_enabled' => $orgSettings['lwfEnabled'] ?? false,
+                ]
+            );
+            
             $template = self::create([
                 'user_id' => $userId,
                 'organization_id' => $organizationId,
                 'created_by' => $createdBy,
-                ...self::getDefaultSettings(),
+                ...$settings,
             ]);
         }
 

@@ -189,11 +189,14 @@ class PayrollController extends Controller
         $taxRegime = $request->get('tax_regime') ?? $profile?->tax_regime ?? 'new';
         $isMetro = $request->get('is_metro_city') ?? $profile?->is_metro_city ?? false;
 
+        $taxExemptions = $this->calculator->getApprovedTaxDeductions($user->id);
+
         $calculation = $this->calculator->calculatePayroll(
             annualCtc: $request->annual_ctc,
             stateCode: $state,
             isMetroCity: $isMetro,
-            taxRegime: $taxRegime
+            taxRegime: $taxRegime,
+            annualTaxExemptions: $taxExemptions
         );
 
         return response()->json([
@@ -411,6 +414,95 @@ class PayrollController extends Controller
     }
 
     /**
+     * Generate and download payslip as PDF.
+     */
+    public function downloadPayslipPdf(Request $request, int $userId, string $monthYear)
+    {
+        $payrollItem = PayrollItem::where('user_id', $userId)
+            ->whereHas('payrollRun', function ($q) use ($monthYear) {
+                $q->where('month_year', $monthYear);
+            })
+            ->first();
+
+        if (!$payrollItem) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payslip not found for this month',
+            ], 404);
+        }
+
+        $pdfService = new \App\Services\PayrollPdfService();
+        $pdf = $pdfService->generatePayslip($payrollItem);
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => "attachment; filename=\"payslip_{$userId}_{$monthYear}.pdf\"",
+        ]);
+    }
+
+    /**
+     * Employee self-service: get my payslips.
+     */
+    public function myPayslips(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $payrollItems = PayrollItem::where('user_id', $user->id)
+            ->with(['payrollRun'])
+            ->orderBy('id', 'desc')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'month_year' => $item->payrollRun?->month_year,
+                    'gross_salary' => $item->gross_salary,
+                    'total_deductions' => $item->total_deductions,
+                    'net_pay' => $item->net_pay,
+                    'payment_status' => $item->payment_status,
+                    'basic' => $item->basic,
+                    'hra' => $item->hra,
+                    'conveyance' => $item->conveyance,
+                    'special_allowance' => $item->special_allowance,
+                    'pf_employee' => $item->pf_employee,
+                    'esi_employee' => $item->esi_employee,
+                    'pt' => $item->pt,
+                    'tds' => $item->tds,
+                    'working_days' => $item->total_working_days,
+                    'days_present' => $item->days_present,
+                    'created_at' => $item->created_at,
+                ];
+            });
+
+        // Calculate YTD totals
+        $ytdGross = $payrollItems->sum('gross_salary');
+        $ytdDeductions = $payrollItems->sum('total_deductions');
+        $ytdNetPay = $payrollItems->sum('net_pay');
+
+        $profile = $user->employeeProfile;
+
+        return response()->json([
+            'payslips' => $payrollItems,
+            'ytd' => [
+                'gross' => $ytdGross,
+                'deductions' => $ytdDeductions,
+                'net_pay' => $ytdNetPay,
+                'months_count' => $payrollItems->count(),
+            ],
+            'employee' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'employee_code' => $user->employeeWorkInfo?->employee_code,
+                'designation' => $user->employeeWorkInfo?->designation,
+                'department' => $user->groups->first()?->name,
+                'pan_number' => $profile?->pan_number,
+                'uan_number' => $profile?->uan_number,
+                'bank_account' => $user->employeeBankAccounts->first()?->account_number,
+                'bank_ifsc' => $user->employeeBankAccounts->first()?->ifsc_swift,
+            ],
+        ]);
+    }
+
+    /**
      * Get payroll summary for organization.
      */
     public function getSummary(Request $request): JsonResponse
@@ -451,11 +543,14 @@ class PayrollController extends Controller
         $isMetro = $request->get('is_metro_city', false);
 
         foreach ($request->employees as $employee) {
+            $taxExemptions = $this->calculator->getApprovedTaxDeductions($employee['user_id']);
+
             $calculation = $this->calculator->calculatePayroll(
                 annualCtc: $employee['annual_ctc'],
                 stateCode: $state,
                 isMetroCity: $isMetro,
-                taxRegime: $taxRegime
+                taxRegime: $taxRegime,
+                annualTaxExemptions: $taxExemptions
             );
 
             $results[] = [

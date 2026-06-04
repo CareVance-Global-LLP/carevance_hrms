@@ -92,13 +92,45 @@ class PayrollMonthlyRun extends Model
         return $this->status === 'processed';
     }
 
+    public function isLocked(): bool
+    {
+        return $this->status === 'locked';
+    }
+
+    public function isApproved(): bool
+    {
+        return $this->status === 'approved';
+    }
+
+    public function isReleased(): bool
+    {
+        return $this->status === 'released';
+    }
+
     public function isPaid(): bool
     {
         return $this->status === 'paid';
     }
 
-    public function isLocked(): bool
+    /**
+     * Available status transitions
+     */
+    public static function getStatusFlow(): array
     {
-        return $this->status === 'locked';
+        return [
+            'draft' => ['processing', 'locked'],
+            'processing' => ['draft', 'locked'],
+            'processed' => ['draft', 'locked'],
+            'locked' => ['approved', 'draft'],
+            'approved' => ['released', 'locked'],
+            'released' => ['paid', 'approved'],
+            'paid' => [],
+        ];
+    }
+
+    public function canTransitionTo(string $newStatus): bool
+    {
+        $allowed = self::getStatusFlow()[$this->status] ?? [];
+        return in_array($newStatus, $allowed);
     }
 }

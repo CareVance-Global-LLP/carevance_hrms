@@ -7,6 +7,7 @@ import {
   CalendarClock,
   Camera,
   FileClock,
+  FileText,
   Fingerprint,
   FolderKanban,
   Gauge,
@@ -24,6 +25,7 @@ import {
   UserPlus,
   Users,
   Wallet,
+  IndianRupee,
   Waypoints,
 } from 'lucide-react';
 
@@ -136,22 +138,23 @@ export const topNavigation: NavGroup[] = [
     ],
   },
   {
+    label: 'Payroll',
+    icon: Wallet,
+    planFeature: 'payroll',
+    items: [
+      { label: 'My Payroll', to: '/my-payroll', icon: Wallet, planFeature: 'payroll' },
+      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll', adminOnly: true },
+      { label: 'Tax Declarations', to: '/tax-declarations', icon: FileText, planFeature: 'payroll' },
+      { label: 'Loans & Advances', to: '/loans', icon: IndianRupee, planFeature: 'payroll' },
+    ],
+  },
+  {
     label: 'Resignation',
     icon: UserMinus,
     employeeAndManagerOnly: true,
     items: [
       { label: 'Submit Resignation', to: '/resignation', icon: UserMinus },
       { label: 'My Resignation', to: '/resignation/status', icon: FileClock },
-    ],
-  },
-  {
-    label: 'Payroll',
-    to: '/payroll',
-    icon: Wallet,
-    adminOnly: true,
-    planFeature: 'payroll',
-    items: [
-      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll' },
     ],
   },
 ];

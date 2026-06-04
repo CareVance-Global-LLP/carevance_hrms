@@ -1733,6 +1733,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         eyebrow="Department quick add"
         description="Add a department and manage members from the directory below."
       />
+
     </div>
   );
 }

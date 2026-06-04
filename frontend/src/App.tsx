@@ -87,6 +87,9 @@ const SuperAdminBilling = lazyWithChunkRetry(() => import('@/pages/super-admin/B
 const SuperAdminPlans = lazyWithChunkRetry(() => import('@/pages/super-admin/Plans'));
 const GoogleSignupCompletion = lazyWithChunkRetry(() => import('@/pages/GoogleSignupCompletion'));
 const Payroll = lazyWithChunkRetry(() => import('@/pages/Payroll'));
+const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
+const TaxDeclaration = lazyWithChunkRetry(() => import('@/pages/TaxDeclaration'));
+const Loans = lazyWithChunkRetry(() => import('@/pages/Loans'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
 const isChunkLoadFailure = (error: unknown) => {
@@ -582,6 +585,9 @@ function App() {
             <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
             <Route path="settings/roles" element={<AdminRoute><RoleManagement /></AdminRoute>} />
             <Route path="payroll" element={<PlanFeatureRoute feature="payroll"><AdminRoute><Payroll /></AdminRoute></PlanFeatureRoute>} />
+            <Route path="my-payroll" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><MyPayroll /></ProtectedRoute></PlanFeatureRoute>} />
+            <Route path="tax-declarations" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><TaxDeclaration /></ProtectedRoute></PlanFeatureRoute>} />
+            <Route path="loans" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><Loans /></ProtectedRoute></PlanFeatureRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />

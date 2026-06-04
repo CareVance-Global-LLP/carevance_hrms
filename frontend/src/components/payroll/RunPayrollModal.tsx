@@ -114,25 +114,39 @@ export default function RunPayrollModal({
           for (const employee of employees) {
             try {
               if (!employee.payroll_status.is_processed) {
-                // Get employee details to fetch template
-                const detailsResponse = await payrollApi.getEmployeePayrollDetails(employee.id, {
-                  month_year: monthYear
-                });
+                // Use annual_ctc from employee template data (returned by getDepartmentEmployees)
+                // If not available, fetch it from the details endpoint
+                let annualCtc = (employee as any).annual_ctc;
                 
-                const template = detailsResponse.data.template;
+                if (!annualCtc) {
+                  // Fallback: fetch employee details to get template with annual_ctc
+                  const detailsResponse = await payrollApi.getEmployeePayrollDetails(employee.id, {
+                    month_year: monthYear
+                  });
+                  annualCtc = detailsResponse.data.template.annual_ctc;
+                }
                 
-                // Use a default CTC if not available (this should be configured per employee)
-                // For now, we'll calculate based on template or use a reasonable default
-                const annualCtc = 500000; // Default CTC - in production this should come from employee profile
+                // If still no CTC, skip or use a placeholder (user must set it first)
+                if (!annualCtc || annualCtc <= 0) {
+                  errors.push(`Skipped ${employee.name}: No annual CTC configured. Set it in the employee's payroll template first.`);
+                  continue;
+                }
+                
+                // Use time tracking data for attendance calculations
+                const timeTracking = employee.time_tracking || {};
+                const workingDays = timeTracking.payroll_attendance_days || 26;
+                const daysPresent = timeTracking.payroll_attendance_days || 26;
+                const lopDays = 0; // Calculate from LOP tracking if available
+                const overtimeHours = 0; // Calculate from overtime tracking if available
                 
                 await payrollApi.processEmployeePayroll(employee.id, {
                   user_id: employee.id,
                   month_year: monthYear,
                   annual_ctc: annualCtc,
-                  working_days: 26,
-                  days_present: 26,
-                  lOP_days: 0,
-                  overtime_hours: 0
+                  working_days: workingDays,
+                  days_present: daysPresent,
+                  lOP_days: lopDays,
+                  overtime_hours: overtimeHours
                 });
               }
               

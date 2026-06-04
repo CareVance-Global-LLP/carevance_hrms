@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\EmployeeTaxDeclaration;
+use App\Models\EmployeeTaxDeclarationItem;
+
 /**
  * Payroll Calculator Service
  * 
@@ -13,35 +16,42 @@ namespace App\Services;
  * - Professional Tax (state-wise)
  * - TDS/Income Tax (New Tax Regime default)
  * - Gratuity provision
+ * - Tax declaration exemptions (80C, 80D, etc.)
  */
 class PayrollCalculatorService
 {
     /**
      * PF Constants
      */
-    const PF_WAGE_CAP = 15000; // Maximum basic salary for PF calculation
-    const EMPLOYEE_PF_RATE = 0.12; // 12%
-    const EMPLOYER_PF_RATE = 0.12; // 12%
-    const EPS_RATE = 0.0833; // 8.33% of employer PF goes to EPS
-    const EPF_RATE = 0.0367; // 3.67% of employer PF goes to EPF
+    const PF_WAGE_CAP = 15000;
+    const EMPLOYEE_PF_RATE = 0.12;
+    const EMPLOYER_PF_RATE = 0.12;
+    const EPS_RATE = 0.0833;
+    const EPF_RATE = 0.0367;
 
     /**
      * ESI Constants
      */
-    const ESI_GROSS_THRESHOLD = 21000; // Maximum gross for ESI
-    const ESI_EMPLOYEE_RATE = 0.0075; // 0.75%
-    const ESI_EMPLOYER_RATE = 0.0325; // 3.25%
+    const ESI_GROSS_THRESHOLD = 21000;
+    const ESI_EMPLOYEE_RATE = 0.0075;
+    const ESI_EMPLOYER_RATE = 0.0325;
 
     /**
      * Gratuity Constants
      */
-    const GRATUITY_RATE = 0.0481; // 4.81% provision
+    const GRATUITY_RATE = 0.0481;
 
     /**
      * Tax Constants (New Tax Regime FY 2025-26)
      */
     const STANDARD_DEDUCTION_NEW = 75000;
-    const REBATE_LIMIT_NEW = 1200000; // ₹12 lakh
+    const REBATE_LIMIT_NEW = 1200000;
+
+    /**
+     * Section 80C combined cap (80C + 80CCC + 80CCD1)
+     */
+    const SECTION_80C_CAP = 150000;
+    const SECTION_80CCD1B_CAP = 50000;
 
     /**
      * Calculate complete payroll breakdown.
@@ -51,6 +61,7 @@ class PayrollCalculatorService
      * @param bool $isMetroCity Is metro city (for HRA calculation)
      * @param string $taxRegime 'new' or 'old' (default: 'new')
      * @param array $customConfig Custom configuration (basic_percentage, hra_percentage, etc.)
+     * @param float $annualTaxExemptions Total approved tax exemptions from Form 12BB declarations
      * @return array Complete payroll breakdown
      */
     public function calculatePayroll(
@@ -58,32 +69,31 @@ class PayrollCalculatorService
         string $stateCode = 'maharashtra',
         bool $isMetroCity = false,
         string $taxRegime = 'new',
-        array $customConfig = []
+        array $customConfig = [],
+        float $annualTaxExemptions = 0
     ): array {
         $config = array_merge([
-            'basic_percentage' => 0.40, // 40% of CTC
-            'hra_percentage_of_basic' => 0.50, // 50% of basic (metro) or 40% (non-metro)
-            'conveyance_allowance' => 1600, // Fixed ₹1,600
-            'medical_allowance' => 0, // Post-2018, covered under standard deduction
+            'basic_percentage' => 0.40,
+            'hra_percentage_of_basic' => 0.50,
+            'conveyance_allowance' => 1600,
+            'medical_allowance' => 0,
         ], $customConfig);
 
-        // Adjust HRA for non-metro
         if (!$isMetroCity) {
-            $config['hra_percentage_of_basic'] = 0.40; // 40% for non-metro
+            $config['hra_percentage_of_basic'] = 0.40;
         }
 
         $monthlyCtc = $annualCtc / 12;
 
-        // Step 1: Calculate Gross Components
         $salaryComponents = $this->calculateSalaryComponents($monthlyCtc, $config);
 
-        // Step 2: Calculate Statutory Deductions (Employee)
         $employeeDeductions = $this->calculateEmployeeDeductions(
             $salaryComponents['basic'],
             $salaryComponents['gross'],
             $stateCode,
             $annualCtc,
-            $taxRegime
+            $taxRegime,
+            $annualTaxExemptions
         );
 
         // Step 3: Calculate Employer Contributions
@@ -195,6 +205,7 @@ class PayrollCalculatorService
      * @param string $stateCode State code
      * @param float $annualCtc Annual CTC
      * @param string $taxRegime Tax regime
+     * @param float $annualTaxExemptions Approved tax declaration exemptions
      * @return array Deductions
      */
     protected function calculateEmployeeDeductions(
@@ -202,19 +213,13 @@ class PayrollCalculatorService
         float $gross,
         string $stateCode,
         float $annualCtc,
-        string $taxRegime
+        string $taxRegime,
+        float $annualTaxExemptions = 0
     ): array {
-        // PF: 12% of basic, capped at ₹15,000
         $pf = $this->calculateEmployeePF($basic);
-
-        // ESI: 0.75% of gross (if gross ≤ ₹21,000)
         $esi = $this->calculateEmployeeESI($gross);
-
-        // PT: State-specific
         $pt = PTStateService::calculate($stateCode, $gross);
-
-        // TDS: Calculate monthly
-        $tds = $this->calculateMonthlyTDS($annualCtc, $taxRegime);
+        $tds = $this->calculateMonthlyTDS($annualCtc, $taxRegime, $annualTaxExemptions);
 
         return [
             'pf' => $pf,
@@ -338,13 +343,14 @@ class PayrollCalculatorService
      * 
      * @param float $annualCtc Annual CTC
      * @param string $taxRegime 'new' or 'old'
+     * @param float $annualTaxExemptions Approved tax declaration exemptions (80C, 80D, 24b, etc.)
      * @return float Monthly TDS
      */
-    public function calculateMonthlyTDS(float $annualCtc, string $taxRegime = 'new'): float
+    public function calculateMonthlyTDS(float $annualCtc, string $taxRegime = 'new', float $annualTaxExemptions = 0): float
     {
-        // Estimate gross from CTC (rough approximation)
-        // For simplicity, we'll use CTC as taxable income estimate
-        $taxableIncome = $annualCtc;
+        // Estimate taxable income: CTC reduced by standard deduction and approved tax exemptions
+        $standardDeduction = $taxRegime === 'new' ? self::STANDARD_DEDUCTION_NEW : 50000;
+        $taxableIncome = max(0, $annualCtc - $standardDeduction - $annualTaxExemptions);
 
         if ($taxRegime === 'new') {
             $annualTax = $this->calculateNewRegimeTax($taxableIncome);
@@ -476,6 +482,98 @@ class PayrollCalculatorService
         );
 
         return max(0, $hraExempt);
+    }
+
+    /**
+     * Get approved tax declaration deductions for an employee in a financial year.
+     * Computes total deductible amount with per-section caps per IT Act.
+     * 
+     * @param int $userId Employee user ID
+     * @param string|null $financialYear Financial year (e.g. '2025-26'), defaults to current
+     * @return float Total approved exemption amount
+     */
+    public function getApprovedTaxDeductions(int $userId, ?string $financialYear = null): float
+    {
+        $financialYear = $financialYear ?? $this->getCurrentFinancialYear();
+
+        $declaration = EmployeeTaxDeclaration::where('user_id', $userId)
+            ->where('financial_year', $financialYear)
+            ->where('status', 'approved')
+            ->first();
+
+        if (!$declaration) {
+            return 0;
+        }
+
+        $items = $declaration->items()->where('status', 'approved')->get();
+        $totalDeductions = 0;
+        $section80Total = 0;
+
+        foreach ($items as $item) {
+            $amount = (float) $item->approved_amount;
+            if ($amount <= 0) continue;
+
+            switch ($item->section) {
+                case '80C':
+                case '80CCC':
+                case '80CCD1':
+                    $section80Total += $amount;
+                    break;
+                case '80CCD1B':
+                    $totalDeductions += min($amount, self::SECTION_80CCD1B_CAP);
+                    break;
+                case '80D':
+                    $totalDeductions += min($amount, 25000);
+                    break;
+                case '80DD':
+                    $totalDeductions += min($amount, 75000);
+                    break;
+                case '80DDB':
+                    $totalDeductions += min($amount, 40000);
+                    break;
+                case '80E':
+                    $totalDeductions += $amount;
+                    break;
+                case '80G':
+                    $totalDeductions += min($amount, 0.50 * $amount); // 50% for most
+                    break;
+                case '80GG':
+                    $totalDeductions += min($amount, 60000);
+                    break;
+                case '80TTA':
+                    $totalDeductions += min($amount, 10000);
+                    break;
+                case '80TTB':
+                    $totalDeductions += min($amount, 50000);
+                    break;
+                case '24B':
+                    $totalDeductions += min($amount, 200000);
+                    break;
+                case 'HRA':
+                    break;
+                case 'LTA':
+                    break;
+                default:
+                    $totalDeductions += $amount;
+            }
+        }
+
+        $totalDeductions += min($section80Total, self::SECTION_80C_CAP);
+
+        return $totalDeductions;
+    }
+
+    /**
+     * Get current financial year string (e.g. '2025-26').
+     */
+    public function getCurrentFinancialYear(): string
+    {
+        $year = now()->year;
+        $month = now()->month;
+        if ($month < 4) {
+            return ($year - 1) . '-' . substr($year, -2);
+        }
+        return $year . '-' . substr($year + 1, -2);
     }
 
     /**

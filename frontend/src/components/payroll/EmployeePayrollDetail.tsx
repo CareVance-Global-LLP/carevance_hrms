@@ -41,17 +41,24 @@ function formatNumber(value: number): string {
 }
 
 const INDIAN_STATES = [
-  { value: 'maharashtra', label: 'Maharashtra' },
+  { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
+  { value: 'assam', label: 'Assam' },
+  { value: 'bihar', label: 'Bihar' },
+  { value: 'delhi', label: 'Delhi' },
+  { value: 'gujarat', label: 'Gujarat' },
+  { value: 'haryana', label: 'Haryana' },
+  { value: 'jharkhand', label: 'Jharkhand' },
   { value: 'karnataka', label: 'Karnataka' },
+  { value: 'kerala', label: 'Kerala' },
+  { value: 'madhya_pradesh', label: 'Madhya Pradesh' },
+  { value: 'maharashtra', label: 'Maharashtra' },
+  { value: 'odisha', label: 'Odisha' },
+  { value: 'punjab', label: 'Punjab' },
+  { value: 'rajasthan', label: 'Rajasthan' },
   { value: 'tamil_nadu', label: 'Tamil Nadu' },
   { value: 'telangana', label: 'Telangana' },
-  { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
+  { value: 'uttar_pradesh', label: 'Uttar Pradesh' },
   { value: 'west_bengal', label: 'West Bengal' },
-  { value: 'gujarat', label: 'Gujarat' },
-  { value: 'delhi', label: 'Delhi' },
-  { value: 'punjab', label: 'Punjab' },
-  { value: 'haryana', label: 'Haryana' },
-  { value: 'rajasthan', label: 'Rajasthan' },
 ];
 
 export default function EmployeePayrollDetail({ employeeId, monthYear, onBack }: EmployeePayrollDetailProps) {
@@ -92,15 +99,27 @@ export default function EmployeePayrollDetail({ employeeId, monthYear, onBack }:
   useEffect(() => {
     if (data) {
       setTemplate(data.template);
-      if (data.payroll_preview && !hasUserEditedCtc) {
-        setCalculation(data.payroll_preview);
-        setAnnualCtc(String(data.payroll_preview.annual?.ctc || ''));
+      if (!hasUserEditedCtc) {
+        // Try to load annual_ctc from template first, then from preview
+        const savedCtc = data.template.annual_ctc;
+        const previewCtc = data.payroll_preview?.annual?.ctc;
+        const ctc = savedCtc || previewCtc || '';
+        if (ctc) {
+          setAnnualCtc(String(ctc));
+        }
+        if (data.payroll_preview) {
+          setCalculation(data.payroll_preview);
+        }
       }
     }
   }, [data, hasUserEditedCtc]);
 
   const handleCalculatePreview = async () => {
     if (!annualCtc || !template) return;
+    // Save annual_ctc to template for future use
+    if (parseFloat(annualCtc) !== template.annual_ctc) {
+      updateTemplateMutation.mutate({ annual_ctc: parseFloat(annualCtc) });
+    }
     await handleCalculatePreviewWithTemplate(template);
   };
 
@@ -503,6 +522,19 @@ export default function EmployeePayrollDetail({ employeeId, monthYear, onBack }:
                     {template.tds_enabled ? <ToggleRight className="h-6 w-6" /> : <ToggleLeft className="h-6 w-6" />}
                   </button>
                 </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm text-slate-700">Labour Welfare Fund (LWF)</span>
+                    <p className="text-xs text-slate-500">State-specific contribution</p>
+                  </div>
+                  <button
+                    onClick={() => handleToggleDeduction('lwf_enabled', !template.lwf_enabled)}
+                    className={template.lwf_enabled ? 'text-blue-600' : 'text-slate-400'}
+                  >
+                    {template.lwf_enabled ? <ToggleRight className="h-6 w-6" /> : <ToggleLeft className="h-6 w-6" />}
+                  </button>
+                </div>
               </div>
 
               <Button 
@@ -603,6 +635,12 @@ export default function EmployeePayrollDetail({ employeeId, monthYear, onBack }:
                       <div className="flex justify-between">
                         <span className="text-slate-600">TDS (Income Tax)</span>
                         <span>{formatCurrency(calculation.components.deductions.tds)}</span>
+                      </div>
+                    )}
+                    {template.lwf_enabled && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">LWF</span>
+                        <span>{formatCurrency(30)}</span>
                       </div>
                     )}
                     <div className="flex justify-between pt-2 border-t border-slate-200 font-medium text-rose-600">

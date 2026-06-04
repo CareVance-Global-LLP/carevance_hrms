@@ -161,34 +161,38 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
       [`Month: ${month}`],
       [`Generated on: ${new Date().toLocaleString()}`],
       [''],
-      ['This report provides a summary of statutory deductions for compliance purposes.'],
+      ['Summary'],
+      ['Total Employees', String(stats?.total_employees || 0)],
+      ['Processed Employees', String(stats?.processed_employees || 0)],
+      ['Gross Salary Amount', `₹${(stats?.total_gross || 0).toLocaleString('en-IN')}`],
+      ['Total Deductions', `₹${(stats?.total_deductions || 0).toLocaleString('en-IN')}`],
       [''],
-      ['Deduction Type', 'Employee Contribution (₹)', 'Employer Contribution (₹)', 'Total (₹)'],
-      ['Provident Fund (PF)', 'As per calculation', 'As per calculation', 'N/A'],
-      ['Employee State Insurance (ESI)', '0.75% of gross', '3.25% of gross', '4% of gross'],
-      ['Professional Tax (PT)', 'State-specific', 'N/A', 'State-specific'],
-      ['Tax Deducted at Source (TDS)', 'As per IT slab', 'N/A', 'As per IT slab'],
-      [''],
-      ['Note: Detailed employee-wise deductions available in Payroll Register'],
+      ['Note: Download the Payroll Register for employee-wise deduction breakdown.'],
     ];
     return lines.map(line => line.join(',')).join('\n');
   };
 
   const generateBankReport = (departments: any[], month?: string): string => {
+    const totalEmployees = departments.reduce((sum, d) => sum + d.employee_count, 0);
+    const totalNetPay = departments.reduce((sum, d) => sum + d.total_net_pay, 0);
     const lines = [
       ['CareVance HRMS - Bank Transfer Report'],
       [`Month: ${month}`],
       [`Generated on: ${new Date().toLocaleString()}`],
       [''],
-      ['This report is for NEFT/RTGS processing.'],
-      [''],
-      ['S.No', 'Employee Name', 'Bank Account', 'IFSC Code', 'Net Pay (₹)', 'Status'],
-      ['1', 'Sample Employee 1', '1234567890', 'SBIN0001234', '50000', 'Pending'],
-      ['2', 'Sample Employee 2', '0987654321', 'HDFC0005678', '45000', 'Pending'],
+      ['Department-wise Summary'],
+      ['Department', 'Employees', 'Processed', 'Net Pay (₹)'],
     ];
     
+    departments.forEach(dept => {
+      lines.push([dept.name, String(dept.employee_count), String(dept.processed_count), String(dept.total_net_pay)]);
+    });
+    
     lines.push(['']);
-    lines.push(['Note: Detailed bank information available from employee profiles']);
+    lines.push(['TOTAL', String(totalEmployees), String(totalEmployees), String(totalNetPay)]);
+    lines.push(['']);
+    lines.push(['Note: Employee-wise bank details are available in employee profiles.']);
+    lines.push(['Use the "Bank Transfer" action in Payroll Run to generate NEFT file.']);
     
     return lines.map(line => line.join(',')).join('\n');
   };

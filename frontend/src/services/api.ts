@@ -1511,6 +1511,98 @@ export const payrollApi = {
   generatePayslip: (data: { user_id: number; month: string; payroll_data: PayrollCalculation }) =>
     api.post<{ success: boolean; payslip: PayslipData; download_url: string | null }>('/payroll/generate-payslip', data),
 
+  // Payroll Run Lifecycle
+  getPayrollRuns: () =>
+    api.get<{ runs: any[] }>('/payroll/runs'),
+
+  getPayrollRunDetail: (runId: number) =>
+    api.get<{ run: any; items: any[] }>(`/payroll/runs/${runId}`),
+
+  lockPayrollRun: (runId: number, notes?: string) =>
+    api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/lock`, { notes }),
+
+  approvePayrollRun: (runId: number, notes?: string) =>
+    api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/approve`, { notes }),
+
+  releasePayrollRun: (runId: number, notes?: string) =>
+    api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/release`, { notes }),
+
+  processRunPayment: (runId: number, paymentMethod?: string, payDate?: string) =>
+    api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/process-payment`, { payment_method: paymentMethod, pay_date: payDate }),
+
+  generateBankFile: (runId: number) =>
+    api.get<{ success: boolean; filename: string; content: string; entries: any[]; total_amount: number; total_employees: number }>(`/payroll/runs/${runId}/bank-file`),
+
+  generateBulkPayslips: (runId: number) =>
+    api.get<{ success: boolean; run: any; payslips: any[]; total_employees: number }>(`/payroll/runs/${runId}/payslips`),
+
+  // Tax Declarations (Form 12BB)
+  getTaxSections: () =>
+    api.get<{ sections: Record<string, string>; categories: Record<string, string[]> }>('/payroll/tax-sections'),
+
+  getMyTaxDeclaration: (params?: { financial_year?: string }) =>
+    api.get<{ declaration: any; sections: Record<string, string>; categories: Record<string, string[]> }>('/payroll/my/declaration', { params }),
+
+  saveTaxDeclarationItems: (data: { items: any[]; financial_year?: string }) =>
+    api.post<{ success: boolean; message: string; declaration: any }>('/payroll/my/declaration/items', data),
+
+  submitTaxDeclaration: (declarationId: number) =>
+    api.post<{ success: boolean; message: string; declaration: any }>(`/payroll/my/declaration/${declarationId}/submit`),
+
+  uploadTaxProof: (itemId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('proof', file);
+    return api.post<{ success: boolean; message: string; proof_path: string }>(`/payroll/declaration-items/${itemId}/proof`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  reviewTaxDeclaration: (declarationId: number, data: { action: 'approve' | 'reject'; remarks?: string; items?: any[] }) =>
+    api.post<{ success: boolean; message: string; declaration: any }>(`/payroll/declarations/${declarationId}/review`, data),
+
+  listTaxDeclarations: (params?: { financial_year?: string; status?: string }) =>
+    api.get<{ declarations: any[]; financial_year: string }>('/payroll/declarations', { params }),
+
+  // Loan / Advance Management
+  requestLoan: (data: { loan_type: string; amount: number; emi_amount: number; total_installments: number; purpose?: string }) =>
+    api.post<{ success: boolean; message: string; loan: any }>('/payroll/loans/request', data),
+
+  getMyLoans: () =>
+    api.get<{ loans: any[]; active_loan: any | null }>('/payroll/my/loans'),
+
+  listLoans: (params?: { status?: string }) =>
+    api.get<{ loans: any[] }>('/payroll/loans', { params }),
+
+  approveLoan: (loanId: number) =>
+    api.post<{ success: boolean; message: string; loan: any }>(`/payroll/loans/${loanId}/approve`),
+
+  rejectLoan: (loanId: number, rejection_reason: string) =>
+    api.post<{ success: boolean; message: string; loan: any }>(`/payroll/loans/${loanId}/reject`, { rejection_reason }),
+
+  closeLoan: (loanId: number) =>
+    api.post<{ success: boolean; message: string; loan: any }>(`/payroll/loans/${loanId}/close`),
+
+  // Employee Self-Service
+  getMyPayslips: () =>
+    api.get<{ payslips: any[]; ytd: { gross: number; deductions: number; net_pay: number; months_count: number }; employee: any }>('/payroll/my/payslips'),
+
+  downloadPayslipPdf: (userId: number, monthYear: string, config?: any) =>
+    api.get(`/payroll/payslip/${userId}/${monthYear}/download`, { ...config, responseType: 'blob' }),
+
+  // Payroll Organization Settings
+  getPayrollSettings: () =>
+    api.get<{ success: boolean; settings: PayrollOrganizationSettings }>('/payroll/settings'),
+  
+  updatePayrollSettings: (settings: Partial<PayrollOrganizationSettings>) =>
+    api.put<{ success: boolean; message: string; settings: PayrollOrganizationSettings }>('/payroll/settings', settings),
+  
+  resetPayrollSettings: () =>
+    api.post<{ success: boolean; message: string; settings: PayrollOrganizationSettings }>('/payroll/settings/reset'),
+
+  // Dashboard Data
+  getDashboardData: (params?: { month_year?: string }) =>
+    api.get<{ success: boolean; data: any }>('/payroll/dashboard-data', { params }),
+
   // Legacy Summary
   getSummary: (params?: { month?: string }) =>
     api.get<PayrollSummary>('/payroll/summary', { params }),
