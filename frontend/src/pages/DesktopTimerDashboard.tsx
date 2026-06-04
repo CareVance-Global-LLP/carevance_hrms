@@ -291,10 +291,20 @@ export default function DesktopTimerDashboard() {
         setActiveTimer(activeFromApi);
         if (!activeFromApi) {
           localStorage.removeItem(ACTIVE_TIMER_KEY);
+          setLiveDuration(0);
         } else {
           clearAutoStartArm(userId);
           clearAutoStartSuppression(userId);
           hasRestoredSnapshotRef.current = false;
+          // Immediately compute live duration when timer is restored
+          const base = Number.isFinite(Number(activeFromApi.duration)) ? Number(activeFromApi.duration) : 0;
+          const startMs = getStartTimeMs(activeFromApi.start_time);
+          if (Number.isFinite(startMs)) {
+            const elapsed = Math.floor((Date.now() - startMs) / 1000);
+            setLiveDuration(Math.max(base, elapsed, 0));
+          } else {
+            setLiveDuration(base);
+          }
         }
 
         setTodayEntries(data?.today_entries || []);

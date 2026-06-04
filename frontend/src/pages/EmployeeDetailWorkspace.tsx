@@ -15,6 +15,7 @@ import { ArrowLeft, Download } from 'lucide-react';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
 import { useAuth } from '@/contexts/AuthContext';
+import { validateGovernmentId, validateIfsc, validateBankAccount, validateUpi } from '@/lib/idValidation';
 
 const tabs = ['overview', 'about', 'work', 'government', 'bank', 'documents', 'attendance', 'leave', 'activity'];
 const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -50,6 +51,7 @@ export default function EmployeeDetailWorkspace() {
   const [aboutForm, setAboutForm] = useState<Record<string, any>>({});
   const [workForm, setWorkForm] = useState<Record<string, any>>({});
   const [govForm, setGovForm] = useState<Record<string, any>>({ id_type: 'PAN', status: 'pending' });
+  const [govValidation, setGovValidation] = useState<{ valid: boolean; error?: string; normalized?: string } | null>(null);
   const [bankForm, setBankForm] = useState<Record<string, any>>(createEmptyBankForm());
   const [docForm, setDocForm] = useState<Record<string, any>>({ category: 'other', review_status: 'pending' });
   const [payrollForm, setPayrollForm] = useState<Record<string, any>>({});
@@ -151,30 +153,46 @@ export default function EmployeeDetailWorkspace() {
       {tab === 'work' ? <EmployeeSectionCard title="Work Info" description="Department, reporting, attendance policy, work schedule, and employment status."><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"><div><FieldLabel>Employee Code</FieldLabel><TextInput value={workForm.employee_code || ''} onChange={(event) => setWorkForm((current) => ({ ...current, employee_code: event.target.value }))} /></div><div><FieldLabel>Department</FieldLabel><SelectInput value={workForm.report_group_id || ''} onChange={(event) => setWorkForm((current) => ({ ...current, report_group_id: event.target.value ? Number(event.target.value) : '' }))}><option value="">Select department</option>{data.options.departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectInput></div><div><FieldLabel>Designation</FieldLabel><TextInput value={workForm.designation || ''} onChange={(event) => setWorkForm((current) => ({ ...current, designation: event.target.value }))} /></div><div><FieldLabel>Reporting Manager</FieldLabel><SelectInput value={workForm.reporting_manager_id || ''} onChange={(event) => setWorkForm((current) => ({ ...current, reporting_manager_id: event.target.value ? Number(event.target.value) : '' }))}><option value="">Select manager</option>{data.options.managers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</SelectInput></div><div><FieldLabel>Work Location</FieldLabel><TextInput value={workForm.work_location || ''} onChange={(event) => setWorkForm((current) => ({ ...current, work_location: event.target.value }))} /></div><div><FieldLabel>Shift</FieldLabel><TextInput value={workForm.shift_name || ''} onChange={(event) => setWorkForm((current) => ({ ...current, shift_name: event.target.value }))} /></div><div><FieldLabel>Attendance Policy</FieldLabel><TextInput value={workForm.attendance_policy || ''} onChange={(event) => setWorkForm((current) => ({ ...current, attendance_policy: event.target.value }))} /></div><div><FieldLabel>Employment Type</FieldLabel><TextInput value={workForm.employment_type || ''} onChange={(event) => setWorkForm((current) => ({ ...current, employment_type: event.target.value }))} /></div><div><FieldLabel>Joining Date</FieldLabel><TextInput type="date" value={workForm.joining_date || ''} onChange={(event) => setWorkForm((current) => ({ ...current, joining_date: event.target.value }))} /></div><div><FieldLabel>Probation Status</FieldLabel><TextInput value={workForm.probation_status || ''} onChange={(event) => setWorkForm((current) => ({ ...current, probation_status: event.target.value }))} /></div><div><FieldLabel>Status</FieldLabel><SelectInput value={workForm.employment_status || 'active'} onChange={(event) => setWorkForm((current) => ({ ...current, employment_status: event.target.value }))}><option value="active">Active</option><option value="inactive">Inactive</option><option value="notice">Notice</option><option value="exited">Exited</option></SelectInput></div><div><FieldLabel>Exit Date</FieldLabel><TextInput type="date" value={workForm.exit_date || ''} onChange={(event) => setWorkForm((current) => ({ ...current, exit_date: event.target.value }))} /></div><div><FieldLabel>Work Mode</FieldLabel><SelectInput value={workForm.work_mode || ''} onChange={(event) => setWorkForm((current) => ({ ...current, work_mode: event.target.value }))}><option value="">Select mode</option><option value="office">Office</option><option value="remote">Remote</option><option value="hybrid">Hybrid</option></SelectInput></div><div><FieldLabel>Expected Start Time (HH:MM)</FieldLabel><TextInput type="time" value={workForm.expected_start_time || ''} onChange={(event) => setWorkForm((current) => ({ ...current, expected_start_time: event.target.value }))} /></div><div><FieldLabel>Expected Timezone</FieldLabel><SelectInput value={workForm.expected_timezone || ''} onChange={(event) => setWorkForm((current) => ({ ...current, expected_timezone: event.target.value }))}><option value="">Use organization default</option>{COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}</SelectInput></div></div><div className="mt-6"><Button onClick={() => saveWork.mutate()} disabled={saveWork.isPending}>Save Work Info</Button></div></EmployeeSectionCard> : null}
 
 
-      {tab === 'government' ? <EmployeeSectionCard title="Government IDs" description="Compliance IDs with proof support and verification status."><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"><div><FieldLabel>ID Type</FieldLabel><TextInput value={govForm.id_type || ''} onChange={(event) => setGovForm((current) => ({ ...current, id_type: event.target.value }))} /></div><div><FieldLabel>ID Number</FieldLabel><TextInput value={govForm.id_number || ''} onChange={(event) => setGovForm((current) => ({ ...current, id_number: event.target.value }))} /></div><div><FieldLabel>Status</FieldLabel><SelectInput value={govForm.status || 'pending'} onChange={(event) => setGovForm((current) => ({ ...current, status: event.target.value }))}><option value="pending">Pending</option><option value="verified">Verified</option><option value="rejected">Rejected</option></SelectInput></div><div><FieldLabel>Issue Date</FieldLabel><TextInput type="date" value={govForm.issue_date || ''} onChange={(event) => setGovForm((current) => ({ ...current, issue_date: event.target.value }))} /></div><div><FieldLabel>Expiry Date</FieldLabel><TextInput type="date" value={govForm.expiry_date || ''} onChange={(event) => setGovForm((current) => ({ ...current, expiry_date: event.target.value }))} /></div><div><FieldLabel>Proof File</FieldLabel><input type="file" className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" onChange={(event) => setGovForm((current) => ({ ...current, proof_file: event.target.files?.[0] || null }))} /></div></div><div className="mt-5"><Button onClick={() => saveGov.mutate()} disabled={saveGov.isPending || !govForm.id_type || !govForm.id_number}>Save ID</Button></div><div className="mt-5 space-y-3">{data.government_ids.map((item) => <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-medium text-slate-950">{item.id_type}</p><p className="text-sm text-slate-500">{item.id_number}</p></div><StatusBadge tone={payrollStatusTone(item.status)}>{item.status}</StatusBadge></div><p className="mt-2 text-sm text-slate-500">{item.document ? `Proof: ${item.document.title}` : 'No proof attached yet.'}</p></div>)}</div></EmployeeSectionCard> : null}
+      {tab === 'government' ? <EmployeeSectionCard title="Government IDs" description="Compliance IDs with proof support and verification status."><div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"><div><FieldLabel>ID Type</FieldLabel><SelectInput value={govForm.id_type || 'PAN'} onChange={(event) => { const newType = event.target.value; setGovForm((current) => ({ ...current, id_type: newType, id_number: '' })); setGovValidation(null); }}><option value="aadhaar">Aadhaar</option><option value="pan">PAN</option><option value="passport">Passport</option><option value="driving_license">Driving License</option><option value="voter_id">Voter ID (EPIC)</option><option value="uan">UAN</option><option value="esi">ESI Number</option></SelectInput></div><div><FieldLabel>ID Number</FieldLabel><TextInput value={govForm.id_number || ''} onChange={(event) => { const value = event.target.value; setGovForm((current) => ({ ...current, id_number: value })); if (govForm.id_type && value) { setGovValidation(validateGovernmentId(govForm.id_type, value)); } else { setGovValidation(null); } }} className={govValidation?.error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : govValidation?.valid ? 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500' : ''} /><p className="mt-1 text-sm">{govValidation?.error ? <span className="text-red-600">{govValidation.error}</span> : govValidation?.valid ? <span className="text-emerald-600">Valid {govForm.id_type.toUpperCase()} format</span> : <span className="text-slate-400">Format validation: {govForm.id_type === 'aadhaar' ? '12 digits' : govForm.id_type === 'pan' ? 'ABCDE1234F' : govForm.id_type === 'passport' ? 'Letter + 7 chars' : govForm.id_type === 'driving_license' ? 'State code + numbers' : govForm.id_type === 'voter_id' ? 'ABC1234567' : govForm.id_type === 'uan' ? '12 digits' : govForm.id_type === 'esi' ? '17 digits' : 'Select type first'}</span>}</p></div><div><FieldLabel>Status</FieldLabel><SelectInput value={govForm.status || 'pending'} onChange={(event) => setGovForm((current) => ({ ...current, status: event.target.value }))}><option value="pending">Pending</option><option value="verified">Verified</option><option value="rejected">Rejected</option></SelectInput></div><div><FieldLabel>Issue Date</FieldLabel><TextInput type="date" value={govForm.issue_date || ''} onChange={(event) => setGovForm((current) => ({ ...current, issue_date: event.target.value }))} /></div><div><FieldLabel>Expiry Date</FieldLabel><TextInput type="date" value={govForm.expiry_date || ''} onChange={(event) => setGovForm((current) => ({ ...current, expiry_date: event.target.value }))} /></div><div><FieldLabel>Proof File</FieldLabel><input type="file" className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" onChange={(event) => setGovForm((current) => ({ ...current, proof_file: event.target.files?.[0] || null }))} /></div></div><div className="mt-5"><Button onClick={() => saveGov.mutate()} disabled={saveGov.isPending || !govForm.id_type || !govForm.id_number || govValidation === null || !govValidation.valid}>Save ID</Button></div><div className="mt-5 space-y-3">{data.government_ids.map((item) => <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-medium text-slate-950">{item.id_type}</p><p className="text-sm text-slate-500">{item.id_number}</p></div><StatusBadge tone={payrollStatusTone(item.status)}>{item.status}</StatusBadge></div><p className="mt-2 text-sm text-slate-500">{item.document ? `Proof: ${item.document.title}` : 'No proof attached yet.'}</p></div>)}</div></EmployeeSectionCard> : null}
 
       {tab === 'bank' ? (
         <EmployeeSectionCard title="Bank Details" description="Payout bank details, alternative payment channels, and verification.">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {[
-              ['account_holder_name', 'Account Holder'],
-              ['bank_name', 'Bank Name'],
-              ['account_number', 'Account Number'],
-              ['ifsc_swift', 'IFSC / SWIFT'],
-              ['branch', 'Branch'],
-              ['account_type', 'Account Type'],
-              ['upi_id', 'UPI'],
-              ['payment_email', 'Payment Email'],
-            ].map(([key, label]) => (
-              <div key={key}>
-                <FieldLabel>{label}</FieldLabel>
-                <TextInput
-                  type={key.includes('email') ? 'email' : 'text'}
-                  value={bankForm[key] || ''}
-                  onChange={(event) => setBankForm((current) => ({ ...current, [key]: event.target.value }))}
-                />
-              </div>
-            ))}
+            <div>
+              <FieldLabel>Account Holder</FieldLabel>
+              <TextInput value={bankForm.account_holder_name || ''} onChange={(event) => setBankForm((current) => ({ ...current, account_holder_name: event.target.value }))} />
+            </div>
+            <div>
+              <FieldLabel>Bank Name</FieldLabel>
+              <TextInput value={bankForm.bank_name || ''} onChange={(event) => setBankForm((current) => ({ ...current, bank_name: event.target.value }))} />
+            </div>
+            <div>
+              <FieldLabel>Account Number</FieldLabel>
+              <TextInput value={bankForm.account_number || ''} onChange={(event) => setBankForm((current) => ({ ...current, account_number: event.target.value }))} />
+              {bankForm.account_number && (() => { const result = validateBankAccount(bankForm.account_number); return result.error ? <p className="mt-1 text-xs text-red-600">{result.error}</p> : result.valid ? <p className="mt-1 text-xs text-emerald-600">Valid account number format</p> : null; })()}
+            </div>
+            <div>
+              <FieldLabel>IFSC / SWIFT</FieldLabel>
+              <TextInput value={bankForm.ifsc_swift || ''} onChange={(event) => setBankForm((current) => ({ ...current, ifsc_swift: event.target.value }))} />
+              {bankForm.ifsc_swift && (() => { const result = validateIfsc(bankForm.ifsc_swift); return result.error ? <p className="mt-1 text-xs text-red-600">{result.error}</p> : result.valid ? <p className="mt-1 text-xs text-emerald-600">Valid IFSC format</p> : null; })()}
+            </div>
+            <div>
+              <FieldLabel>Branch</FieldLabel>
+              <TextInput value={bankForm.branch || ''} onChange={(event) => setBankForm((current) => ({ ...current, branch: event.target.value }))} />
+            </div>
+            <div>
+              <FieldLabel>Account Type</FieldLabel>
+              <TextInput value={bankForm.account_type || ''} onChange={(event) => setBankForm((current) => ({ ...current, account_type: event.target.value }))} />
+            </div>
+            <div>
+              <FieldLabel>UPI</FieldLabel>
+              <TextInput value={bankForm.upi_id || ''} onChange={(event) => setBankForm((current) => ({ ...current, upi_id: event.target.value }))} />
+              {bankForm.upi_id && (() => { const result = validateUpi(bankForm.upi_id); return result.error ? <p className="mt-1 text-xs text-red-600">{result.error}</p> : result.valid ? <p className="mt-1 text-xs text-emerald-600">Valid UPI format</p> : null; })()}
+            </div>
+            <div>
+              <FieldLabel>Payment Email</FieldLabel>
+              <TextInput type="email" value={bankForm.payment_email || ''} onChange={(event) => setBankForm((current) => ({ ...current, payment_email: event.target.value }))} />
+            </div>
 
             <div>
               <FieldLabel>Payout Method</FieldLabel>

@@ -74,7 +74,8 @@ export function usePlan() {
   const planCode = organization?.plan_code || 'basic';
   const maxSeats = organization?.max_seats ?? 5;
   const isTrial = organization?.subscription_status === 'trial';
-  const effectivePlanCode = isTrial ? 'basic' : planCode;
+  // Trial users should get features from their selected plan (e.g., advanced_tracker), not force basic
+  const effectivePlanCode = planCode;
   const features = PLAN_FEATURES[effectivePlanCode] || PLAN_FEATURES.basic;
 
   const hasFeature = useCallback(

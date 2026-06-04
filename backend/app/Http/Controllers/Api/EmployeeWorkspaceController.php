@@ -12,6 +12,7 @@ class EmployeeWorkspaceController extends Controller
 {
     public function __construct(
         private readonly EmployeeWorkspaceService $employeeWorkspaceService,
+        private readonly \App\Services\Validation\IndianIdValidationService $validationService,
     ) {
     }
 
@@ -108,6 +109,22 @@ class EmployeeWorkspaceController extends Controller
             'proof_file' => 'nullable|file|max:10240',
         ]);
 
+        // Validate ID format before saving
+        $idType = strtolower($data['id_type']);
+        $validationResult = $this->validationService->validate($idType, $data['id_number']);
+        
+        if (!$validationResult['valid']) {
+            return response()->json([
+                'message' => 'Invalid ID format',
+                'error' => $validationResult['error'],
+                'id_type' => $data['id_type'],
+                'id_number' => $validationResult['normalized'] ?? $data['id_number'],
+            ], 422);
+        }
+
+        // Normalize the ID number
+        $data['id_number'] = $validationResult['normalized'];
+
         if ($request->hasFile('proof_file')) {
             $document = $this->employeeWorkspaceService->storeDocument($employee, $currentUser, [
                 'title' => ($data['id_type'] ?? 'Government ID') . ' proof',
@@ -151,6 +168,43 @@ class EmployeeWorkspaceController extends Controller
             'notes' => 'nullable|string',
             'proof_file' => 'nullable|file|max:10240',
         ]);
+
+        // Validate bank details
+        $validationErrors = [];
+
+        if (!empty($data['ifsc_swift'])) {
+            $ifscResult = $this->validationService->validateIfsc($data['ifsc_swift']);
+            if (!$ifscResult['valid']) {
+                $validationErrors['ifsc_swift'] = $ifscResult['error'];
+            } else {
+                $data['ifsc_swift'] = $ifscResult['normalized'];
+            }
+        }
+
+        if (!empty($data['account_number'])) {
+            $accountResult = $this->validationService->validateBankAccount($data['account_number']);
+            if (!$accountResult['valid']) {
+                $validationErrors['account_number'] = $accountResult['error'];
+            } else {
+                $data['account_number'] = $accountResult['normalized'];
+            }
+        }
+
+        if (!empty($data['upi_id'])) {
+            $upiResult = $this->validationService->validateUpi($data['upi_id']);
+            if (!$upiResult['valid']) {
+                $validationErrors['upi_id'] = $upiResult['error'];
+            } else {
+                $data['upi_id'] = $upiResult['normalized'];
+            }
+        }
+
+        if (!empty($validationErrors)) {
+            return response()->json([
+                'message' => 'Invalid bank details',
+                'errors' => $validationErrors,
+            ], 422);
+        }
 
         if ($request->hasFile('proof_file')) {
             $document = $this->employeeWorkspaceService->storeDocument($employee, $currentUser, [

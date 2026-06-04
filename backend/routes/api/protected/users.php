@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\EmployeeWorkspaceController;
 use App\Http\Controllers\Api\ReportGroupController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\DocumentValidationController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/users', [UserController::class, 'index']);
@@ -16,6 +17,12 @@ Route::get('/users/{id}/profile-360', [UserController::class, 'profile360']);
 
 Route::get('/groups', [ReportGroupController::class, 'index']);
 Route::get('/groups/{id}', [ReportGroupController::class, 'show']);
+
+// Document Validation Routes (available to all authenticated users)
+Route::post('/validate/government-id', [DocumentValidationController::class, 'validateGovernmentId']);
+Route::post('/validate/bank-details', [DocumentValidationController::class, 'validateBankDetails']);
+Route::post('/validate/bulk', [DocumentValidationController::class, 'bulkValidate']);
+Route::get('/validation/rules', [DocumentValidationController::class, 'getValidationRules']);
 
 Route::middleware('role:admin,manager')->group(function () {
     Route::get('/employees/{id}/workspace', [EmployeeWorkspaceController::class, 'show']);

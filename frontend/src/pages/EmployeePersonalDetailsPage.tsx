@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { canAccess } from '@/lib/permissions';
 import { employeeWorkspaceApi, userApi } from '@/services/api';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
+import { usePlan } from '@/hooks/usePlan';
 
 const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
@@ -35,6 +36,8 @@ export default function EmployeePersonalDetailsPage() {
   
   // Only the profile owner can edit their personal info
   const canEditOwnProfile = user?.id === id;
+  const { hasFeature } = usePlan();
+  const hasPayrollFeature = hasFeature('payroll');
 
   const workspaceQuery = useQuery({
     queryKey: ['employee-workspace', id],
@@ -421,8 +424,9 @@ export default function EmployeePersonalDetailsPage() {
         )}
       </section>
 
-      {/* Bank Accounts Section */}
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      {hasPayrollFeature && (
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        {/* Bank Accounts Section */}
         <div className="flex items-center gap-2">
           <CreditCard className="h-5 w-5 text-blue-600" />
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Bank Account Details</p>
@@ -529,9 +533,11 @@ export default function EmployeePersonalDetailsPage() {
           </div>
         )}
       </section>
+      )}
 
-      {/* Documents Section */}
+      {hasPayrollFeature && (
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        {/* Documents Section */}
         <div className="flex items-center gap-2">
           <Building2 className="h-5 w-5 text-blue-600" />
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Documents</p>
@@ -609,6 +615,7 @@ export default function EmployeePersonalDetailsPage() {
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }

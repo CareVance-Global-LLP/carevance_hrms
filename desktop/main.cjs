@@ -51,6 +51,7 @@ const readConfiguredAppConfig = () => {
   }
 };
 const APP_CONFIG = readConfiguredAppConfig();
+console.log('[Desktop] Loaded config:', JSON.stringify(APP_CONFIG, null, 2));
 const APP_URL = process.env.APP_URL || (typeof APP_CONFIG.appUrl === 'string' ? APP_CONFIG.appUrl.trim() : '') || DEFAULT_APP_URL;
 const IS_REMOTE_APP_URL = /^https?:\/\//i.test(APP_URL);
 const isAllowedAppUrl = (value) => {
@@ -141,6 +142,7 @@ const BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS = Array.from(new Set(
     .map((origin) => String(origin || '').trim().toLowerCase().replace(/\/+$/, ''))
     .filter(Boolean)
 ));
+console.log('[Desktop] Browser tracking allowed origins:', BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS);
 const APP_ICON = process.platform === 'win32'
   ? path.join(__dirname, 'assets', 'icon.ico')
   : path.join(__dirname, 'assets', 'icon.png');

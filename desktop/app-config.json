@@ -8,8 +8,10 @@
   "browserTracking": {
     "chromeStoreUrl": null,
     "edgeStoreUrl": null,
-    "chromeExtensionOrigin": null,
+    "chromeExtensionOrigin": "chrome-extension://idokemlmnjpefdelnfiehbnbhjkneplp",
     "edgeExtensionOrigin": null,
-    "allowedExtensionOrigins": []
+    "allowedExtensionOrigins": [
+      "chrome-extension://idokemlmnjpefdelnfiehbnbhjkneplp"
+    ]
   }
 }

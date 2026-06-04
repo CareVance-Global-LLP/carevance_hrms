@@ -94,7 +94,7 @@ export const topNavigation: NavGroup[] = [
     icon: CalendarClock,
     items: [
       { label: 'Attendance', to: '/attendance', icon: CalendarClock },
-      { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management', employeeAndManagerOnly: true },
+      { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management' },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
       { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true, planFeature: 'monitoring', permission: 'monitoring.view' },

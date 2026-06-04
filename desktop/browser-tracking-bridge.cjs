@@ -426,8 +426,12 @@ function createBrowserTrackingBridge({
     const isExtensionOrigin = isAllowedExtensionOrigin(origin, allowedExtensionOrigins);
     const requiresExtensionOrigin = pathname === '/pair' || pathname === '/events';
 
+    // Debug logging
+    console.log('[browser-tracking-bridge] Request:', { method, pathname, origin, isExtensionOrigin, allowedOrigins: allowedExtensionOrigins });
+
     if (method === 'OPTIONS') {
       if (!isExtensionOrigin) {
+        console.log('[browser-tracking-bridge] OPTIONS rejected - invalid origin:', origin);
         return jsonResponse(403, { error: 'invalid_origin' });
       }
 
@@ -435,10 +439,18 @@ function createBrowserTrackingBridge({
     }
 
     if (requiresExtensionOrigin && !isExtensionOrigin) {
+      console.log('[browser-tracking-bridge] Request rejected - invalid origin:', origin, 'allowed:', allowedExtensionOrigins);
       return jsonResponse(403, { error: 'invalid_origin' });
     }
 
     if (method === 'POST' && pathname === '/pair') {
+      console.log('[browser-tracking-bridge] Pair request received:', { 
+        pairingCode: body.pairing_code, 
+        origin, 
+        browserName: body.browser_name,
+        profileKey: body.profile_key 
+      });
+      
       const token = consumePairing({
         pairingCode: String(body.pairing_code || '').trim(),
         origin,
@@ -448,8 +460,11 @@ function createBrowserTrackingBridge({
       });
 
       if (!token) {
+        console.log('[browser-tracking-bridge] Pairing failed - invalid pairing code or other issue');
         return withCors(jsonResponse(403, { error: 'invalid_pairing' }), origin, allowedExtensionOrigins);
       }
+      
+      console.log('[browser-tracking-bridge] Pairing successful');
 
       return withCors(
         jsonResponse(200, {
