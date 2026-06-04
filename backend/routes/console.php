@@ -280,3 +280,8 @@ Artisan::command('schedule:tasks-overdue', function () {
 Artisan::command('schedule:tasks-recurrences', function () {
     $this->call('tasks:process-recurrences');
 })->dailyAt('00:00');
+
+// Schedule: auto-close stale running timers every 15 minutes
+Artisan::command('schedule:timers-close-stale', function () {
+    $this->call('timers:close-stale');
+})->everyFifteenMinutes();

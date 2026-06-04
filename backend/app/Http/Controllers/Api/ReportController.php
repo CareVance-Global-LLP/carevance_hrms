@@ -2470,12 +2470,23 @@ class ReportController extends Controller
             ];
         })->values();
 
-        $liveMonitoringRows = $liveMonitoringRows->map(function (array $row) use ($onLeaveUserIds) {
+        $liveMonitoringRows = $liveMonitoringRows->map(function (array $row) use ($onLeaveUserIds, $recentActivitiesByUser) {
             $isOnLeave = $onLeaveUserIds->contains((int) ($row['user']['id'] ?? 0));
             $row['is_on_leave'] = $isOnLeave;
-            $row['work_status'] = $isOnLeave
-                ? 'on_leave'
-                : ((bool) ($row['is_working'] ?? false) ? 'active' : 'inactive');
+
+            if ($isOnLeave) {
+                $row['work_status'] = 'on_leave';
+            } elseif (! (bool) ($row['is_working'] ?? false)) {
+                $row['work_status'] = 'inactive';
+            } else {
+                $userId = (int) ($row['user']['id'] ?? 0);
+                $recentActivities = collect($recentActivitiesByUser->get($userId, collect()));
+                $hasRecentNonIdleActivity = $recentActivities->contains(fn ($activity) => ($activity->type ?? '') !== 'idle');
+
+                $row['work_status'] = $hasRecentNonIdleActivity ? 'active' : 'idle';
+                $row['is_idle'] = ! $hasRecentNonIdleActivity;
+            }
+
             return $row;
         })->values();
 
@@ -2654,6 +2665,17 @@ class ReportController extends Controller
             ->where('user_id', $selectedUser->id)
             ->whereNull('end_time')
             ->exists();
+
+        $hasRecentNonIdleActivity = false;
+        if ($isWorking) {
+            $recentActivity = Activity::query()
+                ->where('user_id', $selectedUser->id)
+                ->where('recorded_at', '>=', now()->subMinutes(5))
+                ->where('type', '!=', 'idle')
+                ->exists();
+            $hasRecentNonIdleActivity = $recentActivity;
+        }
+
         $browserTracking = BrowserTrackingConnection::query()
             ->where('user_id', $selectedUser->id)
             ->orderByDesc('last_seen_at')
@@ -2674,7 +2696,8 @@ class ReportController extends Controller
             'last_activity_at' => null,
             'browser_tracking' => $this->summarizeBrowserTrackingConnections($browserTracking),
             'is_on_leave' => false,
-            'work_status' => $isWorking ? 'active' : 'inactive',
+            'is_idle' => $isWorking && ! $hasRecentNonIdleActivity,
+            'work_status' => $isWorking ? ($hasRecentNonIdleActivity ? 'active' : 'idle') : 'inactive',
         ];
         $isEmployee = $selectedUser->getHierarchyLevel() >= 100;
 

@@ -22,4 +22,17 @@ return [
     |
     */
     'idle_auto_stop_threshold_seconds' => (int) env('IDLE_AUTO_STOP_THRESHOLD_SECONDS', 300),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Stale Timer Max Minutes
+    |--------------------------------------------------------------------------
+    |
+    | Maximum minutes a running timer is allowed to exist without any activity
+    | before the scheduled cleanup command auto-closes it. This prevents
+    | orphaned timers from accumulating when users close the browser or
+    | desktop app without stopping the timer.
+    |
+    */
+    'stale_timer_max_minutes' => (int) env('STALE_TIMER_MAX_MINUTES', 120),
 ];

@@ -26,4 +26,5 @@ Route::middleware('api.token')->group(function () {
     require base_path('routes/api/protected/resignations.php');
     require base_path('routes/api/protected/geofence.php');
     require base_path('routes/api/protected/team.php');
+    require base_path('routes/api/protected/payroll.php');
 });

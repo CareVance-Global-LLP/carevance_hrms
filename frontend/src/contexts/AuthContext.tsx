@@ -291,6 +291,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [token, user?.role]);
 
+  useEffect(() => {
+    const stopTimerOnUnload = () => {
+      const storedToken = getStoredAuthValue('token');
+      const storedUser = getStoredAuthValue('user');
+      if (DEMO_MODE || !storedToken || !storedUser) return;
+
+      let parsedUser: User | null = null;
+      try { parsedUser = JSON.parse(storedUser); } catch { return; }
+      if (!isTrackedTimerUser(parsedUser)) return;
+
+      const payload = JSON.stringify({ timer_slot: 'primary' });
+      const url = `${apiUrl}/time-entries/stop`;
+      fetch(url, {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${storedToken}`,
+        },
+        body: payload,
+      }).catch(() => {});
+    };
+
+    window.addEventListener('beforeunload', stopTimerOnUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', stopTimerOnUnload);
+    };
+  }, []);
+
   const fetchUser = async () => {
     try {
       const response = await authApi.me();

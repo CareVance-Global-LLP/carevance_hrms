@@ -1428,4 +1428,74 @@ export const teamApi = {
     api.get<TeamHierarchyPayload>('/me/team-hierarchy'),
 };
 
+// Payroll API - Comprehensive
+export const payrollApi = {
+  // Dashboard & Stats
+  getDashboard: () =>
+    api.get<PayrollDashboardData>('/payroll/dashboard'),
+
+  getStats: (params?: { month_year?: string }) =>
+    api.get<PayrollStats>('/payroll/stats', { params }),
+
+  // Time tracking
+  checkIn: () =>
+    api.post<{ success: boolean; message: string; entry: PayrollTimeEntry }>('/payroll/check-in'),
+
+  checkOut: () =>
+    api.post<{ success: boolean; message: string; entry: PayrollTimeEntry }>('/payroll/check-out'),
+
+  getTimeEntries: (params?: { from?: string; to?: string }) =>
+    api.get<PayrollTimeEntry[]>('/payroll/time-entries', { params }),
+
+  // Departments
+  getDepartments: (params?: { month_year?: string }) =>
+    api.get<{ departments: PayrollDepartment[]; unassigned_count: number; month_year: string }>('/payroll/departments', { params }),
+
+  getDepartmentEmployees: (departmentId: number, params?: { month_year?: string; search?: string }) =>
+    api.get<{ department_id: number; employees: PayrollDepartmentEmployee[]; month_year: string }>(`/payroll/departments/${departmentId}/employees`, { params }),
+
+  // Employee Payroll
+  getEmployeePayrollDetails: (userId: number, params?: { month_year?: string; annual_ctc?: number }) =>
+    api.get<EmployeePayrollDetails>(`/payroll/employees/${userId}`, { params }),
+
+  updateEmployeeTemplate: (userId: number, data: Partial<EmployeePayrollTemplate>) =>
+    api.put<{ success: boolean; message: string; template: EmployeePayrollTemplate }>(`/payroll/employees/${userId}/template`, data),
+
+  processEmployeePayroll: (userId: number, data: ProcessPayrollRequest) =>
+    api.post<{ success: boolean; message: string; payroll_item: any }>(`/payroll/employees/${userId}/process`, data),
+
+  // Calculations
+  calculate: (data: CalculatePayrollRequest) =>
+    api.post<{ success: boolean; calculation: PayrollCalculation }>('/payroll/calculate', data),
+
+  calculateBulk: (data: { employees: Array<{ user_id: number; annual_ctc: number }>; state?: string; tax_regime?: 'new' | 'old'; is_metro_city?: boolean }) =>
+    api.post<{ success: boolean; results: Array<{ user_id: number; calculation: PayrollCalculation }> }>('/payroll/calculate-bulk', data),
+
+  // Legacy - All Employees
+  getEmployees: () =>
+    api.get<PayrollEmployee[]>('/payroll/employees'),
+
+  updateEmployeeProfile: (userId: number, data: UpdatePayrollProfileRequest) =>
+    api.put<{ success: boolean; message: string; profile: any }>(`/payroll/employees/${userId}/profile`, data),
+
+  // Professional Tax
+  getPTStates: () =>
+    api.get<{ all_states: PTState[]; states_with_pt: PTState[]; states_without_pt: PTState[] }>('/payroll/pt-states'),
+
+  getPTConfiguration: (state: string) =>
+    api.get<{ success: boolean; state: string; configuration: { monthly: PTSlab[] }; has_pt: boolean; annual_limit: number }>(`/payroll/pt-states/${state}/configuration`),
+
+  // Payments
+  processPayment: (data: ProcessPaymentRequest) =>
+    api.post<ProcessPaymentResponse>('/payroll/process-payment', data),
+
+  // Payslips
+  generatePayslip: (data: { user_id: number; month: string; payroll_data: PayrollCalculation }) =>
+    api.post<{ success: boolean; payslip: PayslipData; download_url: string | null }>('/payroll/generate-payslip', data),
+
+  // Legacy Summary
+  getSummary: (params?: { month?: string }) =>
+    api.get<PayrollSummary>('/payroll/summary', { params }),
+};
+
 export default api;

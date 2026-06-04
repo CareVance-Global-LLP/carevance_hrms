@@ -1015,3 +1015,292 @@ export interface TeamHierarchyPayload {
   };
   members: TeamHierarchyMember[];
 }
+
+// Payroll Types
+export interface PayrollTimeEntry {
+  id: number;
+  user_id: number;
+  organization_id: number;
+  work_date: string;
+  check_in: string | null;
+  check_out: string | null;
+  duration_seconds: number;
+  break_seconds: number;
+  payable_hours: number;
+  status: 'active' | 'completed' | 'absent' | 'leave';
+  notes: string | null;
+  meta: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
+  duration_hours?: number;
+  formatted_duration?: string;
+}
+
+export interface PayrollCalculation {
+  monthly: {
+    ctc: number;
+    gross: number;
+    net: number;
+    total_deductions: number;
+  };
+  annual: {
+    ctc: number;
+    gross: number;
+    net: number;
+  };
+  components: {
+    earnings: {
+      basic: number;
+      hra: number;
+      conveyance: number;
+      special_allowance: number;
+    };
+    deductions: {
+      pf_employee: number;
+      esi_employee: number;
+      pt: number;
+      tds: number;
+    };
+    employer_contributions: {
+      pf_employer: number;
+      eps: number;
+      epf: number;
+      esi_employer: number;
+      gratuity: number;
+    };
+  };
+  breakdown: {
+    pf_wages: number;
+    pf_cap_applied: boolean;
+    esi_applicable: boolean;
+    tax_regime: 'new' | 'old';
+    state_code: string;
+    is_metro_city: boolean;
+  };
+}
+
+export interface PayrollEmployee {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  pan_number?: string | null;
+  uan_number?: string | null;
+  bank_account?: string | null;
+  bank_ifsc?: string | null;
+}
+
+export interface PayslipData {
+  employee: {
+    id: number;
+    name: string;
+    email: string;
+    pan?: string | null;
+    uan?: string | null;
+    bank_account?: string | null;
+    bank_ifsc?: string | null;
+  };
+  employer: {
+    name: string;
+    tan?: string | null;
+  };
+  month: string;
+  payroll: PayrollCalculation;
+  generated_at: string;
+}
+
+export interface PTState {
+  code: string;
+  name: string;
+}
+
+export interface PTSlab {
+  min: number;
+  max: number | null;
+  amount: number;
+}
+
+export interface PayrollDashboardData {
+  active_entry: PayrollTimeEntry | null;
+  today_duration: number;
+  today_duration_formatted: string;
+  month_hours: number;
+  month_days: number;
+  is_checked_in: boolean;
+}
+
+export interface PayrollSummary {
+  month: string;
+  employee_count: number;
+  total_payroll: number;
+  status: string;
+}
+
+export interface CalculatePayrollRequest {
+  user_id: number;
+  annual_ctc: number;
+  state?: string;
+  tax_regime?: 'new' | 'old';
+  is_metro_city?: boolean;
+}
+
+export interface ProcessPaymentRequest {
+  user_id: number;
+  amount: number;
+  payment_method: 'bank_transfer' | 'razorpay' | 'cash';
+  month: string;
+  payroll_data: PayrollCalculation;
+}
+
+export interface ProcessPaymentResponse {
+  success: boolean;
+  message: string;
+  payment_reference: string;
+  status: string;
+  amount: number;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+  };
+}
+
+export interface UpdatePayrollProfileRequest {
+  pan_number?: string;
+  uan_number?: string;
+  esi_ip_number?: string;
+  tax_regime?: 'new' | 'old';
+  is_metro_city?: boolean;
+  pt_state?: string;
+}
+
+// Comprehensive Payroll Types
+export interface PayrollDepartment {
+  id: number;
+  name: string;
+  employee_count: number;
+  processed_count: number;
+  paid_count: number;
+  total_net_pay: number;
+}
+
+export interface PayrollDepartmentEmployee {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  avatar?: string | null;
+  employee_code?: string | null;
+  designation?: string | null;
+  joining_date?: string | null;
+  time_tracking: {
+    total_worked_hours: number;
+    total_productive_hours: number;
+    total_idle_hours: number;
+    total_unproductive_hours: number;
+    activity_percentage: number;
+    productivity_score: number;
+    entry_count: number;
+  };
+  payroll_status: {
+    is_processed: boolean;
+    net_pay: number;
+    payment_status: 'pending' | 'processing' | 'paid' | 'failed';
+    gross_salary: number;
+    total_deductions: number;
+  };
+  has_template: boolean;
+  template_id: number;
+}
+
+export interface EmployeePayrollTemplate {
+  id: number;
+  user_id: number;
+  organization_id: number;
+  basic_percentage: number;
+  hra_percentage: number;
+  conveyance_allowance: number;
+  medical_allowance: number;
+  special_allowance: number;
+  pf_enabled: boolean;
+  esi_enabled: boolean;
+  pt_enabled: boolean;
+  tds_enabled: boolean;
+  lwf_enabled: boolean;
+  pf_employee_percentage: number;
+  pf_employer_percentage: number;
+  pf_wage_cap: number;
+  pf_above_cap: boolean;
+  esi_employee_percentage: number;
+  esi_employer_percentage: number;
+  esi_threshold: number;
+  pt_state: string;
+  tax_regime: 'new' | 'old';
+  is_metro_city: boolean;
+  custom_earnings: Array<{ name: string; amount: number }>;
+  custom_deductions: Array<{ name: string; amount: number }>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeePayrollDetails {
+  employee: {
+    id: number;
+    name: string;
+    email: string;
+    avatar?: string | null;
+    role: string;
+    employee_code?: string | null;
+    designation?: string | null;
+    department?: string | null;
+    joining_date?: string | null;
+    pan_number?: string | null;
+    uan_number?: string | null;
+    bank_account?: string | null;
+    bank_ifsc?: string | null;
+  };
+  time_tracking: {
+    total_worked_seconds: number;
+    total_worked_hours: number;
+    total_productive_seconds: number;
+    total_productive_hours: number;
+    total_idle_seconds: number;
+    total_idle_hours: number;
+    total_unproductive_seconds: number;
+    total_unproductive_hours: number;
+    activity_percentage: number;
+    productivity_score: number;
+    entry_count: number;
+  };
+  template: EmployeePayrollTemplate;
+  existing_payroll?: {
+    id: number;
+    net_pay: number;
+    gross_salary: number;
+    total_deductions: number;
+    payment_status: string;
+  } | null;
+  payroll_preview?: PayrollCalculation | null;
+  month_year: string;
+}
+
+export interface PayrollStats {
+  month_year: string;
+  total_employees: number;
+  processed_employees: number;
+  total_gross: number;
+  total_deductions: number;
+  total_net_pay: number;
+  status: string;
+}
+
+export interface ProcessPayrollRequest {
+  user_id: number;
+  month_year: string;
+  annual_ctc: number;
+  working_days: number;
+  days_present: number;
+  lOP_days?: number;
+  overtime_hours?: number;
+}

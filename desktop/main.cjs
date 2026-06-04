@@ -1013,7 +1013,7 @@ const createWindow = async () => {
 
     closePreparationTimeout = setTimeout(() => {
       proceedToCloseWindow();
-    }, 3000);
+    }, 10000);
   });
 
   mainWindow.on('closed', () => {
@@ -1494,6 +1494,15 @@ app.on('before-quit', () => {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;
   }
+
+  if (mainWindow && !mainWindow.isDestroyed() && !allowWindowClose) {
+    try {
+      mainWindow.webContents.send('desktop:prepare-close');
+    } catch {
+      // Renderer may not be ready
+    }
+  }
+
   stopForegroundWindowWatcher();
   if (browserTrackingBridge) {
     void browserTrackingBridge.stop().catch(() => {

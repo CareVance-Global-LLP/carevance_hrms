@@ -23,6 +23,7 @@ import {
   UserMinus,
   UserPlus,
   Users,
+  Wallet,
   Waypoints,
 } from 'lucide-react';
 
@@ -141,6 +142,15 @@ export const topNavigation: NavGroup[] = [
     items: [
       { label: 'Submit Resignation', to: '/resignation', icon: UserMinus },
       { label: 'My Resignation', to: '/resignation/status', icon: FileClock },
+    ],
+  },
+  {
+    label: 'Payroll',
+    to: '/payroll',
+    icon: Wallet,
+    adminOnly: true,
+    items: [
+      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet },
     ],
   },
 ];
