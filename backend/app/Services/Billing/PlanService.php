@@ -66,6 +66,7 @@ class PlanService
             'employee_timeline',
             'project_tracking',
             'task_tracking',
+            'payroll',
         ],
     ];
 

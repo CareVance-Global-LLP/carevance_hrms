@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { payrollEnabled } from '@/lib/runtimeConfig';
 
 const PLAN_FEATURES: Record<string, string[]> = {
   basic: [
@@ -63,6 +64,7 @@ const PLAN_FEATURES: Record<string, string[]> = {
     'project_tracking',
     'task_tracking',
     'monitoring',
+    'payroll',
   ],
 };
 
@@ -76,7 +78,10 @@ export function usePlan() {
   const features = PLAN_FEATURES[effectivePlanCode] || PLAN_FEATURES.basic;
 
   const hasFeature = useCallback(
-    (feature: string) => features.includes(feature),
+    (feature: string) => {
+      if (feature === 'payroll' && payrollEnabled) return true;
+      return features.includes(feature);
+    },
     [features]
   );
 

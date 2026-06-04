@@ -149,8 +149,9 @@ export const topNavigation: NavGroup[] = [
     to: '/payroll',
     icon: Wallet,
     adminOnly: true,
+    planFeature: 'payroll',
     items: [
-      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet },
+      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll' },
     ],
   },
 ];

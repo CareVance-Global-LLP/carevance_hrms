@@ -26,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'sanitize' => \App\Http\Middleware\SanitizeInput::class,
             'payroll.enabled' => \App\Http\Middleware\PayrollEnabled::class,
+            'plan.payroll' => \App\Http\Middleware\CheckPayrollPlan::class,
         ]);
 
         // Apply sanitize middleware to API routes

@@ -581,7 +581,7 @@ function App() {
             <Route path="settings/billing" element={<StrictAdminRoute><BillingSettingsPage /></StrictAdminRoute>} />
             <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
             <Route path="settings/roles" element={<AdminRoute><RoleManagement /></AdminRoute>} />
-            <Route path="payroll" element={<AdminRoute><Payroll /></AdminRoute>} />
+            <Route path="payroll" element={<PlanFeatureRoute feature="payroll"><AdminRoute><Payroll /></AdminRoute></PlanFeatureRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />

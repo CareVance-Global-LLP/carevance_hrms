@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Route;
  */
 
 // Department-based Payroll Management
-Route::prefix('payroll')->group(function () {
+Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Debug endpoint
     Route::get('/debug', [\App\Http\Controllers\Api\PayrollDebugController::class, 'debugDepartments']);
     
