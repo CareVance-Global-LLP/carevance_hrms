@@ -333,7 +333,7 @@ export default function OrganizationTree() {
       allIds: Array.from(uniqueUsers.keys()),
       managers 
     };
-  }, [currentUser, assignedUsers]);
+  }, [assignedUsers]); // Removed currentUser - prevents refresh race condition
 
   /* ── Auto-collapse large branches ── */
   useEffect(() => {
@@ -344,8 +344,7 @@ export default function OrganizationTree() {
       }
       if (auto.size > 0) setCollapsed(auto);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tree.childrenMap, collapsed.size]);
+  }, [tree]);
 
   /* ── Draw connectors ── */
   useEffect(() => {
@@ -436,7 +435,18 @@ export default function OrganizationTree() {
   if (isAuthLoading || isLoading) return <PageLoadingState label="Building organization tree…" />;
   if (!isAuthenticated) return <PageErrorState message="Please log in to view this page." />;
   if (isError) return <PageErrorState message="Unable to load organization data right now." />;
-  if (!tree.admin) return <PageEmptyState title="No organization data" description="No admin record is available." />;
+  
+  // Wait for data to be ready before showing "No admin" error
+  // This prevents flash of empty state during refresh
+  if (!isLoading && !tree.admin && assignedUsers.length === 0) {
+    return <PageEmptyState title="No organization data" description="No admin record is available." />;
+  }
+  
+  // Guard: Don't render tree until admin is available
+  // This prevents rendering issues during auth refresh
+  if (!tree.admin) {
+    return <PageLoadingState label="Loading organization data…" />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50/60 pb-8">
