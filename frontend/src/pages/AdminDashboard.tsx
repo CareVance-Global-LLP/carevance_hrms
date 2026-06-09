@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { isLikelyMobile } from '@/lib/mobile';
 import { hasSuperAdminAccess } from '@/lib/permissions';
 import {
-  Bell,
+
   Briefcase,
   Calendar,
   CheckCircle2,
@@ -22,7 +22,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { CHAT_NOTIFICATION_TYPES } from '@/lib/chatNotifications';
+
 import { formatDate as formatDateForTimezone, formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
@@ -632,10 +632,9 @@ export default function AdminDashboard() {
   const persistedFilters = useMemo(readPersistedDashboardFilters, []);
   const [universalSearch, setUniversalSearch] = useState('');
   const [isUniversalSearchOpen, setIsUniversalSearchOpen] = useState(false);
-  const [isDashboardNotificationsOpen, setIsDashboardNotificationsOpen] = useState(false);
-  const [dashboardNotificationsSeen, setDashboardNotificationsSeen] = useState(false);
+
   const [clockTick, setClockTick] = useState(() => Date.now());
-  const dashboardNotificationsRef = useRef<HTMLDivElement | null>(null);
+
   const [workSearch, setWorkSearch] = useState('');
   const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
@@ -1674,51 +1673,7 @@ export default function AdminDashboard() {
     }
   };
 
-  useEffect(() => {
-    if (!isDashboardNotificationsOpen) return;
 
-    const handleOutside = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node | null;
-      if (target && !dashboardNotificationsRef.current?.contains(target)) {
-        setIsDashboardNotificationsOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsDashboardNotificationsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleOutside);
-    document.addEventListener('touchstart', handleOutside);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleOutside);
-      document.removeEventListener('touchstart', handleOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isDashboardNotificationsOpen]);
-
-  useEffect(() => {
-    if (!isDashboardNotificationsOpen || !hasUnreadDashboardNotifications || dashboardNotificationsSeen) {
-      return;
-    }
-
-    let active = true;
-    setDashboardNotificationsSeen(true);
-
-    notificationApi.markAllRead({ exclude_types: CHAT_NOTIFICATION_TYPES }).catch(() => {
-      if (active) {
-        setDashboardNotificationsSeen(false);
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [dashboardNotificationsSeen, hasUnreadDashboardNotifications, isDashboardNotificationsOpen]);
 
   return (
     <div className="w-full space-y-5 bg-[#f5f7fb] pt-4 text-slate-900">
@@ -1733,51 +1688,7 @@ export default function AdminDashboard() {
             <Calendar className="h-4 w-4 text-blue-600" />
             {dateLabel}
           </div>
-          <div ref={dashboardNotificationsRef} className="relative">
-            <button
-              type="button"
-              aria-label="Notifications"
-              aria-haspopup="dialog"
-              aria-expanded={isDashboardNotificationsOpen}
-              onClick={() => setIsDashboardNotificationsOpen((open) => !open)}
-              className={`relative rounded-lg border p-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 ${isDashboardNotificationsOpen ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-            >
-              <Bell className="h-4 w-4" />
-              {hasUnreadDashboardNotifications && !dashboardNotificationsSeen ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500" /> : null}
-            </button>
 
-            {isDashboardNotificationsOpen ? (
-              <div
-                role="region"
-                aria-label="Dashboard notifications"
-                className="absolute right-0 top-full z-40 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
-              >
-                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                  <p className="text-sm font-semibold text-slate-950">Notifications</p>
-                  <Link
-                    to="/notifications"
-                    onClick={() => setIsDashboardNotificationsOpen(false)}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                  >
-                    View all notifications
-                  </Link>
-                </div>
-                <div className="max-h-80 overflow-y-auto">
-                  {dashboardNotifications.length ? (
-                    dashboardNotifications.map((notification) => (
-                      <div key={notification.id} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
-                        <p className="text-sm font-semibold text-slate-950">{notification.title}</p>
-                        <p className="mt-1 text-xs leading-5 text-slate-600">{notification.message}</p>
-                        <p className="mt-2 text-[11px] font-medium text-slate-400">{notification.date}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="px-4 py-5 text-sm text-slate-500">No notifications</p>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
           <Link aria-label="Settings" to="/settings" className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
             <Settings className="h-4 w-4" />
           </Link>

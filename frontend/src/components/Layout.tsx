@@ -588,8 +588,9 @@ export default function Layout() {
             ])
           : Promise.resolve(null);
 
+        // Load all notifications (not just unread) for the panel, but exclude chat notifications
         const [notificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
-          notificationApi.list({ limit: 20, unread_only: true }),
+          notificationApi.list({ limit: 20 }),
           chatApi.getUnreadSummary(),
           approvalPromise,
         ]);
@@ -597,11 +598,15 @@ export default function Layout() {
         if (!active) return;
 
         const allItems = (notificationResponse.data?.data || []) as AppNotificationItem[];
+        // Filter out chat notifications from the panel - but keep all others (read and unread)
         const nextNonChat = allItems.filter((item) => !isChatNotification(item));
         const nextChat = allItems.filter((item) => isChatNotification(item));
 
+        // Calculate unread count only for non-chat notifications
+        const unreadNonChatCount = nextNonChat.filter((item) => !item.is_read).length;
+
         setNotifications(nextNonChat);
-        setUnreadNotifications(Number(notificationResponse.data?.unread_count || 0));
+        setUnreadNotifications(unreadNonChatCount);
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
 
         if (approvalResponses) {
@@ -619,6 +624,7 @@ export default function Layout() {
           return;
         }
 
+        // Show desktop notifications for new items (both chat and non-chat)
         const newNonChat = nextNonChat.filter((item) => {
           const id = Number(item.id);
           return !item.is_read && !seenNotificationIdsRef.current.has(id);

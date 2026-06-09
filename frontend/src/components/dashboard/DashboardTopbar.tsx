@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Bell, Menu, MoreHorizontal, X } from 'lucide-react';
+import { Menu, MoreHorizontal, X } from 'lucide-react';
 import type { User } from '@/types';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import TopNavigation from '@/components/dashboard/TopNavigation';
@@ -131,32 +131,6 @@ export default function DashboardTopbar({
             </div>
 
             <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-2.5">
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={onToggleNotifications}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onTouchStart={(event) => event.stopPropagation()}
-                  aria-haspopup="menu"
-                  aria-expanded={notificationsOpen}
-                  aria-label="Notifications"
-                  className={cn(
-                    'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
-                    notificationsOpen || notificationsActive
-                      ? 'border-sky-200 bg-sky-50 text-sky-700'
-                      : 'border-slate-200 bg-white contrast-text-secondary hover:bg-white'
-                  )}
-                >
-                  <Bell className="h-5 w-5" />
-                  {unreadNotifications > 0 ? (
-                    <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
-                    </span>
-                  ) : null}
-                </button>
-                {notificationPanel}
-              </div>
-
               <div className="relative">
                 <button
                   type="button"
