@@ -30,6 +30,7 @@ import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDurationSmart as formatDuration, formatPercent } from '@/lib/formatters';
+import { API_LIMITS, limitConcurrency, batchArray, validateDateRange, getSafeDateRange } from '@/lib/apiLimits';
 import {
   Activity,
   AlertTriangle,
@@ -238,35 +239,62 @@ const fetchTimeEntriesForUsers = async (userIds: number[], startDate: string, en
   const uniqueUserIds = Array.from(new Set(userIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
   if (!uniqueUserIds.length) return [];
 
-  const entryCollections = await Promise.all(
-    uniqueUserIds.map(async (userId) => {
-      const collectedEntries: any[] = [];
-      let currentPage = 1;
-      let hasMorePages = true;
+  // Limit to max 500 users to prevent overload
+  const limitedUserIds = uniqueUserIds.slice(0, 500);
+  if (uniqueUserIds.length > 500) {
+    console.warn(`fetchTimeEntriesForUsers: Limited from ${uniqueUserIds.length} to 500 users`);
+  }
 
-      while (hasMorePages) {
-        const response = await timeEntryApi.getAll({
-          user_id: userId,
-          start_date: startDate,
-          end_date: endDate,
-          page: currentPage,
-          per_page: 1000,
-        });
-        const payload = response.data;
+  // Process users in batches of 50
+  const userBatches = batchArray(limitedUserIds, API_LIMITS.USERS_BATCH_SIZE);
+  const allEntries: any[] = [];
 
-        collectedEntries.push(...(payload.data || []));
-        if (!payload.last_page || payload.current_page >= payload.last_page) {
-          hasMorePages = false;
-        } else {
-          currentPage += 1;
+  for (const batch of userBatches) {
+    // Limit concurrency to 5 parallel requests
+    const batchResults = await limitConcurrency(
+      batch.map(async (userId) => {
+        const collectedEntries: any[] = [];
+        let currentPage = 1;
+        let hasMorePages = true;
+        let totalFetched = 0;
+
+        // Limit: max 10 pages per user (1000 records with per_page=100)
+        while (hasMorePages && currentPage <= API_LIMITS.MAX_PAGES) {
+          const response = await timeEntryApi.getAll({
+            user_id: userId,
+            start_date: startDate,
+            end_date: endDate,
+            page: currentPage,
+            per_page: 100, // Reduced from 1000
+          });
+          const payload = response.data;
+          const entries = payload.data || [];
+
+          collectedEntries.push(...entries);
+          totalFetched += entries.length;
+
+          // Stop if we've hit the per-user limit
+          if (totalFetched >= API_LIMITS.TIME_ENTRIES_PER_USER) {
+            console.warn(`timeEntryApi: User ${userId} limit reached (${API_LIMITS.TIME_ENTRIES_PER_USER})`);
+            break;
+          }
+
+          if (!payload.last_page || payload.current_page >= payload.last_page) {
+            hasMorePages = false;
+          } else {
+            currentPage += 1;
+          }
         }
-      }
 
-      return collectedEntries;
-    })
-  );
+        return collectedEntries;
+      }),
+      API_LIMITS.CONCURRENT_REQUESTS
+    );
 
-  return entryCollections.flat();
+    allEntries.push(...batchResults.flat());
+  }
+
+  return allEntries;
 };
 
 const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: string; eyebrow: string }> = {
@@ -484,6 +512,17 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     setSelectedUserId(persisted.selectedUserId);
     setSelectedGroupId(persisted.selectedGroupId);
   }, [mode]);
+
+  // Validate and limit date range for performance (max 30 days)
+  useEffect(() => {
+    if (!validateDateRange(startDate, endDate, API_LIMITS.REPORT_DAYS_MAX)) {
+      console.warn(`ReportsWorkspace: Date range exceeds ${API_LIMITS.REPORT_DAYS_MAX} days, auto-adjusting`);
+      const safeRange = getSafeDateRange(endDate, API_LIMITS.REPORT_DAYS_MAX);
+      setStartDate(safeRange.startDate);
+      setEndDate(safeRange.endDate);
+      setDatePreset('custom');
+    }
+  }, [startDate, endDate]);
 
   useEffect(() => {
     writeSessionStorageJson(

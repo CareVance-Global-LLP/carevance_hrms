@@ -1893,6 +1893,7 @@ export const useDesktopTracker = () => {
 
     return () => {
       clearTrackerIntervals();
+      clearLockAutoStopTimeout();
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
       activeDesktopSessionRef.current = null;
@@ -1912,6 +1913,8 @@ export const useDesktopTracker = () => {
       idleStopAttemptsPerEntryRef.current.clear();
       lastIdleStopAttemptMsRef.current = 0;
       lastReliableTrackingContextRef.current = null;
+      systemLockedAtMsRef.current = null;
+      lockScreenAutoStopRevealPendingRef.current = false;
       if (typeof removeForegroundWindowChangeListener === 'function') {
         removeForegroundWindowChangeListener();
       }

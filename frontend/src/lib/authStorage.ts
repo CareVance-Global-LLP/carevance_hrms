@@ -134,8 +134,12 @@ export const setStoredAuthValue = (key: AuthStorageKey, value: string) => {
     if (typeof window !== 'undefined') {
       const preferred = getPreferredAuthStorage();
       const secondary = getSecondaryAuthStorage();
+      // Store only in preferred storage for security
       setStorageItem(preferred, 'token', value);
-      setStorageItem(secondary, 'token', value);
+      // Remove from secondary storage to prevent token leakage
+      if (secondary !== preferred) {
+        removeStorageItem(secondary, 'token');
+      }
     }
     return;
   }

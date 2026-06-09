@@ -1488,7 +1488,8 @@ export default function AdminDashboard() {
               start_date: selectedStartDate,
               end_date: selectedEndDate,
               processed: true,
-              per_page: 200,
+              per_page: 100,
+              max_records: 500, // Limit to prevent memory issues
             })
           )
         : null;

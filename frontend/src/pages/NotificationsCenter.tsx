@@ -248,9 +248,6 @@ export default function NotificationsCenter() {
               <option value="">All types</option>
               <option value="announcement">Announcement</option>
               <option value="news">News</option>
-              <option value="salary_credited">Salary credited</option>
-              <option value="leave_request">Leave request</option>
-              <option value="time_edit">Time edit</option>
             </SelectInput>
           </div>
           <div>

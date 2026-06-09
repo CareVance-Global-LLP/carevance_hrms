@@ -410,11 +410,11 @@ export default function Reports() {
             { key: 'idle_percentage', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
             { key: 'activity', header: 'Last Activity', render: (row: any) => formatLastActivity(row.last_activity_at, viewerTimezone) },
             {
-              key: 'working',
-              header: 'Working',
+              key: 'is_working',
+              header: 'Status',
               render: (row: any) => (
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.is_working ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                  {row.is_working ? 'Yes' : 'No'}
+                  {row.is_working ? 'Working' : 'Offline'}
                 </span>
               ),
             },
