@@ -90,6 +90,10 @@ const Payroll = lazyWithChunkRetry(() => import('@/pages/Payroll'));
 const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
 const TaxDeclaration = lazyWithChunkRetry(() => import('@/pages/TaxDeclaration'));
 const Loans = lazyWithChunkRetry(() => import('@/pages/Loans'));
+const BreakTracking = lazyWithChunkRetry(() => import('@/pages/BreakTrackingPage'));
+const Performance = lazyWithChunkRetry(() => import('@/pages/PerformancePage'));
+const PerformanceGoals = lazyWithChunkRetry(() => import('@/pages/PerformanceGoalsPage'));
+const Expenses = lazyWithChunkRetry(() => import('@/pages/ExpensesPage'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
 const isChunkLoadFailure = (error: unknown) => {
@@ -546,6 +550,7 @@ function App() {
             <Route path="attendance/selfies-map" element={<AdminRoute><SelfieMapView /></AdminRoute>} />
             <Route path="leave" element={<PlanFeatureRoute feature="leave_management"><Attendance mode="leave" /></PlanFeatureRoute>} />
             <Route path="edit-time" element={<Attendance mode="time-edit" />} />
+            <Route path="breaks" element={<ProtectedRoute><BreakTracking /></ProtectedRoute>} />
             <Route path="team" element={<Navigate to="/user-management" replace />} />
             <Route path="monitoring" element={<Navigate to="/monitoring/productive-time" replace />} />
             <Route path="monitoring/productive-time" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="productive-time" /></AdminRoute></PlanFeatureRoute>} />
@@ -588,6 +593,9 @@ function App() {
             <Route path="my-payroll" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><MyPayroll /></ProtectedRoute></PlanFeatureRoute>} />
             <Route path="tax-declarations" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><TaxDeclaration /></ProtectedRoute></PlanFeatureRoute>} />
             <Route path="loans" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><Loans /></ProtectedRoute></PlanFeatureRoute>} />
+            <Route path="performance" element={<ProtectedRoute><Performance /></ProtectedRoute>} />
+            <Route path="performance-goals" element={<ProtectedRoute><PerformanceGoals /></ProtectedRoute>} />
+            <Route path="expenses" element={<ProtectedRoute><Expenses /></ProtectedRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />

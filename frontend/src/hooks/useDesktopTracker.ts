@@ -16,6 +16,7 @@ import {
   emitDesktopTimerIdleStop,
   setIdleAutoStopNotice,
   suppressAutoStart,
+  suppressAutoStartGlobally,
 } from '@/lib/desktopTimerSession';
 import { activityApi, activitySessionApi, browserTrackingConnectionApi, screenshotApi, timeEntryApi } from '@/services/api';
 import type {
@@ -1154,6 +1155,7 @@ export const useDesktopTracker = () => {
       if (userId) {
         try {
           suppressAutoStart(userId);
+          suppressAutoStartGlobally(userId);
           setIdleAutoStopNotice(userId, IDLE_AUTO_STOP_MESSAGE);
           emitDesktopTimerIdleStop({
             userId,
@@ -1213,8 +1215,34 @@ export const useDesktopTracker = () => {
           syncScreenshotInterval(null);
           return;
         }
-        activeEntryRef.current = activeEntry;
-        syncScreenshotInterval(activeEntry.id);
+        
+        // Only update activeEntryRef if:
+        // 1. We don't have a cached entry (timer just started)
+        // 2. The API entry matches our cached entry (timer continuing)
+        // This prevents stale API data from overriding locally stopped timer
+        const cachedEntry = activeEntryRef.current;
+        if (!cachedEntry?.id) {
+          // No cached entry, use API entry (timer just started)
+          activeEntryRef.current = activeEntry;
+          console.log('[desktop-tracker] Timer started from API', { entryId: activeEntry.id });
+        } else if (cachedEntry.id === activeEntry.id) {
+          // API matches cached entry, update with fresh data
+          activeEntryRef.current = activeEntry;
+        } else {
+          // API entry ID doesn't match cached entry - timer was restarted or stale data
+          console.log('[desktop-tracker] Timer ID mismatch in tick', {
+            cached_id: cachedEntry.id,
+            api_id: activeEntry.id,
+          });
+          // Trust the newer entry (higher ID usually means newer)
+          if (activeEntry.id > cachedEntry.id) {
+            activeEntryRef.current = activeEntry;
+            console.log('[desktop-tracker] Updated to newer timer from API');
+          }
+          // Otherwise keep cached entry - it might be a stale API response
+        }
+        
+        syncScreenshotInterval(activeEntryRef.current?.id || null);
 
         if (systemLockedAtMsRef.current !== null && lockAutoStopTimeoutRef.current === null) {
           scheduleLockAutoStop();
@@ -1796,6 +1824,11 @@ export const useDesktopTracker = () => {
           return;
         }
         const cachedEntry = activeEntryRef.current;
+        // If no cached entry, timer was likely stopped - don't check API to avoid stale data
+        if (!cachedEntry?.id) {
+          console.log('[desktop-tracker] No cached active entry, skipping idle stop check');
+          return;
+        }
         if (cachedEntry?.id && lastAutoStoppedEntryIdRef.current === cachedEntry.id) return;
         if (cachedEntry?.id && (now - lastIdleStopAttemptMsRef.current) < IDLE_STOP_MIN_INTERVAL_MS) return;
         const active = await timeEntryApi.active({ timer_slot: 'primary' });
@@ -1803,14 +1836,23 @@ export const useDesktopTracker = () => {
         const activeEntry = active.data;
         if (!activeEntry?.id) return;
         if (lastAutoStoppedEntryIdRef.current === activeEntry.id) return;
-        activeEntryRef.current = activeEntry;
+        // Only update activeEntryRef if the API entry ID matches our cached entry
+        // This prevents stale API data from overriding locally stopped timer
+        if (activeEntry.id === cachedEntry.id) {
+          activeEntryRef.current = activeEntry;
+        } else {
+          console.log('[desktop-tracker] API active entry ID mismatch, using cached entry', {
+            cached_id: cachedEntry.id,
+            api_id: activeEntry.id,
+          });
+        }
         const lastActivityAtMs = Math.max(0, now - (Math.floor(idleSeconds) * 1000));
         const recordedAt = new Date(now).toISOString();
         console.info('[desktop-tracker] dedicated idle stop check: forcing stop', {
           idle_seconds: Math.floor(idleSeconds),
-          session_id: activeEntry.id,
+          session_id: cachedEntry.id,
         });
-        const stopped = await forceStopTimerForLock(activeEntry, Math.floor(idleSeconds), lastActivityAtMs, recordedAt);
+        const stopped = await forceStopTimerForLock(cachedEntry, Math.floor(idleSeconds), lastActivityAtMs, recordedAt);
         if (stopped) {
           lockScreenAutoStopRevealPendingRef.current = true;
           if (typeof document === 'undefined' || document.visibilityState === 'visible') {

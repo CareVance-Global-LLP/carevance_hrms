@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollDepartmentController;
+use App\Http\Controllers\Api\PerformanceGoalController;
+use App\Http\Controllers\Api\PerformanceReviewController;
+use App\Http\Controllers\Api\ReimbursementController;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -94,4 +97,29 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::get('/employees', [PayrollController::class, 'getEmployees']);
     Route::put('/employees/{userId}/profile', [PayrollController::class, 'updateEmployeeProfile']);
     Route::get('/summary', [PayrollController::class, 'getSummary']);
+    
+    // Performance Management
+    Route::get('/performance-goals', [PerformanceGoalController::class, 'index']);
+    Route::post('/performance-goals', [PerformanceGoalController::class, 'store']);
+    Route::get('/performance-goals/{id}', [PerformanceGoalController::class, 'show']);
+    Route::put('/performance-goals/{id}', [PerformanceGoalController::class, 'update']);
+    Route::delete('/performance-goals/{id}', [PerformanceGoalController::class, 'destroy']);
+    
+    Route::get('/performance-reviews', [PerformanceReviewController::class, 'index']);
+    Route::post('/performance-reviews', [PerformanceReviewController::class, 'store']);
+    Route::get('/performance-reviews/{id}', [PerformanceReviewController::class, 'show']);
+    Route::put('/performance-reviews/{id}', [PerformanceReviewController::class, 'update']);
+    Route::delete('/performance-reviews/{id}', [PerformanceReviewController::class, 'destroy']);
+    Route::get('/performance-reviews/employee/{employeeId}', [PerformanceReviewController::class, 'getEmployeeReviews']);
+    Route::get('/performance-reviews/summary', [PerformanceReviewController::class, 'getSummary']);
+    
+    // Reimbursements
+    Route::get('/reimbursements', [ReimbursementController::class, 'index']);
+    Route::post('/reimbursements', [ReimbursementController::class, 'store']);
+    Route::get('/reimbursements/{id}', [ReimbursementController::class, 'show']);
+    Route::put('/reimbursements/{id}', [ReimbursementController::class, 'update']);
+    Route::delete('/reimbursements/{id}', [ReimbursementController::class, 'destroy']);
+    Route::post('/reimbursements/{id}/approve', [ReimbursementController::class, 'approve']);
+    Route::post('/reimbursements/{id}/reject', [ReimbursementController::class, 'reject']);
+    Route::get('/reimbursements/summary', [ReimbursementController::class, 'getSummary']);
 });

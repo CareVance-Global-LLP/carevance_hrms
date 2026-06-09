@@ -36,9 +36,30 @@ export const clearAutoStartSuppression = (userId?: number | null) => {
   sessionStorage.removeItem(getAutoStartSuppressionKey(userId));
 };
 
+// Global suppression using localStorage (persists across refresh)
+const AUTO_START_SUPPRESSED_GLOBAL_KEY = 'desktop_timer_auto_start_suppressed_global';
+const getAutoStartSuppressedGlobalKey = (userId?: number | null) =>
+  getStorageScopedKey(AUTO_START_SUPPRESSED_GLOBAL_KEY, userId);
+
+export const suppressAutoStartGlobally = (userId?: number | null) => {
+  if (!userId) return;
+  localStorage.setItem(getAutoStartSuppressedGlobalKey(userId), '1');
+};
+
+export const clearAutoStartSuppressionGlobal = (userId?: number | null) => {
+  if (!userId) return;
+  localStorage.removeItem(getAutoStartSuppressedGlobalKey(userId));
+};
+
+export const isAutoStartSuppressedGlobally = (userId?: number | null) => {
+  if (!userId) return false;
+  return localStorage.getItem(getAutoStartSuppressedGlobalKey(userId)) === '1';
+};
+
 export const isAutoStartSuppressed = (userId?: number | null) => {
   if (!userId) return false;
-  return sessionStorage.getItem(getAutoStartSuppressionKey(userId)) === '1';
+  return sessionStorage.getItem(getAutoStartSuppressionKey(userId)) === '1' || 
+         localStorage.getItem(getAutoStartSuppressedGlobalKey(userId)) === '1';
 };
 
 const getAutoStartArmedKey = (userId?: number | null) => getStorageScopedKey(AUTO_START_ARMED_KEY, userId);

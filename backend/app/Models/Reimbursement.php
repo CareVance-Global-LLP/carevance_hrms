@@ -12,24 +12,25 @@ class Reimbursement extends Model
 
     protected $fillable = [
         'organization_id',
-        'user_id',
-        'title',
-        'description',
-        'expense_date',
+        'employee_id',
+        'approver_id',
+        'category',
         'amount',
         'currency',
+        'expense_date',
+        'description',
+        'receipt_url',
+        'merchant_name',
+        'location',
         'status',
-        'submitted_by',
-        'approved_by',
         'approved_at',
-        'meta',
+        'notes',
     ];
 
     protected $casts = [
-        'amount' => 'decimal:2',
         'expense_date' => 'date',
         'approved_at' => 'datetime',
-        'meta' => 'array',
+        'amount' => 'decimal:2',
     ];
 
     public function organization(): BelongsTo
@@ -37,18 +38,28 @@ class Reimbursement extends Model
         return $this->belongsTo(Organization::class);
     }
 
-    public function user(): BelongsTo
+    public function employee(): BelongsTo
     {
-        return $this->belongsTo(User::class);
-    }
-
-    public function submitter(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'submitted_by');
+        return $this->belongsTo(User::class, 'employee_id');
     }
 
     public function approver(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'approved_by');
+        return $this->belongsTo(User::class, 'approver_id');
+    }
+
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
+    }
+
+    public function scopeApproved($query)
+    {
+        return $query->where('status', 'approved');
+    }
+
+    public function scopeRejected($query)
+    {
+        return $query->where('status', 'rejected');
     }
 }

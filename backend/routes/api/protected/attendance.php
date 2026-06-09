@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AttendanceHolidayController;
 use App\Http\Controllers\Api\AttendanceSelfieController;
 use App\Http\Controllers\Api\AttendanceTimeEditRequestController;
+use App\Http\Controllers\Api\BreakTrackingController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use Illuminate\Support\Facades\Route;
 
@@ -34,3 +35,9 @@ Route::middleware('role:admin,manager')->group(function () {
     Route::post('/attendance/holidays', [AttendanceHolidayController::class, 'upsert']);
     Route::delete('/attendance/holidays/{id}', [AttendanceHolidayController::class, 'destroy']);
 });
+
+Route::get('/breaks/today', [BreakTrackingController::class, 'today']);
+Route::get('/breaks/history', [BreakTrackingController::class, 'history']);
+Route::post('/breaks/start', [BreakTrackingController::class, 'start']);
+Route::post('/breaks/end', [BreakTrackingController::class, 'end']);
+Route::delete('/breaks/{id}', [BreakTrackingController::class, 'destroy']);

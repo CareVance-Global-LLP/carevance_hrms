@@ -7,6 +7,7 @@ import {
   canUseDesktopAutoStart,
   clearAutoStartArm,
   clearAutoStartSuppression,
+  clearAutoStartSuppressionGlobal,
   clearIdleAutoStopNotice,
   clearWorkedBaselineSnapshot,
   consumeIdleAutoStopNotice,
@@ -183,6 +184,10 @@ export default function DesktopTimerDashboard() {
   const hasAttemptedAutoStartRef = useRef(false);
   const latestWorkedSecondsRef = useRef(0);
   const wasAutoStartedRef = useRef(false);
+  const isFetchingRef = useRef(false);
+  const fetchAbortControllerRef = useRef<AbortController | null>(null);
+  const isTimerOperationInProgressRef = useRef(false);
+  const justStoppedByIdleRef = useRef(false);
 
   useEffect(() => {
     console.log('[Live Duration] Effect triggered', {
@@ -253,6 +258,20 @@ export default function DesktopTimerDashboard() {
   };
 
   const fetchData = async () => {
+    // Prevent concurrent fetch calls
+    if (isFetchingRef.current) {
+      console.log('[fetchData] Already fetching, skipping duplicate request');
+      return;
+    }
+    
+    // Cancel any previous fetch
+    if (fetchAbortControllerRef.current) {
+      fetchAbortControllerRef.current.abort();
+    }
+    
+    fetchAbortControllerRef.current = new AbortController();
+    isFetchingRef.current = true;
+    
     let requestFailed = false;
 
     try {
@@ -302,17 +321,79 @@ export default function DesktopTimerDashboard() {
           console.error('Failed to verify active timer after dashboard returned no running entry:', activeError);
         }
       }
+      
+      // Additional check: if API returns active timer but localStorage has different timer ID,
+      // check if the API timer is actually running (no end_time). Only update if it's a valid running timer.
+      if (dashboardSucceeded && activeFromApi && snapshot) {
+        try {
+          const parsedSnapshot = JSON.parse(snapshot);
+          if (parsedSnapshot.id !== activeFromApi.id) {
+            // Check if API timer is actually running (no end_time) and is from today
+            const apiTimerDate = getEntryLocalDateString(activeFromApi.start_time);
+            const isToday = apiTimerDate === getLocalDateString();
+            const isRunning = !activeFromApi.end_time;
+            
+            if (isRunning && isToday) {
+              console.log('[Timer] Timer ID mismatch - API has newer running timer. Updating to API timer.');
+              // Update localStorage with the new timer from API
+              localStorage.setItem(
+                ACTIVE_TIMER_KEY,
+                JSON.stringify({
+                  id: activeFromApi.id,
+                  start_time: activeFromApi.start_time,
+                  duration: activeFromApi.duration ?? 0,
+                  description: activeFromApi.description ?? '',
+                  project_id: activeFromApi.project_id ?? null,
+                  task_id: activeFromApi.task_id ?? null,
+                  timer_slot: activeFromApi.timer_slot ?? 'primary',
+                })
+              );
+            } else {
+              console.log('[Timer] Timer ID mismatch - API timer is stopped or from different day. Ignoring API timer.', {
+                isRunning,
+                isToday,
+                apiEndTime: activeFromApi.end_time,
+              });
+              // Clear the API timer since it's not actually running (likely stale cache)
+              activeFromApi = null;
+            }
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
 
       if (dashboardSucceeded) {
+        // Check if timer was explicitly stopped locally (no ACTIVE_TIMER_KEY in localStorage)
+        // but API still returns an active timer (stale cache). In this case, trust local state.
+        const hasLocalTimerSnapshot = localStorage.getItem(ACTIVE_TIMER_KEY);
+        const isTimerExplicitlyStopped = !hasLocalTimerSnapshot && activeFromApi;
+        
+        if (isTimerExplicitlyStopped) {
+          console.log('[Timer] API returned active timer but local snapshot is cleared (timer was stopped). Ignoring API timer.');
+          activeFromApi = null;
+          // Clear the stale timer from API cache if possible
+          try {
+            await timeEntryApi.stop({ timer_slot: 'primary' });
+          } catch (e) {
+            // Ignore errors, timer might already be stopped
+          }
+        }
+        
         // Preserve auto-started timer if API hasn't caught up yet
         if (wasAutoStartedRef.current && !activeFromApi) {
           console.log('[Timer] Preserving auto-started timer while API catches up');
           wasAutoStartedRef.current = false;
+        } else if (justStoppedByIdleRef.current && activeFromApi) {
+          // API returned stale timer after idle stop - ignore it
+          console.log('[Timer] Ignoring stale timer from API after idle stop');
+          justStoppedByIdleRef.current = false;
         } else {
           setActiveTimer(activeFromApi);
           if (!activeFromApi) {
             localStorage.removeItem(ACTIVE_TIMER_KEY);
             setLiveDuration(0);
+            justStoppedByIdleRef.current = false;
           } else {
             clearAutoStartArm(userId);
             clearAutoStartSuppression(userId);
@@ -407,6 +488,8 @@ export default function DesktopTimerDashboard() {
         setNotice((currentNotice) => currentNotice || 'Some dashboard data could not be loaded. Showing the latest available timer context.');
       }
       setIsLoading(false);
+      isFetchingRef.current = false;
+      fetchAbortControllerRef.current = null;
     }
   };
 
@@ -469,8 +552,13 @@ export default function DesktopTimerDashboard() {
       setFeedback({ tone: 'error', message: pendingNotice });
       setNotice('');
       setActiveTimer(null);
+      justStoppedByIdleRef.current = true;
       localStorage.removeItem(ACTIVE_TIMER_KEY);
       emitDesktopTimerStopped({ userId });
+      // Safety: reset flag after 30 seconds to prevent getting stuck
+      setTimeout(() => {
+        justStoppedByIdleRef.current = false;
+      }, 30000);
     }
 
     const handleIdleAutoStop = (event: Event) => {
@@ -493,8 +581,14 @@ export default function DesktopTimerDashboard() {
       setFeedback({ tone: 'error', message: detail.message });
       setNotice('');
       setActiveTimer(null);
+      setLiveDuration(0);
+      justStoppedByIdleRef.current = true;
       localStorage.removeItem(ACTIVE_TIMER_KEY);
       emitDesktopTimerStopped({ userId });
+      // Safety: reset flag after 30 seconds to prevent getting stuck
+      setTimeout(() => {
+        justStoppedByIdleRef.current = false;
+      }, 30000);
     };
 
     window.addEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, handleIdleAutoStop as EventListener);
@@ -635,6 +729,11 @@ export default function DesktopTimerDashboard() {
   }, [activeTimer?.id, isLoading, isStarting, userId, organization?.settings?.attendance?.office_start_time]);
 
   const handleStartTimer = async (isAutoStart = false) => {
+    if (isTimerOperationInProgressRef.current) {
+      console.log('[handleStartTimer] Timer operation already in progress, skipping');
+      return;
+    }
+    isTimerOperationInProgressRef.current = true;
     setIsStarting(true);
     setNotice(isAutoStart ? 'Starting your timer automatically...' : '');
     setFeedback(null);
@@ -649,6 +748,7 @@ export default function DesktopTimerDashboard() {
       const response = await timeEntryApi.start(startPayload);
       clearAutoStartArm(userId);
       clearAutoStartSuppression(userId);
+      clearAutoStartSuppressionGlobal(userId);
       setTimerBaseSeconds(Number(response.data.duration || 0));
       const resumedWorkedSeconds = Math.max(workedBaseSeconds, todayDisplaySeconds);
       setWorkedBaseSeconds(resumedWorkedSeconds);
@@ -720,10 +820,16 @@ export default function DesktopTimerDashboard() {
       }
     } finally {
       setIsStarting(false);
+      isTimerOperationInProgressRef.current = false;
     }
   };
 
   const handleStopTimer = async () => {
+    if (isTimerOperationInProgressRef.current) {
+      console.log('[handleStopTimer] Timer operation already in progress, skipping');
+      return;
+    }
+    isTimerOperationInProgressRef.current = true;
     try {
       setNotice('');
       clearAutoStartArm(userId);
@@ -787,6 +893,8 @@ export default function DesktopTimerDashboard() {
         return;
       }
       console.error('Error stopping timer:', error);
+    } finally {
+      isTimerOperationInProgressRef.current = false;
     }
   };
 

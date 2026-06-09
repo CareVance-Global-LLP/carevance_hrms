@@ -1,11 +1,13 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
+  Award,
   BarChart3,
   Bell,
   Building2,
   CalendarClock,
   Camera,
+  Coffee,
   FileClock,
   FileText,
   Fingerprint,
@@ -16,7 +18,9 @@ import {
   MapPin,
   MessageSquare,
   Network,
+  Receipt,
   Settings,
+  Target,
   Share2,
   Shield,
   ShieldCheck,
@@ -97,10 +101,26 @@ export const topNavigation: NavGroup[] = [
       { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management' },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
+      { label: 'Breaks', to: '/breaks', icon: Coffee },
       { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true, planFeature: 'monitoring', permission: 'monitoring.view' },
       { label: 'Screenshots', to: '/monitoring/screenshots', icon: Camera, adminOnly: true, permission: 'screenshots.view' },
       { label: 'Selfies Map', to: '/attendance/selfies-map', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing', permission: 'selfies.view' },
       { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true, permission: 'reports.view' },
+    ],
+  },
+  {
+    label: 'Performance',
+    icon: Award,
+    items: [
+      { label: 'Performance Reviews', to: '/performance', icon: Award },
+      { label: 'Goals', to: '/performance-goals', icon: Target },
+    ],
+  },
+  {
+    label: 'Expenses',
+    icon: Receipt,
+    items: [
+      { label: 'My Expenses', to: '/expenses', icon: Receipt },
     ],
   },
   {
