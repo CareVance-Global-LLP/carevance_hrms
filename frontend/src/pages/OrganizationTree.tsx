@@ -241,59 +241,98 @@ export default function OrganizationTree() {
 
   /* ── Build tree (only assigned-department users) ── */
   const tree = useMemo(() => {
-    const sorted = [...assignedUsers].sort((a, b) => a.hierarchy_level - b.hierarchy_level);
-    const admin = sorted[0] ?? (currentUser
-      ? {
-          id: currentUser.id,
-          name: currentUser.name,
-          email: currentUser.email ?? '',
-          role: currentUser.role ?? 'admin',
-          role_id: currentUser.role_id ?? null,
-          role_name: currentUser.role_name ?? (currentUser.role ? `${currentUser.role.charAt(0).toUpperCase()}${currentUser.role.slice(1)}` : 'Admin'),
-          hierarchy_level: currentUser.hierarchy_level ?? (currentUser.role === 'manager' ? 50 : currentUser.role === 'employee' ? 100 : 10),
-          reporting_manager_id: null,
-          department: '',
-          groups: [],
-        }
-      : null);
-
+    // Deduplicate users by ID
+    const uniqueUsers = new Map<number, OrgUser>();
+    for (const u of assignedUsers) {
+      if (!uniqueUsers.has(u.id)) {
+        uniqueUsers.set(u.id, u);
+      }
+    }
+    const dedupedUsers = Array.from(uniqueUsers.values());
+    
+    // Step 1: Find admin (lowest hierarchy_level, always at top)
+    const sortedByHierarchy = [...dedupedUsers].sort((a, b) => a.hierarchy_level - b.hierarchy_level);
+    const admin = sortedByHierarchy[0];
+    
     if (!admin) {
-      return { admin: null as OrgUser | null, childrenMap: new Map<number, OrgUser[]>(), allIds: [] as number[] };
+      return { 
+        admin: null as OrgUser | null, 
+        childrenMap: new Map<number, OrgUser[]>(), 
+        allIds: [] as number[],
+        managers: [] as OrgUser[] 
+      };
     }
 
     const childrenMap = new Map<number, OrgUser[]>();
-    const userById = new Map<number, OrgUser>(assignedUsers.map((u) => [u.id, u]));
+    const userById = new Map<number, OrgUser>(dedupedUsers.map((u) => [u.id, u]));
+    const placedUserIds = new Set<number>();
+    
+    // Place admin at root
+    placedUserIds.add(admin.id);
 
-    for (const u of assignedUsers) {
+    // Step 2: Identify managers and custom roles (hierarchy < 100 but not admin)
+    // These can have employees under them
+    const managers = dedupedUsers.filter((u) => 
+      u.id !== admin.id && 
+      u.hierarchy_level < 100 &&
+      u.department && // Must have a department to manage others
+      u.department.trim() !== ''
+    ).sort((a, b) => a.hierarchy_level - b.hierarchy_level);
+
+    // Step 3: Place users by explicit reporting_manager_id FIRST (highest priority)
+    for (const u of dedupedUsers) {
       if (u.id === admin.id) continue;
-
-      let parentId: number | null = null;
-
-      if (u.reporting_manager_id && userById.has(u.reporting_manager_id) && u.reporting_manager_id !== u.id) {
-        parentId = u.reporting_manager_id;
-      } else {
-        const candidates = assignedUsers.filter((v) =>
-          v.id !== u.id &&
-          v.hierarchy_level < u.hierarchy_level
-        );
-
-        if (candidates.length === 0) {
-          parentId = admin.id;
-        } else {
-          candidates.sort((a, b) => b.hierarchy_level - a.hierarchy_level);
-          const userDept = deptLabel(u.department).toLowerCase();
-          const sameDept = candidates.find((v) =>
-            deptLabel(v.department).toLowerCase() === userDept
-          );
-          parentId = (sameDept ?? candidates[0]).id;
+      if (placedUserIds.has(u.id)) continue;
+      
+      if (u.reporting_manager_id && userById.has(u.reporting_manager_id)) {
+        const manager = userById.get(u.reporting_manager_id)!;
+        // Can report to anyone higher in hierarchy
+        if (manager.hierarchy_level < u.hierarchy_level) {
+          if (!childrenMap.has(manager.id)) childrenMap.set(manager.id, []);
+          childrenMap.get(manager.id)!.push(u);
+          placedUserIds.add(u.id);
         }
       }
-
-      if (!childrenMap.has(parentId)) childrenMap.set(parentId, []);
-      childrenMap.get(parentId)!.push(u);
+    }
+    
+    // Step 4: Place employees under managers with same department
+    for (const u of dedupedUsers) {
+      if (u.id === admin.id) continue;
+      if (placedUserIds.has(u.id)) continue;
+      
+      // Only employees can be auto-assigned by department
+      if (u.hierarchy_level >= 100) {
+        const userDept = deptLabel(u.department).toLowerCase();
+        
+        // Find manager with same department (higher rank = lower level number)
+        const matchingManager = managers.find((m) => 
+          deptLabel(m.department).toLowerCase() === userDept
+        );
+        
+        if (matchingManager) {
+          if (!childrenMap.has(matchingManager.id)) childrenMap.set(matchingManager.id, []);
+          childrenMap.get(matchingManager.id)!.push(u);
+          placedUserIds.add(u.id);
+        } else {
+          // No matching manager, attach directly to admin
+          if (!childrenMap.has(admin.id)) childrenMap.set(admin.id, []);
+          childrenMap.get(admin.id)!.push(u);
+          placedUserIds.add(u.id);
+        }
+      } else {
+        // Custom roles/managers without explicit reporting go under admin
+        if (!childrenMap.has(admin.id)) childrenMap.set(admin.id, []);
+        childrenMap.get(admin.id)!.push(u);
+        placedUserIds.add(u.id);
+      }
     }
 
-    return { admin, childrenMap, allIds: assignedUsers.map((u) => u.id) };
+    return { 
+      admin, 
+      childrenMap, 
+      allIds: Array.from(uniqueUsers.keys()),
+      managers 
+    };
   }, [currentUser, assignedUsers]);
 
   /* ── Auto-collapse large branches ── */
