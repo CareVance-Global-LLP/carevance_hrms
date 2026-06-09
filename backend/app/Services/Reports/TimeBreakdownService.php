@@ -16,6 +16,16 @@ class TimeBreakdownService
         }
 
         $normalizedIdleDuration = min(max(0, $idleDuration), $totalDuration);
+        
+        // Sanity check: if idle equals total tracked time but there are activity events,
+        // this suggests incorrect idle detection. Cap idle at 95% to ensure some working time.
+        // This handles cases where desktop app incorrectly reports all time as idle
+        // while user is actually working on activities.
+        $maxIdleRatio = 0.95;
+        if ($normalizedIdleDuration >= $totalDuration * $maxIdleRatio && $totalActivityDuration > 0) {
+            $normalizedIdleDuration = (int) ($totalDuration * $maxIdleRatio);
+        }
+        
         $workingDuration = max($totalDuration - $normalizedIdleDuration, 0);
 
         return [

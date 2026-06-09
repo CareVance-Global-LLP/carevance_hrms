@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\Monitoring\ActivityFeedService;
 use App\Services\Reports\ActivityProductivityService;
 use App\Services\Reports\DashboardSummaryService;
+use App\Services\Reports\IdleValidationService;
 use App\Services\Reports\ReportPayloadBuilder;
 use App\Services\Reports\TimeBreakdownService;
 use App\Services\Reports\UsageProcessingService;
@@ -121,6 +122,7 @@ class ReportController extends Controller
     public function __construct(
         private readonly ActivityProductivityService $activityProductivityService,
         private readonly DashboardSummaryService $dashboardSummaryService,
+        private readonly IdleValidationService $idleValidationService,
         private readonly ReportPayloadBuilder $reportPayloadBuilder,
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
@@ -1099,15 +1101,45 @@ class ReportController extends Controller
             ? []
             : $this->resolveLastActivityByUser($userIds, $startDate, $endDate);
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
+        // Fetch activity data for proper idle time calculation consistency with filtered views
+        $activitiesByUser = collect();
+        if (! $skipActivity) {
+            $activities = $this->activityFeedService->forUsersInRangeForIdle($userIds, $startDate, $endDate);
+            $activitiesByUser = $activities->groupBy(fn ($activity) => (int) ($activity->user_id ?? 0));
+        }
+
+        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $resolvedNow, $calendarDaysCount, $activitiesByUser, $startDate, $endDate) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $adjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
-            $idleDuration = (int) ($idleDurationByUser[(int) $user->id] ?? 0);
+            $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration;
+            $rawIdleDuration = (int) ($idleDurationByUser[(int) $user->id] ?? 0);
+            
+            // Calculate activity total duration for pro-rata idle scaling consistency
+            $userActivities = $activitiesByUser->get($user->id, collect());
+            $activityTotalDuration = (int) $userActivities->sum('duration');
+            
+            // Enhanced idle validation with automatic correction
+            $validatedIdle = $this->idleValidationService->validateIdleTime(
+                $user->id,
+                $trackedDuration,
+                $rawIdleDuration,
+                $activityTotalDuration,
+                [
+                    'source' => 'buildLiteOverallReport',
+                    'start_date' => $startDate->toDateTimeString(),
+                    'end_date' => $endDate->toDateTimeString(),
+                    'original_idle' => $rawIdleDuration,
+                ]
+            );
+            
+            $idleDuration = $validatedIdle['idle_duration'];
+            
             $timeBreakdown = $this->timeBreakdownService->build(
-                $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration,
-                $idleDuration
+                $trackedDuration,
+                $idleDuration,
+                $activityTotalDuration
             );
             $attendanceSummary = $this->buildOverallAttendanceSummary($userAttendanceRecords, $calendarDaysCount);
 
@@ -1116,6 +1148,8 @@ class ReportController extends Controller
                 'entries_count' => $userEntries->count(),
                 'last_activity_at' => $lastActivityByUser[(int) $user->id] ?? null,
                 'is_working' => $activeUserIds->contains((int) $user->id),
+                'idle_validated' => $validatedIdle['corrected'],
+                'idle_validation_reason' => $validatedIdle['reason'],
             ] + $timeBreakdown + $attendanceSummary;
         })->values();
 
@@ -2185,12 +2219,29 @@ class ReportController extends Controller
                 includeProcessedLogs: false,
             );
         $selectedMetrics = (array) ($selectedUsageSummary['metrics'] ?? []);
-        $totalIdle = (int) ($selectedMetrics['idle_time'] ?? 0);
+        $rawTotalIdle = (int) ($selectedMetrics['idle_time'] ?? 0);
         $selectedTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow);
+        $activityTotalDuration = (int) ($selectedMetrics['total_time'] ?? 0);
+        
+        // Enhanced idle validation with automatic correction
+        $validatedIdle = $this->idleValidationService->validateIdleTime(
+            $selectedUser->id,
+            $selectedTrackedDuration,
+            $rawTotalIdle,
+            $activityTotalDuration,
+            [
+                'source' => 'employeeInsights',
+                'start_date' => $startDate->toDateTimeString(),
+                'end_date' => $endDate->toDateTimeString(),
+                'original_idle' => $rawTotalIdle,
+            ]
+        );
+        $totalIdle = $validatedIdle['idle_duration'];
+        
         $selectedTimeBreakdown = $this->timeBreakdownService->build(
             $selectedTrackedDuration,
             $totalIdle,
-            (int) ($selectedMetrics['total_time'] ?? 0),
+            $activityTotalDuration,
         );
         $idleCount = max(1, (int) ($selectedUsageSummary['idle_segments_count'] ?? 0));
         $avgIdle = (float) round(((int) ($selectedTimeBreakdown['idle_duration'] ?? 0)) / $idleCount, 2);
@@ -2650,14 +2701,31 @@ class ReportController extends Controller
     ): array {
         $activities = $this->activityFeedService->forUsersInRangeForIdle([$selectedUser->id], $startDate, $endDate);
         $activityTotalDuration = (int) collect($activities)->sum('duration');
-        $idleDuration = $this->safeCalculateIdleTime($activities, [
+        $rawIdleDuration = $this->safeCalculateIdleTime($activities, [
             'report' => 'dashboard_selected_employee',
             'user_id' => $selectedUser->id,
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
         ]);
+        
+        // Enhanced idle validation with automatic correction
+        $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow);
+        $validatedIdle = $this->idleValidationService->validateIdleTime(
+            $selectedUser->id,
+            $trackedDuration,
+            $rawIdleDuration,
+            $activityTotalDuration,
+            [
+                'source' => 'buildLiteEmployeeInsights',
+                'start_date' => $startDate->toDateTimeString(),
+                'end_date' => $endDate->toDateTimeString(),
+                'original_idle' => $rawIdleDuration,
+            ]
+        );
+        $idleDuration = $validatedIdle['idle_duration'];
+        
         $timeBreakdown = $this->timeBreakdownService->build(
-            $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
+            $trackedDuration,
             $idleDuration,
             $activityTotalDuration
         );
