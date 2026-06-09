@@ -12,6 +12,7 @@ type AppRuntimeConfig = {
   VITE_GOOGLE_OAUTH_ENABLED?: string;
   VITE_IDLE_TRACK_THRESHOLD_SECONDS?: string;
   VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS?: string;
+  VITE_LOCK_SCREEN_AUTO_STOP_THRESHOLD_SECONDS?: string;
   VITE_IDLE_GUARD_INTERVAL_MS?: string;
   VITE_PAYROLL_ENABLED?: string;
 };
@@ -147,6 +148,13 @@ export const idleAutoStopThresholdSeconds = resolveNumericConfigValue(
   import.meta.env.VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS,
   5 * 60,
   60
+);
+
+export const lockScreenAutoStopThresholdSeconds = resolveNumericConfigValue(
+  runtimeConfig.VITE_LOCK_SCREEN_AUTO_STOP_THRESHOLD_SECONDS,
+  import.meta.env.VITE_LOCK_SCREEN_AUTO_STOP_THRESHOLD_SECONDS,
+  5 * 60,
+  30
 );
 
 export const payrollEnabled = resolveBooleanConfigValue(

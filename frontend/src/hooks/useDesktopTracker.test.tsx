@@ -186,12 +186,6 @@ describe('useDesktopTracker', () => {
           foregroundWindowListeners = foregroundWindowListeners.filter((listener) => listener !== callback);
         };
       },
-      getSystemLockState: vi.fn().mockResolvedValue({
-        state: 'unlocked',
-        locked: false,
-        locked_at: null,
-        recorded_at: new Date().toISOString(),
-      }),
       onSystemLockState: (callback) => {
         systemLockStateListeners.push(callback);
         return () => {

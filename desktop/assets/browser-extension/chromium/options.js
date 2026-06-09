@@ -26,19 +26,37 @@ export const pairBrowserBridge = async ({
 
   if (!response.ok) {
     let errorCode = '';
+    let errorReason = '';
     try {
       const errorPayload = await response.json();
       errorCode = String(errorPayload?.error || '').trim();
+      errorReason = String(errorPayload?.reason || '').trim();
     } catch {
       errorCode = '';
-    }
-
-    if (errorCode === 'invalid_pairing') {
-      throw new Error('That pairing code is expired or no longer active. Generate a fresh code in the desktop app.');
+      errorReason = '';
     }
 
     if (errorCode === 'invalid_origin') {
       throw new Error('This extension is not allowed by the desktop app. Reinstall it from the desktop pairing guide.');
+    }
+
+    if (errorCode === 'invalid_pairing') {
+      if (errorReason === 'expired') {
+        throw new Error('That pairing code has expired. Open the desktop app to generate a new one.');
+      }
+      if (errorReason === 'unknown_code') {
+        throw new Error('That pairing code is unknown. Make sure you used the latest code from the desktop app.');
+      }
+      if (errorReason === 'browser_name_mismatch') {
+        throw new Error('The browser does not match the one selected when generating the code. Generate a new code and retry.');
+      }
+      if (errorReason === 'missing_profile_key') {
+        throw new Error('The extension could not read its browser profile id. Reload the extension and try again.');
+      }
+      if (errorReason === 'origin_not_allowed') {
+        throw new Error('The desktop app does not allow this extension. Reinstall it from the desktop pairing guide.');
+      }
+      throw new Error('That pairing code is no longer active. Generate a fresh code in the desktop app.');
     }
 
     throw new Error(`Browser bridge responded with ${response.status}`);

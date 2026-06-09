@@ -174,3 +174,45 @@ test('manifest grants loopback bridge access', () => {
   assert.ok(Array.isArray(manifest.permissions));
   assert.equal(manifest.permissions.includes('alarms'), true);
 });
+
+const pairWithBridgeResponse = async (body, { status = 403, ok = false } = {}) => {
+  const fetchImpl = async () => ({
+    ok,
+    status,
+    json: async () => body,
+  });
+
+  return optionsPage.pairBrowserBridge({
+    fetchImpl,
+    pairingCode: 'PAIR-1234',
+    browserProfileId: 'browser-profile-a',
+  });
+};
+
+test('options pairBrowserBridge surfaces a human message when the pairing code is expired', async () => {
+  await assert.rejects(
+    () => pairWithBridgeResponse({ error: 'invalid_pairing', reason: 'expired' }),
+    /expired/i
+  );
+});
+
+test('options pairBrowserBridge surfaces a human message when the pairing code is unknown', async () => {
+  await assert.rejects(
+    () => pairWithBridgeResponse({ error: 'invalid_pairing', reason: 'unknown_code' }),
+    /unknown/i
+  );
+});
+
+test('options pairBrowserBridge surfaces a human message when the browser does not match', async () => {
+  await assert.rejects(
+    () => pairWithBridgeResponse({ error: 'invalid_pairing', reason: 'browser_name_mismatch' }),
+    /browser/i
+  );
+});
+
+test('options pairBrowserBridge surfaces a human message when the extension is not allowed', async () => {
+  await assert.rejects(
+    () => pairWithBridgeResponse({ error: 'invalid_origin' }),
+    /not allowed/i
+  );
+});

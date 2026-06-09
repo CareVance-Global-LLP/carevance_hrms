@@ -12,6 +12,7 @@ import RoleSelector from '@/components/add-user/RoleSelector';
 import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
 import InviteLinkPanel from '@/components/add-user/InviteLinkPanel';
 import CsvUploadPanel from '@/components/add-user/CsvUploadPanel';
+import CustomAddUserPanel from '@/components/add-user/CustomAddUserPanel';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import {
@@ -21,12 +22,13 @@ import {
 } from '@/services/addUser';
 
 
-type AddUserTab = 'email' | 'link' | 'csv';
+type AddUserTab = 'email' | 'link' | 'csv' | 'custom';
 
 const tabOptions: Array<{ id: AddUserTab; label: string; description: string }> = [
   { id: 'email', label: 'Invite by Email', description: 'Invite multiple people with their roles and access.' },
   { id: 'link', label: 'Invite by Link', description: 'Generate a single-use secure onboarding link for one recipient.' },
   { id: 'csv', label: 'Add by CSV', description: 'Bulk import employees, managers, or admins.' },
+  { id: 'custom', label: 'Add by Custom', description: 'Admin adds user with all details (email, password, personal info, bank details).' },
 ];
 
 const extractInviteError = (error: any, fallback: string) => {
@@ -363,7 +365,7 @@ export default function AddUserDrawer({
             />
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
             {tabOptions.map((tab) => (
               <button
                 key={tab.id}
@@ -412,14 +414,30 @@ export default function AddUserDrawer({
               </>
             ) : null}
 
-            {activeTab !== 'csv' ? (
+            {activeTab === 'custom' ? (
+              <>
+                <CustomAddUserPanel
+                  organizationId={organization?.id || 0}
+                  allowedRoles={allowedRoles}
+                  onSuccess={() => {
+                    setFeedback({ tone: 'success', message: 'User created successfully.' });
+                    onCompleted?.();
+                  }}
+                  onError={(message) => {
+                    setFeedback({ tone: 'error', message });
+                  }}
+                />
+              </>
+            ) : null}
+
+            {activeTab !== 'csv' && activeTab !== 'custom' ? (
               <>
                 <RoleSelector value={role} onChange={setRole} allowedRoles={allowedRoles} />
                 <div className="h-px bg-slate-200" />
               </>
             ) : null}
 
-            {activeTab !== 'csv' ? (
+            {activeTab !== 'csv' && activeTab !== 'custom' ? (
               <>
                 <GroupMultiSelect
                   options={groupsQuery.data || []}
@@ -434,6 +452,7 @@ export default function AddUserDrawer({
               </>
             ) : null}
 
+            {activeTab !== 'csv' && activeTab !== 'custom' ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50">
               <div className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left">
                 <div>
@@ -524,8 +543,9 @@ export default function AddUserDrawer({
                   </div>
               </div>
             </div>
+            ) : null}
 
-            {activeTab !== 'csv' ? (
+            {activeTab !== 'csv' && activeTab !== 'custom' ? (
             <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
               <input
                 type="checkbox"

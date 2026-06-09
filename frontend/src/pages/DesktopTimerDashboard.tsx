@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi } from '@/services/api';
 import {
   ACTIVE_TIMER_KEY,
+  armAutoStart,
   canUseDesktopAutoStart,
   clearAutoStartArm,
   clearAutoStartSuppression,
@@ -181,8 +182,15 @@ export default function DesktopTimerDashboard() {
   const hasRestoredSnapshotRef = useRef(false);
   const hasAttemptedAutoStartRef = useRef(false);
   const latestWorkedSecondsRef = useRef(0);
+  const wasAutoStartedRef = useRef(false);
 
   useEffect(() => {
+    console.log('[Live Duration] Effect triggered', {
+      hasActiveTimer: Boolean(activeTimer),
+      activeTimerId: activeTimer?.id,
+      activeTimerStartTime: activeTimer?.start_time,
+      activeTimerDuration: activeTimer?.duration,
+    });
     if (!activeTimer) {
       setLiveDuration(0);
       return;
@@ -204,6 +212,14 @@ export default function DesktopTimerDashboard() {
     const computeDuration = () => {
       const base = Number.isFinite(Number(activeTimer.duration)) ? Number(activeTimer.duration) : 0;
       const startMs = getStartTimeMs(activeTimer.start_time);
+      console.log('[Live Duration] computeDuration', {
+        activeTimerId: activeTimer.id,
+        startTime: activeTimer.start_time,
+        duration: activeTimer.duration,
+        base,
+        startMs,
+        now: Date.now(),
+      });
       if (!Number.isFinite(startMs)) {
         return base;
       }
@@ -288,22 +304,28 @@ export default function DesktopTimerDashboard() {
       }
 
       if (dashboardSucceeded) {
-        setActiveTimer(activeFromApi);
-        if (!activeFromApi) {
-          localStorage.removeItem(ACTIVE_TIMER_KEY);
-          setLiveDuration(0);
+        // Preserve auto-started timer if API hasn't caught up yet
+        if (wasAutoStartedRef.current && !activeFromApi) {
+          console.log('[Timer] Preserving auto-started timer while API catches up');
+          wasAutoStartedRef.current = false;
         } else {
-          clearAutoStartArm(userId);
-          clearAutoStartSuppression(userId);
-          hasRestoredSnapshotRef.current = false;
-          // Immediately compute live duration when timer is restored
-          const base = Number.isFinite(Number(activeFromApi.duration)) ? Number(activeFromApi.duration) : 0;
-          const startMs = getStartTimeMs(activeFromApi.start_time);
-          if (Number.isFinite(startMs)) {
-            const elapsed = Math.floor((Date.now() - startMs) / 1000);
-            setLiveDuration(Math.max(base, elapsed, 0));
+          setActiveTimer(activeFromApi);
+          if (!activeFromApi) {
+            localStorage.removeItem(ACTIVE_TIMER_KEY);
+            setLiveDuration(0);
           } else {
-            setLiveDuration(base);
+            clearAutoStartArm(userId);
+            clearAutoStartSuppression(userId);
+            hasRestoredSnapshotRef.current = false;
+            // Immediately compute live duration when timer is restored
+            const base = Number.isFinite(Number(activeFromApi.duration)) ? Number(activeFromApi.duration) : 0;
+            const startMs = getStartTimeMs(activeFromApi.start_time);
+            if (Number.isFinite(startMs)) {
+              const elapsed = Math.floor((Date.now() - startMs) / 1000);
+              setLiveDuration(Math.max(base, elapsed, 0));
+            } else {
+              setLiveDuration(base);
+            }
           }
         }
 
@@ -391,6 +413,7 @@ export default function DesktopTimerDashboard() {
   useEffect(() => {
     hasAttemptedAutoStartRef.current = false;
     hasRestoredSnapshotRef.current = false;
+    wasAutoStartedRef.current = false;
     setNotice('');
     setFeedback(null);
     setActiveTimer(null);
@@ -497,8 +520,20 @@ export default function DesktopTimerDashboard() {
       return;
     }
 
+    // Only seed auto-start on initial mount, not on re-renders
+    // This ensures auto-start is armed when user logs in
     seedDesktopLaunchAutoStart(userId);
-  }, [user, userId]);
+    
+    // Always arm auto-start when user logs in (even if previously seeded)
+    // This ensures auto-start works after logout/login
+    if (canUseDesktopAutoStart()) {
+      armAutoStart(userId);
+      console.log('[Timer Auto-Start] Armed auto-start for user:', userId);
+    }
+    
+    // Reset the attempted flag when user changes (new login)
+    hasAttemptedAutoStartRef.current = false;
+  }, [user?.id, userId]);
 
   useEffect(() => {
     if (!userId || activeTimer) {
@@ -509,33 +544,95 @@ export default function DesktopTimerDashboard() {
   }, [selectedProjectId]);
 
   useEffect(() => {
-    if (isLoading || !isTrackedTimerUser(user) || !canUseDesktopAutoStart()) {
+    // Guard: don't retry auto-start after a failed attempt in this session
+    if (hasAttemptedAutoStartRef.current) {
       return;
     }
 
-    if (activeTimer) {
+    // Debug logging for auto-start troubleshooting
+    console.log('[Timer Auto-Start] Checking conditions:', {
+      isLoading,
+      isTrackedTimerUser: isTrackedTimerUser(user),
+      canUseDesktopAutoStart: canUseDesktopAutoStart(),
+      activeTimer: !!activeTimer,
+      hasAttemptedAutoStart: hasAttemptedAutoStartRef.current,
+      isStarting,
+      isAutoStartSuppressed: isAutoStartSuppressed(userId),
+      isAutoStartArmed: isAutoStartArmed(userId),
+      officeStartTime: (organization?.settings as any)?.attendance?.office_start_time,
+    });
+
+    if (isLoading) {
+      console.log('[Timer Auto-Start] BLOCKED: isLoading is true');
+      return;
+    }
+    
+    if (!isTrackedTimerUser(user)) {
+      console.log('[Timer Auto-Start] BLOCKED: User is not a tracked timer user');
+      return;
+    }
+    
+    if (!canUseDesktopAutoStart()) {
+      console.log('[Timer Auto-Start] BLOCKED: Not running in desktop app (window.desktopTracker not found)');
+      return;
+    }
+
+    // Only block auto-start if timer is actually running (has valid start_time)
+    // Don't clear auto-start arm for stale snapshots - let fetchData verify first
+    if (activeTimer?.start_time) {
+      if (hasRestoredSnapshotRef.current) {
+        console.log('[Timer Auto-Start] Stale snapshot present, letting fetchData verify before blocking auto-start');
+        return;
+      }
+      console.log('[Timer Auto-Start] BLOCKED: Timer already running (has start_time), clearing auto-start state');
       clearAutoStartArm(userId);
       hasAttemptedAutoStartRef.current = true;
       return;
     }
 
-    if (
-      hasAttemptedAutoStartRef.current
-      || isStarting
-      || isAutoStartSuppressed(userId)
-      || !isAutoStartArmed(userId)
-    ) {
+    // If stale timer data exists (no start_time), wait for fetchData to clear it
+    // Safety: if activeTimer has no valid id, treat as null (e.g. error response object)
+    if (activeTimer && !activeTimer.start_time) {
+      if (activeTimer.id) {
+        console.log('[Timer Auto-Start] Stale timer data (no start_time), waiting for fetchData', { 
+          activeTimerId: activeTimer.id
+        });
+        return;
+      }
+      // Re-arm auto-start in case it was cleared by fetchData finding stale data
+      if (!isAutoStartArmed(userId)) {
+        armAutoStart(userId);
+        console.log('[Timer Auto-Start] Re-armed auto-start after clearing invalid timer data');
+      }
+    }
+
+    if (isStarting) {
+      console.log('[Timer Auto-Start] BLOCKED: Timer is currently starting');
+      return;
+    }
+    
+    if (isAutoStartSuppressed(userId)) {
+      console.log('[Timer Auto-Start] BLOCKED: Auto-start is suppressed');
+      hasAttemptedAutoStartRef.current = true;
+      return;
+    }
+    
+    if (!isAutoStartArmed(userId)) {
+      console.log('[Timer Auto-Start] BLOCKED: Auto-start is not armed');
+      hasAttemptedAutoStartRef.current = true;
       return;
     }
 
     const officeStartTime = (organization?.settings as any)?.attendance?.office_start_time;
     if (!isAtOrAfterOfficeStartTime(officeStartTime)) {
+      console.log('[Timer Auto-Start] Before office start time:', officeStartTime);
       return;
     }
 
+    console.log('[Timer Auto-Start] All conditions met, attempting auto-start');
     hasAttemptedAutoStartRef.current = true;
     void handleStartTimer(true);
-  }, [activeTimer?.id, isLoading, isStarting, user, userId, organization]);
+  }, [activeTimer?.id, isLoading, isStarting, userId, organization?.settings?.attendance?.office_start_time]);
 
   const handleStartTimer = async (isAutoStart = false) => {
     setIsStarting(true);
@@ -544,11 +641,12 @@ export default function DesktopTimerDashboard() {
     clearIdleAutoStopNotice(userId);
     try {
       const startedAtIso = new Date().toISOString();
-      const response = await timeEntryApi.start({
-        project_id: isAutoStart ? null : selectedProjectId,
-        task_id: isAutoStart ? null : selectedTaskId,
-        timer_slot: 'primary',
-      });
+      const startPayload: Record<string, any> = { timer_slot: 'primary' };
+      if (!isAutoStart) {
+        startPayload.project_id = selectedProjectId;
+        startPayload.task_id = selectedTaskId;
+      }
+      const response = await timeEntryApi.start(startPayload);
       clearAutoStartArm(userId);
       clearAutoStartSuppression(userId);
       setTimerBaseSeconds(Number(response.data.duration || 0));
@@ -556,6 +654,11 @@ export default function DesktopTimerDashboard() {
       setWorkedBaseSeconds(resumedWorkedSeconds);
       setWorkedBaselineSnapshot(userId, resumedWorkedSeconds, attendanceToday?.attendance_date);
       syncTimerEntryLocally(response.data);
+      
+      // Mark as auto-started so fetchData doesn't overwrite it
+      if (isAutoStart) {
+        wasAutoStartedRef.current = true;
+      }
 
       // Sync the task status locally — the backend start endpoint already
       // moves it to in_progress via syncTaskStatusForTimer for employees.
@@ -590,11 +693,17 @@ export default function DesktopTimerDashboard() {
       }
       setNotice(isAutoStart ? 'Timer started. Choose a task for the running session if needed.' : '');
     } catch (error: any) {
-      console.error('Error starting timer:', error);
-      const errorCode = String(error?.response?.data?.error_code || '').trim();
-      const errorMessage = String(error?.response?.data?.message || '').trim();
+      const errorData = error?.response?.data;
+      console.error('Error starting timer:', errorData || error);
+      const errorCode = String(errorData?.error_code || '').trim();
+      const errorMessage = String(errorData?.message || JSON.stringify(errorData) || '').trim();
       const isLeaveStartBlocked = errorCode === 'ON_APPROVED_LEAVE'
         || (/leave/i.test(errorMessage) && /timer\s+cannot\s+start/i.test(errorMessage));
+
+      if (isAutoStart) {
+        clearAutoStartArm(userId);
+        suppressAutoStart(userId);
+      }
 
       if (isLeaveStartBlocked) {
         setFeedback({
@@ -603,7 +712,11 @@ export default function DesktopTimerDashboard() {
         });
         setNotice('');
       } else {
-        setNotice(errorMessage || (isAutoStart ? 'Could not auto-start the timer.' : 'Failed to start timer'));
+        setFeedback({
+          tone: 'error',
+          message: errorMessage || (isAutoStart ? 'Could not auto-start the timer.' : 'Failed to start timer'),
+        });
+        setNotice('');
       }
     } finally {
       setIsStarting(false);
@@ -1177,7 +1290,12 @@ export default function DesktopTimerDashboard() {
                         <p className="mt-1 text-sm text-slate-500">{getTimeEntrySubtitle(entry, 'No description provided')}</p>
                       </td>
                       <td className="px-4 py-4 text-slate-700">
-                        {new Date(entry.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        {(() => {
+                          const ms = getStartTimeMs(entry.start_time);
+                          return Number.isFinite(ms)
+                            ? new Date(ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                            : '—';
+                        })()}
                       </td>
                       <td className="px-4 py-4 text-slate-700">{formatDuration(entry.duration)}</td>
                       <td className="px-4 py-4 text-slate-700">

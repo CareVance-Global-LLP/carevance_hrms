@@ -8,7 +8,6 @@ use App\Http\Requests\Api\Auth\LoginRequest;
 use App\Http\Requests\Api\Auth\ResendVerificationEmailRequest;
 use App\Http\Requests\Api\Auth\SignupOwnerRequest;
 use App\Models\Organization;
-use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Auth\ApiTokenService;
 use App\Services\Audit\AuditLogService;
@@ -324,16 +323,6 @@ class AuthController extends Controller
                         ->delete();
                 }
             }
-        }
-
-        if ($user) {
-            TimeEntry::where('user_id', $user->id)
-                ->whereNull('end_time')
-                ->update([
-                    'end_time' => now(),
-                    'duration' => DB::raw("EXTRACT(EPOCH FROM (NOW() - start_time))::integer"),
-                    'auto_stopped_for_idle' => false,
-                ]);
         }
 
         if ($user) {

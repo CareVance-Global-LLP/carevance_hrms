@@ -12,30 +12,62 @@ const trustMetrics = [
   { label: 'Avg rating', value: '4.8/5' },
 ];
 
+const planTypes = [
+  {
+    title: 'Tracking Plans',
+    description: 'Per-user pricing for teams that need time tracking, screenshots, and productivity insights.',
+    color: 'blue',
+  },
+  {
+    title: 'Payroll Plans',
+    description: 'Workspace pricing with full HRMS, payroll automation, compliance, and employee management.',
+    color: 'indigo',
+  },
+];
+
 export default function PricingPage() {
   return (
     <div className="text-slate-950">
       <Navbar />
 
-      <section className="bg-white px-4 pb-8 pt-20 sm:px-6 sm:pb-10 sm:pt-28 lg:px-8">
+      <section className="bg-gradient-to-b from-white via-blue-50/30 to-white px-4 pb-8 pt-20 sm:px-6 sm:pb-10 sm:pt-28 lg:px-8">
         <div className="mx-auto max-w-5xl text-center">
           <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">
             Plans & pricing
           </span>
           <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
-            Find the right plan for your team
+            Simple, transparent pricing
           </h1>
           <p className="mx-auto mt-3 max-w-2xl text-base leading-7 text-slate-500">
-            Start with a 14-day free trial — no credit card required. Upgrade, downgrade, or cancel at any time.
+            Start with a 14-day free trial. Upgrade, downgrade, or cancel anytime.
           </p>
         </div>
 
         {/* Trust metrics */}
-        <div className="mx-auto mt-8 grid max-w-3xl gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 shadow-sm sm:grid-cols-4">
+        <div className="mx-auto mt-8 grid max-w-3xl gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 shadow-sm sm:grid-cols-4">
           {trustMetrics.map((metric) => (
             <div key={metric.label} className="flex flex-col items-center bg-white px-4 py-5 text-center">
               <p className="text-xl font-bold text-slate-900">{metric.value}</p>
               <p className="mt-0.5 text-xs font-medium text-slate-500">{metric.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Plan type cards */}
+        <div className="mx-auto mt-10 grid max-w-3xl gap-4 sm:grid-cols-2">
+          {planTypes.map((pt) => (
+            <div
+              key={pt.title}
+              className={`rounded-xl border p-5 ${
+                pt.color === 'blue'
+                  ? 'border-blue-200 bg-blue-50/50'
+                  : 'border-indigo-200 bg-indigo-50/50'
+              }`}
+            >
+              <p className={`text-sm font-bold ${pt.color === 'blue' ? 'text-blue-700' : 'text-indigo-700'}`}>
+                {pt.title}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">{pt.description}</p>
             </div>
           ))}
         </div>

@@ -1,7 +1,7 @@
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { AlertCircle, CheckCircle } from 'lucide-react';
 
 interface GoogleLoginButtonProps {
@@ -13,6 +13,7 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
   const { googleLogin } = useAuth();
   const [error, setError] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const hasMounted = useRef(false);
 
   const isDesktopApp = typeof window !== 'undefined' &&
     Boolean((window as any).desktopTracker);
@@ -94,6 +95,11 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
     );
   }
 
+  // Prevent double initialization in React StrictMode
+  if (!hasMounted.current) {
+    hasMounted.current = true;
+  }
+
   return (
     <div className="w-full">
       {error && (
@@ -103,17 +109,19 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
         </div>
       )}
 
-      <div className="flex justify-center">
-        <GoogleLogin
-          onSuccess={handleSuccess}
-          onError={handleError}
-          text={type === 'signup' ? 'signup_with' : 'signin_with'}
-          shape="pill"
-          theme="outline"
-          size="large"
-          width={300}
-        />
-      </div>
+      {hasMounted.current && (
+        <div className="flex justify-center">
+          <GoogleLogin
+            onSuccess={handleSuccess}
+            onError={handleError}
+            text={type === 'signup' ? 'signup_with' : 'signin_with'}
+            shape="pill"
+            theme="outline"
+            size="large"
+            width={300}
+          />
+        </div>
+      )}
     </div>
   );
 }

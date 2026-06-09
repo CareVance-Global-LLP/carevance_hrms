@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import { formatDateTime } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
+import { decodeHtmlEntities } from '@/lib/formatters';
 import { chatApi } from '@/services/api';
 import type { ChatConversation, ChatGroup, ChatGroupMessage, ChatMessage, ChatTypingUser } from '@/types';
 
@@ -1126,7 +1127,9 @@ export default function Chat() {
   };
 
   const renderMessageBody = (body: string, mine: boolean) => {
-    const lines = body.split('\n');
+    // First decode any HTML entities that might have been encoded
+    const decodedBody = decodeHtmlEntities(body);
+    const lines = decodedBody.split('\n');
 
     return lines.map((line, lineIndex) => {
       const segments = line.split(URL_OR_EMAIL_PATTERN);
@@ -1137,6 +1140,7 @@ export default function Chat() {
             const isLinkToken = EMAIL_TOKEN_PATTERN.test(segment) || URL_TOKEN_PATTERN.test(segment);
 
             if (!isLinkToken) {
+              // For non-link segments, escape HTML and then split by special characters to preserve them
               return <Fragment key={`text-${lineIndex}-${segmentIndex}`}>{segment}</Fragment>;
             }
 
@@ -1375,7 +1379,7 @@ export default function Chat() {
                     <p className="font-medium text-gray-900">{conversation.other_user?.name}</p>
                     <p className="text-xs text-gray-500">{conversation.other_user?.email}</p>
                     {conversation.last_message?.body && (
-                      <p className="mt-1 truncate text-xs text-gray-600">{conversation.last_message.body}</p>
+                      <p className="mt-1 truncate text-xs text-gray-600">{decodeHtmlEntities(conversation.last_message.body)}</p>
                     )}
                     {!!conversation.unread_count && conversation.unread_count > 0 && (
                       <span className="mt-1 inline-block rounded-full bg-primary-600 px-2 py-0.5 text-xs text-white">
@@ -1415,7 +1419,7 @@ export default function Chat() {
                     </div>
                     <p className="text-xs text-gray-500">{group.member_count || 0} members</p>
                     {group.last_message?.body && (
-                      <p className="mt-1 truncate text-xs text-gray-600">{group.last_message.body}</p>
+                      <p className="mt-1 truncate text-xs text-gray-600">{decodeHtmlEntities(group.last_message.body)}</p>
                     )}
                     {!!group.unread_count && group.unread_count > 0 && (
                       <span className="mt-1 inline-block rounded-full bg-primary-600 px-2 py-0.5 text-xs text-white">

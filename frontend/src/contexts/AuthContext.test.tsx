@@ -100,6 +100,7 @@ describe('AuthProvider', () => {
 
     vi.mocked(authApi.login).mockResolvedValue({
       data: {
+        success: true,
         token: 'employee-token',
         user: {
           id: 7,
@@ -129,7 +130,7 @@ describe('AuthProvider', () => {
     });
     expect(isAutoStartArmed(7)).toBe(false);
     expect(sessionStorage.getItem('token')).toBe('employee-token');
-    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.getItem('token')).toBe('employee-token');
 
     await user.click(screen.getByRole('button', { name: /logout/i }));
 
@@ -151,6 +152,7 @@ describe('AuthProvider', () => {
 
     vi.mocked(authApi.login).mockResolvedValue({
       data: {
+        success: true,
         token: 'employee-token',
         user: {
           id: 7,

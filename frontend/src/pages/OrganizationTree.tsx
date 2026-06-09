@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ChevronDown,
   ChevronRight,
+  AlertTriangle,
   Crown,
   Network,
   Search,
@@ -224,10 +225,23 @@ export default function OrganizationTree() {
     enabled: isAuthenticated && !isAuthLoading,
   });
 
-  /* ── Build tree ── */
+  /* ── Separate assigned vs unassigned ── */
+  const { assignedUsers, unassignedUsers } = useMemo(() => {
+    const assigned: OrgUser[] = [];
+    const unassigned: OrgUser[] = [];
+    for (const u of raw) {
+      if (!u.department || u.department.trim() === '') {
+        unassigned.push(u);
+      } else {
+        assigned.push(u);
+      }
+    }
+    return { assignedUsers: assigned, unassignedUsers: unassigned };
+  }, [raw]);
+
+  /* ── Build tree (only assigned-department users) ── */
   const tree = useMemo(() => {
-    // Find admin/root: lowest hierarchy_level, or current user fallback
-    const sorted = [...raw].sort((a, b) => a.hierarchy_level - b.hierarchy_level);
+    const sorted = [...assignedUsers].sort((a, b) => a.hierarchy_level - b.hierarchy_level);
     const admin = sorted[0] ?? (currentUser
       ? {
           id: currentUser.id,
@@ -247,43 +261,40 @@ export default function OrganizationTree() {
       return { admin: null as OrgUser | null, childrenMap: new Map<number, OrgUser[]>(), allIds: [] as number[] };
     }
 
-    // Build parent-child map purely by hierarchy level.
-    // Each person reports to the nearest higher-ranked person
-    // (same department preferred), creating the visual chain.
     const childrenMap = new Map<number, OrgUser[]>();
+    const userById = new Map<number, OrgUser>(assignedUsers.map((u) => [u.id, u]));
 
-    for (const u of raw) {
+    for (const u of assignedUsers) {
       if (u.id === admin.id) continue;
 
-      // Find all people with a lower hierarchy_level (higher rank)
-      const candidates = raw.filter((v) =>
-        v.id !== u.id &&
-        v.hierarchy_level < u.hierarchy_level
-      );
+      let parentId: number | null = null;
 
-      if (candidates.length === 0) {
-        // No one higher ranked — report directly to admin
-        if (!childrenMap.has(admin.id)) childrenMap.set(admin.id, []);
-        childrenMap.get(admin.id)!.push(u);
-        continue;
+      if (u.reporting_manager_id && userById.has(u.reporting_manager_id) && u.reporting_manager_id !== u.id) {
+        parentId = u.reporting_manager_id;
+      } else {
+        const candidates = assignedUsers.filter((v) =>
+          v.id !== u.id &&
+          v.hierarchy_level < u.hierarchy_level
+        );
+
+        if (candidates.length === 0) {
+          parentId = admin.id;
+        } else {
+          candidates.sort((a, b) => b.hierarchy_level - a.hierarchy_level);
+          const userDept = deptLabel(u.department).toLowerCase();
+          const sameDept = candidates.find((v) =>
+            deptLabel(v.department).toLowerCase() === userDept
+          );
+          parentId = (sameDept ?? candidates[0]).id;
+        }
       }
 
-      // Sort candidates by hierarchy_level descending (nearest to user first)
-      candidates.sort((a, b) => b.hierarchy_level - a.hierarchy_level);
-
-      // Prefer same department
-      const userDept = deptLabel(u.department).toLowerCase();
-      const sameDept = candidates.find((v) =>
-        deptLabel(v.department).toLowerCase() === userDept
-      );
-
-      const parent = sameDept ?? candidates[0];
-      if (!childrenMap.has(parent.id)) childrenMap.set(parent.id, []);
-      childrenMap.get(parent.id)!.push(u);
+      if (!childrenMap.has(parentId)) childrenMap.set(parentId, []);
+      childrenMap.get(parentId)!.push(u);
     }
 
-    return { admin, childrenMap, allIds: raw.map((u) => u.id) };
-  }, [currentUser, raw]);
+    return { admin, childrenMap, allIds: assignedUsers.map((u) => u.id) };
+  }, [currentUser, assignedUsers]);
 
   /* ── Auto-collapse large branches ── */
   useEffect(() => {
@@ -394,7 +405,7 @@ export default function OrganizationTree() {
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* ── Stats ── */}
-        <div className={`mb-5 grid grid-cols-2 gap-3 ${roleCards.length > 4 ? 'sm:grid-cols-3 lg:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-4'}`}>
+        <div className={`mb-5 grid grid-cols-2 gap-3 ${roleCards.length > 4 ? 'sm:grid-cols-3 lg:grid-cols-5' : 'sm:grid-cols-2 lg:grid-cols-4'}`}>
           {roleCards.map((s) => (
             <SurfaceCard key={s.key} className="p-4">
               <div className="flex items-center justify-between">
@@ -407,6 +418,18 @@ export default function OrganizationTree() {
               </div>
             </SurfaceCard>
           ))}
+          {unassignedUsers.length > 0 && (
+            <SurfaceCard className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-500">No Department</p>
+                  <p className="mt-1 text-2xl font-semibold text-amber-600">{unassignedUsers.length}</p>
+                  <p className="mt-0.5 text-[10px] text-slate-400">Unassigned employees</p>
+                </div>
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+              </div>
+            </SurfaceCard>
+          )}
         </div>
 
         {/* ── Toolbar ── */}
@@ -447,7 +470,7 @@ export default function OrganizationTree() {
         </div>
 
         {/* ── Tree viewport ── */}
-        <div className="relative overflow-auto rounded-xl border border-slate-200 bg-white" style={{ height: '75vh' }}>
+        <div className="relative overflow-auto rounded-xl border border-slate-200 bg-white" style={{ minHeight: '400px', maxHeight: '80vh' }}>
           <div ref={wrapperRef} className="relative inline-block min-w-full p-10">
             {/* SVG connectors */}
             <svg className="pointer-events-none absolute inset-0 z-0" width="100%" height="100%">
@@ -491,6 +514,41 @@ export default function OrganizationTree() {
             </div>
           </div>
         </div>
+
+        {/* ── Unassigned Department Employees ── */}
+        {unassignedUsers.length > 0 && (
+          <div className="mt-6">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <h2 className="text-sm font-semibold text-slate-700">
+                No Department Assigned
+              </h2>
+              <span className="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                {unassignedUsers.length}
+              </span>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+              <div className="flex flex-wrap gap-3">
+                {unassignedUsers
+                  .filter((u) => (q ? matchUser(u, q) : true))
+                  .map((u) => (
+                    <div
+                      key={u.id}
+                      className="flex items-center gap-2.5 rounded-lg border border-amber-200 bg-white px-3 py-2 shadow-sm"
+                    >
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-700">
+                        {initials(u.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{u.name}</p>
+                        <p className="text-[10px] text-slate-400">{u.role_name || u.role}</p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Routing note ── */}
         <div className="mt-8 rounded-lg border border-slate-200 bg-white p-4">

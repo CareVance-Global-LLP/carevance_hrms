@@ -156,3 +156,12 @@ export const enumerateMonths = (range: DateRange) => {
   }
   return months;
 };
+
+// HTML entity decoding utility
+// Use this when displaying text that may contain HTML entities (like &quot; for ")
+export const decodeHtmlEntities = (text: string): string => {
+  if (!text) return '';
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  return textarea.value;
+};

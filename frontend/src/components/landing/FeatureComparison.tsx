@@ -1,67 +1,26 @@
+import { useState } from 'react';
 import { Check, Minus } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { featureCategories, PlanType } from '@/constants/pricing';
 import SectionHeading from './SectionHeading';
+import { fadeSlideUp, viewportOptions } from './animations';
 
-const planColumns = [
-  { key: 'basic', label: 'Basic' },
-  { key: 'advanced', label: 'Advanced' },
-  { key: 'enterprise', label: 'Enterprise' },
-] as const;
+type PlanKey = 'basic_tracking' | 'advance_tracking' | 'basic_payroll' | 'professional_payroll';
 
-type PlanKey = (typeof planColumns)[number]['key'];
+const trackingColumns: { key: PlanKey; label: string; sublabel: string }[] = [
+  { key: 'basic_tracking', label: 'Basic', sublabel: 'Tracking' },
+  { key: 'advance_tracking', label: 'Advance', sublabel: 'Tracking' },
+];
 
-const rows: { category: string; features: { name: string; plans: Record<PlanKey, boolean | 'limited'> }[] }[] = [
-  {
-    category: 'Time Tracking',
-    features: [
-      { name: 'Desktop timer app', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Check-in / check-out', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Idle detection and auto-stop', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Overtime calculation and history', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Project tracking', plans: { basic: false, advanced: true, enterprise: true } },
-      { name: 'Task tracking', plans: { basic: false, advanced: true, enterprise: true } },
-    ],
-  },
-  {
-    category: 'Monitoring & Screenshots',
-    features: [
-      { name: 'Screenshot capture and viewer history', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Employee timeline', plans: { basic: false, advanced: true, enterprise: true } },
-      { name: 'Geo-fencing', plans: { basic: false, advanced: true, enterprise: true } },
-    ],
-  },
-  {
-    category: 'Reports & Analytics',
-    features: [
-      { name: 'Reports module with CSV export', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Custom reports and dashboards', plans: { basic: false, advanced: false, enterprise: true } },
-    ],
-  },
-  {
-    category: 'Workforce Management',
-    features: [
-      { name: 'User and role management', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Approval workflow', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Workspace onboarding and invites', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Multi-role access', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Chat module', plans: { basic: false, advanced: true, enterprise: true } },
-      { name: 'Leave application and approval workflow', plans: { basic: false, advanced: true, enterprise: true } },
-    ],
-  },
-  {
-    category: 'Support & Onboarding',
-    features: [
-      { name: 'Email support', plans: { basic: true, advanced: true, enterprise: true } },
-      { name: 'Priority support', plans: { basic: false, advanced: true, enterprise: true } },
-      { name: 'Custom rollout and onboarding support', plans: { basic: false, advanced: false, enterprise: true } },
-      { name: 'Flexible billing and procurement support', plans: { basic: false, advanced: false, enterprise: true } },
-    ],
-  },
+const payrollColumns: { key: PlanKey; label: string; sublabel: string }[] = [
+  { key: 'basic_payroll', label: 'Basic', sublabel: 'Tracker + Payroll' },
+  { key: 'professional_payroll', label: 'Professional', sublabel: 'Tracker + Payroll' },
 ];
 
 function Cell({ present }: { present: boolean | 'limited' }) {
   if (present === true) {
     return (
-      <span className="mx-auto flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+      <span className="mx-auto flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
         <Check className="h-3 w-3" />
       </span>
     );
@@ -77,48 +36,91 @@ function Cell({ present }: { present: boolean | 'limited' }) {
 }
 
 export default function FeatureComparison() {
+  const [activeTab, setActiveTab] = useState<PlanType>('tracking');
+  const columns = activeTab === 'tracking' ? trackingColumns : payrollColumns;
+
   return (
     <section className="bg-[#f3f6fb] px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Compare plans"
-          title="Everything you need to compare at a glance"
-          description="See exactly which features are available in each plan."
+          title="Feature-by-feature comparison"
+          description="See exactly what's included in each plan tier."
         />
 
-        <div className="mt-10 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[500px] border-collapse">
+        {/* Tab toggle */}
+        <div className="mt-8 flex justify-center">
+          <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            {(['tracking', 'payroll'] as PlanType[]).map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setActiveTab(type)}
+                className={`rounded-md px-5 py-2 text-sm font-semibold transition ${
+                  activeTab === type
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {type === 'tracking' ? 'Tracking Plans' : 'Payroll Plans'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <motion.div
+          key={activeTab}
+          variants={fadeSlideUp}
+          initial="hidden"
+          animate="visible"
+          viewport={viewportOptions}
+          className="mt-8 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm"
+        >
+          <table className="w-full min-w-[600px] border-collapse">
             <thead>
               <tr>
-                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Feature</th>
-                {planColumns.map((col) => (
-                  <th key={col.key} className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-900">
-                    {col.label}
+                <th className="border-b border-slate-200 bg-slate-50 px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 w-[40%]">
+                  Feature
+                </th>
+                {columns.map((col) => (
+                  <th key={col.key} className="border-b border-slate-200 bg-slate-50 px-4 py-3.5 text-center">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-900">{col.label}</p>
+                    <p className="text-[10px] font-medium text-slate-400 mt-0.5">{col.sublabel}</p>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.flatMap((section) => [
-                <tr key={section.category}>
-                  <td colSpan={planColumns.length + 1} className="bg-slate-50/50 px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 sm:px-4">
-                    {section.category}
-                  </td>
-                </tr>,
-                ...section.features.map((feat) => (
-                  <tr key={feat.name} className="border-b border-slate-100 last:border-b-0">
-                    <td className="px-3 py-3 text-xs text-slate-700 sm:px-4 sm:text-sm">{feat.name}</td>
-                    {planColumns.map((col) => (
-                      <td key={col.key} className="px-3 py-3 text-center sm:px-4">
-                        <Cell present={feat.plans[col.key]} />
-                      </td>
-                    ))}
-                  </tr>
-                )),
-              ])}
+              {featureCategories.map((section) => {
+                const visibleFeatures = section.features.filter((f) =>
+                  columns.some((col) => f[col.key])
+                );
+                if (visibleFeatures.length === 0) return null;
+
+                return [
+                  <tr key={`header-${section.category}`}>
+                    <td
+                      colSpan={columns.length + 1}
+                      className="bg-gradient-to-r from-slate-50 to-transparent px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400"
+                    >
+                      {section.category}
+                    </td>
+                  </tr>,
+                  ...visibleFeatures.map((feat) => (
+                    <tr key={feat.name} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition-colors">
+                      <td className="px-4 py-3 text-sm text-slate-700">{feat.name}</td>
+                      {columns.map((col) => (
+                        <td key={col.key} className="px-4 py-3 text-center">
+                          <Cell present={feat[col.key]} />
+                        </td>
+                      ))}
+                    </tr>
+                  )),
+                ];
+              })}
             </tbody>
           </table>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

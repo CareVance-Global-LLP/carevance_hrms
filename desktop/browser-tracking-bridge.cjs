@@ -283,23 +283,28 @@ function createBrowserTrackingBridge({
   };
 
   const consumeActivePairing = (pairingCode) => {
-    const pairing = pairings.get(pairingCode);
+    const normalizedCode = String(pairingCode || '').trim();
+    if (!normalizedCode) {
+      return { pairing: null, reason: 'missing_code' };
+    }
+
+    const pairing = pairings.get(normalizedCode);
     if (!pairing) {
-      if (activePairingCode === pairingCode) {
+      if (activePairingCode === normalizedCode) {
         activePairingCode = null;
       }
-      return null;
+      return { pairing: null, reason: 'unknown_code' };
     }
 
     if (pairing.expiresAt < now().getTime()) {
-      pairings.delete(pairingCode);
-      if (activePairingCode === pairingCode) {
+      pairings.delete(normalizedCode);
+      if (activePairingCode === normalizedCode) {
         activePairingCode = null;
       }
-      return null;
+      return { pairing: null, reason: 'expired' };
     }
 
-    return pairing;
+    return { pairing, reason: 'ok' };
   };
 
   const pruneExpiredConnections = () => {
@@ -325,7 +330,8 @@ function createBrowserTrackingBridge({
 
   const getRendererState = () => {
     pruneExpiredConnections();
-    const activePairing = activePairingCode ? consumeActivePairing(activePairingCode) : null;
+    const activePairingLookup = activePairingCode ? consumeActivePairing(activePairingCode) : { pairing: null, reason: 'unknown_code' };
+    const activePairing = activePairingLookup.pairing;
     return {
       ready,
       local_url: localUrl,
@@ -361,18 +367,26 @@ function createBrowserTrackingBridge({
   };
 
   const consumePairing = ({ pairingCode, origin, browserName, profileKey, extensionVersion }) => {
-    const pairing = consumeActivePairing(pairingCode);
+    const normalizedPairingCode = String(pairingCode || '').trim();
     const normalizedProfileKey = String(profileKey || '').trim();
-    if (!pairing) {
-      return null;
+    const normalizedBrowserName = String(browserName || '').trim().toLowerCase();
+
+    const lookup = consumeActivePairing(normalizedPairingCode);
+    if (!lookup.pairing) {
+      return { token: null, reason: lookup.reason };
+    }
+    const pairing = lookup.pairing;
+
+    if (pairing.browserName !== normalizedBrowserName) {
+      return { token: null, reason: 'browser_name_mismatch' };
     }
 
-    if (pairing.browserName !== String(browserName || '').trim().toLowerCase()) {
-      return null;
+    if (!normalizedProfileKey) {
+      return { token: null, reason: 'missing_profile_key' };
     }
 
-    if (!isAllowedExtensionOrigin(origin, allowedExtensionOrigins) || !normalizedProfileKey) {
-      return null;
+    if (!isAllowedExtensionOrigin(origin, allowedExtensionOrigins)) {
+      return { token: null, reason: 'origin_not_allowed' };
     }
 
     const token = crypto.randomBytes(24).toString('hex');
@@ -388,12 +402,12 @@ function createBrowserTrackingBridge({
       lastSeenAt: timestamp,
       lastSeenAtMs: timestampMs,
     });
-    pairings.delete(pairingCode);
-    if (activePairingCode === pairingCode) {
+    pairings.delete(normalizedPairingCode);
+    if (activePairingCode === normalizedPairingCode) {
       activePairingCode = null;
     }
     emitStateChanged();
-    return token;
+    return { token, reason: 'ok' };
   };
 
   const handleBrowserEvent = async (token, origin, payload) => {
@@ -426,12 +440,8 @@ function createBrowserTrackingBridge({
     const isExtensionOrigin = isAllowedExtensionOrigin(origin, allowedExtensionOrigins);
     const requiresExtensionOrigin = pathname === '/pair' || pathname === '/events';
 
-    // Debug logging
-    console.log('[browser-tracking-bridge] Request:', { method, pathname, origin, isExtensionOrigin, allowedOrigins: allowedExtensionOrigins });
-
     if (method === 'OPTIONS') {
       if (!isExtensionOrigin) {
-        console.log('[browser-tracking-bridge] OPTIONS rejected - invalid origin:', origin);
         return jsonResponse(403, { error: 'invalid_origin' });
       }
 
@@ -439,19 +449,11 @@ function createBrowserTrackingBridge({
     }
 
     if (requiresExtensionOrigin && !isExtensionOrigin) {
-      console.log('[browser-tracking-bridge] Request rejected - invalid origin:', origin, 'allowed:', allowedExtensionOrigins);
       return jsonResponse(403, { error: 'invalid_origin' });
     }
 
     if (method === 'POST' && pathname === '/pair') {
-      console.log('[browser-tracking-bridge] Pair request received:', { 
-        pairingCode: body.pairing_code, 
-        origin, 
-        browserName: body.browser_name,
-        profileKey: body.profile_key 
-      });
-      
-      const token = consumePairing({
+      const result = consumePairing({
         pairingCode: String(body.pairing_code || '').trim(),
         origin,
         browserName: body.browser_name,
@@ -459,21 +461,52 @@ function createBrowserTrackingBridge({
         extensionVersion: body.extension_version,
       });
 
-      if (!token) {
-        console.log('[browser-tracking-bridge] Pairing failed - invalid pairing code or other issue');
-        return withCors(jsonResponse(403, { error: 'invalid_pairing' }), origin, allowedExtensionOrigins);
+      if (!result.token) {
+        return withCors(
+          jsonResponse(403, {
+            error: 'invalid_pairing',
+            reason: result.reason,
+            expected_origin: origin,
+            expected_browser_name: body.browser_name,
+            allowed_origins: allowedExtensionOrigins,
+            active_pairing_code: activePairingCode,
+          }),
+          origin,
+          allowedExtensionOrigins
+        );
       }
-      
-      console.log('[browser-tracking-bridge] Pairing successful');
 
       return withCors(
         jsonResponse(200, {
-          token,
+          token: result.token,
           local_url: localUrl,
         }),
         origin,
         allowedExtensionOrigins
       );
+    }
+
+    if (method === 'GET' && pathname === '/diag') {
+      const activePairing = activePairingCode ? pairings.get(activePairingCode) : null;
+      return jsonResponse(200, {
+        ready,
+        local_url: localUrl,
+        last_error: lastError,
+        allowed_origins: allowedExtensionOrigins,
+        allowed_origins_count: allowedExtensionOrigins.length,
+        active_pairing_code: activePairingCode,
+        active_pairing_browser_name: activePairing?.browserName || null,
+        active_pairing_expires_at: activePairing
+          ? new Date(activePairing.expiresAt).toISOString()
+          : null,
+        active_pairing_expired: activePairing
+          ? activePairing.expiresAt < now().getTime()
+          : null,
+        active_connections: tokens.size,
+        last_event_at: lastEventAt,
+        server_time: now().toISOString(),
+        last_request_origin: origin || null,
+      });
     }
 
     if (method === 'POST' && pathname === '/events') {

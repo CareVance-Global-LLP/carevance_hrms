@@ -11,7 +11,8 @@
     "chromeExtensionOrigin": "chrome-extension://idokemlmnjpefdelnfiehbnbhjkneplp",
     "edgeExtensionOrigin": null,
     "allowedExtensionOrigins": [
-      "chrome-extension://idokemlmnjpefdelnfiehbnbhjkneplp"
+      "chrome-extension://idokemlmnjpefdelnfiehbnbhjkneplp",
+      "chrome-extension://ipjfaolaendldffgooakhknllidaeohh"
     ]
   }
 }

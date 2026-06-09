@@ -14,7 +14,7 @@ const browserTrackingChromeStoreUrl = (process.env.BROWSER_TRACKING_CHROME_STORE
 const browserTrackingEdgeStoreUrl = (process.env.BROWSER_TRACKING_EDGE_STORE_URL || '').trim();
 const browserTrackingChromeExtensionOrigin = (process.env.BROWSER_TRACKING_CHROME_EXTENSION_ORIGIN || 'chrome-extension://idokemlmnjpefdelnfiehbnbhjkneplp').trim();
 const browserTrackingEdgeExtensionOrigin = (process.env.BROWSER_TRACKING_EDGE_EXTENSION_ORIGIN || '').trim();
-const browserTrackingAllowedExtensionOrigins = (process.env.BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS || 'chrome-extension://idokemlmnjpefdelnfiehbnbhjkneplp')
+const browserTrackingAllowedExtensionOrigins = (process.env.BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS || 'chrome-extension://idokemlmnjpefdelnfiehbnbhjkneplp,chrome-extension://ipjfaolaendldffgooakhknllidaeohh')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);

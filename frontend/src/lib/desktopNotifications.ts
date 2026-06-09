@@ -1,6 +1,7 @@
 import type { AppNotificationItem, User } from '@/types';
 import { isChatNotification } from '@/lib/chatNotifications';
 import { isApprovalNotification } from '@/lib/notificationDisplay';
+import { decodeHtmlEntities } from '@/lib/formatters';
 
 export type NotificationSoundType = 'chat' | 'approval' | 'announcement' | 'default';
 
@@ -105,9 +106,10 @@ export const formatNotificationMessage = (
     const messagePreview = notification.message || notification.meta?.message_preview;
     if (messagePreview) {
       const maxLength = 120;
-      return messagePreview.length > maxLength 
-        ? `${messagePreview.substring(0, maxLength)}...` 
-        : messagePreview;
+      const decodedPreview = decodeHtmlEntities(messagePreview);
+      return decodedPreview.length > maxLength 
+        ? `${decodedPreview.substring(0, maxLength)}...` 
+        : decodedPreview;
     }
     return 'Click to view conversation';
   }
