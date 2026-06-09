@@ -123,7 +123,7 @@ const api = axios.create({
   // Global timeout to prevent hanging requests
   timeout: 30000,
   // Retry configuration for transient failures
-  validateStatus: (status) => status >= 200 && status < 500,
+  validateStatus: (status) => status >= 200 && status < 300,
 });
 
 // Request interceptor to add auth token and CSRF token
