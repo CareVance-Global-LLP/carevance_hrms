@@ -84,12 +84,41 @@ interface ApiErrorResponse {
   request_id?: string;
 }
 
+// Get CSRF token from cookie (set by backend)
+const getCsrfToken = (): string | null => {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
+// Check if request is retryable
+const isRetryableError = (error: AxiosError): boolean => {
+  if (!error.config) return false;
+  // Don't retry if max retries reached
+  const retryCount = (error.config as any)._retryCount || 0;
+  if (retryCount >= 3) return false;
+  
+  // Retry on network errors or 5xx errors
+  return !error.response || (error.response.status >= 500 && error.response.status < 600);
+};
+
+// Calculate retry delay with exponential backoff
+const getRetryDelay = (retryCount: number): number => {
+  return Math.min(1000 * Math.pow(2, retryCount), 30000); // Max 30s
+};
+
+// Check if browser is online
+const isOnline = (): boolean => {
+  return typeof navigator !== 'undefined' && navigator.onLine !== false;
+};
+
 const api = axios.create({
   baseURL: apiUrl,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest', // CSRF protection header
   },
   // Global timeout to prevent hanging requests
   timeout: 30000,
@@ -97,18 +126,36 @@ const api = axios.create({
   validateStatus: (status) => status >= 200 && status < 500,
 });
 
-// Request interceptor to add auth token
+// Request interceptor to add auth token and CSRF token
 api.interceptors.request.use((config) => {
+  // Check if online
+  if (!isOnline()) {
+    return Promise.reject(new Error('No internet connection. Please check your network.'));
+  }
+  
   const token = getStoredAuthValue('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  
+  // Add CSRF token for state-changing requests (POST, PUT, DELETE, PATCH)
+  if (['post', 'put', 'delete', 'patch'].includes(config.method?.toLowerCase() || '')) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      config.headers['X-XSRF-TOKEN'] = csrfToken;
+    }
   }
   
   // Add request timeout for better error handling
   config.timeout = config.timeout || 30000; // 30 seconds default
   config.timeoutErrorMessage = 'Request timed out. Please check your connection.';
   
+  // Track retry count
+  (config as any)._retryCount = (config as any)._retryCount || 0;
+  
   return config;
+}, (error) => {
+  return Promise.reject(error);
 });
 
 // Response interceptor to handle errors
@@ -125,7 +172,7 @@ api.interceptors.response.use(
 
     return response;
   },
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     const status = error.response?.status;
     const errorCode = (error.response?.data as ApiErrorResponse)?.error_code;
     
@@ -152,13 +199,13 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
     
-    // Handle validation errors
+    // Handle validation errors - don't retry
     if (status === 422 || errorCode === 'VALIDATION_ERROR') {
       // Let the component handle validation errors
       return Promise.reject(error);
     }
     
-    // Handle rate limiting
+    // Handle rate limiting - retry after delay
     if (status === 429 || errorCode === 'TOO_MANY_REQUESTS') {
       console.error('Rate limit exceeded. Please try again later.');
       return Promise.reject(error);
@@ -172,6 +219,28 @@ api.interceptors.response.use(
         console.error('Request ID:', requestId);
       }
       return Promise.reject(error);
+    }
+    
+    // Handle network errors (ECONNABORTED, NETWORK_ERROR, etc.) with retry
+    if (!error.response || error.code === 'ECONNABORTED' || error.message?.includes('Network Error')) {
+      const config = error.config;
+      if (config && isRetryableError(error)) {
+        const retryCount = ((config as any)._retryCount || 0) + 1;
+        (config as any)._retryCount = retryCount;
+        
+        console.warn(`Request failed, retrying (${retryCount}/3): ${config.url}`);
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, getRetryDelay(retryCount)));
+        
+        // Check if still online before retrying
+        if (!isOnline()) {
+          return Promise.reject(new Error('No internet connection. Please check your network.'));
+        }
+        
+        // Retry the request
+        return api(config);
+      }
     }
     
     return Promise.reject(error);
@@ -726,13 +795,14 @@ export const activityApi = {
   getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; simple?: boolean | number; page?: number; per_page?: number }) =>
     api.get<{ data: Activity[]; current_page?: number; last_page?: number; total?: number; has_more?: boolean }>('/activities', { params }),
 
-  getAllPages: async (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; simple?: boolean | number; per_page?: number }) => {
-    const pageSize = Math.max(1, Number(params?.per_page || 200));
+  getAllPages: async (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; simple?: boolean | number; per_page?: number; max_records?: number }) => {
+    const pageSize = Math.max(1, Number(params?.per_page || 100));
+    const maxRecords = Math.min(1000, Number(params?.max_records || 1000)); // Hard limit: 1000 records max
     let page = 1;
     let hasMore = true;
     const results: Activity[] = [];
 
-    while (hasMore) {
+    while (hasMore && results.length < maxRecords) {
       const response = await api.get<{
         data: Activity[];
         current_page?: number;
@@ -748,6 +818,12 @@ export const activityApi = {
 
       const payload = response.data;
       results.push(...(Array.isArray(payload.data) ? payload.data : []));
+
+      // Stop if we've reached the limit
+      if (results.length >= maxRecords) {
+        results.splice(maxRecords); // Trim to exact limit
+        break;
+      }
 
       if (payload.next_page_url) {
         page += 1;

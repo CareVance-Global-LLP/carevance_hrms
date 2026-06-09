@@ -229,8 +229,10 @@ export default function DesktopTimerDashboard() {
         return base;
       }
 
+      // Calculate elapsed time since timer started
       const elapsed = Math.floor((Date.now() - startMs) / 1000);
-      return Math.max(base, elapsed, 0);
+      // Total duration = base duration (already tracked) + current elapsed time
+      return Math.max(base + elapsed, 0);
     };
 
     setLiveDuration(computeDuration());

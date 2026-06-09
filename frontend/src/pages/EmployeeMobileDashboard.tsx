@@ -176,16 +176,24 @@ export default function EmployeeMobileDashboard() {
 
   // Auto-stop when leaving zone
   useEffect(() => {
-    if (activeTimer && !geo.isInsideZone && zone && geo.latitude && geo.longitude) {
+    // Prevent duplicate stops if already stopping or no active timer
+    if (!activeTimer || stopping) return;
+    
+    // Only stop if outside zone and have valid coordinates
+    if (!geo.isInsideZone && zone && geo.latitude && geo.longitude) {
+      setStopping(true);
       timeEntryApi.stop({
         timer_slot: 'primary',
         latitude: geo.latitude,
         longitude: geo.longitude,
       }).then(() => {
         fetchDashboard(month);
-      }).catch(() => {});
+      }).catch(() => {
+        // Reset stopping state on error so user can try manual stop
+        setStopping(false);
+      });
     }
-  }, [geo.isInsideZone, activeTimer, zone, geo.latitude, geo.longitude, month, fetchDashboard]);
+  }, [geo.isInsideZone, activeTimer, zone, geo.latitude, geo.longitude, month, fetchDashboard, stopping]);
 
   const lastMonth = () => {
     const d = new Date(month + '-01');
