@@ -194,15 +194,19 @@ export default function ExpensesPage() {
     receipt_url: '',
   });
 
-  const { data: expenses, isLoading } = useQuery({
+  const { data: expenses, isLoading, isError: isExpensesError, error: expensesError } = useQuery({
     queryKey: ['expenses'],
     queryFn: () => expenseApi.getReimbursements(),
+    retry: false,
   });
 
-  const { data: summary } = useQuery({
+  const { data: summary, isError: isSummaryError } = useQuery({
     queryKey: ['expense-summary'],
     queryFn: () => expenseApi.getSummary(),
+    retry: false,
   });
+
+  const payrollUnavailable = isExpensesError && (expensesError as any)?.response?.status === 403;
 
   const createMutation = useMutation({
     mutationFn: (data: any) => expenseApi.createReimbursement(data),
@@ -284,6 +288,23 @@ export default function ExpensesPage() {
     if (categoryFilter !== 'all' && expense.category !== categoryFilter) return false;
     return true;
   });
+
+  if (payrollUnavailable) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <PageHeader title="Expenses" description="Submit and manage expense reimbursements" />
+        <div className="p-6 max-w-6xl mx-auto">
+          <SurfaceCard className="p-12 text-center">
+            <Receipt className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-slate-900 mb-2">Payroll Feature Not Available</h2>
+            <p className="text-slate-500 max-w-md mx-auto">
+              Expense reimbursements are not included in your current plan. Please contact your organization admin to upgrade.
+            </p>
+          </SurfaceCard>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
