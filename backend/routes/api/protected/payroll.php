@@ -2,9 +2,11 @@
 
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollDepartmentController;
+use App\Http\Controllers\Api\PayrollDiagnosticController;
 use App\Http\Controllers\Api\PerformanceGoalController;
 use App\Http\Controllers\Api\PerformanceReviewController;
 use App\Http\Controllers\Api\ReimbursementController;
+use App\Http\Controllers\Api\EnhancedPayrollController;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -15,8 +17,11 @@ use Illuminate\Support\Facades\Route;
 
 // Department-based Payroll Management
 Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
-    // Debug endpoint
+    // Debug endpoints
     Route::get('/debug', [\App\Http\Controllers\Api\PayrollDebugController::class, 'debugDepartments']);
+    Route::get('/diagnose', [PayrollDiagnosticController::class, 'diagnose']);
+    Route::post('/quick-fix', [PayrollDiagnosticController::class, 'quickFix']);
+    Route::get('/test-departments/{departmentId}/employees', [PayrollDiagnosticController::class, 'testDepartmentEmployees']);
     
     // Dashboard & Stats
     Route::get('/dashboard', [PayrollDepartmentController::class, 'getPayrollStats']);
@@ -39,6 +44,8 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Calculations
     Route::post('/calculate', [PayrollController::class, 'calculate']);
     Route::post('/calculate-bulk', [PayrollController::class, 'calculateBulk']);
+    Route::post('/calculate-comprehensive', [EnhancedPayrollController::class, 'calculatePayroll']);
+    Route::get('/employees/{userId}/ctc-breakdown', [EnhancedPayrollController::class, 'getCTCBreakdown']);
     
     // Professional Tax
     Route::get('/pt-states', [PayrollController::class, 'getPTStates']);
@@ -84,6 +91,26 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::post('/loans/{loanId}/approve', [\App\Http\Controllers\Api\LoanController::class, 'approveLoan']);
     Route::post('/loans/{loanId}/reject', [\App\Http\Controllers\Api\LoanController::class, 'rejectLoan']);
     Route::post('/loans/{loanId}/close', [\App\Http\Controllers\Api\LoanController::class, 'closeLoan']);
+    
+    // Leave Encashment (NEW)
+    Route::post('/leave-encashments', [EnhancedPayrollController::class, 'requestLeaveEncashment']);
+    Route::get('/leave-encashments', [EnhancedPayrollController::class, 'listLeaveEncashments']);
+    Route::post('/leave-encashments/{id}/approve', [EnhancedPayrollController::class, 'approveLeaveEncashment']);
+    Route::post('/leave-encashments/{id}/reject', [EnhancedPayrollController::class, 'rejectLeaveEncashment']);
+    
+    // Arrear Payments (NEW)
+    Route::post('/arrears', [EnhancedPayrollController::class, 'createArrear']);
+    Route::get('/arrears', [EnhancedPayrollController::class, 'listArrears']);
+    Route::post('/arrears/{id}/approve', [EnhancedPayrollController::class, 'approveArrear']);
+    Route::post('/arrears/{id}/reject', [EnhancedPayrollController::class, 'rejectArrear']);
+    
+    // Full & Final Settlement (NEW)
+    Route::post('/fnf-settlements', [EnhancedPayrollController::class, 'createFnFSettlement']);
+    Route::get('/fnf-settlements', [EnhancedPayrollController::class, 'listFnFSettlements']);
+    Route::get('/fnf-settlements/{id}', [EnhancedPayrollController::class, 'getFnFSettlement']);
+    Route::post('/fnf-settlements/{id}/approve', [EnhancedPayrollController::class, 'approveFnFSettlement']);
+    Route::post('/fnf-settlements/{id}/reject', [EnhancedPayrollController::class, 'rejectFnFSettlement']);
+    Route::post('/fnf-settlements/{id}/process-payment', [EnhancedPayrollController::class, 'processFnFPayment']);
     
     // Payroll Organization Settings
     Route::get('/settings', [\App\Http\Controllers\Api\PayrollSettingsController::class, 'getSettings']);

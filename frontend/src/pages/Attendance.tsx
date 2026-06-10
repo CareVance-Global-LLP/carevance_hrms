@@ -21,7 +21,7 @@ import { formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeFo
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDuration } from '@/lib/formatters';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { Briefcase, CalendarDays, Clock, FolderKanban, Layers3, Users } from 'lucide-react';
+import { Briefcase, CalendarDays, Clock, Download, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
 
 const formatDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
@@ -295,6 +295,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [organizationMembersCount, setOrganizationMembersCount] = useState(0);
   const [isEmployeePanelLoading, setIsEmployeePanelLoading] = useState(false);
   const [hasHalfDayLeaveToday, setHasHalfDayLeaveToday] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [leaveToday, setLeaveToday] = useState<{ leave_type: 'full_day' | 'half_day'; units: number; label: string } | null>(null);
 
   const isAdmin = hasAdminAccess(user);
@@ -377,6 +378,54 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
 
     setCalendarScope('overall');
+  };
+
+  const handleExportAttendance = () => {
+    if (isExporting || rows.length === 0) return;
+
+    setIsExporting(true);
+    try {
+      // Build CSV from already-loaded rows data
+      const csvRows = [['Employee Name', 'Present Days', 'Absent Days', 'Total Days']];
+      let totalPresent = 0;
+      let totalAbsent = 0;
+      let totalAll = 0;
+
+      for (const row of rows) {
+        const present = Number(row.days_present) || 0;
+        const absent = Number(row.absent_days ?? (row.working_days_in_range - present - (Number(row.leave_days) || 0)));
+        const total = present + Math.max(0, absent);
+        const name = row.user?.name || 'Unknown';
+
+        csvRows.push([`"${name}"`, String(present), String(Math.max(0, absent)), String(total)]);
+        totalPresent += present;
+        totalAbsent += Math.max(0, absent);
+        totalAll += total;
+      }
+
+      // Add total row
+      csvRows.push(['"TOTAL"', String(totalPresent), String(totalAbsent), String(totalAll)]);
+
+      const csv = csvRows.map(r => r.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const filename = `attendance-report-${startDate}-to-${endDate}.csv`;
+
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      setPunchFeedback('Attendance report downloaded successfully');
+    } catch (error) {
+      console.error('Export failed:', error);
+      setPunchFeedback('', 'Failed to download attendance report.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const setPunchFeedback = (nextMessage = '', nextError = '') => {
@@ -1659,6 +1708,26 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </SelectInput>
           </div>
         )}
+        <div className="flex items-end">
+          <button
+            type="button"
+            onClick={handleExportAttendance}
+            disabled={isExporting || isLoading}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isExporting ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                Export Report
+              </>
+            )}
+          </button>
+        </div>
       </FilterPanel>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

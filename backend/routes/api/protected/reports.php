@@ -11,6 +11,7 @@ Route::get('/reports/productivity', [ReportController::class, 'productivity']);
 Route::get('/reports/attendance', [ReportController::class, 'attendance']);
 Route::get('/reports/project/{projectId}', [ReportController::class, 'project']);
 Route::get('/reports/export', [ReportController::class, 'export']);
+Route::get('/reports/attendance/export', [ReportController::class, 'exportAttendanceSimple']);
 
 Route::middleware('role:admin,manager')->group(function () {
     Route::get('/reports/team', [ReportController::class, 'team']);

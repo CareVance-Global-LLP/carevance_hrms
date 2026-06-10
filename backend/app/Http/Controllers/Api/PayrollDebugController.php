@@ -2,68 +2,86 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
-use App\Models\Group;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class PayrollDebugController extends Controller
 {
     /**
-     * Debug endpoint to test payroll departments
+     * Debug departments endpoint
      */
     public function debugDepartments(Request $request): JsonResponse
     {
         $organizationId = $request->user()->organization_id;
         
-        Log::info('Debug Payroll Departments', [
-            'user_id' => $request->user()->id,
-            'organization_id' => $organizationId,
-        ]);
-
-        // Get all groups for the organization
-        $groups = Group::where('organization_id', $organizationId)
+        // Get all departments
+        $departments = \App\Models\Group::where('organization_id', $organizationId)
             ->where('is_active', true)
             ->get();
-
-        Log::info('Groups found', ['count' => $groups->count(), 'groups' => $groups->toArray()]);
-
-        // Count users in each group via group_user pivot
-        $departments = $groups->map(function ($group) use ($organizationId) {
-            $employeeCount = DB::table('group_user')
-                ->join('users', 'group_user.user_id', '=', 'users.id')
-                ->where('group_user.group_id', $group->id)
-                ->whereIn('users.role', ['employee', 'manager', 'admin'])
-                ->where('users.organization_id', $organizationId)
-                ->count();
-
-            return [
-                'id' => $group->id,
-                'name' => $group->name,
-                'employee_count' => $employeeCount,
-            ];
-        });
-
-        // Get unassigned count
-        $assignedUserIds = DB::table('group_user')
+        
+        // Get all users in organization
+        $users = \App\Models\User::where('organization_id', $organizationId)
+            ->whereIn('role', ['employee', 'manager', 'admin'])
+            ->get();
+        
+        // Get group_user assignments
+        $assignments = \DB::table('group_user')
             ->join('groups', 'group_user.group_id', '=', 'groups.id')
             ->where('groups.organization_id', $organizationId)
-            ->pluck('group_user.user_id');
-
-        $unassignedCount = User::where('organization_id', $organizationId)
-            ->whereNotIn('id', $assignedUserIds)
-            ->whereIn('role', ['employee', 'manager', 'admin'])
-            ->count();
-
+            ->select('group_user.*', 'groups.name as group_name')
+            ->get();
+        
+        // Debug specific department
+        $departmentId = $request->get('dept_id');
+        $debugEmployees = null;
+        
+        if ($departmentId) {
+            $debugEmployees = \App\Models\User::where('organization_id', $organizationId)
+                ->whereIn('role', ['employee', 'manager', 'admin'])
+                ->whereExists(function ($query) use ($departmentId) {
+                    $query->select(\DB::raw(1))
+                        ->from('group_user')
+                        ->whereColumn('group_user.user_id', 'users.id')
+                        ->where('group_user.group_id', $departmentId);
+                })
+                ->get();
+        }
+        
         return response()->json([
-            'success' => true,
-            'user_organization_id' => $organizationId,
-            'departments' => $departments,
-            'unassigned_count' => $unassignedCount,
-            'raw_groups' => $groups,
+            'organization_id' => $organizationId,
+            'total_departments' => $departments->count(),
+            'departments' => $departments->map(function($d) {
+                return [
+                    'id' => $d->id,
+                    'name' => $d->name,
+                    'is_active' => $d->is_active,
+                ];
+            }),
+            'total_users' => $users->count(),
+            'users' => $users->map(function($u) {
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'role' => $u->role,
+                ];
+            }),
+            'total_assignments' => $assignments->count(),
+            'assignments' => $assignments->map(function($a) {
+                return [
+                    'group_id' => $a->group_id,
+                    'user_id' => $a->user_id,
+                    'group_name' => $a->group_name,
+                ];
+            }),
+            'debug_department_id' => $departmentId,
+            'debug_employees' => $debugEmployees ? $debugEmployees->map(function($e) {
+                return [
+                    'id' => $e->id,
+                    'name' => $e->name,
+                    'email' => $e->email,
+                ];
+            }) : null,
         ]);
     }
 }

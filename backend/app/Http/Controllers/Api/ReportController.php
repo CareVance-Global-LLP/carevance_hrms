@@ -1523,6 +1523,130 @@ class ReportController extends Controller
         ]);
     }
 
+    /**
+     * Simple attendance export with just: Employee Name, Date Range, Present Days, Absent Days, Total Days
+     */
+    public function exportAttendanceSimple(Request $request)
+    {
+        $this->normalizeDepartmentIdsFilter($request);
+
+        $request->validate([
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date',
+            'user_ids' => 'nullable|array',
+            'user_ids.*' => 'integer',
+        ]);
+
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $startDate = Carbon::parse($request->get('start_date', Carbon::now()->startOfMonth()->toDateString()))->startOfDay();
+        $endDate = Carbon::parse($request->get('end_date', Carbon::now()->endOfMonth()->toDateString()))->endOfDay();
+        if ($startDate->greaterThan($endDate)) {
+            [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
+        }
+
+        // Get scoped users
+        $scopedUsers = $this->resolveScopedExportUsers($request, $user);
+        $userIds = $scopedUsers
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        // Calculate working days in range
+        $allDatesInRange = collect(CarbonPeriod::create($startDate->copy()->startOfDay(), $endDate->copy()->startOfDay()))
+            ->map(fn (Carbon $date) => $date->toDateString())
+            ->values();
+        $workingDates = $allDatesInRange
+            ->reject(fn (string $date) => Carbon::parse($date)->isWeekend())
+            ->values();
+        $workingDaysCount = $workingDates->count();
+
+        // Get attendance records for all users
+        $attendanceRecords = $userIds->isEmpty() || !$user->organization_id
+            ? collect()
+            : AttendanceRecord::query()
+                ->where('organization_id', $user->organization_id)
+                ->whereIn('user_id', $userIds->all())
+                ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
+                ->whereNotNull('check_in_at')
+                ->get(['user_id', 'attendance_date']);
+
+        $attendanceByUser = $attendanceRecords->groupBy(fn ($record) => (int) $record->user_id);
+
+        // Get approved leaves
+        $approvedLeaves = $userIds->isEmpty() || !$user->organization_id
+            ? collect()
+            : LeaveRequest::query()
+                ->where('organization_id', $user->organization_id)
+                ->whereIn('user_id', $userIds->all())
+                ->where('status', 'approved')
+                ->whereDate('start_date', '<=', $endDate->toDateString())
+                ->whereDate('end_date', '>=', $startDate->toDateString())
+                ->get(['user_id', 'start_date', 'end_date'])
+                ->groupBy(fn ($leave) => (int) $leave->user_id);
+
+        // Build CSV
+        $lines = ['Employee Name,Date Range,Present Days,Absent Days,Total Days'];
+
+        foreach ($scopedUsers as $scopedUser) {
+            $userId = (int) $scopedUser->id;
+            
+            // Count present days (has check_in_at)
+            $presentDays = $attendanceByUser->get($userId, collect())->count();
+            
+            // Count leave days
+            $leaveDays = 0;
+            $userLeaves = $approvedLeaves->get($userId, collect());
+            foreach ($userLeaves as $leave) {
+                $leaveStart = Carbon::parse($leave->start_date);
+                $leaveEnd = Carbon::parse($leave->end_date);
+                
+                // Clamp to date range
+                if ($leaveStart->lessThan($startDate)) {
+                    $leaveStart = $startDate->copy();
+                }
+                if ($leaveEnd->greaterThan($endDate)) {
+                    $leaveEnd = $endDate->copy();
+                }
+                
+                // Count working days in leave period
+                $period = CarbonPeriod::create($leaveStart->toDateString(), $leaveEnd->toDateString());
+                foreach ($period as $date) {
+                    if (!$date->isWeekend()) {
+                        $leaveDays++;
+                    }
+                }
+            }
+            
+            // Calculate absent days (working days - present days - leave days)
+            $absentDays = max(0, $workingDaysCount - $presentDays - $leaveDays);
+            $totalDays = $presentDays + $absentDays;
+            
+            $dateRange = $startDate->toDateString() . ' to ' . $endDate->toDateString();
+            
+            $lines[] = implode(',', [
+                $this->csvValue($scopedUser->name),
+                $this->csvValue($dateRange),
+                $presentDays,
+                $absentDays,
+                $totalDays,
+            ]);
+        }
+
+        $csv = implode("\n", $lines);
+        $fileName = 'attendance-simple-' . $startDate->toDateString() . '-to-' . $endDate->toDateString() . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+        ]);
+    }
+
     private function resolveScopedExportUsers(Request $request, User $currentUser): Collection
     {
         if (! $this->canViewAll($currentUser) || ! $currentUser->organization_id) {
@@ -1918,7 +2042,8 @@ class ReportController extends Controller
             ->reject(fn (string $date) => Carbon::parse($date)->isWeekend())
             ->values();
 
-        $usersQuery = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser));
+        $usersQuery = $this->visibleUsersQuery($currentUser, $this->restrictMonitoringToEmployees($currentUser))
+            ->with(['employeeWorkInfo.department:id,name', 'employeeWorkInfo.reportingManager:id,name']);
         if ($request->filled('user_id')) {
             $usersQuery->where('id', (int) $request->user_id);
         }
@@ -2030,12 +2155,22 @@ class ReportController extends Controller
             $isWorking = $activeTimeEntryUserIds->contains((int) $user->id)
                 || $openAttendanceUserIds->contains((int) $user->id);
 
+            // Get department and reporting manager from employee work info
+            $workInfo = $user->employeeWorkInfo;
+            $department = $workInfo?->department?->name ?? null;
+            $reportingManager = $workInfo?->reportingManager;
+
             return [
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
                     'role' => $user->role,
+                    'department' => $department,
+                    'reporting_manager' => $reportingManager ? [
+                        'id' => $reportingManager->id,
+                        'name' => $reportingManager->name,
+                    ] : null,
                 ],
                 'days_present' => $daysPresent,
                 'calendar_days_in_range' => $calendarDaysCount,

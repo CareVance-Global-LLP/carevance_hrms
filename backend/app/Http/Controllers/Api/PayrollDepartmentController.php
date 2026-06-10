@@ -105,6 +105,12 @@ class PayrollDepartmentController extends Controller
         $monthYear = $request->get('month_year', now()->format('Y-m'));
         $search = $request->get('search');
 
+        \Log::info("Getting department employees", [
+            'department_id' => $departmentId,
+            'organization_id' => $organizationId,
+            'month_year' => $monthYear,
+        ]);
+
         // Handle unassigned employees (departmentId = 0)
         if ($departmentId === 0) {
             // Get users NOT in any group
@@ -113,20 +119,27 @@ class PayrollDepartmentController extends Controller
                 ->where('groups.organization_id', $organizationId)
                 ->pluck('group_user.user_id');
 
+            \Log::info("Unassigned query", ['assigned_count' => $assignedUserIds->count()]);
+
             $query = User::where('organization_id', $organizationId)
                 ->whereIn('role', ['employee', 'manager', 'admin'])
                 ->whereNotIn('id', $assignedUserIds)
                 ->with(['employeeProfile', 'employeeWorkInfo', 'employeeBankAccounts']);
         } else {
-            // Get employees from specific department
+            // Get employees from specific department using join
+            $userIds = DB::table('group_user')
+                ->where('group_id', $departmentId)
+                ->pluck('user_id');
+
+            \Log::info("Department query", [
+                'department_id' => $departmentId,
+                'user_ids_count' => $userIds->count(),
+                'user_ids' => $userIds->toArray(),
+            ]);
+
             $query = User::where('organization_id', $organizationId)
                 ->whereIn('role', ['employee', 'manager', 'admin'])
-                ->whereExists(function ($query) use ($departmentId) {
-                    $query->select(DB::raw(1))
-                        ->from('group_user')
-                        ->whereColumn('group_user.user_id', 'users.id')
-                        ->where('group_user.group_id', $departmentId);
-                })
+                ->whereIn('id', $userIds)
                 ->with(['employeeProfile', 'employeeWorkInfo', 'employeeBankAccounts']);
         }
 
@@ -139,6 +152,8 @@ class PayrollDepartmentController extends Controller
 
         $employees = $query->get();
 
+        \Log::info("Found employees", ['count' => $employees->count()]);
+
         // Eager load payroll items for all employees in one query (fix N+1)
         $userIds = $employees->pluck('id');
         $payrollItems = PayrollItem::whereIn('user_id', $userIds)
@@ -148,66 +163,140 @@ class PayrollDepartmentController extends Controller
             ->get()
             ->keyBy('user_id');
 
-        $employees = $employees->map(function ($user) use ($monthYear, $organizationId, $payrollItems) {
-            // Get time tracking data for the month
-            $timeData = $this->getTimeTrackingData($user->id, $monthYear);
+        try {
+            $employees = $employees->map(function ($user) use ($monthYear, $organizationId, $payrollItems) {
+                try {
+                    // Get time tracking data for the month
+                    $timeData = $this->getTimeTrackingData($user->id, $monthYear);
 
-            // Get payroll data from pre-fetched collection
-            $payrollItem = $payrollItems->get($user->id);
+                    // Get payroll data from pre-fetched collection
+                    $payrollItem = $payrollItems->get($user->id);
 
-            // Get or create payroll template
-            $template = EmployeePayrollTemplate::getOrCreateForUser(
-                $user->id,
-                $organizationId,
-                auth()->id()
-            );
+                    // Get or create payroll template
+                    $template = EmployeePayrollTemplate::getOrCreateForUser(
+                        $user->id,
+                        $organizationId,
+                        auth()->id()
+                    );
 
-            return [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-                'avatar' => $user->avatar,
-                'employee_code' => $user->employeeWorkInfo?->employee_code,
-                'designation' => $user->employeeWorkInfo?->designation,
-                'joining_date' => $user->employeeWorkInfo?->joining_date,
-                
-                // Time Tracking Data
-                'time_tracking' => $timeData,
-                
-                // Payroll Status
-                'payroll_status' => $payrollItem ? [
-                    'is_processed' => true,
-                    'net_pay' => $payrollItem->net_pay,
-                    'payment_status' => $payrollItem->payment_status,
-                    'gross_salary' => $payrollItem->gross_salary,
-                    'total_deductions' => $payrollItem->total_deductions,
-                ] : [
-                    'is_processed' => false,
-                    'net_pay' => 0,
-                    'payment_status' => 'pending',
-                    'gross_salary' => 0,
-                    'total_deductions' => 0,
-                ],
-                
-                // Template Info
-                'has_template' => true,
-                'template_id' => $template->id,
-                'annual_ctc' => $template->annual_ctc ?? 0,
-                'basic_percentage' => $template->basic_percentage,
-                'hra_percentage' => $template->hra_percentage,
-                'conveyance_allowance' => $template->conveyance_allowance,
-                'pf_enabled' => $template->pf_enabled,
-                'esi_enabled' => $template->esi_enabled,
-                'pt_enabled' => $template->pt_enabled,
-                'tds_enabled' => $template->tds_enabled,
-            ];
-        });
+                    // Ensure all numeric values are floats, not null
+                    $netPay = $payrollItem ? (float) $payrollItem->net_pay : 0.00;
+                    $grossSalary = $payrollItem ? (float) $payrollItem->gross_salary : 0.00;
+                    $totalDeductions = $payrollItem ? (float) $payrollItem->total_deductions : 0.00;
+                    
+                    // Ensure template values are never null
+                    $annualCtc = (float) ($template->annual_ctc ?? 0);
+                    $basicPercentage = (float) ($template->basic_percentage ?? 40.00);
+                    $hraPercentage = (float) ($template->hra_percentage ?? 50.00);
+                    $conveyanceAllowance = (float) ($template->conveyance_allowance ?? 1600.00);
+                    
+                    // Ensure time tracking data has numeric values
+                    $safeTimeData = [
+                        'total_worked_hours' => (float) ($timeData['total_worked_hours'] ?? 0),
+                        'total_productive_hours' => (float) ($timeData['total_productive_hours'] ?? 0),
+                        'activity_percentage' => (float) ($timeData['activity_percentage'] ?? 0),
+                        'productivity_score' => (float) ($timeData['productivity_score'] ?? 0),
+                    ];
+
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'avatar' => $user->avatar,
+                        'employee_code' => $user->employeeWorkInfo?->employee_code ?? null,
+                        'designation' => $user->employeeWorkInfo?->designation ?? null,
+                        'joining_date' => $user->employeeWorkInfo?->joining_date ?? null,
+                        
+                        // Time Tracking Data (with safe numeric values)
+                        'time_tracking' => $safeTimeData,
+                        
+                        // Payroll Status (with guaranteed numeric values)
+                        'payroll_status' => [
+                            'is_processed' => $payrollItem ? true : false,
+                            'net_pay' => $netPay,
+                            'payment_status' => $payrollItem?->payment_status ?? 'pending',
+                            'gross_salary' => $grossSalary,
+                            'total_deductions' => $totalDeductions,
+                        ],
+                        
+                        // Template Info (with guaranteed numeric values)
+                        'has_template' => true,
+                        'template_id' => $template->id,
+                        'annual_ctc' => $annualCtc,
+                        'basic_percentage' => $basicPercentage,
+                        'hra_percentage' => $hraPercentage,
+                        'conveyance_allowance' => $conveyanceAllowance,
+                        'pf_enabled' => (bool) $template->pf_enabled,
+                        'esi_enabled' => (bool) $template->esi_enabled,
+                        'pt_enabled' => (bool) $template->pt_enabled,
+                        'tds_enabled' => (bool) $template->tds_enabled,
+                    ];
+                } catch (\Exception $e) {
+                    \Log::error("Error mapping user {$user->id}", [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                    
+                    // Return basic data if mapping fails (all numeric values as floats)
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'avatar' => $user->avatar,
+                        'employee_code' => null,
+                        'designation' => null,
+                        'joining_date' => null,
+                        'time_tracking' => [
+                            'total_worked_hours' => 0.00,
+                            'total_productive_hours' => 0.00,
+                            'activity_percentage' => 0.00,
+                            'productivity_score' => 0.00,
+                        ],
+                        'payroll_status' => [
+                            'is_processed' => false,
+                            'net_pay' => 0.00,
+                            'payment_status' => 'pending',
+                            'gross_salary' => 0.00,
+                            'total_deductions' => 0.00,
+                        ],
+                        'has_template' => false,
+                        'template_id' => null,
+                        'annual_ctc' => 0.00,
+                        'basic_percentage' => 40.00,
+                        'hra_percentage' => 50.00,
+                        'conveyance_allowance' => 1600.00,
+                        'pf_enabled' => true,
+                        'esi_enabled' => true,
+                        'pt_enabled' => true,
+                        'tds_enabled' => true,
+                    ];
+                }
+            });
+        } catch (\Exception $e) {
+            \Log::error("Error in map function", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            // Return empty collection if map fails completely
+            $employees = collect();
+        }
+
+        // Debug: Log the final response
+        \Log::info("Final response for department {$departmentId}", [
+            'employee_count' => $employees->count(),
+            'employee_ids' => $employees->pluck('id')->toArray(),
+        ]);
 
         return response()->json([
+            'success' => true,
             'department_id' => $departmentId,
-            'department_name' => $departmentId === 0 ? 'Unassigned' : null,
+            'department_name' => $departmentId === 0 ? 'Unassigned' : (\App\Models\Group::find($departmentId)?->name ?? 'Unknown'),
             'employees' => $employees,
+            'total_count' => $employees->count(),
             'month_year' => $monthYear,
             'is_unassigned' => $departmentId === 0,
         ]);

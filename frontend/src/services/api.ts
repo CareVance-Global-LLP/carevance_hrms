@@ -943,6 +943,16 @@ export const reportApi = {
       params, 
       responseType: 'blob' as AxiosRequestConfig['responseType'] 
     }),
+
+  exportAttendance: (params?: {
+    start_date?: string;
+    end_date?: string;
+    user_ids?: number[];
+  }) => 
+    api.get('/reports/attendance/export', { 
+      params, 
+      responseType: 'blob' as AxiosRequestConfig['responseType'] 
+    }),
 };
 
 export const dashboardApi = {

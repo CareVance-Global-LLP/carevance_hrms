@@ -612,4 +612,297 @@ class PayrollCalculatorService
     {
         return ($monthlyGross / $totalDays) * $daysWorked;
     }
+
+    /**
+     * Calculate Dearness Allowance (DA).
+     * Common in government/public sector.
+     * 
+     * @param float $basic Monthly basic salary
+     * @param float $daPercentage DA percentage (e.g., 17%)
+     * @return float DA amount
+     */
+    public function calculateDA(float $basic, float $daPercentage): float
+    {
+        return $basic * ($daPercentage / 100);
+    }
+
+    /**
+     * Calculate City Compensatory Allowance (CCA).
+     * 
+     * @param float $basic Monthly basic salary
+     * @param float $ccaFixedAmount Fixed CCA amount
+     * @param string $cityCategory metro_a, metro_b, other
+     * @return float CCA amount
+     */
+    public function calculateCCA(float $basic, float $ccaFixedAmount = 0, string $cityCategory = 'other'): float
+    {
+        if ($ccaFixedAmount > 0) {
+            return $ccaFixedAmount;
+        }
+
+        // Default CCA rates based on city category
+        $ccaRates = [
+            'metro_a' => ['percentage' => 0.10, 'max' => 3000],
+            'metro_b' => ['percentage' => 0.08, 'max' => 2000],
+            'other' => ['percentage' => 0.05, 'max' => 1000],
+        ];
+
+        $rate = $ccaRates[$cityCategory] ?? $ccaRates['other'];
+        $cca = $basic * $rate['percentage'];
+        
+        return min($cca, $rate['max']);
+    }
+
+    /**
+     * Calculate Leave Encashment.
+     * 
+     * @param int $leaveBalance Leave balance in days
+     * @param float $monthlyGross Monthly gross salary
+     * @param int $workingDaysPerMonth Working days per month (default 26)
+     * @return float Leave encashment amount
+     */
+    public function calculateLeaveEncashment(int $leaveBalance, float $monthlyGross, int $workingDaysPerMonth = 26): float
+    {
+        $dailyRate = $monthlyGross / $workingDaysPerMonth;
+        return round($leaveBalance * $dailyRate, 2);
+    }
+
+    /**
+     * Calculate Gratuity for F&F settlement.
+     * Formula: (Last drawn Basic + DA) × 15 × Years of service ÷ 26
+     * Max limit: ₹20,00,000 (as per Gratuity Act 1972)
+     * 
+     * @param float $lastBasic Last drawn basic salary
+     * @param float $yearsOfService Years of service
+     * @param float $dearnessAllowance DA amount (if any)
+     * @return float Gratuity amount (capped at 20 lakhs)
+     */
+    public function calculateGratuityForSettlement(float $lastBasic, float $yearsOfService, float $dearnessAllowance = 0): float
+    {
+        // Minimum 5 years of service required
+        if ($yearsOfService < 5) {
+            return 0;
+        }
+
+        // Calculate gratuity
+        $gratuity = (($lastBasic + $dearnessAllowance) * 15 * $yearsOfService) / 26;
+        
+        // Cap at ₹20,00,000
+        $maxGratuity = 2000000;
+        return min(round($gratuity, 2), $maxGratuity);
+    }
+
+    /**
+     * Calculate Notice Pay Recovery.
+     * 
+     * @param float $monthlyGross Monthly gross salary
+     * @param int $noticePeriodDays Total notice period days
+     * @param int $servedDays Days served
+     * @param int $workingDaysPerMonth Working days (default 26)
+     * @return float Notice pay recovery amount
+     */
+    public function calculateNoticePayRecovery(float $monthlyGross, int $noticePeriodDays, int $servedDays, int $workingDaysPerMonth = 26): float
+    {
+        $shortfallDays = max(0, $noticePeriodDays - $servedDays);
+        if ($shortfallDays <= 0) {
+            return 0;
+        }
+
+        $dailyRate = $monthlyGross / $workingDaysPerMonth;
+        return round($dailyRate * $shortfallDays, 2);
+    }
+
+    /**
+     * Calculate Shift Differential Pay.
+     * 
+     * @param float $basicHourlyRate Basic hourly rate
+     * @param int $nightShiftHours Night shift hours worked
+     * @param int $weekendHours Weekend hours worked
+     * @param float $nightDifferentialPercent Additional percentage for night (e.g., 10%)
+     * @param float $weekendDifferentialPercent Additional percentage for weekend (e.g., 25%)
+     * @return float Shift differential amount
+     */
+    public function calculateShiftDifferential(
+        float $basicHourlyRate,
+        int $nightShiftHours = 0,
+        int $weekendHours = 0,
+        float $nightDifferentialPercent = 10,
+        float $weekendDifferentialPercent = 25
+    ): float {
+        $nightDifferential = $basicHourlyRate * ($nightDifferentialPercent / 100) * $nightShiftHours;
+        $weekendDifferential = $basicHourlyRate * ($weekendDifferentialPercent / 100) * $weekendHours;
+        
+        return round($nightDifferential + $weekendDifferential, 2);
+    }
+
+    /**
+     * Calculate NPS (National Pension System) Contribution.
+     * Default: 10% of (Basic + DA)
+     * 
+     * @param float $basic Monthly basic salary
+     * @param float $da Dearness Allowance
+     * @param float $percentage Contribution percentage (default 10%)
+     * @return float NPS contribution
+     */
+    public function calculateNPS(float $basic, float $da = 0, float $percentage = 10): float
+    {
+        return round(($basic + $da) * ($percentage / 100), 2);
+    }
+
+    /**
+     * Calculate VPF (Voluntary Provident Fund).
+     * Employee can contribute up to 100% of basic over and above regular PF
+     * 
+     * @param float $basic Monthly basic salary
+     * @param float $percentage VPF percentage (0-100)
+     * @return float VPF amount
+     */
+    public function calculateVPF(float $basic, float $percentage): float
+    {
+        if ($percentage <= 0 || $percentage > 100) {
+            return 0;
+        }
+        return round($basic * ($percentage / 100), 2);
+    }
+
+    /**
+     * Calculate LWF (Labour Welfare Fund) - State specific.
+     * 
+     * @param string $stateCode State code
+     * @param float $monthlyGross Monthly gross
+     * @return float LWF amount
+     */
+    public function calculateLWF(string $stateCode, float $monthlyGross): float
+    {
+        $stateCode = strtolower($stateCode);
+        
+        // State-specific LWF rates
+        $lwfRates = [
+            'maharashtra' => ['employee' => 12, 'employer' => 36],
+            'karnataka' => ['employee' => 3, 'employer' => 9],
+            'tamil_nadu' => ['employee' => 10, 'employer' => 20],
+            'gujarat' => ['employee' => 6, 'employer' => 12],
+            'west_bengal' => ['employee' => 3, 'employer' => 6],
+            'kerala' => ['employee' => 10, 'employer' => 20],
+            'haryana' => ['employee' => 11, 'employer' => 22],
+            'delhi' => ['employee' => 0, 'employer' => 0], // No LWF
+        ];
+
+        $rate = $lwfRates[$stateCode] ?? ['employee' => 0, 'employer' => 0];
+        return $rate['employee']; // Return employee contribution
+    }
+
+    /**
+     * Calculate Employer LWF Contribution.
+     * 
+     * @param string $stateCode State code
+     * @return float Employer LWF amount
+     */
+    public function calculateEmployerLWF(string $stateCode): float
+    {
+        $stateCode = strtolower($stateCode);
+        
+        $lwfRates = [
+            'maharashtra' => ['employee' => 12, 'employer' => 36],
+            'karnataka' => ['employee' => 3, 'employer' => 9],
+            'tamil_nadu' => ['employee' => 10, 'employer' => 20],
+            'gujarat' => ['employee' => 6, 'employer' => 12],
+            'west_bengal' => ['employee' => 3, 'employer' => 6],
+            'kerala' => ['employee' => 10, 'employer' => 20],
+            'haryana' => ['employee' => 11, 'employer' => 22],
+            'delhi' => ['employee' => 0, 'employer' => 0],
+        ];
+
+        $rate = $lwfRates[$stateCode] ?? ['employee' => 0, 'employer' => 0];
+        return $rate['employer'];
+    }
+
+    /**
+     * Calculate Total CTC including all components.
+     * 
+     * @param array $components Array of salary components
+     * @return float Total annual CTC
+     */
+    public function calculateTotalCTC(array $components): float
+    {
+        $monthlyCTC = ($components['basic'] ?? 0)
+            + ($components['hra'] ?? 0)
+            + ($components['conveyance'] ?? 0)
+            + ($components['medical'] ?? 0)
+            + ($components['special_allowance'] ?? 0)
+            + ($components['da'] ?? 0)
+            + ($components['cca'] ?? 0)
+            + ($components['education'] ?? 0)
+            + ($components['internet'] ?? 0)
+            + ($components['meal'] ?? 0)
+            + ($components['transport'] ?? 0)
+            + ($components['pf_employer'] ?? 0)
+            + ($components['esi_employer'] ?? 0)
+            + ($components['gratuity'] ?? 0)
+            + ($components['nps_employer'] ?? 0)
+            + ($components['lwf_employer'] ?? 0)
+            + ($components['medical_insurance'] ?? 0)
+            + ($components['life_insurance'] ?? 0);
+
+        return round($monthlyCTC * 12, 2);
+    }
+
+    /**
+     * Calculate Arrear Amount.
+     * 
+     * @param float $originalAmount Original monthly amount
+     * @param float $revisedAmount Revised monthly amount
+     * @param int $numberOfMonths Number of months in arrear
+     * @return float Total arrear amount
+     */
+    public function calculateArrears(float $originalAmount, float $revisedAmount, int $numberOfMonths = 1): float
+    {
+        $monthlyDifference = $revisedAmount - $originalAmount;
+        return round($monthlyDifference * $numberOfMonths, 2);
+    }
+
+    /**
+     * Calculate Variable Pay/Performance Bonus.
+     * 
+     * @param float $ctcComponent Annual CTC allocated for variable pay
+     * @param float $achievementPercent Achievement percentage (0-200)
+     * @return float Payable variable amount
+     */
+    public function calculateVariablePay(float $ctcComponent, float $achievementPercent = 100): float
+    {
+        $monthlyComponent = $ctcComponent / 12;
+        return round($monthlyComponent * ($achievementPercent / 100), 2);
+    }
+
+    /**
+     * Calculate TDS on settlement (F&F).
+     * Treated as regular income for the month.
+     * 
+     * @param float $settlementAmount Net settlement amount
+     * @param float $annualIncome Annual taxable income
+     * @param float $alreadyDeductedTDS TDS already deducted this year
+     * @param string $taxRegime new or old
+     * @return float TDS on settlement
+     */
+    public function calculateTDSOnSettlement(
+        float $settlementAmount,
+        float $annualIncome,
+        float $alreadyDeductedTDS = 0,
+        string $taxRegime = 'new'
+    ): float {
+        // Add settlement to annual income
+        $totalTaxableIncome = $annualIncome + $settlementAmount;
+        
+        // Calculate total tax liability
+        if ($taxRegime === 'new') {
+            $totalTaxLiability = $this->calculateNewRegimeTax($totalTaxableIncome);
+        } else {
+            $totalTaxLiability = $this->calculateOldRegimeTax($totalTaxableIncome);
+        }
+        
+        // Deduct already paid TDS
+        $tdsOnSettlement = max(0, $totalTaxLiability - $alreadyDeductedTDS);
+        
+        return round($tdsOnSettlement, 2);
+    }
 }
