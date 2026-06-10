@@ -9,6 +9,7 @@ import BrandLogo from '@/components/branding/BrandLogo';
 import { cn } from '@/utils/cn';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { resolveUserRoleLabel } from '@/lib/permissions';
+import { OfflineStatusIndicator } from '@/components/desktop/OfflineStatusIndicator';
 
 interface DashboardTopbarProps {
   user?: User | null;
@@ -131,6 +132,7 @@ export default function DashboardTopbar({
             </div>
 
             <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-2.5">
+              <OfflineStatusIndicator />
               <div className="relative">
                 <button
                   type="button"

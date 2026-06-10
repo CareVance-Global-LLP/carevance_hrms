@@ -25,6 +25,7 @@ import {
 import { isTrackedTimerUser } from '@/lib/permissions';
 import { formatDuration } from '@/lib/formatters';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
+import { OfflineBanner } from '@/components/desktop/OfflineStatusIndicator';
 import { SelectInput } from '@/components/ui/FormField';
 import {
   Calendar,
@@ -231,8 +232,8 @@ export default function DesktopTimerDashboard() {
 
       // Calculate elapsed time since timer started
       const elapsed = Math.floor((Date.now() - startMs) / 1000);
-      // Total duration = base duration (already tracked) + current elapsed time
-      return Math.max(base + elapsed, 0);
+      // Use the larger of server-reported duration or client-computed elapsed
+      return Math.max(base, elapsed, 0);
     };
 
     setLiveDuration(computeDuration());
@@ -1170,6 +1171,8 @@ export default function DesktopTimerDashboard() {
         </header>
 
         {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
+
+        <OfflineBanner />
 
         <section className="grid grid-cols-1 gap-7 xl:grid-cols-[1.25fr_1fr]">
           <div className="rounded-lg border border-blue-100 bg-white p-5 shadow-sm">

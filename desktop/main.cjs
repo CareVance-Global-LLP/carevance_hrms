@@ -32,6 +32,12 @@ const {
   getBrowserTrackingOptionsUrl,
   prepareManagedBrowserTrackingExtensionDir,
 } = require('./browser-tracking-install-guide.cjs');
+const { OfflineDatabase, generateLocalId } = require('./offline/offline-db.cjs');
+const { NetworkMonitor } = require('./offline/network-monitor.cjs');
+const { QueueManager } = require('./offline/queue-manager.cjs');
+const SyncEngineModule = require('./offline/sync-engine.cjs');
+console.log('[Desktop] SyncEngine loaded, keys:', Object.keys(SyncEngineModule));
+const { SyncEngine } = SyncEngineModule;
 let activeWindowGetter = null;
 let activeWindowModulePromise = null;
 let retryAfterMsRef = { current: 0 };
@@ -176,6 +182,12 @@ let updateState = {
 };
 let browserTrackingBridge = null;
 let desktopDeviceIdentity = null;
+let offlineDb = null;
+let networkMonitor = null;
+let queueManager = null;
+let syncEngine = null;
+let offlineModeEnabled = false;
+let offlineStatusChangeCallback = null;
 
 app.disableHardwareAcceleration();
 
@@ -526,6 +538,25 @@ const broadcastUpdateState = () => {
   }
 
   mainWindow.webContents.send('desktop:update-state', updateState);
+};
+
+const broadcastOfflineStatus = () => {
+  if (!mainWindow || mainWindow.isDestroyed() || !offlineDb) return;
+
+  const pendingRecords = offlineDb.isReady() ? offlineDb.getAllPendingCount() : 0;
+  const payload = {
+    online: networkMonitor ? networkMonitor.isOnline : true,
+    lastCheckAt: networkMonitor ? networkMonitor.lastCheckAt : null,
+    pendingRecords,
+    lastSyncAt: syncEngine ? syncEngine.lastSyncAt : null,
+    isSyncing: syncEngine ? syncEngine.syncing : false,
+    queueSize: offlineDb.isReady() ? offlineDb.getQueueSize() : 0,
+    mode: offlineModeEnabled ? 'offline-first' : 'online-only',
+  };
+
+  try {
+    mainWindow.webContents.send('desktop:offline-status-change', payload);
+  } catch {}
 };
 
 const broadcastBrowserTrackingState = () => {
@@ -1452,6 +1483,223 @@ ipcMain.handle('desktop:install-update', async () => {
   return true;
 });
 
+// ── Offline Mode IPC Handlers ──
+
+ipcMain.handle('desktop:offline-is-available', async () => {
+  return offlineDb ? offlineDb.available : false;
+});
+
+ipcMain.handle('desktop:offline-get-status', async () => {
+  if (!offlineDb || !offlineDb.isReady()) {
+    return { enabled: false, online: true, pendingRecords: 0, queueSize: 0, lastSyncAt: null, isSyncing: false, mode: 'online-only' };
+  }
+  return {
+    enabled: offlineModeEnabled,
+    online: networkMonitor ? networkMonitor.isOnline : true,
+    pendingRecords: offlineDb.getAllPendingCount(),
+    queueSize: offlineDb.getQueueSize(),
+    lastSyncAt: syncEngine ? syncEngine.lastSyncAt : null,
+    isSyncing: syncEngine ? syncEngine.syncing : false,
+    mode: offlineModeEnabled ? 'offline-first' : 'online-only',
+    lastCheckAt: networkMonitor ? networkMonitor.lastCheckAt : null,
+    syncCounts: offlineDb.getSyncStatusCounts(),
+  };
+});
+
+ipcMain.handle('desktop:offline-get-summary', async () => {
+  if (!offlineDb || !offlineDb.isReady()) return { available: false };
+  return {
+    available: true,
+    ...offlineDb.getOfflineSummary(),
+    networkStatus: networkMonitor ? networkMonitor.getStatus() : { online: true },
+    syncStatus: syncEngine ? syncEngine.getStatus() : { running: false, syncing: false },
+  };
+});
+
+ipcMain.handle('desktop:offline-save-attendance', async (_event, payload) => {
+  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
+  const localId = generateLocalId();
+  const savedId = offlineDb.saveAttendance(
+    localId,
+    payload.user_id,
+    payload.punch_type,
+    payload.punch_at,
+    payload.session_id || null,
+    payload.latitude || null,
+    payload.longitude || null,
+    getDesktopDeviceIdentity().device_id
+  );
+  broadcastOfflineStatus();
+  return { saved: !!savedId, local_id: savedId };
+});
+
+ipcMain.handle('desktop:offline-save-screenshot', async (_event, payload) => {
+  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
+  const localId = generateLocalId();
+  const savedId = offlineDb.saveScreenshot(
+    localId,
+    payload.user_id,
+    payload.image_data,
+    payload.captured_at,
+    getDesktopDeviceIdentity().device_id,
+    payload.time_entry_id
+  );
+  broadcastOfflineStatus();
+  return { saved: !!savedId, local_id: savedId };
+});
+
+ipcMain.handle('desktop:offline-save-activity', async (_event, payload) => {
+  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
+  const localId = generateLocalId();
+  const savedId = offlineDb.saveActivityRecord(
+    localId,
+    payload.user_id,
+    payload.type,
+    payload.name || null,
+    payload.title || null,
+    payload.url || null,
+    payload.duration || 0,
+    payload.recorded_at,
+    payload.metadata || null,
+    getDesktopDeviceIdentity().device_id
+  );
+  broadcastOfflineStatus();
+  return { saved: !!savedId, local_id: savedId };
+});
+
+ipcMain.handle('desktop:offline-save-app-usage', async (_event, payload) => {
+  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
+  const localId = generateLocalId();
+  const savedId = offlineDb.saveAppUsage(
+    localId,
+    payload.user_id,
+    payload.app_name,
+    payload.duration || 0,
+    payload.timestamp,
+    payload.title || null,
+    getDesktopDeviceIdentity().device_id
+  );
+  broadcastOfflineStatus();
+  return { saved: !!savedId, local_id: savedId };
+});
+
+ipcMain.handle('desktop:offline-save-website-usage', async (_event, payload) => {
+  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
+  const localId = generateLocalId();
+  const savedId = offlineDb.saveWebsiteUsage(
+    localId,
+    payload.user_id,
+    payload.url,
+    payload.title || null,
+    payload.duration || 0,
+    payload.timestamp,
+    getDesktopDeviceIdentity().device_id
+  );
+  broadcastOfflineStatus();
+  return { saved: !!savedId, local_id: savedId };
+});
+
+ipcMain.handle('desktop:offline-save-timeline', async (_event, payload) => {
+  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
+  const localId = generateLocalId();
+  const savedId = offlineDb.saveTimeline(
+    localId,
+    payload.user_id,
+    payload.start_time,
+    payload.end_time || null,
+    payload.activity_data || null,
+    getDesktopDeviceIdentity().device_id
+  );
+  broadcastOfflineStatus();
+  return { saved: !!savedId, local_id: savedId };
+});
+
+ipcMain.handle('desktop:offline-save-time-entry', async (_event, payload) => {
+  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
+  const localId = generateLocalId();
+  const savedId = offlineDb.saveTimeEntry(
+    localId,
+    payload.user_id,
+    payload.action,
+    payload.project_id || null,
+    payload.task_id || null,
+    payload.timer_slot || 'primary',
+    payload.latitude || null,
+    payload.longitude || null,
+    getDesktopDeviceIdentity().device_id
+  );
+  broadcastOfflineStatus();
+  return { saved: !!savedId, local_id: savedId };
+});
+
+ipcMain.handle('desktop:offline-save-auth', async (_event, payload) => {
+  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
+  const encryptSecret = getDesktopDeviceIdentity().device_id;
+  const result = offlineDb.saveAuthSession(
+    payload.user_id,
+    payload.token,
+    getDesktopDeviceIdentity().device_id,
+    payload.organization_id || null,
+    payload.user_data || null,
+    encryptSecret
+  );
+  console.log('[desktop] Offline auth session saved for user:', payload.user_id);
+  return { saved: !!result };
+});
+
+ipcMain.handle('desktop:offline-get-auth', async () => {
+  if (!offlineDb || !offlineDb.isReady()) return null;
+  const encryptSecret = getDesktopDeviceIdentity().device_id;
+  const session = offlineDb.getDecryptedAuthSession(getDesktopDeviceIdentity().device_id, encryptSecret);
+  if (!session) return null;
+  return {
+    user_id: session.user_id,
+    token: session.token,
+    organization_id: session.organization_id,
+    user_data: session.user_data ? JSON.parse(session.user_data) : null,
+  };
+});
+
+ipcMain.handle('desktop:offline-clear-auth', async () => {
+  if (!offlineDb || !offlineDb.isReady()) return false;
+  offlineDb.clearAuthSession(getDesktopDeviceIdentity().device_id);
+  console.log('[desktop] Offline auth session cleared');
+  return true;
+});
+
+ipcMain.handle('desktop:offline-trigger-sync', async () => {
+  if (!syncEngine) return { triggered: false, error: 'Sync engine not initialized' };
+  syncEngine.triggerSync();
+  return { triggered: true };
+});
+
+ipcMain.handle('desktop:offline-set-credentials', async (_event, payload) => {
+  if (!syncEngine) return false;
+  syncEngine.setCredentials(
+    payload.auth_token,
+    payload.user_id,
+    getDesktopDeviceIdentity().device_id,
+    payload.api_url
+  );
+  return true;
+});
+
+ipcMain.handle('desktop:offline-get-pending-count', async () => {
+  if (!offlineDb || !offlineDb.isReady()) return 0;
+  return offlineDb.getAllPendingCount();
+});
+
+ipcMain.handle('desktop:offline-get-queue-details', async () => {
+  if (!offlineDb || !offlineDb.isReady() || !queueManager) {
+    return { total: 0, counts: {} };
+  }
+  return {
+    total: queueManager.getQueueSize(),
+    counts: queueManager.getPendingCounts(),
+    syncCounts: offlineDb.getSyncStatusCounts(),
+  };
+});
+
 if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
   setupStrongAutoStart();
@@ -1472,6 +1720,59 @@ app.whenReady().then(async () => {
   const browserTrackingState = await ensureBrowserTrackingBridge().start();
   if (!browserTrackingState?.ready) {
     console.warn('[desktop-tracker] browser tracking bridge unavailable', browserTrackingState?.last_error || '');
+  }
+
+  // Initialize offline mode infrastructure
+  offlineDb = new OfflineDatabase(app.getPath('userData'));
+  if (await offlineDb.open()) {
+    networkMonitor = new NetworkMonitor();
+    queueManager = new QueueManager(offlineDb);
+    syncEngine = new SyncEngine({
+      offlineDb,
+      queueManager,
+      networkMonitor,
+      apiBaseUrl: APP_URL,
+      deviceId: getDesktopDeviceIdentity().device_id,
+    });
+
+    networkMonitor.on('change', (status) => {
+      const payload = {
+        online: status.online,
+        lastCheckAt: status.lastCheckAt,
+        pendingRecords: offlineDb.getAllPendingCount(),
+        lastSyncAt: syncEngine ? syncEngine.lastSyncAt : null,
+        isSyncing: syncEngine ? syncEngine.syncing : false,
+        queueSize: offlineDb.getQueueSize(),
+      };
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('desktop:offline-status-change', payload);
+      }
+    });
+
+    syncEngine.on('sync-start', (data) => {
+      broadcastOfflineStatus();
+    });
+    syncEngine.on('sync-progress', () => {
+      broadcastOfflineStatus();
+    });
+    syncEngine.on('sync-complete', () => {
+      broadcastOfflineStatus();
+    });
+    syncEngine.on('sync-error', (data) => {
+      console.warn('[desktop] Sync error:', data.error);
+      broadcastOfflineStatus();
+    });
+    syncEngine.on('auth-error', () => {
+      console.warn('[desktop] Sync auth error - stopping sync engine');
+      syncEngine.stop();
+    });
+
+    networkMonitor.start();
+    syncEngine.start();
+    offlineModeEnabled = true;
+    console.log('[desktop] Offline mode initialized');
+  } else {
+    console.warn('[desktop] SQLite unavailable - offline mode disabled');
   }
 
   void createWindow();
@@ -1510,6 +1811,16 @@ app.on('before-quit', () => {
     void browserTrackingBridge.stop().catch(() => {
       // Best-effort shutdown.
     });
+  }
+
+  if (syncEngine) {
+    syncEngine.stop();
+  }
+  if (networkMonitor) {
+    networkMonitor.stop();
+  }
+  if (offlineDb) {
+    offlineDb.close();
   }
 });
 }

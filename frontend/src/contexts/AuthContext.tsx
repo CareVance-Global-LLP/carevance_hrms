@@ -9,8 +9,15 @@ import {
   setStoredAuthValue,
 } from '@/lib/authStorage';
 import { ACTIVE_TIMER_KEY, armAutoStart, canUseDesktopAutoStart, clearDesktopTimerSession } from '@/lib/desktopTimerSession';
-import { apiUrl } from '@/lib/runtimeConfig';
+import { apiBaseUrl } from '@/lib/runtimeConfig';
 import { isTrackedTimerUser } from '@/lib/permissions';
+import {
+  saveAuthOffline,
+  getAuthOffline,
+  clearAuthOffline,
+  setOfflineCredentials,
+  isDesktopApp,
+} from '@/services/offlineService';
 
 interface GoogleAuthResponse {
   token: string;
@@ -26,6 +33,7 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  wasOfflineRestored: boolean;
   login: (email: string, password: string, options?: { remember?: boolean }) => Promise<void>;
   signupOwner: (payload: OwnerSignupRequest) => Promise<{ requiresVerification: boolean; email: string }>;
   acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string; timezone?: string }) => Promise<{ requiresVerification: boolean; email: string }>;
@@ -62,7 +70,7 @@ const COOKIE_AUTH_STATE_TOKEN = '__cookie_authenticated__';
 
 // Demo mode - only enabled in development when explicitly set
 const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_MODE === 'true';
-const API_URL = apiUrl;
+const API_URL = apiBaseUrl;
 
 const getResponseStatus = (error: unknown): number | null => {
   if (!error || typeof error !== 'object' || !('response' in error)) {
@@ -78,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [wasOfflineRestored, setWasOfflineRestored] = useState(false);
   const isActiveRef = useRef(true);
 
   const clearStoredAuthState = () => {
@@ -110,6 +119,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     removeStoredAuthValue('organization');
+  };
+
+  const persistAuthOffline = async (nextToken: string, nextUser: User, nextOrganization?: Organization | null) => {
+    if (!isDesktopApp()) return;
+    try {
+      await saveAuthOffline(
+        nextUser.id,
+        nextToken,
+        { id: nextUser.id, name: nextUser.name, email: nextUser.email, role: nextUser.role, organization_id: nextUser.organization_id },
+        nextOrganization?.id,
+        nextOrganization ? (nextOrganization as unknown as Record<string, unknown>) : undefined,
+      );
+      await setOfflineCredentials(nextToken, nextUser.id, apiBaseUrl);
+    } catch (err) {
+      console.warn('[Auth] Offline auth persistence failed:', err);
+    }
   };
 
   const extractUserFromMeResponse = (payload: unknown): User | null => {
@@ -182,6 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   removeStoredAuthValue('organization');
                 }
               }
+              void persistAuthOffline(nextToken, nextUser, nextOrg);
             }
           }
         } catch (error) {
@@ -211,17 +237,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Don't set organization from localStorage initially
-      // Let fetchUser validate and set it from the server
-      // This prevents users with deleted organizations from accessing protected routes
+      // Initialize organization from cached storage before fetchUser.
+      // When online, fetchUser will validate and override from the server.
+      // When offline, this ensures ProtectedRoute doesn't redirect to workspace creation.
+      if (storedOrg) {
+        try {
+          const parsedOrg = JSON.parse(storedOrg);
+          if (parsedOrg?.id) {
+            setOrganization(parsedOrg);
+          }
+        } catch {}
+      }
+
+      let fetchUserSucceeded = false;
 
       if (!DEMO_MODE && (storedToken || storedUser || storedOrg)) {
-        await fetchUser();
+        try {
+          await fetchUser();
+          fetchUserSucceeded = true;
+          if (isDesktopApp() && storedToken) {
+            setOfflineCredentials(storedToken, (JSON.parse(storedUser || '{}') as any).id || 0, apiBaseUrl).catch(() => {});
+          }
+        } catch {
+          // fetchUser failed (likely offline) - try offline auth recovery
+          if (window.desktopTracker) {
+            try {
+              const offlineAuth = await getAuthOffline();
+              if (offlineAuth && offlineAuth.token && isActiveRef.current) {
+                setStoredAuthValue('token', offlineAuth.token);
+                setToken(offlineAuth.token);
+                if (offlineAuth.user_data) {
+                  const userData = offlineAuth.user_data as any;
+                  setStoredAuthValue('user', JSON.stringify(userData));
+                  setUser(userData as User);
+                  // Restore organization if present in offline data
+                  if (userData._organization) {
+                    const orgData = userData._organization as Organization;
+                    setStoredAuthValue('organization', JSON.stringify(orgData));
+                    setOrganization(orgData);
+                  }
+                }
+                console.log('[Auth] Restored session from offline storage');
+                setWasOfflineRestored(true);
+                setOfflineCredentials(offlineAuth.token, offlineAuth.user_id, apiBaseUrl).catch(() => {});
+              }
+            } catch (offlineErr) {
+              console.warn('[Auth] Offline auth recovery failed:', offlineErr);
+            }
+          }
+
+          // Fallback: if offline recovery didn't set org but we have one in localStorage,
+          // restore it (handles existing DBs created before _organization was added)
+          if (!organization && storedOrg) {
+            try {
+              const parsedOrg = JSON.parse(storedOrg);
+              if (parsedOrg?.id) {
+                setOrganization(parsedOrg);
+                console.log('[Auth] Restored organization from localStorage fallback');
+              }
+            } catch {}
+          }
+        }
       }
-      
-      // After fetchUser, if we still have no organization but had one in storage,
-      // clear the stored org since it's no longer valid
-      if (storedOrg && !organization) {
+
+      // Only clear stored org when we confirmed from the server (not when offline)
+      if (fetchUserSucceeded && storedOrg && !organization) {
         removeStoredAuthValue('organization');
       }
 
@@ -296,6 +376,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUser = async () => {
     try {
+      setWasOfflineRestored(false);
       const response = await authApi.me();
       const nextUser = extractUserFromMeResponse(response.data);
       const nextOrganization = (response.data as any)?.organization
@@ -326,8 +407,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Failed to fetch user:', error);
-      // Don't clear auth state here - let the API interceptor handle 401s
-      // This prevents redirect loops when fetchUser fails temporarily
+      throw error;
     }
   };
 
@@ -377,6 +457,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { user: userData, token: authToken, organization: org } = responseData;
 
     storeAuthState(authToken, userData, org);
+    void persistAuthOffline(authToken, userData, org);
   };
 
   const signupOwner = async (payload: OwnerSignupRequest) => {
@@ -479,6 +560,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     clearAuthState();
+    void clearAuthOffline();
   };
 
   const googleLogin = async (credential: string): Promise<GoogleAuthResponse> => {
@@ -560,6 +642,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isLoading,
         isAuthenticated: !!user && !!token,
+        wasOfflineRestored,
         login,
         signupOwner,
         acceptInvitation,

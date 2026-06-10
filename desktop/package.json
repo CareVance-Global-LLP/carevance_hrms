@@ -1,6 +1,6 @@
 {
   "name": "carevance-desktop",
-  "version": "1.0.17",
+  "version": "1.1.0",
   "description": "CareVance Tracker desktop timer and activity tracker",
   "private": true,
   "author": "CareVance",
@@ -24,6 +24,7 @@
       "browser-tracking-bridge.cjs",
       "browser-tracking-install-guide.cjs",
       "app-config.json",
+      "offline/**/*",
       "scripts/**/*",
       "assets/**/*",
       "package.json"
@@ -31,6 +32,7 @@
     "directories": {
       "output": "release-v${version}"
     },
+    "asarUnpack": [],
     "publish": [
       {
         "provider": "github",
@@ -55,7 +57,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "CareVance Tracker",
-      "deleteAppDataOnUninstall": false,
+      "deleteAppDataOnUninstall": true,
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
@@ -69,6 +71,7 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "electron-updater": "^6.8.3",
-    "get-windows": "^9.3.0"
+    "get-windows": "^9.3.0",
+    "sql.js": "^1.11.0"
   }
 }
