@@ -195,12 +195,15 @@ export default function OrganizationTree() {
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
 
   /* ── Queries ── */
-  const { data: raw = [], isLoading, isError } = useQuery({
-    queryKey: ['organization-tree'],
+  const { data: raw = [], isLoading, isError, refetch } = useQuery<OrgUser[]>({
+    queryKey: ['organization-tree', isAuthenticated],
     queryFn: async () => {
+      console.log('[OrganizationTree] Fetching users...');
       const res: any = await userApi.getAll({ simple: 1, is_active: true });
       const list: any[] = res?.data ?? (Array.isArray(res) ? res : []);
-      return list.map((u: any) => ({
+      console.log(`[OrganizationTree] Received ${list.length} users`);
+      
+      const mapped = list.map((u: any) => ({
         id: u.id,
         name: u.name,
         email: u.email ?? '',
@@ -212,9 +215,30 @@ export default function OrganizationTree() {
         department: (u.department ?? '').trim(),
         groups: Array.isArray(u.groups) ? u.groups.map((g: any) => ({ id: g.id, name: g.name, slug: g.slug })) : [],
       })) as OrgUser[];
+      
+      // Debug: Log users by department
+      const byDept: Record<string, number> = {};
+      mapped.forEach(u => {
+        const dept = u.department || 'Unassigned';
+        byDept[dept] = (byDept[dept] || 0) + 1;
+      });
+      console.log('[OrganizationTree] Users by department:', byDept);
+      
+      return mapped;
     },
     enabled: isAuthenticated && !isAuthLoading,
+    staleTime: 0, // Always fetch fresh data
+    gcTime: 5 * 60 * 1000, // Cache for 5 minutes only (gcTime = garbage collection time)
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchOnMount: 'always', // Always refetch on mount
   });
+
+  // Force refetch on initial load to ensure fresh data
+  useEffect(() => {
+    if (isAuthenticated && !isAuthLoading) {
+      refetch();
+    }
+  }, [isAuthenticated, isAuthLoading, refetch]);
 
   const { data: rolesData = [] } = useQuery({
     queryKey: ['roles'],
@@ -503,6 +527,14 @@ export default function OrganizationTree() {
           </div>
 
           <div className="flex gap-2">
+            <button
+              onClick={() => refetch()}
+              disabled={isLoading}
+              className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+              title="Refresh organization data"
+            >
+              {isLoading ? 'Loading…' : 'Refresh'}
+            </button>
             <button
               onClick={() => setCollapsed(new Set(Array.from(tree.childrenMap.keys())))}
               className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
