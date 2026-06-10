@@ -218,7 +218,7 @@ function HomeRoute() {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, organization, isAuthenticated, isLoading } = useAuth();
+  const { user, organization, isAuthenticated, isLoading, wasOfflineRestored } = useAuth();
   const location = useLocation();
   const mobile = isLikelyMobile();
 
@@ -270,7 +270,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Check if user has no organization - redirect to signup
-  if (!organization?.id) {
+  if (!organization?.id && !wasOfflineRestored) {
     return <Navigate to="/signup-owner?message=no-organization" replace />;
   }
 
@@ -282,7 +282,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/payment" replace />;
   }
 
-  if (!needsPayment && requiresOnboarding && !onboardingCompleted && !onboardingSkipped && !isOnboardingRoute && !isPaymentRoute) {
+  if (!needsPayment && requiresOnboarding && !onboardingCompleted && !onboardingSkipped && !isOnboardingRoute && !isPaymentRoute && !wasOfflineRestored) {
     return <Navigate to={onboardingPath} replace />;
   }
 
@@ -298,7 +298,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNode; allowAuthenticated?: boolean }) {
-  const { user, organization, isAuthenticated, isLoading } = useAuth();
+  const { user, organization, isAuthenticated, isLoading, wasOfflineRestored } = useAuth();
   const location = useLocation();
   const mobile = isLikelyMobile();
 
@@ -312,7 +312,7 @@ function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNo
 
   if (isAuthenticated) {
     // Check if user has no organization - redirect to signup
-    if (!organization?.id) {
+    if (!organization?.id && !wasOfflineRestored) {
       // Allow access to signup-owner page to create organization
       if (location.pathname === '/signup-owner') {
         return <>{children}</>;

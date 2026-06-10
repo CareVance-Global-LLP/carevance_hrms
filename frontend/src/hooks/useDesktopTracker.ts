@@ -980,13 +980,28 @@ export const useDesktopTracker = () => {
         return;
       }
 
-      const response = await activityApi.create({
-        time_entry_id: activeEntry.id,
-        type: 'idle' as const,
-        name: idleName,
-        duration: idleSeconds,
-        recorded_at: recordedAt,
-      });
+      let response;
+      try {
+        response = await activityApi.create({
+          time_entry_id: activeEntry.id,
+          type: 'idle' as const,
+          name: idleName,
+          duration: idleSeconds,
+          recorded_at: recordedAt,
+        });
+      } catch (activityError: any) {
+        if (window.desktopTracker?.saveActivityOffline) {
+          const { saveActivityOffline: saveOffline } = await import('@/services/offlineService');
+          await saveOffline(
+            userId || 0,
+            'idle',
+            recordedAt,
+            { name: idleName, duration: idleSeconds }
+          ).catch((e: Error) => console.warn('[Tracker] Offline activity save failed:', e));
+          return;
+        }
+        throw activityError;
+      }
       activeSegmentRef.current = {
         activityId: response.data.id,
         durationSeconds: idleSeconds,
@@ -1510,6 +1525,9 @@ export const useDesktopTracker = () => {
         const idleContextName = idleStateContextName || activeSegmentRef.current?.contextName || 'Active Input';
         await syncIdleActivitySnapshot(activeEntry, idleSeconds, lastActivityAtMs, recordedAt, idleContextName);
         await attemptIdleAutoStop(activeEntry, idleSeconds, lastActivityAtMs, recordedAt);
+      } catch {
+        // Offline or network error — idle guard can't reach the server.
+        // This is expected and non-fatal; the next interval tick will retry.
       } finally {
         inFlight = false;
       }
@@ -1702,14 +1720,26 @@ export const useDesktopTracker = () => {
           return;
         }
 
-        const active = await timeEntryApi.active({ timer_slot: 'primary' });
-        const activeEntry = active.data;
+        let activeEntry: TimeEntry | null = null;
+        try {
+          const active = await timeEntryApi.active({ timer_slot: 'primary' });
+          activeEntry = active.data;
+          if (activeEntry?.id) {
+            activeEntryRef.current = activeEntry;
+          }
+        } catch {
+          // Offline — use cached active entry if available.
+          // Don't stop the screenshot interval — we don't know the real state.
+          activeEntry = activeEntryRef.current;
+        }
         if (!activeEntry?.id) {
-          activeEntryRef.current = null;
-          syncScreenshotInterval(null);
+          if (navigator.onLine) {
+            // Confirmed no active timer from the server
+            activeEntryRef.current = null;
+            syncScreenshotInterval(null);
+          }
           return;
         }
-        activeEntryRef.current = activeEntry;
 
         await runIdleGuard();
 
@@ -1737,11 +1767,25 @@ export const useDesktopTracker = () => {
           return;
         }
 
-        await withTimeout(
-          screenshotApi.upload(activeEntry.id, screenshotDataUrl, `capture-${now}.png`),
-          SCREENSHOT_UPLOAD_TIMEOUT_MS,
-          'Desktop screenshot upload'
-        );
+        try {
+          await withTimeout(
+            screenshotApi.upload(activeEntry.id, screenshotDataUrl, `capture-${now}.png`),
+            SCREENSHOT_UPLOAD_TIMEOUT_MS,
+            'Desktop screenshot upload'
+          );
+        } catch (uploadError: any) {
+          if (window.desktopTracker?.saveScreenshotOffline) {
+            const { saveScreenshotOffline } = await import('@/services/offlineService');
+            await saveScreenshotOffline(
+            userId || 0,
+              screenshotDataUrl,
+              new Date(now).toISOString(),
+              activeEntry.id
+            ).catch((e: Error) => console.warn('[Tracker] Offline screenshot save failed:', e));
+          } else {
+            throw uploadError;
+          }
+        }
       } catch (error) {
         console.error('Desktop tracker screenshot capture failed:', error);
       } finally {
@@ -1931,7 +1975,20 @@ export const useDesktopTracker = () => {
           console.warn('Desktop tracker browser tracking state lookup failed:', error);
         });
     }
-    void tick();
+    void tick().then(() => {
+      if (!activeEntryRef.current?.id) {
+        try {
+          const snapshot = localStorage.getItem('active_timer_snapshot');
+          if (snapshot) {
+            const parsed = JSON.parse(snapshot) as TimeEntry;
+            if (parsed?.id) {
+              activeEntryRef.current = parsed;
+              syncScreenshotInterval(parsed.id);
+            }
+          }
+        } catch {}
+      }
+    });
 
     return () => {
       clearTrackerIntervals();

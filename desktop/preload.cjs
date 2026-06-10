@@ -101,4 +101,35 @@ contextBridge.exposeInMainWorld('desktopTracker', {
     ipcRenderer.removeAllListeners('desktop:prepare-close');
   },
   confirmCloseReady: () => ipcRenderer.invoke('desktop:confirm-close-ready'),
+
+  // Offline Mode API
+  isOfflineAvailable: () => ipcRenderer.invoke('desktop:offline-is-available'),
+  getOfflineStatus: () => ipcRenderer.invoke('desktop:offline-get-status'),
+  getOfflineSummary: () => ipcRenderer.invoke('desktop:offline-get-summary'),
+  saveAttendanceOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-attendance', payload),
+  saveScreenshotOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-screenshot', payload),
+  saveActivityOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-activity', payload),
+  saveAppUsageOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-app-usage', payload),
+  saveWebsiteUsageOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-website-usage', payload),
+  saveTimelineOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-timeline', payload),
+  saveTimeEntryOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-time-entry', payload),
+  saveAuthOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-auth', payload),
+  getAuthOffline: () => ipcRenderer.invoke('desktop:offline-get-auth'),
+  clearAuthOffline: () => ipcRenderer.invoke('desktop:offline-clear-auth'),
+  triggerSync: () => ipcRenderer.invoke('desktop:offline-trigger-sync'),
+  setOfflineCredentials: (payload) => ipcRenderer.invoke('desktop:offline-set-credentials', payload),
+  getPendingCountOffline: () => ipcRenderer.invoke('desktop:offline-get-pending-count'),
+  getQueueDetails: () => ipcRenderer.invoke('desktop:offline-get-queue-details'),
+  onOfflineStatusChange: (callback) => {
+    const listener = (_event, payload) => {
+      callback(payload);
+    };
+    ipcRenderer.on('desktop:offline-status-change', listener);
+    return () => {
+      ipcRenderer.removeListener('desktop:offline-status-change', listener);
+    };
+  },
+  clearOfflineStatusListeners: () => {
+    ipcRenderer.removeAllListeners('desktop:offline-status-change');
+  },
 });

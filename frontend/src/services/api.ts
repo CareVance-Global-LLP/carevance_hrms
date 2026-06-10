@@ -223,6 +223,11 @@ api.interceptors.response.use(
     
     // Handle network errors (ECONNABORTED, NETWORK_ERROR, etc.) with retry
     if (!error.response || error.code === 'ECONNABORTED' || error.message?.includes('Network Error')) {
+      // Dispatch offline detection event for real-time UI updates
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('app:offline-detected'));
+      }
+
       const config = error.config;
       if (config && isRetryableError(error)) {
         const retryCount = ((config as any)._retryCount || 0) + 1;
