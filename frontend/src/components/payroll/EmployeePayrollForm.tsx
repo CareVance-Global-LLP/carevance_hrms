@@ -5,7 +5,7 @@ import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import SalaryBreakdown from './SalaryBreakdown';
+
 import type { PayrollCalculation } from '@/types';
 
 interface EmployeePayrollFormProps {
@@ -150,7 +150,21 @@ export default function EmployeePayrollForm({ onCalculationComplete }: EmployeeP
         </div>
       </SurfaceCard>
 
-      <SalaryBreakdown calculation={calculation} />
+      {calculation && (
+        <div className="p-4 bg-slate-50 rounded-lg">
+          <h4 className="font-medium text-slate-900 mb-2">Calculation Result</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-slate-500">Monthly CTC</p>
+              <p className="font-semibold">₹{calculation.monthly.ctc.toLocaleString('en-IN')}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Net Pay</p>
+              <p className="font-semibold text-emerald-600">₹{calculation.monthly.net.toLocaleString('en-IN')}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

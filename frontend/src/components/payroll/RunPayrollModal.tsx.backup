@@ -22,14 +22,13 @@ interface ProcessingStatus {
   errors: string[];
 }
 
-export default function RunPayrollModal({
-  isOpen,
-  onClose,
-  departments,
-  monthYear,
-  onSuccess
+export default function RunPayrollModal({ 
+  isOpen, 
+  onClose, 
+  departments, 
+  monthYear, 
+  onSuccess 
 }: RunPayrollModalProps) {
-  // ALL useState hooks at the top
   const [selectedDepartments, setSelectedDepartments] = useState<number[]>([]);
   const [step, setStep] = useState<'select' | 'processing' | 'complete' | 'error'>('select');
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({
@@ -40,7 +39,6 @@ export default function RunPayrollModal({
     errors: []
   });
 
-  // ALL useEffect hooks next
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -56,14 +54,34 @@ export default function RunPayrollModal({
     }
   }, [isOpen]);
 
-  // ALL useMutation hooks next
+  // Early return must be after all hooks
+  if (!isOpen) {
+    return null;
+  }
+
+  const toggleDepartment = (deptId: number) => {
+    setSelectedDepartments(prev => 
+      prev.includes(deptId) 
+        ? prev.filter(id => id !== deptId)
+        : [...prev, deptId]
+    );
+  };
+
+  const selectAll = () => {
+    if (selectedDepartments.length === departments.length) {
+      setSelectedDepartments([]);
+    } else {
+      setSelectedDepartments(departments.map(d => d.id));
+    }
+  };
+
   // Get employees for each selected department and process payroll
   const runPayrollMutation = useMutation({
     mutationFn: async () => {
       const results = [];
       const errors = [];
       let processedCount = 0;
-
+      
       // Get total employee count across selected departments
       let totalEmployees = 0;
       for (const deptId of selectedDepartments) {
@@ -72,7 +90,7 @@ export default function RunPayrollModal({
           totalEmployees += dept.employee_count;
         }
       }
-
+      
       setProcessingStatus(prev => ({
         ...prev,
         totalCount: totalEmployees,
@@ -92,9 +110,9 @@ export default function RunPayrollModal({
           const response = await payrollApi.getDepartmentEmployees(deptId, {
             month_year: monthYear
           });
-
+          
           const employees = response.data.employees || [];
-
+          
           // Process each employee in the department
           for (const employee of employees) {
             try {
@@ -102,7 +120,7 @@ export default function RunPayrollModal({
                 // Use annual_ctc from employee template data (returned by getDepartmentEmployees)
                 // If not available, fetch it from the details endpoint
                 let annualCtc = (employee as any).annual_ctc;
-
+                
                 if (!annualCtc) {
                   // Fallback: fetch employee details to get template with annual_ctc
                   const detailsResponse = await payrollApi.getEmployeePayrollDetails(employee.id, {
@@ -110,20 +128,20 @@ export default function RunPayrollModal({
                   });
                   annualCtc = detailsResponse.data.template.annual_ctc;
                 }
-
+                
                 // If still no CTC, skip or use a placeholder (user must set it first)
                 if (!annualCtc || annualCtc <= 0) {
                   errors.push(`Skipped ${employee.name}: No annual CTC configured. Set it in the employee's payroll template first.`);
                   continue;
                 }
-
+                
                 // Use time tracking data for attendance calculations
                 const timeTracking = (employee as any).time_tracking || {};
                 const workingDays = timeTracking.payroll_attendance_days || 26;
                 const daysPresent = timeTracking.payroll_attendance_days || 26;
                 const lopDays = 0; // Calculate from LOP tracking if available
                 const overtimeHours = 0; // Calculate from overtime tracking if available
-
+                
                 await payrollApi.processEmployeePayroll(employee.id, {
                   user_id: employee.id,
                   month_year: monthYear,
@@ -134,7 +152,7 @@ export default function RunPayrollModal({
                   overtime_hours: overtimeHours
                 });
               }
-
+              
               processedCount++;
               setProcessingStatus(prev => ({
                 ...prev,
@@ -145,14 +163,14 @@ export default function RunPayrollModal({
               errors.push(`Failed to process employee ${employee.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
             }
           }
-
+          
           results.push({ departmentId: deptId, success: true });
         } catch (err) {
           errors.push(`Failed to process department ${deptId}: ${err instanceof Error ? err.message : 'Unknown error'}`);
           results.push({ departmentId: deptId, success: false, error: err });
         }
       }
-
+      
       return { results, errors, processedCount, totalEmployees };
     },
     onSuccess: (data) => {
@@ -188,28 +206,6 @@ export default function RunPayrollModal({
     }
   });
 
-  // Conditional return AFTER all hooks
-  if (!isOpen) {
-    return null;
-  }
-
-  // Helper functions after hooks
-  const toggleDepartment = (deptId: number) => {
-    setSelectedDepartments(prev =>
-      prev.includes(deptId)
-        ? prev.filter(id => id !== deptId)
-        : [...prev, deptId]
-    );
-  };
-
-  const selectAll = () => {
-    if (selectedDepartments.length === departments.length) {
-      setSelectedDepartments([]);
-    } else {
-      setSelectedDepartments(departments.map(d => d.id));
-    }
-  };
-
   const handleStartPayroll = () => {
     runPayrollMutation.mutate();
   };
@@ -232,7 +228,6 @@ export default function RunPayrollModal({
     return sum + (dept?.employee_count || 0);
   }, 0);
 
-  // JSX render
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <SurfaceCard className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -273,7 +268,7 @@ export default function RunPayrollModal({
                 <span className="text-sm text-slate-600">
                   {selectedDepartments.length} of {departments.length} departments selected
                 </span>
-                <button
+                <button 
                   onClick={selectAll}
                   className="text-sm text-blue-600 hover:text-blue-700 font-medium"
                 >
@@ -283,11 +278,11 @@ export default function RunPayrollModal({
 
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {departments.map((dept) => (
-                  <label
+                  <label 
                     key={dept.id}
                     className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      selectedDepartments.includes(dept.id)
-                        ? 'border-blue-500 bg-blue-50'
+                      selectedDepartments.includes(dept.id) 
+                        ? 'border-blue-500 bg-blue-50' 
                         : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
@@ -322,8 +317,8 @@ export default function RunPayrollModal({
                 <Button variant="secondary" className="flex-1" onClick={handleClose}>
                   Cancel
                 </Button>
-                <Button
-                  variant="primary"
+                <Button 
+                  variant="primary" 
                   className="flex-1"
                   disabled={selectedDepartments.length === 0 || runPayrollMutation.isPending}
                   onClick={handleStartPayroll}
@@ -353,12 +348,12 @@ export default function RunPayrollModal({
               </p>
               <div className="w-64 mx-auto">
                 <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div
+                  <div 
                     className="h-full bg-blue-600 rounded-full transition-all duration-300"
-                    style={{
-                      width: `${processingStatus.totalCount > 0
-                        ? (processingStatus.processedCount / processingStatus.totalCount) * 100
-                        : 0}%`
+                    style={{ 
+                      width: `${processingStatus.totalCount > 0 
+                        ? (processingStatus.processedCount / processingStatus.totalCount) * 100 
+                        : 0}%` 
                     }}
                   />
                 </div>
@@ -394,7 +389,7 @@ export default function RunPayrollModal({
               <p className="text-slate-500 mb-4">
                 Processed {processingStatus.processedCount} of {processingStatus.totalCount} employees
               </p>
-
+              
               {processingStatus.errors.length > 0 && (
                 <div className="text-left bg-rose-50 rounded-lg p-4 mb-4 max-h-40 overflow-y-auto">
                   <p className="text-sm font-medium text-rose-900 mb-2">Errors:</p>
@@ -405,13 +400,13 @@ export default function RunPayrollModal({
                   </ul>
                 </div>
               )}
-
+              
               <div className="flex justify-center gap-3">
                 <Button variant="secondary" onClick={handleClose}>
                   Close
                 </Button>
-                <Button
-                  variant="primary"
+                <Button 
+                  variant="primary" 
                   onClick={() => setStep('select')}
                 >
                   Try Again

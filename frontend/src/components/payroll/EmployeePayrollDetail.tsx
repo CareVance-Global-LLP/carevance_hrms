@@ -198,15 +198,18 @@ export default function EmployeePayrollDetail({ employeeId, monthYear, onBack }:
     }
   };
 
-  if (isLoading || !data || !template) {
+  // Get data safely before conditional return
+  const employee = data?.employee;
+  const time_tracking = data?.time_tracking;
+
+  // Loading state - must be after all hooks
+  if (isLoading || !data || !template || !employee) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
   }
-
-  const { employee, time_tracking } = data;
 
   return (
     <div className="space-y-6">

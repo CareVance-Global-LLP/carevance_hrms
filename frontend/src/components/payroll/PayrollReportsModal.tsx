@@ -32,7 +32,10 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
     enabled: isOpen,
   });
 
-  if (!isOpen) return null;
+  // Early return must be after all hooks
+  if (!isOpen) {
+    return null;
+  }
 
   const reports: ReportType[] = [
     {

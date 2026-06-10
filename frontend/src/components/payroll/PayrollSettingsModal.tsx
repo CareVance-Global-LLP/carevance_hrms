@@ -87,7 +87,10 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
     },
   });
 
-  if (!isOpen) return null;
+  // Early return must be after all hooks
+  if (!isOpen) {
+    return null;
+  }
 
   const handleSave = () => {
     saveMutation.mutate(settings);

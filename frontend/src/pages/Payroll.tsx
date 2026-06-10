@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import PayrollDashboard from '@/components/payroll/PayrollDashboard';
 import DepartmentEmployees from '@/components/payroll/DepartmentEmployees';
-import EmployeePayrollDetail from '@/components/payroll/EmployeePayrollDetail';
+import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
 import RunPayrollModal from '@/components/payroll/RunPayrollModal';
 import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
@@ -40,12 +40,30 @@ export default function PayrollPage() {
   const handleBackToDashboard = () => {
     setViewMode('dashboard');
     setSelectedDepartmentId(0);
+    // Clear any selected employee as well
+    setSelectedEmployeeId(0);
   };
 
   const handleBackToDepartment = () => {
     setViewMode('department');
     setSelectedEmployeeId(0);
+    // Keep the selectedDepartmentId so we return to the same department
   };
+
+  // Handle browser back button - prevent it from going to external pages
+  useEffect(() => {
+    const handlePopState = () => {
+      // If user presses browser back button, go back within the app
+      if (viewMode === 'employee') {
+        handleBackToDepartment();
+      } else if (viewMode === 'department') {
+        handleBackToDashboard();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [viewMode]);
 
   const handleOpenRunPayroll = (stats: PayrollStats, departments: any[]) => {
     setCurrentStats(stats);
@@ -88,8 +106,6 @@ export default function PayrollPage() {
             onSelectDepartment={handleSelectDepartment}
             onSelectEmployee={handleSelectEmployee}
             onOpenRunPayroll={handleOpenRunPayroll}
-            onOpenReports={handleOpenReports}
-            onOpenSettings={handleOpenSettings}
           />
         )}
 
@@ -103,10 +119,14 @@ export default function PayrollPage() {
         )}
 
         {viewMode === 'employee' && (
-          <EmployeePayrollDetail
+          <EmployeePayrollWizard
             employeeId={selectedEmployeeId}
             monthYear={selectedMonth}
             onBack={handleBackToDepartment}
+            onComplete={() => {
+              // Return to department view after successful payroll processing
+              setViewMode('department');
+            }}
           />
         )}
       </div>

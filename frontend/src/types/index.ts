@@ -1192,6 +1192,7 @@ export interface PayrollDepartmentEmployee {
   avatar?: string | null;
   employee_code?: string | null;
   designation?: string | null;
+  department?: string | null;
   joining_date?: string | null;
   time_tracking: {
     total_worked_hours: number;

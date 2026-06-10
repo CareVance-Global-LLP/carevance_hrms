@@ -23,6 +23,10 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::post('/quick-fix', [PayrollDiagnosticController::class, 'quickFix']);
     Route::get('/test-departments/{departmentId}/employees', [PayrollDiagnosticController::class, 'testDepartmentEmployees']);
     
+    // Test endpoints
+    Route::get('/test-response/{departmentId}', [\App\Http\Controllers\Api\PayrollTestController::class, 'testResponse']);
+    Route::get('/test-raw/{departmentId}', [\App\Http\Controllers\Api\PayrollTestController::class, 'rawData']);
+    
     // Dashboard & Stats
     Route::get('/dashboard', [PayrollDepartmentController::class, 'getPayrollStats']);
     Route::get('/stats', [PayrollDepartmentController::class, 'getPayrollStats']);

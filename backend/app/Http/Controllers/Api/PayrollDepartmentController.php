@@ -190,12 +190,24 @@ class PayrollDepartmentController extends Controller
                     $hraPercentage = (float) ($template->hra_percentage ?? 50.00);
                     $conveyanceAllowance = (float) ($template->conveyance_allowance ?? 1600.00);
                     
-                    // Ensure time tracking data has numeric values
+                    // Ensure ALL time tracking fields are present (frontend expects these)
                     $safeTimeData = [
+                        'total_worked_seconds' => (int) ($timeData['total_worked_seconds'] ?? 0),
                         'total_worked_hours' => (float) ($timeData['total_worked_hours'] ?? 0),
+                        'total_productive_seconds' => (int) ($timeData['total_productive_seconds'] ?? 0),
                         'total_productive_hours' => (float) ($timeData['total_productive_hours'] ?? 0),
+                        'total_idle_seconds' => (int) ($timeData['total_idle_seconds'] ?? 0),
+                        'total_idle_hours' => (float) ($timeData['total_idle_hours'] ?? 0),
+                        'total_unproductive_seconds' => (int) ($timeData['total_unproductive_seconds'] ?? 0),
+                        'total_unproductive_hours' => (float) ($timeData['total_unproductive_hours'] ?? 0),
                         'activity_percentage' => (float) ($timeData['activity_percentage'] ?? 0),
                         'productivity_score' => (float) ($timeData['productivity_score'] ?? 0),
+                        'entry_count' => (int) ($timeData['entry_count'] ?? 0),
+                        'payroll_tracked_seconds' => (int) ($timeData['payroll_tracked_seconds'] ?? 0),
+                        'payroll_tracked_hours' => (float) ($timeData['payroll_tracked_hours'] ?? 0),
+                        'payroll_payable_hours' => (float) ($timeData['payroll_payable_hours'] ?? 0),
+                        'payroll_attendance_days' => (int) ($timeData['payroll_attendance_days'] ?? 0),
+                        'payroll_entry_count' => (int) ($timeData['payroll_entry_count'] ?? 0),
                     ];
 
                     return [
@@ -250,10 +262,22 @@ class PayrollDepartmentController extends Controller
                         'designation' => null,
                         'joining_date' => null,
                         'time_tracking' => [
+                            'total_worked_seconds' => 0,
                             'total_worked_hours' => 0.00,
+                            'total_productive_seconds' => 0,
                             'total_productive_hours' => 0.00,
+                            'total_idle_seconds' => 0,
+                            'total_idle_hours' => 0.00,
+                            'total_unproductive_seconds' => 0,
+                            'total_unproductive_hours' => 0.00,
                             'activity_percentage' => 0.00,
                             'productivity_score' => 0.00,
+                            'entry_count' => 0,
+                            'payroll_tracked_seconds' => 0,
+                            'payroll_tracked_hours' => 0.00,
+                            'payroll_payable_hours' => 0.00,
+                            'payroll_attendance_days' => 0,
+                            'payroll_entry_count' => 0,
                         ],
                         'payroll_status' => [
                             'is_processed' => false,

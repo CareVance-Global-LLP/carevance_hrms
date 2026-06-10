@@ -1,20 +1,21 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   ArrowLeft, 
   Search, 
-  Clock, 
-  Activity,
-  TrendingUp,
-  TrendingDown,
+  Clock,
   Calculator,
-  MoreHorizontal,
-  User,
   CheckCircle2,
   AlertCircle,
   DollarSign,
-  CreditCard,
-  Loader2,
-  X
+  Users,
+  ChevronDown,
+  Filter,
+  MoreHorizontal,
+  User,
+  Play,
+  Briefcase,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -34,187 +35,201 @@ function formatCurrency(amount: number): string {
   return '₹' + amount.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
-// Payment Modal Component
-interface PaymentModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  employee: PayrollDepartmentEmployee | null;
-  onPaymentSuccess: () => void;
-}
+type FilterStatus = 'all' | 'pending' | 'processed' | 'paid';
+type SortBy = 'name' | 'ctc' | 'status';
 
-function PaymentModal({ isOpen, onClose, employee, onPaymentSuccess }: PaymentModalProps) {
-  const [paymentMethod, setPaymentMethod] = useState<'bank_transfer' | 'cash' | 'razorpay'>('bank_transfer');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+// Employee Card Component
+function EmployeeCard({
+  employee,
+  isSelected,
+  onSelect,
+  onClick,
+  onProcess
+}: {
+  employee: PayrollDepartmentEmployee;
+  isSelected: boolean;
+  onSelect: () => void;
+  onClick: () => void;
+  onProcess: (e: React.MouseEvent) => void;
+}) {
+  const status = employee.payroll_status.is_processed 
+    ? (employee.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
+    : 'pending';
 
-  if (!isOpen || !employee) return null;
-
-  const handlePayment = async () => {
-    setIsProcessing(true);
-    setError(null);
-    
-    try {
-      // Import the type for payroll calculation
-      const payrollCalc = {
-        annual: { ctc: 0, gross: 0 },
-        monthly: {
-          ctc: employee.payroll_status.gross_salary,
-          gross: employee.payroll_status.gross_salary,
-          net: employee.payroll_status.net_pay,
-          total_deductions: employee.payroll_status.total_deductions
-        },
-        components: {
-          earnings: { basic: 0, hra: 0, conveyance: 0, special_allowance: 0 },
-          deductions: { pf_employee: 0, esi_employee: 0, pt: 0, tds: 0 },
-          employer_contributions: { pf_employer: 0, eps: 0, epf: 0, esi_employer: 0, gratuity: 0 }
-        },
-        breakdown: { pf_wages: 0, pf_cap_applied: false, esi_applicable: false, tax_regime: 'new' }
-      };
-      
-      // Call the payment API
-      const response = await payrollApi.processPayment({
-        user_id: employee.id,
-        amount: employee.payroll_status.net_pay,
-        payment_method: paymentMethod,
-        month: new Date().toISOString().slice(0, 7),
-        payroll_data: payrollCalc as any
-      });
-      
-      if (response.data.success) {
-        onPaymentSuccess();
-        onClose();
-      } else {
-        setError(response.data.message || 'Payment failed');
-      }
-    } catch (err: any) {
-      console.error('Payment failed:', err);
-      setError(err?.response?.data?.message || err?.message || 'Payment processing failed. Please try again.');
-    } finally {
-      setIsProcessing(false);
+  const statusConfig = {
+    paid: {
+      icon: CheckCircle2,
+      label: 'Paid',
+      bgColor: 'bg-emerald-50',
+      textColor: 'text-emerald-600',
+      borderColor: 'border-emerald-200'
+    },
+    processed: {
+      icon: CheckCircle2,
+      label: 'Processed',
+      bgColor: 'bg-blue-50',
+      textColor: 'text-blue-600',
+      borderColor: 'border-blue-200'
+    },
+    pending: {
+      icon: Clock,
+      label: 'Pending',
+      bgColor: 'bg-amber-50',
+      textColor: 'text-amber-600',
+      borderColor: 'border-amber-200'
     }
   };
 
+  const config = statusConfig[status];
+  const StatusIcon = config.icon;
+
+  // CTC info
+  const hasCTC = employee.annual_ctc && employee.annual_ctc > 0;
+  const monthlyCTC = hasCTC ? (employee.annual_ctc! / 12) : 0;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <SurfaceCard className="w-full max-w-md">
-        <div className="flex items-center justify-between p-6 border-b border-slate-200">
-          <h2 className="text-xl font-bold text-slate-900">Process Payment</h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-            <X className="h-5 w-5 text-slate-500" />
-          </button>
-        </div>
-        
-        <div className="p-6 space-y-6">
-          {/* Error Message */}
-          {error && (
-            <div className="bg-rose-50 border border-rose-200 rounded-lg p-4">
-              <p className="text-sm text-rose-700">
-                <strong>Error:</strong> {error}
-              </p>
-            </div>
+    <SurfaceCard 
+      className={`p-5 transition-all ${
+        isSelected ? 'ring-2 ring-blue-500 border-blue-300' : 'hover:shadow-md'
+      }`}
+    >
+      <div className="flex items-start gap-4">
+        {/* Checkbox */}
+        <button 
+          onClick={(e) => { e.stopPropagation(); onSelect(); }}
+          className="mt-1 flex-shrink-0"
+        >
+          {isSelected ? (
+            <CheckSquare className="h-5 w-5 text-blue-600" />
+          ) : (
+            <Square className="h-5 w-5 text-slate-300 hover:text-slate-400" />
           )}
-          
-          {/* Employee Info */}
-          <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg">
-            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-              <User className="h-5 w-5 text-blue-600" />
-            </div>
+        </button>
+
+        {/* Avatar */}
+        <div 
+          className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-100 to-violet-100 flex items-center justify-center flex-shrink-0 cursor-pointer"
+          onClick={onClick}
+        >
+          {employee.avatar ? (
+            <img src={employee.avatar} alt={employee.name} className="h-12 w-12 rounded-full" />
+          ) : (
+            <span className="text-lg font-semibold text-blue-600">
+              {employee.name.charAt(0)}
+            </span>
+          )}
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between">
             <div>
-              <p className="font-semibold text-slate-900">{employee.name}</p>
-              <p className="text-sm text-slate-500">{employee.email}</p>
+              <h3 
+                className="font-semibold text-slate-900 cursor-pointer hover:text-blue-600 transition-colors"
+                onClick={onClick}
+              >
+                {employee.name}
+              </h3>
+              <p className="text-sm text-slate-500 truncate">
+                {employee.designation || employee.email}
+              </p>
+              {employee.employee_code && (
+                <p className="text-xs text-slate-400 mt-0.5">{employee.employee_code}</p>
+              )}
             </div>
+            <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${config.bgColor} ${config.textColor}`}>
+              <StatusIcon className="h-3.5 w-3.5" />
+              {config.label}
+            </span>
           </div>
 
-          {/* Payment Amount */}
-          <div className="text-center p-4 bg-emerald-50 rounded-lg">
-            <p className="text-sm text-emerald-600 mb-1">Net Pay Amount</p>
-            <p className="text-3xl font-bold text-emerald-700">
-              {formatCurrency(employee.payroll_status.net_pay)}
-            </p>
-          </div>
-
-          {/* Payment Method */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-3">
-              Select Payment Method
-            </label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-slate-50">
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="bank_transfer"
-                  checked={paymentMethod === 'bank_transfer'}
-                  onChange={(e) => setPaymentMethod(e.target.value as any)}
-                  className="h-4 w-4 text-blue-600"
-                />
-                <CreditCard className="h-5 w-5 text-slate-400" />
+          {/* Salary Info */}
+          <div className="mt-4 flex items-center justify-between">
+            <div>
+              {hasCTC ? (
                 <div>
-                  <p className="font-medium text-slate-900">Bank Transfer</p>
-                  <p className="text-xs text-slate-500">NEFT/RTGS/IMPS</p>
+                  <p className="text-xs text-slate-400">CTC</p>
+                  <p className="font-semibold text-slate-900">{formatCurrency(employee.annual_ctc!)}<span className="text-slate-400 font-normal">/yr</span></p>
                 </div>
-              </label>
-
-              <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-slate-50">
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="razorpay"
-                  checked={paymentMethod === 'razorpay'}
-                  onChange={(e) => setPaymentMethod(e.target.value as any)}
-                  className="h-4 w-4 text-blue-600"
-                />
-                <DollarSign className="h-5 w-5 text-slate-400" />
-                <div>
-                  <p className="font-medium text-slate-900">Online Payment</p>
-                  <p className="text-xs text-slate-500">UPI, Card, Net Banking</p>
+              ) : (
+                <div className="flex items-center gap-2 text-amber-600">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="text-sm font-medium">CTC not set</span>
                 </div>
-              </label>
-
-              <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-slate-50">
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="cash"
-                  checked={paymentMethod === 'cash'}
-                  onChange={(e) => setPaymentMethod(e.target.value as any)}
-                  className="h-4 w-4 text-blue-600"
-                />
-                <DollarSign className="h-5 w-5 text-slate-400" />
-                <div>
-                  <p className="font-medium text-slate-900">Cash Payment</p>
-                  <p className="text-xs text-slate-500">Physical cash payment</p>
-                </div>
-              </label>
+              )}
             </div>
-          </div>
-        </div>
 
-        <div className="flex gap-3 p-6 border-t border-slate-200">
-          <Button variant="secondary" className="flex-1" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button 
-            variant="primary" 
-            className="flex-1"
-            onClick={handlePayment}
-            disabled={isProcessing}
-          >
-            {isProcessing ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Processing...
-              </span>
+            {/* Net Pay Display */}
+            {employee.payroll_status.is_processed ? (
+              <div className="text-right">
+                <p className="text-xs text-slate-400">Net Pay</p>
+                <p className="font-semibold text-emerald-600">
+                  {formatCurrency(employee.payroll_status.net_pay)}
+                </p>
+              </div>
+            ) : hasCTC ? (
+              <div className="text-right">
+                <p className="text-xs text-slate-400">Est. Monthly</p>
+                <p className="font-semibold text-slate-700">
+                  ~{formatCurrency(monthlyCTC * 0.75)}<span className="text-slate-400 font-normal">/mo</span>
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Actions */}
+          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2">
+            {status === 'pending' ? (
+              <>
+                <Button 
+                  variant="primary" 
+                  size="sm" 
+                  className="flex-1"
+                  iconLeft={<Play className="h-4 w-4" />}
+                  onClick={onProcess}
+                >
+                  Process Payroll
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  size="sm"
+                  onClick={onClick}
+                >
+                  View
+                </Button>
+              </>
+            ) : status === 'processed' ? (
+              <>
+                <Button 
+                  variant="primary" 
+                  size="sm" 
+                  className="flex-1"
+                  iconLeft={<DollarSign className="h-4 w-4" />}
+                >
+                  Pay Now
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  size="sm"
+                  onClick={onClick}
+                >
+                  Edit
+                </Button>
+              </>
             ) : (
-              <span className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Confirm Payment
-              </span>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                className="flex-1"
+                onClick={onClick}
+              >
+                View Payslip
+              </Button>
             )}
-          </Button>
+          </div>
         </div>
-      </SurfaceCard>
-    </div>
+      </div>
+    </SurfaceCard>
   );
 }
 
@@ -225,11 +240,14 @@ export default function DepartmentEmployees({
   onSelectEmployee 
 }: DepartmentEmployeesProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState<PayrollDepartmentEmployee | null>(null);
+  const [selectedEmployees, setSelectedEmployees] = useState<Set<number>>(new Set());
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+  const [sortBy, setSortBy] = useState<SortBy>('name');
+  const [showFilters, setShowFilters] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data, isLoading, refetch } = useQuery({
+  // Fetch employees
+  const { data, isLoading } = useQuery({
     queryKey: ['payroll', 'department', departmentId, 'employees', monthYear, searchQuery],
     queryFn: () => payrollApi.getDepartmentEmployees(departmentId, { 
       month_year: monthYear,
@@ -238,219 +256,274 @@ export default function DepartmentEmployees({
   });
 
   const employees = data?.employees || [];
+  const departmentName = departmentId === 0 ? 'Unassigned Employees' : 
+    employees[0]?.department || 'Department';
 
-  const handleOpenPayment = (employee: PayrollDepartmentEmployee, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedEmployee(employee);
-    setPaymentModalOpen(true);
-  };
-
-  const [paymentSuccessMessage, setPaymentSuccessMessage] = useState<string | null>(null);
-
-  const handlePaymentSuccess = () => {
-    // Show success message
-    setPaymentSuccessMessage('Payment processed successfully!');
-    setTimeout(() => setPaymentSuccessMessage(null), 3000);
+  // Filter and sort employees
+  const filteredEmployees = useMemo(() => {
+    let filtered = [...employees];
     
-    // Refresh the employee list
-    refetch();
-    // Also invalidate related queries
-    queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
-    queryClient.invalidateQueries({ queryKey: ['payroll', 'departments'] });
+    // Apply status filter
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(emp => {
+        const status = emp.payroll_status.is_processed 
+          ? (emp.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
+          : 'pending';
+        return status === filterStatus;
+      });
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'name':
+          return a.name.localeCompare(b.name);
+        case 'ctc':
+          return (b.annual_ctc || 0) - (a.annual_ctc || 0);
+        case 'status':
+          const statusOrder = { pending: 0, processed: 1, paid: 2 };
+          const aStatus = a.payroll_status.is_processed 
+            ? (a.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
+            : 'pending';
+          const bStatus = b.payroll_status.is_processed 
+            ? (b.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
+            : 'pending';
+          return statusOrder[aStatus as keyof typeof statusOrder] - statusOrder[bStatus as keyof typeof statusOrder];
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [employees, filterStatus, sortBy]);
+
+  // Count by status
+  const counts = useMemo(() => {
+    return employees.reduce((acc, emp) => {
+      if (emp.payroll_status.payment_status === 'paid') {
+        acc.paid++;
+      } else if (emp.payroll_status.is_processed) {
+        acc.processed++;
+      } else {
+        acc.pending++;
+      }
+      return acc;
+    }, { pending: 0, processed: 0, paid: 0 });
+  }, [employees]);
+
+  // Selection handlers
+  const toggleSelectAll = () => {
+    if (selectedEmployees.size === filteredEmployees.length) {
+      setSelectedEmployees(new Set());
+    } else {
+      setSelectedEmployees(new Set(filteredEmployees.map(e => e.id)));
+    }
   };
+
+  const toggleSelect = (id: number) => {
+    const newSet = new Set(selectedEmployees);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedEmployees(newSet);
+  };
+
+  // Get selected employee objects
+  const selectedEmployeeObjects = useMemo(() => {
+    return employees.filter(e => selectedEmployees.has(e.id));
+  }, [employees, selectedEmployees]);
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
-          Back
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            {departmentId === 0 ? 'Unassigned Employees' : 'Department Employees'}
-          </h1>
-          <p className="text-sm text-slate-500">{employees.length} employees found</p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
+            Back
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{departmentName}</h1>
+            <p className="text-sm text-slate-500">
+              {employees.length} employees • {counts.pending} pending
+            </p>
+          </div>
+        </div>
+        
+        {/* Bulk Actions */}
+        {selectedEmployees.size > 0 && (
+          <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-lg">
+            <span className="text-sm font-medium text-blue-900">
+              {selectedEmployees.size} selected
+            </span>
+            <div className="h-4 w-px bg-blue-200" />
+            <Button variant="primary" size="sm" iconLeft={<Play className="h-4 w-4" />}>
+              Process Selected
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => setSelectedEmployees(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Status Tabs */}
+      <div className="flex flex-wrap gap-2">
+        {(['all', 'pending', 'processed', 'paid'] as FilterStatus[]).map((status) => (
+          <button
+            key={status}
+            onClick={() => setFilterStatus(status)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filterStatus === status 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+              filterStatus === status ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-600'
+            }`}>
+              {status === 'all' ? employees.length : counts[status]}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleSelectAll}
+            className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
+          >
+            {selectedEmployees.size === filteredEmployees.length && filteredEmployees.length > 0 ? (
+              <CheckSquare className="h-4 w-4 text-blue-600" />
+            ) : (
+              <Square className="h-4 w-4 text-slate-400" />
+            )}
+            Select All
+          </button>
+          <span className="text-slate-300">|</span>
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
+          >
+            <Filter className="h-4 w-4" />
+            Filters
+            <ChevronDown className={`h-3 w-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+
+        <div className="flex-1" />
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <TextInput
+            placeholder="Search by name or email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 w-full sm:w-72"
+          />
         </div>
       </div>
 
-      {/* Success Message */}
-      {paymentSuccessMessage && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
-          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-          <p className="text-sm text-emerald-800">{paymentSuccessMessage}</p>
-        </div>
+      {/* Expanded Filters */}
+      {showFilters && (
+        <SurfaceCard className="p-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">Sort by:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortBy)}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="name">Name</option>
+                <option value="ctc">CTC (High to Low)</option>
+                <option value="status">Status</option>
+              </select>
+            </div>
+          </div>
+        </SurfaceCard>
       )}
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-        <TextInput
-          placeholder="Search employees by name or email..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
-        />
+      {/* Employees Grid */}
+      <div className="space-y-4">
+        {isLoading ? (
+          // Loading state
+          Array.from({ length: 3 }).map((_, i) => (
+            <SurfaceCard key={i} className="p-5 animate-pulse">
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-12 bg-slate-200 rounded-full" />
+                <div className="flex-1">
+                  <div className="h-5 bg-slate-200 rounded w-1/3 mb-2" />
+                  <div className="h-4 bg-slate-200 rounded w-1/4" />
+                </div>
+              </div>
+            </SurfaceCard>
+          ))
+        ) : filteredEmployees.length === 0 ? (
+          <div className="text-center py-12">
+            <Users className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+            <p className="text-slate-500 font-medium">No employees found</p>
+            <p className="text-sm text-slate-400">
+              {searchQuery ? 'Try adjusting your search' : 'This department has no employees'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {filteredEmployees.map((employee) => (
+              <EmployeeCard
+                key={employee.id}
+                employee={employee}
+                isSelected={selectedEmployees.has(employee.id)}
+                onSelect={() => toggleSelect(employee.id)}
+                onClick={() => onSelectEmployee(employee.id)}
+                onProcess={(e) => {
+                  e.stopPropagation();
+                  onSelectEmployee(employee.id);
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Employees Table */}
-      <SurfaceCard className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Time Tracking</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Productivity</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Gross Salary</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Net Pay</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                    Loading employees...
-                  </td>
-                </tr>
-              ) : employees.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                    No employees found
-                  </td>
-                </tr>
-              ) : (
-                employees.map((employee) => (
-                  <tr 
-                    key={employee.id} 
-                    className="hover:bg-slate-50 cursor-pointer"
-                    onClick={() => onSelectEmployee(employee.id)}
-                  >
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center">
-                          {employee.avatar ? (
-                            <img src={employee.avatar} alt={employee.name} className="h-10 w-10 rounded-full" />
-                          ) : (
-                            <User className="h-5 w-5 text-slate-400" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-medium text-slate-900">{employee.name}</p>
-                          <p className="text-xs text-slate-500">{employee.designation || employee.email}</p>
-                          {employee.employee_code && (
-                            <p className="text-xs text-slate-400">{employee.employee_code}</p>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Clock className="h-3 w-3 text-slate-400" />
-                          <span>{employee.time_tracking.total_worked_hours.toFixed(1)}h</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <Activity className="h-3 w-3" />
-                          <span>{employee.time_tracking.activity_percentage.toFixed(0)}% active</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-xs">
-                          <span className="text-emerald-600">{employee.time_tracking.total_productive_hours.toFixed(1)}h productive</span>
-                          <span className="text-slate-300">|</span>
-                          <span className="text-rose-500">{employee.time_tracking.total_idle_hours.toFixed(1)}h idle</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-16 bg-slate-100 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-emerald-500 rounded-full"
-                            style={{ width: `${Math.min(employee.time_tracking.productivity_score, 100)}%` }}
-                          />
-                        </div>
-                        <span className="text-sm font-medium">{employee.time_tracking.productivity_score.toFixed(0)}%</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      {employee.payroll_status.is_processed ? (
-                        <span className="font-medium">{formatCurrency(employee.payroll_status.gross_salary)}</span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      {employee.payroll_status.is_processed ? (
-                        <span className="font-semibold text-emerald-600">{formatCurrency(employee.payroll_status.net_pay)}</span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      {employee.payroll_status.is_processed ? (
-                        employee.payroll_status.payment_status === 'paid' ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-                            <CheckCircle2 className="h-3 w-3" />
-                            Paid
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
-                            <DollarSign className="h-3 w-3" />
-                            Pending
-                          </span>
-                        )
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
-                          <AlertCircle className="h-3 w-3" />
-                          Not Calculated
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectEmployee(employee.id);
-                          }}
-                        >
-                          <Calculator className="h-4 w-4 mr-1" />
-                          Payroll
-                        </Button>
-                        
-                        {/* Pay Button - Only show if payroll is processed but not paid */}
-                        {employee.payroll_status.is_processed && 
-                         employee.payroll_status.payment_status !== 'paid' && (
-                          <Button 
-                            variant="primary" 
-                            size="sm"
-                            onClick={(e) => handleOpenPayment(employee, e)}
-                          >
-                            <DollarSign className="h-3 w-3 mr-1" />
-                            Pay
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* Summary Footer */}
+      {employees.length > 0 && (
+        <div className="bg-slate-50 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full bg-amber-500" />
+              <span className="text-sm text-slate-600">{counts.pending} Pending</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full bg-blue-500" />
+              <span className="text-sm text-slate-600">{counts.processed} Processed</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded-full bg-emerald-500" />
+              <span className="text-sm text-slate-600">{counts.paid} Paid</span>
+            </div>
+          </div>
+          
+          {selectedEmployees.size > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-600">
+                {selectedEmployees.size} employees selected
+              </span>
+              <Button variant="primary" size="sm" iconLeft={<Play className="h-4 w-4" />}>
+                Process Selected
+              </Button>
+            </div>
+          )}
         </div>
-      </SurfaceCard>
-
-      {/* Payment Modal */}
-      <PaymentModal
-        isOpen={paymentModalOpen}
-        onClose={() => setPaymentModalOpen(false)}
-        employee={selectedEmployee}
-        onPaymentSuccess={handlePaymentSuccess}
-      />
+      )}
     </div>
   );
 }
