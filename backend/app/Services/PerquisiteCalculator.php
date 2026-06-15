@@ -17,7 +17,7 @@ class PerquisiteCalculator
         return max(0, 2400 - $employeeContribution);
     }
 
-    public function calculateAccommodationPerquisite(float rentPaid, float salary, bool isMetro = true): float
+    public function calculateAccommodationPerquisite(float $rentPaid, float $salary, bool $isMetro = true): float
     {
         $percentage = $isMetro ? 0.15 : 0.10;
         return max(0, ($salary * $percentage) - $rentPaid);

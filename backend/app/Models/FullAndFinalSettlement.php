@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 namespace App\Models;
 
@@ -10,7 +10,7 @@ class FullAndFinalSettlement extends Model
 {
     use HasFactory;
 
-    protected + = 'full_and_final_settlements';
+    protected $table = 'full_and_final_settlements';
 
     protected $fillable = [
         'organization_id',
@@ -146,11 +146,11 @@ class FullAndFinalSettlement extends Model
 
     public function calculateNetSettlement(): float
     {
-        $this->total_earnings = ->current_month_salary + ->salary_in_arrears + ->leave_encashment + ->comp_off_value + ->gratuity_amount + ->retrenchment_compensation + ->severance_package;
+        $this->total_earnings = $this->current_month_salary + $this->salary_in_arrears + $this->leave_encashment + $this->comp_off_value + $this->gratuity_amount + $this->retrenchment_compensation + $this->severance_package;
         
-        $this->total_deductions = ->notice_pay_recovery + ->loan_recovery + ->advance_recovery + ->asset_recovery + ->other_deductions + ->tds_on_settlement;
+        $this->total_deductions = $this->notice_pay_recovery + $this->loan_recovery + $this->advance_recovery + $this->asset_recovery + $this->other_deductions + $this->tds_on_settlement;
         
-        $this->net_settlement_amount = ->total_earnings - ->total_deductions;
+        $this->net_settlement_amount = $this->total_earnings - $this->total_deductions;
         
         return $this->net_settlement_amount;
     }
