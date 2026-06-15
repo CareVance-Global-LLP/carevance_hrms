@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\PerformanceGoalController;
 use App\Http\Controllers\Api\PerformanceReviewController;
 use App\Http\Controllers\Api\ReimbursementController;
 use App\Http\Controllers\Api\EnhancedPayrollController;
+use App\Http\Controllers\PayrollAutoProcessController;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -144,6 +145,18 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::get('/performance-reviews/employee/{employeeId}', [PerformanceReviewController::class, 'getEmployeeReviews']);
     Route::get('/performance-reviews/summary', [PerformanceReviewController::class, 'getSummary']);
     
+    // Automated Payroll Processing (Keka/GreytHR-style)
+    Route::prefix('auto')->group(function () {
+        Route::post('/quick-process', [PayrollAutoProcessController::class, 'quickProcess']);
+        Route::post('/process-with-checklist', [PayrollAutoProcessController::class, 'processWithChecklist']);
+        Route::post('/quick-validate', [PayrollAutoProcessController::class, 'quickValidate']);
+        Route::post('/detect-changes', [PayrollAutoProcessController::class, 'detectChanges']);
+        Route::post('/diff', [PayrollAutoProcessController::class, 'getDiff']);
+        Route::post('/generate-filings', [PayrollAutoProcessController::class, 'autoGenerateFilings']);
+        Route::post('/validate-run', [PayrollAutoProcessController::class, 'validateRun']);
+        Route::get('/checklist-status/{runId}', [PayrollAutoProcessController::class, 'checklistStatus']);
+    });
+
     // Reimbursements
     Route::get('/reimbursements', [ReimbursementController::class, 'index']);
     Route::post('/reimbursements', [ReimbursementController::class, 'store']);

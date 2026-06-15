@@ -6,7 +6,7 @@ $allowedOrigins = array_values(array_filter(array_map(
     static fn (string $origin) => trim($origin),
     explode(',', (string) env(
         'CORS_ALLOWED_ORIGINS',
-        $isLocalEnvironment ? 'http://localhost:5173,http://127.0.0.1:5173' : ''
+        $isLocalEnvironment ? 'http://localhost:5173,http://127.0.0.1:5173,null' : ''
     ))
 )));
 $allowedOriginPatterns = array_values(array_filter(array_map(

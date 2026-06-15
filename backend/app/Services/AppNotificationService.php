@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AppNotification;
 use App\Models\User;
+use App\Services\ExpoPushService;
 use Illuminate\Support\Collection;
 
 class AppNotificationService
@@ -34,10 +35,13 @@ class AppNotificationService
             ->whereIn('id', $normalizedUserIds)
             ->get(['id', 'settings']);
 
+        $recipientUserIds = [];
+
         $rows = $users
             ->filter(fn (User $user) => $this->shouldStoreNotification($user, $type))
-            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $meta) {
+            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $meta, &$recipientUserIds) {
                 $resolvedMeta = $this->resolveMeta($type, $meta);
+                $recipientUserIds[] = (int) $user->id;
 
                 return [
                     'organization_id' => $organizationId,
@@ -58,6 +62,14 @@ class AppNotificationService
 
         if (!empty($rows)) {
             AppNotification::insert($rows);
+
+            $resolvedMeta = $this->resolveMeta($type, $meta);
+            app(ExpoPushService::class)->sendToUsers(
+                users: $recipientUserIds,
+                title: $title,
+                body: $message,
+                data: $resolvedMeta ?? []
+            );
         }
     }
 

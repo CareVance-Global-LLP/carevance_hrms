@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Notifications\ListNotificationsRequest;
 use App\Http\Requests\Api\Notifications\PublishNotificationRequest;
 use App\Models\AppNotification;
+use App\Models\DeviceToken;
 use App\Models\User;
 use App\Services\AppNotificationService;
 use Illuminate\Http\Request;
@@ -149,6 +150,23 @@ class NotificationController extends Controller
             ]);
 
         return $this->updatedResponse([], 'All notifications marked as read.');
+    }
+
+    public function registerDevice(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string',
+            'platform' => 'required|string|in:ios,android',
+        ]);
+
+        $user = $request->user();
+
+        DeviceToken::updateOrCreate(
+            ['token' => $request->token],
+            ['user_id' => $user->id, 'platform' => $request->platform]
+        );
+
+        return response()->json(['message' => 'Device registered for notifications.']);
     }
 
     private function canManage(User $user): bool

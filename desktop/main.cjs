@@ -906,6 +906,21 @@ const createWindow = async () => {
   let failRetryCount = 0;
   const MAX_FAIL_RETRIES = 5;
   const FAIL_RETRY_DELAY = 3000;
+  const OFFLINE_FALLBACK_PATH = path.join(__dirname, 'offline', 'offline-fallback.html');
+  let onOfflineFallback = false;
+
+  // ERR_INTERNET_DISCONNECTED: Chromium's error code when the machine has no network.
+  // When this occurs and all retries are exhausted, show the bundled offline fallback
+  // page instead of a generic error screen. The fallback page monitors connectivity and
+  // auto-reloads the remote URL when the network returns.
+  const ERR_INTERNET_DISCONNECTED = -106;
+
+  const reloadRemoteUrl = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    onOfflineFallback = false;
+    failRetryCount = 0;
+    mainWindow.loadURL(APP_URL).catch(() => {});
+  };
 
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || String(validatedURL || '').startsWith('data:text/html')) {
@@ -936,6 +951,23 @@ const createWindow = async () => {
       return;
     }
 
+    // If all retries exhausted due to no internet, show the local offline fallback page
+    if (errorCode === ERR_INTERNET_DISCONNECTED && !onOfflineFallback) {
+      onOfflineFallback = true;
+      console.log('[desktop] loading offline fallback page');
+      if (fs.existsSync(OFFLINE_FALLBACK_PATH)) {
+        mainWindow.loadFile(OFFLINE_FALLBACK_PATH).catch(() => {});
+      } else {
+        void renderRendererLoadError({
+          appUrl: APP_URL,
+          errorCode,
+          errorDescription,
+          failedUrl: validatedURL,
+        });
+      }
+      return;
+    }
+
     void renderRendererLoadError({
       appUrl: APP_URL,
       errorCode,
@@ -943,6 +975,15 @@ const createWindow = async () => {
       failedUrl: validatedURL,
     });
   });
+
+  // When on the offline fallback page and network returns, reload the remote URL
+  const networkCheckTimer = setInterval(() => {
+    if (!onOfflineFallback || !networkMonitor) return;
+    if (networkMonitor.isOnline) {
+      console.log('[desktop] network restored, reloading remote URL');
+      reloadRemoteUrl();
+    }
+  }, 5000);
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[desktop] renderer process exited', {

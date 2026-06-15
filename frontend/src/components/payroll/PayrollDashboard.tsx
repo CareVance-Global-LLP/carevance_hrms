@@ -14,7 +14,8 @@ import {
   ArrowRight,
   Clock,
   Briefcase,
-  AlertTriangle
+  AlertTriangle,
+  Zap
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -28,6 +29,7 @@ interface PayrollDashboardProps {
   onSelectDepartment: (departmentId: number) => void;
   onSelectEmployee: (employeeId: number) => void;
   onOpenRunPayroll: (stats: PayrollStats, departments: PayrollDepartment[]) => void;
+  onOpenQuickProcess?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -229,7 +231,8 @@ function QuickActionCard({
 export default function PayrollDashboard({ 
   onSelectDepartment, 
   onSelectEmployee,
-  onOpenRunPayroll
+  onOpenRunPayroll,
+  onOpenQuickProcess
 }: PayrollDashboardProps) {
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -313,6 +316,13 @@ export default function PayrollDashboard({
             disabled={summaryStats.pendingCount === 0}
           >
             Process All ({summaryStats.pendingCount})
+          </Button>
+          <Button
+            variant="secondary"
+            iconLeft={<Zap className="h-4 w-4" />}
+            onClick={onOpenQuickProcess}
+          >
+            Quick Process
           </Button>
         </div>
       </div>

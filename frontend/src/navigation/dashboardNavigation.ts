@@ -166,6 +166,7 @@ export const topNavigation: NavGroup[] = [
       { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll', adminOnly: true },
       { label: 'Tax Declarations', to: '/tax-declarations', icon: FileText, planFeature: 'payroll' },
       { label: 'Loans & Advances', to: '/loans', icon: IndianRupee, planFeature: 'payroll' },
+      { label: 'Advanced Payroll', to: '/filings', icon: FileText, planFeature: 'payroll', adminOnly: true },
     ],
   },
   {

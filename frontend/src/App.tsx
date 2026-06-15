@@ -90,6 +90,7 @@ const Payroll = lazyWithChunkRetry(() => import('@/pages/Payroll'));
 const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
 const TaxDeclaration = lazyWithChunkRetry(() => import('@/pages/TaxDeclaration'));
 const Loans = lazyWithChunkRetry(() => import('@/pages/Loans'));
+const Filings = lazyWithChunkRetry(() => import('@/pages/Filings'));
 const BreakTracking = lazyWithChunkRetry(() => import('@/pages/BreakTrackingPage'));
 const Performance = lazyWithChunkRetry(() => import('@/pages/PerformancePage'));
 const PerformanceGoals = lazyWithChunkRetry(() => import('@/pages/PerformanceGoalsPage'));
@@ -593,6 +594,7 @@ function App() {
             <Route path="my-payroll" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><MyPayroll /></ProtectedRoute></PlanFeatureRoute>} />
             <Route path="tax-declarations" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><TaxDeclaration /></ProtectedRoute></PlanFeatureRoute>} />
             <Route path="loans" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><Loans /></ProtectedRoute></PlanFeatureRoute>} />
+            <Route path="filings" element={<PlanFeatureRoute feature="payroll"><AdminRoute><Filings /></AdminRoute></PlanFeatureRoute>} />
             <Route path="performance" element={<ProtectedRoute><Performance /></ProtectedRoute>} />
             <Route path="performance-goals" element={<ProtectedRoute><PerformanceGoals /></ProtectedRoute>} />
             <Route path="expenses" element={<ProtectedRoute><Expenses /></ProtectedRoute>} />

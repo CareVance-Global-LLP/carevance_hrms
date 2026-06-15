@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import PayrollDashboard from '@/components/payroll/PayrollDashboard';
+import PayrollCockpit from '@/components/payroll/PayrollCockpit';
+import PayrollWizard from '@/components/payroll/PayrollWizard';
 import DepartmentEmployees from '@/components/payroll/DepartmentEmployees';
 import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
 import RunPayrollModal from '@/components/payroll/RunPayrollModal';
+import QuickPayrollProcess from '@/components/payroll/QuickPayrollProcess';
 import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
+import Button from '@/components/ui/Button';
 
-type ViewMode = 'dashboard' | 'department' | 'employee';
+type ViewMode = 'cockpit' | 'dashboard' | 'department' | 'employee' | 'quick-process' | 'wizard';
 
 export default function PayrollPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
+  const [viewMode, setViewMode] = useState<ViewMode>('cockpit');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number>(0);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number>(0);
   const [selectedMonth] = useState(() => {
@@ -38,29 +42,24 @@ export default function PayrollPage() {
   };
 
   const handleBackToDashboard = () => {
-    setViewMode('dashboard');
+    setViewMode('cockpit');
     setSelectedDepartmentId(0);
-    // Clear any selected employee as well
     setSelectedEmployeeId(0);
   };
 
   const handleBackToDepartment = () => {
     setViewMode('department');
     setSelectedEmployeeId(0);
-    // Keep the selectedDepartmentId so we return to the same department
   };
 
-  // Handle browser back button - prevent it from going to external pages
   useEffect(() => {
     const handlePopState = () => {
-      // If user presses browser back button, go back within the app
       if (viewMode === 'employee') {
         handleBackToDepartment();
       } else if (viewMode === 'department') {
         handleBackToDashboard();
       }
     };
-
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [viewMode]);
@@ -71,8 +70,20 @@ export default function PayrollPage() {
     setIsRunPayrollModalOpen(true);
   };
 
-  const handleOpenReports = (stats: PayrollStats) => {
-    setCurrentStats(stats);
+  const handleOpenQuickProcess = () => {
+    setViewMode('quick-process');
+  };
+
+  const handleQuickProcessComplete = () => {
+    setViewMode('cockpit');
+  };
+
+  const handleCloseQuickProcess = () => {
+    setViewMode('cockpit');
+  };
+
+  const handleOpenReports = (stats?: PayrollStats) => {
+    if (stats) setCurrentStats(stats);
     setIsReportsModalOpen(true);
   };
 
@@ -81,15 +92,11 @@ export default function PayrollPage() {
   };
 
   const handlePayrollSuccess = () => {
-    // Refresh the dashboard data
     setIsRunPayrollModalOpen(false);
-    // Force a re-render by toggling view mode
-    setViewMode('dashboard');
+    setViewMode('cockpit');
   };
 
   const handleSaveSettings = (settings: PayrollOrganizationSettings) => {
-    // Settings are saved to localStorage in the modal component
-    // We could also sync to backend here if needed
     console.log('Settings saved:', settings);
   };
 
@@ -101,11 +108,46 @@ export default function PayrollPage() {
       />
 
       <div className="p-6">
+        {viewMode === 'cockpit' && (
+          <PayrollCockpit
+            monthYear={selectedMonth}
+            onStartWizard={() => setViewMode('wizard')}
+            onQuickProcess={handleOpenQuickProcess}
+            onOpenSettings={handleOpenSettings}
+            onOpenReports={() => handleOpenReports()}
+            onOpenLegacyDashboard={() => setViewMode('dashboard')}
+          />
+        )}
+
+        {viewMode === 'wizard' && (
+          <PayrollWizard
+            monthYear={selectedMonth}
+            onComplete={() => setViewMode('cockpit')}
+            onBack={() => setViewMode('cockpit')}
+          />
+        )}
+
+        {viewMode === 'quick-process' && (
+          <div className="max-w-3xl mx-auto">
+            <div className="mb-4">
+              <Button variant="ghost" onClick={handleCloseQuickProcess}>
+                ← Back to Dashboard
+              </Button>
+            </div>
+            <QuickPayrollProcess
+              monthYear={selectedMonth}
+              onComplete={handleQuickProcessComplete}
+              onClose={handleCloseQuickProcess}
+            />
+          </div>
+        )}
+
         {viewMode === 'dashboard' && (
           <PayrollDashboard
             onSelectDepartment={handleSelectDepartment}
             onSelectEmployee={handleSelectEmployee}
             onOpenRunPayroll={handleOpenRunPayroll}
+            onOpenQuickProcess={handleOpenQuickProcess}
           />
         )}
 
@@ -123,15 +165,11 @@ export default function PayrollPage() {
             employeeId={selectedEmployeeId}
             monthYear={selectedMonth}
             onBack={handleBackToDepartment}
-            onComplete={() => {
-              // Return to department view after successful payroll processing
-              setViewMode('department');
-            }}
+            onComplete={() => setViewMode('department')}
           />
         )}
       </div>
 
-      {/* Run Payroll Modal */}
       <RunPayrollModal
         isOpen={isRunPayrollModalOpen}
         onClose={() => setIsRunPayrollModalOpen(false)}
@@ -140,7 +178,6 @@ export default function PayrollPage() {
         onSuccess={handlePayrollSuccess}
       />
 
-      {/* Reports Modal */}
       <PayrollReportsModal
         isOpen={isReportsModalOpen}
         onClose={() => setIsReportsModalOpen(false)}
@@ -148,7 +185,6 @@ export default function PayrollPage() {
         monthYear={selectedMonth}
       />
 
-      {/* Settings Modal */}
       <PayrollSettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}

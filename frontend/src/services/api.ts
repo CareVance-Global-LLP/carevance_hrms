@@ -1698,6 +1698,142 @@ export const payrollApi = {
   // Legacy Summary
   getSummary: (params?: { month?: string }) =>
     api.get<PayrollSummary>('/payroll/summary', { params }),
+
+  // ===== Statutory Filings =====
+  listFilings: (params?: Record<string, any>) =>
+    api.get<any>('/payroll/filings', { params }),
+  getFiling: (id: number) =>
+    api.get<any>(`/payroll/filings/${id}`),
+  downloadFiling: (id: number) =>
+    api.get(`/payroll/filings/${id}/download`, { responseType: 'blob' }),
+  generatePfEcr: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/pf-ecr', { payroll_run_id: payrollRunId }),
+  generateEsiChallan: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/esi-challan', { payroll_run_id: payrollRunId }),
+  generateForm24Q: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/form-24q', { payroll_run_id: payrollRunId }),
+  generateForm16: (payrollItemId: number) =>
+    api.post<any>('/payroll/filings/generate/form-16', { payroll_item_id: payrollItemId }),
+  generateForm12BA: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/form-12ba', { payroll_run_id: payrollRunId }),
+  generatePtReturn: (payrollRunId: number, state: string) =>
+    api.post<any>('/payroll/filings/generate/pt-return', { payroll_run_id: payrollRunId, state }),
+  generateLwfReturn: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/lwf-return', { payroll_run_id: payrollRunId }),
+  generateAllFilings: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/all', { payroll_run_id: payrollRunId }),
+
+  // ===== FBP =====
+  getFbpComponents: () =>
+    api.get<any>('/payroll/fbp/components'),
+  getFbpAllocations: (userId: number) =>
+    api.get<any>(`/payroll/fbp/allocations/${userId}`),
+  allocateFbp: (data: { user_id: number; fbp_component_id: number; amount: number }) =>
+    api.post<any>('/payroll/fbp/allocate', data),
+  submitFbpClaim: (data: Record<string, any>) =>
+    api.post<any>('/payroll/fbp/claims', data),
+  approveFbpClaim: (id: number, approvedAmount: number, monthYear?: string) =>
+    api.post<any>(`/payroll/fbp/claims/${id}/approve`, { approved_amount: approvedAmount, month_year: monthYear }),
+  rejectFbpClaim: (id: number, reason: string) =>
+    api.post<any>(`/payroll/fbp/claims/${id}/reject`, { reason }),
+
+  // ===== Perquisites =====
+  createPerquisite: (data: Record<string, any>) =>
+    api.post<any>('/payroll/perquisites', data),
+  getUserPerquisites: (userId: number) =>
+    api.get<any>(`/payroll/perquisites/user/${userId}`),
+
+  // ===== Tax Simulator =====
+  compareTaxRegimes: (data: { annual_ctc: number; exemptions?: Record<string, number>; is_metro?: boolean }) =>
+    api.post<any>('/payroll/tax-simulator/compare', data),
+  taxWhatIf: (data: { current_ctc: number; scenarios: Record<string, any>[] }) =>
+    api.post<any>('/payroll/tax-simulator/what-if', data),
+  calculateMonthlyTakeHome: (data: { annual_ctc: number; regime?: string; exemptions?: Record<string, number> }) =>
+    api.post<any>('/payroll/tax-simulator/monthly-take-home', data),
+
+  // ===== Salary Revision Letters =====
+  generateRevisionLetter: (data: { user_id: number; new_ctc: number; revision_type: string; reason: string }) =>
+    api.post<any>('/payroll/revision-letters', data),
+  getRevisionLetters: (userId?: number) =>
+    api.get<any>(userId ? `/payroll/revision-letters/user/${userId}` : '/payroll/revision-letters'),
+  acceptRevisionLetter: (id: number) =>
+    api.post<any>(`/payroll/revision-letters/${id}/accept`),
+  rejectRevisionLetter: (id: number) =>
+    api.post<any>(`/payroll/revision-letters/${id}/reject`),
+
+  // ===== Checklist =====
+  runPayrollValidation: (payrollRunId: number) =>
+    api.post<any>('/payroll/checklist/validate-run', { payroll_run_id: payrollRunId }),
+  getChecklistStatus: (runId: number) =>
+    api.get<any>(`/payroll/checklist/run/${runId}`),
+  resolveCheck: (checkId: number, resolution: string) =>
+    api.post<any>('/payroll/checklist/resolve', { check_id: checkId, resolution }),
+
+  // ===== Arrears =====
+  detectCtcArrears: (userId: number, currentMonthYear: string) =>
+    api.get<any>(`/payroll/arrears/detect/${userId}`, { params: { current_month_year: currentMonthYear } }),
+  calculateArrear: (data: { user_id: number; month_year: string; amount: number; reason: string }) =>
+    api.post<any>('/payroll/arrears/calculate', data),
+
+  // ===== Variable Pay =====
+  calculateVariablePay: (userId: number, payrollItemId: number) =>
+    api.post<any>('/payroll/variable-pay/calculate', { user_id: userId, payroll_item_id: payrollItemId }),
+
+  // ===== Reports =====
+  getPayrollRegister: (data: { month_year: string; filters?: Record<string, any> }) =>
+    api.post<any>('/payroll/reports/payroll-register', data),
+  getStatutoryRegister: (data: { month_year: string; type: string }) =>
+    api.post<any>('/payroll/reports/statutory-register', data),
+  getBankReconciliation: (monthYear: string) =>
+    api.post<any>('/payroll/reports/bank-reconciliation', { month_year: monthYear }),
+
+  // ===== Bank Integration =====
+  createTransferBatch: (payrollRunId: number, bankName?: string) =>
+    api.post<any>('/payroll/bank/create-batch', { payroll_run_id: payrollRunId, bank_name: bankName }),
+  processBatch: (batchId: number) =>
+    api.post<any>(`/payroll/bank/batches/${batchId}/process`),
+  generateBatchBankFile: (batchId: number, format?: string) =>
+    api.post<any>(`/payroll/bank/batches/${batchId}/file`, { format }),
+  initiatePaymentReversal: (data: { payroll_item_id: number; reason: string }) =>
+    api.post<any>('/payroll/bank/payment-reversal', data),
+
+  // ===== Formula Engine =====
+  evaluateFormula: (expression: string, variables?: Record<string, number>) =>
+    api.post<any>('/payroll/formula-engine/evaluate', { expression, variables }),
+  validateFormula: (expression: string) =>
+    api.post<any>('/payroll/formula-engine/validate', { expression }),
+
+  // ===== Pay Groups =====
+  listPayGroups: () =>
+    api.get<any>('/payroll/pay-groups'),
+  createPayGroup: (data: Record<string, any>) =>
+    api.post<any>('/payroll/pay-groups', data),
+
+  // ===== Compensation =====
+  listDailyWageStructures: () =>
+    api.get<any>('/payroll/compensation/daily-wage-structures'),
+  listCtcBands: () =>
+    api.get<any>('/payroll/compensation/ctc-bands'),
+  findCtcBand: (annualCtc: number) =>
+    api.post<any>('/payroll/compensation/find-ctc-band', { annual_ctc: annualCtc }),
+
+  // ===== Auto Process (One-Click Payroll - Keka/GreytHR-style) =====
+  quickProcessPayroll: (monthYear: string) =>
+    api.post<{ success: boolean; run: any; message: string }>('/payroll/auto/quick-process', { month_year: monthYear }),
+  processPayrollWithChecklist: (monthYear: string) =>
+    api.post<any>('/payroll/auto/process-with-checklist', { month_year: monthYear }),
+  quickValidatePayroll: (monthYear: string) =>
+    api.post<any>('/payroll/auto/quick-validate', { month_year: monthYear }),
+  detectPayrollChanges: (monthYear: string) =>
+    api.post<{ success: boolean; changes: Record<string, any>; has_changes: boolean }>('/payroll/auto/detect-changes', { month_year: monthYear }),
+  getPayrollDiff: (monthYear: string) =>
+    api.post<{ success: boolean; has_prev: boolean; diff: Record<string, any>; current: Record<string, any>; previous: Record<string, any> }>('/payroll/auto/diff', { month_year: monthYear }),
+  autoGenerateFilings: (runId: number) =>
+    api.post<{ success: boolean; filings_generated: number; filings: any[] }>('/payroll/auto/generate-filings', { run_id: runId }),
+  validatePayrollRun: (runId: number) =>
+    api.post<any>('/payroll/auto/validate-run', { run_id: runId }),
+  getAutoChecklistStatus: (runId: number) =>
+    api.get<any>(`/payroll/auto/checklist-status/${runId}`),
 };
 
 export default api;

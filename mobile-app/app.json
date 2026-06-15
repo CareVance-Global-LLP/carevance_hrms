@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "CareVance HRMS",
+    "slug": "carevance-hrms",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "carevance",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      },
+      "bundleIdentifier": "com.carevance.hrms",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Your location is used to mark attendance and verify you are within the geofence zone.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Background location is used for live GPS tracking during work hours.",
+        "NSCameraUsageDescription": "Camera is used for attendance selfie verification.",
+        "NSPhotoLibraryAddUsageDescription": "Photo library access is used to save payslip PDFs."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#2563eb"
+      },
+      "package": "com.carevance.hrms",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      "expo-camera",
+      "expo-secure-store",
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9993712d-7d7c-4256-8e4b-54fa349c186c"
+      }
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

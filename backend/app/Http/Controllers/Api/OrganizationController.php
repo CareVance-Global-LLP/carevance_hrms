@@ -123,11 +123,46 @@ class OrganizationController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        return response()->json(
-            \App\Models\User::where('organization_id', $organization->id)
-                ->orderBy('created_at', 'desc')
-                ->get()
-        );
+        $users = \App\Models\User::where('organization_id', $organization->id)
+            ->with([
+                'employeeProfile',
+                'employeeWorkInfo.department:id,name,slug',
+                'groups:id,name,slug',
+                'customRole',
+            ])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $payload = $users->map(function (\App\Models\User $user) {
+            $departmentName = (string) (
+                $user->employeeWorkInfo?->department?->name
+                ?? $user->groups->first()?->name
+                ?? ''
+            );
+
+            return array_merge($user->toArray(), [
+                'department' => trim($departmentName),
+                'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
+                'hierarchy_level' => $user->customRole?->hierarchy_level ?? match ($user->role) {
+                    'admin' => 10,
+                    'manager' => 50,
+                    'employee' => 100,
+                    default => 100,
+                },
+            ]);
+        });
+
+        return response()->json($payload);
+    }
+
+    public function myMembers()
+    {
+        $user = request()->user();
+        if (!$user || !$user->organization_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        return $this->members($user->organization_id);
     }
 
     public function invite(Request $request, int $id)
