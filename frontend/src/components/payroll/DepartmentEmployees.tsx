@@ -15,8 +15,6 @@ import {
   CheckSquare,
   Square,
   Loader2,
-  Save,
-  X
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -46,25 +44,16 @@ function EmployeeCard({
   onSelect,
   onClick,
   onProcess,
-  onCtcSaved,
   monthYear,
-  isSavingCtc,
-  onSaveCtc,
 }: {
   employee: PayrollDepartmentEmployee;
   isSelected: boolean;
   onSelect: () => void;
   onClick: () => void;
   onProcess: (e: React.MouseEvent) => void;
-  onCtcSaved?: () => void;
   monthYear: string;
-  isSavingCtc: boolean;
-  onSaveCtc: (userId: number, annualCtc: number) => Promise<void>;
 }) {
-  const [inlineCtc, setInlineCtc] = useState<string>('');
-  const [showInlineCtc, setShowInlineCtc] = useState(false);
-
-  const status = employee.payroll_status.is_processed 
+  const status = employee.payroll_status.is_processed
     ? (employee.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
     : 'pending';
 
@@ -98,15 +87,6 @@ function EmployeeCard({
   // CTC info
   const hasCTC = employee.annual_ctc && employee.annual_ctc > 0;
   const monthlyCTC = hasCTC ? (employee.annual_ctc! / 12) : 0;
-
-  const handleInlineSave = async () => {
-    const n = Number(inlineCtc);
-    if (!Number.isFinite(n) || n <= 0) return;
-    await onSaveCtc(employee.id, n);
-    setInlineCtc('');
-    setShowInlineCtc(false);
-    onCtcSaved?.();
-  };
 
   return (
     <SurfaceCard 
@@ -198,58 +178,6 @@ function EmployeeCard({
             ) : null}
           </div>
 
-          {/* Inline CTC entry (for pending employees without CTC) */}
-          {status === 'pending' && !hasCTC && (
-            <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              {!showInlineCtc ? (
-                <button
-                  onClick={() => setShowInlineCtc(true)}
-                  className="w-full flex items-center justify-between text-sm text-amber-700 hover:text-amber-800"
-                >
-                  <span className="flex items-center gap-2">
-                    <DollarSign className="h-4 w-4" />
-                    Set CTC inline
-                  </span>
-                  <span className="text-xs">→</span>
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-amber-700 font-medium">₹</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1000"
-                    autoFocus
-                    placeholder="Annual CTC"
-                    value={inlineCtc}
-                    onChange={(e) => setInlineCtc(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleInlineSave();
-                      if (e.key === 'Escape') { setShowInlineCtc(false); setInlineCtc(''); }
-                    }}
-                    className="flex-1 px-2 py-1 text-sm border border-amber-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={handleInlineSave}
-                    disabled={isSavingCtc || !inlineCtc}
-                    iconLeft={isSavingCtc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                  >
-                    Save
-                  </Button>
-                  <button
-                    onClick={() => { setShowInlineCtc(false); setInlineCtc(''); }}
-                    className="p-1 text-amber-600 hover:text-amber-800"
-                    title="Cancel"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Actions */}
           <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2">
             {status === 'pending' ? (
@@ -324,15 +252,6 @@ export default function DepartmentEmployees({
   });
   const queryClient = useQueryClient();
 
-  // Quick-save CTC mutation
-  const quickSaveCtcMutation = useMutation({
-    mutationFn: ({ userId, annualCtc }: { userId: number; annualCtc: number }) =>
-      payrollApi.quickSaveCtc(userId, { annual_ctc: annualCtc, month_year: monthYear }).then(r => r.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'department', departmentId, 'employees'] });
-    },
-  });
-
   // Bulk process mutation
   const processSelectedMutation = useMutation({
     mutationFn: (userIds: number[]) =>
@@ -350,10 +269,6 @@ export default function DepartmentEmployees({
       }
     },
   });
-
-  const handleSaveCtc = async (userId: number, annualCtc: number) => {
-    await quickSaveCtcMutation.mutateAsync({ userId, annualCtc });
-  };
 
   const handleProcessSelected = () => {
     if (selectedEmployees.size === 0) return;
@@ -609,12 +524,6 @@ export default function DepartmentEmployees({
                   onSelectEmployee(employee.id);
                 }}
                 monthYear={monthYear}
-                isSavingCtc={quickSaveCtcMutation.isPending}
-                onSaveCtc={handleSaveCtc}
-                onCtcSaved={() => {
-                  // After CTC is saved, the card should switch to "Process Payroll" state.
-                  setSelectedEmployees(prev => new Set(prev).add(employee.id));
-                }}
               />
             ))}
           </div>

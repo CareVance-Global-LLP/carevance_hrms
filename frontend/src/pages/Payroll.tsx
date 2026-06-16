@@ -1,23 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import PayrollDashboard from '@/components/payroll/PayrollDashboard';
-import PayrollCockpit from '@/components/payroll/PayrollCockpit';
-import PayrollWizard from '@/components/payroll/PayrollWizard';
 import DepartmentEmployees from '@/components/payroll/DepartmentEmployees';
 import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
 import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
 import RunPayrollModal from '@/components/payroll/RunPayrollModal';
-import QuickPayrollProcess from '@/components/payroll/QuickPayrollProcess';
 import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
-import Button from '@/components/ui/Button';
 
-type ViewMode = 'cockpit' | 'dashboard' | 'department' | 'employee' | 'quick-process' | 'wizard' | 'dept-templates';
+type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates';
 
 export default function PayrollPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('cockpit');
+  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number>(0);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number>(0);
   const [selectedMonth] = useState(() => {
@@ -43,7 +39,7 @@ export default function PayrollPage() {
   };
 
   const handleBackToDashboard = () => {
-    setViewMode('cockpit');
+    setViewMode('dashboard');
     setSelectedDepartmentId(0);
     setSelectedEmployeeId(0);
   };
@@ -53,38 +49,10 @@ export default function PayrollPage() {
     setSelectedEmployeeId(0);
   };
 
-  const handleOpenDepartmentTemplates = () => {
-    setViewMode('dept-templates');
-  };
-
-  useEffect(() => {
-    const handlePopState = () => {
-      if (viewMode === 'employee') {
-        handleBackToDepartment();
-      } else if (viewMode === 'department') {
-        handleBackToDashboard();
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [viewMode]);
-
   const handleOpenRunPayroll = (stats: PayrollStats, departments: any[]) => {
     setCurrentStats(stats);
     setDepartmentsList(departments);
     setIsRunPayrollModalOpen(true);
-  };
-
-  const handleOpenQuickProcess = () => {
-    setViewMode('quick-process');
-  };
-
-  const handleQuickProcessComplete = () => {
-    setViewMode('cockpit');
-  };
-
-  const handleCloseQuickProcess = () => {
-    setViewMode('cockpit');
   };
 
   const handleOpenReports = (stats?: PayrollStats) => {
@@ -96,9 +64,13 @@ export default function PayrollPage() {
     setIsSettingsModalOpen(true);
   };
 
+  const handleOpenDepartmentTemplates = () => {
+    setViewMode('dept-templates');
+  };
+
   const handlePayrollSuccess = () => {
     setIsRunPayrollModalOpen(false);
-    setViewMode('cockpit');
+    setViewMode('dashboard');
   };
 
   const handleSaveSettings = (settings: PayrollOrganizationSettings) => {
@@ -113,52 +85,17 @@ export default function PayrollPage() {
       />
 
       <div className="p-6">
-        {viewMode === 'cockpit' && (
-          <PayrollCockpit
-            monthYear={selectedMonth}
-            onStartWizard={() => setViewMode('wizard')}
-            onQuickProcess={handleOpenQuickProcess}
-            onOpenSettings={handleOpenSettings}
-            onOpenReports={() => handleOpenReports()}
-            onOpenLegacyDashboard={() => setViewMode('dashboard')}
+        {viewMode === 'dashboard' && (
+          <PayrollDashboard
+            onSelectDepartment={handleSelectDepartment}
+            onSelectEmployee={handleSelectEmployee}
+            onOpenRunPayroll={handleOpenRunPayroll}
             onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
           />
         )}
 
         {viewMode === 'dept-templates' && (
           <DepartmentTemplates onBack={handleBackToDashboard} />
-        )}
-
-        {viewMode === 'wizard' && (
-          <PayrollWizard
-            monthYear={selectedMonth}
-            onComplete={() => setViewMode('cockpit')}
-            onBack={() => setViewMode('cockpit')}
-          />
-        )}
-
-        {viewMode === 'quick-process' && (
-          <div className="max-w-3xl mx-auto">
-            <div className="mb-4">
-              <Button variant="ghost" onClick={handleCloseQuickProcess}>
-                ← Back to Dashboard
-              </Button>
-            </div>
-            <QuickPayrollProcess
-              monthYear={selectedMonth}
-              onComplete={handleQuickProcessComplete}
-              onClose={handleCloseQuickProcess}
-            />
-          </div>
-        )}
-
-        {viewMode === 'dashboard' && (
-          <PayrollDashboard
-            onSelectDepartment={handleSelectDepartment}
-            onSelectEmployee={handleSelectEmployee}
-            onOpenRunPayroll={handleOpenRunPayroll}
-            onOpenQuickProcess={handleOpenQuickProcess}
-          />
         )}
 
         {viewMode === 'department' && (

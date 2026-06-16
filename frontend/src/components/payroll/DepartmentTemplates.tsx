@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Building2, Save, Trash2, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Building2, Save, AlertCircle, CheckCircle2, Loader2, User, X } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 
 const INDIAN_STATES = [
   { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
@@ -32,35 +31,8 @@ interface DepartmentTemplatesProps {
   onBack: () => void;
 }
 
-type Template = {
-  id: number;
-  organization_id: number;
-  department_id: number;
-  default_annual_ctc: number | string;
-  basic_percentage: number | string;
-  hra_percentage: number | string;
-  da_percentage: number | string;
-  conveyance_allowance: number | string;
-  pf_enabled: boolean;
-  esi_enabled: boolean;
-  pt_enabled: boolean;
-  tds_enabled: boolean;
-  lwf_enabled: boolean;
-  pf_employee_percentage: number | string;
-  pf_employer_percentage: number | string;
-  pf_wage_cap: number | string;
-  esi_employee_percentage: number | string;
-  esi_employer_percentage: number | string;
-  esi_threshold: number | string;
-  pt_state: string;
-  tax_regime: string;
-  is_metro_city: boolean;
-  is_active: boolean;
-  department?: { id: number; name: string; slug: string };
-};
-
-const emptyTemplate: Omit<Template, 'id' | 'organization_id' | 'department_id' | 'department'> = {
-  default_annual_ctc: 0,
+const emptyEmployeeForm = {
+  annual_ctc: 0,
   basic_percentage: 40,
   hra_percentage: 50,
   da_percentage: 0,
@@ -84,77 +56,118 @@ const emptyTemplate: Omit<Template, 'id' | 'organization_id' | 'department_id' |
 
 export default function DepartmentTemplates({ onBack }: DepartmentTemplatesProps) {
   const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
-  const [form, setForm] = useState<typeof emptyTemplate>(emptyTemplate);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+
+  const [empForm, setEmpForm] = useState({ ...emptyEmployeeForm });
+
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  // List departments for the org
+  const { data: deptData, isLoading: deptsLoading } = useQuery({
     queryKey: ['payroll', 'department-templates'],
     queryFn: () => payrollApi.listDepartmentTemplates().then(r => r.data),
   });
 
-  const existingTemplates: Template[] = data?.templates || [];
-  const missingDepts: Array<{ id: number; name: string; slug: string }> = data?.departments_without_template || [];
-
-  const allDepartments = useMemo(() => {
-    const fromExisting = existingTemplates.map(t => ({ id: t.department_id, name: t.department?.name || `Dept #${t.department_id}`, slug: t.department?.slug || '' }));
-    const fromMissing = missingDepts;
+  const existingTemplates = (deptData?.templates || []) as Array<any>;
+  const departmentsList = useMemo(() => {
+    const covered = existingTemplates.map(t => ({
+      id: t.department_id,
+      name: t.department?.name || `Dept #${t.department_id}`,
+      has_seed: true,
+    }));
+    const missing = (deptData?.departments_without_template || []).map((d: any) => ({
+      id: d.id,
+      name: d.name,
+      has_seed: false,
+    }));
+    const all = [...covered, ...missing];
     const seen = new Set<number>();
-    const out: Array<{ id: number; name: string; slug: string }> = [];
-    for (const d of [...fromExisting, ...fromMissing]) {
-      if (!seen.has(d.id)) {
-        seen.add(d.id);
-        out.push(d);
-      }
-    }
-    return out.sort((a, b) => a.name.localeCompare(b.name));
-  }, [existingTemplates, missingDepts]);
+    return all.filter(d => {
+      if (seen.has(d.id)) return false;
+      seen.add(d.id);
+      return true;
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }, [deptData]);
 
+  // Auto-select first dept
   useEffect(() => {
-    if (selectedDeptId == null && allDepartments.length > 0) {
-      setSelectedDeptId(allDepartments[0].id);
+    if (selectedDeptId == null && departmentsList.length > 0) {
+      setSelectedDeptId(departmentsList[0].id);
     }
-  }, [allDepartments, selectedDeptId]);
+  }, [departmentsList, selectedDeptId]);
 
+  // List employees in the selected department
+  const { data: empData, isLoading: empsLoading } = useQuery({
+    queryKey: ['payroll', 'dept-employees', selectedDeptId],
+    queryFn: () => {
+      if (selectedDeptId == null) return null;
+      return payrollApi.getDepartmentEmployees(selectedDeptId, {}).then(r => r.data);
+    },
+    enabled: selectedDeptId != null,
+  });
+
+  const employees = (empData?.employees || []) as Array<any>;
+
+  // Filter by search
+  const filteredEmployees = useMemo(() => {
+    if (!searchQuery) return employees;
+    const q = searchQuery.toLowerCase();
+    return employees.filter(e =>
+      (e.name || '').toLowerCase().includes(q) ||
+      (e.email || '').toLowerCase().includes(q) ||
+      (e.employee_code || '').toLowerCase().includes(q),
+    );
+  }, [employees, searchQuery]);
+
+  // Reset employee selection when dept changes
   useEffect(() => {
-    if (selectedDeptId == null) return;
-    const existing = existingTemplates.find(t => t.department_id === selectedDeptId);
-    if (existing) {
-      setForm({
-        default_annual_ctc: Number(existing.default_annual_ctc ?? 0),
-        basic_percentage: Number(existing.basic_percentage ?? 40),
-        hra_percentage: Number(existing.hra_percentage ?? 50),
-        da_percentage: Number(existing.da_percentage ?? 0),
-        conveyance_allowance: Number(existing.conveyance_allowance ?? 1600),
-        pf_enabled: !!existing.pf_enabled,
-        esi_enabled: !!existing.esi_enabled,
-        pt_enabled: !!existing.pt_enabled,
-        tds_enabled: !!existing.tds_enabled,
-        lwf_enabled: !!existing.lwf_enabled,
-        pf_employee_percentage: Number(existing.pf_employee_percentage ?? 12),
-        pf_employer_percentage: Number(existing.pf_employer_percentage ?? 12),
-        pf_wage_cap: Number(existing.pf_wage_cap ?? 15000),
-        esi_employee_percentage: Number(existing.esi_employee_percentage ?? 0.75),
-        esi_employer_percentage: Number(existing.esi_employer_percentage ?? 3.25),
-        esi_threshold: Number(existing.esi_threshold ?? 21000),
-        pt_state: existing.pt_state ?? 'maharashtra',
-        tax_regime: existing.tax_regime ?? 'new',
-        is_metro_city: !!existing.is_metro_city,
-        is_active: existing.is_active !== false,
-      });
-    } else {
-      setForm(emptyTemplate);
-    }
+    setSelectedEmployeeId(null);
     setSavedMessage(null);
     setErrorMessage(null);
-  }, [selectedDeptId, existingTemplates]);
+  }, [selectedDeptId]);
 
-  const saveMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => payrollApi.upsertDepartmentTemplate(selectedDeptId!, data).then(r => r.data),
+  // Load employee form when an employee is selected
+  useEffect(() => {
+    if (selectedEmployeeId == null) return;
+    const e = employees.find(emp => emp.id === selectedEmployeeId);
+    if (!e) return;
+    setEmpForm({
+      annual_ctc: Number(e.annual_ctc ?? 0),
+      basic_percentage: Number(e.basic_percentage ?? 40),
+      hra_percentage: Number(e.hra_percentage ?? 50),
+      da_percentage: Number(e.da_percentage ?? 0),
+      conveyance_allowance: Number(e.conveyance_allowance ?? 1600),
+      pf_enabled: e.pf_enabled !== false,
+      esi_enabled: e.esi_enabled !== false,
+      pt_enabled: e.pt_enabled !== false,
+      tds_enabled: e.tds_enabled !== false,
+      lwf_enabled: !!e.lwf_enabled,
+      pf_employee_percentage: Number(e.pf_employee_percentage ?? 12),
+      pf_employer_percentage: Number(e.pf_employer_percentage ?? 12),
+      pf_wage_cap: Number(e.pf_wage_cap ?? 15000),
+      esi_employee_percentage: Number(e.esi_employee_percentage ?? 0.75),
+      esi_employer_percentage: Number(e.esi_employer_percentage ?? 3.25),
+      esi_threshold: Number(e.esi_threshold ?? 21000),
+      pt_state: e.pt_state ?? 'maharashtra',
+      tax_regime: e.tax_regime ?? 'new',
+      is_metro_city: e.is_metro_city !== false,
+      is_active: e.is_active !== false,
+    });
+    setSavedMessage(null);
+    setErrorMessage(null);
+  }, [selectedEmployeeId, employees]);
+
+  // Save employee template
+  const saveEmployeeMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      payrollApi.updateEmployeeTemplate(selectedEmployeeId!, data).then(r => r.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'department-templates'] });
-      setSavedMessage('Department template saved. New employees in this department will inherit these defaults.');
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'dept-employees', selectedDeptId] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'department-employees', selectedDeptId] });
+      setSavedMessage('Employee template saved.');
       setErrorMessage(null);
     },
     onError: (err: any) => {
@@ -163,58 +176,47 @@ export default function DepartmentTemplates({ onBack }: DepartmentTemplatesProps
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: () => payrollApi.deleteDepartmentTemplate(selectedDeptId!).then(r => r.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'department-templates'] });
-      setSavedMessage(null);
-    },
-  });
+  const selectedEmployee = employees.find(e => e.id === selectedEmployeeId) || null;
+  const selectedDept = departmentsList.find(d => d.id === selectedDeptId) || null;
 
-  const existing = existingTemplates.find(t => t.department_id === selectedDeptId);
-  const isExisting = !!existing;
-
-  const handleSave = () => {
-    if (selectedDeptId == null) return;
-    saveMutation.mutate(form as unknown as Record<string, unknown>);
-  };
-
-  const handleDelete = () => {
-    if (!isExisting) return;
-    if (!window.confirm('Remove this department template? Existing employee templates are NOT affected — only future new-hires will stop inheriting these defaults.')) {
-      return;
-    }
-    deleteMutation.mutate();
-  };
+  const formatCtc = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <PageHeader
-        title="Department Salary Templates"
-        description="Set default salary components and statutory toggles per department. New employees inherit these defaults; existing templates are not retroactively changed."
-        actions={
-          <Button variant="ghost" onClick={onBack}>
-            ← Back to Payroll
+    <div className="max-w-6xl mx-auto space-y-6">
+      <div>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            iconLeft={<ArrowLeft className="h-4 w-4" />}
+          >
+            Back to Payroll
           </Button>
-        }
-      />
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Salary Templates</h1>
+        </div>
+        <p className="mt-1 max-w-3xl text-xs text-slate-500">
+          Pick a department, then an employee, to edit their salary structure. Department-level templates only seed defaults for new hires.
+        </p>
+      </div>
 
-      {isLoading ? (
+      {deptsLoading ? (
         <div className="flex items-center justify-center h-32">
           <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
         </div>
-      ) : allDepartments.length === 0 ? (
+      ) : departmentsList.length === 0 ? (
         <SurfaceCard className="p-6 text-center text-slate-500">
           <Building2 className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-          <p>No departments found. Create departments first to set up templates.</p>
+          <p>No departments found. Create departments first to manage employee templates.</p>
         </SurfaceCard>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left rail: departments */}
           <SurfaceCard className="p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Departments</h3>
             <div className="space-y-1 max-h-[600px] overflow-y-auto">
-              {allDepartments.map(d => {
-                const covered = existingTemplates.some(t => t.department_id === d.id);
+              {departmentsList.map(d => {
+                const empCount = d.id === selectedDeptId ? employees.length : null;
                 return (
                   <button
                     key={d.id}
@@ -225,11 +227,12 @@ export default function DepartmentTemplates({ onBack }: DepartmentTemplatesProps
                         : 'hover:bg-slate-50 text-slate-700 border border-transparent'
                     }`}
                   >
-                    <span className="truncate">{d.name}</span>
-                    {covered ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
-                    ) : (
-                      <span className="text-[10px] uppercase tracking-wide text-amber-600 flex-shrink-0">no template</span>
+                    <span className="truncate flex items-center gap-2">
+                      <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+                      {d.name}
+                    </span>
+                    {empCount != null && (
+                      <span className="text-[10px] text-slate-400 flex-shrink-0">{empCount}</span>
                     )}
                   </button>
                 );
@@ -237,147 +240,244 @@ export default function DepartmentTemplates({ onBack }: DepartmentTemplatesProps
             </div>
           </SurfaceCard>
 
-          <SurfaceCard className="p-6 lg:col-span-2 space-y-4">
-            {!isExisting && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                <div className="text-sm text-amber-800">
-                  No template for this department yet. Saving will create one. New employees added to this department will inherit these defaults.
+          {/* Middle column: employees in the selected department */}
+          <SurfaceCard className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-700">
+                {selectedDept ? `${selectedDept.name} — Employees` : 'Employees'}
+              </h3>
+            </div>
+
+            {selectedDept && (
+              <div className="relative mb-3">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search employees…"
+                  className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
+
+            <div className="space-y-1 max-h-[540px] overflow-y-auto">
+              {!selectedDept ? (
+                <p className="text-sm text-slate-400 text-center py-6">Select a department to view employees.</p>
+              ) : empsLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                 </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <FieldLabel>Default Annual CTC (₹)</FieldLabel>
-                <TextInput
-                  type="number"
-                  value={String(form.default_annual_ctc)}
-                  onChange={e => setForm({ ...form, default_annual_ctc: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-              <div>
-                <FieldLabel>Basic Salary (% of CTC)</FieldLabel>
-                <TextInput
-                  type="number"
-                  value={String(form.basic_percentage)}
-                  onChange={e => setForm({ ...form, basic_percentage: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-              <div>
-                <FieldLabel>HRA (% of Basic)</FieldLabel>
-                <TextInput
-                  type="number"
-                  value={String(form.hra_percentage)}
-                  onChange={e => setForm({ ...form, hra_percentage: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-              <div>
-                <FieldLabel>Conveyance Allowance (₹)</FieldLabel>
-                <TextInput
-                  type="number"
-                  value={String(form.conveyance_allowance)}
-                  onChange={e => setForm({ ...form, conveyance_allowance: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-              <div>
-                <FieldLabel>DA (% of CTC)</FieldLabel>
-                <TextInput
-                  type="number"
-                  value={String(form.da_percentage)}
-                  onChange={e => setForm({ ...form, da_percentage: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-              <div>
-                <FieldLabel>State (Professional Tax)</FieldLabel>
-                <SelectInput
-                  value={form.pt_state}
-                  onChange={e => setForm({ ...form, pt_state: e.target.value })}
-                >
-                  {INDIAN_STATES.map(s => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </SelectInput>
-              </div>
-              <div>
-                <FieldLabel>Tax Regime</FieldLabel>
-                <SelectInput
-                  value={form.tax_regime}
-                  onChange={e => setForm({ ...form, tax_regime: e.target.value })}
-                >
-                  <option value="new">New Regime</option>
-                  <option value="old">Old Regime</option>
-                </SelectInput>
-              </div>
-              <div>
-                <FieldLabel>ESI Threshold (₹/mo)</FieldLabel>
-                <TextInput
-                  type="number"
-                  value={String(form.esi_threshold)}
-                  onChange={e => setForm({ ...form, esi_threshold: parseFloat(e.target.value) || 0 })}
-                />
-              </div>
-            </div>
-
-            <div className="border-t border-slate-200 pt-4">
-              <h4 className="text-sm font-medium text-slate-700 mb-3">Statutory Toggles</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {([
-                  ['pf_enabled', 'Provident Fund'],
-                  ['esi_enabled', 'ESI'],
-                  ['pt_enabled', 'Professional Tax'],
-                  ['tds_enabled', 'TDS'],
-                  ['lwf_enabled', 'LWF'],
-                  ['is_metro_city', 'Metro City'],
-                  ['is_active', 'Active'],
-                ] as const).map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={!!form[key]}
-                      onChange={e => setForm({ ...form, [key]: e.target.checked })}
-                      className="rounded border-slate-300"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {savedMessage && (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800">
-                {savedMessage}
-              </div>
-            )}
-            {errorMessage && (
-              <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-sm text-rose-800">
-                {errorMessage}
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              {isExisting && (
-                <Button
-                  variant="ghost"
-                  onClick={handleDelete}
-                  iconLeft={<Trash2 className="h-4 w-4" />}
-                  disabled={deleteMutation.isPending}
-                >
-                  Remove template
-                </Button>
+              ) : filteredEmployees.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-6">No employees in this department.</p>
+              ) : (
+                filteredEmployees.map((e: any) => {
+                  const hasCtc = e.annual_ctc && e.annual_ctc > 0;
+                  return (
+                    <button
+                      key={e.id}
+                      onClick={() => setSelectedEmployeeId(e.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
+                        selectedEmployeeId === e.id
+                          ? 'bg-blue-50 text-blue-900 border border-blue-200'
+                          : 'hover:bg-slate-50 text-slate-700 border border-transparent'
+                      }`}
+                    >
+                      <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-100 to-violet-100 flex items-center justify-center flex-shrink-0">
+                        {e.avatar ? (
+                          <img src={e.avatar} alt={e.name} className="h-8 w-8 rounded-full" />
+                        ) : (
+                          <span className="text-xs font-semibold text-blue-600">
+                            {(e.name || '?').charAt(0)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{e.name}</div>
+                        <div className="text-xs text-slate-500 truncate">
+                          {e.designation || e.email}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {hasCtc ? (
+                          <>
+                            <div className="text-xs font-semibold text-slate-900">{formatCtc(e.annual_ctc)}</div>
+                            <div className="text-[10px] text-emerald-600">CTC set</div>
+                          </>
+                        ) : (
+                          <div className="text-[10px] text-amber-600">No CTC</div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
               )}
-              <Button
-                variant="primary"
-                onClick={handleSave}
-                disabled={saveMutation.isPending}
-                iconLeft={saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              >
-                {saveMutation.isPending ? 'Saving…' : isExisting ? 'Update template' : 'Create template'}
-              </Button>
             </div>
+          </SurfaceCard>
+
+          {/* Right column: selected employee template editor */}
+          <SurfaceCard className="p-6 lg:col-span-2 space-y-4">
+            {!selectedEmployee ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center text-slate-500">
+                <User className="h-10 w-10 mb-3 text-slate-300" />
+                <p className="font-medium">Select an employee</p>
+                <p className="text-sm text-slate-400 mt-1">
+                  {selectedDept
+                    ? 'Pick someone from the employees list to edit their salary structure.'
+                    : 'Pick a department first, then choose an employee.'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">{selectedEmployee.name}</h3>
+                    <p className="text-sm text-slate-500">
+                      {selectedEmployee.designation || selectedEmployee.email}
+                      {selectedEmployee.employee_code ? ` · ${selectedEmployee.employee_code}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedEmployeeId(null)}
+                    className="p-1 text-slate-400 hover:text-slate-600"
+                    title="Close editor"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {!selectedEmployee.annual_ctc || selectedEmployee.annual_ctc <= 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-amber-800">
+                      This employee doesn't have a CTC set yet. Saving the form below will create their template and apply the values.
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel>Annual CTC (₹)</FieldLabel>
+                    <TextInput
+                      type="number"
+                      value={String(empForm.annual_ctc)}
+                      onChange={e => setEmpForm({ ...empForm, annual_ctc: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Basic Salary (% of CTC)</FieldLabel>
+                    <TextInput
+                      type="number"
+                      value={String(empForm.basic_percentage)}
+                      onChange={e => setEmpForm({ ...empForm, basic_percentage: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>HRA (% of Basic)</FieldLabel>
+                    <TextInput
+                      type="number"
+                      value={String(empForm.hra_percentage)}
+                      onChange={e => setEmpForm({ ...empForm, hra_percentage: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Conveyance Allowance (₹)</FieldLabel>
+                    <TextInput
+                      type="number"
+                      value={String(empForm.conveyance_allowance)}
+                      onChange={e => setEmpForm({ ...empForm, conveyance_allowance: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>DA (% of CTC)</FieldLabel>
+                    <TextInput
+                      type="number"
+                      value={String(empForm.da_percentage)}
+                      onChange={e => setEmpForm({ ...empForm, da_percentage: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>State (Professional Tax)</FieldLabel>
+                    <SelectInput
+                      value={empForm.pt_state}
+                      onChange={e => setEmpForm({ ...empForm, pt_state: e.target.value })}
+                    >
+                      {INDIAN_STATES.map(s => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>Tax Regime</FieldLabel>
+                    <SelectInput
+                      value={empForm.tax_regime}
+                      onChange={e => setEmpForm({ ...empForm, tax_regime: e.target.value })}
+                    >
+                      <option value="new">New Regime</option>
+                      <option value="old">Old Regime</option>
+                    </SelectInput>
+                  </div>
+                  <div>
+                    <FieldLabel>ESI Threshold (₹/mo)</FieldLabel>
+                    <TextInput
+                      type="number"
+                      value={String(empForm.esi_threshold)}
+                      onChange={e => setEmpForm({ ...empForm, esi_threshold: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 pt-4">
+                  <h4 className="text-sm font-medium text-slate-700 mb-3">Statutory Toggles</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {([
+                      ['pf_enabled', 'Provident Fund'],
+                      ['esi_enabled', 'ESI'],
+                      ['pt_enabled', 'Professional Tax'],
+                      ['tds_enabled', 'TDS'],
+                      ['lwf_enabled', 'LWF'],
+                      ['is_metro_city', 'Metro City'],
+                      ['is_active', 'Active'],
+                    ] as const).map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={!!empForm[key]}
+                          onChange={e => setEmpForm({ ...empForm, [key]: e.target.checked })}
+                          className="rounded border-slate-300"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {savedMessage && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800">
+                    {savedMessage}
+                  </div>
+                )}
+                {errorMessage && (
+                  <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-sm text-rose-800">
+                    {errorMessage}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <Button
+                    variant="primary"
+                    onClick={() => saveEmployeeMutation.mutate(empForm as unknown as Record<string, unknown>)}
+                    disabled={saveEmployeeMutation.isPending}
+                    iconLeft={saveEmployeeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  >
+                    {saveEmployeeMutation.isPending ? 'Saving…' : 'Save employee template'}
+                  </Button>
+                </div>
+              </>
+            )}
           </SurfaceCard>
         </div>
       )}
+
     </div>
   );
 }
