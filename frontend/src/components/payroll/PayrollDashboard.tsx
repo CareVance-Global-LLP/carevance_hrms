@@ -12,7 +12,6 @@ import {
   ArrowRight,
   Clock,
   Briefcase,
-  Zap,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -30,7 +29,6 @@ interface PayrollDashboardProps {
   onSelectDepartment: (departmentId: number) => void;
   onSelectEmployee: (employeeId: number) => void;
   onOpenRunPayroll: (stats: PayrollStats, departments: PayrollDepartment[]) => void;
-  onOpenQuickProcess?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -184,8 +182,10 @@ function QuickActionCard({
 export default function PayrollDashboard({
   onSelectDepartment,
   onOpenRunPayroll,
-  onOpenQuickProcess,
 }: PayrollDashboardProps) {
+  // onSelectEmployee is declared in the interface so the parent (Payroll.tsx)
+  // can still wire it; the legacy dashboard's current widgets don't drill into
+  // a single employee, so we don't destructure it here.
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -261,9 +261,6 @@ export default function PayrollDashboard({
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <Button variant="secondary" iconLeft={<Zap className="h-4 w-4" />} onClick={onOpenQuickProcess}>
-              Quick Process
-            </Button>
             <Button
               variant="primary"
               iconLeft={<Play className="h-4 w-4" />}
