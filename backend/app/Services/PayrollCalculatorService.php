@@ -10,6 +10,115 @@ use Carbon\Carbon;
 
 class PayrollCalculatorService
 {
+    public function calculatePayroll(
+        float $annualCtc,
+        string $stateCode = 'maharashtra',
+        bool $isMetroCity = true,
+        string $taxRegime = 'new',
+        array $customConfig = [],
+        array $annualTaxExemptions = []
+    ): array {
+        $monthlyCtc = $annualCtc / 12;
+
+        // Default config
+        $basicPercentage = $customConfig['basic_percentage'] ?? 0.40;
+        $hraPercentageOfBasic = $customConfig['hra_percentage_of_basic'] ?? 0.50;
+        $conveyanceAllowance = $customConfig['conveyance_allowance'] ?? 1600;
+
+        $pfEnabled = $customConfig['pf_enabled'] ?? true;
+        $esiEnabled = $customConfig['esi_enabled'] ?? true;
+        $ptEnabled = $customConfig['pt_enabled'] ?? true;
+        $tdsEnabled = $customConfig['tds_enabled'] ?? true;
+
+        // Build earnings
+        $basic = round($monthlyCtc * $basicPercentage, 2);
+        $hra = round($basic * $hraPercentageOfBasic, 2);
+        $conveyance = (float) $conveyanceAllowance;
+        $specialAllowance = round($monthlyCtc - $basic - $hra - $conveyance, 2);
+        $gross = $basic + $hra + $conveyance + $specialAllowance;
+
+        // Deductions
+        $pfEmployee = $pfEnabled ? $this->calculateEmployeePF($basic) : 0;
+        $esiEmployee = $esiEnabled && $gross <= 21000 ? round($gross * 0.0075, 2) : 0;
+        $pt = $ptEnabled ? $this->calculatePT($gross, $stateCode) : 0;
+
+        // TDS
+        $annualGross = $gross * 12;
+        if ($taxRegime === 'old') {
+            $taxResult = $this->calculateOldRegimeTax($annualGross, $annualTaxExemptions);
+        } else {
+            $taxResult = $this->calculateNewRegimeTax($annualGross, $annualTaxExemptions);
+        }
+        $monthlyTds = $tdsEnabled ? round($taxResult['total_tax'] / 12, 2) : 0;
+
+        $totalDeductions = round($pfEmployee + $esiEmployee + $pt + $monthlyTds, 2);
+        $netPay = round($gross - $totalDeductions, 2);
+
+        // Employer contributions
+        $pfEmployer = $pfEnabled ? $this->calculateEmployerPF($basic) : 0;
+        $eps = $pfEnabled ? round(min($basic, 15000) * 0.0833, 2) : 0;
+        $epf = round($pfEmployer - $eps, 2);
+        $esiEmployer = $esiEnabled && $gross <= 21000 ? round($gross * 0.0325, 2) : 0;
+        $gratuity = round($basic * 0.0481, 2);
+
+        $pfWages = min($basic, 15000);
+        $pfCapApplied = $basic > 15000;
+
+        return [
+            'monthly' => [
+                'ctc' => $monthlyCtc,
+                'gross' => $gross,
+                'net' => $netPay,
+                'total_deductions' => $totalDeductions,
+            ],
+            'annual' => [
+                'ctc' => $annualCtc,
+                'gross' => round($gross * 12, 2),
+                'net' => round($netPay * 12, 2),
+            ],
+            'components' => [
+                'earnings' => [
+                    'basic' => $basic,
+                    'hra' => $hra,
+                    'conveyance' => $conveyance,
+                    'special_allowance' => $specialAllowance,
+                ],
+                'deductions' => [
+                    'pf_employee' => $pfEmployee,
+                    'esi_employee' => $esiEmployee,
+                    'pt' => $pt,
+                    'tds' => $monthlyTds,
+                ],
+                'employer_contributions' => [
+                    'pf_employer' => $pfEmployer,
+                    'eps' => $eps,
+                    'epf' => $epf,
+                    'esi_employer' => $esiEmployer,
+                    'gratuity' => $gratuity,
+                ],
+            ],
+            'breakdown' => [
+                'pf_wages' => $pfWages,
+                'pf_cap_applied' => $pfCapApplied,
+                'esi_applicable' => $gross <= 21000,
+                'tax_regime' => $taxRegime,
+                'state_code' => $stateCode,
+                'is_metro_city' => $isMetroCity,
+            ],
+        ];
+    }
+
+    public function calculateEmployeePF(float $basicWages): float
+    {
+        $wageBase = min($basicWages, 15000);
+        return round($wageBase * 0.12, 2);
+    }
+
+    public function calculateEmployerPF(float $basicWages): float
+    {
+        $wageBase = min($basicWages, 15000);
+        return round($wageBase * 0.12, 2);
+    }
     public function calculatePT(float $gross, string $state = 'maharashtra'): float
     {
         $ptSlabs = [
@@ -174,6 +283,19 @@ class PayrollCalculatorService
         $year = $now->year;
         $month = $now->month;
         return $month >= 4 ? "$year-" . ($year + 1) : ($year - 1) . "-$year";
+    }
+
+    public function calculateLeaveEncashment(int $leaveBalance, float $monthlyGross): float
+    {
+        $daysInMonth = 30;
+        $dailyRate = $monthlyGross / $daysInMonth;
+        return round($dailyRate * $leaveBalance, 2);
+    }
+
+    public function calculateGratuityForSettlement(float $basicSalary, float $yearsOfService): float
+    {
+        $gratuityPerYear = ($basicSalary * 15) / 26;
+        return round($gratuityPerYear * $yearsOfService, 2);
     }
 
     public function resolveSalaryFormula(int $templateId, array $context = []): array

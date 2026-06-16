@@ -218,8 +218,9 @@ class PayrollDepartmentController extends Controller
                         'avatar' => $user->avatar,
                         'employee_code' => $user->employeeWorkInfo?->employee_code ?? null,
                         'designation' => $user->employeeWorkInfo?->designation ?? null,
+                        'department' => $user->groups->first()?->name ?? null,
                         'joining_date' => $user->employeeWorkInfo?->joining_date ?? null,
-                        
+
                         // Time Tracking Data (with safe numeric values)
                         'time_tracking' => $safeTimeData,
                         

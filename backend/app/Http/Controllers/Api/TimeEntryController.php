@@ -278,6 +278,11 @@ class TimeEntryController extends Controller
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
             'accuracy' => 'nullable|numeric|min:0',
+            // Optional client-supplied stop timestamp. The offline sync engine
+            // posts this so a session that was buffered offline can be closed
+            // with the original click-time instead of "right now" (which can
+            // be much later for long offline windows).
+            'ended_at' => 'nullable|date',
         ]);
 
         $user = $request->user();
@@ -297,7 +302,14 @@ class TimeEntryController extends Controller
             return response()->json(['message' => 'No running timer found'], 404);
         }
 
-        $stoppedAt = now();
+        // For idle auto-stop we always trust the server's clock (the request is
+        // server-driven). For a manual stop the client may supply an ended_at
+        // (the offline sync engine does this to keep the recorded duration
+        // honest). The resolver rejects client timestamps that would lead to
+        // a negative duration or are obviously bogus.
+        $stoppedAt = $request->boolean('auto_stopped_for_idle')
+            ? now()
+            : $this->resolveStopTimestamp($request, $runningEntries);
         $idleContext = null;
         $shouldSendIdleEmail = false;
 
@@ -565,6 +577,62 @@ class TimeEntryController extends Controller
 
                 $query->where('timer_slot', $slot);
             });
+    }
+
+    /**
+     * Pick the effective stop timestamp for a manual stop request. The client
+     * may include an `ended_at` (the offline sync engine does this) so that a
+     * session that ran while the device was offline is closed with the
+     * original click-time instead of "now". We always fall back to the server
+     * clock if the client value would lead to a negative duration or sits in
+     * the future.
+     */
+    private function resolveStopTimestamp(Request $request, Collection $runningEntries): Carbon
+    {
+        $now = now();
+        $rawEndedAt = $request->input('ended_at');
+        if (! $rawEndedAt) {
+            return $now;
+        }
+
+        try {
+            $candidate = ExternalTimestamp::parseToAppTimezone($rawEndedAt);
+        } catch (\Throwable $e) {
+            Log::warning('Stop: rejected ended_at — could not parse.', [
+                'ended_at' => $rawEndedAt,
+                'error' => $e->getMessage(),
+            ]);
+            return $now;
+        }
+
+        // 5-minute future skew tolerance covers clock drift between client
+        // and server. Anything further out is rejected.
+        if ($candidate->greaterThan($now->copy()->addMinutes(5))) {
+            Log::warning('Stop: rejected ended_at — in the future.', [
+                'ended_at' => $rawEndedAt,
+                'server_now' => $now->toIso8601String(),
+            ]);
+            return $now;
+        }
+
+        // The client value must not be earlier than any running entry's
+        // start_time, otherwise the entry would end up with a negative
+        // duration. Fall back to now() and log.
+        foreach ($runningEntries as $entry) {
+            $entryStart = $entry->start_time instanceof Carbon
+                ? $entry->start_time
+                : Carbon::parse($entry->start_time);
+            if ($candidate->lessThan($entryStart)) {
+                Log::warning('Stop: rejected ended_at — earlier than entry start_time.', [
+                    'ended_at' => $rawEndedAt,
+                    'entry_id' => $entry->id,
+                    'entry_start_time' => $entryStart->toIso8601String(),
+                ]);
+                return $now;
+            }
+        }
+
+        return $candidate;
     }
 
     private function closeRunningEntries(Collection $runningEntries, Carbon $endedAt): void

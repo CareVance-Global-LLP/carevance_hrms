@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi } from '@/services/api';
+import { startTimerOfflineAware, stopTimerOfflineAware } from '@/services/offlineApiWrapper';
 import {
   ACTIVE_TIMER_KEY,
   armAutoStart,
@@ -134,6 +135,51 @@ const restoreTimerSnapshot = (
     localStorage.removeItem(ACTIVE_TIMER_KEY);
     return null;
   }
+};
+
+// Adapt the offline-aware wrapper's result into the axios-like { data: {...} }
+// shape that the rest of the timer code reads. When the action was buffered
+// for offline sync we synthesize a local placeholder entry so the UI can keep
+// rendering without crashing; the real record will land when the sync engine
+// posts to the server.
+const adaptTimerStartResult = (
+  result: { success: boolean; data?: any; offline?: boolean; error?: string },
+  fallback: { project_id?: number | null; task_id?: number | null; timer_slot?: 'primary' | 'secondary' },
+) => {
+  if (result.offline) {
+    return {
+      data: {
+        id: `offline-${Date.now()}`,
+        duration: 0,
+        start_time: new Date().toISOString(),
+        project_id: fallback.project_id ?? null,
+        task_id: fallback.task_id ?? null,
+        timer_slot: fallback.timer_slot || 'primary',
+        description: '',
+      },
+    };
+  }
+  return { data: result.data };
+};
+
+const adaptTimerStopResult = (
+  result: { success: boolean; data?: any; offline?: boolean; error?: string },
+  fallback: { id?: number | string | null; timer_slot?: 'primary' | 'secondary' },
+) => {
+  if (result.offline) {
+    return {
+      data: {
+        id: `offline-${Date.now()}`,
+        duration: 0,
+        end_time: new Date().toISOString(),
+        timer_slot: fallback.timer_slot || 'primary',
+        // Carry the active entry id forward so callers can still emit a
+        // "stopped" event for the right logical entry.
+        _fromActiveId: fallback.id ?? null,
+      },
+    };
+  }
+  return { data: result.data };
 };
 
 const toArrayPayload = <T,>(payload: unknown): T[] => {
@@ -375,11 +421,14 @@ export default function DesktopTimerDashboard() {
         if (isTimerExplicitlyStopped) {
           console.log('[Timer] API returned active timer but local snapshot is cleared (timer was stopped). Ignoring API timer.');
           activeFromApi = null;
-          // Clear the stale timer from API cache if possible
+          // Clear the stale timer from API cache if possible. Use the
+          // offline-aware wrapper so a network blip during this best-effort
+          // cleanup never crashes the data fetch. If we are offline, the
+          // stop is queued for the sync engine to handle on reconnect.
           try {
-            await timeEntryApi.stop({ timer_slot: 'primary' });
+            await stopTimerOfflineAware({ timer_slot: 'primary' });
           } catch (e) {
-            // Ignore errors, timer might already be stopped
+            // Ignore errors, timer might already be stopped on the server.
           }
         }
         
@@ -743,12 +792,36 @@ export default function DesktopTimerDashboard() {
     clearIdleAutoStopNotice(userId);
     try {
       const startedAtIso = new Date().toISOString();
-      const startPayload: Record<string, any> = { timer_slot: 'primary' };
+      const startPayload: Record<string, any> = { timer_slot: 'primary' as const };
       if (!isAutoStart) {
         startPayload.project_id = selectedProjectId;
         startPayload.task_id = selectedTaskId;
       }
-      const response = await timeEntryApi.start(startPayload);
+      const startResult = await startTimerOfflineAware({
+        project_id: startPayload.project_id as number | null | undefined,
+        task_id: startPayload.task_id as number | null | undefined,
+        timer_slot: 'primary',
+      });
+      if (!startResult.success) {
+        // Offline-save failure (rare). Treat the same as a network failure
+        // for the user: tell them the change will be retried, suppress the
+        // auto-start arm so we don't loop, and bail out of this attempt.
+        const offlineError = startResult.error || (isAutoStart
+          ? 'Could not auto-start the timer. The change will be retried when you reconnect.'
+          : 'Failed to start timer. The change will be retried when you reconnect.');
+        if (isAutoStart) {
+          clearAutoStartArm(userId);
+          suppressAutoStart(userId);
+        }
+        setFeedback({ tone: 'error', message: offlineError });
+        setNotice('');
+        return;
+      }
+      const response = adaptTimerStartResult(startResult, {
+        project_id: startPayload.project_id as number | null | undefined,
+        task_id: startPayload.task_id as number | null | undefined,
+        timer_slot: 'primary',
+      });
       clearAutoStartArm(userId);
       clearAutoStartSuppression(userId);
       clearAutoStartSuppressionGlobal(userId);
@@ -837,7 +910,29 @@ export default function DesktopTimerDashboard() {
       setNotice('');
       clearAutoStartArm(userId);
       suppressAutoStart(userId);
-      const response = await timeEntryApi.stop({ timer_slot: (activeTimer?.timer_slot || 'primary') as 'primary' | 'secondary' });
+      const stopResult = await stopTimerOfflineAware({
+        timer_slot: (activeTimer?.timer_slot || 'primary') as 'primary' | 'secondary',
+      });
+      if (!stopResult.success) {
+        // Offline stop save failed. Surface the error to the user but
+        // still treat it as a stopped timer locally — the sync engine
+        // will retry and reconcile the state.
+        setFeedback({
+          tone: 'error',
+          message: stopResult.error || 'Failed to stop timer. The change will be retried when you reconnect.',
+        });
+        setActiveTimer(null);
+        setTimerBaseSeconds(0);
+        localStorage.removeItem(ACTIVE_TIMER_KEY);
+        if (userId) {
+          emitDesktopTimerStopped({ userId, entryId: activeTimer?.id ?? null });
+        }
+        return;
+      }
+      const response = adaptTimerStopResult(stopResult, {
+        id: activeTimer?.id ?? null,
+        timer_slot: (activeTimer?.timer_slot || 'primary') as 'primary' | 'secondary',
+      });
       const stoppedEntry = response.data;
       const stoppedDuration = Number(stoppedEntry?.duration || 0);
       const nextWorkedSeconds = Math.max(
@@ -921,11 +1016,24 @@ export default function DesktopTimerDashboard() {
       // Calculate the time worked on the current timer before switching
       const currentTimerDuration = Math.max(0, liveDuration - timerBaseSeconds);
       const nextWorkedSeconds = workedBaseSeconds + currentTimerDuration;
+      const switchSlot = (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary';
 
       // First, explicitly stop the current timer to create a completed entry
       // This ensures the time worked without a project is saved as a separate entry
-      const stoppedResponse = await timeEntryApi.stop({
-        timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary'
+      const stopResult = await stopTimerOfflineAware({ timer_slot: switchSlot });
+      if (!stopResult.success) {
+        // Offline-save failed. Roll back the optimistic UI change and surface
+        // the error so the user can retry.
+        setSelectedProjectId(activeTimer.project_id || null);
+        setFeedback({
+          tone: 'error',
+          message: stopResult.error || 'Failed to switch project. The change will be retried when you reconnect.',
+        });
+        return;
+      }
+      const stoppedResponse = adaptTimerStopResult(stopResult, {
+        id: activeTimer.id ?? null,
+        timer_slot: switchSlot,
       });
 
       // Add the stopped entry to todayEntries so it shows in the list
@@ -944,10 +1052,23 @@ export default function DesktopTimerDashboard() {
       } : prev);
 
       // Start a fresh timer with the new project
-      const response = await timeEntryApi.start({
+      const startResult = await startTimerOfflineAware({
         project_id: projectId,
         task_id: null,
-        timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary',
+        timer_slot: switchSlot,
+      });
+      if (!startResult.success) {
+        setSelectedProjectId(activeTimer.project_id || null);
+        setFeedback({
+          tone: 'error',
+          message: startResult.error || 'Failed to start timer for the new project. The change will be retried when you reconnect.',
+        });
+        return;
+      }
+      const response = adaptTimerStartResult(startResult, {
+        project_id: projectId,
+        task_id: null,
+        timer_slot: switchSlot,
       });
 
       setSelectedTaskId(null);
@@ -1007,10 +1128,21 @@ export default function DesktopTimerDashboard() {
         // Calculate the time worked on the current timer before switching
         const currentTimerDuration = Math.max(0, liveDuration - timerBaseSeconds);
         const nextWorkedSeconds = workedBaseSeconds + currentTimerDuration;
+        const switchSlot = (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary';
 
         // Stop the current timer to create a completed entry
-        const stoppedResponse = await timeEntryApi.stop({
-          timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary'
+        const stopResult = await stopTimerOfflineAware({ timer_slot: switchSlot });
+        if (!stopResult.success) {
+          setSelectedTaskId(activeTimer.task_id || null);
+          setFeedback({
+            tone: 'error',
+            message: stopResult.error || 'Failed to switch task. The change will be retried when you reconnect.',
+          });
+          return;
+        }
+        const stoppedResponse = adaptTimerStopResult(stopResult, {
+          id: activeTimer.id ?? null,
+          timer_slot: switchSlot,
         });
 
         // Add the stopped entry to todayEntries so it shows in the list
@@ -1028,10 +1160,23 @@ export default function DesktopTimerDashboard() {
         } : prev);
 
         // Start a fresh timer with the new task
-        const response = await timeEntryApi.start({
+        const startResult = await startTimerOfflineAware({
           project_id: nextTask?.project_id ?? null,
           task_id: taskId,
-          timer_slot: (activeTimer.timer_slot || 'primary') as 'primary' | 'secondary',
+          timer_slot: switchSlot,
+        });
+        if (!startResult.success) {
+          setSelectedTaskId(activeTimer.task_id || null);
+          setFeedback({
+            tone: 'error',
+            message: startResult.error || 'Failed to start timer for the new task. The change will be retried when you reconnect.',
+          });
+          return;
+        }
+        const response = adaptTimerStartResult(startResult, {
+          project_id: nextTask?.project_id ?? null,
+          task_id: taskId,
+          timer_slot: switchSlot,
         });
 
         // Sync the task status locally

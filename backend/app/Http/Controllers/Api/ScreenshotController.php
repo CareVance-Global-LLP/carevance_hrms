@@ -225,6 +225,14 @@ class ScreenshotController extends Controller
                 'filename' => 'nullable|string|max:255',
                 'thumbnail' => 'nullable|string|max:65535',
                 'blurred' => 'nullable|boolean',
+                // Idempotency keys for the offline sync flow. When both are
+                // present, the request is treated as a re-send from the
+                // desktop's offline queue and a previously persisted
+                // screenshot for the same (device_id, local_id) pair is
+                // returned instead of being duplicated.
+                'local_id' => 'nullable|string|max:80',
+                'device_id' => 'nullable|string|max:80',
+                'captured_at' => 'nullable|date',
             ]);
 
             $user = $request->user();
@@ -237,6 +245,33 @@ class ScreenshotController extends Controller
             }
             if (!$this->canViewAll($user) && $timeEntry->user_id !== $user->id) {
                 return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            // Idempotent lookup: if the desktop offline queue re-sends the
+            // same (device_id, local_id) pair, return the previously
+            // stored screenshot instead of writing a duplicate row. This
+            // is critical for the offline flow because the sync engine
+            // may legitimately retry the same payload several times
+            // before the queue item is removed, and we don't want every
+            // retry to create a new screenshot in the gallery.
+            $incomingLocalId = $validated['local_id'] ?? null;
+            $incomingDeviceId = $validated['device_id'] ?? null;
+            if (!empty($incomingLocalId) && !empty($incomingDeviceId)) {
+                $existing = Screenshot::query()
+                    ->where('device_id', $incomingDeviceId)
+                    ->where('local_id', $incomingLocalId)
+                    ->first();
+                if ($existing) {
+                    $existing->loadMissing('timeEntry.user');
+                    Log::info('Screenshot upload deduplicated by (device_id, local_id).', [
+                        'screenshot_id' => (int) $existing->id,
+                        'time_entry_id' => (int) $existing->time_entry_id,
+                        'user_id' => (int) $user->id,
+                        'device_id' => $incomingDeviceId,
+                        'local_id' => $incomingLocalId,
+                    ]);
+                    return response()->json($existing, 200);
+                }
             }
 
             $filename = $validated['filename'] ?? null;
@@ -291,6 +326,12 @@ class ScreenshotController extends Controller
                 'filename' => $filename,
                 'thumbnail' => $validated['thumbnail'] ?? null,
                 'blurred' => (bool)($validated['blurred'] ?? false),
+                // Persist offline-queue idempotency keys so that retries
+                // from the same device can be detected and the existing
+                // row reused instead of duplicated.
+                'local_id' => $incomingLocalId,
+                'device_id' => $incomingDeviceId,
+                'captured_at' => $validated['captured_at'] ?? null,
             ]);
 
             $screenshot->loadMissing('timeEntry.user');

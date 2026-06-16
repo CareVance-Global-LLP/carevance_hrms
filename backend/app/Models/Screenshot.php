@@ -8,10 +8,11 @@ use Illuminate\Support\Facades\URL;
 
 class Screenshot extends Model
 {
-    protected $fillable = ['time_entry_id', 'filename', 'thumbnail', 'blurred'];
+    protected $fillable = ['time_entry_id', 'filename', 'thumbnail', 'blurred', 'local_id', 'device_id', 'captured_at'];
 
     protected $casts = [
         'blurred' => 'boolean',
+        'captured_at' => 'datetime',
     ];
 
     protected $appends = ['path', 'recorded_at', 'user_id', 'user', 'session_id', 'activity_state'];

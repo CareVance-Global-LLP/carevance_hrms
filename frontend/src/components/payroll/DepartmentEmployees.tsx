@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, 
   Search, 
@@ -205,6 +205,7 @@ function EmployeeCard({
                   size="sm" 
                   className="flex-1"
                   iconLeft={<DollarSign className="h-4 w-4" />}
+                  onClick={onClick}
                 >
                   Pay Now
                 </Button>
@@ -244,11 +245,24 @@ export default function DepartmentEmployees({
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [showFilters, setShowFilters] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queryClient = useQueryClient();
+
+  // Debounce search to avoid too many API calls
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery]);
 
   // Fetch employees
   const { data, isLoading } = useQuery({
-    queryKey: ['payroll', 'department', departmentId, 'employees', monthYear, searchQuery],
+    queryKey: ['payroll', 'department', departmentId, 'employees', monthYear, debouncedSearch],
     queryFn: () => payrollApi.getDepartmentEmployees(departmentId, { 
       month_year: monthYear,
       search: searchQuery || undefined 
@@ -353,12 +367,20 @@ export default function DepartmentEmployees({
         
         {/* Bulk Actions */}
         {selectedEmployees.size > 0 && (
-          <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-lg">
+            <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-lg">
             <span className="text-sm font-medium text-blue-900">
               {selectedEmployees.size} selected
             </span>
             <div className="h-4 w-px bg-blue-200" />
-            <Button variant="primary" size="sm" iconLeft={<Play className="h-4 w-4" />}>
+            <Button 
+              variant="primary" 
+              size="sm" 
+              iconLeft={<Play className="h-4 w-4" />}
+              onClick={() => {
+                const firstSelected = selectedEmployeeObjects[0];
+                if (firstSelected) onSelectEmployee(firstSelected.id);
+              }}
+            >
               Process Selected
             </Button>
             <Button 
@@ -517,7 +539,15 @@ export default function DepartmentEmployees({
               <span className="text-sm text-slate-600">
                 {selectedEmployees.size} employees selected
               </span>
-              <Button variant="primary" size="sm" iconLeft={<Play className="h-4 w-4" />}>
+              <Button 
+                variant="primary" 
+                size="sm" 
+                iconLeft={<Play className="h-4 w-4" />}
+                onClick={() => {
+                  const firstSelected = selectedEmployeeObjects[0];
+                  if (firstSelected) onSelectEmployee(firstSelected.id);
+                }}
+              >
                 Process Selected
               </Button>
             </div>

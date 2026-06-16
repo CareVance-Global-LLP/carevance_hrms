@@ -22,7 +22,15 @@ export default function LoginScreen() {
     if (!email.trim() || !password.trim()) { Alert.alert('Error', 'Please enter email and password'); return; }
     setLoading(true);
     try { await login(email.trim(), password); }
-    catch (err: any) { Alert.alert('Login Failed', err?.response?.data?.message || err?.message || 'Login failed'); }
+    catch (err: any) {
+      const data = err?.response?.data;
+      const fieldError = data?.errors?.email?.[0] || data?.errors?.password?.[0];
+      const message = fieldError
+        || (data?.message === 'The given data was invalid.' ? null : data?.message)
+        || err?.message
+        || 'Login failed';
+      Alert.alert('Login Failed', message);
+    }
     finally { setLoading(false); }
   };
 

@@ -148,6 +148,7 @@ export default function PayrollPage() {
             onSelectEmployee={handleSelectEmployee}
             onOpenRunPayroll={handleOpenRunPayroll}
             onOpenQuickProcess={handleOpenQuickProcess}
+            onBack={handleBackToDashboard}
           />
         )}
 

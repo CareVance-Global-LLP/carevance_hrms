@@ -118,16 +118,19 @@ export default function EmployeePayrollWizard({
     },
   });
 
-  // Initialize from data
+  // Initialize from data and auto-calculate
   useEffect(() => {
     if (data && !template) {
       setTemplate(data.template);
       const savedCtc = data.template.annual_ctc;
       if (savedCtc) {
         setAnnualCtc(String(savedCtc));
-      }
-      if (data.payroll_preview) {
-        setCalculation(data.payroll_preview);
+        if (data.payroll_preview) {
+          setCalculation(data.payroll_preview);
+        } else {
+          // Auto-trigger calculation if backend didn't return a preview
+          setTimeout(calculatePreview, 200);
+        }
       }
     }
   }, [data, template]);
@@ -283,23 +286,69 @@ export default function EmployeePayrollWizard({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
             <p className="text-xs text-slate-500 mb-1">Total Tracked Hours</p>
-            <p className="text-2xl font-bold text-slate-900">{time_tracking.payroll_tracked_hours?.toFixed(1) || time_tracking.total_worked_hours.toFixed(1)}h</p>
-            <p className="text-xs text-slate-400 mt-1">From timesheets</p>
+            {time_tracking.payroll_tracked_hours && time_tracking.payroll_tracked_hours > 0 ? (
+              <>
+                <p className="text-2xl font-bold text-slate-900">{time_tracking.payroll_tracked_hours.toFixed(1)}h</p>
+                <p className="text-xs text-slate-400 mt-1">From timesheets</p>
+              </>
+            ) : time_tracking.total_worked_hours > 0 ? (
+              <>
+                <p className="text-2xl font-bold text-slate-900">{time_tracking.total_worked_hours.toFixed(1)}h</p>
+                <p className="text-xs text-slate-400 mt-1">From timesheets</p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-slate-400">0.0h</p>
+                <p className="text-xs text-amber-500 mt-1">No tracking data</p>
+              </>
+            )}
           </div>
           <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
             <p className="text-xs text-slate-500 mb-1">Productive Hours</p>
-            <p className="text-2xl font-bold text-emerald-600">{time_tracking.total_productive_hours.toFixed(1)}h</p>
-            <p className="text-xs text-slate-400 mt-1">Active work time</p>
+            {time_tracking.total_productive_hours > 0 ? (
+              <>
+                <p className="text-2xl font-bold text-emerald-600">{time_tracking.total_productive_hours.toFixed(1)}h</p>
+                <p className="text-xs text-slate-400 mt-1">Active work time</p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-slate-400">0.0h</p>
+                <p className="text-xs text-amber-500 mt-1">No activity recorded</p>
+              </>
+            )}
           </div>
           <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
             <p className="text-xs text-slate-500 mb-1">Activity Rate</p>
-            <p className="text-2xl font-bold text-blue-600">{time_tracking.activity_percentage.toFixed(0)}%</p>
-            <p className="text-xs text-slate-400 mt-1">Time active</p>
+            {time_tracking.activity_percentage > 0 ? (
+              <>
+                <p className="text-2xl font-bold text-blue-600">{time_tracking.activity_percentage.toFixed(0)}%</p>
+                <p className="text-xs text-slate-400 mt-1">Time active</p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-slate-400">0%</p>
+                <p className="text-xs text-amber-500 mt-1">No activity data</p>
+              </>
+            )}
           </div>
           <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
             <p className="text-xs text-slate-500 mb-1">Attendance Days</p>
-            <p className="text-2xl font-bold text-violet-600">{time_tracking.payroll_attendance_days || Math.floor((time_tracking.payroll_tracked_hours || time_tracking.total_worked_hours) / 8)}</p>
-            <p className="text-xs text-slate-400 mt-1">Days present</p>
+            {time_tracking.payroll_tracked_hours && time_tracking.payroll_tracked_hours > 0 ? (
+              <>
+                <p className="text-2xl font-bold text-violet-600">{time_tracking.payroll_attendance_days || Math.floor((time_tracking.payroll_tracked_hours) / 8)}</p>
+                <p className="text-xs text-slate-400 mt-1">Days present</p>
+              </>
+            ) : time_tracking.total_worked_hours > 0 ? (
+              <>
+                <p className="text-2xl font-bold text-violet-600">{time_tracking.payroll_attendance_days || Math.floor((time_tracking.total_worked_hours) / 8)}</p>
+                <p className="text-xs text-slate-400 mt-1">Days present</p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-slate-400">0</p>
+                <p className="text-xs text-amber-500 mt-1">No attendance data</p>
+              </>
+            )}
           </div>
         </div>
 

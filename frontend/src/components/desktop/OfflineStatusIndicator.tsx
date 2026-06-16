@@ -1,7 +1,7 @@
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
 export function OfflineStatusIndicator() {
-  const { status, pendingRecords, isDesktopApp, lastSyncAt, loading, isSyncing } = useOnlineStatus();
+  const { status, pendingRecords, isDesktopApp, lastSyncAt, loading, isSyncing, queueSize } = useOnlineStatus();
 
   if (!isDesktopApp || loading) return null;
 
@@ -17,15 +17,34 @@ export function OfflineStatusIndicator() {
     offline: 'Offline',
   };
 
-  const formatLastSync = (dateStr: string | null) => {
-    if (!dateStr) return 'Never';
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleString();
-    } catch {
-      return dateStr;
-    }
+  const formatRelative = (dateStr: string | null): string | null => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    const diffMs = Date.now() - d.getTime();
+    const sec = Math.floor(diffMs / 1000);
+    if (sec < 5) return 'just now';
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    return d.toLocaleString();
   };
+
+  // Decide what to show in the "Last sync" slot.
+  // - If the desktop engine reported a sync time, show a friendly relative time.
+  // - If there is no sync time but the queue is empty (i.e. no offline data has
+  //   ever been generated), show "Live mode" so the user doesn't stare at "Never".
+  // - If the queue is non-empty but no sync has happened, keep "Never" so it's
+  //   obvious there is pending data that hasn't been flushed yet.
+  const lastSyncLabel = (() => {
+    const rel = formatRelative(lastSyncAt);
+    if (rel) return rel;
+    if (status === 'offline') return 'Never (offline)';
+    if ((queueSize ?? pendingRecords) === 0) return 'Live';
+    return 'Never';
+  })();
 
   return (
     <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs"
@@ -59,8 +78,8 @@ export function OfflineStatusIndicator() {
       )}
 
       {status === 'online' && (
-        <span className="text-slate-400">
-          Last sync: {formatLastSync(lastSyncAt)}
+        <span className="text-slate-400" title={lastSyncAt ? new Date(lastSyncAt).toLocaleString() : 'No offline queue'}>
+          Last sync: {lastSyncLabel}
         </span>
       )}
     </div>

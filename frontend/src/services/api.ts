@@ -718,7 +718,12 @@ export const timeEntryApi = {
     latitude?: number;
     longitude?: number;
     accuracy?: number;
-  }) => 
+    // Optional client-supplied stop timestamp (ISO-8601). The offline sync
+    // engine posts this so a session that ran offline can be closed with the
+    // original click-time. The backend falls back to "now" if the value is
+    // missing, in the future, or would create a negative duration.
+    ended_at?: string;
+  }) =>
     api.post<TimeEntry>('/time-entries/stop', data || {}),
   
   active: (params?: { timer_slot?: 'primary' | 'secondary' }) => 

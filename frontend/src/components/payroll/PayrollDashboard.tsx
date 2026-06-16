@@ -15,7 +15,8 @@ import {
   Clock,
   Briefcase,
   AlertTriangle,
-  Zap
+  Zap,
+  ArrowLeft
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -30,6 +31,7 @@ interface PayrollDashboardProps {
   onSelectEmployee: (employeeId: number) => void;
   onOpenRunPayroll: (stats: PayrollStats, departments: PayrollDepartment[]) => void;
   onOpenQuickProcess?: () => void;
+  onBack?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -232,7 +234,8 @@ export default function PayrollDashboard({
   onSelectDepartment, 
   onSelectEmployee,
   onOpenRunPayroll,
-  onOpenQuickProcess
+  onOpenQuickProcess,
+  onBack
 }: PayrollDashboardProps) {
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -296,11 +299,18 @@ export default function PayrollDashboard({
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Payroll</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Process and manage employee salaries for {selectedMonth}
-          </p>
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
+              Back
+            </Button>
+          )}
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Payroll</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Process and manage employee salaries for {selectedMonth}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <input
