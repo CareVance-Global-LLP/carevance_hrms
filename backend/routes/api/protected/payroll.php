@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\PerformanceGoalController;
 use App\Http\Controllers\Api\PerformanceReviewController;
 use App\Http\Controllers\Api\ReimbursementController;
 use App\Http\Controllers\Api\EnhancedPayrollController;
+use App\Http\Controllers\Api\TaxProofUploadController;
 use App\Http\Controllers\PayrollAutoProcessController;
 use Illuminate\Support\Facades\Route;
 
@@ -39,7 +40,11 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Employee Payroll
     Route::get('/employees/{userId}', [PayrollDepartmentController::class, 'getEmployeePayrollDetails']);
     Route::put('/employees/{userId}/template', [PayrollDepartmentController::class, 'updateEmployeeTemplate']);
+    Route::patch('/employees/{userId}/ctc', [PayrollDepartmentController::class, 'quickSaveCtc']);
     Route::post('/employees/{userId}/process', [PayrollDepartmentController::class, 'processEmployeePayroll']);
+
+    // Department bulk process
+    Route::post('/departments/{departmentId}/process-selected', [PayrollDepartmentController::class, 'processSelectedEmployees']);
     
     // Time tracking (standalone mode)
     Route::post('/check-in', [PayrollController::class, 'checkIn']);
@@ -166,4 +171,19 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::post('/reimbursements/{id}/approve', [ReimbursementController::class, 'approve']);
     Route::post('/reimbursements/{id}/reject', [ReimbursementController::class, 'reject']);
     Route::get('/reimbursements/summary', [ReimbursementController::class, 'getSummary']);
+
+    // Tax-Proof Submissions (Form 12BB attachments)
+    // Employee endpoints
+    Route::get('/tax-proofs/mine', [TaxProofUploadController::class, 'myProofs']);
+    Route::get('/tax-proofs/summary', [TaxProofUploadController::class, 'complianceSummary']);
+    Route::get('/tax-proofs/my-12bb/{financialYear}', [TaxProofUploadController::class, 'downloadMy12BB']);
+    Route::get('/tax-proofs', [TaxProofUploadController::class, 'index']);
+    Route::post('/tax-proofs', [TaxProofUploadController::class, 'store']);
+    Route::get('/tax-proofs/{id}', [TaxProofUploadController::class, 'show']);
+    Route::get('/tax-proofs/{id}/download', [TaxProofUploadController::class, 'download']);
+    Route::delete('/tax-proofs/{id}', [TaxProofUploadController::class, 'destroy']);
+
+    // Admin-only endpoints
+    Route::post('/tax-proofs/bulk-approve', [TaxProofUploadController::class, 'bulkApprove']);
+    Route::post('/tax-proofs/{id}/review', [TaxProofUploadController::class, 'review']);
 });

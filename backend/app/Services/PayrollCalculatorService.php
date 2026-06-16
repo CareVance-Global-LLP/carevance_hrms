@@ -18,9 +18,20 @@ class PayrollCalculatorService
     const ESI_EMPLOYER_RATE = 0.0325;
     const GRATUITY_RATE = 0.0481;
     const STANDARD_DEDUCTION_NEW = 75000;
+    const STANDARD_DEDUCTION_OLD = 50000;
     const REBATE_LIMIT_NEW = 1200000;
+    const REBATE_LIMIT_OLD = 500000;
+    const REBATE_MAX_OLD = 12500;
     const SECTION_80C_CAP = 150000;
     const SECTION_80CCD1B_CAP = 50000;
+    const HEALTH_EDUCATION_CESS = 0.04;
+    // Surcharge slabs (FY 2024-25)
+    const SURCHARGE_SLABS = [
+        ['min' => 5000000,  'max' => 10000000, 'rate' => 0.10],
+        ['min' => 10000001, 'max' => 20000000, 'rate' => 0.15],
+        ['min' => 20000001, 'max' => 50000000, 'rate' => 0.25],
+        ['min' => 50000001, 'max' => PHP_FLOAT_MAX, 'rate' => 0.25, 'capped' => 'old'],
+    ];
 
     public function calculatePayroll(
         float $annualCtc,
@@ -133,11 +144,23 @@ class PayrollCalculatorService
         string $taxRegime,
         float $annualTaxExemptions = 0
     ): array {
+        // TDS must be calculated on GROSS SALARY (CTC - employer PF - gratuity)
+        // not on CTC, because employer-side contributions are not the employee's
+        // taxable income. Both regimes use the same gross definition.
+        $employerPfMonthly = $this->calculateEmployerPF($basic);
+        $gratuityMonthly   = $this->calculateGratuityProvision($basic);
+        $annualGross       = max(0, ($gross) * 12);
+
+        // Exemptions only used for OLD regime. For NEW regime, only standard deduction applies.
+        $exemptions = $taxRegime === 'old' ? ['section_80c' => $annualTaxExemptions] : [];
+
+        $tds = $this->calculateMonthlyTDS($annualGross, $taxRegime, $exemptions);
+
         return [
             'pf' => $this->calculateEmployeePF($basic),
             'esi' => $this->calculateEmployeeESI($gross),
             'pt' => PTStateService::calculate($stateCode, $gross),
-            'tds' => $this->calculateMonthlyTDS($annualCtc, $taxRegime, $annualTaxExemptions),
+            'tds' => $tds['monthly_tds'],
         ];
     }
 
@@ -187,18 +210,76 @@ class PayrollCalculatorService
         return (($lastBasic + $dearnessAllowance) * 15 * $yearsOfService) / 26;
     }
 
-    public function calculateMonthlyTDS(float $annualCtc, string $taxRegime = 'new', float $annualTaxExemptions = 0): float
+    /**
+     * Calculate monthly TDS (Tax Deducted at Source).
+     *
+     * IMPORTANT: TDS is calculated on Gross Salary (CTC minus employer's PF and gratuity
+     * contributions, which are NOT part of the employee's income under both Income Tax
+     * regimes). For the new regime (Sec 115BAC), only the standard deduction of ₹75,000
+     * is allowed — no other exemptions (80C, 80D, HRA, LTA, etc.). For the old regime
+     * (default), all Chapter VI-A deductions + HRA exemption are available.
+     *
+     * @param float $annualGross Annual Gross Salary (CTC - employer PF - gratuity)
+     * @param string $taxRegime 'new' (115BAC) or 'old' (default)
+     * @param array $exemptions Map of section => annual amount (used for old regime only)
+     * @return array{monthly_tds: float, annual_tax: array}
+     */
+    public function calculateMonthlyTDS(float $annualGross, string $taxRegime = 'new', array $exemptions = []): array
     {
-        $totalDeductions = $annualTaxExemptions;
-        $taxableIncome = max(0, $annualCtc - $totalDeductions);
-
         if ($taxRegime === 'new') {
-            $annualTax = $this->calculateNewRegimeTax($taxableIncome);
+            // New regime: ONLY standard deduction of ₹75,000 is allowed.
+            // All other exemptions (80C, 80D, HRA, LTA) are NOT available.
+            $annualTax = $this->calculateNewRegimeTax($annualGross, []);
         } else {
-            $annualTax = $this->calculateOldRegimeTax($taxableIncome, []);
+            // Old regime: standard deduction + all Chapter VI-A deductions + HRA
+            $annualTax = $this->calculateOldRegimeTax($annualGross, $exemptions);
         }
 
-        return is_array($annualTax) ? ($annualTax['total_tax'] / 12) : ($annualTax / 12);
+        $annualTotal = is_array($annualTax) ? $annualTax['total_tax'] : (float) $annualTax;
+        return [
+            'monthly_tds' => round($annualTotal / 12, 2),
+            'annual_tax' => $annualTax,
+        ];
+    }
+
+    /**
+     * Backward-compat shim: return just the monthly TDS as a float.
+     */
+    public function calculateMonthlyTDSLegacy(float $annualCtc, string $taxRegime = 'new', float $annualTaxExemptions = 0): float
+    {
+        $result = $this->calculateMonthlyTDS(
+            $annualCtc,
+            $taxRegime,
+            ['section_80c' => $annualTaxExemptions]
+        );
+        return $result['monthly_tds'];
+    }
+
+    /**
+     * Calculate surcharge for high-income individuals (FY 2024-25).
+     * New regime (Sec 115BAC) surcharge capped at 25%.
+     * Old regime surcharge goes up to 30% for income > ₹5Cr but marginal relief applies.
+     */
+    protected function calculateSurcharge(float $taxBeforeSurcharge, float $totalIncome, string $regime): float
+    {
+        if ($totalIncome <= 5000000) return 0.0;
+
+        $surchargeRate = 0.0;
+        $capped = false;
+        foreach (self::SURCHARGE_SLABS as $slab) {
+            if ($totalIncome > $slab['min'] && $totalIncome <= $slab['max']) {
+                $surchargeRate = $slab['rate'];
+                $capped = ($regime === 'new' || ($slab['capped'] ?? false) === 'old');
+                break;
+            }
+        }
+
+        // New regime surcharge cap: 25% (Sec 115BAC)
+        if ($regime === 'new' && $surchargeRate > 0.25) {
+            $surchargeRate = 0.25;
+        }
+
+        return $taxBeforeSurcharge * $surchargeRate;
     }
 
     public function calculateLOP(float $monthlyGross, int $lopDays, int $workingDays = 26): float
@@ -328,16 +409,20 @@ class PayrollCalculatorService
 
     public function calculateNewRegimeTax(float $annualIncome, array $exemptions = []): array
     {
+        // New regime (Sec 115BAC): ONLY standard deduction of ₹75,000 is allowed.
+        // No HRA, LTA, 80C, 80D, 24(b) etc. exemptions.
         $taxableIncome = max(0, $annualIncome - self::STANDARD_DEDUCTION_NEW);
 
+        // New regime slabs (Sec 115BAC) — FY 2024-25, contiguous boundaries.
+        // The rebate u/s 87A is on TOTAL income (annualIncome), not on taxable income.
         $slabs = [
-            ['min' => 0, 'max' => 400000, 'rate' => 0],
-            ['min' => 400001, 'max' => 800000, 'rate' => 0.05],
-            ['min' => 800001, 'max' => 1200000, 'rate' => 0.10],
-            ['min' => 1200001, 'max' => 1600000, 'rate' => 0.15],
-            ['min' => 1600001, 'max' => 2000000, 'rate' => 0.20],
-            ['min' => 2000001, 'max' => 2400000, 'rate' => 0.25],
-            ['min' => 2400001, 'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
+            ['min' => 0,         'max' => 400000,    'rate' => 0],
+            ['min' => 400000,    'max' => 800000,    'rate' => 0.05],
+            ['min' => 800000,    'max' => 1200000,   'rate' => 0.10],
+            ['min' => 1200000,   'max' => 1600000,   'rate' => 0.15],
+            ['min' => 1600000,   'max' => 2000000,   'rate' => 0.20],
+            ['min' => 2000000,   'max' => 2400000,   'rate' => 0.25],
+            ['min' => 2400000,   'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
         ];
 
         $tax = 0;
@@ -350,39 +435,60 @@ class PayrollCalculatorService
             }
         }
 
-        $rebate = ($taxableIncome <= self::REBATE_LIMIT_NEW) ? $tax : 0;
+        // 87A rebate: full tax rebate if TOTAL income (annualIncome) <= ₹12L.
+        // Sec 87A reads "total income of the assessee ... does not exceed ₹12,00,000".
+        $rebate = ($annualIncome <= self::REBATE_LIMIT_NEW) ? $tax : 0;
         $taxAfterRebate = max(0, $tax - $rebate);
-        $cess = $taxAfterRebate * 0.04;
-        $totalTax = $taxAfterRebate + $cess;
+
+        // Surcharge for income > ₹50L (capped at 25% for new regime)
+        $surcharge = $this->calculateSurcharge($taxAfterRebate, $annualIncome, 'new');
+        $taxWithSurcharge = $taxAfterRebate + $surcharge;
+
+        // Health & Education Cess: 4% on (tax + surcharge)
+        $cess = $taxWithSurcharge * self::HEALTH_EDUCATION_CESS;
+        $totalTax = $taxWithSurcharge + $cess;
 
         return [
+            'regime' => 'new',
             'taxable_income' => $taxableIncome,
-            'tax_before_cess' => $taxAfterRebate,
-            'rebate_87a' => $rebate,
-            'cess' => $cess,
-            'total_tax' => $totalTax,
+            'tax_before_cess' => round($taxWithSurcharge, 2),
+            'rebate_87a' => round($rebate, 2),
+            'surcharge' => round($surcharge, 2),
+            'cess' => round($cess, 2),
+            'total_tax' => round($totalTax, 2),
             'effective_rate' => $annualIncome > 0 ? round($totalTax / $annualIncome * 100, 2) : 0,
         ];
     }
 
     public function calculateOldRegimeTax(float $annualIncome, array $exemptions = []): array
     {
+        // Old regime: Chapter VI-A deductions + HRA exemption + Standard Deduction
         $section80c = min($exemptions['section_80c'] ?? 0, 150000);
         $section80d = min($exemptions['section_80d'] ?? 0, 25000);
-        $section80g = $exemptions['section_80g'] ?? 0;
-        $section24b = min($exemptions['section_24b'] ?? 0, 200000);
+        $section80dd = min($exemptions['section_80dd'] ?? 0, 75000);
+        $section80ddb = min($exemptions['section_80ddb'] ?? 0, 40000);
         $section80e = $exemptions['section_80e'] ?? 0;
+        $section80g = $exemptions['section_80g'] ?? 0;
+        $section80gg = min($exemptions['section_80gg'] ?? 0, 60000);
+        $section80tta = min($exemptions['section_80tta'] ?? 0, 10000);
+        $section24b = min($exemptions['section_24b'] ?? 0, 200000);
         $npsDeduction = min($exemptions['section_80ccd'] ?? 0, 50000);
+        $hraExemption = min($exemptions['hra_exemption'] ?? 0, $annualIncome); // computed externally
 
-        $standardDeduction = 50000;
-        $totalDeductions = $standardDeduction + $section80c + $section80d + $section80g + $section24b + $section80e + $npsDeduction;
+        $standardDeduction = self::STANDARD_DEDUCTION_OLD;
+        $totalDeductions = $standardDeduction
+            + $section80c + $section80d + $section80dd + $section80ddb
+            + $section80e + $section80g + $section80gg + $section80tta
+            + $section24b + $npsDeduction + $hraExemption;
         $taxableIncome = max(0, $annualIncome - $totalDeductions);
 
+        // Old regime slabs — FY 2024-25, contiguous boundaries (the old
+        // "+1" offsets caused fractional-rupee under-charges at slab edges).
         $slabs = [
-            ['min' => 0, 'max' => 250000, 'rate' => 0],
-            ['min' => 250001, 'max' => 500000, 'rate' => 0.05],
-            ['min' => 500001, 'max' => 1000000, 'rate' => 0.20],
-            ['min' => 1000001, 'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
+            ['min' => 0,        'max' => 250000,     'rate' => 0],
+            ['min' => 250000,   'max' => 500000,     'rate' => 0.05],
+            ['min' => 500000,   'max' => 1000000,    'rate' => 0.20],
+            ['min' => 1000000,  'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
         ];
 
         $tax = 0;
@@ -395,27 +501,70 @@ class PayrollCalculatorService
             }
         }
 
-        $rebate = ($taxableIncome <= 500000) ? min($tax, 12500) : 0;
+        // 87A rebate: max ₹12,500 if TOTAL income (annualIncome) <= ₹5L.
+        // Sec 87A reads "total income of the assessee ... does not exceed ₹5,00,000".
+        $rebate = ($annualIncome <= self::REBATE_LIMIT_OLD) ? min($tax, self::REBATE_MAX_OLD) : 0;
         $taxAfterRebate = max(0, $tax - $rebate);
-        $cess = $taxAfterRebate * 0.04;
-        $totalTax = $taxAfterRebate + $cess;
+
+        // Surcharge (up to 30% for income > ₹5Cr in old regime; capped at 25% for > ₹2Cr)
+        $surcharge = $this->calculateSurcharge($taxAfterRebate, $annualIncome, 'old');
+        $taxWithSurcharge = $taxAfterRebate + $surcharge;
+
+        // Health & Education Cess: 4% on (tax + surcharge)
+        $cess = $taxWithSurcharge * self::HEALTH_EDUCATION_CESS;
+        $totalTax = $taxWithSurcharge + $cess;
 
         return [
+            'regime' => 'old',
             'taxable_income' => $taxableIncome,
-            'tax_before_cess' => $taxAfterRebate,
-            'rebate_87a' => $rebate,
-            'cess' => $cess,
-            'total_tax' => $totalTax,
+            'tax_before_cess' => round($taxWithSurcharge, 2),
+            'rebate_87a' => round($rebate, 2),
+            'surcharge' => round($surcharge, 2),
+            'cess' => round($cess, 2),
+            'total_tax' => round($totalTax, 2),
             'effective_rate' => $annualIncome > 0 ? round($totalTax / $annualIncome * 100, 2) : 0,
             'deductions_claimed' => [
+                'standard_deduction' => $standardDeduction,
                 '80c' => $section80c,
                 '80d' => $section80d,
-                '80g' => $section80g,
-                '24b' => $section24b,
+                '80dd' => $section80dd,
+                '80ddb' => $section80ddb,
                 '80e' => $section80e,
+                '80g' => $section80g,
+                '80gg' => $section80gg,
+                '80tta' => $section80tta,
+                '24b' => $section24b,
                 '80ccd_nps' => $npsDeduction,
+                'hra_exemption' => $hraExemption,
             ],
         ];
+    }
+
+    /**
+     * Calculate HRA Exemption u/s 10(13A) for the OLD regime.
+     *
+     * HRA exemption is the minimum of:
+     *  a) Actual HRA received
+     *  b) 50% of basic (metro) or 40% of basic (non-metro) of salary
+     *  c) Rent paid - 10% of basic salary
+     *
+     * @param float $hraReceived     Annual HRA received
+     * @param float $basicAnnual     Annual basic salary
+     * @param float $rentPaid        Annual rent paid
+     * @param bool  $isMetroCity     True if metro (Mumbai/Delhi/Kolkata/Chennai)
+     * @return float Annual HRA exemption
+     */
+    public function calculateHraExemption(
+        float $hraReceived,
+        float $basicAnnual,
+        float $rentPaid,
+        bool $isMetroCity = false
+    ): float {
+        $percent = $isMetroCity ? 0.50 : 0.40;
+        $a = $hraReceived;
+        $b = $basicAnnual * $percent;
+        $c = max(0, $rentPaid - (0.10 * $basicAnnual));
+        return min($a, $b, $c);
     }
 
     public function getFinancialYear(): string

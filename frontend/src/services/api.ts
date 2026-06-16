@@ -1571,8 +1571,14 @@ export const payrollApi = {
   updateEmployeeTemplate: (userId: number, data: Partial<EmployeePayrollTemplate>) =>
     api.put<{ success: boolean; message: string; template: EmployeePayrollTemplate }>(`/payroll/employees/${userId}/template`, data),
 
+  quickSaveCtc: (userId: number, data: { annual_ctc: number; month_year: string }) =>
+    api.patch<{ success: boolean; message: string; template: EmployeePayrollTemplate }>(`/payroll/employees/${userId}/ctc`, data),
+
   processEmployeePayroll: (userId: number, data: ProcessPayrollRequest) =>
     api.post<{ success: boolean; message: string; payroll_item: any }>(`/payroll/employees/${userId}/process`, data),
+
+  processSelectedEmployees: (departmentId: number, data: { month_year: string; user_ids: number[]; working_days: number; default_annual_ctc?: number; lOP_days?: number; overtime_hours?: number }) =>
+    api.post<{ success: boolean; message: string; succeeded: Array<{ user_id: number; payroll_item_id: number | null }>; failed: Array<{ user_id: number; reason: string }> }>(`/payroll/departments/${departmentId}/process-selected`, data),
 
   // Calculations
   calculate: (data: CalculatePayrollRequest) =>
@@ -1655,6 +1661,44 @@ export const payrollApi = {
   listTaxDeclarations: (params?: { financial_year?: string; status?: string }) =>
     api.get<{ declarations: any[]; financial_year: string }>('/payroll/declarations', { params }),
 
+  // ---- Form 12BB / Tax proof upload (employee + admin) ----
+  // Employee: list & upload proofs for their own declarations.
+  listMyTaxProofs: (params?: { financial_year?: string; status?: string }) =>
+    api.get<{ data: any[]; count: number }>('/payroll/tax-proofs/mine', { params }),
+
+  uploadTaxProofV2: (data: { declaration_item_id: number; financial_year: string; amount: number; description?: string; file: File }) => {
+    const formData = new FormData();
+    formData.append('declaration_item_id', String(data.declaration_item_id));
+    if (data.financial_year) formData.append('financial_year', data.financial_year);
+    formData.append('amount', String(data.amount));
+    if (data.description) formData.append('description', data.description);
+    formData.append('proof_file', data.file);
+    return api.post<{ success: boolean; message: string; data: any }>(
+      '/payroll/tax-proofs', formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+  },
+
+  downloadMy12BB: (financialYear: string) =>
+    api.get<{ message: string; financial_year: string; submissions: any[]; total_declared: number }>(`/payroll/tax-proofs/my-12bb/${encodeURIComponent(financialYear)}`),
+
+  // Admin: list, review, bulk-approve, get compliance summary.
+  listTaxProofs: (params?: { financial_year?: string; status?: string; user_id?: number; section?: string }) =>
+    api.get<{ data: any[]; count: number; summary?: any }>('/payroll/tax-proofs', { params }),
+
+  reviewTaxProof: (id: number, data: { decision: 'approved' | 'rejected' | 'partial'; approved_amount?: number; notes?: string }) =>
+    api.post<{ message: string; data: any }>(`/payroll/tax-proofs/${id}/review`, data),
+
+  bulkApproveTaxProofs: (userId: number, financialYear?: string) =>
+    api.post<{ message: string; count: number }>(
+      '/payroll/tax-proofs/bulk-approve', { user_id: userId, financial_year: financialYear },
+    ),
+
+  taxProofsSummary: (financialYear?: string) =>
+    api.get<{ total_submissions: number; by_status: Record<string, number>; pending_amount: number; approved_amount: number; organisation_id: number; financial_year?: string }>(
+      '/payroll/tax-proofs/summary', { params: financialYear ? { financial_year: financialYear } : undefined },
+    ),
+
   // Loan / Advance Management
   requestLoan: (data: { loan_type: string; amount: number; emi_amount: number; total_installments: number; purpose?: string }) =>
     api.post<{ success: boolean; message: string; loan: any }>('/payroll/loans/request', data),
@@ -1712,8 +1756,8 @@ export const payrollApi = {
     api.post<any>('/payroll/filings/generate/esi-challan', { payroll_run_id: payrollRunId }),
   generateForm24Q: (payrollRunId: number) =>
     api.post<any>('/payroll/filings/generate/form-24q', { payroll_run_id: payrollRunId }),
-  generateForm16: (payrollItemId: number) =>
-    api.post<any>('/payroll/filings/generate/form-16', { payroll_item_id: payrollItemId }),
+  generateForm16: (userId: number, financialYear: string) =>
+    api.post<any>('/payroll/filings/generate/form-16', { user_id: userId, financial_year: financialYear }),
   generateForm12BA: (payrollRunId: number) =>
     api.post<any>('/payroll/filings/generate/form-12ba', { payroll_run_id: payrollRunId }),
   generatePtReturn: (payrollRunId: number, state: string) =>

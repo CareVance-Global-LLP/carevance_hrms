@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PayrollItem;
 use App\Models\PayrollTimeEntry;
 use App\Models\User;
 use App\Models\Organization;

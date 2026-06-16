@@ -111,7 +111,7 @@ class ReimbursementController extends Controller
 
         return response()->json([
             'message' => 'Reimbursement updated successfully.',
-            'reimbursement' => $reimbursement->fresh()->load(['employee:id:name']),
+            'reimbursement' => $reimbursement->fresh()->load(['employee:id,name']),
         ]);
     }
 

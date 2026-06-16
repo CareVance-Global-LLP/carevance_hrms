@@ -47,9 +47,16 @@ class PayrollFilingController extends Controller
 
     public function generateForm16(Request $request, PayrollFilingService $filingService)
     {
-        $request->validate(['payroll_item_id' => 'required|exists:payroll_items,id']);
-        $item = \App\Models\PayrollItem::findOrFail($request->payroll_item_id);
-        $filing = $filingService->generateForm16($item, auth()->user()->organization_id, auth()->id());
+        $data = $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'financial_year' => 'required|string|regex:/^\d{4}-\d{4}$/',
+        ]);
+        $filing = $filingService->generateForm16(
+            $data['user_id'],
+            $data['financial_year'],
+            auth()->user()->organization_id,
+            auth()->id()
+        );
         return response()->json($filing);
     }
 

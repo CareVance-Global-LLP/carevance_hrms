@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, 
   Save, 
@@ -33,27 +33,6 @@ interface EmployeePayrollWizardProps {
   onBack: () => void;
   onComplete?: () => void;
 }
-
-const INDIAN_STATES = [
-  { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
-  { value: 'assam', label: 'Assam' },
-  { value: 'bihar', label: 'Bihar' },
-  { value: 'delhi', label: 'Delhi' },
-  { value: 'gujarat', label: 'Gujarat' },
-  { value: 'haryana', label: 'Haryana' },
-  { value: 'jharkhand', label: 'Jharkhand' },
-  { value: 'karnataka', label: 'Karnataka' },
-  { value: 'kerala', label: 'Kerala' },
-  { value: 'madhya_pradesh', label: 'Madhya Pradesh' },
-  { value: 'maharashtra', label: 'Maharashtra' },
-  { value: 'odisha', label: 'Odisha' },
-  { value: 'punjab', label: 'Punjab' },
-  { value: 'rajasthan', label: 'Rajasthan' },
-  { value: 'tamil_nadu', label: 'Tamil Nadu' },
-  { value: 'telangana', label: 'Telangana' },
-  { value: 'uttar_pradesh', label: 'Uttar Pradesh' },
-  { value: 'west_bengal', label: 'West Bengal' },
-];
 
 const CTC_PRESETS = [
   { value: 300000, label: '₹3L' },
@@ -92,6 +71,42 @@ export default function EmployeePayrollWizard({
     queryKey: ['payroll', 'employee', employeeId, monthYear],
     queryFn: () => payrollApi.getEmployeePayrollDetails(employeeId, { month_year: monthYear }).then(res => res.data),
   });
+
+  // Fetch PT states (slabs/slabs are server-side; we only need the dropdown options here)
+  const { data: ptStatesData } = useQuery({
+    queryKey: ['payroll', 'pt-states'],
+    queryFn: () => payrollApi.getPTStates().then(r => r.data),
+    staleTime: 1000 * 60 * 60 * 24, // PT state list is static — cache for a day
+  });
+
+  // Build the dropdown options from the API; fall back to a static list if the
+  // API call fails (e.g. offline) so the wizard still works.
+  const INDIAN_STATES = useMemo(() => {
+    const apiStates = (ptStatesData?.all_states ?? []) as Array<{ code: string; name: string }>;
+    if (apiStates.length > 0) {
+      return apiStates.map(s => ({ value: s.code, label: s.name }));
+    }
+    return [
+      { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
+      { value: 'assam', label: 'Assam' },
+      { value: 'bihar', label: 'Bihar' },
+      { value: 'delhi', label: 'Delhi' },
+      { value: 'gujarat', label: 'Gujarat' },
+      { value: 'haryana', label: 'Haryana' },
+      { value: 'jharkhand', label: 'Jharkhand' },
+      { value: 'karnataka', label: 'Karnataka' },
+      { value: 'kerala', label: 'Kerala' },
+      { value: 'madhya_pradesh', label: 'Madhya Pradesh' },
+      { value: 'maharashtra', label: 'Maharashtra' },
+      { value: 'odisha', label: 'Odisha' },
+      { value: 'punjab', label: 'Punjab' },
+      { value: 'rajasthan', label: 'Rajasthan' },
+      { value: 'tamil_nadu', label: 'Tamil Nadu' },
+      { value: 'telangana', label: 'Telangana' },
+      { value: 'uttar_pradesh', label: 'Uttar Pradesh' },
+      { value: 'west_bengal', label: 'West Bengal' },
+    ];
+  }, [ptStatesData]);
 
   // Update template mutation
   const updateTemplateMutation = useMutation({
