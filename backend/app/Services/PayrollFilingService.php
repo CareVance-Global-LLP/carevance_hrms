@@ -8,6 +8,7 @@ use App\Models\PayrollItem;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\User;
 use App\Models\Organization;
+use App\Models\PerquisiteRecord;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -29,20 +30,20 @@ class PayrollFilingService
         $totalWages = 0;
 
         foreach ($items as $item) {
-            $profile = $item->user->employeeProfile;
-            $workInfo = $item->user->employeeWorkInfo;
+            $profile = $item->user->employeeProfile;   // may be null
+            $workInfo = $item->user->employeeWorkInfo; // may be null
             $pfWages = min($item->basic, 15000);
             $totalWages += $pfWages;
 
             $lines[] = sprintf(
                 "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f",
-                $profile->uan_number ?? '',
-                $profile->uan_number ?? '',
+                $profile?->uan_number ?? '',
+                $profile?->uan_number ?? '',
                 $item->user->name ?? '',
-                $workInfo->father_name ?? '',
-                $profile->date_of_birth ? Carbon::parse($profile->date_of_birth)->format('d/m/Y') : '',
-                $profile->gender === 'female' ? 'F' : 'M',
-                $workInfo->date_of_joining ? Carbon::parse($workInfo->date_of_joining)->format('d/m/Y') : '',
+                $workInfo?->father_name ?? '',
+                $profile?->date_of_birth ? Carbon::parse($profile->date_of_birth)->format('d/m/Y') : '',
+                ($profile?->gender === 'female') ? 'F' : 'M',
+                $workInfo?->date_of_joining ? Carbon::parse($workInfo->date_of_joining)->format('d/m/Y') : '',
                 $pfWages,
                 $item->pf_employee ?? 0,
                 $item->eps ?? 0,
@@ -190,48 +191,96 @@ class PayrollFilingService
         ]);
     }
 
-    public function generateForm16(PayrollItem $item, int $orgId, int $userId): PayrollFiling
+    /**
+     * Generate Form 16 (TDS certificate) for an employee for one financial year.
+     * Aggregates all `payroll_items` for the user across the FY (Apr-Mar).
+     * Renders Part A (employer/deductor details) + Part B (annualized tax computation)
+     * via filings.form16_annual view and saves as PDF.
+     */
+    public function generateForm16(int $employeeUserId, string $financialYear, int $orgId, int $generatorId): PayrollFiling
     {
-        $user = $item->user()->with('employeeProfile', 'employeeWorkInfo')->first();
-        $org = Organization::find($orgId);
-        $run = $item->payrollRun;
-        $finYear = $this->getFinancialYear($run->month_year);
+        [$fyStart, $fyEnd] = $this->getFinancialYearRange($financialYear);
 
-        $html = view('filings.form16', [
+        $user = User::with('employeeProfile', 'employeeWorkInfo')
+            ->where('organization_id', $orgId)
+            ->findOrFail($employeeUserId);
+        $org = Organization::find($orgId);
+
+        $items = PayrollItem::where('organization_id', $orgId)
+            ->where('user_id', $employeeUserId)
+            ->whereBetween('month_year', [$fyStart, $fyEnd])
+            ->orderBy('month_year')
+            ->get();
+
+        if ($items->isEmpty()) {
+            throw new \RuntimeException("No payroll items found for user {$employeeUserId} in FY {$financialYear}");
+        }
+
+        // Aggregate annual totals
+        $totals = [
+            'gross' => (float) $items->sum('gross_salary'),
+            'basic' => (float) $items->sum('basic'),
+            'hra' => (float) $items->sum('hra'),
+            'pf_employee' => (float) $items->sum('pf_employee'),
+            'esi_employee' => (float) $items->sum('esi_employee'),
+            'pt' => (float) $items->sum('pt'),
+            'tds' => (float) $items->sum('tds'),
+            'total_deductions' => (float) $items->sum('total_deductions'),
+        ];
+
+        // Use first item's tax regime as the canonical one (we assume it doesn't change mid-year)
+        $firstItem = $items->first();
+        $taxRegime = $firstItem->template_snapshot['tax_regime'] ?? 'new';
+
+        // Recompute annual tax via the canonical service so the certificate matches
+        // what we actually deducted, rather than echoing the sum.
+        $annualExemptions = $this->calculator->getApprovedTaxDeductions($employeeUserId, $financialYear);
+        $annualizedTds = $this->calculator->calculateMonthlyTDS(
+            annualGross: $totals['gross'],
+            taxRegime: $taxRegime,
+            exemptions: ['section_80c' => $annualExemptions]
+        );
+
+        $html = view('filings.form16_annual', [
             'employer' => $org,
             'employee' => $user,
-            'item' => $item,
-            'run' => $run,
-            'financialYear' => $finYear,
-            'certificateNo' => 'PART-A-' . $item->id,
-            'tan' => $org->settings['tan_number'] ?? '',
+            'financialYear' => $financialYear,
+            'totals' => $totals,
+            'annualizedTds' => $annualizedTds,
+            'taxRegime' => $taxRegime,
+            'months' => $items,
             'pan' => $org->settings['pan_number'] ?? '',
-            'remarks' => '',
+            'tan' => $org->settings['tan_number'] ?? '',
+            'certificateNo' => 'FORM16-' . str_replace('-', '', $financialYear) . '-' . $employeeUserId,
+            'generatedAt' => now(),
         ])->render();
 
-        $filename = sprintf('form_16_%s_%s_%s.pdf', $user->employeeProfile->pan_number ?? 'NOPAN', $user->id, $finYear);
+        $filename = sprintf('form_16_%s_%s.html', $user->employeeProfile->pan_number ?? 'NOPAN', $financialYear);
         $path = "filings/{$orgId}/form16/{$filename}";
 
-        $pdfService = app(PayrollPdfService::class);
-        $pdf = $pdfService->generatePayslip($item);
-        Storage::disk('local')->put($path, $pdf->output());
+        // Persist HTML (the existing PayrollPdfService is for payslips, not tax certificates;
+        // HTML keeps the file human-readable & printable without pulling in another PDF lib).
+        Storage::disk('local')->put($path, $html);
 
         return PayrollFiling::create([
             'organization_id' => $orgId,
             'type' => 'form_16',
             'period_type' => 'annual',
-            'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
+            'period_year' => (int) explode('-', $financialYear)[0],
             'status' => 'generated',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
-            'generated_by' => $userId,
+            'generated_by' => $generatorId,
             'meta_data' => [
-                'user_id' => $user->id,
+                'user_id' => $employeeUserId,
                 'pan' => $user->employeeProfile->pan_number ?? '',
-                'financial_year' => $finYear,
-                'part_a_amount' => $item->gross_salary,
-                'part_b_tds' => $item->tds,
+                'financial_year' => $financialYear,
+                'tax_regime' => $taxRegime,
+                'annual_gross' => $totals['gross'],
+                'annual_tds' => $totals['tds'],
+                'recomputed_annual_tds' => $annualizedTds['annual_tax'] ?? null,
+                'months_included' => $items->count(),
             ],
         ]);
     }
@@ -272,12 +321,15 @@ class PayrollFilingService
 
     public function generatePtReturn(PayrollMonthlyRun $run, string $state, int $orgId, int $userId): PayrollFiling
     {
-        $items = $run->items()->with('user.employeeProfile')
-            ->whereHas('user.employeePayrollTemplate', fn($q) => $q->where('pt_state', $state))
+        // Filter items whose employee's template is in the given state.
+        $userIdsInState = EmployeePayrollTemplate::where('organization_id', $orgId)
+            ->where('pt_state', $state)
+            ->pluck('user_id');
+        $items = $run->items()
+            ->with('user.employeeProfile', 'user.employeeWorkInfo')
+            ->whereIn('user_id', $userIdsInState)
             ->get();
-
-        $ptService = app(PTStateService::class);
-        $slabs = $ptService->getSlabs($state);
+        $org = Organization::find($orgId);
 
         $lines = [];
         $lines[] = "PROFESSIONAL TAX RETURN - {$state}";
@@ -318,8 +370,12 @@ class PayrollFilingService
 
     public function generateLwfReturn(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
-        $items = $run->items()->with('user.employeeProfile')
-            ->whereHas('user.employeePayrollTemplate', fn($q) => $q->where('lwf_enabled', true))
+        $userIdsWithLwf = EmployeePayrollTemplate::where('organization_id', $orgId)
+            ->where('lwf_enabled', true)
+            ->pluck('user_id');
+        $items = $run->items()
+            ->with('user.employeeProfile', 'user.employeeWorkInfo')
+            ->whereIn('user_id', $userIdsWithLwf)
             ->get();
         $org = Organization::find($orgId);
 
@@ -439,5 +495,22 @@ class PayrollFilingService
             return $y . '-' . ($y + 1);
         }
         return ($y - 1) . '-' . $y;
+    }
+
+    /**
+     * Returns [start_month_year, end_month_year] for a financial year string.
+     * Example: getFinancialYearRange('2025-2026') => ['2025-04', '2026-03']
+     */
+    private function getFinancialYearRange(string $financialYear): array
+    {
+        if (!preg_match('/^(\d{4})-(\d{4})$/', $financialYear, $m)) {
+            throw new \InvalidArgumentException("Invalid financial year format: {$financialYear} (expected YYYY-YYYY)");
+        }
+        $startYear = (int) $m[1];
+        $endYear = (int) $m[2];
+        if ($endYear !== $startYear + 1) {
+            throw new \InvalidArgumentException("Financial year end ({$endYear}) must be start + 1 ({$startYear})");
+        }
+        return [sprintf('%d-04', $startYear), sprintf('%d-03', $endYear)];
     }
 }

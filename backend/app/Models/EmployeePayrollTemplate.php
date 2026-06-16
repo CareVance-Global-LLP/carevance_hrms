@@ -160,7 +160,17 @@ class EmployeePayrollTemplate extends Model
     }
 
     /**
-     * Create or update template for user
+     * Create or update template for user.
+     *
+     * Default-resolution order (highest priority last):
+     *   1. Built-in hard defaults (getDefaultSettings)
+     *   2. DepartmentPayrollTemplate for the user's primary group, if one exists
+     *   3. Organization.settings['payroll']
+     *
+     * NOTE: this method only runs when there is no existing template for the
+     * user. Editing a department template does NOT retroactively change
+     * existing employees' templates (per the master guide §4: 'Make sure the
+     * check actually runs *after* ... not before' / 'payroll is a consumer').
      */
     public static function getOrCreateForUser(int $userId, int $organizationId, ?int $createdBy = null): self
     {
@@ -169,34 +179,56 @@ class EmployeePayrollTemplate extends Model
             ->first();
 
         if (!$template) {
-            // Get organization settings
             $organization = \App\Models\Organization::find($organizationId);
-            $orgSettings = $organization?->settings['payroll'] ?? [];
-            
-            // Merge default settings with organization settings
+            $orgSettings = is_array($organization?->settings['payroll'] ?? null) ? $organization->settings['payroll'] : [];
+
+            $deptTemplate = null;
+            $user = \App\Models\User::find($userId);
+            if ($user) {
+                $deptTemplate = DepartmentPayrollTemplate::findForUser($user);
+            }
+
             $settings = array_merge(
                 self::getDefaultSettings(),
+                $deptTemplate ? $deptTemplate->toEmployeeTemplateDefaults() : [],
                 [
-                    'basic_percentage' => $orgSettings['defaultBasicPercentage'] ?? 40.00,
-                    'hra_percentage' => $orgSettings['defaultHraPercentage'] ?? 50.00,
-                    'conveyance_allowance' => $orgSettings['defaultConveyance'] ?? 1600.00,
-                    'pf_employee_percentage' => $orgSettings['pfEmployeePercentage'] ?? 12.00,
-                    'pf_employer_percentage' => $orgSettings['pfEmployerPercentage'] ?? 12.00,
-                    'pf_wage_cap' => $orgSettings['pfWageCap'] ?? 15000.00,
-                    'esi_employee_percentage' => $orgSettings['esiEmployeePercentage'] ?? 0.75,
-                    'esi_employer_percentage' => $orgSettings['esiEmployerPercentage'] ?? 3.25,
-                    'esi_threshold' => $orgSettings['esiThreshold'] ?? 21000.00,
-                    'pt_state' => $orgSettings['defaultState'] ?? 'maharashtra',
-                    'tax_regime' => $orgSettings['defaultTaxRegime'] ?? 'new',
-                    'is_metro_city' => $orgSettings['isMetroCity'] ?? true,
-                    'pf_enabled' => $orgSettings['pfEnabled'] ?? true,
-                    'esi_enabled' => $orgSettings['esiEnabled'] ?? true,
-                    'pt_enabled' => $orgSettings['ptEnabled'] ?? true,
-                    'tds_enabled' => $orgSettings['tdsEnabled'] ?? true,
-                    'lwf_enabled' => $orgSettings['lwfEnabled'] ?? false,
+                    'basic_percentage' => $orgSettings['defaultBasicPercentage']
+                        ?? ($deptTemplate?->basic_percentage ?? 40.00),
+                    'hra_percentage' => $orgSettings['defaultHraPercentage']
+                        ?? ($deptTemplate?->hra_percentage ?? 50.00),
+                    'conveyance_allowance' => $orgSettings['defaultConveyance']
+                        ?? ($deptTemplate?->conveyance_allowance ?? 1600.00),
+                    'pf_employee_percentage' => $orgSettings['pfEmployeePercentage']
+                        ?? ($deptTemplate?->pf_employee_percentage ?? 12.00),
+                    'pf_employer_percentage' => $orgSettings['pfEmployerPercentage']
+                        ?? ($deptTemplate?->pf_employer_percentage ?? 12.00),
+                    'pf_wage_cap' => $orgSettings['pfWageCap']
+                        ?? ($deptTemplate?->pf_wage_cap ?? 15000.00),
+                    'esi_employee_percentage' => $orgSettings['esiEmployeePercentage']
+                        ?? ($deptTemplate?->esi_employee_percentage ?? 0.75),
+                    'esi_employer_percentage' => $orgSettings['esiEmployerPercentage']
+                        ?? ($deptTemplate?->esi_employer_percentage ?? 3.25),
+                    'esi_threshold' => $orgSettings['esiThreshold']
+                        ?? ($deptTemplate?->esi_threshold ?? 21000.00),
+                    'pt_state' => $orgSettings['defaultState']
+                        ?? ($deptTemplate?->pt_state ?? 'maharashtra'),
+                    'tax_regime' => $orgSettings['defaultTaxRegime']
+                        ?? ($deptTemplate?->tax_regime ?? 'new'),
+                    'is_metro_city' => $orgSettings['isMetroCity']
+                        ?? ($deptTemplate?->is_metro_city ?? true),
+                    'pf_enabled' => $orgSettings['pfEnabled']
+                        ?? ($deptTemplate?->pf_enabled ?? true),
+                    'esi_enabled' => $orgSettings['esiEnabled']
+                        ?? ($deptTemplate?->esi_enabled ?? true),
+                    'pt_enabled' => $orgSettings['ptEnabled']
+                        ?? ($deptTemplate?->pt_enabled ?? true),
+                    'tds_enabled' => $orgSettings['tdsEnabled']
+                        ?? ($deptTemplate?->tds_enabled ?? true),
+                    'lwf_enabled' => $orgSettings['lwfEnabled']
+                        ?? ($deptTemplate?->lwf_enabled ?? false),
                 ]
             );
-            
+
             $template = self::create([
                 'user_id' => $userId,
                 'organization_id' => $organizationId,

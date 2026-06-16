@@ -9,6 +9,7 @@ use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Services\Attendance\AttendanceService;
 use App\Services\PayrollCalculatorService;
 use App\Services\PTStateService;
 use Carbon\Carbon;
@@ -19,10 +20,12 @@ use Illuminate\Support\Facades\DB;
 class PayrollDepartmentController extends Controller
 {
     protected PayrollCalculatorService $calculator;
+    protected AttendanceService $attendance;
 
-    public function __construct(PayrollCalculatorService $calculator)
+    public function __construct(PayrollCalculatorService $calculator, AttendanceService $attendance)
     {
         $this->calculator = $calculator;
+        $this->attendance = $attendance;
     }
 
     /**
@@ -343,6 +346,9 @@ class PayrollDepartmentController extends Controller
         // Get time tracking data
         $timeData = $this->getTimeTrackingData($userId, $monthYear);
 
+        // NEW: Real attendance summary (single source of truth, hours + days).
+        $attendanceSummary = $this->attendance->monthlyAttendanceSummary($user, $monthYear);
+
         // Get or create payroll template
         $template = EmployeePayrollTemplate::getOrCreateForUser(
             $userId,
@@ -399,10 +405,47 @@ class PayrollDepartmentController extends Controller
                 'bank_ifsc' => $user->employeeBankAccounts->first()?->ifsc_swift,
             ],
             'time_tracking' => $timeData,
+            'attendance_summary' => $attendanceSummary,
             'template' => $template,
             'existing_payroll' => $payrollItem,
             'payroll_preview' => $payrollPreview,
             'month_year' => $monthYear,
+        ]);
+    }
+
+    /**
+     * Get the monthly attendance summary (the single source of truth used
+     * by every payroll path). Returns days AND hours, plus the
+     * `attendance_source` marker so the UI can tell whether real Tracker
+     * data or no-punch fallback was used.
+     *
+     * Defaults to the caller's own user id, but admins can pass ?user_id=
+     * to fetch for any user in their org.
+     */
+    public function getMonthlyAttendanceSummary(Request $request): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+        $monthYear = $request->get('month_year', now()->format('Y-m'));
+        $userId = (int) $request->get('user_id', $request->user()->id);
+
+        $user = User::where('organization_id', $organizationId)
+            ->where('id', $userId)
+            ->firstOrFail();
+
+        $summary = $this->attendance->monthlyAttendanceSummary($user, $monthYear);
+
+        // Add an `hours` block for clarity. Seconds remain the source of
+        // truth in the DB; this is presentation-only.
+        $summary['hours'] = [
+            'worked_hours' => round(($summary['total_worked_seconds'] ?? 0) / 3600, 2),
+            'overtime_hours' => round(($summary['overtime_seconds'] ?? 0) / 3600, 2),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'user_id' => $user->id,
+            'month_year' => $monthYear,
+            'summary' => $summary,
         ]);
     }
 
@@ -444,6 +487,7 @@ class PayrollDepartmentController extends Controller
 
         $template->update([
             ...$request->only([
+                'annual_ctc',
                 'basic_percentage',
                 'hra_percentage',
                 'conveyance_allowance',
@@ -477,8 +521,8 @@ class PayrollDepartmentController extends Controller
         $request->validate([
             'month_year' => 'required|string',
             'annual_ctc' => 'required|numeric|min:0',
-            'working_days' => 'required|integer|min:1',
-            'days_present' => 'required|integer|min:0',
+            'working_days' => 'nullable|integer|min:1',
+            'days_present' => 'nullable|integer|min:0',
             'lOP_days' => 'nullable|numeric|min:0',
             'overtime_hours' => 'nullable|numeric|min:0',
         ]);
@@ -494,6 +538,17 @@ class PayrollDepartmentController extends Controller
         // Save annual_ctc to template for future use
         $template->update(['annual_ctc' => $request->annual_ctc]);
 
+        // Immutability: reject if the run is already paid or released.
+        $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $request->month_year)
+            ->first();
+        if ($existingRun && in_array($existingRun->status, ['paid', 'released'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot process payroll — run for {$request->month_year} is already {$existingRun->status} and immutable.",
+            ], 422);
+        }
+
         // Get or create payroll run
         $payrollRun = PayrollMonthlyRun::firstOrCreate(
             [
@@ -505,6 +560,17 @@ class PayrollDepartmentController extends Controller
                 'created_by' => auth()->id(),
             ]
         );
+
+        // Attendance: use the shared monthly summary as the source of truth.
+        // If the caller (wizard manual override) explicitly passes the
+        // attendance fields, those win — the summary is the fallback.
+        $attendance = $this->attendance->monthlyAttendanceSummary($user, $request->month_year);
+        $workingDays = $request->filled('working_days') ? (int) $request->working_days : (int) round($attendance['working_days']);
+        $daysPresent = $request->filled('days_present') ? (int) $request->days_present : (int) round($attendance['present_days']);
+        $lOPDays = $request->filled('lOP_days') ? (float) $request->lOP_days : (float) $attendance['lop_days'];
+        $overtimeHours = $request->filled('overtime_hours')
+            ? (float) $request->overtime_hours
+            : round($attendance['overtime_seconds'] / 3600, 2);
 
         // Get department ID
         $departmentId = DB::table('group_user')
@@ -543,15 +609,13 @@ class PayrollDepartmentController extends Controller
             : 0;
 
         // Calculate LOP deduction
-        $lOPDays = $request->lOP_days ?? 0;
-        $lOPDeduction = $calculation['monthly']['gross'] > 0 && $request->working_days > 0
-            ? ($calculation['monthly']['gross'] / $request->working_days) * $lOPDays
+        $lOPDeduction = $calculation['monthly']['gross'] > 0 && $workingDays > 0
+            ? ($calculation['monthly']['gross'] / $workingDays) * $lOPDays
             : 0;
 
         // Calculate overtime pay (assuming 2x rate)
-        $overtimeHours = $request->overtime_hours ?? 0;
-        $hourlyRate = $request->working_days > 0
-            ? $calculation['monthly']['gross'] / ($request->working_days * 8)
+        $hourlyRate = $workingDays > 0
+            ? $calculation['monthly']['gross'] / ($workingDays * 8)
             : 0;
         $overtimePay = $overtimeHours * $hourlyRate * 2;
 
@@ -559,7 +623,7 @@ class PayrollDepartmentController extends Controller
         $timeData = $this->getTimeTrackingData($userId, $request->month_year);
 
         // Prevent negative days
-        $daysAbsent = max(0, $request->working_days - $request->days_present - $lOPDays);
+        $daysAbsent = max(0, $workingDays - $daysPresent - $lOPDays);
 
         // Loan / Advance EMI deduction
         $loanEmiAmount = 0;
@@ -603,10 +667,11 @@ class PayrollDepartmentController extends Controller
                 'user_id' => $userId,
             ],
             [
+                'month_year' => $request->month_year,
                 'organization_id' => $organizationId,
                 'department_id' => $departmentId,
-                'total_working_days' => $request->working_days,
-                'days_present' => $request->days_present,
+                'total_working_days' => $workingDays,
+                'days_present' => $daysPresent,
                 'days_absent' => $daysAbsent,
                 'lOP_days' => $lOPDays,
                 'total_worked_seconds' => $timeData['total_worked_seconds'],
@@ -649,6 +714,154 @@ class PayrollDepartmentController extends Controller
             'success' => true,
             'message' => 'Payroll processed successfully',
             'payroll_item' => $payrollItem->fresh(),
+        ]);
+    }
+
+    /**
+     * Quick-save CTC for an employee (inline update from Roster card).
+     * Validates run is not paid/released before persisting.
+     */
+    public function quickSaveCtc(Request $request, int $userId): JsonResponse
+    {
+        $data = $request->validate([
+            'annual_ctc' => 'required|numeric|min:0',
+            'month_year' => 'required|string',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+
+        $user = User::where('organization_id', $organizationId)
+            ->where('id', $userId)
+            ->firstOrFail();
+
+        // Immutability: reject if the run is already paid or released.
+        $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $data['month_year'])
+            ->first();
+        if ($existingRun && in_array($existingRun->status, ['paid', 'released'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot update CTC — run for {$data['month_year']} is already {$existingRun->status} and immutable.",
+            ], 422);
+        }
+
+        $template = EmployeePayrollTemplate::getOrCreateForUser(
+            $userId,
+            $organizationId,
+            auth()->id()
+        );
+        $template->update([
+            'annual_ctc' => $data['annual_ctc'],
+            'updated_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'CTC updated',
+            'template' => $template->fresh(),
+        ]);
+    }
+
+    /**
+     * Bulk process payroll for selected employees in a department.
+     * For each user_id: validates the run is not paid/released and reuses
+     * the same per-employee calc as processEmployeePayroll.
+     */
+    public function processSelectedEmployees(Request $request, int $departmentId): JsonResponse
+    {
+        $data = $request->validate([
+            'month_year' => 'required|string',
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+            'working_days' => 'required|integer|min:1',
+            'default_annual_ctc' => 'nullable|numeric|min:0',
+            'lOP_days' => 'nullable|numeric|min:0',
+            'overtime_hours' => 'nullable|numeric|min:0',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+
+        // Verify department belongs to org
+        $deptExists = DB::table('groups')
+            ->where('id', $departmentId)
+            ->where('organization_id', $organizationId)
+            ->exists();
+        if (!$deptExists) {
+            return response()->json(['success' => false, 'message' => 'Department not found'], 404);
+        }
+
+        // Verify all users are in this department
+        $validUserIds = DB::table('group_user')
+            ->where('group_id', $departmentId)
+            ->whereIn('user_id', $data['user_ids'])
+            ->pluck('user_id')
+            ->toArray();
+
+        if (count($validUserIds) === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No valid users found in this department',
+            ], 422);
+        }
+
+        // Early check: if the run is paid/released, abort the whole batch
+        $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $data['month_year'])
+            ->first();
+        if ($existingRun && in_array($existingRun->status, ['paid', 'released'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot process payroll — run for {$data['month_year']} is already {$existingRun->status} and immutable.",
+            ], 422);
+        }
+
+        $succeeded = [];
+        $failed = [];
+        $lOPDays = $data['lOP_days'] ?? 0;
+        $overtimeHours = $data['overtime_hours'] ?? 0;
+
+        foreach ($validUserIds as $uid) {
+            $template = EmployeePayrollTemplate::getOrCreateForUser($uid, $organizationId);
+            $annualCtc = $template->annual_ctc ?: ($data['default_annual_ctc'] ?? 0);
+
+            if ($annualCtc <= 0) {
+                $failed[] = [
+                    'user_id' => $uid,
+                    'reason' => 'No annual_ctc set on template; pass default_annual_ctc to apply',
+                ];
+                continue;
+            }
+
+            $daysPresent = $data['working_days'] - $lOPDays;
+
+            $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', [
+                'month_year' => $data['month_year'],
+                'annual_ctc' => $annualCtc,
+                'working_days' => $data['working_days'],
+                'days_present' => max(0, $daysPresent),
+                'lOP_days' => $lOPDays,
+                'overtime_hours' => $overtimeHours,
+            ]);
+            $subRequest->setUserResolver(fn () => $request->user());
+
+            try {
+                $response = $this->processEmployeePayroll($subRequest, $uid);
+                $payload = $response->getData(true);
+                if (($payload['success'] ?? false) === true) {
+                    $succeeded[] = ['user_id' => $uid, 'payroll_item_id' => $payload['payroll_item']['id'] ?? null];
+                } else {
+                    $failed[] = ['user_id' => $uid, 'reason' => $payload['message'] ?? 'Unknown error'];
+                }
+            } catch (\Throwable $e) {
+                $failed[] = ['user_id' => $uid, 'reason' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'success' => count($failed) === 0,
+            'message' => count($succeeded) . ' processed, ' . count($failed) . ' failed',
+            'succeeded' => $succeeded,
+            'failed' => $failed,
         ]);
     }
 
@@ -855,6 +1068,9 @@ class PayrollDepartmentController extends Controller
                 'employee_name' => $item->user?->name,
                 'employee_email' => $item->user?->email,
                 'department' => $item->department?->name,
+                'total_working_days' => $item->total_working_days,
+                'days_present' => $item->days_present,
+                'lOP_days' => $item->lOP_days,
                 'basic' => $item->basic,
                 'hra' => $item->hra,
                 'gross_salary' => $item->gross_salary,
@@ -868,6 +1084,12 @@ class PayrollDepartmentController extends Controller
                 'payment_status' => $item->payment_status,
                 'payment_method' => $item->payment_method,
                 'payment_reference' => $item->payment_reference,
+                // Hours snapshot for at-a-glance reporting.
+                'worked_hours' => $item->worked_hours,
+                'productive_hours' => $item->productive_hours,
+                'overtime_hours' => $item->overtime_hours,
+                'idle_hours' => $item->idle_hours,
+                'unproductive_hours' => $item->unproductive_hours,
             ];
         });
 
@@ -1135,6 +1357,16 @@ class PayrollDepartmentController extends Controller
                     'name' => $user->organization?->name,
                 ],
                 'month' => $run->month_year,
+                'attendance' => [
+                    'total_working_days' => $item->total_working_days,
+                    'days_present' => $item->days_present,
+                    'lOP_days' => $item->lOP_days,
+                    'worked_hours' => $item->worked_hours,
+                    'productive_hours' => $item->productive_hours,
+                    'overtime_hours' => $item->overtime_hours,
+                    'idle_hours' => $item->idle_hours,
+                    'unproductive_hours' => $item->unproductive_hours,
+                ],
                 'earnings' => [
                     'basic' => $item->basic,
                     'hra' => $item->hra,

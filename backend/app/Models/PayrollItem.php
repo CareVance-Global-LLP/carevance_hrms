@@ -9,6 +9,7 @@ class PayrollItem extends Model
 {
     protected $fillable = [
         'payroll_run_id',
+        'month_year',
         'organization_id',
         'user_id',
         'department_id',
@@ -30,12 +31,36 @@ class PayrollItem extends Model
         'conveyance',
         'medical',
         'special_allowance',
+        'da',
+        'cca',
+        'education',
+        'hostel',
+        'internet',
+        'meal',
+        'transport',
+        'uniform',
+        'books_periodicals_amount',
+        'fuel_maintenance',
+        'variable_pay',
+        'performance_bonus',
+        'retention_bonus',
+        'arrears',
+        'arrears_pf',
+        'leave_encashment',
+        'encashed_leave_days',
+        'notice_pay_recovery',
+        'notice_pay_addition',
         'custom_earnings',
         'gross_salary',
         'pf_employee',
         'esi_employee',
         'pt',
         'tds',
+        'nps_employee',
+        'vpf_employee',
+        'lwf',
+        'medical_insurance',
+        'life_insurance',
         'lOP_deduction',
         'custom_deductions',
         'total_deductions',
@@ -44,13 +69,22 @@ class PayrollItem extends Model
         'epf',
         'esi_employer',
         'gratuity',
+        'nps_employer',
+        'superannuation',
+        'medical_insurance_employer',
         'total_employer_contributions',
         'net_pay',
+        'shift_differential',
+        'night_shift_hours',
+        'weekend_hours',
+        'is_full_and_final',
+        'settlement_type',
         'payment_status',
         'payment_method',
         'payment_reference',
         'paid_at',
         'template_snapshot',
+        'additional_components',
     ];
 
     protected $casts = [
@@ -63,12 +97,36 @@ class PayrollItem extends Model
         'conveyance' => 'decimal:2',
         'medical' => 'decimal:2',
         'special_allowance' => 'decimal:2',
+        'da' => 'decimal:2',
+        'cca' => 'decimal:2',
+        'education' => 'decimal:2',
+        'hostel' => 'decimal:2',
+        'internet' => 'decimal:2',
+        'meal' => 'decimal:2',
+        'transport' => 'decimal:2',
+        'uniform' => 'decimal:2',
+        'books_periodicals_amount' => 'decimal:2',
+        'fuel_maintenance' => 'decimal:2',
+        'variable_pay' => 'decimal:2',
+        'performance_bonus' => 'decimal:2',
+        'retention_bonus' => 'decimal:2',
+        'arrears' => 'decimal:2',
+        'arrears_pf' => 'decimal:2',
+        'leave_encashment' => 'decimal:2',
+        'encashed_leave_days' => 'integer',
+        'notice_pay_recovery' => 'decimal:2',
+        'notice_pay_addition' => 'decimal:2',
         'custom_earnings' => 'decimal:2',
         'gross_salary' => 'decimal:2',
         'pf_employee' => 'decimal:2',
         'esi_employee' => 'decimal:2',
         'pt' => 'decimal:2',
         'tds' => 'decimal:2',
+        'nps_employee' => 'decimal:2',
+        'vpf_employee' => 'decimal:2',
+        'lwf' => 'decimal:2',
+        'medical_insurance' => 'decimal:2',
+        'life_insurance' => 'decimal:2',
         'lOP_deduction' => 'decimal:2',
         'custom_deductions' => 'decimal:2',
         'total_deductions' => 'decimal:2',
@@ -77,10 +135,33 @@ class PayrollItem extends Model
         'epf' => 'decimal:2',
         'esi_employer' => 'decimal:2',
         'gratuity' => 'decimal:2',
+        'nps_employer' => 'decimal:2',
+        'superannuation' => 'decimal:2',
+        'medical_insurance_employer' => 'decimal:2',
         'total_employer_contributions' => 'decimal:2',
         'net_pay' => 'decimal:2',
+        'shift_differential' => 'decimal:2',
+        'night_shift_hours' => 'integer',
+        'weekend_hours' => 'integer',
+        'is_full_and_final' => 'boolean',
         'paid_at' => 'datetime',
         'template_snapshot' => 'array',
+        'additional_components' => 'array',
+    ];
+
+    /**
+     * Accessors appended to JSON output so any API response that returns
+     * a PayrollItem (or a collection of them) automatically includes the
+     * hour-snapshot of every time-attendance field. Seconds remain the
+     * source of truth; the hour fields are derived.
+     */
+    protected $appends = [
+        'worked_hours',
+        'productive_hours',
+        'idle_hours',
+        'unproductive_hours',
+        'overtime_hours',
+        'attendance_percentage',
     ];
 
     public function payrollRun(): BelongsTo
@@ -117,6 +198,49 @@ class PayrollItem extends Model
     public function getOvertimeHoursAttribute(): float
     {
         return round($this->overtime_seconds / 3600, 2);
+    }
+
+    /**
+     * Get productive hours
+     */
+    public function getProductiveHoursAttribute(): float
+    {
+        return round($this->total_productive_seconds / 3600, 2);
+    }
+
+    /**
+     * Get idle hours
+     */
+    public function getIdleHoursAttribute(): float
+    {
+        return round($this->total_idle_seconds / 3600, 2);
+    }
+
+    /**
+     * Get unproductive hours
+     */
+    public function getUnproductiveHoursAttribute(): float
+    {
+        return round($this->total_unproductive_seconds / 3600, 2);
+    }
+
+    /**
+     * Serialize time-attendance fields as hours for the API response.
+     * Returns a fresh associative array (the model itself, when
+     * ->toArray()'d, will already include these via $appends).
+     *
+     * Useful when you want a flat "hours" snapshot alongside the raw
+     * seconds (e.g. PayrollItem-level responses, reports, exports).
+     */
+    public function hoursSnapshot(): array
+    {
+        return [
+            'worked_hours' => $this->worked_hours,
+            'productive_hours' => $this->productive_hours,
+            'idle_hours' => $this->idle_hours,
+            'unproductive_hours' => $this->unproductive_hours,
+            'overtime_hours' => $this->overtime_hours,
+        ];
     }
 
     /**

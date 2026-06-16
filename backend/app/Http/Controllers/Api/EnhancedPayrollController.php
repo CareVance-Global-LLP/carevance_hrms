@@ -8,6 +8,7 @@ use App\Models\EmployeeLoan;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\FullAndFinalSettlement;
 use App\Models\LeaveEncashment;
+use App\Models\Organization;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
 use App\Models\User;
@@ -27,6 +28,54 @@ class EnhancedPayrollController extends Controller
         $this->calculator = $calculator;
     }
 
+    /**
+     * Read the org's `settings.payroll` block with the same defaults that
+     * PayrollSettingsController exposes. Falls back to statutory defaults if
+     * the org has nothing configured yet.
+     */
+    private function getPayrollConfig(int $orgId): array
+    {
+        $defaults = [
+            'defaultBasicPercentage' => 40,
+            'defaultHraPercentage' => 50,
+            'defaultConveyance' => 1600,
+            'defaultState' => 'maharashtra',
+            'defaultTaxRegime' => 'new',
+            'pfWageCap' => 15000,
+            'esiThreshold' => 21000,
+            'workingDaysPerMonth' => 26,
+            'pfEmployeePercentage' => 12,
+            'pfEmployerPercentage' => 12,
+            'esiEmployeePercentage' => 0.75,
+            'esiEmployerPercentage' => 3.25,
+        ];
+        $org = Organization::find($orgId);
+        $orgSettings = $org?->settings['payroll'] ?? [];
+        return array_merge($defaults, $orgSettings);
+    }
+
+    /**
+     * Returns ['start' => 'YYYY-MM', 'end' => 'YYYY-MM', 'label' => 'YYYY-YYYY']
+     * for the financial year containing the given month_year (YYYY-MM).
+     * FY in India runs Apr-Mar.
+     */
+    private function getFinancialYearFromMonth(string $monthYear): array
+    {
+        [$y, $m] = array_map('intval', explode('-', $monthYear));
+        if ($m >= 4) {
+            return [
+                'start' => sprintf('%d-04', $y),
+                'end' => sprintf('%d-03', $y + 1),
+                'label' => $y . '-' . ($y + 1),
+            ];
+        }
+        return [
+            'start' => sprintf('%d-04', $y - 1),
+            'end' => sprintf('%d-03', $y),
+            'label' => ($y - 1) . '-' . $y,
+        ];
+    }
+
     public function calculatePayroll(Request $request): JsonResponse
     {
         $request->validate([
@@ -38,10 +87,10 @@ class EnhancedPayrollController extends Controller
 
         try {
             $result = $this->calculator->calculatePayroll(
-                annualCtc: (float) $request->input('annual_ctc'),
-                stateCode: $request->input('state_code', 'maharashtra'),
-                isMetroCity: $request->boolean('is_metro_city', true),
-                taxRegime: $request->input('tax_regime', 'new')
+                annualCtc: $request->annual_ctc,
+                stateCode: $request->state_code ?? 'maharashtra',
+                isMetroCity: $request->is_metro_city ?? true,
+                taxRegime: $request->tax_regime ?? 'new'
             );
 
             return response()->json([
@@ -84,7 +133,7 @@ class EnhancedPayrollController extends Controller
             ], 400);
         }
 
-        $result = $this->calculator->calculatePayroll(annualCtc: (float) $annualCtc);
+        $result = $this->calculator->calculatePayroll(annualCtc: $annualCtc);
 
         return response()->json([
             'success' => true,
@@ -117,40 +166,69 @@ class EnhancedPayrollController extends Controller
 
         $organizationId = $request->user()->organization_id;
 
+        // Reject if a non-rejected encashment for this employee already exists for the same FY.
+        $fy = $this->getFinancialYearFromMonth($request->month_year);
+        $existingApproved = LeaveEncashment::where('organization_id', $organizationId)
+            ->where('user_id', $request->user_id)
+            ->where('status', 'approved')
+            ->where('month_year', '>=', $fy['start'])
+            ->where('month_year', '<=', $fy['end'])
+            ->exists();
+        if ($existingApproved) {
+            return response()->json([
+                'success' => false,
+                'message' => "An approved leave encashment for FY {$fy['label']} already exists for this employee. Refunds/additional encashments must be raised as a separate F&F adjustment.",
+            ], 422);
+        }
+
         try {
             $user = User::where('organization_id', $organizationId)
-                ->findOrFail($request->input('user_id'));
+                ->findOrFail($request->user_id);
 
-            $template = EmployeePayrollTemplate::getOrCreateForUser(
-                $user->id,
-                $organizationId
-            );
+            $template = EmployeePayrollTemplate::getOrCreateForUser($user->id, $organizationId);
+            $config = $this->getPayrollConfig($organizationId);
+            $annualCtc = $template->annual_ctc ?? 0;
+            $workingDays = (int) ($config['workingDaysPerMonth'] ?? 26);
 
-            $annualCtc = $template->annual_ctc ?? 300000;
+            if ($annualCtc <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot encash leave — employee has no annual_ctc set on their template.',
+                ], 422);
+            }
+
+            if ($request->encashed_days > $request->eligible_days) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Encashed days ({$request->encashed_days}) cannot exceed eligible balance ({$request->eligible_days}).",
+                ], 422);
+            }
+
             $monthlyGross = $annualCtc / 12;
-            $workingDays = 26;
             $ratePerDay = $monthlyGross / $workingDays;
-            $totalAmount = $ratePerDay * (int) $request->input('encashed_days');
+            $totalAmount = $ratePerDay * $request->encashed_days;
 
-            $pfDeduction = $template->pf_enabled ? ($ratePerDay * (int) $request->input('encashed_days') * 0.12) : 0;
+            $pfDeduction = $template->pf_enabled
+                ? $this->calculator->calculateEmployeePF($template->pf_above_cap ? PHP_FLOAT_MAX : $monthlyGross)
+                : 0;
             $taxDeduction = 0;
 
             $encashment = LeaveEncashment::create([
                 'organization_id' => $organizationId,
                 'user_id' => $user->id,
-                'leave_type' => $request->input('leave_type'),
-                'eligible_days' => (int) $request->input('eligible_days'),
-                'encashed_days' => (int) $request->input('encashed_days'),
-                'balance_days' => (int) $request->input('eligible_days') - (int) $request->input('encashed_days'),
+                'leave_type' => $request->leave_type,
+                'eligible_days' => $request->eligible_days,
+                'encashed_days' => $request->encashed_days,
+                'balance_days' => $request->eligible_days - $request->encashed_days,
                 'rate_per_day' => $ratePerDay,
                 'total_amount' => $totalAmount,
                 'pf_deduction' => $pfDeduction,
                 'tax_deduction' => $taxDeduction,
                 'net_amount' => $totalAmount - $pfDeduction - $taxDeduction,
                 'status' => 'draft',
-                'month_year' => $request->input('month_year'),
+                'month_year' => $request->month_year,
                 'requested_by' => auth()->id(),
-                'notes' => $request->input('notes'),
+                'notes' => $request->notes,
             ]);
 
             return response()->json([
@@ -195,6 +273,17 @@ class EnhancedPayrollController extends Controller
             ], 422);
         }
 
+        // Immutability: cannot approve against a run that's already paid or released.
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $encashment->month_year)
+            ->first();
+        if ($run && in_array($run->status, ['paid', 'released'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot approve — payroll run for {$encashment->month_year} is already {$run->status} and immutable.",
+            ], 422);
+        }
+
         $encashment->update([
             'status' => 'approved',
             'approved_by' => auth()->id(),
@@ -219,7 +308,7 @@ class EnhancedPayrollController extends Controller
 
         $encashment->update([
             'status' => 'rejected',
-            'rejection_reason' => $request->input('reason'),
+            'rejection_reason' => $request->reason,
         ]);
 
         return response()->json([
@@ -247,16 +336,21 @@ class EnhancedPayrollController extends Controller
 
         try {
             $user = User::where('organization_id', $organizationId)
-                ->findOrFail($request->input('user_id'));
+                ->findOrFail($request->user_id);
 
-            $basicDifference = (float) $request->input('revised_basic') - (float) $request->input('original_basic');
-            $grossDifference = (float) $request->input('revised_gross') - (float) $request->input('original_gross');
+            $basicDifference = $request->revised_basic - $request->original_basic;
+            $grossDifference = $request->revised_gross - $request->original_gross;
 
-            $pfOnArrear = $basicDifference * 0.12;
-            $esiOnArrear = $grossDifference <= 21000 ? $grossDifference * 0.0075 : 0;
-            $tdsOnArrear = $grossDifference * 0.10;
+            $config = $this->getPayrollConfig($organizationId);
+            $pfRate = ((float) ($config['pfEmployeePercentage'] ?? 12)) / 100;
+            $esiEmployeeRate = ((float) ($config['esiEmployeePercentage'] ?? 0.75)) / 100;
+            $esiThreshold = (float) ($config['esiThreshold'] ?? 21000);
+            $tdsRate = 0.10; // TDS on arrear is typically 10% flat per IT Act s.192; not org-configurable
+            $pfOnArrear = $basicDifference * $pfRate;
+            $esiOnArrear = $grossDifference <= $esiThreshold ? $grossDifference * $esiEmployeeRate : 0;
+            $tdsOnArrear = $grossDifference * $tdsRate;
             $ptOnArrear = PTStateService::calculate(
-                $user->employeeProfile?->pt_state ?? 'maharashtra',
+                $user->employeeProfile?->pt_state ?? $config['defaultState'] ?? 'maharashtra',
                 $grossDifference
             );
 
@@ -265,14 +359,14 @@ class EnhancedPayrollController extends Controller
             $arrear = ArrearPayment::create([
                 'organization_id' => $organizationId,
                 'user_id' => $user->id,
-                'arrear_month' => $request->input('arrear_month'),
-                'calculation_month' => $request->input('calculation_month'),
-                'arrear_type' => $request->input('arrear_type'),
-                'original_basic' => (float) $request->input('original_basic'),
-                'revised_basic' => (float) $request->input('revised_basic'),
+                'arrear_month' => $request->arrear_month,
+                'calculation_month' => $request->calculation_month,
+                'arrear_type' => $request->arrear_type,
+                'original_basic' => $request->original_basic,
+                'revised_basic' => $request->revised_basic,
                 'basic_difference' => $basicDifference,
-                'original_gross' => (float) $request->input('original_gross'),
-                'revised_gross' => (float) $request->input('revised_gross'),
+                'original_gross' => $request->original_gross,
+                'revised_gross' => $request->revised_gross,
                 'gross_difference' => $grossDifference,
                 'pf_on_arrear' => $pfOnArrear,
                 'esi_on_arrear' => $esiOnArrear,
@@ -280,7 +374,7 @@ class EnhancedPayrollController extends Controller
                 'pt_on_arrear' => $ptOnArrear,
                 'net_arrear_amount' => $netArrear,
                 'status' => 'draft',
-                'reason' => $request->input('reason'),
+                'reason' => $request->reason,
                 'requested_by' => auth()->id(),
             ]);
 
@@ -319,16 +413,94 @@ class EnhancedPayrollController extends Controller
         $arrear = ArrearPayment::where('organization_id', $organizationId)
             ->findOrFail($id);
 
-        $arrear->update([
-            'status' => 'approved',
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
-        ]);
+        if ($arrear->status !== 'draft') {
+            return response()->json([
+                'success' => false,
+                'message' => "Arrear is already in '{$arrear->status}' state and cannot be re-approved.",
+            ], 422);
+        }
+
+        // The arrear's "calculation_month" tells us which payroll run it must be applied to.
+        // We look up the run + item, and if the run is already paid/released, we reject —
+        // arrears must be applied before the run is locked for the period.
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $arrear->calculation_month)
+            ->first();
+        if (!$run) {
+            return response()->json([
+                'success' => false,
+                'message' => "Payroll run for calculation_month {$arrear->calculation_month} does not exist. Create it first, then approve the arrear.",
+            ], 422);
+        }
+        if (in_array($run->status, ['paid', 'released'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot approve arrear — run {$arrear->calculation_month} is already {$run->status} and immutable.",
+            ], 422);
+        }
+
+        $item = PayrollItem::where('payroll_run_id', $run->id)
+            ->where('user_id', $arrear->user_id)
+            ->first();
+        if (!$item) {
+            return response()->json([
+                'success' => false,
+                'message' => "Employee has no payroll_item in run {$arrear->calculation_month}. Process payroll for the run first, then approve the arrear.",
+            ], 422);
+        }
+
+        // Apply: add the net arrear to the payroll_item.arrears column, increase net_pay by the
+        // pre-tax gross difference, and recompute the run's totals.
+        \DB::transaction(function () use ($arrear, $item) {
+            $newArrears = (float) $item->arrears + (float) $arrear->gross_difference;
+            $newNetPay = (float) $item->net_pay + (float) $arrear->gross_difference
+                - (float) $arrear->pf_on_arrear - (float) $arrear->esi_on_arrear
+                - (float) $arrear->pt_on_arrear - (float) $arrear->tds_on_arrear;
+
+            $item->update([
+                'arrears' => $newArrears,
+                'arrears_pf' => (float) $item->arrears_pf + (float) $arrear->pf_on_arrear,
+                'net_pay' => max(0, $newNetPay),
+            ]);
+
+            $arrear->update([
+                'status' => 'approved',
+                'approved_by' => auth()->id(),
+                'approved_at' => now(),
+                'payroll_run_id' => $item->payroll_run_id,
+            ]);
+        });
+
+        // Recompute run-level aggregates (gross, deductions, net_pay, totals)
+        $this->recomputePayrollRunTotals($run->fresh());
 
         return response()->json([
             'success' => true,
-            'message' => 'Arrear approved',
+            'message' => 'Arrear approved and applied to payroll run ' . $arrear->calculation_month,
             'data' => $arrear->fresh(),
+        ]);
+    }
+
+    /**
+     * Recompute PayrollMonthlyRun aggregate columns from its items.
+     * Safe to call after any payroll_item mutation (arrears, encashment, etc).
+     */
+    private function recomputePayrollRunTotals(PayrollMonthlyRun $run): void
+    {
+        $items = PayrollItem::where('payroll_run_id', $run->id)->get();
+        $run->update([
+            'total_employees' => $items->count(),
+            'total_gross' => $items->sum('gross_salary'),
+            'total_deductions' => $items->sum('total_deductions'),
+            'total_net_pay' => $items->sum('net_pay'),
+            'total_employer_contributions' => $items->sum('total_employer_contributions'),
+            'total_pf_employee' => $items->sum('pf_employee'),
+            'total_pf_employer' => $items->sum('pf_employer'),
+            'total_esi_employee' => $items->sum('esi_employee'),
+            'total_esi_employer' => $items->sum('esi_employer'),
+            'total_pt' => $items->sum('pt'),
+            'total_tds' => $items->sum('tds'),
+            'total_arrears' => $items->sum('arrears'),
         ]);
     }
 
@@ -343,7 +515,7 @@ class EnhancedPayrollController extends Controller
 
         $arrear->update([
             'status' => 'rejected',
-            'rejection_reason' => $request->input('reason'),
+            'rejection_reason' => $request->reason,
         ]);
 
         return response()->json([
@@ -369,31 +541,55 @@ class EnhancedPayrollController extends Controller
 
         $organizationId = $request->user()->organization_id;
 
+        // Status gate: a single employee can only have one F&F in a non-terminal state.
+        // Once paid, the F&F is immutable — finance must reject the existing one before
+        // a new one can be drafted (e.g. discovery of a missed loan recovery).
+        $existingActive = FullAndFinalSettlement::where('organization_id', $organizationId)
+            ->where('user_id', $request->user_id)
+            ->whereNotIn('status', ['rejected'])
+            ->first();
+        if ($existingActive) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot create a new F&F — employee already has an F&F (id: {$existingActive->id}) in '{$existingActive->status}' state. Reject the existing one first if you need to start over.",
+                'existing_settlement_id' => $existingActive->id,
+                'existing_status' => $existingActive->status,
+            ], 422);
+        }
+
         try {
             $user = User::where('organization_id', $organizationId)
-                ->findOrFail($request->input('user_id'));
+                ->findOrFail($request->user_id);
 
-            $template = EmployeePayrollTemplate::getOrCreateForUser(
-                $user->id,
-                $organizationId
-            );
+            $template = EmployeePayrollTemplate::getOrCreateForUser($user->id, $organizationId);
+            $config = $this->getPayrollConfig($organizationId);
+            $annualCtc = $template->annual_ctc ?? 0;
+            $basicPercentage = ($template->basic_percentage ?? ($config['defaultBasicPercentage'] ?? 40)) / 100;
+            $workingDays = (int) ($config['workingDaysPerMonth'] ?? 26);
 
-            $basicSalary = (($template->annual_ctc ?? 300000) * ($template->basic_percentage ?? 40) / 100) / 12;
+            if ($annualCtc <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot create F&F — employee has no annual_ctc set on their template.',
+                ], 422);
+            }
 
-            $shortfallDays = max(0, (int) $request->input('notice_period_days') - (int) $request->input('served_days'));
-            $noticePayRecovery = $shortfallDays > 0 ? ($basicSalary / 30) * $shortfallDays : 0;
+            $basicSalary = ($annualCtc * $basicPercentage) / 12;
+            // Notice pay divisor: standard 30 days/month for notice-period pay recovery (Factories Act 1948 §25F)
+            $noticeDivisor = 30;
 
-            $monthlyGross = ($template->annual_ctc ?? 300000) / 12;
-            $leaveEncashment = $this->calculator->calculateLeaveEncashment(
-                (int) $request->input('earned_leave_balance'),
-                $monthlyGross
-            );
+            $shortfallDays = max(0, $request->notice_period_days - $request->served_days);
+            $noticePayRecovery = $shortfallDays > 0 ? ($basicSalary / $noticeDivisor) * $shortfallDays : 0;
 
-            $gratuityAmount = $request->boolean('is_gratuity_eligible') && (float) $request->input('years_of_service') >= 5
-                ? $this->calculator->calculateGratuityForSettlement($basicSalary, (float) $request->input('years_of_service'))
+            $monthlyGross = $annualCtc / 12;
+            $ratePerDay = $monthlyGross / $workingDays;
+            $leaveEncashment = $ratePerDay * $request->earned_leave_balance;
+
+            $gratuityAmount = $request->is_gratuity_eligible && $request->years_of_service >= 5
+                ? $this->calculator->calculateGratuityOnExit($basicSalary, $request->years_of_service)
                 : 0;
 
-            $lastWorkingDate = Carbon::parse($request->input('last_working_date'));
+            $lastWorkingDate = Carbon::parse($request->last_working_date);
             $daysInMonth = $lastWorkingDate->daysInMonth;
             $daysWorked = $lastWorkingDate->day;
             $currentMonthSalary = ($monthlyGross / $daysInMonth) * $daysWorked;
@@ -407,21 +603,21 @@ class EnhancedPayrollController extends Controller
             $settlement = FullAndFinalSettlement::create([
                 'organization_id' => $organizationId,
                 'user_id' => $user->id,
-                'resignation_date' => $request->input('resignation_date'),
-                'last_working_date' => $request->input('last_working_date'),
+                'resignation_date' => $request->resignation_date,
+                'last_working_date' => $request->last_working_date,
                 'settlement_date' => now(),
-                'exit_type' => $request->input('exit_type'),
-                'notice_period_days' => (int) $request->input('notice_period_days'),
-                'served_days' => (int) $request->input('served_days'),
+                'exit_type' => $request->exit_type,
+                'notice_period_days' => $request->notice_period_days,
+                'served_days' => $request->served_days,
                 'shortfall_days' => $shortfallDays,
                 'notice_pay_recovery' => $noticePayRecovery,
                 'basic_salary' => $basicSalary,
                 'current_month_salary' => $currentMonthSalary,
-                'earned_leave_balance' => (int) $request->input('earned_leave_balance'),
+                'earned_leave_balance' => $request->earned_leave_balance,
                 'leave_encashment' => $leaveEncashment,
-                'years_of_service' => (float) $request->input('years_of_service'),
+                'years_of_service' => $request->years_of_service,
                 'gratuity_amount' => $gratuityAmount,
-                'is_gratuity_eligible' => $request->boolean('is_gratuity_eligible', false),
+                'is_gratuity_eligible' => $request->is_gratuity_eligible ?? false,
                 'loan_recovery' => $loanRecovery,
                 'status' => 'draft',
                 'prepared_by' => auth()->id(),
@@ -510,7 +706,7 @@ class EnhancedPayrollController extends Controller
 
         $settlement->update([
             'status' => 'rejected',
-            'rejection_reason' => $request->input('reason'),
+            'rejection_reason' => $request->reason,
         ]);
 
         return response()->json([
@@ -541,8 +737,8 @@ class EnhancedPayrollController extends Controller
 
         $settlement->update([
             'status' => 'paid',
-            'payment_method' => $request->input('payment_method'),
-            'payment_reference' => $request->input('payment_reference'),
+            'payment_method' => $request->payment_method,
+            'payment_reference' => $request->payment_reference,
             'paid_at' => now(),
         ]);
 

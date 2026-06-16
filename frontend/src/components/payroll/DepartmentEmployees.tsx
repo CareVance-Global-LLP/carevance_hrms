@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   ArrowLeft, 
   Search, 
@@ -10,12 +10,13 @@ import {
   Users,
   ChevronDown,
   Filter,
-  MoreHorizontal,
   User,
   Play,
-  Briefcase,
   CheckSquare,
-  Square
+  Square,
+  Loader2,
+  Save,
+  X
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -44,14 +45,25 @@ function EmployeeCard({
   isSelected,
   onSelect,
   onClick,
-  onProcess
+  onProcess,
+  onCtcSaved,
+  monthYear,
+  isSavingCtc,
+  onSaveCtc,
 }: {
   employee: PayrollDepartmentEmployee;
   isSelected: boolean;
   onSelect: () => void;
   onClick: () => void;
   onProcess: (e: React.MouseEvent) => void;
+  onCtcSaved?: () => void;
+  monthYear: string;
+  isSavingCtc: boolean;
+  onSaveCtc: (userId: number, annualCtc: number) => Promise<void>;
 }) {
+  const [inlineCtc, setInlineCtc] = useState<string>('');
+  const [showInlineCtc, setShowInlineCtc] = useState(false);
+
   const status = employee.payroll_status.is_processed 
     ? (employee.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
     : 'pending';
@@ -86,6 +98,15 @@ function EmployeeCard({
   // CTC info
   const hasCTC = employee.annual_ctc && employee.annual_ctc > 0;
   const monthlyCTC = hasCTC ? (employee.annual_ctc! / 12) : 0;
+
+  const handleInlineSave = async () => {
+    const n = Number(inlineCtc);
+    if (!Number.isFinite(n) || n <= 0) return;
+    await onSaveCtc(employee.id, n);
+    setInlineCtc('');
+    setShowInlineCtc(false);
+    onCtcSaved?.();
+  };
 
   return (
     <SurfaceCard 
@@ -177,6 +198,58 @@ function EmployeeCard({
             ) : null}
           </div>
 
+          {/* Inline CTC entry (for pending employees without CTC) */}
+          {status === 'pending' && !hasCTC && (
+            <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+              {!showInlineCtc ? (
+                <button
+                  onClick={() => setShowInlineCtc(true)}
+                  className="w-full flex items-center justify-between text-sm text-amber-700 hover:text-amber-800"
+                >
+                  <span className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" />
+                    Set CTC inline
+                  </span>
+                  <span className="text-xs">→</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-amber-700 font-medium">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    autoFocus
+                    placeholder="Annual CTC"
+                    value={inlineCtc}
+                    onChange={(e) => setInlineCtc(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleInlineSave();
+                      if (e.key === 'Escape') { setShowInlineCtc(false); setInlineCtc(''); }
+                    }}
+                    className="flex-1 px-2 py-1 text-sm border border-amber-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={handleInlineSave}
+                    disabled={isSavingCtc || !inlineCtc}
+                    iconLeft={isSavingCtc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                  >
+                    Save
+                  </Button>
+                  <button
+                    onClick={() => { setShowInlineCtc(false); setInlineCtc(''); }}
+                    className="p-1 text-amber-600 hover:text-amber-800"
+                    title="Cancel"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2">
             {status === 'pending' ? (
@@ -188,7 +261,7 @@ function EmployeeCard({
                   iconLeft={<Play className="h-4 w-4" />}
                   onClick={onProcess}
                 >
-                  Process Payroll
+                  {hasCTC ? 'Process Payroll' : 'Set CTC & Process'}
                 </Button>
                 <Button 
                   variant="secondary" 
@@ -205,7 +278,6 @@ function EmployeeCard({
                   size="sm" 
                   className="flex-1"
                   iconLeft={<DollarSign className="h-4 w-4" />}
-                  onClick={onClick}
                 >
                   Pay Now
                 </Button>
@@ -245,24 +317,52 @@ export default function DepartmentEmployees({
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [showFilters, setShowFilters] = useState(false);
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Default working days = days in the selected month (org configures this in settings).
+  const [workingDays, setWorkingDays] = useState<number>(() => {
+    const [y, m] = monthYear.split('-').map(Number);
+    return new Date(y, m, 0).getDate();
+  });
   const queryClient = useQueryClient();
 
-  // Debounce search to avoid too many API calls
-  useEffect(() => {
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 300);
-    return () => {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    };
-  }, [searchQuery]);
+  // Quick-save CTC mutation
+  const quickSaveCtcMutation = useMutation({
+    mutationFn: ({ userId, annualCtc }: { userId: number; annualCtc: number }) =>
+      payrollApi.quickSaveCtc(userId, { annual_ctc: annualCtc, month_year: monthYear }).then(r => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'department', departmentId, 'employees'] });
+    },
+  });
+
+  // Bulk process mutation
+  const processSelectedMutation = useMutation({
+    mutationFn: (userIds: number[]) =>
+      payrollApi.processSelectedEmployees(departmentId, {
+        month_year: monthYear,
+        user_ids: userIds,
+        working_days: workingDays,
+      }).then(r => r.data),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'department', departmentId, 'employees'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+      if (data?.failed?.length > 0) {
+        const reasons = data.failed.map((f: { user_id: number; reason: string }) => `#${f.user_id}: ${f.reason}`).join('\n');
+        alert(`Processed ${data.succeeded.length} • Failed ${data.failed.length}\n\n${reasons}`);
+      }
+    },
+  });
+
+  const handleSaveCtc = async (userId: number, annualCtc: number) => {
+    await quickSaveCtcMutation.mutateAsync({ userId, annualCtc });
+  };
+
+  const handleProcessSelected = () => {
+    if (selectedEmployees.size === 0) return;
+    processSelectedMutation.mutate(Array.from(selectedEmployees));
+  };
 
   // Fetch employees
   const { data, isLoading } = useQuery({
-    queryKey: ['payroll', 'department', departmentId, 'employees', monthYear, debouncedSearch],
+    queryKey: ['payroll', 'department', departmentId, 'employees', monthYear, searchQuery],
     queryFn: () => payrollApi.getDepartmentEmployees(departmentId, { 
       month_year: monthYear,
       search: searchQuery || undefined 
@@ -367,19 +467,17 @@ export default function DepartmentEmployees({
         
         {/* Bulk Actions */}
         {selectedEmployees.size > 0 && (
-            <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-lg">
+          <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-lg">
             <span className="text-sm font-medium text-blue-900">
               {selectedEmployees.size} selected
             </span>
             <div className="h-4 w-px bg-blue-200" />
-            <Button 
-              variant="primary" 
-              size="sm" 
-              iconLeft={<Play className="h-4 w-4" />}
-              onClick={() => {
-                const firstSelected = selectedEmployeeObjects[0];
-                if (firstSelected) onSelectEmployee(firstSelected.id);
-              }}
+            <Button
+              variant="primary"
+              size="sm"
+              iconLeft={processSelectedMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              onClick={handleProcessSelected}
+              disabled={processSelectedMutation.isPending}
             >
               Process Selected
             </Button>
@@ -510,6 +608,13 @@ export default function DepartmentEmployees({
                   e.stopPropagation();
                   onSelectEmployee(employee.id);
                 }}
+                monthYear={monthYear}
+                isSavingCtc={quickSaveCtcMutation.isPending}
+                onSaveCtc={handleSaveCtc}
+                onCtcSaved={() => {
+                  // After CTC is saved, the card should switch to "Process Payroll" state.
+                  setSelectedEmployees(prev => new Set(prev).add(employee.id));
+                }}
               />
             ))}
           </div>
@@ -539,14 +644,12 @@ export default function DepartmentEmployees({
               <span className="text-sm text-slate-600">
                 {selectedEmployees.size} employees selected
               </span>
-              <Button 
-                variant="primary" 
-                size="sm" 
-                iconLeft={<Play className="h-4 w-4" />}
-                onClick={() => {
-                  const firstSelected = selectedEmployeeObjects[0];
-                  if (firstSelected) onSelectEmployee(firstSelected.id);
-                }}
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={processSelectedMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                onClick={handleProcessSelected}
+                disabled={processSelectedMutation.isPending}
               >
                 Process Selected
               </Button>

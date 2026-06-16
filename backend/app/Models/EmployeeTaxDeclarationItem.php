@@ -15,6 +15,9 @@ class EmployeeTaxDeclarationItem extends Model
         'declared_amount',
         'approved_amount',
         'proof_path',
+        'proof_status',
+        'proof_submission_id',
+        'proof_submitted_at',
         'status',
         'remarks',
     ];
@@ -22,6 +25,7 @@ class EmployeeTaxDeclarationItem extends Model
     protected $casts = [
         'declared_amount' => 'decimal:2',
         'approved_amount' => 'decimal:2',
+        'proof_submitted_at' => 'datetime',
     ];
 
     public const SECTIONS = [

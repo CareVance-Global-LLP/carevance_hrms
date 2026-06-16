@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, 
   Save, 
@@ -33,27 +33,6 @@ interface EmployeePayrollWizardProps {
   onBack: () => void;
   onComplete?: () => void;
 }
-
-const INDIAN_STATES = [
-  { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
-  { value: 'assam', label: 'Assam' },
-  { value: 'bihar', label: 'Bihar' },
-  { value: 'delhi', label: 'Delhi' },
-  { value: 'gujarat', label: 'Gujarat' },
-  { value: 'haryana', label: 'Haryana' },
-  { value: 'jharkhand', label: 'Jharkhand' },
-  { value: 'karnataka', label: 'Karnataka' },
-  { value: 'kerala', label: 'Kerala' },
-  { value: 'madhya_pradesh', label: 'Madhya Pradesh' },
-  { value: 'maharashtra', label: 'Maharashtra' },
-  { value: 'odisha', label: 'Odisha' },
-  { value: 'punjab', label: 'Punjab' },
-  { value: 'rajasthan', label: 'Rajasthan' },
-  { value: 'tamil_nadu', label: 'Tamil Nadu' },
-  { value: 'telangana', label: 'Telangana' },
-  { value: 'uttar_pradesh', label: 'Uttar Pradesh' },
-  { value: 'west_bengal', label: 'West Bengal' },
-];
 
 const CTC_PRESETS = [
   { value: 300000, label: '₹3L' },
@@ -92,6 +71,42 @@ export default function EmployeePayrollWizard({
     queryKey: ['payroll', 'employee', employeeId, monthYear],
     queryFn: () => payrollApi.getEmployeePayrollDetails(employeeId, { month_year: monthYear }).then(res => res.data),
   });
+
+  // Fetch PT states (slabs/slabs are server-side; we only need the dropdown options here)
+  const { data: ptStatesData } = useQuery({
+    queryKey: ['payroll', 'pt-states'],
+    queryFn: () => payrollApi.getPTStates().then(r => r.data),
+    staleTime: 1000 * 60 * 60 * 24, // PT state list is static — cache for a day
+  });
+
+  // Build the dropdown options from the API; fall back to a static list if the
+  // API call fails (e.g. offline) so the wizard still works.
+  const INDIAN_STATES = useMemo(() => {
+    const apiStates = (ptStatesData?.all_states ?? []) as Array<{ code: string; name: string }>;
+    if (apiStates.length > 0) {
+      return apiStates.map(s => ({ value: s.code, label: s.name }));
+    }
+    return [
+      { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
+      { value: 'assam', label: 'Assam' },
+      { value: 'bihar', label: 'Bihar' },
+      { value: 'delhi', label: 'Delhi' },
+      { value: 'gujarat', label: 'Gujarat' },
+      { value: 'haryana', label: 'Haryana' },
+      { value: 'jharkhand', label: 'Jharkhand' },
+      { value: 'karnataka', label: 'Karnataka' },
+      { value: 'kerala', label: 'Kerala' },
+      { value: 'madhya_pradesh', label: 'Madhya Pradesh' },
+      { value: 'maharashtra', label: 'Maharashtra' },
+      { value: 'odisha', label: 'Odisha' },
+      { value: 'punjab', label: 'Punjab' },
+      { value: 'rajasthan', label: 'Rajasthan' },
+      { value: 'tamil_nadu', label: 'Tamil Nadu' },
+      { value: 'telangana', label: 'Telangana' },
+      { value: 'uttar_pradesh', label: 'Uttar Pradesh' },
+      { value: 'west_bengal', label: 'West Bengal' },
+    ];
+  }, [ptStatesData]);
 
   // Update template mutation
   const updateTemplateMutation = useMutation({
@@ -135,33 +150,38 @@ export default function EmployeePayrollWizard({
     }
   }, [data, template]);
 
-  // Auto-populate attendance from timesheet data
+  // Auto-populate attendance from the new monthly attendance summary
+  // (single source of truth — AttendanceRecord / AttendancePunch /
+  // LeaveRequest / AttendanceHoliday). Falls back to the legacy
+  // /8-hours-from-tracked-hours heuristic only when the summary is
+  // missing (e.g., older backend).
   useEffect(() => {
+    const summary = data?.attendance_summary;
+    if (summary) {
+      setWorkingDays(String(Math.round(summary.working_days)));
+      setDaysPresent(String(Math.round(summary.present_days)));
+      setLOPDays(String(Math.round(summary.lop_days)));
+      const otHours = Number(summary.hours?.overtime_hours ?? 0);
+      setOvertimeHours(otHours > 0 ? otHours.toFixed(2) : '0');
+      return;
+    }
+
     if (data?.time_tracking) {
       const tt = data.time_tracking;
-      
-      // Calculate working days from tracked hours (assuming 8 hours per day)
       const trackedHours = tt.payroll_tracked_hours || tt.total_worked_hours || 0;
       const calculatedWorkingDays = Math.max(1, Math.ceil(trackedHours / 8));
-      
-      // Days present from payroll data or calculate from hours
-      const calculatedDaysPresent = tt.payroll_attendance_days || 
+      const calculatedDaysPresent = tt.payroll_attendance_days ||
         Math.min(calculatedWorkingDays, Math.floor(trackedHours / 8));
-      
-      // LWP days = working days - days present
       const calculatedLwp = Math.max(0, calculatedWorkingDays - calculatedDaysPresent);
-      
-      // Overtime = hours beyond standard 8 hours per day
       const standardHours = calculatedDaysPresent * 8;
       const calculatedOvertime = Math.max(0, trackedHours - standardHours);
-      
-      // Only update if values haven't been manually edited
+
       setWorkingDays(String(calculatedWorkingDays));
       setDaysPresent(String(calculatedDaysPresent));
       setLOPDays(String(calculatedLwp));
       setOvertimeHours(calculatedOvertime > 0 ? calculatedOvertime.toFixed(1) : '0');
     }
-  }, [data?.time_tracking]);
+  }, [data?.attendance_summary, data?.time_tracking]);
 
   // Calculate preview
   const calculatePreview = async () => {
@@ -282,73 +302,97 @@ export default function EmployeePayrollWizard({
           </div>
         </div>
         
-        {/* Timesheet Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-500 mb-1">Total Tracked Hours</p>
-            {time_tracking.payroll_tracked_hours && time_tracking.payroll_tracked_hours > 0 ? (
-              <>
-                <p className="text-2xl font-bold text-slate-900">{time_tracking.payroll_tracked_hours.toFixed(1)}h</p>
-                <p className="text-xs text-slate-400 mt-1">From timesheets</p>
-              </>
-            ) : time_tracking.total_worked_hours > 0 ? (
-              <>
-                <p className="text-2xl font-bold text-slate-900">{time_tracking.total_worked_hours.toFixed(1)}h</p>
-                <p className="text-xs text-slate-400 mt-1">From timesheets</p>
-              </>
-            ) : (
-              <>
-                <p className="text-2xl font-bold text-slate-400">0.0h</p>
-                <p className="text-xs text-amber-500 mt-1">No tracking data</p>
-              </>
-            )}
-          </div>
-          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-500 mb-1">Productive Hours</p>
-            {time_tracking.total_productive_hours > 0 ? (
-              <>
-                <p className="text-2xl font-bold text-emerald-600">{time_tracking.total_productive_hours.toFixed(1)}h</p>
-                <p className="text-xs text-slate-400 mt-1">Active work time</p>
-              </>
-            ) : (
-              <>
-                <p className="text-2xl font-bold text-slate-400">0.0h</p>
-                <p className="text-xs text-amber-500 mt-1">No activity recorded</p>
-              </>
-            )}
-          </div>
-          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-500 mb-1">Activity Rate</p>
-            {time_tracking.activity_percentage > 0 ? (
-              <>
-                <p className="text-2xl font-bold text-blue-600">{time_tracking.activity_percentage.toFixed(0)}%</p>
-                <p className="text-xs text-slate-400 mt-1">Time active</p>
-              </>
-            ) : (
-              <>
-                <p className="text-2xl font-bold text-slate-400">0%</p>
-                <p className="text-xs text-amber-500 mt-1">No activity data</p>
-              </>
-            )}
-          </div>
-          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-500 mb-1">Attendance Days</p>
-            {time_tracking.payroll_tracked_hours && time_tracking.payroll_tracked_hours > 0 ? (
-              <>
-                <p className="text-2xl font-bold text-violet-600">{time_tracking.payroll_attendance_days || Math.floor((time_tracking.payroll_tracked_hours) / 8)}</p>
-                <p className="text-xs text-slate-400 mt-1">Days present</p>
-              </>
-            ) : time_tracking.total_worked_hours > 0 ? (
-              <>
-                <p className="text-2xl font-bold text-violet-600">{time_tracking.payroll_attendance_days || Math.floor((time_tracking.total_worked_hours) / 8)}</p>
-                <p className="text-xs text-slate-400 mt-1">Days present</p>
-              </>
-            ) : (
-              <>
-                <p className="text-2xl font-bold text-slate-400">0</p>
-                <p className="text-xs text-amber-500 mt-1">No attendance data</p>
-              </>
-            )}
+        {/* Timesheet Summary Cards — prefer the new attendance_summary
+            (the single source of truth for payroll), fall back to the
+            time_tracking payload for older backend responses. */}
+        {(() => {
+          const summary = data?.attendance_summary;
+          const trackedHours = summary?.hours?.worked_hours
+            ?? time_tracking.payroll_tracked_hours
+            ?? time_tracking.total_worked_hours
+            ?? 0;
+          const productiveHours = summary
+            ? Math.round((summary.total_worked_seconds - (summary.lop_days * 8 * 3600)) / 3600 * 10) / 10
+            : (time_tracking.total_productive_hours ?? 0);
+          const overtimeHours = summary?.hours?.overtime_hours ?? 0;
+          const attendanceDays = summary
+            ? Math.round(summary.present_days)
+            : (time_tracking.payroll_attendance_days || Math.floor((time_tracking.payroll_tracked_hours || 0) / 8));
+          const activityPct = time_tracking.activity_percentage ?? 0;
+          const hasData = trackedHours > 0 || (summary && summary.total_worked_seconds > 0);
+
+          return (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <p className="text-xs text-slate-500 mb-1">Total Tracked Hours</p>
+                {hasData ? (
+                  <>
+                    <p className="text-2xl font-bold text-slate-900">{trackedHours.toFixed(1)}h</p>
+                    <p className="text-xs text-slate-400 mt-1">From timesheets</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-400">0.0h</p>
+                    <p className="text-xs text-amber-500 mt-1">No tracking data</p>
+                  </>
+                )}
+              </div>
+              <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <p className="text-xs text-slate-500 mb-1">Productive Hours</p>
+                {productiveHours > 0 ? (
+                  <>
+                    <p className="text-2xl font-bold text-emerald-600">{productiveHours.toFixed(1)}h</p>
+                    <p className="text-xs text-slate-400 mt-1">Active work time</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-400">0.0h</p>
+                    <p className="text-xs text-amber-500 mt-1">No activity recorded</p>
+                  </>
+                )}
+              </div>
+              <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <p className="text-xs text-slate-500 mb-1">Overtime Hours</p>
+                {overtimeHours > 0 ? (
+                  <>
+                    <p className="text-2xl font-bold text-orange-600">{overtimeHours.toFixed(1)}h</p>
+                    <p className="text-xs text-slate-400 mt-1">Beyond standard shift</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-400">0.0h</p>
+                    <p className="text-xs text-slate-400 mt-1">Within standard shift</p>
+                  </>
+                )}
+              </div>
+              <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <p className="text-xs text-slate-500 mb-1">Attendance Days</p>
+                {hasData ? (
+                  <>
+                    <p className="text-2xl font-bold text-violet-600">{attendanceDays}</p>
+                    <p className="text-xs text-slate-400 mt-1">Days present</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-slate-400">0</p>
+                    <p className="text-xs text-amber-500 mt-1">No attendance data</p>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Activity rate — informational only, doesn't affect net pay (per
+            master guide §1: productivity data is display-only). */}
+        <div className="grid grid-cols-1 gap-4 mb-6">
+          <div className="text-center p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-xs text-slate-500 mb-1">
+              Activity Rate <span className="italic text-slate-400">(informational only — does not affect net pay)</span>
+            </p>
+            <p className={`text-2xl font-bold ${time_tracking.activity_percentage > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+              {(time_tracking.activity_percentage ?? 0).toFixed(0)}%
+            </p>
           </div>
         </div>
 

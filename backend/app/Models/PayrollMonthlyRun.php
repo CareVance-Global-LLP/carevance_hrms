@@ -26,10 +26,17 @@ class PayrollMonthlyRun extends Model
         'total_esi_employer',
         'total_pt',
         'total_tds',
+        'total_arrears',
+        'total_variable_pay',
+        'total_leave_encashment',
+        'total_nps',
+        'total_vpf',
+        'total_lwf',
         'created_by',
         'approved_by',
         'approved_at',
         'notes',
+        'is_full_and_final_run',
     ];
 
     protected $casts = [
@@ -44,7 +51,14 @@ class PayrollMonthlyRun extends Model
         'total_esi_employer' => 'decimal:2',
         'total_pt' => 'decimal:2',
         'total_tds' => 'decimal:2',
+        'total_arrears' => 'decimal:2',
+        'total_variable_pay' => 'decimal:2',
+        'total_leave_encashment' => 'decimal:2',
+        'total_nps' => 'decimal:2',
+        'total_vpf' => 'decimal:2',
+        'total_lwf' => 'decimal:2',
         'approved_at' => 'datetime',
+        'is_full_and_final_run' => 'boolean',
     ];
 
     public function organization(): BelongsTo

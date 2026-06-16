@@ -1573,11 +1573,63 @@ export const payrollApi = {
   getEmployeePayrollDetails: (userId: number, params?: { month_year?: string; annual_ctc?: number }) =>
     api.get<EmployeePayrollDetails>(`/payroll/employees/${userId}`, { params }),
 
+  // Monthly attendance summary (single source of truth for payroll).
+  // Returns days AND hours. Default month_year = current month; default
+  // user_id = the caller.
+  getMonthlyAttendanceSummary: (params?: { user_id?: number; month_year?: string }) =>
+    api.get<{
+      success: boolean;
+      user_id: number;
+      month_year: string;
+      summary: {
+        month_year: string;
+        days_in_month: number;
+        working_days: number;
+        holidays: number;
+        weekend_days: number;
+        present_days: number;
+        absent_days: number;
+        paid_leave_days: number;
+        lop_days: number;
+        half_days: number;
+        late_count: number;
+        unregularized_absences: number;
+        overtime_seconds: number;
+        total_worked_seconds: number;
+        attendance_source: 'tracker' | 'no_records';
+        hours: { worked_hours: number; overtime_hours: number };
+      };
+    }>('/payroll/attendance-summary', { params }),
+
   updateEmployeeTemplate: (userId: number, data: Partial<EmployeePayrollTemplate>) =>
     api.put<{ success: boolean; message: string; template: EmployeePayrollTemplate }>(`/payroll/employees/${userId}/template`, data),
 
+  quickSaveCtc: (userId: number, data: { annual_ctc: number; month_year: string }) =>
+    api.patch<{ success: boolean; message: string; template: EmployeePayrollTemplate }>(`/payroll/employees/${userId}/ctc`, data),
+
   processEmployeePayroll: (userId: number, data: ProcessPayrollRequest) =>
     api.post<{ success: boolean; message: string; payroll_item: any }>(`/payroll/employees/${userId}/process`, data),
+
+  processSelectedEmployees: (departmentId: number, data: { month_year: string; user_ids: number[]; working_days: number; default_annual_ctc?: number; lOP_days?: number; overtime_hours?: number }) =>
+    api.post<{ success: boolean; message: string; succeeded: Array<{ user_id: number; payroll_item_id: number | null }>; failed: Array<{ user_id: number; reason: string }> }>(`/payroll/departments/${departmentId}/process-selected`, data),
+
+  // Unified run-payroll entry point (single|department|all). Routes through
+  // the same PayrollAutoProcessService::processForUsers, so bulk == individual.
+  processScoped: (data: { month_year: string; scope: 'single' | 'department' | 'all'; user_ids?: number[]; department_ids?: number[] }) =>
+    api.post<{ success: boolean; run: any; scope: string; user_count: number | null; message: string }>('/payroll/auto/process-scoped', data),
+
+  // Department-level salary template (3-level hierarchy: org -> dept -> employee).
+  listDepartmentTemplates: () =>
+    api.get<{ success: boolean; templates: any[]; departments_without_template: Array<{ id: number; name: string; slug: string }> }>('/payroll/department-templates'),
+
+  getDepartmentTemplate: (departmentId: number) =>
+    api.get<{ success: boolean; template: any }>(`/payroll/department-templates/${departmentId}`),
+
+  upsertDepartmentTemplate: (departmentId: number, data: Record<string, unknown>) =>
+    api.put<{ success: boolean; message: string; template: any }>(`/payroll/department-templates/${departmentId}`, data),
+
+  deleteDepartmentTemplate: (departmentId: number) =>
+    api.delete<{ success: boolean; message: string }>(`/payroll/department-templates/${departmentId}`),
 
   // Calculations
   calculate: (data: CalculatePayrollRequest) =>
@@ -1660,6 +1712,44 @@ export const payrollApi = {
   listTaxDeclarations: (params?: { financial_year?: string; status?: string }) =>
     api.get<{ declarations: any[]; financial_year: string }>('/payroll/declarations', { params }),
 
+  // ---- Form 12BB / Tax proof upload (employee + admin) ----
+  // Employee: list & upload proofs for their own declarations.
+  listMyTaxProofs: (params?: { financial_year?: string; status?: string }) =>
+    api.get<{ data: any[]; count: number }>('/payroll/tax-proofs/mine', { params }),
+
+  uploadTaxProofV2: (data: { declaration_item_id: number; financial_year: string; amount: number; description?: string; file: File }) => {
+    const formData = new FormData();
+    formData.append('declaration_item_id', String(data.declaration_item_id));
+    if (data.financial_year) formData.append('financial_year', data.financial_year);
+    formData.append('amount', String(data.amount));
+    if (data.description) formData.append('description', data.description);
+    formData.append('proof_file', data.file);
+    return api.post<{ success: boolean; message: string; data: any }>(
+      '/payroll/tax-proofs', formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+  },
+
+  downloadMy12BB: (financialYear: string) =>
+    api.get<{ message: string; financial_year: string; submissions: any[]; total_declared: number }>(`/payroll/tax-proofs/my-12bb/${encodeURIComponent(financialYear)}`),
+
+  // Admin: list, review, bulk-approve, get compliance summary.
+  listTaxProofs: (params?: { financial_year?: string; status?: string; user_id?: number; section?: string }) =>
+    api.get<{ data: any[]; count: number; summary?: any }>('/payroll/tax-proofs', { params }),
+
+  reviewTaxProof: (id: number, data: { decision: 'approved' | 'rejected' | 'partial'; approved_amount?: number; notes?: string }) =>
+    api.post<{ message: string; data: any }>(`/payroll/tax-proofs/${id}/review`, data),
+
+  bulkApproveTaxProofs: (userId: number, financialYear?: string) =>
+    api.post<{ message: string; count: number }>(
+      '/payroll/tax-proofs/bulk-approve', { user_id: userId, financial_year: financialYear },
+    ),
+
+  taxProofsSummary: (financialYear?: string) =>
+    api.get<{ total_submissions: number; by_status: Record<string, number>; pending_amount: number; approved_amount: number; organisation_id: number; financial_year?: string }>(
+      '/payroll/tax-proofs/summary', { params: financialYear ? { financial_year: financialYear } : undefined },
+    ),
+
   // Loan / Advance Management
   requestLoan: (data: { loan_type: string; amount: number; emi_amount: number; total_installments: number; purpose?: string }) =>
     api.post<{ success: boolean; message: string; loan: any }>('/payroll/loans/request', data),
@@ -1717,8 +1807,8 @@ export const payrollApi = {
     api.post<any>('/payroll/filings/generate/esi-challan', { payroll_run_id: payrollRunId }),
   generateForm24Q: (payrollRunId: number) =>
     api.post<any>('/payroll/filings/generate/form-24q', { payroll_run_id: payrollRunId }),
-  generateForm16: (payrollItemId: number) =>
-    api.post<any>('/payroll/filings/generate/form-16', { payroll_item_id: payrollItemId }),
+  generateForm16: (userId: number, financialYear: string) =>
+    api.post<any>('/payroll/filings/generate/form-16', { user_id: userId, financial_year: financialYear }),
   generateForm12BA: (payrollRunId: number) =>
     api.post<any>('/payroll/filings/generate/form-12ba', { payroll_run_id: payrollRunId }),
   generatePtReturn: (payrollRunId: number, state: string) =>

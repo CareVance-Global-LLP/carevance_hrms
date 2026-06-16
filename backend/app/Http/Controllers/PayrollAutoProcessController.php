@@ -73,6 +73,75 @@ class PayrollAutoProcessController extends Controller
         ]);
     }
 
+    /**
+     * Scoped payroll run. The single endpoint that backs every Run-Payroll
+     * flow (single employee / one or more departments / whole org) by
+     * delegating to PayrollAutoProcessService::processForUsers.
+     *
+     * Request body:
+     *   month_year: 'YYYY-MM'                  (required)
+     *   scope:      'single' | 'department' | 'all'   (required)
+     *   user_ids:   [int]                       (when scope = 'single')
+     *   department_ids: [int]                   (when scope = 'department')
+     */
+    public function processScoped(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'month_year' => 'required|date_format:Y-m',
+            'scope' => 'required|in:single,department,all',
+            'user_ids' => 'array',
+            'user_ids.*' => 'integer',
+            'department_ids' => 'array',
+            'department_ids.*' => 'integer',
+        ]);
+
+        $orgId = Auth::user()->organization_id;
+        $userIds = null;
+
+        if ($validated['scope'] === 'single') {
+            $request->validate(['user_ids' => 'required|array|min:1']);
+            $userIds = array_map('intval', $validated['user_ids']);
+        } elseif ($validated['scope'] === 'department') {
+            $request->validate(['department_ids' => 'required|array|min:1']);
+            $deptIds = array_map('intval', $validated['department_ids']);
+            $userIds = \App\Models\User::query()
+                ->where('organization_id', $orgId)
+                ->whereHas('groups', fn ($q) => $q->whereIn('groups.id', $deptIds))
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            if (empty($userIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No active employees found in the selected department(s).',
+                ], 422);
+            }
+        }
+
+        try {
+            $run = $this->autoProcess->processForUsers(
+                $orgId,
+                $validated['month_year'],
+                $userIds,
+                Auth::id(),
+            );
+
+            return response()->json([
+                'success' => true,
+                'run' => $run,
+                'scope' => $validated['scope'],
+                'user_count' => $userIds !== null ? count($userIds) : null,
+                'message' => 'Payroll processed successfully',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function quickValidate(Request $request): JsonResponse
     {
         $request->validate([

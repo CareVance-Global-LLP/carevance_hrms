@@ -151,6 +151,146 @@ class PTStateService
                 ['min' => 83334, 'max' => null, 'amount' => 208],
             ],
         ],
+        // --- Newly added states (FY 2024-25) ---
+        'chhattisgarh' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 12500, 'amount' => 0],
+                ['min' => 12501, 'max' => 17000, 'amount' => 150],
+                ['min' => 17001, 'max' => 25000, 'amount' => 180],
+                ['min' => 25001, 'max' => null, 'amount' => 208],
+            ],
+        ],
+        'goa' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 15000, 'amount' => 0],
+                ['min' => 15001, 'max' => 25000, 'amount' => 150],
+                ['min' => 25001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'himachal_pradesh' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 7500, 'amount' => 0],
+                ['min' => 7501, 'max' => 10000, 'amount' => 100],
+                ['min' => 10001, 'max' => 15000, 'amount' => 150],
+                ['min' => 15001, 'max' => 20000, 'amount' => 200],
+                ['min' => 20001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'jammu_and_kashmir' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 15000, 'amount' => 0],
+                ['min' => 15001, 'max' => 20000, 'amount' => 100],
+                ['min' => 20001, 'max' => 30000, 'amount' => 150],
+                ['min' => 30001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'ladakh' => [
+            'monthly' => [
+                ['min' => 0, 'max' => null, 'amount' => 0], // PT not yet levied
+            ],
+        ],
+        'manipur' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 10000, 'amount' => 0],
+                ['min' => 10001, 'max' => 20000, 'amount' => 100],
+                ['min' => 20001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'meghalaya' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 10000, 'amount' => 0],
+                ['min' => 10001, 'max' => 15000, 'amount' => 100],
+                ['min' => 15001, 'max' => 25000, 'amount' => 150],
+                ['min' => 25001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'mizoram' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 10000, 'amount' => 0],
+                ['min' => 10001, 'max' => 15000, 'amount' => 150],
+                ['min' => 15001, 'max' => 25000, 'amount' => 200],
+                ['min' => 25001, 'max' => null, 'amount' => 208],
+            ],
+        ],
+        'nagaland' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 12000, 'amount' => 0],
+                ['min' => 12001, 'max' => 15000, 'amount' => 115],
+                ['min' => 15001, 'max' => 25000, 'amount' => 160],
+                ['min' => 25001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'sikkim' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 10000, 'amount' => 0],
+                ['min' => 10001, 'max' => 15000, 'amount' => 100],
+                ['min' => 15001, 'max' => 20000, 'amount' => 150],
+                ['min' => 20001, 'max' => 25000, 'amount' => 175],
+                ['min' => 25001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'tripura' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 7500, 'amount' => 0],
+                ['min' => 7501, 'max' => 15000, 'amount' => 130],
+                ['min' => 15001, 'max' => 25000, 'amount' => 150],
+                ['min' => 25001, 'max' => null, 'amount' => 208],
+            ],
+        ],
+        'uttarakhand' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 10000, 'amount' => 0],
+                ['min' => 10001, 'max' => 15000, 'amount' => 100],
+                ['min' => 15001, 'max' => 20000, 'amount' => 150],
+                ['min' => 20001, 'max' => 25000, 'amount' => 175],
+                ['min' => 25001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        // --- Union Territories ---
+        'puducherry' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 9999, 'amount' => 0],
+                ['min' => 10000, 'max' => 14999, 'amount' => 100],
+                ['min' => 15000, 'max' => 19999, 'amount' => 150],
+                ['min' => 20000, 'max' => 24999, 'amount' => 175],
+                ['min' => 25000, 'max' => null, 'amount' => 208],
+            ],
+        ],
+        'chandigarh' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 12000, 'amount' => 0],
+                ['min' => 12001, 'max' => 15000, 'amount' => 100],
+                ['min' => 15001, 'max' => 20000, 'amount' => 150],
+                ['min' => 20001, 'max' => 25000, 'amount' => 200],
+                ['min' => 25001, 'max' => null, 'amount' => 250],
+            ],
+        ],
+        'andaman_and_nicobar' => [
+            'monthly' => [
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in A&N
+            ],
+        ],
+        'dadra_and_nagar_haveli' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 10000, 'amount' => 0],
+                ['min' => 10001, 'max' => 15000, 'amount' => 100],
+                ['min' => 15001, 'max' => 25000, 'amount' => 150],
+                ['min' => 25001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'daman_and_diu' => [
+            'monthly' => [
+                ['min' => 0, 'max' => 10000, 'amount' => 0],
+                ['min' => 10001, 'max' => 15000, 'amount' => 100],
+                ['min' => 15001, 'max' => 25000, 'amount' => 150],
+                ['min' => 25001, 'max' => null, 'amount' => 200],
+            ],
+        ],
+        'lakshadweep' => [
+            'monthly' => [
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Lakshadweep
+            ],
+        ],
     ];
 
     /**
@@ -159,24 +299,44 @@ class PTStateService
     public static function getStates(): array
     {
         return [
-            ['code' => 'andhra_pradesh', 'name' => 'Andhra Pradesh'],
-            ['code' => 'assam', 'name' => 'Assam'],
-            ['code' => 'bihar', 'name' => 'Bihar'],
-            ['code' => 'delhi', 'name' => 'Delhi'],
-            ['code' => 'gujarat', 'name' => 'Gujarat'],
-            ['code' => 'haryana', 'name' => 'Haryana'],
-            ['code' => 'jharkhand', 'name' => 'Jharkhand'],
-            ['code' => 'karnataka', 'name' => 'Karnataka'],
-            ['code' => 'kerala', 'name' => 'Kerala'],
-            ['code' => 'madhya_pradesh', 'name' => 'Madhya Pradesh'],
-            ['code' => 'maharashtra', 'name' => 'Maharashtra'],
-            ['code' => 'odisha', 'name' => 'Odisha'],
-            ['code' => 'punjab', 'name' => 'Punjab'],
-            ['code' => 'rajasthan', 'name' => 'Rajasthan'],
-            ['code' => 'tamil_nadu', 'name' => 'Tamil Nadu'],
-            ['code' => 'telangana', 'name' => 'Telangana'],
-            ['code' => 'uttar_pradesh', 'name' => 'Uttar Pradesh'],
-            ['code' => 'west_bengal', 'name' => 'West Bengal'],
+            // States (28)
+            ['code' => 'andhra_pradesh', 'name' => 'Andhra Pradesh', 'type' => 'state'],
+            ['code' => 'assam', 'name' => 'Assam', 'type' => 'state'],
+            ['code' => 'bihar', 'name' => 'Bihar', 'type' => 'state'],
+            ['code' => 'chhattisgarh', 'name' => 'Chhattisgarh', 'type' => 'state'],
+            ['code' => 'goa', 'name' => 'Goa', 'type' => 'state'],
+            ['code' => 'gujarat', 'name' => 'Gujarat', 'type' => 'state'],
+            ['code' => 'haryana', 'name' => 'Haryana', 'type' => 'state'],
+            ['code' => 'himachal_pradesh', 'name' => 'Himachal Pradesh', 'type' => 'state'],
+            ['code' => 'jammu_and_kashmir', 'name' => 'Jammu & Kashmir', 'type' => 'state'],
+            ['code' => 'jharkhand', 'name' => 'Jharkhand', 'type' => 'state'],
+            ['code' => 'karnataka', 'name' => 'Karnataka', 'type' => 'state'],
+            ['code' => 'kerala', 'name' => 'Kerala', 'type' => 'state'],
+            ['code' => 'madhya_pradesh', 'name' => 'Madhya Pradesh', 'type' => 'state'],
+            ['code' => 'maharashtra', 'name' => 'Maharashtra', 'type' => 'state'],
+            ['code' => 'manipur', 'name' => 'Manipur', 'type' => 'state'],
+            ['code' => 'meghalaya', 'name' => 'Meghalaya', 'type' => 'state'],
+            ['code' => 'mizoram', 'name' => 'Mizoram', 'type' => 'state'],
+            ['code' => 'nagaland', 'name' => 'Nagaland', 'type' => 'state'],
+            ['code' => 'odisha', 'name' => 'Odisha', 'type' => 'state'],
+            ['code' => 'punjab', 'name' => 'Punjab', 'type' => 'state'],
+            ['code' => 'rajasthan', 'name' => 'Rajasthan', 'type' => 'state'],
+            ['code' => 'sikkim', 'name' => 'Sikkim', 'type' => 'state'],
+            ['code' => 'tamil_nadu', 'name' => 'Tamil Nadu', 'type' => 'state'],
+            ['code' => 'telangana', 'name' => 'Telangana', 'type' => 'state'],
+            ['code' => 'tripura', 'name' => 'Tripura', 'type' => 'state'],
+            ['code' => 'uttar_pradesh', 'name' => 'Uttar Pradesh', 'type' => 'state'],
+            ['code' => 'uttarakhand', 'name' => 'Uttarakhand', 'type' => 'state'],
+            ['code' => 'west_bengal', 'name' => 'West Bengal', 'type' => 'state'],
+            // Union Territories (8)
+            ['code' => 'andaman_and_nicobar', 'name' => 'Andaman & Nicobar Islands', 'type' => 'ut'],
+            ['code' => 'chandigarh', 'name' => 'Chandigarh', 'type' => 'ut'],
+            ['code' => 'dadra_and_nagar_haveli', 'name' => 'Dadra & Nagar Haveli', 'type' => 'ut'],
+            ['code' => 'daman_and_diu', 'name' => 'Daman & Diu', 'type' => 'ut'],
+            ['code' => 'delhi', 'name' => 'Delhi', 'type' => 'ut'],
+            ['code' => 'lakshadweep', 'name' => 'Lakshadweep', 'type' => 'ut'],
+            ['code' => 'ladakh', 'name' => 'Ladakh', 'type' => 'ut'],
+            ['code' => 'puducherry', 'name' => 'Puducherry', 'type' => 'ut'],
         ];
     }
 

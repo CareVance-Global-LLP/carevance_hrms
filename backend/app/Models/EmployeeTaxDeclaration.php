@@ -13,6 +13,7 @@ class EmployeeTaxDeclaration extends Model
         'user_id',
         'financial_year',
         'status',
+        'proof_status',
         'total_declared_amount',
         'approved_amount',
         'submitted_at',

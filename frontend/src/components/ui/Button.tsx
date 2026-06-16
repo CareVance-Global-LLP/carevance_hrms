@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -26,6 +27,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
   iconLeft?: ReactNode;
   iconRight?: ReactNode;
+  loading?: boolean;
 }
 
 export default function Button({
@@ -34,6 +36,7 @@ export default function Button({
   disabled,
   iconLeft,
   iconRight,
+  loading = false,
   size = 'md',
   type = 'button',
   variant = 'primary',
@@ -42,7 +45,8 @@ export default function Button({
   return (
     <button
       type={type}
-      disabled={disabled}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       className={cn(
         'inline-flex items-center justify-center gap-2 whitespace-nowrap leading-none transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-not-allowed disabled:opacity-60',
         variantClasses[variant],
@@ -51,7 +55,13 @@ export default function Button({
       )}
       {...props}
     >
-      {iconLeft ? <span className="shrink-0">{iconLeft}</span> : null}
+      {loading ? (
+        <span className="shrink-0">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        </span>
+      ) : iconLeft ? (
+        <span className="shrink-0">{iconLeft}</span>
+      ) : null}
       {children}
       {iconRight ? <span className="shrink-0">{iconRight}</span> : null}
     </button>

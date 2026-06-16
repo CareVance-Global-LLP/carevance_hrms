@@ -161,9 +161,11 @@ class ValidatePayrollCommand extends Command
     private function displayValidationItem(array $validation, int $index = 1): void
     {
         $summary = $validation['summary'] ?? [];
+        $employeeName = $summary['employee_name'] ?? 'Unknown';
+        $employeeId = $summary['employee_id'] ?? 'N/A';
         
         $this->line("─" . str_repeat("─", 60));
-        $this->info("Employee: {$summary['employee_name'] ?? 'Unknown'} (ID: {$summary['employee_id'] ?? 'N/A'})");
+        $this->info("Employee: {$employeeName} (ID: {$employeeId})");
         $this->line("─" . str_repeat("─", 60));
 
         // Display errors

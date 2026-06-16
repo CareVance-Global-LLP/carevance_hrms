@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PayrollItem;
 use App\Models\PayrollTimeEntry;
 use App\Models\User;
 use App\Models\Organization;
@@ -469,6 +470,15 @@ class PayrollController extends Controller
                     'tds' => $item->tds,
                     'working_days' => $item->total_working_days,
                     'days_present' => $item->days_present,
+                    'lOP_days' => $item->lOP_days,
+                    // Hours snapshot (read-only; derived from the *_seconds
+                    // columns on the model). Display in hours to avoid
+                    // huge numbers like 3,105,657s in the UI.
+                    'worked_hours' => $item->worked_hours,
+                    'productive_hours' => $item->productive_hours,
+                    'overtime_hours' => $item->overtime_hours,
+                    'idle_hours' => $item->idle_hours,
+                    'unproductive_hours' => $item->unproductive_hours,
                     'created_at' => $item->created_at,
                 ];
             });

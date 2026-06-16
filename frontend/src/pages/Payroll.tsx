@@ -4,6 +4,7 @@ import PayrollDashboard from '@/components/payroll/PayrollDashboard';
 import PayrollCockpit from '@/components/payroll/PayrollCockpit';
 import PayrollWizard from '@/components/payroll/PayrollWizard';
 import DepartmentEmployees from '@/components/payroll/DepartmentEmployees';
+import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
 import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
 import RunPayrollModal from '@/components/payroll/RunPayrollModal';
 import QuickPayrollProcess from '@/components/payroll/QuickPayrollProcess';
@@ -13,7 +14,7 @@ import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 import Button from '@/components/ui/Button';
 
-type ViewMode = 'cockpit' | 'dashboard' | 'department' | 'employee' | 'quick-process' | 'wizard';
+type ViewMode = 'cockpit' | 'dashboard' | 'department' | 'employee' | 'quick-process' | 'wizard' | 'dept-templates';
 
 export default function PayrollPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('cockpit');
@@ -50,6 +51,10 @@ export default function PayrollPage() {
   const handleBackToDepartment = () => {
     setViewMode('department');
     setSelectedEmployeeId(0);
+  };
+
+  const handleOpenDepartmentTemplates = () => {
+    setViewMode('dept-templates');
   };
 
   useEffect(() => {
@@ -116,7 +121,12 @@ export default function PayrollPage() {
             onOpenSettings={handleOpenSettings}
             onOpenReports={() => handleOpenReports()}
             onOpenLegacyDashboard={() => setViewMode('dashboard')}
+            onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
           />
+        )}
+
+        {viewMode === 'dept-templates' && (
+          <DepartmentTemplates onBack={handleBackToDashboard} />
         )}
 
         {viewMode === 'wizard' && (
@@ -148,7 +158,6 @@ export default function PayrollPage() {
             onSelectEmployee={handleSelectEmployee}
             onOpenRunPayroll={handleOpenRunPayroll}
             onOpenQuickProcess={handleOpenQuickProcess}
-            onBack={handleBackToDashboard}
           />
         )}
 

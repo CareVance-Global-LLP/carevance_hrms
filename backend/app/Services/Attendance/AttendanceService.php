@@ -839,7 +839,7 @@ class AttendanceService
         ];
     }
 
-    private function shiftTargetSeconds(): int
+    public function shiftTargetSeconds(): int
     {
         return config('attendance.shift_seconds', 8 * 3600);
     }
@@ -978,7 +978,7 @@ class AttendanceService
             ));
     }
 
-    private function calculateEffectiveWorkedSeconds(AttendanceRecord $record): int
+    public function calculateEffectiveWorkedSeconds(AttendanceRecord $record): int
     {
         if (!$record->relationLoaded('punches')) {
             $record->load('punches');
@@ -1081,5 +1081,185 @@ class AttendanceService
             (int) ($entry->duration ?? 0),
             Carbon::parse($entry->start_time)->diffInSeconds($resolvedEnd)
         );
+    }
+
+    /**
+     * Single source of truth for monthly attendance → payroll metrics.
+     *
+     * This is what every payroll path (bulk auto-process, individual
+     * processEmployeePayroll, the wizard preview) must read from. It is a
+     * pure read against AttendanceRecord/AttendancePunch/LeaveRequest/
+     * AttendanceHoliday — never writes to the Tracker or Attendance tables.
+     *
+     * Per-day classification (config('attendance.shift_seconds') defines the
+     * "1.0 day" target, default 8*3600):
+     *   - holiday or weekend         -> counted in working_days, NOT in present/absent/LOP
+     *   - approved full-day leave    -> counted in working_days + paid_leave, NOT in present/absent
+     *   - approved half-day leave    -> 0.5 paid_leave; remaining 0.5 worked if any
+     *   - worked >= shift_target     -> 1.0 present
+     *   - worked >= half target      -> 0.5 present (half_day); 0.5 LOP
+     *   - worked == 0                 -> 1.0 LOP (unless holiday/weekend/approved leave)
+     *
+     * Returned shape:
+     *   [
+     *     'month_year'              => 'YYYY-MM',
+     *     'days_in_month'           => int,
+     *     'working_days'            => float (excludes weekends/holidays),
+     *     'holidays'                => int,
+     *     'weekend_days'            => int,
+     *     'present_days'            => float,
+     *     'absent_days'             => float (== lop_days for clean reporting),
+     *     'paid_leave_days'         => float,
+     *     'lop_days'                => float,
+     *     'half_days'               => int,
+     *     'late_count'              => int,
+     *     'unregularized_absences'  => int (working days with worked=0 and no approved leave),
+     *     'overtime_seconds'        => int (worked - target, only on present days),
+     *     'total_worked_seconds'    => int,
+     *     'attendance_source'       => 'tracker' | 'no_records',
+     *   ]
+     */
+    public function monthlyAttendanceSummary(User $user, string $monthYear): array
+    {
+        [$year, $month] = array_map('intval', explode('-', $monthYear));
+        if ($year < 1970 || $month < 1 || $month > 12) {
+            throw new \InvalidArgumentException("month_year must be YYYY-MM, got '{$monthYear}'");
+        }
+
+        $start = Carbon::create($year, $month, 1)->startOfDay();
+        $end = $start->copy()->endOfMonth()->endOfDay();
+        $shiftTarget = $this->shiftTargetSeconds();
+        $halfTarget = (int) floor($shiftTarget / 2);
+
+        // Holidays in the month for this org (and the user's country filter,
+        // which AttendanceHoliday::countryForSettings() resolves for us).
+        $country = AttendanceHoliday::countryForSettings(
+            is_array($user->organization?->settings) ? $user->organization->settings : []
+        );
+        $holidayDates = AttendanceHoliday::where('organization_id', $user->organization_id)
+            ->where(function ($q) use ($country) {
+                $q->where('country', 'ALL');
+                if ($country !== 'ALL') {
+                    $q->orWhere('country', $country);
+                }
+            })
+            ->whereBetween('holiday_date', [$start->toDateString(), $end->toDateString()])
+            ->pluck('holiday_date')
+            ->map(fn ($d) => Carbon::parse($d)->toDateString())
+            ->flip();
+
+        // Pre-load approved leaves in the month.
+        $approvedLeaves = LeaveRequest::where('organization_id', $user->organization_id)
+            ->where('user_id', $user->id)
+            ->where('status', 'approved')
+            ->where(function ($q) use ($start, $end) {
+                $q->whereDate('start_date', '<=', $end->toDateString())
+                    ->whereDate('end_date', '>=', $start->toDateString());
+            })
+            ->get();
+
+        // Pre-load attendance records with their punches.
+        $records = AttendanceRecord::where('organization_id', $user->organization_id)
+            ->where('user_id', $user->id)
+            ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+            ->with('punches')
+            ->get()
+            ->keyBy(fn (AttendanceRecord $r) => $r->attendance_date->toDateString());
+
+        $presentDays = 0.0;
+        $paidLeaveDays = 0.0;
+        $lopDays = 0.0;
+        $halfDays = 0;
+        $lateCount = 0;
+        $unregularizedAbsences = 0;
+        $overtimeSeconds = 0;
+        $totalWorkedSeconds = 0;
+        $workingDays = 0.0;
+        $weekendDays = 0;
+        $holidayCount = 0;
+
+        foreach (CarbonPeriod::create($start, $end) as $date) {
+            $dateStr = $date->toDateString();
+            $isWeekend = $date->isWeekend();
+            $isHoliday = $holidayDates->has($dateStr);
+
+            if ($isHoliday) {
+                $holidayCount++;
+            }
+            if ($isWeekend) {
+                $weekendDays++;
+            }
+            if ($isWeekend || $isHoliday) {
+                // Weekends/holidays are not payable work days and not LOP.
+                continue;
+            }
+
+            $workingDays += 1.0;
+
+            $record = $records->get($dateStr);
+            $worked = $record ? $this->calculateEffectiveWorkedSeconds($record) : 0;
+            $totalWorkedSeconds += $worked;
+            if ($record && (int) ($record->late_minutes ?? 0) > 0) {
+                $lateCount++;
+            }
+
+            // Approved leave for this date (any of the overlapping approved
+            // leaves may be a half-day).
+            $leaveUnits = 0.0;
+            foreach ($approvedLeaves as $leave) {
+                $units = $leave->unitsForDate($date);
+                if ($units > 0 && $units > $leaveUnits) {
+                    $leaveUnits = $units; // use the largest single leave claim
+                }
+            }
+
+            if ($worked >= $shiftTarget) {
+                $presentDays += 1.0;
+                $overtimeSeconds += max(0, $worked - $shiftTarget);
+            } elseif ($worked >= $halfTarget) {
+                // Half day present; remaining 0.5 of the working day
+                $presentDays += 0.5;
+                $halfDays++;
+                if ($leaveUnits >= 0.5) {
+                    $paidLeaveDays += 0.5;
+                } else {
+                    $lopDays += 0.5;
+                }
+            } elseif ($worked > 0) {
+                // Worked a little but didn't reach half — count as half-LOP
+                $presentDays += 0.25; // partial credit
+                $lopDays += 0.75;
+            } else {
+                // Worked 0 seconds.
+                if ($leaveUnits >= 1.0) {
+                    $paidLeaveDays += 1.0;
+                } elseif ($leaveUnits >= 0.5) {
+                    $paidLeaveDays += 0.5;
+                    $lopDays += 0.5;
+                    $halfDays++;
+                } else {
+                    $lopDays += 1.0;
+                    $unregularizedAbsences++;
+                }
+            }
+        }
+
+        return [
+            'month_year' => $monthYear,
+            'days_in_month' => (int) $start->daysInMonth,
+            'working_days' => round($workingDays, 2),
+            'holidays' => $holidayCount,
+            'weekend_days' => $weekendDays,
+            'present_days' => round($presentDays, 2),
+            'absent_days' => round($lopDays, 2),
+            'paid_leave_days' => round($paidLeaveDays, 2),
+            'lop_days' => round($lopDays, 2),
+            'half_days' => $halfDays,
+            'late_count' => $lateCount,
+            'unregularized_absences' => $unregularizedAbsences,
+            'overtime_seconds' => $overtimeSeconds,
+            'total_worked_seconds' => $totalWorkedSeconds,
+            'attendance_source' => $records->isNotEmpty() ? 'tracker' : 'no_records',
+        ];
     }
 }

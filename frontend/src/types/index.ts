@@ -1275,6 +1275,29 @@ export interface EmployeePayrollDetails {
     bank_account?: string | null;
     bank_ifsc?: string | null;
   };
+  /**
+   * Real monthly attendance summary (single source of truth). The
+   * PayrollItem is written from this on every run; the wizard reads
+   * from this for auto-populating days, hours, and overtime.
+   */
+  attendance_summary?: {
+    month_year: string;
+    days_in_month: number;
+    working_days: number;
+    holidays: number;
+    weekend_days: number;
+    present_days: number;
+    absent_days: number;
+    paid_leave_days: number;
+    lop_days: number;
+    half_days: number;
+    late_count: number;
+    unregularized_absences: number;
+    overtime_seconds: number;
+    total_worked_seconds: number;
+    attendance_source: 'tracker' | 'no_records';
+    hours: { worked_hours: number; overtime_hours: number };
+  };
   time_tracking: {
     total_worked_seconds: number;
     total_worked_hours: number;

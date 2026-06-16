@@ -16,6 +16,7 @@ use App\Models\FbpClaim;
 use App\Models\PerquisiteRecord;
 use App\Models\VariablePayAssignment;
 use App\Models\User;
+use App\Services\Attendance\AttendanceService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -25,24 +26,44 @@ class PayrollAutoProcessService
     protected PayrollValidationService $validation;
     protected PayrollFilingService $filings;
     protected PayrollChecklistService $checklist;
+    protected AttendanceService $attendance;
 
     public function __construct(
         PayrollCalculatorService $calculator,
         PayrollValidationService $validation,
         PayrollFilingService $filings,
         PayrollChecklistService $checklist,
+        AttendanceService $attendance,
     ) {
         $this->calculator = $calculator;
         $this->validation = $validation;
         $this->filings = $filings;
         $this->checklist = $checklist;
+        $this->attendance = $attendance;
     }
 
     public function quickProcess(int $orgId, string $monthYear, int $userId): array
     {
-        return DB::transaction(function () use ($orgId, $monthYear, $userId) {
-            $run = $this->createOrGetRun($orgId, $monthYear, $userId);
-            $this->autoSyncEmployees($run, $orgId);
+        return $this->processForUsers($orgId, $monthYear, null, $userId);
+    }
+
+    /**
+     * Single source of truth for the full payroll run.
+     *
+     * Every payroll path routes through here:
+     *   - single employee     -> processForUsers($orgId, $m, [$userId], $actor)
+     *   - department run      -> processForUsers($orgId, $m, $dept->users()->pluck('id')->all(), $actor)
+     *   - whole-org run       -> processForUsers($orgId, $m, null, $actor)
+     *
+     * This guarantees that bulk and individual produce identical net pay
+     * (per master guide §3: "Single source of truth — no duplicate
+     * calculation engines").
+     */
+    public function processForUsers(int $orgId, string $monthYear, ?array $userIds, int $actorUserId): array
+    {
+        return DB::transaction(function () use ($orgId, $monthYear, $userIds, $actorUserId) {
+            $run = $this->createOrGetRun($orgId, $monthYear, $actorUserId);
+            $this->autoSyncEmployees($run, $orgId, $userIds);
             $this->autoSyncAttendance($run);
             $this->autoSyncLeaves($run);
             $this->autoSyncReimbursements($run);
@@ -51,7 +72,7 @@ class PayrollAutoProcessService
             $this->autoSyncPerquisites($run);
             $this->autoApplyHolds($run);
             $this->calculateAllItems($run);
-            $this->validateRun($run, $orgId, $userId);
+            $this->validateRun($run, $orgId, $actorUserId);
 
             return $run->fresh()->load('items.user.employeeProfile');
         });
@@ -99,7 +120,7 @@ class PayrollAutoProcessService
         return $run;
     }
 
-    private function autoSyncEmployees(PayrollMonthlyRun $run, int $orgId): void
+    private function autoSyncEmployees(PayrollMonthlyRun $run, int $orgId, ?array $userIds = null): void
     {
         $templates = EmployeePayrollTemplate::with([
             'user.employeeProfile',
@@ -108,6 +129,7 @@ class PayrollAutoProcessService
         ])
             ->where('organization_id', $orgId)
             ->where('is_active', true)
+            ->when($userIds !== null, fn ($q) => $q->whereIn('user_id', $userIds))
             ->get();
 
         foreach ($templates as $template) {
@@ -137,19 +159,34 @@ class PayrollAutoProcessService
         }
     }
 
+    /**
+     * Real attendance sync, replacing the old hard-coded 26/26/0/0 stub.
+     * Reads from AttendanceRecord/AttendancePunch/LeaveRequest/AttendanceHoliday
+     * via AttendanceService::monthlyAttendanceSummary (single source of
+     * truth for payroll attendance, per the master guide).
+     *
+     * Payroll is a CONSUMER of attendance — this method never writes back to
+     * the attendance tables.
+     */
     private function autoSyncAttendance(PayrollMonthlyRun $run): void
     {
         $items = PayrollItem::where('payroll_run_id', $run->id)->get();
         foreach ($items as $item) {
-            $user = User::with(['employeeProfile'])->find($item->user_id);
-            if (!$user) continue;
+            $user = User::find($item->user_id);
+            if (!$user) {
+                continue;
+            }
+
+            $summary = $this->attendance->monthlyAttendanceSummary($user, $run->month_year);
 
             $item->update([
-                'total_working_days' => 26,
-                'days_present' => 26,
-                'days_absent' => 0,
-                'days_leave' => 0,
-                'lOP_days' => 0,
+                'total_working_days' => (float) $summary['working_days'],
+                'days_present' => (float) $summary['present_days'],
+                'days_absent' => (float) $summary['lop_days'],
+                'days_leave' => (float) $summary['paid_leave_days'],
+                'lOP_days' => (float) $summary['lop_days'],
+                'total_worked_seconds' => (int) $summary['total_worked_seconds'],
+                'overtime_seconds' => (int) $summary['overtime_seconds'],
             ]);
         }
     }

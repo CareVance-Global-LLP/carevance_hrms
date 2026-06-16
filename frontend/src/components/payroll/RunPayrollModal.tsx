@@ -31,6 +31,7 @@ export default function RunPayrollModal({
 }: RunPayrollModalProps) {
   // ALL useState hooks at the top
   const [selectedDepartments, setSelectedDepartments] = useState<number[]>([]);
+  const [useUnifiedEngine, setUseUnifiedEngine] = useState(true);
   const [step, setStep] = useState<'select' | 'processing' | 'complete' | 'error'>('select');
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({
     status: 'pending',
@@ -57,6 +58,47 @@ export default function RunPayrollModal({
   }, [isOpen]);
 
   // ALL useMutation hooks next
+  // Unified engine path: a single /payroll/auto/process-scoped call.
+  // Bulk and individual use the same engine, so net pay is identical.
+  const unifiedRunMutation = useMutation({
+    mutationFn: () => payrollApi.processScoped({
+      month_year: monthYear,
+      scope: selectedDepartments.length === 0 ? 'all' : 'department',
+      department_ids: selectedDepartments.length > 0 ? selectedDepartments : undefined,
+    }).then(r => r.data),
+    onSuccess: (data) => {
+      if (data.success) {
+        setProcessingStatus({
+          status: 'success',
+          message: `Unified engine processed ${data.user_count ?? 'all'} employees.`,
+          processedCount: data.user_count ?? 0,
+          totalCount: data.user_count ?? 0,
+          errors: [],
+        });
+        setStep('complete');
+      } else {
+        setProcessingStatus({
+          status: 'error',
+          message: data.message || 'Payroll run failed',
+          processedCount: 0,
+          totalCount: 0,
+          errors: [data.message || 'Unknown error'],
+        });
+        setStep('error');
+      }
+    },
+    onError: (err: any) => {
+      setStep('error');
+      setProcessingStatus({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Failed to process payroll',
+        processedCount: 0,
+        totalCount: 0,
+        errors: [err instanceof Error ? err.message : 'Unknown error'],
+      });
+    },
+  });
+
   // Get employees for each selected department and process payroll
   const runPayrollMutation = useMutation({
     mutationFn: async () => {
@@ -117,12 +159,30 @@ export default function RunPayrollModal({
                   continue;
                 }
 
-                // Use time tracking data for attendance calculations
-                const timeTracking = (employee as any).time_tracking || {};
-                const workingDays = timeTracking.payroll_attendance_days || 26;
-                const daysPresent = timeTracking.payroll_attendance_days || 26;
-                const lopDays = 0; // Calculate from LOP tracking if available
-                const overtimeHours = 0; // Calculate from overtime tracking if available
+                // Use the new monthly attendance summary (single source of
+                // truth). Falls back to the legacy time-tracking fields if
+                // the summary endpoint is unavailable for any reason.
+                let workingDays: number;
+                let daysPresent: number;
+                let lopDays: number;
+                let overtimeHours: number;
+                try {
+                  const summaryRes = await payrollApi.getMonthlyAttendanceSummary({
+                    user_id: employee.id,
+                    month_year: monthYear,
+                  });
+                  const s = summaryRes.data.summary;
+                  workingDays = Math.round(s.working_days);
+                  daysPresent = Math.round(s.present_days);
+                  lopDays = Math.round(s.lop_days);
+                  overtimeHours = Number(s.hours?.overtime_hours ?? 0);
+                } catch {
+                  const timeTracking = (employee as any).time_tracking || {};
+                  workingDays = timeTracking.payroll_attendance_days || 26;
+                  daysPresent = timeTracking.payroll_attendance_days || 26;
+                  lopDays = 0;
+                  overtimeHours = 0;
+                }
 
                 await payrollApi.processEmployeePayroll(employee.id, {
                   user_id: employee.id,
@@ -131,7 +191,7 @@ export default function RunPayrollModal({
                   working_days: workingDays,
                   days_present: daysPresent,
                   lOP_days: lopDays,
-                  overtime_hours: overtimeHours
+                  overtime_hours: overtimeHours,
                 });
               }
 
@@ -211,7 +271,11 @@ export default function RunPayrollModal({
   };
 
   const handleStartPayroll = () => {
-    runPayrollMutation.mutate();
+    if (useUnifiedEngine) {
+      unifiedRunMutation.mutate();
+    } else {
+      runPayrollMutation.mutate();
+    }
   };
 
   const handleClose = () => {
@@ -318,6 +382,41 @@ export default function RunPayrollModal({
                 ))}
               </div>
 
+              {/* Engine selector — defaults to unified so bulk and individual produce identical results. */}
+              <div className="border-t border-slate-200 pt-4 mt-2">
+                <p className="text-xs text-slate-500 mb-2">Processing engine</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${useUnifiedEngine ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="run-engine"
+                      value="unified"
+                      checked={useUnifiedEngine}
+                      onChange={() => setUseUnifiedEngine(true)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">Unified engine <span className="ml-1 text-[10px] uppercase tracking-wide text-emerald-600">Recommended</span></div>
+                      <div className="text-xs text-slate-500">Single call to /payroll/auto/process-scoped. Same net pay as processing an individual employee. Reads attendance, leaves, FBP, variable pay in one pass.</div>
+                    </div>
+                  </label>
+                  <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer transition-colors ${!useUnifiedEngine ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="run-engine"
+                      value="loop"
+                      checked={!useUnifiedEngine}
+                      onChange={() => setUseUnifiedEngine(false)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">Per-employee loop (legacy)</div>
+                      <div className="text-xs text-slate-500">Iterates the existing processEmployeePayroll endpoint. Kept for transitional use; will be deprecated.</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
               <div className="flex gap-3 pt-4">
                 <Button variant="secondary" className="flex-1" onClick={handleClose}>
                   Cancel
@@ -325,10 +424,10 @@ export default function RunPayrollModal({
                 <Button
                   variant="primary"
                   className="flex-1"
-                  disabled={selectedDepartments.length === 0 || runPayrollMutation.isPending}
+                  disabled={selectedDepartments.length === 0 || runPayrollMutation.isPending || unifiedRunMutation.isPending}
                   onClick={handleStartPayroll}
                 >
-                  {runPayrollMutation.isPending ? (
+                  {(runPayrollMutation.isPending || unifiedRunMutation.isPending) ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Starting...
