@@ -1,144 +1,59 @@
-import { useState, useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useState } from 'react';
+import { HelpCircle } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import PayrollDashboard from '@/components/payroll/PayrollDashboard';
 import DepartmentEmployees from '@/components/payroll/DepartmentEmployees';
 import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
 import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
+import FilingsDashboard from '@/components/payroll/FilingsDashboard';
+import HelpDrawer from '@/components/payroll/HelpDrawer';
 import RunPayrollModal from '@/components/payroll/RunPayrollModal';
 import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 
-type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates';
-
-const VIEW_VALUES: ReadonlySet<ViewMode> = new Set([
-  'dashboard',
-  'department',
-  'employee',
-  'dept-templates',
-]);
-
-const DEFAULT_VIEW: ViewMode = 'dashboard';
-
-function currentMonthString(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function isValidMonth(value: string): boolean {
-  return /^\d{4}-\d{2}$/.test(value);
-}
-
-function parseInt0(value: string | null): number {
-  if (!value) return 0;
-  const n = parseInt(value, 10);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function parseView(value: string | null): ViewMode {
-  if (value && (VIEW_VALUES as Set<string>).has(value)) {
-    return value as ViewMode;
-  }
-  return DEFAULT_VIEW;
-}
+type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates' | 'filings';
 
 export default function PayrollPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number>(0);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number>(0);
+  const [selectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
 
-  // ---- URL params as the single source of truth (refresh-safe, shareable) ----
-  const urlMonth = searchParams.get('month');
-  const urlView = parseView(searchParams.get('view'));
-  const urlDept = parseInt0(searchParams.get('dept'));
-  const urlEmp = parseInt0(searchParams.get('emp'));
-
-  const selectedMonth = useMemo(
-    () => (urlMonth && isValidMonth(urlMonth) ? urlMonth : currentMonthString()),
-    [urlMonth],
-  );
-  const viewMode: ViewMode = urlView;
-  const selectedDepartmentId = urlDept;
-  const selectedEmployeeId = urlEmp;
-
-  // ---- Mutators that update the URL ----
-  const updateParams = useCallback(
-    (patch: Record<string, string | null>, opts: { replace?: boolean } = {}) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          for (const [k, v] of Object.entries(patch)) {
-            if (v === null || v === '') {
-              next.delete(k);
-            } else {
-              next.set(k, v);
-            }
-          }
-          return next;
-        },
-        { replace: opts.replace ?? false },
-      );
-    },
-    [setSearchParams],
-  );
-
-  // setMonth uses replace:true so the browser back button doesn't fill up
-  // with one history entry per keystroke of the month input.
-  const setMonth = useCallback(
-    (month: string) => {
-      updateParams({ month: isValidMonth(month) ? month : null }, { replace: true });
-    },
-    [updateParams],
-  );
-
-  const navigate = useCallback(
-    (next: {
-      view: ViewMode;
-      dept?: number | null;
-      emp?: number | null;
-    }) => {
-      const patch: Record<string, string | null> = { view: next.view };
-      if (next.dept === null || next.dept === undefined || next.dept === 0) {
-        patch.dept = null;
-      } else {
-        patch.dept = String(next.dept);
-      }
-      if (next.emp === null || next.emp === undefined || next.emp === 0) {
-        patch.emp = null;
-      } else {
-        patch.emp = String(next.emp);
-      }
-      updateParams(patch);
-    },
-    [updateParams],
-  );
-
-  const handleSelectDepartment = (departmentId: number) => {
-    navigate({ view: 'department', dept: departmentId, emp: null });
-  };
-
-  const handleSelectEmployee = (employeeId: number) => {
-    navigate({ view: 'employee', dept: selectedDepartmentId, emp: employeeId });
-  };
-
-  const handleBackToDashboard = () => {
-    navigate({ view: 'dashboard', dept: null, emp: null });
-  };
-
-  const handleBackToDepartment = () => {
-    navigate({ view: 'department', dept: selectedDepartmentId, emp: null });
-  };
-
-  const handleOpenDepartmentTemplates = () => {
-    navigate({ view: 'dept-templates', dept: null, emp: null });
-  };
-
-  // ---- Modal state (transient, doesn't go in the URL) ----
+  // Modal states
   const [isRunPayrollModalOpen, setIsRunPayrollModalOpen] = useState(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [currentStats, setCurrentStats] = useState<PayrollStats | undefined>();
   const [departmentsList, setDepartmentsList] = useState<any[]>([]);
+
+  // Help drawer
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  const handleSelectDepartment = (departmentId: number) => {
+    setSelectedDepartmentId(departmentId);
+    setViewMode('department');
+  };
+
+  const handleSelectEmployee = (employeeId: number) => {
+    setSelectedEmployeeId(employeeId);
+    setViewMode('employee');
+  };
+
+  const handleBackToDashboard = () => {
+    setViewMode('dashboard');
+    setSelectedDepartmentId(0);
+    setSelectedEmployeeId(0);
+  };
+
+  const handleBackToDepartment = () => {
+    setViewMode('department');
+    setSelectedEmployeeId(0);
+  };
 
   const handleOpenRunPayroll = (stats: PayrollStats, departments: any[]) => {
     setCurrentStats(stats);
@@ -155,9 +70,22 @@ export default function PayrollPage() {
     setIsSettingsModalOpen(true);
   };
 
+  const handleOpenDepartmentTemplates = () => {
+    setViewMode('dept-templates');
+  };
+
+  const handleOpenFilings = () => {
+    setViewMode('filings');
+  };
+
+  const handleOpenWizard = () => {
+    setViewMode('dashboard');
+    // The NextStepsCard will show "Start Setup" linking to /payroll/setup
+  };
+
   const handlePayrollSuccess = () => {
     setIsRunPayrollModalOpen(false);
-    handleBackToDashboard();
+    setViewMode('dashboard');
   };
 
   const handleSaveSettings = (settings: PayrollOrganizationSettings) => {
@@ -168,7 +96,17 @@ export default function PayrollPage() {
     <div className="min-h-screen bg-slate-50">
       <PageHeader
         title="Payroll"
-        description={`Manage employee salaries and compliance · ${selectedMonth}`}
+        description="Manage employee salaries and compliance"
+        actions={
+          <button
+            onClick={() => setIsHelpOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            aria-label="Open help"
+          >
+            <HelpCircle className="h-4 w-4" />
+            <span className="hidden sm:inline">Help</span>
+          </button>
+        }
       />
 
       <div className="p-6">
@@ -178,8 +116,8 @@ export default function PayrollPage() {
             onSelectEmployee={handleSelectEmployee}
             onOpenRunPayroll={handleOpenRunPayroll}
             onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
-            selectedMonth={selectedMonth}
-            onMonthChange={setMonth}
+            onOpenFilings={handleOpenFilings}
+            onOpenWizard={handleOpenWizard}
           />
         )}
 
@@ -201,8 +139,12 @@ export default function PayrollPage() {
             employeeId={selectedEmployeeId}
             monthYear={selectedMonth}
             onBack={handleBackToDepartment}
-            onComplete={() => navigate({ view: 'department', dept: selectedDepartmentId, emp: null })}
+            onComplete={() => setViewMode('department')}
           />
+        )}
+
+        {viewMode === 'filings' && (
+          <FilingsDashboard />
         )}
       </div>
 
@@ -225,6 +167,12 @@ export default function PayrollPage() {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         onSave={handleSaveSettings}
+      />
+
+      {/* Help drawer with glossary, how-to guides, and FAQs */}
+      <HelpDrawer
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
       />
     </div>
   );

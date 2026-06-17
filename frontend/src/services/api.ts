@@ -1865,10 +1865,40 @@ export const payrollApi = {
     api.post<any>('/payroll/checklist/resolve', { check_id: checkId, resolution }),
 
   // ===== Arrears =====
+  listArrears: (params?: { status?: string }) =>
+    api.get<{ data: any[] }>('/payroll/arrears', { params }),
+  createArrear: (data: Record<string, any>) =>
+    api.post<any>('/payroll/arrears', data),
+  approveArrear: (id: number) =>
+    api.post<any>(`/payroll/arrears/${id}/approve`),
+  rejectArrear: (id: number, reason: string) =>
+    api.post<any>(`/payroll/arrears/${id}/reject`, { reason }),
   detectCtcArrears: (userId: number, currentMonthYear: string) =>
     api.get<any>(`/payroll/arrears/detect/${userId}`, { params: { current_month_year: currentMonthYear } }),
   calculateArrear: (data: { user_id: number; month_year: string; amount: number; reason: string }) =>
     api.post<any>('/payroll/arrears/calculate', data),
+
+  // ===== Leave Encashment =====
+  listLeaveEncashments: (params?: { status?: string }) =>
+    api.get<{ data: any[] }>('/payroll/leave-encashments', { params }),
+  requestLeaveEncashment: (data: Record<string, any>) =>
+    api.post<any>('/payroll/leave-encashments', data),
+  approveLeaveEncashment: (id: number) =>
+    api.post<any>(`/payroll/leave-encashments/${id}/approve`),
+  rejectLeaveEncashment: (id: number, reason: string) =>
+    api.post<any>(`/payroll/leave-encashments/${id}/reject`, { reason }),
+
+  // ===== F&F Settlements =====
+  listFnFSettlements: (params?: { status?: string }) =>
+    api.get<{ data: any[] }>('/payroll/fnf-settlements', { params }),
+  createFnFSettlement: (data: Record<string, any>) =>
+    api.post<any>('/payroll/fnf-settlements', data),
+  approveFnFSettlement: (id: number) =>
+    api.post<any>(`/payroll/fnf-settlements/${id}/approve`),
+  rejectFnFSettlement: (id: number, reason: string) =>
+    api.post<any>(`/payroll/fnf-settlements/${id}/reject`, { reason }),
+  processFnFPayment: (id: number, paymentMethod: string, reference?: string) =>
+    api.post<any>(`/payroll/fnf-settlements/${id}/process-payment`, { payment_method: paymentMethod, payment_reference: reference }),
 
   // ===== Variable Pay =====
   calculateVariablePay: (userId: number, payrollItemId: number) =>
@@ -1929,6 +1959,54 @@ export const payrollApi = {
     api.post<any>('/payroll/auto/validate-run', { run_id: runId }),
   getAutoChecklistStatus: (runId: number) =>
     api.get<any>(`/payroll/auto/checklist-status/${runId}`),
+
+  // ===== Reimbursements =====
+  listReimbursements: (params?: { status?: string }) =>
+    api.get<{ data: any[] }>('/payroll/reimbursements', { params }),
+  createReimbursement: (data: Record<string, any>) =>
+    api.post<any>('/payroll/reimbursements', data),
+  approveReimbursement: (id: number) =>
+    api.post<any>(`/payroll/reimbursements/${id}/approve`),
+  rejectReimbursement: (id: number, reason: string) =>
+    api.post<any>(`/payroll/reimbursements/${id}/reject`, { reason }),
+
+  // ===== Revision Letters (Employee self-service) =====
+  myRevisionLetters: () =>
+    api.get<{ data: any[] }>('/payroll/revision-letters/user/me'),
+
+  // ===== Onboarding (first-time user guidance) =====
+  getOnboardingStatus: () =>
+    api.get<{
+      onboarded: boolean;
+      dismissed_at: string | null;
+      first_run_at: string | null;
+      first_filing_at: string | null;
+      steps: Record<string, boolean>;
+      completed_steps: string[];
+      next_action: string;
+      completion_percentage: number;
+      completed_count: number;
+      total_count: number;
+      has_payroll_run: boolean;
+      has_filings: boolean;
+      employees_with_ctc: number;
+      employees_total: number;
+      step_labels: Record<string, string>;
+    }>('/payroll/onboarding-status'),
+  markDefaultsConfigured: () =>
+    api.post<{ success: boolean; message: string }>('/payroll/onboarding/mark-defaults-configured'),
+  dismissOnboarding: () =>
+    api.post<{ success: boolean; message: string }>('/payroll/onboarding/dismiss'),
+  reopenOnboarding: () =>
+    api.post<{ success: boolean; message: string }>('/payroll/onboarding/reopen'),
+  completeOnboardingStep: (step: 'welcome' | 'defaults' | 'first_employee' | 'test_calculation' | 'completed') =>
+    api.post<{ success: boolean; message: string; completed_steps: string[] }>('/payroll/onboarding/complete-step', { step }),
+  markSetupStep: (step: string) =>
+    api.post<{ success: boolean; message: string; completed_steps: string[] }>('/payroll/onboarding/mark-setup-step', { step }),
+  unmarkSetupStep: (step: string) =>
+    api.post<{ success: boolean; message: string; completed_steps: string[] }>('/payroll/onboarding/unmark-setup-step', { step }),
+  markWelcomeSeen: () =>
+    api.post<{ success: boolean; message: string }>('/payroll/onboarding/mark-welcome-seen'),
 };
 
 export default api;

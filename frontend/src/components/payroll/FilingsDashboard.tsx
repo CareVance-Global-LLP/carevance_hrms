@@ -7,14 +7,12 @@ import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 
 const FILING_TYPES = [
-  { key: 'pf_ecr', label: 'PF ECR', desc: 'EPFO monthly return' },
-  { key: 'esi_challan', label: 'ESI Challan', desc: 'ESI monthly challan' },
-  { key: 'form_24q', label: 'Form 24Q', desc: 'Quarterly TDS return' },
-  { key: 'form_16', label: 'Form 16', desc: 'TDS certificate' },
-  { key: 'form_12ba', label: 'Form 12BA', desc: 'Perquisites statement' },
-  { key: 'pt_return', label: 'PT Return', desc: 'Professional Tax return' },
-  { key: 'lwf_return', label: 'LWF Return', desc: 'Labour Welfare Fund' },
-  { key: 'bonus_form_c', label: 'Bonus Form C', desc: 'Bonus Act return' },
+  { key: 'pf_ecr', label: 'PF ECR', desc: 'EPFO monthly return', needsRun: true },
+  { key: 'esi_challan', label: 'ESI Challan', desc: 'ESI monthly challan', needsRun: true },
+  { key: 'form_24q', label: 'Form 24Q', desc: 'Quarterly TDS return', needsRun: true },
+  { key: 'form_12ba', label: 'Form 12BA', desc: 'Perquisites statement', needsRun: true },
+  { key: 'pt_return', label: 'PT Return', desc: 'Professional Tax return', needsRun: true, needsState: true },
+  { key: 'lwf_return', label: 'LWF Return', desc: 'Labour Welfare Fund', needsRun: true },
 ];
 
 interface FilingButtonProps {
@@ -22,23 +20,57 @@ interface FilingButtonProps {
   desc: string;
   onClick: () => void;
   disabled?: boolean;
+  needsState?: boolean;
+  state?: string;
+  onStateChange?: (state: string) => void;
 }
 
-function FilingButton({ label, desc, onClick, disabled }: FilingButtonProps) {
+function FilingButton({ label, desc, onClick, disabled, needsState, state, onStateChange }: FilingButtonProps) {
   return (
     <SurfaceCard
       className={`p-4 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all ${
         disabled ? 'opacity-50 pointer-events-none' : ''
       }`}
-      onClick={onClick}
+      onClick={needsState ? undefined : onClick}
     >
       <div className="flex items-start gap-3">
         <div className="h-10 w-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
           <FileText className="h-5 w-5" />
         </div>
-        <div>
+        <div className="flex-1">
           <h3 className="font-semibold text-slate-900 text-sm">{label}</h3>
           <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
+          {needsState && (
+            <div className="mt-2">
+              <select
+                value={state || ''}
+                onChange={(e) => onStateChange?.(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                disabled={disabled}
+                className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select state...</option>
+                <option value="maharashtra">Maharashtra</option>
+                <option value="karnataka">Karnataka</option>
+                <option value="tamil_nadu">Tamil Nadu</option>
+                <option value="gujarat">Gujarat</option>
+                <option value="west_bengal">West Bengal</option>
+                <option value="delhi">Delhi</option>
+                <option value="haryana">Haryana</option>
+                <option value="uttar_pradesh">Uttar Pradesh</option>
+                <option value="telangana">Telangana</option>
+                <option value="andhra_pradesh">Andhra Pradesh</option>
+                <option value="rajasthan">Rajasthan</option>
+                <option value="madhya_pradesh">Madhya Pradesh</option>
+                <option value="punjab">Punjab</option>
+                <option value="odisha">Odisha</option>
+                <option value="kerala">Kerala</option>
+                <option value="bihar">Bihar</option>
+                <option value="jharkhand">Jharkhand</option>
+                <option value="assam">Assam</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
     </SurfaceCard>
@@ -48,11 +80,19 @@ function FilingButton({ label, desc, onClick, disabled }: FilingButtonProps) {
 export default function FilingsDashboard() {
   const queryClient = useQueryClient();
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'generate' | 'history'>('generate');
+  const [ptState, setPtState] = useState<string>('');
+  const [form16EmployeeId, setForm16EmployeeId] = useState<number | null>(null);
+  const [form16FinancialYear, setForm16FinancialYear] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'form16'>('generate');
 
   const { data: runs, isLoading: runsLoading } = useQuery({
     queryKey: ['payroll-runs'],
     queryFn: () => payrollApi.getPayrollRuns(),
+  });
+
+  const { data: employees, isLoading: employeesLoading } = useQuery({
+    queryKey: ['payroll-employees'],
+    queryFn: () => payrollApi.getEmployees(),
   });
 
   const { data: filings, isLoading: filingsLoading } = useQuery({
@@ -76,15 +116,22 @@ export default function FilingsDashboard() {
         case 'form_24q': return payrollApi.generateForm24Q(runId);
         case 'form_12ba': return payrollApi.generateForm12BA(runId);
         case 'lwf_return': return payrollApi.generateLwfReturn(runId);
-        case 'pt_return': return payrollApi.generatePtReturn(runId, '');
+        case 'pt_return': return payrollApi.generatePtReturn(runId, ptState);
         default: throw new Error('Unknown filing type');
       }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['payroll-filings'] }),
   });
 
+  const generateForm16Mutation = useMutation({
+    mutationFn: ({ userId, financialYear }: { userId: number; financialYear: string }) =>
+      payrollApi.generateForm16(userId, financialYear),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['payroll-filings'] }),
+  });
+
   const runsList = Array.isArray(runs) ? runs : (runs as any)?.runs ?? [];
   const filingsList = Array.isArray(filings) ? filings : (filings as any)?.data ?? [];
+  const employeesList = Array.isArray(employees) ? employees : (employees as any)?.data ?? employees ?? [];
 
   return (
     <div className="space-y-6">
@@ -96,6 +143,14 @@ export default function FilingsDashboard() {
           onClick={() => setActiveTab('generate')}
         >
           Generate
+        </Button>
+        <Button
+          variant={activeTab === 'form16' ? 'primary' : 'secondary'}
+          size="sm"
+          iconLeft={<FileText className="h-4 w-4" />}
+          onClick={() => setActiveTab('form16')}
+        >
+          Form 16
         </Button>
         <Button
           variant={activeTab === 'history' ? 'primary' : 'secondary'}
@@ -137,6 +192,9 @@ export default function FilingsDashboard() {
                     desc={ft.desc}
                     onClick={() => generateSingleMutation.mutate({ type: ft.key, runId: selectedRun })}
                     disabled={generateSingleMutation.isPending}
+                    needsState={ft.needsState}
+                    state={ptState}
+                    onStateChange={setPtState}
                   />
                 ))}
               </div>
@@ -155,6 +213,55 @@ export default function FilingsDashboard() {
             </>
           )}
         </>
+      ) : activeTab === 'form16' ? (
+        <SurfaceCard className="p-5">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Generate Form 16 (TDS Certificate)</h3>
+          <p className="text-sm text-slate-500 mb-4">
+            Form 16 is generated per employee per financial year. Select an employee and financial year to generate.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
+              <select
+                value={form16EmployeeId ?? ''}
+                onChange={(e) => setForm16EmployeeId(Number(e.target.value) || null)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select employee...</option>
+                {employeesList.map((emp: any) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name} ({emp.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year</label>
+              <select
+                value={form16FinancialYear}
+                onChange={(e) => setForm16FinancialYear(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select financial year...</option>
+                <option value="2024-2025">2024-2025</option>
+                <option value="2023-2024">2023-2024</option>
+                <option value="2022-2023">2022-2023</option>
+              </select>
+            </div>
+          </div>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (form16EmployeeId && form16FinancialYear) {
+                generateForm16Mutation.mutate({ userId: form16EmployeeId, financialYear: form16FinancialYear });
+              }
+            }}
+            disabled={generateForm16Mutation.isPending || !form16EmployeeId || !form16FinancialYear}
+            iconLeft={generateForm16Mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+          >
+            {generateForm16Mutation.isPending ? 'Generating...' : 'Generate Form 16'}
+          </Button>
+        </SurfaceCard>
       ) : (
         <SurfaceCard className="overflow-hidden">
           {filingsLoading ? (

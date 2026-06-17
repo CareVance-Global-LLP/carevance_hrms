@@ -21,29 +21,8 @@ return new class extends Migration
             $table->string('status')->default('in_progress'); // in_progress, completed, verified
             $table->timestamps();
 
-            $table->unique(['user_id', 'financial_year_id']);
+            $table->unique(['user_id', 'financial_year']);
             $table->index(['organization_id', 'status']);
-        });
-
-        Schema::create('tax_proof_submissions', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('declaration_item_id')->nullable()->constrained('employee_tax_declaration_items')->cascadeOnDelete();
-            $table->string('financial_year', 9)->nullable();
-            $table->string('declaration_type'); // 80c, 80d, 24b, hra, lta, others
-            $table->string('description')->nullable();
-            $table->decimal('amount', 12, 2);
-            $table->string('proof_file_path')->nullable();
-            $table->string('proof_filename')->nullable();
-            $table->string('status')->default('pending'); // pending, approved, rejected
-            $table->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamp('reviewed_at')->nullable();
-            $table->text('review_notes')->nullable();
-            $table->timestamps();
-
-            $table->index(['organization_id', 'status']);
-            $table->index(['user_id', 'financial_year_id']);
         });
 
         Schema::create('salary_revision_letters', function (Blueprint $table) {
@@ -73,7 +52,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('salary_revision_letters');
-        Schema::dropIfExists('tax_proof_submissions');
         Schema::dropIfExists('tax_wizard_sessions');
     }
 };

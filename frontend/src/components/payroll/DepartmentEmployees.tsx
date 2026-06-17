@@ -1,16 +1,14 @@
 import { useState, useMemo } from 'react';
-import { 
-  ArrowLeft, 
-  Search, 
+import {
+  ArrowLeft,
+  Search,
   Clock,
-  Calculator,
   CheckCircle2,
   AlertCircle,
   DollarSign,
   Users,
   ChevronDown,
   Filter,
-  User,
   Play,
   CheckSquare,
   Square,
@@ -50,14 +48,12 @@ function EmployeeCard({
   onSelect,
   onClick,
   onProcess,
-  monthYear,
 }: {
   employee: PayrollDepartmentEmployee;
   isSelected: boolean;
   onSelect: () => void;
   onClick: () => void;
   onProcess: (e: React.MouseEvent) => void;
-  monthYear: string;
 }) {
   const status = employee.payroll_status.is_processed
     ? (employee.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
@@ -252,7 +248,7 @@ export default function DepartmentEmployees({
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [showFilters, setShowFilters] = useState(false);
   // Default working days = days in the selected month (org configures this in settings).
-  const [workingDays, setWorkingDays] = useState<number>(() => {
+  const [workingDays] = useState<number>(() => {
     const [y, m] = monthYear.split('-').map(Number);
     return new Date(y, m, 0).getDate();
   });
@@ -315,15 +311,16 @@ export default function DepartmentEmployees({
           return a.name.localeCompare(b.name);
         case 'ctc':
           return (b.annual_ctc || 0) - (a.annual_ctc || 0);
-        case 'status':
+        case 'status': {
           const statusOrder = { pending: 0, processed: 1, paid: 2 };
-          const aStatus = a.payroll_status.is_processed 
+          const aStatus = a.payroll_status.is_processed
             ? (a.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
             : 'pending';
-          const bStatus = b.payroll_status.is_processed 
+          const bStatus = b.payroll_status.is_processed
             ? (b.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
             : 'pending';
           return statusOrder[aStatus as keyof typeof statusOrder] - statusOrder[bStatus as keyof typeof statusOrder];
+        }
         default:
           return 0;
       }
@@ -364,11 +361,6 @@ export default function DepartmentEmployees({
     }
     setSelectedEmployees(newSet);
   };
-
-  // Get selected employee objects
-  const selectedEmployeeObjects = useMemo(() => {
-    return employees.filter(e => selectedEmployees.has(e.id));
-  }, [employees, selectedEmployees]);
 
   return (
     <div className="space-y-6">
@@ -534,7 +526,6 @@ export default function DepartmentEmployees({
                   e.stopPropagation();
                   onSelectEmployee(employee.id);
                 }}
-                monthYear={monthYear}
               />
             ))}
           </div>

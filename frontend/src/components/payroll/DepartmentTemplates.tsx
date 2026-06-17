@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Building2, Save, AlertCircle, CheckCircle2, Loader2, User, X } from 'lucide-react';
+import { ArrowLeft, Building2, Save, AlertCircle, Loader2, User, X } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';

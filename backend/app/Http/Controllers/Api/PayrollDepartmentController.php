@@ -735,6 +735,9 @@ class PayrollDepartmentController extends Controller
         // Update payroll run totals
         $this->updatePayrollRunTotals($payrollRun);
 
+        // Mark first payroll run completion (drives onboarding "Next Steps" card)
+        $this->markFirstPayrollRunIfNeeded($organizationId);
+
         return response()->json([
             'success' => true,
             'message' => $autoClosedTimers > 0
@@ -743,6 +746,33 @@ class PayrollDepartmentController extends Controller
             'auto_closed_timers' => $autoClosedTimers,
             'payroll_item' => $payrollItem->fresh(),
         ]);
+    }
+
+    /**
+     * If this is the org's first payroll item, stamp the org settings so the
+     * onboarding "Next Steps" card can progress.
+     */
+    private function markFirstPayrollRunIfNeeded(int $organizationId): void
+    {
+        try {
+            $org = \App\Models\Organization::find($organizationId);
+            if (!$org) {
+                return;
+            }
+            $payrollSettings = $org->settings['payroll'] ?? [];
+            if (!empty($payrollSettings['first_run_completed_at'])) {
+                return;
+            }
+            $payrollSettings['first_run_completed_at'] = now()->toIso8601String();
+            $org->settings = array_merge($org->settings ?? [], ['payroll' => $payrollSettings]);
+            $org->save();
+        } catch (\Throwable $e) {
+            // Non-fatal: never block payroll processing on a settings write.
+            \Log::warning('Failed to mark first payroll run completion', [
+                'org' => $organizationId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
