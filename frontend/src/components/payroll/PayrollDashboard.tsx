@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Clock,
   Briefcase,
+  FileText,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -19,8 +20,8 @@ import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
+import NextStepsCard from './NextStepsCard';
 import { cn } from '@/utils/cn';
 
 import type { PayrollDepartment, PayrollStats } from '@/types';
@@ -30,6 +31,8 @@ interface PayrollDashboardProps {
   onSelectEmployee: (employeeId: number) => void;
   onOpenRunPayroll: (stats: PayrollStats, departments: PayrollDepartment[]) => void;
   onOpenDepartmentTemplates?: () => void;
+  onOpenFilings?: () => void;
+  onOpenWizard?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -184,6 +187,8 @@ export default function PayrollDashboard({
   onSelectDepartment,
   onOpenRunPayroll,
   onOpenDepartmentTemplates,
+  onOpenFilings,
+  onOpenWizard,
 }: PayrollDashboardProps) {
   // onSelectEmployee is declared in the interface so the parent (Payroll.tsx)
   // can still wire it; the legacy dashboard's current widgets don't drill into
@@ -252,28 +257,29 @@ export default function PayrollDashboard({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      <PageHeader
-        title="Payroll"
-        description={`Process and manage employee salaries for ${selectedMonth}`}
-        actions={
-          <>
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <Button
-              variant="primary"
-              iconLeft={<Play className="h-4 w-4" />}
-              onClick={handleQuickProcess}
-              disabled={summaryStats.pendingCount === 0}
-            >
-              Process All ({summaryStats.pendingCount})
-            </Button>
-          </>
-        }
-      />
+      {/* Onboarding: Next Steps card for first-time / not-yet-completed users */}
+      <NextStepsCard onOpenWizard={onOpenWizard} />
+
+      {/* Month selector + quick action row */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <label className="text-sm font-medium text-slate-700">Month:</label>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <Button
+          variant="primary"
+          iconLeft={<Play className="h-4 w-4" />}
+          onClick={handleQuickProcess}
+          disabled={summaryStats.pendingCount === 0}
+        >
+          Process All ({summaryStats.pendingCount})
+        </Button>
+      </div>
 
       {/* Quick Stats (design system MetricCard) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -342,6 +348,13 @@ export default function PayrollDashboard({
               action={() => {
                 /* open reports */
               }}
+              variant="default"
+            />
+            <QuickActionCard
+              icon={FileText}
+              title="Statutory Filings"
+              description="Generate PF, ESI, Form 16, 24Q, PT, LWF returns"
+              action={() => onOpenFilings?.()}
               variant="default"
             />
           </div>

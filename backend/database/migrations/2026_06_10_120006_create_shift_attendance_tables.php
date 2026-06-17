@@ -79,7 +79,7 @@ return new class extends Migration
         });
 
         // Comp-off Management
-        Schema::create('comp_off_balance', function (Blueprint $table) {
+        Schema::create('comp_off_balances', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
@@ -109,7 +109,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('comp_off_balance_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('comp_off_balance_id')->constrained('comp_off_balances')->cascadeOnDelete();
             
             // Transaction Details
             $table->enum('type', ['earned', 'used', 'expired', 'lapsed', 'adjusted']);
@@ -202,7 +202,7 @@ return new class extends Migration
         Schema::dropIfExists('attendance_violations');
         Schema::dropIfExists('attendance_deduction_rules');
         Schema::dropIfExists('comp_off_transactions');
-        Schema::dropIfExists('comp_off_balance');
+        Schema::dropIfExists('comp_off_balances');
         Schema::dropIfExists('employee_shifts');
         Schema::dropIfExists('shifts');
     }

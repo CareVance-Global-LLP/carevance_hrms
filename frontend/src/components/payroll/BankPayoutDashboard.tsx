@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Landmark, Upload, Download, RotateCcw, Loader2 } from 'lucide-react';
+import { Landmark, Upload, Download, RotateCcw } from 'lucide-react';
 import api, { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 
 export default function BankPayoutDashboard() {
@@ -16,7 +15,7 @@ export default function BankPayoutDashboard() {
     queryFn: () => payrollApi.getPayrollRuns(),
   });
 
-  const { data: batches, refetch: refetchBatches } = useQuery({
+  const { data: batches } = useQuery({
     queryKey: ['bank-batches'],
     queryFn: () => api.get<any>('/payroll/bank/batches'),
   });

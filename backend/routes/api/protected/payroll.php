@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollDepartmentController;
 use App\Http\Controllers\Api\PayrollDiagnosticController;
+use App\Http\Controllers\Api\PayrollOnboardingController;
 use App\Http\Controllers\Api\PerformanceGoalController;
 use App\Http\Controllers\Api\PerformanceReviewController;
 use App\Http\Controllers\Api\ReimbursementController;
@@ -29,7 +30,17 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Test endpoints
     Route::get('/test-response/{departmentId}', [\App\Http\Controllers\Api\PayrollTestController::class, 'testResponse']);
     Route::get('/test-raw/{departmentId}', [\App\Http\Controllers\Api\PayrollTestController::class, 'rawData']);
-    
+
+    // Onboarding (first-time user guidance)
+    Route::get('/onboarding-status', [PayrollOnboardingController::class, 'status']);
+    Route::post('/onboarding/mark-defaults-configured', [PayrollOnboardingController::class, 'markDefaultsConfigured']);
+    Route::post('/onboarding/dismiss', [PayrollOnboardingController::class, 'dismiss']);
+    Route::post('/onboarding/reopen', [PayrollOnboardingController::class, 'reopen']);
+    Route::post('/onboarding/complete-step', [PayrollOnboardingController::class, 'completeStep']);
+    Route::post('/onboarding/mark-setup-step', [PayrollOnboardingController::class, 'markSetupStep']);
+    Route::post('/onboarding/unmark-setup-step', [PayrollOnboardingController::class, 'unmarkSetupStep']);
+    Route::post('/onboarding/mark-welcome-seen', [PayrollOnboardingController::class, 'markWelcomeSeen']);
+
     // Dashboard & Stats
     Route::get('/dashboard', [PayrollDepartmentController::class, 'getPayrollStats']);
     Route::get('/stats', [PayrollDepartmentController::class, 'getPayrollStats']);

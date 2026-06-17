@@ -474,7 +474,35 @@ class PayrollFilingService
             $filings[] = $this->generatePtReturn($run, $state, $orgId, $userId);
         }
 
+        // Mark first filing generated (drives onboarding "Next Steps" card)
+        $this->markFirstFilingGeneratedIfNeeded($orgId);
+
         return $filings;
+    }
+
+    /**
+     * Stamp org settings the first time any statutory filing is generated.
+     */
+    private function markFirstFilingGeneratedIfNeeded(int $orgId): void
+    {
+        try {
+            $org = \App\Models\Organization::find($orgId);
+            if (!$org) {
+                return;
+            }
+            $payrollSettings = $org->settings['payroll'] ?? [];
+            if (!empty($payrollSettings['first_filing_generated_at'])) {
+                return;
+            }
+            $payrollSettings['first_filing_generated_at'] = now()->toIso8601String();
+            $org->settings = array_merge($org->settings ?? [], ['payroll' => $payrollSettings]);
+            $org->save();
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to mark first filing generated', [
+                'org' => $orgId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function getQuarterFromMonth(string $month): string

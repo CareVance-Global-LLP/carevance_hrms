@@ -1,16 +1,19 @@
 import { useState } from 'react';
+import { HelpCircle } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import PayrollDashboard from '@/components/payroll/PayrollDashboard';
 import DepartmentEmployees from '@/components/payroll/DepartmentEmployees';
 import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
 import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
+import FilingsDashboard from '@/components/payroll/FilingsDashboard';
+import HelpDrawer from '@/components/payroll/HelpDrawer';
 import RunPayrollModal from '@/components/payroll/RunPayrollModal';
 import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 
-type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates';
+type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates' | 'filings';
 
 export default function PayrollPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
@@ -27,6 +30,9 @@ export default function PayrollPage() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [currentStats, setCurrentStats] = useState<PayrollStats | undefined>();
   const [departmentsList, setDepartmentsList] = useState<any[]>([]);
+
+  // Help drawer
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const handleSelectDepartment = (departmentId: number) => {
     setSelectedDepartmentId(departmentId);
@@ -68,6 +74,15 @@ export default function PayrollPage() {
     setViewMode('dept-templates');
   };
 
+  const handleOpenFilings = () => {
+    setViewMode('filings');
+  };
+
+  const handleOpenWizard = () => {
+    setViewMode('dashboard');
+    // The NextStepsCard will show "Start Setup" linking to /payroll/setup
+  };
+
   const handlePayrollSuccess = () => {
     setIsRunPayrollModalOpen(false);
     setViewMode('dashboard');
@@ -82,6 +97,16 @@ export default function PayrollPage() {
       <PageHeader
         title="Payroll"
         description="Manage employee salaries and compliance"
+        actions={
+          <button
+            onClick={() => setIsHelpOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            aria-label="Open help"
+          >
+            <HelpCircle className="h-4 w-4" />
+            <span className="hidden sm:inline">Help</span>
+          </button>
+        }
       />
 
       <div className="p-6">
@@ -91,6 +116,8 @@ export default function PayrollPage() {
             onSelectEmployee={handleSelectEmployee}
             onOpenRunPayroll={handleOpenRunPayroll}
             onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
+            onOpenFilings={handleOpenFilings}
+            onOpenWizard={handleOpenWizard}
           />
         )}
 
@@ -115,6 +142,10 @@ export default function PayrollPage() {
             onComplete={() => setViewMode('department')}
           />
         )}
+
+        {viewMode === 'filings' && (
+          <FilingsDashboard />
+        )}
       </div>
 
       <RunPayrollModal
@@ -136,6 +167,12 @@ export default function PayrollPage() {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         onSave={handleSaveSettings}
+      />
+
+      {/* Help drawer with glossary, how-to guides, and FAQs */}
+      <HelpDrawer
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
       />
     </div>
   );
