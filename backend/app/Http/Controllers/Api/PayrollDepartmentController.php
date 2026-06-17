@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Attendance\AttendanceService;
 use App\Services\PayrollCalculatorService;
 use App\Services\PTStateService;
+use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,11 +22,16 @@ class PayrollDepartmentController extends Controller
 {
     protected PayrollCalculatorService $calculator;
     protected AttendanceService $attendance;
+    protected TimeEntryDurationService $timeEntryDuration;
 
-    public function __construct(PayrollCalculatorService $calculator, AttendanceService $attendance)
-    {
+    public function __construct(
+        PayrollCalculatorService $calculator,
+        AttendanceService $attendance,
+        TimeEntryDurationService $timeEntryDuration,
+    ) {
         $this->calculator = $calculator;
         $this->attendance = $attendance;
+        $this->timeEntryDuration = $timeEntryDuration;
     }
 
     /**
@@ -343,6 +349,11 @@ class PayrollDepartmentController extends Controller
             ->with(['employeeProfile', 'employeeWorkInfo', 'employeeBankAccounts', 'groups'])
             ->firstOrFail();
 
+        // Close any timers that the user forgot to stop so the headline
+        // hours don't include multi-day runaway durations. Scoped to
+        // the requested month so we never touch historical data.
+        $autoClosedTimers = $this->closeStaleRunningTimers($userId, $monthYear);
+
         // Get time tracking data
         $timeData = $this->getTimeTrackingData($userId, $monthYear);
 
@@ -410,6 +421,11 @@ class PayrollDepartmentController extends Controller
             'existing_payroll' => $payrollItem,
             'payroll_preview' => $payrollPreview,
             'month_year' => $monthYear,
+            // How many stale running timers this call auto-closed. Zero
+            // most of the time; > 0 means the user forgot to stop a
+            // timer and the controller is now reporting the snapshot
+            // honestly instead of inflating hours.
+            'auto_closed_timers' => $autoClosedTimers,
         ]);
     }
 
@@ -519,7 +535,11 @@ class PayrollDepartmentController extends Controller
     public function processEmployeePayroll(Request $request, int $userId): JsonResponse
     {
         $request->validate([
-            'month_year' => 'required|string',
+            'month_year' => [
+                'required',
+                'string',
+                'regex:/^\d{4}-(0[1-9]|1[0-2])$/',
+            ],
             'annual_ctc' => 'required|numeric|min:0',
             'working_days' => 'nullable|integer|min:1',
             'days_present' => 'nullable|integer|min:0',
@@ -532,6 +552,11 @@ class PayrollDepartmentController extends Controller
         $user = User::where('organization_id', $organizationId)
             ->where('id', $userId)
             ->firstOrFail();
+
+        // Close any timers that the user forgot to stop so the payroll
+        // snapshot doesn't include multi-day runaway durations. Scoped
+        // to the requested month so historical data is never touched.
+        $autoClosedTimers = $this->closeStaleRunningTimers($userId, $request->month_year);
 
         $template = EmployeePayrollTemplate::getOrCreateForUser($userId, $organizationId);
 
@@ -712,7 +737,10 @@ class PayrollDepartmentController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Payroll processed successfully',
+            'message' => $autoClosedTimers > 0
+                ? "Payroll processed. Auto-closed {$autoClosedTimers} stale running timer(s) in {$request->month_year}."
+                : 'Payroll processed successfully',
+            'auto_closed_timers' => $autoClosedTimers,
             'payroll_item' => $payrollItem->fresh(),
         ]);
     }
@@ -866,6 +894,64 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
+     * Close any primary-slot TimeEntry for this user that was started
+     * within the given payroll month and is still running. The auto-close
+     * is scoped to the month so it cannot corrupt historical data:
+     * a timer from a previous month is left alone (payroll for the old
+     * month is already immutable).
+     *
+     * Returns the number of entries that were closed, so the controller
+     * can surface it to the operator (e.g. via a banner in the wizard).
+     */
+    private function closeStaleRunningTimers(int $userId, string $monthYear): int
+    {
+        $dates = explode('-', $monthYear);
+        if (count($dates) !== 2) {
+            return 0;
+        }
+        $year = (int) $dates[0];
+        $month = (int) $dates[1];
+        if ($year < 1970 || $year > 2100 || $month < 1 || $month > 12) {
+            return 0;
+        }
+
+        $monthStart = Carbon::create($year, $month, 1)->startOfDay();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+
+        // Only the first day of the month or later — anything before
+        // belongs to a previous (already-frozen) payroll cycle and
+        // must not be touched.
+        $boundaryAt = max($monthStart, now()->startOfDay());
+
+        $staleEntries = TimeEntry::where('user_id', $userId)
+            ->whereNull('end_time')
+            ->where(function ($q) {
+                $q->where('timer_slot', 'primary')
+                    ->orWhereNull('timer_slot');
+            })
+            ->where('start_time', '>=', $monthStart)
+            ->where('start_time', '<=', $monthEnd)
+            ->where('start_time', '<', $boundaryAt)
+            ->orderByDesc('start_time')
+            ->get();
+
+        if ($staleEntries->isEmpty()) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($staleEntries as $entry) {
+            $entry->update([
+                'end_time' => $boundaryAt,
+                'duration' => $this->timeEntryDuration->effectiveDuration($entry, $boundaryAt),
+            ]);
+            $count++;
+        }
+
+        return $count;
+    }
+
+    /**
      * Get time tracking data for an employee.
      * Merges data from main TimeEntry/Activity models with PayrollTimeEntry.
      */
@@ -883,7 +969,15 @@ class PayrollDepartmentController extends Controller
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get();
 
-        $totalWorkedSeconds = $timeEntries->sum('duration');
+        // Use effective duration so RUNNING timers (end_time = null) are
+        // counted correctly up to `now()`, instead of being treated as
+        // zero-second completed rows. (See TimeEntryDurationService.)
+        $totalWorkedSeconds = $this->timeEntryDuration->sumEffectiveDuration($timeEntries);
+
+        // Track whether any timer is still running, so the UI can warn the
+        // operator that the headline hours may be ticking up as long as
+        // the timer is open. Useful for debugging "300h this month" reports.
+        $hasRunningTimer = $timeEntries->contains(fn (TimeEntry $e) => $e->end_time === null);
         
         // Get activity data
         $activities = \App\Models\Activity::where('user_id', $userId)
@@ -934,6 +1028,10 @@ class PayrollDepartmentController extends Controller
             'activity_percentage' => $activityPercentage,
             'productivity_score' => $productivityScore,
             'entry_count' => $timeEntries->count(),
+            // True if at least one TimeEntry in this month is still running
+            // (end_time = null). The UI can warn the operator that the
+            // hours above are still ticking up.
+            'has_running_timer' => $hasRunningTimer,
             // PayrollTimeEntry integration
             'payroll_tracked_seconds' => $payrollTrackedSeconds,
             'payroll_tracked_hours' => round($payrollTrackedSeconds / 3600, 2),

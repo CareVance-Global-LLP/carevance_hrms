@@ -243,6 +243,35 @@ class UsageProcessingService
         });
     }
 
+    /**
+     * Bust the idle summary cache for a specific user and date range.
+     * Called when idle Activity records are created or updated so that
+     * subsequent report queries pick up the fresh data immediately.
+     */
+    public function bustIdleCacheForUser(int $userId, Carbon $date): void
+    {
+        // Invalidate for common date ranges that might include this date.
+        // We cannot know the exact query range the next report will use,
+        // so we invalidate a broad set of likely keys (today, this week,
+        // this month).
+        $ranges = [
+            [$date->copy()->startOfDay(), $date->copy()->endOfDay()],
+            [$date->copy()->startOfWeek(), $date->copy()->endOfWeek()],
+            [$date->copy()->startOfMonth(), $date->copy()->endOfMonth()],
+        ];
+
+        $idCollection = collect([$userId]);
+        foreach ($ranges as [$start, $end]) {
+            $cacheKey = sprintf(
+                'usage_processing.idle_summary:%s:%s:%s',
+                md5($idCollection->implode(',')),
+                $start->toDateString(),
+                $end->toDateString(),
+            );
+            Cache::forget($cacheKey);
+        }
+    }
+
     private function computeIdleDurationsFastForUsers(Collection $ids, Carbon $startDate, Carbon $endDate): array
     {
         // Load only idle activities (far fewer rows than full activity load).

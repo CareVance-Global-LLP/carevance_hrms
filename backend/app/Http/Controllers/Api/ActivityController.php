@@ -415,10 +415,26 @@ class ActivityController extends Controller
             ]);
             $existingActivity->save();
 
+            // Bust idle cache so reports pick up fresh idle durations immediately
+            if (($validated['type'] ?? '') === 'idle') {
+                $this->usageProcessingService->bustIdleCacheForUser(
+                    (int) $validated['user_id'],
+                    $validated['recorded_at'] instanceof Carbon ? $validated['recorded_at'] : now(),
+                );
+            }
+
             return response()->json($existingActivity, 200);
         }
 
         $activity = Activity::create($validated);
+
+        // Bust idle cache so reports pick up fresh idle durations immediately
+        if (($validated['type'] ?? '') === 'idle') {
+            $this->usageProcessingService->bustIdleCacheForUser(
+                (int) $validated['user_id'],
+                $validated['recorded_at'] instanceof Carbon ? $validated['recorded_at'] : now(),
+            );
+        }
 
         return response()->json($activity, 201);
     }
@@ -478,6 +494,16 @@ class ActivityController extends Controller
         }
 
         $activity->update($validated);
+
+        // Bust idle cache so reports pick up fresh idle durations immediately
+        if (($validated['type'] ?? $activity->type) === 'idle') {
+            $this->usageProcessingService->bustIdleCacheForUser(
+                (int) $activity->user_id,
+                isset($validated['recorded_at']) && $validated['recorded_at'] instanceof Carbon
+                    ? $validated['recorded_at']
+                    : ($activity->recorded_at ?? now()),
+            );
+        }
 
         return response()->json($activity);
     }

@@ -13,8 +13,11 @@ return new class extends Migration
     public function up(): void
     {
         // Convert role column from enum to string to support super_admin
-        DB::statement("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
-        
+        // (no-op on sqlite/mysql since the check constraint is a Postgres concept)
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check');
+        }
+
         // Change role column to string to allow any role value
         Schema::table('users', function (Blueprint $table) {
             $table->string('role')->default('employee')->change();

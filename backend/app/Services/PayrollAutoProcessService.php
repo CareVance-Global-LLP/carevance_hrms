@@ -59,7 +59,7 @@ class PayrollAutoProcessService
      * (per master guide §3: "Single source of truth — no duplicate
      * calculation engines").
      */
-    public function processForUsers(int $orgId, string $monthYear, ?array $userIds, int $actorUserId): array
+    public function processForUsers(int $orgId, string $monthYear, ?array $userIds, int $actorUserId): \App\Models\PayrollMonthlyRun
     {
         return DB::transaction(function () use ($orgId, $monthYear, $userIds, $actorUserId) {
             $run = $this->createOrGetRun($orgId, $monthYear, $actorUserId);
@@ -377,10 +377,14 @@ class PayrollAutoProcessService
             $tds = 0;
             if ($template->tds_enabled) {
                 $annualProjected = $gross * 12;
-                $exemptions = $this->calculator->getApprovedTaxDeductions($item->user_id);
+                // getApprovedTaxDeductions returns a flat float total; the
+                // tax calculator wants a per-section array. Pass the full
+                // declaration map (or empty for "no exemptions") — the
+                // calculator handles both.
+                $exemptionMap = $this->calculator->getApprovedTaxDeductionMap($item->user_id);
                 $taxCalc = $template->tax_regime === 'new'
-                    ? $this->calculator->calculateNewRegimeTax($annualProjected, $exemptions)
-                    : $this->calculator->calculateOldRegimeTax($annualProjected, $exemptions);
+                    ? $this->calculator->calculateNewRegimeTax($annualProjected, $exemptionMap)
+                    : $this->calculator->calculateOldRegimeTax($annualProjected, $exemptionMap);
                 $tds = round(($taxCalc['total_tax'] ?? 0) / 12, 2);
             }
 

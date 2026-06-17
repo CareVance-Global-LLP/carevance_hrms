@@ -295,31 +295,113 @@ export default function EmployeePayrollWizard({
             <div>
               <p className="text-sm font-medium text-blue-900">Auto-calculated from Timesheets</p>
               <p className="text-xs text-blue-700 mt-1">
-                Working days, present days, and overtime are automatically calculated based on the employee's tracked hours. 
+                Working days, present days, and overtime are automatically calculated based on the employee's tracked hours.
                 You can manually adjust the values if needed.
               </p>
             </div>
           </div>
         </div>
+
+        {/* Stale-timer warning: surfaced only when the controller actually
+            auto-closed one or more running timers in this month. We show
+            this so the operator knows the snapshot is honest (and that
+            the user has a forgotten timer to chase up). */}
+        {data && (data.auto_closed_timers ?? 0) > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-amber-900">
+                  Auto-closed {data.auto_closed_timers} stale running timer
+                  {data.auto_closed_timers === 1 ? '' : 's'} for {monthYear}
+                </p>
+                <p className="text-xs text-amber-700 mt-1">
+                  The user had a timer that was never stopped. The hours below are capped at
+                  the start of today. Ask the employee to start/stop their timer cleanly going forward.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Timesheet Summary Cards — prefer the new attendance_summary
             (the single source of truth for payroll), fall back to the
-            time_tracking payload for older backend responses. */}
+            time_tracking payload for older backend responses. The source
+            label below each value tells the user exactly where the
+            number came from, so "0.0h" no longer looks like a bug. */}
         {(() => {
           const summary = data?.attendance_summary;
-          const trackedHours = summary?.hours?.worked_hours
-            ?? time_tracking.payroll_tracked_hours
-            ?? time_tracking.total_worked_hours
-            ?? 0;
-          const productiveHours = summary
-            ? Math.round((summary.total_worked_seconds - (summary.lop_days * 8 * 3600)) / 3600 * 10) / 10
-            : (time_tracking.total_productive_hours ?? 0);
+
+          // Resolve tracked hours, recording which source provided it.
+          let trackedHours = 0;
+          let trackedSource: 'attendance_summary' | 'payroll_tracked_hours' | 'total_worked_hours' | 'none' = 'none';
+          if (summary?.hours?.worked_hours && summary.hours.worked_hours > 0) {
+            trackedHours = summary.hours.worked_hours;
+            trackedSource = 'attendance_summary';
+          } else if (time_tracking.payroll_tracked_hours && time_tracking.payroll_tracked_hours > 0) {
+            trackedHours = time_tracking.payroll_tracked_hours;
+            trackedSource = 'payroll_tracked_hours';
+          } else if (time_tracking.total_worked_hours && time_tracking.total_worked_hours > 0) {
+            trackedHours = time_tracking.total_worked_hours;
+            trackedSource = 'total_worked_hours';
+          }
+
+          // Resolve productive hours, recording source.
+          let productiveHours = 0;
+          let productiveSource: 'attendance_summary' | 'productivity_logs' | 'none' = 'none';
+          if (summary && summary.total_worked_seconds > 0) {
+            productiveHours = Math.round(
+              (summary.total_worked_seconds - (summary.lop_days * 8 * 3600)) / 3600 * 10,
+            ) / 10;
+            productiveSource = 'attendance_summary';
+          } else if (time_tracking.total_productive_hours && time_tracking.total_productive_hours > 0) {
+            productiveHours = time_tracking.total_productive_hours;
+            productiveSource = 'productivity_logs';
+          }
+
+          // Resolve overtime hours.
           const overtimeHours = summary?.hours?.overtime_hours ?? 0;
-          const attendanceDays = summary
-            ? Math.round(summary.present_days)
-            : (time_tracking.payroll_attendance_days || Math.floor((time_tracking.payroll_tracked_hours || 0) / 8));
-          const activityPct = time_tracking.activity_percentage ?? 0;
+          const overtimeSource: 'attendance_summary' | 'none' =
+            summary?.hours?.overtime_hours ? 'attendance_summary' : 'none';
+
+          // Resolve attendance days.
+          let attendanceDays = 0;
+          let attendanceSource: 'attendance_summary' | 'payroll_attendance_days' | 'derived' | 'none' = 'none';
+          if (summary && summary.working_days > 0) {
+            attendanceDays = Math.round(summary.present_days);
+            attendanceSource = 'attendance_summary';
+          } else if (time_tracking.payroll_attendance_days) {
+            attendanceDays = time_tracking.payroll_attendance_days;
+            attendanceSource = 'payroll_attendance_days';
+          } else if (trackedHours > 0) {
+            attendanceDays = Math.floor(trackedHours / 8);
+            attendanceSource = 'derived';
+          }
+
           const hasData = trackedHours > 0 || (summary && summary.total_worked_seconds > 0);
+
+          // Anomaly detection: warn the user when the average hours per
+          // working day looks implausible, OR when a timer is still
+          // running (in which case the headline number is ticking up).
+          const attendanceDaysForWarn = summary && summary.working_days > 0
+            ? summary.present_days
+            : attendanceDays;
+          const hoursPerDay = attendanceDaysForWarn > 0
+            ? trackedHours / attendanceDaysForWarn
+            : 0;
+          const suspiciousHours = hoursPerDay > 16;
+          const hasRunningTimer = time_tracking.has_running_timer === true;
+
+          // Human-readable source labels.
+          const SOURCE_LABELS: Record<string, string> = {
+            attendance_summary: 'Source: Attendance summary',
+            payroll_tracked_hours: 'Source: Check-in / check-out (PayrollTimeEntry)',
+            total_worked_hours: 'Source: Timer / stopwatch (TimeEntry)',
+            payroll_attendance_days: 'Source: Check-in / check-out',
+            derived: 'Source: derived from tracked hours (÷ 8)',
+            productivity_logs: 'Source: Activity logs',
+            none: 'No source for this month',
+          };
 
           return (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -328,12 +410,30 @@ export default function EmployeePayrollWizard({
                 {hasData ? (
                   <>
                     <p className="text-2xl font-bold text-slate-900">{trackedHours.toFixed(1)}h</p>
-                    <p className="text-xs text-slate-400 mt-1">From timesheets</p>
+                    <p className="text-xs text-slate-400 mt-1" title={trackedSource}>
+                      {SOURCE_LABELS[trackedSource]}
+                    </p>
+                    {(suspiciousHours || hasRunningTimer) && (
+                      <p
+                        className="text-[10px] text-amber-700 mt-1"
+                        title={
+                          hasRunningTimer
+                            ? 'A TimeEntry timer is still running. The hours below are ticking up until it is stopped.'
+                            : `Average ${hoursPerDay.toFixed(1)} h/day is well above 16 h — likely a runaway timer.`
+                        }
+                      >
+                        {hasRunningTimer
+                          ? 'Timer still running — hours will keep climbing'
+                          : 'Unusually high — check for running timers'}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <>
                     <p className="text-2xl font-bold text-slate-400">0.0h</p>
-                    <p className="text-xs text-amber-500 mt-1">No tracking data</p>
+                    <p className="text-xs text-amber-600 mt-1">
+                      No time tracked in {monthYear} — try a different month
+                    </p>
                   </>
                 )}
               </div>
@@ -342,7 +442,9 @@ export default function EmployeePayrollWizard({
                 {productiveHours > 0 ? (
                   <>
                     <p className="text-2xl font-bold text-emerald-600">{productiveHours.toFixed(1)}h</p>
-                    <p className="text-xs text-slate-400 mt-1">Active work time</p>
+                    <p className="text-xs text-slate-400 mt-1" title={productiveSource}>
+                      {SOURCE_LABELS[productiveSource]}
+                    </p>
                   </>
                 ) : (
                   <>
@@ -356,7 +458,9 @@ export default function EmployeePayrollWizard({
                 {overtimeHours > 0 ? (
                   <>
                     <p className="text-2xl font-bold text-orange-600">{overtimeHours.toFixed(1)}h</p>
-                    <p className="text-xs text-slate-400 mt-1">Beyond standard shift</p>
+                    <p className="text-xs text-slate-400 mt-1" title={overtimeSource}>
+                      {SOURCE_LABELS[overtimeSource]}
+                    </p>
                   </>
                 ) : (
                   <>
@@ -370,7 +474,9 @@ export default function EmployeePayrollWizard({
                 {hasData ? (
                   <>
                     <p className="text-2xl font-bold text-violet-600">{attendanceDays}</p>
-                    <p className="text-xs text-slate-400 mt-1">Days present</p>
+                    <p className="text-xs text-slate-400 mt-1" title={attendanceSource}>
+                      {SOURCE_LABELS[attendanceSource]}
+                    </p>
                   </>
                 ) : (
                   <>
@@ -402,6 +508,9 @@ export default function EmployeePayrollWizard({
             <h4 className="text-sm font-medium text-slate-900 flex items-center gap-2">
               <Calculator className="h-4 w-4 text-slate-400" />
               Auto-fetched Attendance Data
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                {monthYear}
+              </span>
             </h4>
             <button
               onClick={() => setIsEditingAttendance(!isEditingAttendance)}

@@ -1202,6 +1202,8 @@ export interface PayrollDepartmentEmployee {
     activity_percentage: number;
     productivity_score: number;
     entry_count: number;
+    has_running_timer?: boolean;
+    auto_closed_timers?: number;
     payroll_tracked_seconds?: number;
     payroll_tracked_hours?: number;
     payroll_payable_hours?: number;
@@ -1310,6 +1312,8 @@ export interface EmployeePayrollDetails {
     activity_percentage: number;
     productivity_score: number;
     entry_count: number;
+    has_running_timer?: boolean;
+    auto_closed_timers?: number;
     payroll_tracked_seconds?: number;
     payroll_tracked_hours?: number;
     payroll_payable_hours?: number;
@@ -1326,6 +1330,10 @@ export interface EmployeePayrollDetails {
   } | null;
   payroll_preview?: PayrollCalculation | null;
   month_year: string;
+  // Count of stale running timers the controller auto-closed while
+  // preparing this response (> 0 = the user forgot to stop a timer and
+  // the snapshot now reflects the corrected, capped duration).
+  auto_closed_timers?: number;
 }
 
 export interface PayrollStats {

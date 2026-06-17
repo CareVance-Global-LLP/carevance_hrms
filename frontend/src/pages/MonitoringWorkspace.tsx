@@ -646,7 +646,15 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const topUnproductiveTool = selectedUserTools.unproductive?.[0] || null;
   const trackedDurationValue = Number(organizationSummary.tracked_duration || organizationSummary.total_duration || 0);
   const workingDurationValue = Number(organizationSummary.working_duration || 0);
-  const idleDurationValue = Number(organizationSummary.idle_duration || 0);
+  // Idle: try the most authoritative fields first. The backend's
+  // /api/reports/employee-insights can return idle under several keys
+  // depending on org size and aggregation path; coalesce them.
+  const idleDurationValue = Number(
+    organizationSummary.idle_duration
+    ?? organizationSummary.idle_time
+    ?? organizationSummary.total_idle_duration
+    ?? 0
+  );
   const productiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.productive || [] : organizationTools.productive || [];
   const unproductiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.unproductive || [] : organizationTools.unproductive || [];
   const selectedUserBrowserTracking = (selectedUserLive?.browser_tracking || null) as BrowserTrackingHealthSummary | null;

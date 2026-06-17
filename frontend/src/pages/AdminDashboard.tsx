@@ -1100,11 +1100,22 @@ export default function AdminDashboard() {
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
   const absentPercent = totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0;
   const presentLatePercent = totalEmployees ? Math.round((finalPresentLateInRange / totalEmployees) * 100) : 0;
+  const IDLE_SOURCE_LABELS: Record<'overall' | 'insights' | 'org' | 'none', string> = {
+    overall: 'Source: per-user (reports/overall)',
+    insights: 'Source: employee insights',
+    org: 'Source: org-wide summary',
+    none: 'No idle data available',
+  };
   const attendanceByEmployeeId = new Map(attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row]));
   const overallByUserRows = safeArray<any>(data.overall.by_user)
     .filter((row: any) => scopedEmployeeIds.has(Number(row.user?.id || row.user_id || 0)));
   const employeeById = new Map(employees.map((employee) => [employee.id, employee]));
   const resolveIdleSeconds = (row: any, trackedSeconds: number): number => {
+    // Read the most authoritative field first. Do NOT Math.min the result
+    // against trackedSeconds — when trackedSeconds is briefly 0 (live
+    // timer just cleared, or a different field is the source) the clamp
+    // turns the displayed idle time into 0h 0m even though the real value
+    // is positive. Reported idle from the backend is already trusted.
     const reportedIdle = Number(
       row.idle_duration
       ?? row.idle_time
@@ -1113,9 +1124,12 @@ export default function AdminDashboard() {
       ?? NaN
     );
     if (Number.isFinite(reportedIdle) && reportedIdle > 0) {
-      return Math.min(trackedSeconds, Math.max(0, reportedIdle));
+      return reportedIdle;
     }
 
+    // Fallback: derive from working_duration. Only clamp to tracked
+    // when we have a positive tracked value to clamp against; never
+    // return 0 just because trackedSeconds is 0.
     const reportedWorking = Number(
       row.working_duration
       ?? row.working_time
@@ -1124,7 +1138,13 @@ export default function AdminDashboard() {
       ?? NaN
     );
     if (Number.isFinite(reportedWorking) && reportedWorking >= 0) {
-      return Math.max(0, trackedSeconds - Math.min(trackedSeconds, reportedWorking));
+      if (trackedSeconds > 0) {
+        return Math.max(0, trackedSeconds - Math.min(trackedSeconds, reportedWorking));
+      }
+      // No tracked anchor: we cannot derive idle time from working_duration
+      // alone. Return 0 rather than incorrectly returning working_duration
+      // as idle, which would misrepresent the employee's activity.
+      return 0;
     }
 
     return 0;
@@ -1473,7 +1493,7 @@ export default function AdminDashboard() {
       if (!selectedEmployee?.id) return null;
       const [profileResponse, insightsResponse, screenshotsResponse] = await Promise.allSettled([
         userApi.getProfile360(selectedEmployee.id, { start_date: selectedStartDate, end_date: selectedEndDate }),
-        reportApi.employeeInsights({ start_date: selectedStartDate, end_date: selectedEndDate, user_id: selectedEmployee.id }),
+        reportApi.employeeInsights({ start_date: selectedStartDate, end_date: selectedEndDate, user_id: selectedEmployee.id, dashboard_lite: 1 }),
         screenshotApi.getAll({ user_id: selectedEmployee.id, start_date: selectedStartDate, end_date: selectedEndDate, page: 1, per_page: 4 }),
       ]);
       const insights = insightsResponse.status === 'fulfilled' ? insightsResponse.value.data : null;
@@ -1534,12 +1554,31 @@ export default function AdminDashboard() {
       isRangeIncludingToday ? selectedEmployee?.current_duration : 0,
     ].map((value) => Number(value || 0)).filter((value) => Number.isFinite(value))
   );
-  const selectedEmployeeIdleFromOverall = selectedEmployeeOverallRow
+  // Idle seconds — try every authoritative source in order:
+  //   1. by_user row from /api/reports/overall (canonical, per-user)
+  //   2. employeeInsights.stats (per-user from /api/reports/employee-insights)
+  //   3. employeeInsights.organization_summary (last resort, org-wide)
+  // Never short-circuit to 0 unless all three are missing/zero.
+  const overallIdle = selectedEmployeeOverallRow
     ? resolveIdleSeconds(selectedEmployeeOverallRow, selectedEmployeeTrackedSeconds)
-    : NaN;
-  const selectedEmployeeIdleSeconds = Number.isFinite(selectedEmployeeIdleFromOverall)
-    ? selectedEmployeeIdleFromOverall
-    : Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0);
+    : 0;
+  const insightsIdle = Number(employeeStats.idle_total_duration || employeeStats.idle_duration || 0);
+  const orgIdle = Number(
+    (employeeInsights?.organization_summary?.idle_duration
+      ?? employeeInsights?.organization_summary?.idle_time) || 0
+  );
+  let selectedEmployeeIdleSeconds = 0;
+  let selectedEmployeeIdleSource: 'overall' | 'insights' | 'org' | 'none' = 'none';
+  if (Number.isFinite(overallIdle) && overallIdle > 0) {
+    selectedEmployeeIdleSeconds = overallIdle;
+    selectedEmployeeIdleSource = 'overall';
+  } else if (Number.isFinite(insightsIdle) && insightsIdle > 0) {
+    selectedEmployeeIdleSeconds = insightsIdle;
+    selectedEmployeeIdleSource = 'insights';
+  } else if (Number.isFinite(orgIdle) && orgIdle > 0) {
+    selectedEmployeeIdleSeconds = orgIdle;
+    selectedEmployeeIdleSource = 'org';
+  }
   const scopeIdleSeconds = dashboardScope === 'employee'
     ? selectedEmployeeIdleSeconds
     : Number(data.overall.summary?.idle_duration || data.overall.summary?.idle_time || 0);
@@ -1933,7 +1972,7 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Tracked</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedEmployeeTrackedSeconds)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{employeePresentDays} present</p></div>
-                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p><p className="mt-1 text-[10px] text-slate-400">{IDLE_SOURCE_LABELS[selectedEmployeeIdleSource]}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Screenshots</p><p className="mt-2 text-lg font-semibold text-blue-700">{employeeScreenshotCount}</p></div>
               </div>
 

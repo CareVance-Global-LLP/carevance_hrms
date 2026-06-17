@@ -34,6 +34,12 @@ function formatCurrency(amount: number): string {
   return '₹' + amount.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
+function formatMonthLabel(monthYear: string): string {
+  const [y, m] = monthYear.split('-').map(Number);
+  if (!y || !m) return monthYear;
+  return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
 type FilterStatus = 'all' | 'pending' | 'processed' | 'paid';
 type SortBy = 'name' | 'ctc' | 'status';
 
@@ -373,7 +379,12 @@ export default function DepartmentEmployees({
             Back
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">{departmentName}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-slate-900">{departmentName}</h1>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                {formatMonthLabel(monthYear)}
+              </span>
+            </div>
             <p className="text-sm text-slate-500">
               {employees.length} employees • {counts.pending} pending
             </p>

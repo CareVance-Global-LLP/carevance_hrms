@@ -315,7 +315,14 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-200">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Payroll Reports</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-900">Payroll Reports</h2>
+              {monthYear && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                  {monthYear}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-slate-500">
               Download reports for {monthYear || 'current month'}
             </p>

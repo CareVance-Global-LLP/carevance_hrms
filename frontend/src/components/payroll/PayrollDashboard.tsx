@@ -30,6 +30,8 @@ interface PayrollDashboardProps {
   onSelectEmployee: (employeeId: number) => void;
   onOpenRunPayroll: (stats: PayrollStats, departments: PayrollDepartment[]) => void;
   onOpenDepartmentTemplates?: () => void;
+  selectedMonth: string;
+  onMonthChange: (month: string) => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -184,14 +186,12 @@ export default function PayrollDashboard({
   onSelectDepartment,
   onOpenRunPayroll,
   onOpenDepartmentTemplates,
+  selectedMonth,
+  onMonthChange,
 }: PayrollDashboardProps) {
   // onSelectEmployee is declared in the interface so the parent (Payroll.tsx)
   // can still wire it; the legacy dashboard's current widgets don't drill into
   // a single employee, so we don't destructure it here.
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  });
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch data
@@ -260,7 +260,7 @@ export default function PayrollDashboard({
             <input
               type="month"
               value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+              onChange={(e) => onMonthChange(e.target.value)}
               className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <Button

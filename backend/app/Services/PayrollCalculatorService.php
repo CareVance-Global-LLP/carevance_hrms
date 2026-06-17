@@ -356,6 +356,37 @@ class PayrollCalculatorService
         return $totalDeductions;
     }
 
+    /**
+     * Per-section approved tax deductions, keyed by section code.
+     * Used by the auto-process engine when calling the tax calculators
+     * (which expect a map, not a flat float total).
+     */
+    public function getApprovedTaxDeductionMap(int $userId, ?string $financialYear = null): array
+    {
+        $financialYear = $financialYear ?? $this->getCurrentFinancialYear();
+
+        $declaration = EmployeeTaxDeclaration::where('user_id', $userId)
+            ->where('financial_year', $financialYear)
+            ->where('status', 'approved')
+            ->first();
+
+        if (!$declaration) return [];
+
+        $items = $declaration->items()->where('status', 'approved')->get();
+
+        $bySection = [];
+        foreach ($items as $item) {
+            $amount = (float) $item->approved_amount;
+            if ($amount <= 0) continue;
+            // Lower-cased section key so callers can do
+            // $map['section_80c'] or $map['80c'] interchangeably.
+            $key = strtolower((string) $item->section);
+            $bySection[$key] = ($bySection[$key] ?? 0) + $amount;
+        }
+
+        return $bySection;
+    }
+
     public function getCurrentFinancialYear(): string
     {
         $year = now()->year;

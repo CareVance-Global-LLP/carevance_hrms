@@ -85,13 +85,34 @@ return new class extends Migration
     }
 
     /**
-     * Check if an index exists on a table (PostgreSQL compatible)
+     * Check if an index exists on a table (driver-aware: works on
+     * PostgreSQL, MySQL/SQLite). Used so the migration is idempotent
+     * on every supported database.
      */
     private function indexExists(string $table, string $index): bool
     {
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            $result = DB::select(
+                'SELECT indexname FROM pg_indexes WHERE tablename = ? AND indexname = ?',
+                [$table, $index]
+            );
+            return count($result) > 0;
+        }
+
+        if ($driver === 'mysql') {
+            $result = DB::select(
+                'SELECT INDEX_NAME AS indexname FROM information_schema.STATISTICS WHERE TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1',
+                [$table, $index]
+            );
+            return count($result) > 0;
+        }
+
+        // sqlite (and any other driver): query sqlite_master.
         $result = DB::select(
-            "SELECT indexname FROM pg_indexes WHERE tablename = ? AND indexname = ?",
-            [$table, $index]
+            'SELECT name AS indexname FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?',
+            ['index', $table, $index]
         );
         return count($result) > 0;
     }

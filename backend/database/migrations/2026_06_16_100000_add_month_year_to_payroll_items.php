@@ -16,14 +16,23 @@ return new class extends Migration
                 $table->index(['organization_id', 'month_year']);
                 $table->index(['user_id', 'month_year']);
             });
-            // Backfill from the linked run.
-            DB::statement("
-                UPDATE payroll_items pi
-                SET month_year = pmr.month_year
-                FROM payroll_monthly_runs pmr
-                WHERE pi.payroll_run_id = pmr.id
-                  AND pi.month_year IS NULL
-            ");
+            // Backfill from the linked run. Postgres uses UPDATE ... FROM,
+            // sqlite/mysql use UPDATE ... JOIN.
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                DB::statement('
+                    UPDATE payroll_items pi
+                    SET month_year = pmr.month_year
+                    FROM payroll_monthly_runs pmr
+                    WHERE pi.payroll_run_id = pmr.id
+                      AND pi.month_year IS NULL
+                ');
+            } else {
+                DB::statement('
+                    UPDATE payroll_items
+                    SET month_year = (SELECT month_year FROM payroll_monthly_runs WHERE payroll_monthly_runs.id = payroll_items.payroll_run_id)
+                    WHERE month_year IS NULL
+                ');
+            }
         }
     }
 
