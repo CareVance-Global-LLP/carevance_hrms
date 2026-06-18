@@ -33,6 +33,7 @@ interface PayrollDashboardProps {
   onOpenDepartmentTemplates?: () => void;
   onOpenFilings?: () => void;
   onOpenWizard?: () => void;
+  onOpenRunDetail?: (runId: number) => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -189,6 +190,7 @@ export default function PayrollDashboard({
   onOpenDepartmentTemplates,
   onOpenFilings,
   onOpenWizard,
+  onOpenRunDetail,
 }: PayrollDashboardProps) {
   // onSelectEmployee is declared in the interface so the parent (Payroll.tsx)
   // can still wire it; the legacy dashboard's current widgets don't drill into
@@ -421,6 +423,9 @@ export default function PayrollDashboard({
         )}
       </div>
 
+      {/* Recent Runs */}
+      <RecentRuns onOpenRunDetail={onOpenRunDetail} />
+
       {/* Help Text */}
       <SurfaceCard className="p-4 bg-blue-50 border-blue-200">
         <div className="flex items-start gap-3">
@@ -430,10 +435,63 @@ export default function PayrollDashboard({
             <ol className="text-sm text-blue-700 mt-1 space-y-1 list-decimal list-inside">
               <li>Click on a department with pending employees</li>
               <li>Select employees to process or process all at once</li>
-              <li>Review and confirm salary calculations</li>
-              <li>Save and pay employees</li>
+              <li>Review the run — Lock → Approve → Release → Disburse</li>
+              <li>Generate bank file and upload to your banking portal</li>
             </ol>
           </div>
+        </div>
+      </SurfaceCard>
+    </div>
+  );
+}
+
+function RecentRuns({ onOpenRunDetail }: { onOpenRunDetail?: (runId: number) => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['payroll', 'runs'],
+    queryFn: () => payrollApi.getPayrollRuns().then((r) => r.data),
+  });
+
+  const runs = Array.isArray(data) ? data : (data?.runs ?? []);
+  if (isLoading || runs.length === 0) return null;
+
+  const recent = runs.slice(0, 5);
+  const statusTone: Record<string, string> = {
+    draft: 'bg-slate-100 text-slate-700',
+    locked: 'bg-amber-100 text-amber-700',
+    approved: 'bg-blue-100 text-blue-700',
+    released: 'bg-violet-100 text-violet-700',
+    disbursed: 'bg-emerald-100 text-emerald-700',
+    paid: 'bg-emerald-100 text-emerald-700',
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-slate-900">Recent Payroll Runs</h2>
+        <p className="text-xs text-slate-500">Click a run to view its lifecycle, lock/approve, or download bank file</p>
+      </div>
+      <SurfaceCard className="p-0 overflow-hidden">
+        <div className="divide-y divide-slate-100">
+          {recent.map((r: any) => (
+            <button
+              key={r.id}
+              onClick={() => onOpenRunDetail?.(r.id)}
+              className="w-full flex items-center justify-between p-3 hover:bg-blue-50 transition-colors text-left"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-slate-900">{r.month_year ?? r.run_month ?? 'Unknown month'}</p>
+                <p className="text-xs text-slate-500">Run #{r.id} · {r.employee_count ?? 0} employees</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-semibold text-slate-900">
+                  ₹{Number(r.total_net_pay ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${statusTone[r.status] ?? 'bg-slate-100 text-slate-700'}`}>
+                  {r.status ?? 'draft'}
+                </span>
+              </div>
+            </button>
+          ))}
         </div>
       </SurfaceCard>
     </div>

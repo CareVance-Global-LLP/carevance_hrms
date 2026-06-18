@@ -10,6 +10,7 @@ import HelpDrawer from '@/components/payroll/HelpDrawer';
 import RunPayrollModal from '@/components/payroll/RunPayrollModal';
 import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
+import PayrollRunDetailModal from '@/components/payroll/PayrollRunDetailModal';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 
@@ -28,11 +29,16 @@ export default function PayrollPage() {
   const [isRunPayrollModalOpen, setIsRunPayrollModalOpen] = useState(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [runDetailId, setRunDetailId] = useState<number | null>(null);
   const [currentStats, setCurrentStats] = useState<PayrollStats | undefined>();
   const [departmentsList, setDepartmentsList] = useState<any[]>([]);
 
   // Help drawer
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  const handleOpenRunDetail = (runId: number) => {
+    setRunDetailId(runId);
+  };
 
   const handleSelectDepartment = (departmentId: number) => {
     setSelectedDepartmentId(departmentId);
@@ -118,6 +124,7 @@ export default function PayrollPage() {
             onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
             onOpenFilings={handleOpenFilings}
             onOpenWizard={handleOpenWizard}
+            onOpenRunDetail={handleOpenRunDetail}
           />
         )}
 
@@ -167,6 +174,13 @@ export default function PayrollPage() {
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         onSave={handleSaveSettings}
+      />
+
+      <PayrollRunDetailModal
+        isOpen={runDetailId !== null}
+        onClose={() => setRunDetailId(null)}
+        runId={runDetailId}
+        monthYear={selectedMonth}
       />
 
       {/* Help drawer with glossary, how-to guides, and FAQs */}

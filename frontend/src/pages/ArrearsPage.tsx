@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { TextInput, SelectInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const STATUS_OPTIONS = ['draft', 'approved', 'rejected', 'paid'];
 const ARREAR_TYPES = ['salary', 'increment', 'promotion', 'retrospective', 'settlement'];
@@ -67,9 +68,31 @@ export default function ArrearsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Arrears Management" description="Manage salary arrears for employees" />
+      <PageHeader
+        title="Arrears"
+        description="Retroactive salary payments — for increments, promotions, or revisions applied after the effective date."
+      />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <HowItWorksCard
+          whatIsThis="Salary paid for past months when something changed retrospectively — e.g. an increment approved in October but effective from April. The system calculates the differential for each affected month and pays the total in the current run."
+          whenToUse={[
+            'Annual increment processed late (effective date in the past)',
+            'Promotion approved retroactively after a delayed review',
+            'Settlement of any retrospective pay correction',
+          ]}
+          howItFlows={[
+            { step: 1, label: 'Detect or create', desc: 'Use "Detect" on an employee/month, or create manually' },
+            { step: 2, label: 'Pick arrear type', desc: 'Salary, increment, promotion, retrospective, or settlement' },
+            { step: 3, label: 'Enter months + delta', desc: 'Which months, and the new-vs-old differential per month' },
+            { step: 4, label: 'Approve & pay', desc: 'Add to current month\'s payroll run for disbursement' },
+          ]}
+          commonMistakes={[
+            'Paying arrears for a month that already had a disbursed run — needs re-processing',
+            'Forgetting to update the employee template for the new CTC going forward',
+            'Calculating arrears on Basic alone instead of full CTC differential',
+          ]}
+        />
         {/* Filters */}
         <SurfaceCard className="p-5">
           <div className="flex flex-wrap gap-4 items-end">

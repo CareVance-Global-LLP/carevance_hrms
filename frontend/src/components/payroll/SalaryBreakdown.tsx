@@ -1,4 +1,5 @@
 import { TrendingUp, TrendingDown, Wallet, Calculator } from 'lucide-react';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import type { PayrollCalculation, EmployeePayrollTemplate } from '@/types';
 
 interface SalaryBreakdownProps {
@@ -8,6 +9,32 @@ interface SalaryBreakdownProps {
 
 function formatCurrency(amount: number): string {
   return '₹' + Number(amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
+function labelToGlossaryKey(label: string): string | null {
+  const map: Record<string, string> = {
+    basic: 'basic',
+    hra: 'hra',
+    conveyance: 'conveyance',
+    pf_employee: 'pf_employee',
+    pf_employer: 'pf_employer',
+    esi_employee: 'esi_employee',
+    esi_employer: 'esi_employer',
+    professional_tax: 'pt',
+    pt: 'pt',
+    tds: 'tds',
+    nps: 'nps',
+    vpf: 'vpf',
+    gross: 'gross',
+    net: 'net',
+    total: 'net',
+    total_deductions: 'gross',
+    lop: 'lop',
+    overtime: 'overtime',
+    special_allowance: 'basic',
+    medical_allowance: 'ctc',
+  };
+  return map[label.toLowerCase()] ?? null;
 }
 
 export default function SalaryBreakdown({ calculation, template }: SalaryBreakdownProps) {
@@ -24,12 +51,29 @@ export default function SalaryBreakdown({ calculation, template }: SalaryBreakdo
   const earnings = components?.earnings ?? {};
   const deductions = components?.deductions ?? {};
 
+  const renderRow = (key: string, value: any, bold = false) => {
+    const glossaryKey = labelToGlossaryKey(key);
+    const labelText = key.replace(/_/g, ' ');
+    return (
+      <div className={`flex justify-between items-center text-sm py-1 border-b border-slate-100 ${bold ? 'font-semibold text-slate-900 bg-slate-50 -mx-2 px-2 rounded' : 'text-slate-700'}`}>
+        <span className="flex items-center gap-1.5 capitalize">
+          {labelText}
+          {glossaryKey && <InfoTooltip title={labelText.toUpperCase()} content="See glossary for full explanation" size="sm" />}
+        </span>
+        <span className={bold ? 'font-bold text-slate-900' : 'font-medium text-slate-900'}>{formatCurrency(value as number)}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* Net pay headline */}
       <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-xl p-5 flex items-center justify-between">
         <div>
-          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Net Pay (Take Home)</p>
+          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider flex items-center gap-1">
+            Net Pay (Take Home)
+            <InfoTooltip title="Net / Take-Home" content="What hits your bank account = Gross minus all deductions." size="sm" />
+          </p>
           <p className="text-3xl font-bold text-emerald-900 mt-1">{formatCurrency(monthly.net)}</p>
           <p className="text-xs text-emerald-600 mt-1">
             {monthly.gross > 0 ? ((monthly.net / monthly.gross) * 100).toFixed(1) : 0}% of gross
@@ -43,36 +87,30 @@ export default function SalaryBreakdown({ calculation, template }: SalaryBreakdo
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
             <TrendingUp className="h-3 w-3" /> Earnings
+            <InfoTooltip title="Gross Salary" content="Monthly salary before any deductions. Sum of Basic + HRA + allowances." size="sm" />
           </h4>
           <div className="space-y-1">
             {Object.entries(earnings).map(([key, value]) => (
-              <div key={key} className="flex justify-between text-sm py-1 border-b border-slate-100">
-                <span className="text-slate-600 capitalize">{key.replace(/_/g, ' ')}</span>
-                <span className="font-medium text-slate-900">{formatCurrency(value as number)}</span>
+              <div key={key}>
+                {renderRow(key, value)}
               </div>
             ))}
-            <div className="flex justify-between text-sm py-2 mt-1 bg-slate-50 -mx-2 px-2 rounded">
-              <span className="font-semibold text-slate-900">Gross</span>
-              <span className="font-bold text-slate-900">{formatCurrency(monthly.gross)}</span>
-            </div>
+            <div className="mt-1">{renderRow('gross', monthly.gross, true)}</div>
           </div>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-lg p-4">
           <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
             <TrendingDown className="h-3 w-3" /> Deductions
+            <InfoTooltip title="Statutory deductions" content="PF, ESI, PT, TDS — what's taken from Gross before Net." size="sm" />
           </h4>
           <div className="space-y-1">
             {Object.entries(deductions).map(([key, value]) => (
-              <div key={key} className="flex justify-between text-sm py-1 border-b border-slate-100">
-                <span className="text-slate-600 capitalize">{key.replace(/_/g, ' ')}</span>
-                <span className="font-medium text-slate-900">{formatCurrency(value as number)}</span>
+              <div key={key}>
+                {renderRow(key, value)}
               </div>
             ))}
-            <div className="flex justify-between text-sm py-2 mt-1 bg-slate-50 -mx-2 px-2 rounded">
-              <span className="font-semibold text-slate-900">Total</span>
-              <span className="font-bold text-rose-600">-{formatCurrency(monthly.total_deductions)}</span>
-            </div>
+            <div className="mt-1">{renderRow('total_deductions', monthly.total_deductions, true)}</div>
           </div>
         </div>
       </div>

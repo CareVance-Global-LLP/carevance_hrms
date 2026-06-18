@@ -1217,6 +1217,7 @@ export interface PayrollDepartmentEmployee {
     gross_salary: number;
     total_deductions: number;
   };
+  payroll_item_id?: number | null;
   has_template: boolean;
   template_id: number;
   annual_ctc?: number | null;

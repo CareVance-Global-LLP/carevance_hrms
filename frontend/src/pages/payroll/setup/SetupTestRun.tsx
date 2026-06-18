@@ -5,6 +5,7 @@ import SetupLayout, { StepHeader } from './SetupLayout';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import Button from '@/components/ui/Button';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { payrollApi } from '@/services/api';
 import { usePayrollOnboarding } from '@/hooks/usePayrollOnboarding';
 
@@ -25,12 +26,29 @@ export default function SetupTestRun() {
   });
   const employees = Array.isArray(employeesData) ? employeesData : [];
 
+  // Pull org settings so test run mirrors production values
+  const { data: settingsData } = useQuery({
+    queryKey: ['payroll', 'settings-existing'],
+    queryFn: () => payrollApi.getPayrollSettings().then(res => res.data?.settings ?? {}),
+  });
+  const orgSettings = (settingsData as any) ?? {};
+
+  // Pre-fill tax regime from org defaults once settings load
+  useQuery({
+    queryKey: ['payroll', 'test-run-prefill'],
+    queryFn: () => {
+      if (orgSettings.defaultTaxRegime) setTaxRegime(orgSettings.defaultTaxRegime);
+      return null;
+    },
+    enabled: !!orgSettings.defaultTaxRegime,
+  });
+
   const calculateMutation = useMutation({
     mutationFn: () => payrollApi.calculate({
       user_id: parseInt(employeeId),
       annual_ctc: parseFloat(annualCtc),
       tax_regime: taxRegime,
-      is_metro_city: true,
+      is_metro_city: orgSettings.isMetroCity ?? true,
     }),
     onSuccess: (res) => {
       setCalcPreview(res.data?.calculation ?? res.data);
@@ -81,13 +99,18 @@ export default function SetupTestRun() {
       )}
 
       <SurfaceCard className="p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-2">
           <Calculator className="h-5 w-5 text-blue-600" />
           <h3 className="text-sm font-semibold text-slate-900">Sample Calculation</h3>
+          <InfoTooltip content="Pick one employee and a CTC to verify the breakdown (Gross → PF/ESI/PT/TDS → Net) before you run payroll for everyone." title="Test run" />
         </div>
+        <p className="text-xs text-slate-500 mb-4">This is a dry run — nothing is saved or processed. It only validates that your settings produce sensible numbers.</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div>
-            <FieldLabel>Employee</FieldLabel>
+            <div className="flex items-center gap-1 mb-1">
+              <FieldLabel>Employee</FieldLabel>
+              <InfoTooltip content="Pick any employee with a CTC configured." title="Employee" />
+            </div>
             <SelectInput value={employeeId} onChange={(e) => handleEmployeeChange(e.target.value)}>
               <option value="">Select...</option>
               {employees.map((emp: any) => (
@@ -96,7 +119,10 @@ export default function SetupTestRun() {
             </SelectInput>
           </div>
           <div>
-            <FieldLabel>Annual CTC (₹)</FieldLabel>
+            <div className="flex items-center gap-1 mb-1">
+              <FieldLabel>Annual CTC (₹)</FieldLabel>
+              <InfoTooltip content="Total annual package including all benefits and employer contributions." title="CTC" />
+            </div>
             <div className="relative">
               <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <TextInput
@@ -108,7 +134,10 @@ export default function SetupTestRun() {
             </div>
           </div>
           <div>
-            <FieldLabel>Tax Regime</FieldLabel>
+            <div className="flex items-center gap-1 mb-1">
+              <FieldLabel>Tax Regime</FieldLabel>
+              <InfoTooltip content="Drives TDS calculation. New: lower slabs, no HRA/80C. Old: higher slabs, full exemptions." title="Tax regime" />
+            </div>
             <SelectInput value={taxRegime} onChange={(e) => setTaxRegime(e.target.value as 'new' | 'old')}>
               <option value="new">New Regime</option>
               <option value="old">Old Regime</option>

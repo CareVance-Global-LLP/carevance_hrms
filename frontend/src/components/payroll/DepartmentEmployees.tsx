@@ -19,6 +19,8 @@ import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import PayEmployeeModal from './PayEmployeeModal';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import type { PayrollDepartmentEmployee } from '@/types';
 
 interface DepartmentEmployeesProps {
@@ -48,12 +50,14 @@ function EmployeeCard({
   onSelect,
   onClick,
   onProcess,
+  onPay,
 }: {
   employee: PayrollDepartmentEmployee;
   isSelected: boolean;
   onSelect: () => void;
   onClick: () => void;
   onProcess: (e: React.MouseEvent) => void;
+  onPay: (e: React.MouseEvent) => void;
 }) {
   const status = employee.payroll_status.is_processed
     ? (employee.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
@@ -65,21 +69,24 @@ function EmployeeCard({
       label: 'Paid',
       bgColor: 'bg-emerald-50',
       textColor: 'text-emerald-600',
-      borderColor: 'border-emerald-200'
+      borderColor: 'border-emerald-200',
+      tooltip: 'Funds have been credited to this employee\'s bank account.',
     },
     processed: {
       icon: CheckCircle2,
       label: 'Processed',
       bgColor: 'bg-blue-50',
       textColor: 'text-blue-600',
-      borderColor: 'border-blue-200'
+      borderColor: 'border-blue-200',
+      tooltip: 'Salary calculated for this month but payment not yet released. Click "Pay Now" for one-off or process via run detail.',
     },
     pending: {
       icon: Clock,
       label: 'Pending',
       bgColor: 'bg-amber-50',
       textColor: 'text-amber-600',
-      borderColor: 'border-amber-200'
+      borderColor: 'border-amber-200',
+      tooltip: 'Payroll not yet processed for this employee. Click "Process Payroll" to calculate.',
     }
   };
 
@@ -143,6 +150,7 @@ function EmployeeCard({
             <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${config.bgColor} ${config.textColor}`}>
               <StatusIcon className="h-3.5 w-3.5" />
               {config.label}
+              <InfoTooltip content={(config as any).tooltip ?? ''} title={config.label} size="sm" />
             </span>
           </div>
 
@@ -203,16 +211,22 @@ function EmployeeCard({
               </>
             ) : status === 'processed' ? (
               <>
-                <Button 
-                  variant="primary" 
-                  size="sm" 
+                <Button
+                  variant="primary"
+                  size="sm"
                   className="flex-1"
                   iconLeft={<DollarSign className="h-4 w-4" />}
+                  onClick={onPay}
                 >
                   Pay Now
+                  <InfoTooltip
+                    content="Records this employee as paid (one-off). For bulk payouts, use the bank file from the run detail instead."
+                    title="Pay Now"
+                    size="sm"
+                  />
                 </Button>
-                <Button 
-                  variant="secondary" 
+                <Button
+                  variant="secondary"
                   size="sm"
                   onClick={onClick}
                 >
@@ -220,9 +234,9 @@ function EmployeeCard({
                 </Button>
               </>
             ) : (
-              <Button 
-                variant="secondary" 
-                size="sm" 
+              <Button
+                variant="secondary"
+                size="sm"
                 className="flex-1"
                 onClick={onClick}
               >
@@ -236,17 +250,23 @@ function EmployeeCard({
   );
 }
 
-export default function DepartmentEmployees({ 
-  departmentId, 
-  monthYear, 
-  onBack, 
-  onSelectEmployee 
+export default function DepartmentEmployees({
+  departmentId,
+  monthYear,
+  onBack,
+  onSelectEmployee
 }: DepartmentEmployeesProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmployees, setSelectedEmployees] = useState<Set<number>>(new Set());
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [showFilters, setShowFilters] = useState(false);
+  const [payingEmployee, setPayingEmployee] = useState<{
+    id: number;
+    name: string;
+    payrollItemId?: number;
+    netPay?: number;
+  } | null>(null);
   // Default working days = days in the selected month (org configures this in settings).
   const [workingDays] = useState<number>(() => {
     const [y, m] = monthYear.split('-').map(Number);
@@ -526,6 +546,15 @@ export default function DepartmentEmployees({
                   e.stopPropagation();
                   onSelectEmployee(employee.id);
                 }}
+                onPay={(e) => {
+                  e.stopPropagation();
+                  setPayingEmployee({
+                    id: employee.id,
+                    name: employee.name,
+                    payrollItemId: employee.payroll_item_id ?? undefined,
+                    netPay: employee.payroll_status.net_pay,
+                  });
+                }}
               />
             ))}
           </div>
@@ -568,6 +597,12 @@ export default function DepartmentEmployees({
           )}
         </div>
       )}
+
+      <PayEmployeeModal
+        isOpen={payingEmployee !== null}
+        onClose={() => setPayingEmployee(null)}
+        employee={payingEmployee ? { ...payingEmployee, monthYear } : null}
+      />
     </div>
   );
 }

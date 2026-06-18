@@ -5,13 +5,14 @@ import SetupLayout, { StepHeader } from './SetupLayout';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import Button from '@/components/ui/Button';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { payrollApi } from '@/services/api';
 import { usePayrollOnboarding } from '@/hooks/usePayrollOnboarding';
 
 export default function SetupEmployees() {
+  const queryClient = useQueryClient();
   const { status, markSetupStep } = usePayrollOnboarding();
   const isComplete = status?.steps.employees ?? false;
-  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [ctcs, setCtcs] = useState<Record<number, string>>({});
   const [regimes, setRegimes] = useState<Record<number, 'new' | 'old'>>({});
@@ -24,10 +25,12 @@ export default function SetupEmployees() {
     queryFn: () => payrollApi.getEmployees().then(res => res.data ?? []),
   });
 
-  const { data: templatesData } = useQuery({
-    queryKey: ['payroll', 'employee-templates'],
-    queryFn: () => payrollApi.getEmployees().then(res => res.data ?? []),
+  // Pull current org settings so new employee templates inherit them
+  const { data: settingsData } = useQuery({
+    queryKey: ['payroll', 'settings-existing'],
+    queryFn: () => payrollApi.getPayrollSettings().then(res => res.data?.settings ?? {}),
   });
+  const orgSettings = (settingsData as any) ?? {};
 
   const employees = Array.isArray(employeesData) ? employeesData : [];
 
@@ -68,14 +71,21 @@ export default function SetupEmployees() {
       let failCount = 0;
       for (const u of updates) {
         try {
+          // Pull live org settings for each save so any change made in SetupDefaults
+          // is reflected in the template even if the user didn't re-open this page.
           await payrollApi.updateEmployeeTemplate(u.userId, {
             annual_ctc: u.annual_ctc,
-            tax_regime: u.regime,
-            pf_enabled: true,
-            esi_enabled: u.annual_ctc <= 2100000,
-            pt_enabled: true,
-            tds_enabled: true,
-            lwf_enabled: false,
+            tax_regime: u.regime ?? orgSettings.defaultTaxRegime ?? 'new',
+            pf_enabled: orgSettings.pfEnabled ?? true,
+            esi_enabled: (orgSettings.esiEnabled ?? true) && (u.annual_ctc / 12) <= (orgSettings.esiThreshold ?? 21000),
+            pt_enabled: orgSettings.ptEnabled ?? true,
+            tds_enabled: orgSettings.tdsEnabled ?? true,
+            lwf_enabled: orgSettings.lwfEnabled ?? false,
+            pt_state: orgSettings.defaultState ?? 'maharashtra',
+            is_metro_city: orgSettings.isMetroCity ?? true,
+            basic_percentage: orgSettings.defaultBasicPercentage ?? 40,
+            hra_percentage: orgSettings.defaultHraPercentage ?? 50,
+            conveyance_allowance: orgSettings.defaultConveyance ?? 1600,
           } as any);
           successCount++;
         } catch {
@@ -83,6 +93,7 @@ export default function SetupEmployees() {
         }
       }
 
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'onboarding-status'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'department'] });
       setCtcs({});
@@ -104,6 +115,7 @@ export default function SetupEmployees() {
   const handleMarkComplete = async () => {
     try {
       await markSetupStep('employees');
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'onboarding-status'] });
     } catch (e: any) {
       setError(e?.response?.data?.message || 'Failed to save progress');
     }
@@ -119,7 +131,7 @@ export default function SetupEmployees() {
       <StepHeader
         stepNumber={4}
         title="Employees & CTC"
-        description="Set the annual CTC for each employee. Type the amount in the row, then click Save."
+        description="Set the annual CTC for each employee. New templates inherit your org defaults from Step 2."
         isComplete={isComplete}
       />
 
@@ -142,6 +154,11 @@ export default function SetupEmployees() {
             </div>
           )}
         </div>
+        {orgSettings.defaultState && (
+          <div className="mt-2 text-xs text-blue-700">
+            New templates will use: PT state <strong>{orgSettings.defaultState}</strong>, Basic <strong>{orgSettings.defaultBasicPercentage ?? 40}%</strong>, HRA <strong>{orgSettings.defaultHraPercentage ?? 50}%</strong>
+          </div>
+        )}
       </SurfaceCard>
 
       {error && (
@@ -154,7 +171,7 @@ export default function SetupEmployees() {
       {success && (
         <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-start gap-2">
           <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-emerald-700 flex-1">{success}</p>
+          <p className="text-sm text-emerald-700 break-words flex-1">{success}</p>
         </div>
       )}
 
@@ -185,14 +202,24 @@ export default function SetupEmployees() {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Annual CTC (₹)</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tax Regime</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    <span className="inline-flex items-center gap-1">
+                      Annual CTC (₹)
+                      <InfoTooltip content="Total annual package including all benefits, taxes paid by employer, and employee deductions. Not what hits the bank account — that\'s Net Pay." title="CTC" />
+                    </span>
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    <span className="inline-flex items-center gap-1">
+                      Tax Regime
+                      <InfoTooltip content="New Regime: lower rates, fewer exemptions. Old Regime: higher rates, full 80C/80D/HRA deductions." title="Tax regime" />
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((emp: any) => {
                   const currentCtc = ctcs[emp.id] ?? '';
-                  const currentRegime = regimes[emp.id] ?? 'new';
+                  const currentRegime = regimes[emp.id] ?? (orgSettings.defaultTaxRegime ?? 'new');
                   const hasChange = currentCtc && parseFloat(currentCtc) > 0;
                   return (
                     <tr key={emp.id} className="hover:bg-slate-50">

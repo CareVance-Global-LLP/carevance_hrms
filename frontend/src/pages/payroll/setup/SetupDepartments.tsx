@@ -5,6 +5,7 @@ import SetupLayout, { StepHeader } from './SetupLayout';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { TextInput, FieldLabel } from '@/components/ui/FormField';
 import Button from '@/components/ui/Button';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { payrollApi } from '@/services/api';
 import { usePayrollOnboarding } from '@/hooks/usePayrollOnboarding';
 
@@ -213,19 +214,31 @@ function DepartmentRow({
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
         <div>
-          <FieldLabel>Basic %</FieldLabel>
+          <div className="flex items-center gap-1 mb-1">
+            <FieldLabel>Basic %</FieldLabel>
+            <InfoTooltip content="% of CTC allocated to Basic Salary. Drives PF and gratuity." title="Basic %" typical="40–50%" />
+          </div>
           <TextInput type="number" value={basicPct} onChange={(e) => setBasicPct(e.target.value)} />
         </div>
         <div>
-          <FieldLabel>HRA %</FieldLabel>
+          <div className="flex items-center gap-1 mb-1">
+            <FieldLabel>HRA %</FieldLabel>
+            <InfoTooltip content="HRA as % of Basic. Tax-exempt up to 50% (metro) or 40% (non-metro) of Basic." title="HRA %" typical="50%" />
+          </div>
           <TextInput type="number" value={hraPct} onChange={(e) => setHraPct(e.target.value)} />
         </div>
         <div>
-          <FieldLabel>Conveyance</FieldLabel>
+          <div className="flex items-center gap-1 mb-1">
+            <FieldLabel>Conveyance</FieldLabel>
+            <InfoTooltip content="Tax-exempt up to ₹1,600/month under Old Regime." title="Conveyance" typical="₹1,600" />
+          </div>
           <TextInput type="number" value={conveyance} onChange={(e) => setConveyance(e.target.value)} />
         </div>
         <div>
-          <FieldLabel>Working Days</FieldLabel>
+          <div className="flex items-center gap-1 mb-1">
+            <FieldLabel>Working Days</FieldLabel>
+            <InfoTooltip content="Expected work days/month. Used for pro-rata calculations." title="Working days" typical="26" />
+          </div>
           <TextInput type="number" value={workingDays} onChange={(e) => setWorkingDays(e.target.value)} />
         </div>
       </div>

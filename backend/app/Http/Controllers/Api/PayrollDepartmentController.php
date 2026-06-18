@@ -241,7 +241,8 @@ class PayrollDepartmentController extends Controller
                             'gross_salary' => $grossSalary,
                             'total_deductions' => $totalDeductions,
                         ],
-                        
+                        'payroll_item_id' => $payrollItem?->id,
+
                         // Template Info (with guaranteed numeric values)
                         'has_template' => true,
                         'template_id' => $template->id,
@@ -1339,6 +1340,42 @@ class PayrollDepartmentController extends Controller
             'success' => true,
             'message' => 'Payroll run released successfully',
             'run' => $run->fresh(),
+        ]);
+    }
+
+    /**
+     * Mark a single payroll item as paid (per-employee payment).
+     * Useful for individual payouts outside the bulk bank-file flow.
+     */
+    public function markItemPaid(Request $request, int $itemId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $item = \App\Models\PayrollItem::whereHas('run', function ($q) use ($organizationId) {
+            $q->where('organization_id', $organizationId);
+        })->where('id', $itemId)->firstOrFail();
+
+        if ($item->payment_status === 'paid') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item is already marked paid',
+            ], 422);
+        }
+
+        $reference = $request->get('payment_reference')
+            ?: ('PAY-' . strtoupper(substr(md5(random_bytes(8)), 0, 8)));
+
+        $item->update([
+            'payment_status' => 'paid',
+            'payment_method' => $request->get('payment_method', 'bank_transfer'),
+            'payment_reference' => $reference,
+            'paid_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment recorded for employee',
+            'item' => $item->fresh(),
         ]);
     }
 

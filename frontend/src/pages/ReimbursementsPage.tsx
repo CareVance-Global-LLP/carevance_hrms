@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'paid'];
 
@@ -70,9 +71,32 @@ export default function ReimbursementsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Reimbursements" description="Manage employee expense reimbursements" />
+      <PageHeader
+        title="Reimbursements"
+        description="Refund employees for business expenses (travel, meals, equipment) — added to next payroll run."
+      />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <HowItWorksCard
+          whatIsThis="Refunds for out-of-pocket business expenses. Employee submits a claim with bills, admin approves, and the amount is added to the next payroll run."
+          whenToUse={[
+            'Business travel (flights, hotels, taxi, meals)',
+            'Work-from-home setup (internet, chair, monitor)',
+            'Team meals, client meetings, conference fees',
+          ]}
+          howItFlows={[
+            { step: 1, label: 'Submit claim', desc: 'Employee uploads receipts and categorises the expense' },
+            { step: 2, label: 'Manager approves', desc: 'Verifies business purpose and receipt validity' },
+            { step: 3, label: 'Admin approves', desc: 'Final review; tax-free treatment confirmed' },
+            { step: 4, label: 'Added to payroll', desc: 'Approved reimbursements flow into next month\'s run' },
+          ]}
+          commonMistakes={[
+            'Approving without receipt (audit risk — receipts must be retained 8 years)',
+            'Treating personal expenses as reimbursable (commute to/from home is not)',
+            'Forgetting GST — reimbursements including GST require GST-compliant invoices',
+          ]}
+        />
+
         {/* Action Bar */}
         <div className="flex items-center justify-between">
           <SurfaceCard className="p-4 flex-1 mr-4">

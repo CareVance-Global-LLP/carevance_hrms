@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected'];
 
@@ -69,9 +70,32 @@ export default function FBPPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PageHeader title="FBP - Flexible Benefits Plan" description="Manage flexible benefits allocations and claims" />
+      <PageHeader
+        title="Flexible Benefits Plan"
+        description="Restructure CTC into tax-free components (meal card, fuel, phone, books) — employees pick what suits them."
+      />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <HowItWorksCard
+          whatIsThis="Restructures part of CTC into tax-free components the employee picks (meal vouchers, fuel, phone, books, driver). Reduces taxable income vs plain cash allowance."
+          whenToUse={[
+            'Tax optimisation for senior employees with large CTCs',
+            'Cafeteria-style benefits — let employees choose what they actually use',
+            'Reduce employer\'s salary cost-to-tax ratio while raising take-home',
+          ]}
+          howItFlows={[
+            { step: 1, label: 'Define components', desc: 'Set up FBP components with annual caps (e.g. meal vouchers ₹26,400/yr)' },
+            { step: 2, label: 'Allocate', desc: 'Assign components and amounts to each employee' },
+            { step: 3, label: 'Employee claims', desc: 'Employee submits bills against their allocation' },
+            { step: 4, label: 'Approved & paid', desc: 'Approved claims flow into payroll as tax-free component' },
+          ]}
+          commonMistakes={[
+            'Crossing statutory caps (e.g. meal vouchers > ₹2,200/month become taxable)',
+            'Forgetting that unclaimed FBP balance usually lapses at year-end',
+            'Allocating components without confirming employee actually uses them',
+          ]}
+        />
+
         {/* Action Bar */}
         <div className="flex items-center justify-between">
           <div className="flex-1 mr-4">

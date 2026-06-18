@@ -87,6 +87,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::post('/runs/{runId}/approve', [PayrollDepartmentController::class, 'approvePayrollRun']);
     Route::post('/runs/{runId}/release', [PayrollDepartmentController::class, 'releasePayrollRun']);
     Route::post('/runs/{runId}/process-payment', [PayrollDepartmentController::class, 'processRunPayment']);
+    Route::post('/items/{itemId}/mark-paid', [PayrollDepartmentController::class, 'markItemPaid']);
     
     // Bank File
     Route::get('/runs/{runId}/bank-file', [PayrollDepartmentController::class, 'generateBankFile']);
@@ -145,6 +146,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::get('/settings', [\App\Http\Controllers\Api\PayrollSettingsController::class, 'getSettings']);
     Route::put('/settings', [\App\Http\Controllers\Api\PayrollSettingsController::class, 'updateSettings']);
     Route::post('/settings/reset', [\App\Http\Controllers\Api\PayrollSettingsController::class, 'resetSettings']);
+    Route::post('/settings/apply-to-all-employees', [\App\Http\Controllers\Api\PayrollSettingsController::class, 'applyToAllEmployees']);
     
     // Dashboard Data
     Route::get('/dashboard-data', [\App\Http\Controllers\Api\PayrollDashboardController::class, 'getDashboardData']);

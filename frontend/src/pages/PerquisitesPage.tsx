@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const PERQUISITE_TYPES = [
   { value: 'car', label: 'Company Car', icon: Car },
@@ -63,9 +64,33 @@ export default function PerquisitesPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Perquisites Management" description="Track taxable perquisites provided to employees" />
+      <PageHeader
+        title="Perquisites"
+        description="Track taxable non-cash benefits (rent-free house, company car, club membership) — added to TDS."
+      />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <HowItWorksCard
+          whatIsThis="Non-cash benefits provided to employees that have a taxable value per Income Tax Rules. Perquisite value is added to employee\'s taxable income, increasing TDS for the year."
+          whenToUse={[
+            'Rent-free or concessional accommodation provided by employer',
+            'Company car used for personal purposes',
+            'Interest-free or low-interest loans above ₹20,000',
+            'ESOPs, club membership, domestic help, gas/electricity',
+          ]}
+          howItFlows={[
+            { step: 1, label: 'Add perquisite', desc: 'Pick employee, type, and value (auto-calculated for some)' },
+            { step: 2, label: 'System values it', desc: 'Per IT Rules — e.g. rent-free house = 15% of Basic (or actual rent)' },
+            { step: 3, label: 'Tax impact', desc: 'Value flows into Form 16 and TDS projection' },
+            { step: 4, label: 'Track in payslip', desc: 'Shown as taxable perquisite line item' },
+          ]}
+          commonMistakes={[
+            'Forgetting that car fuel + driver are separate perquisites',
+            'Not valuing accommodation correctly (city, basic, owned vs rented)',
+            'Missing ESOP perquisite on exercise date (taxable at difference between FMV and exercise price)',
+          ]}
+        />
+
         {/* Action Bar */}
         <div className="flex items-center justify-between">
           <SurfaceCard className="p-4 flex-1 mr-4">

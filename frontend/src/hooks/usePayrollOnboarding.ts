@@ -75,12 +75,6 @@ export function usePayrollOnboarding() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ONBOARDING_KEY }),
   });
 
-  const completeStepMutation = useMutation({
-    mutationFn: (step: 'welcome' | 'defaults' | 'first_employee' | 'test_calculation' | 'completed') =>
-      payrollApi.completeOnboardingStep(step),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ONBOARDING_KEY }),
-  });
-
   const status: PayrollOnboardingStatus | undefined = data
     ? ({ ...(data as Record<string, any>) } as PayrollOnboardingStatus)
     : undefined;
@@ -103,14 +97,12 @@ export function usePayrollOnboarding() {
     markWelcomeSeen: markWelcomeSeenMutation.mutateAsync,
     dismiss: dismissMutation.mutateAsync,
     reopen: reopenMutation.mutateAsync,
-    completeStep: completeStepMutation.mutateAsync,
     isMutating:
       markDefaultsMutation.isPending ||
       markSetupStepMutation.isPending ||
       unmarkSetupStepMutation.isPending ||
       markWelcomeSeenMutation.isPending ||
       dismissMutation.isPending ||
-      reopenMutation.isPending ||
-      completeStepMutation.isPending,
+      reopenMutation.isPending,
   };
 }

@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const REVISION_TYPES = [
   { value: 'annual_increment', label: 'Annual Increment' },
@@ -75,9 +76,33 @@ export default function SalaryRevisionPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Salary Revision Letters" description="Generate, send, and track salary revision letters" />
+      <PageHeader
+        title="Salary Revisions"
+        description="Record CTC changes — increments, promotions, corrections. Auto-detects arrears for back-dated revisions."
+      />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <HowItWorksCard
+          whatIsThis="Formal record of an employee\'s CTC change — annual increment, promotion, or correction. Stores old vs new CTC, effective date, reason, and auto-detects arrears for back-dated changes."
+          whenToUse={[
+            'Annual appraisal cycle (increment effective from April 1)',
+            'Mid-year promotion with CTC revision',
+            'Salary correction after a payroll audit',
+            'Counter-offer adjustment to retain an employee',
+          ]}
+          howItFlows={[
+            { step: 1, label: 'Create revision', desc: 'Old CTC, new CTC, effective date, reason' },
+            { step: 2, label: 'Generate letter', desc: 'PDF revision letter auto-generated for the employee' },
+            { step: 3, label: 'Detect arrears', desc: 'System calculates back-dated differential from effective date' },
+            { step: 4, label: 'Send & pay', desc: 'Letter sent; arrears added to current month\'s payroll run' },
+          ]}
+          commonMistakes={[
+            'Forgetting to set the correct effective date — arrears will be wrong',
+            'Not checking tax regime impact (CTC increase can shift employee to higher slab)',
+            'Generating letter before employee countersigns',
+          ]}
+        />
+
         {/* Action Bar */}
         <div className="flex items-center justify-between">
           <SurfaceCard className="p-4 flex-1 mr-4">

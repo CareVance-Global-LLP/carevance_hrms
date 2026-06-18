@@ -1679,6 +1679,12 @@ export const payrollApi = {
   processRunPayment: (runId: number, paymentMethod?: string, payDate?: string) =>
     api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/process-payment`, { payment_method: paymentMethod, pay_date: payDate }),
 
+  markItemPaid: (itemId: number, paymentReference?: string, paymentMethod?: string) =>
+    api.post<{ success: boolean; message: string; item: any }>(`/payroll/items/${itemId}/mark-paid`, {
+      payment_reference: paymentReference,
+      payment_method: paymentMethod,
+    }),
+
   generateBankFile: (runId: number) =>
     api.get<{ success: boolean; filename: string; content: string; entries: any[]; total_amount: number; total_employees: number }>(`/payroll/runs/${runId}/bank-file`),
 
@@ -1782,9 +1788,12 @@ export const payrollApi = {
   
   updatePayrollSettings: (settings: Partial<PayrollOrganizationSettings>) =>
     api.put<{ success: boolean; message: string; settings: PayrollOrganizationSettings }>('/payroll/settings', settings),
-  
+
   resetPayrollSettings: () =>
     api.post<{ success: boolean; message: string; settings: PayrollOrganizationSettings }>('/payroll/settings/reset'),
+
+  applySettingsToAllEmployees: (force: boolean = false) =>
+    api.post<{ success: boolean; message: string; affected_count: number; applied_fields: string[] }>('/payroll/settings/apply-to-all-employees', null, { params: { force } }),
 
   // Dashboard Data
   getDashboardData: (params?: { month_year?: string }) =>
@@ -1999,8 +2008,6 @@ export const payrollApi = {
     api.post<{ success: boolean; message: string }>('/payroll/onboarding/dismiss'),
   reopenOnboarding: () =>
     api.post<{ success: boolean; message: string }>('/payroll/onboarding/reopen'),
-  completeOnboardingStep: (step: 'welcome' | 'defaults' | 'first_employee' | 'test_calculation' | 'completed') =>
-    api.post<{ success: boolean; message: string; completed_steps: string[] }>('/payroll/onboarding/complete-step', { step }),
   markSetupStep: (step: string) =>
     api.post<{ success: boolean; message: string; completed_steps: string[] }>('/payroll/onboarding/mark-setup-step', { step }),
   unmarkSetupStep: (step: string) =>

@@ -226,15 +226,15 @@ class EmployeePayrollTemplate extends Model
                         ?? ($deptTemplate?->tds_enabled ?? true),
                     'lwf_enabled' => $orgSettings['lwfEnabled']
                         ?? ($deptTemplate?->lwf_enabled ?? false),
-                ]
-            );
-
-            $template = self::create([
-                'user_id' => $userId,
-                'organization_id' => $organizationId,
-                'created_by' => $createdBy,
-                ...$settings,
-            ]);
+                    'nps_enabled' => $orgSettings['npsEnabled']
+                        ?? ($deptTemplate?->nps_enabled ?? false),
+                    'nps_employee_percentage' => $orgSettings['npsEmployeePercentage']
+                        ?? ($deptTemplate?->nps_employee_percentage ?? 10.00),
+                    'vpf_enabled' => $orgSettings['vpfEnabled']
+                        ?? ($deptTemplate?->vpf_enabled ?? false),
+                    'vpf_percentage' => $orgSettings['vpfPercentage']
+                        ?? ($deptTemplate?->vpf_percentage ?? 0),
+                ]);
         }
 
         return $template;

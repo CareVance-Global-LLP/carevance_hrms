@@ -5,14 +5,16 @@ import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import InfoTooltip from '@/components/ui/InfoTooltip';
+import HowItWorksCard from './HowItWorksCard';
 
 const FILING_TYPES = [
-  { key: 'pf_ecr', label: 'PF ECR', desc: 'EPFO monthly return', needsRun: true },
-  { key: 'esi_challan', label: 'ESI Challan', desc: 'ESI monthly challan', needsRun: true },
-  { key: 'form_24q', label: 'Form 24Q', desc: 'Quarterly TDS return', needsRun: true },
-  { key: 'form_12ba', label: 'Form 12BA', desc: 'Perquisites statement', needsRun: true },
-  { key: 'pt_return', label: 'PT Return', desc: 'Professional Tax return', needsRun: true, needsState: true },
-  { key: 'lwf_return', label: 'LWF Return', desc: 'Labour Welfare Fund', needsRun: true },
+  { key: 'pf_ecr', label: 'PF ECR', desc: 'EPFO monthly return', needsRun: true, tooltip: 'Electronic Challan cum Return — monthly PF contribution filing with EPFO. Due by the 15th of the next month.' },
+  { key: 'esi_challan', label: 'ESI Challan', desc: 'ESI monthly challan', needsRun: true, tooltip: 'Monthly ESI contribution filing with ESIC. Due by the 15th of the next month.' },
+  { key: 'form_24q', label: 'Form 24Q', desc: 'Quarterly TDS return', needsRun: true, tooltip: 'Quarterly TDS return on salary payments. Due 15 days after quarter end (15 Jul, 15 Oct, 15 Jan, 31 May).' },
+  { key: 'form_12ba', label: 'Form 12BA', desc: 'Perquisites statement', needsRun: true, tooltip: 'Annual statement of perquisites paid to employees. Issued to each employee by 15 June.' },
+  { key: 'pt_return', label: 'PT Return', desc: 'Professional Tax return', needsRun: true, needsState: true, tooltip: 'State-level Professional Tax return. Due dates vary by state (usually 15th–30th of next month).' },
+  { key: 'lwf_return', label: 'LWF Return', desc: 'Labour Welfare Fund', needsRun: true, tooltip: 'Annual Labour Welfare Fund contribution. Required only in some states (Maharashtra, Karnataka, Kerala, etc.).' },
 ];
 
 interface FilingButtonProps {
@@ -38,7 +40,10 @@ function FilingButton({ label, desc, onClick, disabled, needsState, state, onSta
           <FileText className="h-5 w-5" />
         </div>
         <div className="flex-1">
-          <h3 className="font-semibold text-slate-900 text-sm">{label}</h3>
+          <div className="flex items-center gap-1">
+            <h3 className="font-semibold text-slate-900 text-sm">{label}</h3>
+            <InfoTooltip content={desc} title={label} size="sm" />
+          </div>
           <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
           {needsState && (
             <div className="mt-2">
@@ -135,6 +140,29 @@ export default function FilingsDashboard() {
 
   return (
     <div className="space-y-6">
+      <HowItWorksCard
+        intro="Generate statutory returns for any month and download them for upload to the respective portals."
+        whatIsThis="Statutory returns required by Indian law — PF, ESI, PT, TDS, LWF, Form 16. Generate the file here, then upload to the appropriate government portal (EPFO, ESIC, TDS-CPC, state commercial tax dept)."
+        whenToUse={[
+          'Monthly: PF ECR + ESI Challan (both due by 15th of next month)',
+          'Monthly: PT Return (varies by state)',
+          'Quarterly: TDS Form 24Q (due 15 days after quarter end)',
+          'Annually: Form 16 (15 June after FY ends)',
+          'Annually: LWF (one or two payments per year, state-dependent)',
+        ]}
+        howItFlows={[
+          { step: 1, label: 'Pick a run', desc: 'Select the processed payroll run you want to file' },
+          { step: 2, label: 'Pick filing type', desc: 'Choose the specific return (PF ECR, ESI Challan, Form 24Q, etc.)' },
+          { step: 3, label: 'Generate', desc: 'System pulls data from the run and formats per the portal spec' },
+          { step: 4, label: 'Download & upload', desc: 'Save the file and upload to the respective government portal' },
+        ]}
+        commonMistakes={[
+          'Generating Form 24Q before the run is Approved',
+          'Missing the 15th-of-next-month deadline (penalty applies)',
+          'Uploading a draft run — always lock + approve before filing',
+        ]}
+      />
+
       <div className="flex items-center gap-2">
         <Button
           variant={activeTab === 'generate' ? 'primary' : 'secondary'}
@@ -189,7 +217,7 @@ export default function FilingsDashboard() {
                   <FilingButton
                     key={ft.key}
                     label={ft.label}
-                    desc={ft.desc}
+                    desc={ft.tooltip ?? ft.desc}
                     onClick={() => generateSingleMutation.mutate({ type: ft.key, runId: selectedRun })}
                     disabled={generateSingleMutation.isPending}
                     needsState={ft.needsState}

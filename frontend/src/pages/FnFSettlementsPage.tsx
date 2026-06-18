@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { TextInput, SelectInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected', 'paid'];
 const EXIT_TYPES = ['resignation', 'termination', 'retirement', 'death', 'layoff'];
@@ -68,9 +69,31 @@ export default function FnFSettlementsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Full & Final Settlements" description="Manage employee F&F settlements" />
+      <PageHeader
+        title="Full & Final Settlements"
+        description="Used when an employee exits — calculates final dues (unpaid salary, leave encashment, gratuity) minus outstanding loans."
+      />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <HowItWorksCard
+          whatIsThis="A one-time final payment to an exiting employee. Covers salary for days worked in the last month, encashment of unused earned leaves, and gratuity (if eligible) — minus any outstanding loans or advances."
+          whenToUse={[
+            'Employee submits resignation (use after the manager accepts and exit date is set)',
+            'Retirement, termination, layoff, or death in service',
+            'Annual/periodic settlements for long-pending exits',
+          ]}
+          howItFlows={[
+            { step: 1, label: 'Create F&F', desc: 'Pick employee, exit date, and reason (resignation, termination, etc.)' },
+            { step: 2, label: 'System calculates', desc: 'Salary for last month + leave encashment + gratuity − loans/advances' },
+            { step: 3, label: 'Review & approve', desc: 'Admin verifies the breakdown and approves' },
+            { step: 4, label: 'Process payment', desc: 'Pays via NEFT/RTGS from the bank file or one-off transfer' },
+          ]}
+          commonMistakes={[
+            'Creating F&F before the manager accepts the resignation — wait until exit is confirmed',
+            'Forgetting to mark loans as closed; they will double-deduct',
+            'Not checking 5-year eligibility for gratuity before excluding it',
+          ]}
+        />
         {/* Filters */}
         <SurfaceCard className="p-5">
           <div className="flex flex-wrap gap-4 items-end">

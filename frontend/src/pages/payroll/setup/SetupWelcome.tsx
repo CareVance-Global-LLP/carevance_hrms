@@ -2,18 +2,19 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, Users, ClipboardCheck, ScrollText, Calendar, Landmark, Calculator, Sparkles, Clock, CheckCircle2, ArrowRight, Users as UsersIcon } from 'lucide-react';
 import SetupLayout, { StepHeader } from './SetupLayout';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import { usePayrollOnboarding } from '@/hooks/usePayrollOnboarding';
 import Button from '@/components/ui/Button';
 
 const PREVIEW_STEPS = [
-  { icon: Building2, label: 'Organization Defaults', desc: 'Set Basic %, HRA %, working days, PT state' },
-  { icon: Users, label: 'Department Templates', desc: 'Default salary structure per department' },
-  { icon: UsersIcon, label: 'Employees & CTC', desc: 'Add employees and assign their annual CTC' },
-  { icon: ClipboardCheck, label: 'Compliance Toggles', desc: 'Configure PF, ESI, PT, TDS, LWF' },
-  { icon: ScrollText, label: 'Statutory Details', desc: 'Set TAN, PAN, establishment codes' },
-  { icon: Calendar, label: 'Pay Schedule', desc: 'Pay day, frequency, cut-off dates' },
-  { icon: Landmark, label: 'Bank & Payout', desc: 'Bank account, NEFT/RTGS file format' },
-  { icon: Calculator, label: 'Test Run', desc: 'Dry run with one employee to validate' },
+  { icon: Building2, label: 'Organization Defaults', desc: 'Set Basic %, HRA %, working days, PT state', tooltip: 'Default salary structure that applies to every new employee. Sets the headline structure of every payslip.' },
+  { icon: Users, label: 'Department Templates', desc: 'Default salary structure per department', tooltip: 'Override org defaults per department. Useful when different teams have different pay mixes.' },
+  { icon: UsersIcon, label: 'Employees & CTC', desc: 'Add employees and assign their annual CTC', tooltip: 'Enter each employee\'s Cost to Company and tax regime. CTC drives PF, ESI, and tax calculations.' },
+  { icon: ClipboardCheck, label: 'Compliance Toggles', desc: 'Configure PF, ESI, PT, TDS, LWF', tooltip: 'Choose which statutory deductions apply. PF and ESI are mandatory once you cross the employee/salary thresholds.' },
+  { icon: ScrollText, label: 'Statutory Details', desc: 'Set TAN, PAN, establishment codes', tooltip: 'Government IDs (TAN, PAN, PF/ESI codes) required on every statutory filing.' },
+  { icon: Calendar, label: 'Pay Schedule', desc: 'Pay day, frequency, cut-off dates', tooltip: 'When and how often employees get paid. Drives the monthly payroll calendar.' },
+  { icon: Landmark, label: 'Bank & Payout', desc: 'Bank account, NEFT/RTGS file format', tooltip: 'Source bank account and the format of the salary-transfer file uploaded to your corporate banking portal.' },
+  { icon: Calculator, label: 'Test Run', desc: 'Dry run with one employee to validate', tooltip: 'Run a sample calculation for one employee to verify the numbers look right before going live.' },
 ];
 
 export default function SetupWelcome() {
@@ -64,10 +65,13 @@ export default function SetupWelcome() {
                 <Icon className="h-5 w-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-900 truncate">
-                  <span className="text-slate-400 mr-1.5">{idx + 2}.</span>
-                  {s.label}
-                </p>
+                <div className="flex items-center gap-1">
+                  <p className="text-sm font-medium text-slate-900 truncate">
+                    <span className="text-slate-400 mr-1.5">{idx + 2}.</span>
+                    {s.label}
+                  </p>
+                  <InfoTooltip content={s.tooltip} title={s.label} size="sm" />
+                </div>
                 <p className="text-xs text-slate-500 truncate">{s.desc}</p>
               </div>
             </SurfaceCard>

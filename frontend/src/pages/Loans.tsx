@@ -9,6 +9,7 @@ import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel, TextareaInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 import { useAuth } from '@/contexts/AuthContext';
 
 function formatCurrency(amount: number): string {
@@ -62,9 +63,31 @@ export default function LoansPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Loan & Advances" description="Request and manage salary advances and loans" />
+      <PageHeader
+        title="Loans & Advances"
+        description="Salary advances and EMI-based loans — recovered automatically from monthly payroll."
+      />
 
       <div className="p-6 max-w-6xl mx-auto space-y-6">
+        <HowItWorksCard
+          whatIsThis="Money given to an employee in advance of salary, or as a formal loan with monthly EMI deductions from payroll."
+          whenToUse={[
+            'Salary advance — employee needs a portion of next month\'s salary early',
+            'Personal loan — formal loan with EMI schedule (3–24 months typical)',
+            'Emergency loan — one-time recovery in next payroll',
+          ]}
+          howItFlows={[
+            { step: 1, label: 'Employee requests', desc: 'Loan type, amount, reason, and recovery schedule' },
+            { step: 2, label: 'Manager / HR approves', desc: 'One-click approve, reject, or send back for edits' },
+            { step: 3, label: 'Disbursed', desc: 'Amount credited in next payroll run (advance) or via separate payment' },
+            { step: 4, label: 'EMI recovered', desc: 'Deducted automatically from Gross every month until cleared' },
+          ]}
+          commonMistakes={[
+            'Setting EMI amount that exceeds 40–50% of take-home (employee won\'t be able to repay)',
+            'Forgetting to mark loan as closed when fully recovered',
+            'Approving loan without checking existing outstanding loans',
+          ]}
+        />
         {successMessage && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
             <CheckCircle className="h-5 w-5 text-emerald-600" />

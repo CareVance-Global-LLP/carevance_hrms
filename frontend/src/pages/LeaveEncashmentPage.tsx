@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { TextInput, SelectInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const STATUS_OPTIONS = ['draft', 'approved', 'rejected'];
 const LEAVE_TYPES = ['earned', 'casual', 'sick', 'compensatory'];
@@ -59,9 +60,31 @@ export default function LeaveEncashmentPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Leave Encashment" description="Manage employee leave encashment requests" />
+      <PageHeader
+        title="Leave Encashment"
+        description="Pay out unused earned/privilege leaves — typically at exit, or annually per company policy."
+      />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <HowItWorksCard
+          whatIsThis="Converts unused earned leaves into cash. Per-day rate = (Monthly Basic ÷ Working Days). Tax-free up to ₹25 lakh for non-government employees at exit."
+          whenToUse={[
+            'At exit (most common — pay out unused earned leaves as part of F&F)',
+            'Annually (some companies encash up to a cap each year)',
+            'When an employee crosses the maximum accumulation limit',
+          ]}
+          howItFlows={[
+            { step: 1, label: 'Pick employee', desc: 'And select leave type (earned, casual, sick, compensatory)' },
+            { step: 2, label: 'Enter days', desc: 'How many days to encash — system checks leave balance' },
+            { step: 3, label: 'Calculate', desc: 'Per-day Basic × days encashed' },
+            { step: 4, label: 'Approve', desc: 'Admin approves, amount flows into next payroll run' },
+          ]}
+          commonMistakes={[
+            'Encashing leaves that don\'t qualify (e.g. sick leave usually can\'t be encashed)',
+            'Confusing "leave balance" with "leave type" — only earned/privilege leaves are typically encashable',
+            'Forgetting that encashed leaves are taxable as salary',
+          ]}
+        />
         {/* Filters */}
         <SurfaceCard className="p-5">
           <div className="flex flex-wrap gap-4 items-end">

@@ -469,15 +469,43 @@ export default function RunPayrollModal({
           )}
 
           {step === 'complete' && (
-            <div className="text-center py-12">
-              <CheckCircle className="h-12 w-12 text-emerald-600 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Payroll Complete!</h3>
-              <p className="text-slate-500 mb-2">
-                Successfully processed payroll for {processingStatus.processedCount} employees
-              </p>
-              <p className="text-sm text-slate-400 mb-6">
-                across {selectedDepartments.length} department{selectedDepartments.length !== 1 ? 's' : ''}
-              </p>
+            <div className="py-8 space-y-5">
+              <div className="text-center">
+                <CheckCircle className="h-12 w-12 text-emerald-600 mx-auto mb-3" />
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">Payroll Complete!</h3>
+                <p className="text-slate-500 mb-1">
+                  Successfully processed payroll for {processingStatus.processedCount} employees
+                </p>
+                <p className="text-sm text-slate-400">
+                  across {selectedDepartments.length} department{selectedDepartments.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm font-semibold text-blue-900 mb-3">What happens next?</p>
+                <ol className="space-y-2 text-sm text-blue-800">
+                  <li className="flex gap-2">
+                    <span className="font-semibold text-blue-600 flex-shrink-0">1.</span>
+                    <span><strong>Lock</strong> the run in the dashboard to finalize calculations.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-semibold text-blue-600 flex-shrink-0">2.</span>
+                    <span><strong>Approve</strong> — manager / admin sign-off.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-semibold text-blue-600 flex-shrink-0">3.</span>
+                    <span><strong>Release</strong> the run to generate the bank file.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-semibold text-blue-600 flex-shrink-0">4.</span>
+                    <span><strong>Disburse</strong> — upload the bank file to your banking portal.</span>
+                  </li>
+                </ol>
+                <p className="text-xs text-blue-700 mt-3 pt-3 border-t border-blue-200">
+                  Tip: Click any run in "Recent Payroll Runs" on the dashboard to view lifecycle actions and download the bank file.
+                </p>
+              </div>
+
               <div className="flex justify-center gap-3">
                 <Button variant="primary" onClick={handleClose}>
                   Done

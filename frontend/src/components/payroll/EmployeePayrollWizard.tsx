@@ -25,6 +25,7 @@ import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import ProgressSteps from './ProgressSteps';
 import SalaryBreakdown from './SalaryBreakdown';
+import InfoTooltip from '@/components/ui/InfoTooltip';
 import type { EmployeePayrollDetails, EmployeePayrollTemplate, PayrollCalculation } from '@/types';
 
 interface EmployeePayrollWizardProps {
@@ -636,7 +637,10 @@ export default function EmployeePayrollWizard({
 
         {/* CTC Input with Presets */}
         <div className="mb-6">
-          <FieldLabel>Annual CTC (Cost to Company)</FieldLabel>
+          <div className="flex items-center gap-1.5 mb-1">
+            <FieldLabel className="mb-0">Annual CTC (Cost to Company)</FieldLabel>
+            <InfoTooltip content="Total annual package — Basic + HRA + allowances + employer PF/ESI/gratuity. The headline number in offer letters. Not what hits the bank account." title="CTC" />
+          </div>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₹</span>
             <TextInput
@@ -647,7 +651,7 @@ export default function EmployeePayrollWizard({
               placeholder="Enter annual CTC (e.g., 1200000)"
             />
           </div>
-          
+
           {/* Quick Presets */}
           <div className="flex flex-wrap gap-2 mt-3">
             <span className="text-xs text-slate-500 py-1">Quick select:</span>
@@ -670,7 +674,10 @@ export default function EmployeePayrollWizard({
         {/* Structure Configuration */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <div>
-            <FieldLabel>Basic Salary (% of CTC)</FieldLabel>
+            <div className="flex items-center gap-1.5 mb-1">
+              <FieldLabel className="mb-0">Basic Salary (% of CTC)</FieldLabel>
+              <InfoTooltip content="Foundation of salary. Drives PF, gratuity, HRA exemption. Typical 40–50% of CTC." title="Basic Salary" />
+            </div>
             <TextInput
               type="number"
               value={template.basic_percentage}
@@ -680,7 +687,10 @@ export default function EmployeePayrollWizard({
             />
           </div>
           <div>
-            <FieldLabel>HRA (% of Basic)</FieldLabel>
+            <div className="flex items-center gap-1.5 mb-1">
+              <FieldLabel className="mb-0">HRA (% of Basic)</FieldLabel>
+              <InfoTooltip content="Tax-exempt allowance. Exempt = min(actual HRA, rent−10% Basic, 50% Basic metro / 40% non-metro)." title="HRA" />
+            </div>
             <TextInput
               type="number"
               value={template.hra_percentage}
@@ -690,7 +700,10 @@ export default function EmployeePayrollWizard({
             />
           </div>
           <div>
-            <FieldLabel>Conveyance Allowance (₹)</FieldLabel>
+            <div className="flex items-center gap-1.5 mb-1">
+              <FieldLabel className="mb-0">Conveyance Allowance (₹)</FieldLabel>
+              <InfoTooltip content="Tax-exempt up to ₹1,600/month under Old Regime. Fully taxable under New Regime." title="Conveyance" />
+            </div>
             <TextInput
               type="number"
               value={template.conveyance_allowance}
@@ -698,9 +711,10 @@ export default function EmployeePayrollWizard({
             />
           </div>
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-1.5 mb-1">
               <MapPin className="h-3 w-3 text-slate-400" />
               <FieldLabel className="mb-0">State (Professional Tax)</FieldLabel>
+              <InfoTooltip content="PT is a state subject — rates vary by state (₹0–₹200/mo). Pick the state where your office is registered." title="PT State" />
             </div>
             <SelectInput
               value={template.pt_state}
@@ -715,9 +729,10 @@ export default function EmployeePayrollWizard({
 
         {/* Tax Regime & Metro */}
         <div className="flex flex-wrap items-center gap-6 mb-6 p-4 bg-slate-50 rounded-lg">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Building2 className="h-4 w-4 text-slate-400" />
             <span className="text-sm text-slate-700">Tax Regime:</span>
+            <InfoTooltip content="New: lower rates, fewer exemptions. Old: higher rates, full 80C/80D/HRA deductions." title="Tax regime" />
             <SelectInput
               value={template.tax_regime}
               onChange={(e) => handleUpdateTemplate('tax_regime', e.target.value)}
@@ -727,8 +742,9 @@ export default function EmployeePayrollWizard({
               <option value="old">Old Regime</option>
             </SelectInput>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <span className="text-sm text-slate-700">Metro City:</span>
+            <InfoTooltip content="Affects HRA exemption cap: 50% of Basic in metros (Delhi, Mumbai, Kolkata, Chennai) vs 40% elsewhere." title="Metro City" />
             <button
               onClick={() => handleUpdateTemplate('is_metro_city', !template.is_metro_city)}
               className="text-blue-600"
@@ -741,16 +757,19 @@ export default function EmployeePayrollWizard({
         {/* Deduction Toggles */}
         <div className="space-y-4">
           <h4 className="font-medium text-slate-900">Deductions</h4>
-          
+
           {[
-            { key: 'pf_enabled', label: 'Provident Fund (PF)', desc: '12% of basic salary', default: true },
-            { key: 'esi_enabled', label: 'Employee State Insurance (ESI)', desc: '0.75% employee, 3.25% employer', default: true },
-            { key: 'pt_enabled', label: 'Professional Tax', desc: 'State-specific amount', default: true },
-            { key: 'tds_enabled', label: 'Income Tax (TDS)', desc: 'Based on tax regime', default: true },
+            { key: 'pf_enabled', label: 'Provident Fund (PF)', desc: '12% of basic salary', tooltip: 'Employee + employer each contribute 12% of Basic. Tax-deductible under Section 80C (employee share).' },
+            { key: 'esi_enabled', label: 'Employee State Insurance (ESI)', desc: '0.75% employee, 3.25% employer', tooltip: 'Health insurance for employees earning ≤ ₹21,000/month gross. 0.75% + 3.25%.' },
+            { key: 'pt_enabled', label: 'Professional Tax', desc: 'State-specific amount', tooltip: 'State-level tax. Varies by state (₹0–₹200/mo). Some states (Delhi, Haryana) have no PT.' },
+            { key: 'tds_enabled', label: 'Income Tax (TDS)', desc: 'Based on tax regime', tooltip: 'Monthly income tax deducted based on annual projection. Adjusted at year-end via Form 16/ITR.' },
           ].map((item) => (
             <div key={item.key} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
               <div>
-                <span className="text-sm text-slate-700">{item.label}</span>
+                <span className="text-sm text-slate-700 inline-flex items-center gap-1">
+                  {item.label}
+                  <InfoTooltip content={item.tooltip} title={item.label} size="sm" />
+                </span>
                 <p className="text-xs text-slate-400">{item.desc}</p>
               </div>
               <button
