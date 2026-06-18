@@ -23,6 +23,8 @@ import { cn } from '@/utils/cn';
 import {
   Bell,
   CalendarClock,
+  ChevronDown,
+  ChevronRight,
   Clock,
   LifeBuoy,
   LayoutDashboard,
@@ -70,6 +72,7 @@ export default function Layout() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [updatePanelOpen, setUpdatePanelOpen] = useState(false);
   const [seenDesktopUpdateKey, setSeenDesktopUpdateKey] = useState<string | null>(null);
+  const [openSidebarGroups, setOpenSidebarGroups] = useState<Set<string>>(new Set());
   const globalSearchRef = useRef<HTMLDivElement | null>(null);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
@@ -694,6 +697,25 @@ export default function Layout() {
     }
   }, [desktopPushEnabled]);
 
+  // Auto-expand sidebar groups containing the active route
+  useEffect(() => {
+    const newOpen = new Set(openSidebarGroups);
+    let changed = false;
+
+    for (const group of primaryNavigation) {
+      if (!group.items?.length) continue;
+      const hasActive = group.items.some((item) => item.to && isRouteActive(item.to));
+      if (hasActive && !newOpen.has(group.label)) {
+        newOpen.add(group.label);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setOpenSidebarGroups(newOpen);
+    }
+  }, [location.pathname]);
+
   // Note: Removed auto-mark-as-read when opening notification dropdown
   // Notifications should only be marked as read when user actually clicks on them
   // This prevents notifications from disappearing just by opening the dropdown
@@ -719,7 +741,7 @@ export default function Layout() {
       <Link
         key={`${item.label}-${item.to}`}
         to={item.to}
-        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition ${
+        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] font-medium transition ${
           active
             ? 'bg-blue-600 text-white shadow-sm'
             : nested
@@ -727,7 +749,8 @@ export default function Layout() {
               : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'
         }`}
       >
-        <Icon className={`h-4 w-4 ${active ? 'text-white' : 'text-slate-500'}`} />
+        <ChevronRight className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-white' : 'text-slate-300'}`} />
+        <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-white' : 'text-slate-500'}`} />
         <span className="truncate">{item.label}</span>
         {item.unreadCount ? (
           <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? 'bg-white/20 text-white' : 'bg-rose-600 text-white'}`}>
@@ -763,19 +786,75 @@ export default function Layout() {
                 );
               }
 
+              const hasSections = group.items?.some((i) => i.section);
+              const sectionGroups = hasSections
+                ? (group.items ?? []).reduce<{ label: string; items: typeof group.items }[]>((acc, item) => {
+                    const section = item.section ?? '';
+                    const last = acc[acc.length - 1];
+                    if (!last || last.label !== section) {
+                      acc.push({ label: section, items: [item] });
+                    } else {
+                      last.items.push(item);
+                    }
+                    return acc;
+                  }, [])
+                : null;
+              const items = group.items ?? [];
+
+              const isGroupOpen = openSidebarGroups.has(group.label);
+
               return (
-                <div key={group.label} className="mb-5 space-y-1">
-                  <p className={`px-3 text-[10px] font-semibold uppercase tracking-[0.18em] ${groupActive ? 'text-blue-600' : 'text-slate-400'}`}>
-                    {group.label}
-                  </p>
-                  <div className="space-y-1">
-                    {group.items?.map((item) => renderSidebarLink(
-                      String(item.to || '').startsWith('/approval-inbox')
-                        ? { ...item, unreadCount: pendingApprovals }
-                        : item,
-                      true,
-                      activeItemTo === item.to
-                    ))}
+                <div key={group.label} className="mb-3 space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = new Set(openSidebarGroups);
+                      if (next.has(group.label)) {
+                        next.delete(group.label);
+                      } else {
+                        next.add(group.label);
+                      }
+                      setOpenSidebarGroups(next);
+                    }}
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] transition-colors rounded-md ${
+                      groupActive ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{group.label}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isGroupOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  <div
+                    className="grid transition-all duration-200 ease-in-out"
+                    style={{ gridTemplateRows: isGroupOpen ? '1fr' : '0fr' }}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="space-y-0.5 pt-0.5">
+                        {sectionGroups ? (
+                          sectionGroups.map((sg) => (
+                            <div key={sg.label}>
+                              <p className="px-3 pt-3 pb-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                                {sg.label}
+                              </p>
+                              {sg.items.map((item) => renderSidebarLink(
+                                String(item.to || '').startsWith('/approval-inbox')
+                                  ? { ...item, unreadCount: pendingApprovals }
+                                  : item,
+                                true,
+                                activeItemTo === item.to
+                              ))}
+                            </div>
+                          ))
+                        ) : (
+                          items.map((item) => renderSidebarLink(
+                            String(item.to || '').startsWith('/approval-inbox')
+                              ? { ...item, unreadCount: pendingApprovals }
+                              : item,
+                            true,
+                            activeItemTo === item.to
+                          ))
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               );

@@ -438,19 +438,60 @@ export default function TopNavigation({
 
                   {expanded ? (
                     <div role="menu" className="mt-2 space-y-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-                      {group.items.map((item) => (
-                        <MenuItemRow
-                          key={item.to}
-                          item={item}
-                          groupLabel={group.label}
-                          active={isItemActive(location.pathname, item, group.items)}
-                          onOpenExternal={onOpenExternal}
-                          onSelect={() => {
-                            setOpenGroup(null);
-                            onNavigate?.();
-                          }}
-                        />
-                      ))}
+                      {(() => {
+                        const hasSections = group.items?.some((i) => i.section);
+                        if (!hasSections) {
+                          return group.items?.map((item) => (
+                            <MenuItemRow
+                              key={item.to}
+                              item={item}
+                              groupLabel={group.label}
+                              active={isItemActive(location.pathname, item, group.items)}
+                              onOpenExternal={onOpenExternal}
+                              onSelect={() => {
+                                setOpenGroup(null);
+                                onNavigate?.();
+                              }}
+                            />
+                          ));
+                        }
+
+                        const sectionGroups = (group.items ?? []).reduce<{ label: string; items: typeof group.items }[]>((acc, item) => {
+                          const section = item.section ?? '';
+                          const last = acc[acc.length - 1];
+                          if (!last || last.label !== section) {
+                            acc.push({ label: section, items: [item] });
+                          } else {
+                            last.items.push(item);
+                          }
+                          return acc;
+                        }, []);
+
+                        return sectionGroups.map((sg) => (
+                          <div key={sg.label}>
+                            {sg.label ? (
+                              <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+                                {sg.label}
+                              </p>
+                            ) : null}
+                            <div className="space-y-1">
+                              {sg.items.map((item) => (
+                                <MenuItemRow
+                                  key={item.to}
+                                  item={item}
+                                  groupLabel={group.label}
+                                  active={isItemActive(location.pathname, item, group.items)}
+                                  onOpenExternal={onOpenExternal}
+                                  onSelect={() => {
+                                    setOpenGroup(null);
+                                    onNavigate?.();
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ));
+                      })()}
                     </div>
                   ) : null}
                 </div>
@@ -681,40 +722,123 @@ export default function TopNavigation({
                           <span className="whitespace-nowrap">{group.label}</span>
                         </div>
                         <div className="space-y-1">
-                          {group.items.map((item) => (
-                            <MenuItemRow
-                              key={item.to}
-                              item={item}
-                              groupLabel={group.label}
-                              active={isItemActive(location.pathname, item, group.items)}
-                              onOpenExternal={onOpenExternal}
-                              onSelect={() => {
-                                setOpenGroup(null);
-                                onNavigate?.();
-                              }}
-                            />
-                          ))}
+                          {(() => {
+                            const hasSections = group.items?.some((i) => i.section);
+                            if (!hasSections) {
+                              return group.items?.map((item) => (
+                                <MenuItemRow
+                                  key={item.to}
+                                  item={item}
+                                  groupLabel={group.label}
+                                  active={isItemActive(location.pathname, item, group.items)}
+                                  onOpenExternal={onOpenExternal}
+                                  onSelect={() => {
+                                    setOpenGroup(null);
+                                    onNavigate?.();
+                                  }}
+                                />
+                              ));
+                            }
+
+                            const sectionGroups = (group.items ?? []).reduce<{ label: string; items: typeof group.items }[]>((acc, item) => {
+                              const section = item.section ?? '';
+                              const last = acc[acc.length - 1];
+                              if (!last || last.label !== section) {
+                                acc.push({ label: section, items: [item] });
+                              } else {
+                                last.items.push(item);
+                              }
+                              return acc;
+                            }, []);
+
+                            return sectionGroups.map((sg) => (
+                              <div key={sg.label}>
+                                {sg.label ? (
+                                  <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+                                    {sg.label}
+                                  </p>
+                                ) : null}
+                                <div className="space-y-1">
+                                  {sg.items.map((item) => (
+                                    <MenuItemRow
+                                      key={item.to}
+                                      item={item}
+                                      groupLabel={group.label}
+                                      active={isItemActive(location.pathname, item, group.items)}
+                                      onOpenExternal={onOpenExternal}
+                                      onSelect={() => {
+                                        setOpenGroup(null);
+                                        onNavigate?.();
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            ));
+                          })()}
                         </div>
                       </div>
                     );
                   })}
                 </div>
               ) : (
-                groups
-                  .find((group) => group.label === openGroup)
-                  ?.items?.map((item) => (
-                    <MenuItemRow
-                      key={item.to}
-                      item={item}
-                      groupLabel={openGroup}
-                      active={isItemActive(location.pathname, item, groups.find((group) => group.label === openGroup)?.items)}
-                      onOpenExternal={onOpenExternal}
-                      onSelect={() => {
-                        setOpenGroup(null);
-                        onNavigate?.();
-                      }}
-                    />
-                  ))
+                (() => {
+                  const targetGroup = groups.find((group) => group.label === openGroup);
+                  const targetItems = targetGroup?.items ?? [];
+                  const hasSections = targetItems.some((i) => i.section);
+
+                  if (!hasSections) {
+                    return targetItems.map((item) => (
+                      <MenuItemRow
+                        key={item.to}
+                        item={item}
+                        groupLabel={openGroup}
+                        active={isItemActive(location.pathname, item, targetItems)}
+                        onOpenExternal={onOpenExternal}
+                        onSelect={() => {
+                          setOpenGroup(null);
+                          onNavigate?.();
+                        }}
+                      />
+                    ));
+                  }
+
+                  const sectionGroups = targetItems.reduce<{ label: string; items: typeof targetItems }[]>((acc, item) => {
+                    const section = item.section ?? '';
+                    const last = acc[acc.length - 1];
+                    if (!last || last.label !== section) {
+                      acc.push({ label: section, items: [item] });
+                    } else {
+                      last.items.push(item);
+                    }
+                    return acc;
+                  }, []);
+
+                  return sectionGroups.map((sg) => (
+                    <div key={sg.label}>
+                      {sg.label ? (
+                        <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+                          {sg.label}
+                        </p>
+                      ) : null}
+                      <div className="space-y-1">
+                        {sg.items.map((item) => (
+                          <MenuItemRow
+                            key={item.to}
+                            item={item}
+                            groupLabel={openGroup}
+                            active={isItemActive(location.pathname, item, targetItems)}
+                            onOpenExternal={onOpenExternal}
+                            onSelect={() => {
+                              setOpenGroup(null);
+                              onNavigate?.();
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()
               )}
             </div>,
             document.body

@@ -40,6 +40,7 @@ export type NavLinkItem = {
   label: string;
   to: string;
   icon: LucideIcon;
+  section?: string;
   unreadCount?: number;
   adminOnly?: boolean;
   strictAdminOnly?: boolean;
@@ -165,25 +166,28 @@ export const topNavigation: NavGroup[] = [
     icon: Wallet,
     planFeature: 'payroll',
     items: [
-      // Always-visible essentials (visible to all roles with payroll plan)
-      { label: 'My Payroll', to: '/my-payroll', icon: Wallet, planFeature: 'payroll' },
-      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll', adminOnly: true },
-      { label: 'Setup Wizard', to: '/payroll/setup', icon: Sparkles, planFeature: 'payroll', adminOnly: true },
-      { label: 'Tax Declarations', to: '/tax-declarations', icon: FileText, planFeature: 'payroll' },
-      { label: 'Loans & Advances', to: '/loans', icon: IndianRupee, planFeature: 'payroll' },
-      // All advanced features are always visible — no setup lock
-      { label: 'Tax Simulator', to: '/tax-simulator', icon: Calculator, planFeature: 'payroll' },
-      { label: 'Tax Proofs Review', to: '/tax-proofs', icon: FileText, planFeature: 'payroll', adminOnly: true },
-      { label: 'Salary Revisions', to: '/salary-revisions', icon: FileText, planFeature: 'payroll', adminOnly: true },
-      { label: 'FBP', to: '/fbp', icon: IndianRupee, planFeature: 'payroll', adminOnly: true },
-      { label: 'Perquisites', to: '/perquisites', icon: IndianRupee, planFeature: 'payroll', adminOnly: true },
-      { label: 'Reimbursements', to: '/reimbursements', icon: Receipt, planFeature: 'payroll', adminOnly: true },
-      { label: 'Pre-Payroll Checklist', to: '/pre-payroll-checklist', icon: ClipboardCheck, planFeature: 'payroll', adminOnly: true },
-      { label: 'Payroll Reports', to: '/payroll-reports', icon: BarChart3, planFeature: 'payroll', adminOnly: true },
-      { label: 'Arrears', to: '/arrears', icon: IndianRupee, planFeature: 'payroll', adminOnly: true },
-      { label: 'Leave Encashment', to: '/leave-encashment', icon: FileText, planFeature: 'payroll', adminOnly: true },
-      { label: 'F&F Settlements', to: '/fnf-settlements', icon: UserMinus, planFeature: 'payroll', adminOnly: true },
-      { label: 'Advanced Payroll', to: '/filings', icon: FileText, planFeature: 'payroll', adminOnly: true },
+      // Overview
+      { label: 'My Payroll', to: '/my-payroll', icon: Wallet, planFeature: 'payroll', section: 'Overview' },
+      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll', adminOnly: true, section: 'Overview' },
+      { label: 'Setup Wizard', to: '/payroll/setup', icon: Sparkles, planFeature: 'payroll', adminOnly: true, section: 'Overview' },
+      // Tax
+      { label: 'Tax Declarations', to: '/tax-declarations', icon: FileText, planFeature: 'payroll', section: 'Tax' },
+      { label: 'Tax Proofs Review', to: '/tax-proofs', icon: FileText, planFeature: 'payroll', adminOnly: true, section: 'Tax' },
+      { label: 'Tax Simulator', to: '/tax-simulator', icon: Calculator, planFeature: 'payroll', section: 'Tax' },
+      // Compensation
+      { label: 'Salary Revisions', to: '/salary-revisions', icon: FileText, planFeature: 'payroll', adminOnly: true, section: 'Compensation' },
+      { label: 'FBP', to: '/fbp', icon: IndianRupee, planFeature: 'payroll', adminOnly: true, section: 'Compensation' },
+      { label: 'Perquisites', to: '/perquisites', icon: IndianRupee, planFeature: 'payroll', adminOnly: true, section: 'Compensation' },
+      { label: 'Reimbursements', to: '/reimbursements', icon: Receipt, planFeature: 'payroll', adminOnly: true, section: 'Compensation' },
+      { label: 'Loans & Advances', to: '/loans', icon: IndianRupee, planFeature: 'payroll', section: 'Compensation' },
+      // Compliance
+      { label: 'Pre-Payroll Checklist', to: '/pre-payroll-checklist', icon: ClipboardCheck, planFeature: 'payroll', adminOnly: true, section: 'Compliance' },
+      { label: 'Arrears', to: '/arrears', icon: IndianRupee, planFeature: 'payroll', adminOnly: true, section: 'Compliance' },
+      { label: 'Leave Encashment', to: '/leave-encashment', icon: FileText, planFeature: 'payroll', adminOnly: true, section: 'Compliance' },
+      { label: 'F&F Settlements', to: '/fnf-settlements', icon: UserMinus, planFeature: 'payroll', adminOnly: true, section: 'Compliance' },
+      // Reports & Advanced
+      { label: 'Payroll Reports', to: '/payroll-reports', icon: BarChart3, planFeature: 'payroll', adminOnly: true, section: 'Reports & Advanced' },
+      { label: 'Advanced Payroll', to: '/filings', icon: FileText, planFeature: 'payroll', adminOnly: true, section: 'Reports & Advanced' },
     ],
   },
   {
