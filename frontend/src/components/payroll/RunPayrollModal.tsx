@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Loader2, CheckCircle, AlertCircle, Building2, Users, DollarSign } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { payrollApi } from '@/services/api';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import type { PayrollDepartment } from '@/types';
@@ -91,7 +91,7 @@ export default function RunPayrollModal({
       setStep('error');
       setProcessingStatus({
         status: 'error',
-        message: err instanceof Error ? err.message : 'Failed to process payroll',
+        message: getApiErrorMessage(err, 'Failed to process payroll'),
         processedCount: 0,
         totalCount: 0,
         errors: [err instanceof Error ? err.message : 'Unknown error'],

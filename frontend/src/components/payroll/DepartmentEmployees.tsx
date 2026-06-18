@@ -15,7 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { payrollApi } from '@/services/api';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -289,6 +289,9 @@ export default function DepartmentEmployees({
         const reasons = data.failed.map((f: { user_id: number; reason: string }) => `#${f.user_id}: ${f.reason}`).join('\n');
         alert(`Processed ${data.succeeded.length} • Failed ${data.failed.length}\n\n${reasons}`);
       }
+    },
+    onError: (err: any) => {
+      alert(getApiErrorMessage(err, 'Bulk process failed. The run may already be paid or released.'));
     },
   });
 

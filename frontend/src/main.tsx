@@ -10,6 +10,7 @@ import AppMetadataManager from './components/seo/AppMetadataManager'
 import AnalyticsRouteTracker from './components/analytics/AnalyticsRouteTracker'
 import CookieConsentBanner from './components/public/CookieConsentBanner'
 import RouteViewportManager from './components/router/RouteViewportManager'
+import { ToastProvider } from './components/ui/Toast'
 import { installDesktopTrackerCompatibilityMarkers } from './lib/desktopTrackerCompatibility'
 import './index.css'
 
@@ -137,17 +138,19 @@ installDesktopTrackerCompatibilityMarkers()
 function AppProviders({ children }: { children: React.ReactNode }) {
   const appContent = (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter future={routerFuture}>
-        <ConsentProvider>
-          <AuthProvider>
-            <RouteViewportManager />
-            <AppMetadataManager />
-            <AnalyticsRouteTracker />
-            <CookieConsentBanner />
-            {children}
-          </AuthProvider>
-        </ConsentProvider>
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter future={routerFuture}>
+          <ConsentProvider>
+            <AuthProvider>
+              <RouteViewportManager />
+              <AppMetadataManager />
+              <AnalyticsRouteTracker />
+              <CookieConsentBanner />
+              {children}
+            </AuthProvider>
+          </ConsentProvider>
+        </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   )
 

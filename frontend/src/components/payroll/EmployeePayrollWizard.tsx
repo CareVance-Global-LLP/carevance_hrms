@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  ArrowLeft, 
-  Save, 
+import {
+  ArrowLeft,
+  Save,
   Calculator,
   User,
   Clock,
@@ -16,16 +16,18 @@ import {
   Wallet,
   Play,
   Loader2,
-  Activity
+  Activity,
+  ListChecks,
 } from 'lucide-react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { payrollApi } from '@/services/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import ProgressSteps from './ProgressSteps';
 import SalaryBreakdown from './SalaryBreakdown';
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import { useToast } from '@/components/ui/Toast';
 import type { EmployeePayrollDetails, EmployeePayrollTemplate, PayrollCalculation } from '@/types';
 
 interface EmployeePayrollWizardProps {
@@ -33,6 +35,7 @@ interface EmployeePayrollWizardProps {
   monthYear: string;
   onBack: () => void;
   onComplete?: () => void;
+  onViewRun?: (runId: number) => void;
 }
 
 const CTC_PRESETS = [
@@ -51,12 +54,14 @@ const WIZARD_STEPS = [
   { id: 'review', label: 'Review & Process', description: 'Confirm and save' },
 ];
 
-export default function EmployeePayrollWizard({ 
-  employeeId, 
-  monthYear, 
+export default function EmployeePayrollWizard({
+  employeeId,
+  monthYear,
   onBack,
-  onComplete 
+  onComplete,
+  onViewRun,
 }: EmployeePayrollWizardProps) {
+  const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(0);
   const [annualCtc, setAnnualCtc] = useState('');
   const [workingDays, setWorkingDays] = useState('26');
@@ -66,6 +71,9 @@ export default function EmployeePayrollWizard({
   const [isEditingAttendance, setIsEditingAttendance] = useState(false);
   const [template, setTemplate] = useState<EmployeePayrollTemplate | null>(null);
   const [calculation, setCalculation] = useState<PayrollCalculation | null>(null);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [calcError, setCalcError] = useState<string | null>(null);
+  const [processedRunId, setProcessedRunId] = useState<number | null>(null);
 
   // Fetch employee data
   const { data, isLoading } = useQuery({
@@ -119,6 +127,8 @@ export default function EmployeePayrollWizard({
   });
 
   // Process payroll mutation
+  const { show } = useToast();
+
   const processPayrollMutation = useMutation({
     mutationFn: () => payrollApi.processEmployeePayroll(employeeId, {
       user_id: employeeId,
@@ -129,8 +139,23 @@ export default function EmployeePayrollWizard({
       lOP_days: parseFloat(lOPDays) || 0,
       overtime_hours: parseFloat(overtimeHours) || 0,
     }),
-    onSuccess: () => {
-      onComplete?.();
+    onSuccess: (data) => {
+      // Refresh dependent views so the next screen shows fresh data
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'department'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'run-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'employee', employeeId, monthYear] });
+      // Capture the run id so the success view can offer to open the lifecycle stepper
+      setProcessedRunId((data as any)?.payroll_item?.payroll_run_id ?? null);
+      // Note: don't auto-navigate. Let the success view render so the user
+      // can act (view lifecycle / go back manually).
+    },
+    onError: (err: any) => {
+      show({
+        kind: 'error',
+        message: getApiErrorMessage(err, 'Failed to process payroll. Please check the run status and try again.'),
+      });
     },
   });
 
@@ -184,10 +209,25 @@ export default function EmployeePayrollWizard({
     }
   }, [data?.attendance_summary, data?.time_tracking]);
 
+  // Auto-trigger calculation when CTC becomes a positive number (after template loads).
+  // The 500ms debounce lets the user finish typing before we hit the API.
+  // Intentionally not depending on `template` to avoid refire loops when template toggles change.
+  useEffect(() => {
+    if (!template) return;
+    const ctc = parseFloat(annualCtc);
+    if (!Number.isFinite(ctc) || ctc <= 0) return;
+    const t = setTimeout(() => {
+      calculatePreview();
+    }, 500);
+    return () => clearTimeout(t);
+  }, [annualCtc]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Calculate preview
   const calculatePreview = async () => {
     if (!annualCtc || !template) return;
-    
+
+    setIsCalculating(true);
+    setCalcError(null);
     try {
       const res = await payrollApi.calculate({
         user_id: employeeId,
@@ -196,7 +236,7 @@ export default function EmployeePayrollWizard({
         tax_regime: template.tax_regime ?? 'new',
         is_metro_city: template.is_metro_city ?? true,
       });
-      
+
       // Apply template toggles
       const calc = res.data.calculation;
       const updatedCalculation: PayrollCalculation = {
@@ -217,20 +257,24 @@ export default function EmployeePayrollWizard({
           },
         },
       };
-      
+
       // Recalculate total deductions and net
-      const totalDeductions = 
+      const totalDeductions =
         (template.pf_enabled ? updatedCalculation.components.deductions.pf_employee : 0) +
         (template.esi_enabled ? updatedCalculation.components.deductions.esi_employee : 0) +
         (template.pt_enabled ? updatedCalculation.components.deductions.pt : 0) +
         (template.tds_enabled ? updatedCalculation.components.deductions.tds : 0);
-      
+
       updatedCalculation.monthly.total_deductions = totalDeductions;
       updatedCalculation.monthly.net = updatedCalculation.monthly.gross - totalDeductions;
-      
+
       setCalculation(updatedCalculation);
-    } catch (error) {
+    } catch (error: any) {
+      const message = getApiErrorMessage(error, 'Failed to calculate payroll. Please check your inputs.');
+      setCalcError(message);
       console.error('Calculation failed:', error);
+    } finally {
+      setIsCalculating(false);
     }
   };
 
@@ -783,18 +827,40 @@ export default function EmployeePayrollWizard({
         </div>
       </SurfaceCard>
 
-      <div className="flex justify-between">
-        <Button variant="secondary" onClick={() => setCurrentStep(0)}>
-          Back
-        </Button>
-        <Button 
-          variant="primary" 
-          onClick={() => setCurrentStep(2)}
-          disabled={!calculation}
-          iconRight={<ChevronRight className="h-4 w-4" />}
-        >
-          Review & Process
-        </Button>
+      <div className="flex flex-col gap-2">
+        {calcError && (
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2 text-sm">
+            <AlertCircle className="h-4 w-4 text-rose-600 flex-shrink-0 mt-0.5" />
+            <p className="text-rose-700 flex-1 break-words">{calcError}</p>
+            <button onClick={() => setCalcError(null)} className="text-rose-400 hover:text-rose-600">×</button>
+          </div>
+        )}
+        <div className="flex justify-between">
+          <Button variant="secondary" onClick={() => setCurrentStep(0)}>
+            Back
+          </Button>
+          <Button
+            variant="primary"
+            onClick={async () => {
+              if (!calculation && parseFloat(annualCtc) > 0 && template) {
+                // No preview yet — try to calculate, then advance if it worked.
+                await calculatePreview();
+              }
+              setCurrentStep(2);
+            }}
+            disabled={isCalculating || !annualCtc || parseFloat(annualCtc) <= 0}
+            iconLeft={isCalculating ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+            iconRight={!isCalculating ? <ChevronRight className="h-4 w-4" /> : undefined}
+          >
+            {isCalculating
+              ? 'Calculating…'
+              : calculation
+                ? 'Review & Process'
+                : parseFloat(annualCtc) > 0
+                  ? 'Calculate & Continue'
+                  : 'Enter CTC to continue'}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -830,18 +896,41 @@ export default function EmployeePayrollWizard({
           {/* Confirmation */}
           <SurfaceCard className={`p-6 ${processPayrollMutation.isSuccess ? 'bg-emerald-50 border-emerald-200' : ''}`}>
             {processPayrollMutation.isSuccess ? (
-              <div className="text-center">
+              <div className="text-center py-2">
                 <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-emerald-600" />
                 <h3 className="text-lg font-semibold text-emerald-900 mb-2">Payroll Processed Successfully!</h3>
-                <p className="text-emerald-700 mb-4">Employee payroll has been calculated and saved.</p>
-                <div className="flex justify-center gap-3">
+                <p className="text-emerald-700 mb-5">Employee payroll has been calculated and saved.</p>
+
+                <div className="bg-white border border-blue-200 rounded-lg p-4 mb-5 text-left max-w-md mx-auto">
+                  <div className="flex items-center gap-2 mb-3">
+                    <ListChecks className="h-4 w-4 text-blue-600" />
+                    <p className="text-sm font-semibold text-blue-900">What's next?</p>
+                  </div>
+                  <ol className="text-sm text-slate-700 space-y-1.5">
+                    <li className="flex gap-2"><span className="font-semibold text-blue-600">1.</span> <span><strong>Lock</strong> the run to finalize calculations.</span></li>
+                    <li className="flex gap-2"><span className="font-semibold text-blue-600">2.</span> <span><strong>Approve</strong> as admin / manager.</span></li>
+                    <li className="flex gap-2"><span className="font-semibold text-blue-600">3.</span> <span><strong>Release</strong> to generate the bank file.</span></li>
+                    <li className="flex gap-2"><span className="font-semibold text-blue-600">4.</span> <span><strong>Disburse</strong> via your banking portal.</span></li>
+                  </ol>
+                </div>
+
+                <div className="flex justify-center gap-3 flex-wrap">
                   <Button variant="secondary" onClick={onBack}>
                     Back to Department
                   </Button>
-                  <Button variant="primary" iconLeft={<DollarSign className="h-4 w-4" />}>
-                    Process Payment
-                  </Button>
+                  {processedRunId && onViewRun && (
+                    <Button
+                      variant="primary"
+                      iconLeft={<Activity className="h-4 w-4" />}
+                      onClick={() => onViewRun(processedRunId)}
+                    >
+                      View Run Lifecycle
+                    </Button>
+                  )}
                 </div>
+                <p className="text-xs text-slate-500 mt-4">
+                  Tip: you can always re-open this run from <strong>Recent Payroll Runs</strong> on the dashboard.
+                </p>
               </div>
             ) : (
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

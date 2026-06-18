@@ -252,6 +252,30 @@ api.interceptors.response.use(
   }
 );
 
+/**
+ * Extract a user-friendly error message from an axios error.
+ * Backend usually returns { success: false, message: '...' } on 4xx and
+ * the validation 422 response has { message: '...' } or { errors: { field: [...] } }.
+ * Falls back to a generic message for unexpected shapes.
+ */
+export function getApiErrorMessage(err: any, fallback = 'Something went wrong. Please try again.'): string {
+  const data = err?.response?.data;
+  if (!data) {
+    if (err?.code === 'ECONNABORTED') return 'Request timed out. Please try again.';
+    if (err?.message?.includes('Network Error')) return 'Network error. Check your connection.';
+    return err?.message || fallback;
+  }
+  if (typeof data.message === 'string' && data.message.trim()) {
+    return data.message;
+  }
+  if (data.errors && typeof data.errors === 'object') {
+    const first = Object.keys(data.errors)[0];
+    const msg = first ? data.errors[first]?.[0] : null;
+    if (msg) return `${first}: ${msg}`;
+  }
+  return fallback;
+}
+
 // Auth API
 export const authApi = {
   login: (data: LoginRequest) => 
@@ -1686,7 +1710,10 @@ export const payrollApi = {
     }),
 
   generateBankFile: (runId: number) =>
-    api.get<{ success: boolean; filename: string; content: string; entries: any[]; total_amount: number; total_employees: number }>(`/payroll/runs/${runId}/bank-file`),
+    api.get<{ success: boolean; filename: string; content: string; entries: any[]; total_amount: number; total_employees: number; total_pending: number; skipped_employees: any[]; partial: boolean }>(`/payroll/runs/${runId}/bank-file`),
+
+  getRunMissingBankDetails: (runId: number) =>
+    api.get<{ success: boolean; run_id: number; missing_count: number; missing_employees: any[] }>(`/payroll/runs/${runId}/missing-bank-details`),
 
   generateBulkPayslips: (runId: number) =>
     api.get<{ success: boolean; run: any; payslips: any[]; total_employees: number }>(`/payroll/runs/${runId}/payslips`),

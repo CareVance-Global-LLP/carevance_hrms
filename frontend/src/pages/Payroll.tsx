@@ -20,7 +20,7 @@ export default function PayrollPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<number>(0);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number>(0);
-  const [selectedMonth] = useState(() => {
+  const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
@@ -118,6 +118,8 @@ export default function PayrollPage() {
       <div className="p-6">
         {viewMode === 'dashboard' && (
           <PayrollDashboard
+            selectedMonth={selectedMonth}
+            onMonthChange={setSelectedMonth}
             onSelectDepartment={handleSelectDepartment}
             onSelectEmployee={handleSelectEmployee}
             onOpenRunPayroll={handleOpenRunPayroll}
@@ -147,6 +149,7 @@ export default function PayrollPage() {
             monthYear={selectedMonth}
             onBack={handleBackToDepartment}
             onComplete={() => setViewMode('department')}
+            onViewRun={handleOpenRunDetail}
           />
         )}
 

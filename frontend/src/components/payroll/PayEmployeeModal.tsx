@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Wallet, IndianRupee, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { payrollApi } from '@/services/api';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -46,7 +46,7 @@ export default function PayEmployeeModal({ isOpen, onClose, employee, onSuccess 
         onClose();
       }, 800);
     },
-    onError: (e: any) => setError(e?.response?.data?.message || e?.message || 'Failed to record payment'),
+    onError: (e: any) => setError(getApiErrorMessage(e, 'Failed to record payment')),
   });
 
   if (!isOpen || !employee) return null;

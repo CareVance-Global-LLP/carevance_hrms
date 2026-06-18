@@ -27,6 +27,8 @@ import { cn } from '@/utils/cn';
 import type { PayrollDepartment, PayrollStats } from '@/types';
 
 interface PayrollDashboardProps {
+  selectedMonth?: string;
+  onMonthChange?: (month: string) => void;
   onSelectDepartment: (departmentId: number) => void;
   onSelectEmployee: (employeeId: number) => void;
   onOpenRunPayroll: (stats: PayrollStats, departments: PayrollDepartment[]) => void;
@@ -185,6 +187,8 @@ function QuickActionCard({
 }
 
 export default function PayrollDashboard({
+  selectedMonth: selectedMonthProp,
+  onMonthChange,
   onSelectDepartment,
   onOpenRunPayroll,
   onOpenDepartmentTemplates,
@@ -195,10 +199,12 @@ export default function PayrollDashboard({
   // onSelectEmployee is declared in the interface so the parent (Payroll.tsx)
   // can still wire it; the legacy dashboard's current widgets don't drill into
   // a single employee, so we don't destructure it here.
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  const fallbackMonth = useMemo(() => {
     const now = new Date();
     return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  });
+  }, []);
+  const selectedMonth = selectedMonthProp ?? fallbackMonth;
+  const setSelectedMonth = (m: string) => onMonthChange?.(m);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch data

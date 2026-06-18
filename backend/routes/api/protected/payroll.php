@@ -91,6 +91,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     
     // Bank File
     Route::get('/runs/{runId}/bank-file', [PayrollDepartmentController::class, 'generateBankFile']);
+    Route::get('/runs/{runId}/missing-bank-details', [PayrollDepartmentController::class, 'getRunMissingBankDetails']);
     
     // Bulk Payslips
     Route::get('/runs/{runId}/payslips', [PayrollDepartmentController::class, 'generateBulkPayslips']);

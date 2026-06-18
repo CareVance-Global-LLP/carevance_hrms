@@ -718,7 +718,7 @@ class PayrollDepartmentController extends Controller
                 'pt' => $ptAmount,
                 'tds' => $tdsAmount,
                 'lOP_deduction' => $lOPDeduction,
-                'custom_deductions' => $customDeductions,
+                'custom_deductions' => $loanEmiAmount,
                 'total_deductions' => $totalDeductions,
                 'pf_employer' => $template->pf_enabled ? $calculation['components']['employer_contributions']['pf_employer'] : 0,
                 'eps' => $template->pf_enabled ? $calculation['components']['employer_contributions']['eps'] : 0,
@@ -1351,7 +1351,7 @@ class PayrollDepartmentController extends Controller
     {
         $organizationId = $request->user()->organization_id;
 
-        $item = \App\Models\PayrollItem::whereHas('run', function ($q) use ($organizationId) {
+        $item = \App\Models\PayrollItem::whereHas('payrollRun', function ($q) use ($organizationId) {
             $q->where('organization_id', $organizationId);
         })->where('id', $itemId)->firstOrFail();
 
@@ -1447,10 +1447,24 @@ class PayrollDepartmentController extends Controller
         $entries = [];
         $serialNo = 1;
         $totalAmount = 0;
+        $skipped = [];
 
         foreach ($items as $item) {
             $bankAccount = $item->user->employeeBankAccounts->first();
             if (!$bankAccount || !$bankAccount->account_number || !$bankAccount->ifsc_swift) {
+                // Track skipped employees so the frontend can warn the user
+                // instead of silently producing a partial bank file.
+                $missing = [];
+                if (!$bankAccount || !$bankAccount->account_number) $missing[] = 'account_number';
+                if (!$bankAccount || !$bankAccount->ifsc_swift) $missing[] = 'ifsc_swift';
+
+                $skipped[] = [
+                    'user_id' => $item->user_id,
+                    'name' => $item->user->name,
+                    'email' => $item->user->email,
+                    'net_pay' => $item->net_pay,
+                    'missing_fields' => $missing,
+                ];
                 continue;
             }
 
@@ -1489,6 +1503,54 @@ class PayrollDepartmentController extends Controller
             'entries' => $entries,
             'total_amount' => $totalAmount,
             'total_employees' => count($entries),
+            'total_pending' => $items->count(),
+            'skipped_employees' => $skipped,
+            'partial' => count($skipped) > 0,
+        ]);
+    }
+
+    /**
+     * List employees in a run who are missing valid bank details.
+     * Used by the frontend to surface a warning banner before the user
+     * downloads a bank file or tries to disburse.
+     */
+    public function getRunMissingBankDetails(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        $items = PayrollItem::where('payroll_run_id', $run->id)
+            ->with(['user.employeeBankAccounts'])
+            ->where('payment_status', 'pending')
+            ->get();
+
+        $missing = $items->filter(function ($item) {
+            $bank = $item->user->employeeBankAccounts->first();
+            return !$bank || !$bank->account_number || !$bank->ifsc_swift;
+        })->map(function ($item) {
+            $bank = $item->user->employeeBankAccounts->first();
+            $missingFields = [];
+            if (!$bank || !$bank->account_number) $missingFields[] = 'account_number';
+            if (!$bank || !$bank->ifsc_swift) $missingFields[] = 'ifsc_swift';
+
+            return [
+                'user_id' => $item->user_id,
+                'name' => $item->user->name,
+                'email' => $item->user->email,
+                'net_pay' => $item->net_pay,
+                'has_partial_account' => (bool) $bank,
+                'missing_fields' => $missingFields,
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'run_id' => $run->id,
+            'missing_count' => $missing->count(),
+            'missing_employees' => $missing,
         ]);
     }
 
