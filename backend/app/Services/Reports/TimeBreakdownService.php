@@ -4,28 +4,23 @@ namespace App\Services\Reports;
 
 class TimeBreakdownService
 {
-    public function build(int $trackedDuration, int $idleDuration, int $totalActivityDuration = 0): array
+    public function build(int $trackedDuration, int $idleDuration, int $nonIdleActivityDuration = 0): array
     {
         $totalDuration = max(0, $trackedDuration);
 
-        // When activities span a wider range than the time entries (e.g. full-day
+        // When non-idle activities span a wider range than the time entries (e.g. full-day
         // activities vs. per-timer tracking), pro-rata idle to the tracked period
         // so that idle from outside the timer windows doesn't erase tracked work.
-        if ($totalActivityDuration > $totalDuration && $totalActivityDuration > 0) {
-            $idleDuration = (int) round($idleDuration * ($totalDuration / $totalActivityDuration));
+        // IMPORTANT: Only non-idle activity duration is used here. Including idle
+        // activity durations inflates the denominator and incorrectly reduces idle
+        // (e.g., cumulative idle updates of 60+180+300=540 vs actual merged 300).
+        if ($nonIdleActivityDuration > $totalDuration && $nonIdleActivityDuration > 0) {
+            $idleDuration = (int) round($idleDuration * ($totalDuration / $nonIdleActivityDuration));
         }
 
+        // Never reduce idle below what the actual idle records report.
+        // Legitimate idle can be 100% of tracked time (e.g., auto-stop after idle detection).
         $normalizedIdleDuration = min(max(0, $idleDuration), $totalDuration);
-        
-        // Sanity check: if idle equals total tracked time but there are activity events,
-        // this suggests incorrect idle detection. Cap idle at 95% to ensure some working time.
-        // This handles cases where desktop app incorrectly reports all time as idle
-        // while user is actually working on activities.
-        $maxIdleRatio = 0.95;
-        if ($normalizedIdleDuration >= $totalDuration * $maxIdleRatio && $totalActivityDuration > 0) {
-            $normalizedIdleDuration = (int) ($totalDuration * $maxIdleRatio);
-        }
-        
         $workingDuration = max($totalDuration - $normalizedIdleDuration, 0);
 
         return [

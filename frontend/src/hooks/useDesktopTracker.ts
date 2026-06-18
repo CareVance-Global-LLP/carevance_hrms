@@ -962,7 +962,8 @@ export const useDesktopTracker = () => {
 
       if (activeSegmentRef.current?.kind !== 'idle') {
         if (pendingIdleRewindRef.current.size > 0) {
-          await rewindTrackedIdleWindow(recordedAt);
+          const rewindRecordedAt = new Date(lastActivityAtMs).toISOString();
+          await rewindTrackedIdleWindow(rewindRecordedAt);
         }
         activeSegmentRef.current = null;
       }
@@ -1109,6 +1110,11 @@ export const useDesktopTracker = () => {
             ? Math.max(1, Math.floor(retryAfterSecondsRaw))
             : 15;
           idleStopBlockedUntilMsRef.current = Date.now() + (retryAfterSeconds * 1000);
+
+          // Reset attempt counter on 409 — the backend said "try again later",
+          // not "permanently denied". Without this, the client permanently gives
+          // up after IDLE_STOP_MAX_ATTEMPTS_PER_ENTRY (3) retries.
+          idleStopAttemptsPerEntryRef.current.set(activeEntry.id, 0);
 
           if (activeSegmentRef.current?.kind === 'idle') {
             try {

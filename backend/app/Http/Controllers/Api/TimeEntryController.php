@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TimeEntryController extends Controller
@@ -656,11 +657,66 @@ class TimeEntryController extends Controller
             ->orderByDesc('start_time')
             ->get();
 
-        if ($staleEntries->isEmpty()) {
+        if ($staleEntries->isNotEmpty()) {
+            $this->closeRunningEntries($staleEntries, $boundaryAt);
+        }
+
+        $this->closeIdleRunningEntry($userId);
+    }
+
+    /**
+     * Real-time idle check: if the running timer has no non-idle activity
+     * beyond the idle threshold, auto-stop it as a server-side fallback
+     * for desktop-driven idle detection.
+     */
+    private function closeIdleRunningEntry(int $userId): void
+    {
+        $idleThreshold = max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
+        $cutoff = now()->subSeconds($idleThreshold);
+
+        $entry = $this->runningEntriesQuery($userId, 'primary')
+            ->where('start_time', '<', $cutoff)
+            ->orderByDesc('start_time')
+            ->first();
+
+        if (! $entry) {
             return;
         }
 
-        $this->closeRunningEntries($staleEntries, $boundaryAt);
+        // Check for recent non-idle activity
+        $lastActiveAt = \App\Models\Activity::query()
+            ->where('user_id', $userId)
+            ->where('type', '!=', 'idle')
+            ->where('recorded_at', '>=', $cutoff)
+            ->orderByDesc('recorded_at')
+            ->first(['recorded_at']);
+
+        if ($lastActiveAt) {
+            return; // Recent activity found — not idle
+        }
+
+        // No recent activity — auto-stop
+        $now = now();
+        $startTime = Carbon::parse($entry->start_time);
+        $duration = (int) max(0, $startTime->diffInSeconds($now));
+
+        $entry->timestamps = false;
+        $entry->update([
+            'end_time' => $now,
+            'duration' => $duration,
+            'auto_stopped_for_idle' => true,
+        ]);
+
+        $this->closeOpenAttendancePunches($userId, $now);
+
+        Log::info('Running timer auto-stopped by real-time idle check', [
+            'time_entry_id' => $entry->id,
+            'user_id' => $userId,
+            'start_time' => $entry->start_time->toIso8601String(),
+            'end_time' => $now->toIso8601String(),
+            'idle_seconds' => $idleThreshold,
+            'auto_stopped_for_idle' => true,
+        ]);
     }
 
     private function resolveProjectAndTask(Request $request, User $user, ?TimeEntry $existingEntry = null): array|JsonResponse
@@ -768,11 +824,20 @@ class TimeEntryController extends Controller
             ->orderByDesc('recorded_at')
             ->first();
 
-        $lastActiveAt = $reportedLastActivityAt && $reportedLastActivityAt->betweenIncluded($sessionStartAt, $stoppedAt)
-            ? $reportedLastActivityAt
-            : ($lastNonIdleActivity?->recorded_at
+        // When the client's system idle API confirms >= threshold seconds of
+        // idle, trust the client-reported lastActivityAt over database activity
+        // record timestamps. The activity records may have inflated recorded_at
+        // values because rewindTrackedIdleWindow uses idle-detection time
+        // (~180s after actual idle) instead of the actual last user interaction.
+        if ($reportedLastActivityAt && $reportedIdleSeconds >= $idleAutoStopThresholdSeconds) {
+            $lastActiveAt = $reportedLastActivityAt;
+        } elseif ($reportedLastActivityAt && $reportedLastActivityAt->betweenIncluded($sessionStartAt, $stoppedAt)) {
+            $lastActiveAt = $reportedLastActivityAt;
+        } else {
+            $lastActiveAt = $lastNonIdleActivity?->recorded_at
                 ? Carbon::parse($lastNonIdleActivity->recorded_at)
-                : $sessionStartAt);
+                : $sessionStartAt;
+        }
 
         $idleStartAt = $lastActiveAt;
 
@@ -898,5 +963,35 @@ class TimeEntryController extends Controller
             'longitude' => $request->longitude,
             'accuracy_meters' => $request->filled('accuracy') ? (int) $request->accuracy : null,
         ]);
+    }
+
+    private function closeOpenAttendancePunches(int $userId, Carbon $cutoff): void
+    {
+        $today = now()->toDateString();
+        $record = DB::table('attendance_records')
+            ->where('user_id', $userId)
+            ->whereDate('attendance_date', $today)
+            ->first();
+
+        if (!$record) {
+            return;
+        }
+
+        $openPunches = DB::table('attendance_punches')
+            ->where('attendance_record_id', $record->id)
+            ->whereNull('punch_out_at')
+            ->get();
+
+        foreach ($openPunches as $punch) {
+            DB::table('attendance_punches')
+                ->where('id', $punch->id)
+                ->update(['punch_out_at' => $cutoff]);
+        }
+
+        if ($openPunches->isNotEmpty()) {
+            DB::table('attendance_records')
+                ->where('id', $record->id)
+                ->update(['check_out_at' => $cutoff]);
+        }
     }
 }

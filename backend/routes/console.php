@@ -285,3 +285,8 @@ Artisan::command('schedule:tasks-recurrences', function () {
 Artisan::command('schedule:timers-close-stale', function () {
     $this->call('timers:close-stale');
 })->everyFifteenMinutes();
+
+// Schedule: auto-stop idle timers every minute (server-side fallback for desktop idle detection)
+Artisan::command('schedule:timers-close-idle', function () {
+    $this->call('timers:close-idle');
+})->everyMinute();

@@ -713,13 +713,15 @@ class ReportController extends Controller
                 ->sum('manual_adjustment_seconds');
         $activities = $this->activityFeedService->forUsersInRangeForIdle([$user->id], $startDate, $endDate);
         $activityTotalDuration = (int) $activities->sum('duration');
+        // Only non-idle activity for pro-rata (idle records inflate the total)
+        $nonIdleActivityDuration = (int) $activities->reject(fn ($a) => ($a->type ?? null) === 'idle')->sum('duration');
         $idleDuration = $this->safeCalculateIdleTime($activities, [
             'report' => 'productivity',
             'user_id' => $user->id,
             'start_date' => $startDate->toDateString(),
             'end_date' => $endDate->toDateString(),
         ]);
-        $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration, $activityTotalDuration);
+        $timeBreakdown = $this->timeBreakdownService->build($trackedDuration, $idleDuration, $nonIdleActivityDuration);
         $score = $this->timeBreakdownService->productivityScore($trackedDuration, $idleDuration);
 
         return response()->json([
@@ -1116,16 +1118,18 @@ class ReportController extends Controller
             $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow) + $adjustmentDuration;
             $rawIdleDuration = (int) ($idleDurationByUser[(int) $user->id] ?? 0);
             
-            // Calculate activity total duration for pro-rata idle scaling consistency
+            // Non-idle activity duration for pro-rata scaling.
+            // IMPORTANT: idle records inflate the total (cumulative updates sum to more
+            // than the merged interval), which incorrectly reduces idle via pro-rata.
             $userActivities = $activitiesByUser->get($user->id, collect());
-            $activityTotalDuration = (int) $userActivities->sum('duration');
+            $nonIdleActivityDuration = (int) $userActivities->reject(fn ($a) => ($a->type ?? null) === 'idle')->sum('duration');
             
             // Enhanced idle validation with automatic correction
             $validatedIdle = $this->idleValidationService->validateIdleTime(
                 $user->id,
                 $trackedDuration,
                 $rawIdleDuration,
-                $activityTotalDuration,
+                $nonIdleActivityDuration,
                 [
                     'source' => 'buildLiteOverallReport',
                     'start_date' => $startDate->toDateTimeString(),
@@ -1139,7 +1143,7 @@ class ReportController extends Controller
             $timeBreakdown = $this->timeBreakdownService->build(
                 $trackedDuration,
                 $idleDuration,
-                $activityTotalDuration
+                $nonIdleActivityDuration
             );
             $attendanceSummary = $this->buildOverallAttendanceSummary($userAttendanceRecords, $calendarDaysCount);
 
@@ -2835,7 +2839,8 @@ class ReportController extends Controller
         Carbon $resolvedNow,
     ): array {
         $activities = $this->activityFeedService->forUsersInRangeForIdle([$selectedUser->id], $startDate, $endDate);
-        $activityTotalDuration = (int) collect($activities)->sum('duration');
+        // Only non-idle activity duration for pro-rata (idle records inflate the total)
+        $nonIdleActivityDuration = (int) collect($activities)->reject(fn ($a) => ($a->type ?? null) === 'idle')->sum('duration');
         $rawIdleDuration = $this->safeCalculateIdleTime($activities, [
             'report' => 'dashboard_selected_employee',
             'user_id' => $selectedUser->id,
@@ -2849,7 +2854,7 @@ class ReportController extends Controller
             $selectedUser->id,
             $trackedDuration,
             $rawIdleDuration,
-            $activityTotalDuration,
+            $nonIdleActivityDuration,
             [
                 'source' => 'buildLiteEmployeeInsights',
                 'start_date' => $startDate->toDateTimeString(),
@@ -2862,7 +2867,7 @@ class ReportController extends Controller
         $timeBreakdown = $this->timeBreakdownService->build(
             $trackedDuration,
             $idleDuration,
-            $activityTotalDuration
+            $nonIdleActivityDuration
         );
         $isWorking = TimeEntry::query()
             ->where('user_id', $selectedUser->id)
