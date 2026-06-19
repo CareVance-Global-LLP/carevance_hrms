@@ -7,7 +7,6 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
-        "barryvdh/laravel-dompdf": "*",
         "dompdf/dompdf": "3.1",
         "google/apiclient": "*",
         "guzzlehttp/guzzle": "*",

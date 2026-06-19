@@ -70,7 +70,9 @@ export default function PayEmployeeModal({ isOpen, onClose, employee, onSuccess 
               <Wallet className="h-5 w-5 text-blue-600" />
               Mark as Paid
             </h2>
-            <p className="text-xs text-slate-500 mt-0.5">Record a payment for this employee outside the bulk bank file.</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Record a payment for this employee outside the bulk bank file.
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg" aria-label="Close">
             <X className="h-5 w-5 text-slate-500" />
@@ -107,9 +109,19 @@ export default function PayEmployeeModal({ isOpen, onClose, employee, onSuccess 
             )}
           </div>
 
+          {/* Lifecycle context — make the run-status impact explicit */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 space-y-1">
+            <p className="font-semibold text-slate-900">What this does</p>
+            <ul className="list-disc list-inside space-y-0.5">
+              <li>Marks <strong>{employee.name}</strong>'s payslip as <em>paid</em> with the chosen method and reference.</li>
+              <li>The payroll <strong>run status does not change</strong> — it stays where it was (Draft / Locked / Approved / Released).</li>
+              <li>To finalize the entire run, open the run lifecycle from "Recent Payroll Runs" and use <strong>Disburse Payments</strong>.</li>
+            </ul>
+          </div>
+
           {!employee.payrollItemId && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-              Tip: For bulk payouts, use the bank file from the run detail. This is best for one-off corrections.
+              <strong>No payslip yet.</strong> Process this employee's payroll first (via department → employee), then come back here to record a payment.
             </div>
           )}
 

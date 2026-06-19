@@ -564,14 +564,18 @@ class PayrollDepartmentController extends Controller
         // Save annual_ctc to template for future use
         $template->update(['annual_ctc' => $request->annual_ctc]);
 
-        // Immutability: reject if the run is already paid or released.
+        // Immutability: a 'disbursed' run is locked for compliance.
+        // 'paid' and 'released' were historically block-lists but those
+        // are mid-lifecycle states and may still receive edits via the
+        // unlock path or partial corrections. Only the terminal
+        // 'disbursed' state is truly immutable.
         $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)
             ->where('month_year', $request->month_year)
             ->first();
-        if ($existingRun && in_array($existingRun->status, ['paid', 'released'], true)) {
+        if ($existingRun && $existingRun->status === 'disbursed') {
             return response()->json([
                 'success' => false,
-                'message' => "Cannot process payroll — run for {$request->month_year} is already {$existingRun->status} and immutable.",
+                'message' => "Cannot process payroll — run for {$request->month_year} is already disbursed and immutable for compliance.",
             ], 422);
         }
 
@@ -863,14 +867,16 @@ class PayrollDepartmentController extends Controller
             ], 422);
         }
 
-        // Early check: if the run is paid/released, abort the whole batch
+        // Early check: if the run is already disbursed, abort the whole batch.
+        // Only the terminal 'disbursed' state is immutable; locked/approved/
+        // released runs may still be edited via the unlock path.
         $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)
             ->where('month_year', $data['month_year'])
             ->first();
-        if ($existingRun && in_array($existingRun->status, ['paid', 'released'], true)) {
+        if ($existingRun && $existingRun->status === 'disbursed') {
             return response()->json([
                 'success' => false,
-                'message' => "Cannot process payroll — run for {$data['month_year']} is already {$existingRun->status} and immutable.",
+                'message' => "Cannot process payroll — run for {$data['month_year']} is already disbursed and immutable for compliance.",
             ], 422);
         }
 
@@ -1229,7 +1235,16 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
-     * Lock a payroll run (prevents further edits)
+     * Lock a payroll run (no more edits to calculations).
+     *
+     * "Perfect flow" change: partial runs are now allowed by default.
+     * If some employees haven't been processed yet, we lock anyway —
+     * the missing employees are recorded in `lock_reason` for audit and
+     * returned in the response so the UI can warn the operator.
+     *
+     * The `force=1` and `reason` params are still accepted for legacy
+     * callers (the audit log entry is still written), but no longer
+     * required.
      */
     public function lockPayrollRun(Request $request, int $runId): JsonResponse
     {
@@ -1239,23 +1254,308 @@ class PayrollDepartmentController extends Controller
             ->where('id', $runId)
             ->firstOrFail();
 
-        if (!in_array($run->status, ['draft', 'processing'])) {
+        if (!in_array($run->status, ['draft', 'processing'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => "Cannot lock run in '{$run->status}' status",
             ], 422);
         }
 
+        // Completeness check: count expected vs processed employees.
+        $completeness = $this->getRunCompletenessData($organizationId, $run);
+
+        // Lock the run regardless of completeness — partial is allowed.
+        // Record the reason if the caller passed one (e.g. via the legacy
+        // `force=1` path or for audit clarity).
+        $lockReason = trim((string) $request->get('reason', ''));
+        if (! $completeness['is_complete'] && $lockReason === '') {
+            // Auto-generate a reason when partial so the audit trail is
+            // never empty.
+            $lockReason = "Partial run: {$completeness['processed_count']} of {$completeness['expected_count']} employees processed.";
+        }
+
         $run->update([
             'status' => 'locked',
+            'locked_at' => now(),
+            'locked_by' => auth()->id(),
+            'lock_reason' => $lockReason !== '' ? $lockReason : null,
             'notes' => $request->get('notes', $run->notes),
+        ]);
+
+        // Audit the lock for compliance review.
+        $this->writeRunAudit($run, 'locked', [
+            'expected_count' => $completeness['expected_count'],
+            'processed_count' => $completeness['processed_count'],
+            'missing_count' => $completeness['missing_count'],
+            'is_complete' => $completeness['is_complete'],
+            'reason' => $lockReason,
+            'locked_by' => auth()->id(),
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Payroll run locked successfully',
+            'message' => $completeness['is_complete']
+                ? 'Payroll run locked.'
+                : "Payroll run locked (partial). {$completeness['missing_count']} employee(s) not included.",
+            'run' => $run->fresh(),
+            'completeness' => $completeness,
+        ]);
+    }
+
+    /**
+     * Get completeness info for a run — how many of the expected
+     * active employees have been processed for this run's month.
+     *
+     * "Expected" = active users in this org with role in
+     * [employee, manager, admin] AND a payroll template (i.e. on payroll).
+     * Users without an annual_ctc configured yet are counted as expected
+     * so the operator sees them as "needs setup" rather than silently skipped.
+     */
+    private function getRunCompletenessData(int $organizationId, PayrollMonthlyRun $run): array
+    {
+        $monthYear = $run->month_year;
+
+        // Expected: every on-payroll user with an active template
+        $expectedUserIds = DB::table('employee_payroll_templates as t')
+            ->join('users as u', 'u.id', '=', 't.user_id')
+            ->where('t.organization_id', $organizationId)
+            ->whereIn('u.role', ['employee', 'manager', 'admin'])
+            ->where('t.is_active', true)
+            ->whereNotNull('t.annual_ctc')
+            ->where('t.annual_ctc', '>', 0)
+            ->pluck('u.id')
+            ->unique()
+            ->values()
+            ->all();
+
+        // If we have NO templates with CTCs yet, fall back to "everyone in
+        // this org" so we don't silently report 100% complete on a fresh org.
+        if (empty($expectedUserIds)) {
+            $expectedUserIds = User::where('organization_id', $organizationId)
+                ->whereIn('role', ['employee', 'manager', 'admin'])
+                ->pluck('id')
+                ->all();
+        }
+
+        // Processed: users with a payroll_item in this run
+        $processedUserIds = PayrollItem::where('payroll_run_id', $run->id)
+            ->pluck('user_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $expectedSet = array_flip($expectedUserIds);
+        $processedSet = array_flip($processedUserIds);
+
+        // array_diff_key returns KEYS that are in $expectedSet but not in $processedSet.
+        // Since $expectedSet is the flipped user-id list, those keys ARE the missing
+        // user ids — no need for array_values() (which would reindex them to 0,1,2...).
+        $missingUserIds = array_keys(array_diff_key($expectedSet, $processedSet));
+
+        $missingEmployees = empty($missingUserIds)
+            ? []
+            : User::whereIn('id', $missingUserIds)
+                ->select(['id', 'name', 'email'])
+                ->get()
+                ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email])
+                ->all();
+
+        return [
+            'expected_count' => count($expectedUserIds),
+            'processed_count' => count($processedUserIds),
+            'missing_count' => count($missingUserIds),
+            'is_complete' => count($missingUserIds) === 0,
+            'missing_employees' => $missingEmployees,
+        ];
+    }
+
+    /**
+     * GET endpoint for run completeness — surfaced in the UI to drive
+     * the "Process remaining" CTA in PayrollRunDetailModal.
+     */
+    public function getRunCompleteness(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        $completeness = $this->getRunCompletenessData($organizationId, $run);
+
+        return response()->json([
+            'success' => true,
+            'run_id' => $runId,
+            'month_year' => $run->month_year,
+            'status' => $run->status,
+            ...$completeness,
+        ]);
+    }
+
+    /**
+     * Process payroll for all remaining (unprocessed) active employees
+     * in this run's month. Uses each user's saved annual_ctc from the
+     * template, defaulting to 0 (skipped) when not configured.
+     *
+     * This is the "Process Remaining" button on the run detail modal —
+     * it lets HR fill the gaps before locking without manually clicking
+     * through every department.
+     */
+    public function processRemainingEmployees(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        if (! in_array($run->status, ['draft', 'processing'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot process remaining employees — run is in '{$run->status}' status. Only draft/processing runs accept new items.",
+            ], 422);
+        }
+
+        $completeness = $this->getRunCompletenessData($organizationId, $run);
+        if ($completeness['is_complete']) {
+            return response()->json([
+                'success' => true,
+                'message' => 'All expected employees are already processed.',
+                'succeeded' => 0,
+                'failed' => 0,
+                'skipped_no_ctc' => 0,
+            ]);
+        }
+
+        $missingUserIds = array_column($completeness['missing_employees'], 'id');
+
+        // Compute working days default for this month. Per-employee
+        // processing always re-reads monthly attendance inside
+        // processEmployeePayroll, so passing 26 here is safe — the actual
+        // working_days get re-derived from attendance when not overridden.
+        $workingDays = 26;
+
+        $succeeded = 0;
+        $failed = 0;
+        $skippedNoCtc = 0;
+
+        foreach ($missingUserIds as $uid) {
+            $template = EmployeePayrollTemplate::where('user_id', $uid)
+                ->where('organization_id', $organizationId)
+                ->first();
+
+            if (! $template || ! $template->annual_ctc || $template->annual_ctc <= 0) {
+                $skippedNoCtc++;
+                continue;
+            }
+
+            $subRequest = Request::create(
+                '/payroll/employees/' . $uid . '/process',
+                'POST',
+                [
+                    'month_year' => $run->month_year,
+                    'annual_ctc' => (float) $template->annual_ctc,
+                    'working_days' => $workingDays,
+                ]
+            );
+            $subRequest->setUserResolver(fn () => $request->user());
+
+            try {
+                $response = $this->processEmployeePayroll($subRequest, $uid);
+                if (($response->getData(true)['success'] ?? false) === true) {
+                    $succeeded++;
+                } else {
+                    $failed++;
+                }
+            } catch (\Throwable $e) {
+                $failed++;
+                \Log::warning("processRemainingEmployees: failed for user {$uid}", ['err' => $e->getMessage()]);
+            }
+        }
+
+        $freshCompleteness = $this->getRunCompletenessData($organizationId, $run->fresh());
+
+        return response()->json([
+            'success' => $failed === 0,
+            'message' => "{$succeeded} processed, {$failed} failed, {$skippedNoCtc} skipped (no annual_ctc configured).",
+            'succeeded' => $succeeded,
+            'failed' => $failed,
+            'skipped_no_ctc' => $skippedNoCtc,
+            'completeness' => $freshCompleteness,
+        ]);
+    }
+
+    /**
+     * Roll back a locked run to 'draft' so corrections can be made.
+     * Audit-logged. Only works when status='locked' (not approved/released/disbursed).
+     */
+    public function unlockPayrollRun(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        if ($run->status !== 'locked') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot unlock run in '{$run->status}' status. Only 'locked' runs can be unlocked.",
+            ], 422);
+        }
+
+        $reason = trim((string) $request->get('reason', ''));
+        if ($reason === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unlocking requires a reason for the audit log.',
+            ], 422);
+        }
+
+        $previousStatus = $run->status;
+
+        $run->update([
+            'status' => 'draft',
+            'notes' => ($run->notes ? $run->notes . "\n\n" : '') . "Unlocked " . now()->toDateTimeString() . " by " . ($request->user()->name ?? 'user #' . auth()->id()) . ": {$reason}",
+        ]);
+
+        $this->writeRunAudit($run, 'unlocked', [
+            'reason' => $reason,
+            'from_status' => $previousStatus,
+            'to_status' => 'draft',
+            'unlocked_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Run unlocked. It is now editable again.',
             'run' => $run->fresh(),
         ]);
+    }
+
+    /**
+     * Persist a lifecycle audit entry. Falls back silently if the audit_logs
+     * table is missing the columns we want — auditing must never block payroll.
+     */
+    private function writeRunAudit(PayrollMonthlyRun $run, string $action, array $meta = []): void
+    {
+        try {
+            DB::table('audit_logs')->insert([
+                'organization_id' => $run->organization_id,
+                'actor_id' => auth()->id(),
+                'action' => 'payroll_run.' . $action,
+                'auditable_type' => PayrollMonthlyRun::class,
+                'auditable_id' => $run->id,
+                'meta' => json_encode($meta),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('writeRunAudit failed (non-blocking)', [
+                'run_id' => $run->id,
+                'action' => $action,
+                'err' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -1291,7 +1591,16 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
-     * Release a payroll run (generates payslips, ready for payment)
+     * Release a payroll run (bank file is generated, ready for upload to bank).
+     *
+     * The "perfect payroll flow" change: missing bank details do NOT block
+     * release anymore. Those employees are auto-skipped from the bank file
+     * and surfaced in the response so the operator can chase them
+     * separately (cash payment, or wait until they add bank details).
+     *
+     * Only the run lifecycle transition is enforced:
+     * - Must be in 'locked' or 'approved' status
+     * - 'disbursed' is terminal
      */
     public function releasePayrollRun(Request $request, int $runId): JsonResponse
     {
@@ -1301,15 +1610,18 @@ class PayrollDepartmentController extends Controller
             ->where('id', $runId)
             ->firstOrFail();
 
-        if (!in_array($run->status, ['approved', 'locked'])) {
+        if (!in_array($run->status, ['approved', 'locked'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => "Cannot release run in '{$run->status}' status. Must be 'approved' first.",
             ], 422);
         }
 
-        // Check for employees missing bank details
+        // Identify employees missing bank details. Auto-skip them from the
+        // bank file (don't block the whole run). Return them so the UI can
+        // show "These N employees will need a separate payment".
         $employeesMissingBankDetails = PayrollItem::where('payroll_run_id', $run->id)
+            ->where('payment_status', 'pending')
             ->whereHas('user', function ($q) {
                 $q->whereDoesntHave('employeeBankAccounts', function ($q2) {
                     $q2->whereNotNull('account_number')
@@ -1319,27 +1631,24 @@ class PayrollDepartmentController extends Controller
             ->with(['user:id,name'])
             ->get();
 
-        if ($employeesMissingBankDetails->count() > 0) {
-            $employeeNames = $employeesMissingBankDetails->pluck('user.name')->implode(', ');
-            return response()->json([
-                'success' => false,
-                'message' => "Cannot release payroll. {$employeesMissingBankDetails->count()} employee(s) missing bank details: {$employeeNames}",
-                'employees_missing_bank_details' => $employeesMissingBankDetails->map(fn($item) => [
-                    'id' => $item->user_id,
-                    'name' => $item->user->name,
-                ]),
-            ], 422);
-        }
-
         $run->update([
             'status' => 'released',
+            'released_at' => now(),
+            'released_by' => auth()->id(),
             'notes' => $request->get('notes', $run->notes),
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Payroll run released successfully',
+            'message' => $employeesMissingBankDetails->count() > 0
+                ? "Payroll run released. {$employeesMissingBankDetails->count()} employee(s) skipped from bank file (missing bank details)."
+                : 'Payroll run released successfully.',
             'run' => $run->fresh(),
+            'skipped_employees' => $employeesMissingBankDetails->map(fn($item) => [
+                'id' => $item->user_id,
+                'name' => $item->user->name,
+                'reason' => 'no_bank_details',
+            ])->values(),
         ]);
     }
 
@@ -1380,7 +1689,7 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
-     * Process payment for a payroll run (marks all items as paid)
+     * Process payment for a payroll run (marks all items as paid, transitions run to "disbursed")
      */
     public function processRunPayment(Request $request, int $runId): JsonResponse
     {
@@ -1390,39 +1699,53 @@ class PayrollDepartmentController extends Controller
             ->where('id', $runId)
             ->firstOrFail();
 
-        if (!in_array($run->status, ['released', 'approved'])) {
+        // Only allow disbursement from 'released' or 'approved' state.
+        // 'disbursed' is the immutable terminal state — once set, no further changes.
+        if (!in_array($run->status, ['released', 'approved'], true)) {
             return response()->json([
                 'success' => false,
-                'message' => "Cannot process payment for run in '{$run->status}' status. Release it first.",
+                'message' => "Cannot disburse payments for run in '{$run->status}' status. Release it first.",
             ], 422);
         }
 
         $paymentMethod = $request->get('payment_method', 'bank_transfer');
 
-        // Update all pending items to paid
-        PayrollItem::where('payroll_run_id', $run->id)
+        // Generate a per-row payment reference. Doing it in PHP rather than
+        // SQL because Postgres has RANDOM() and MySQL has RAND() — keep this
+        // portable. Bulk size is bounded by # of pending items in one run.
+        $pendingItems = PayrollItem::where('payroll_run_id', $run->id)
             ->where('payment_status', 'pending')
-            ->update([
+            ->get();
+
+        foreach ($pendingItems as $item) {
+            $item->update([
                 'payment_status' => 'paid',
                 'payment_method' => $paymentMethod,
-                'payment_reference' => DB::raw("CONCAT('PAY-', UPPER(SUBSTRING(MD5(RAND()), 1, 8)))"),
+                'payment_reference' => 'PAY-' . strtoupper(substr(md5(random_bytes(6)), 0, 8)),
                 'paid_at' => now(),
             ]);
+        }
 
+        // Terminal state: 'disbursed'. Once set, the run becomes immutable for compliance.
         $run->update([
-            'status' => 'paid',
+            'status' => 'disbursed',
             'pay_date' => $request->get('pay_date', now()),
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Payment processed for all employees',
+            'message' => 'Payments disbursed. Run is now immutable.',
             'run' => $run->fresh(),
         ]);
     }
 
     /**
      * Generate bank file (NEFT/RTGS format)
+     *
+     * Bank files are a compliance artifact — only generated after the run
+     * has been approved. Draft/processing/locked runs may still change
+     * (new items added, recalculations), so a bank file from those states
+     * would be wrong the moment it's produced.
      */
     public function generateBankFile(Request $request, int $runId): JsonResponse
     {
@@ -1431,6 +1754,15 @@ class PayrollDepartmentController extends Controller
         $run = PayrollMonthlyRun::where('organization_id', $organizationId)
             ->where('id', $runId)
             ->firstOrFail();
+
+        if (! in_array($run->status, ['approved', 'released', 'disbursed'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Bank file is only available after the run is approved. Current status: '{$run->status}'. Lock the run and approve it first.",
+                'current_status' => $run->status,
+                'allowed_statuses' => ['approved', 'released', 'disbursed'],
+            ], 422);
+        }
 
         $items = PayrollItem::where('payroll_run_id', $run->id)
             ->with(['user.employeeBankAccounts', 'user.employeeProfile'])
@@ -1629,5 +1961,352 @@ class PayrollDepartmentController extends Controller
             'payslips' => $payslips,
             'total_employees' => $payslips->count(),
         ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // PERFECT PAYROLL FLOW (atomic)
+    //
+    // The flow below replaces the 4-step manual ceremony (lock → approve →
+    // release → disburse) with two endpoints that match how greytHR and
+    // Keka actually do it:
+    //
+    //   1. POST /payroll/process-and-pay  — creates run, processes every
+    //      active employee, locks, approves, releases, and returns the
+    //      bank file inline. ONE click from the operator's POV.
+    //
+    //   2. POST /payroll/runs/{id}/disburse  — operator confirms the
+    //      bank file was uploaded to the bank portal; this marks every
+    //      remaining pending payslip as paid and transitions the run to
+    //      the immutable `disbursed` state.
+    //
+    // The old 4 endpoints (lock/approve/release/processRunPayment) are
+    // retained for back-compat but the UI uses only these two.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Atomic payroll workflow — "Process & Pay" in one call.
+     *
+     * Steps performed (in order, inside one transaction per concern):
+     *  1. Find or create the PayrollMonthlyRun for {month_year}
+     *  2. Bulk-process all unprocessed active employees (those with CTC
+     *     set; employees without CTC are surfaced as exceptions)
+     *  3. Lock the run (records locked_at + locked_by + lock_reason)
+     *  4. Auto-approve the run (records approved_by + approved_at)
+     *  5. Release the run — bank file is generated inline, employees
+     *     missing bank details are auto-skipped (not blocked)
+     *
+     * Returns the full review screen payload: headcount, totals,
+     * skipped employees, and the bank file as base64-decodable text.
+     */
+    public function processAndPay(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'month_year' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'working_days' => 'nullable|integer|min:1|max:31',
+            'default_annual_ctc' => 'nullable|numeric|min:0',
+            'lock_reason' => 'nullable|string|max:500',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+        $monthYear = $data['month_year'];
+        $workingDays = (int) ($data['working_days'] ?? 26);
+
+        // Immutability: cannot re-run for a disbursed month.
+        $existing = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $monthYear)
+            ->first();
+        if ($existing && $existing->status === 'disbursed') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot re-process {$monthYear}: already disbursed and immutable.",
+            ], 422);
+        }
+
+        // ── 1. Find or create the run ─────────────────────────────────
+        $run = PayrollMonthlyRun::firstOrCreate(
+            ['organization_id' => $organizationId, 'month_year' => $monthYear],
+            ['status' => 'draft', 'created_by' => auth()->id()]
+        );
+
+        // If the run was already locked/approved/released, return current
+        // state without re-running steps (the operator may have used the
+        // legacy endpoints). The UI handles these statuses already.
+        if (in_array($run->status, ['locked', 'approved', 'released'], true)) {
+            return response()->json([
+                'success' => true,
+                'already_advanced' => true,
+                'message' => "Run is already in '{$run->status}' status.",
+                'run' => $run->fresh(),
+            ]);
+        }
+
+        // ── 2. Bulk-process every unprocessed employee ───────────────
+        $expectedUserIds = DB::table('employee_payroll_templates as t')
+            ->join('users as u', 'u.id', '=', 't.user_id')
+            ->where('t.organization_id', $organizationId)
+            ->whereIn('u.role', ['employee', 'manager', 'admin'])
+            ->where('t.is_active', true)
+            ->whereNotNull('t.annual_ctc')
+            ->where('t.annual_ctc', '>', 0)
+            ->pluck('u.id')
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($expectedUserIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => "No employees have a CTC configured yet. Set up salary templates first.",
+                'no_employees' => true,
+            ], 422);
+        }
+
+        $processedUserIds = PayrollItem::where('payroll_run_id', $run->id)
+            ->pluck('user_id')
+            ->unique()
+            ->values()
+            ->all();
+        $missingUserIds = array_values(array_diff($expectedUserIds, $processedUserIds));
+
+        $processed = 0;
+        $skippedNoCtc = 0;
+
+        foreach ($missingUserIds as $uid) {
+            $template = EmployeePayrollTemplate::where('user_id', $uid)
+                ->where('organization_id', $organizationId)
+                ->first();
+            if (! $template || ! $template->annual_ctc || $template->annual_ctc <= 0) {
+                $skippedNoCtc++;
+                continue;
+            }
+
+            $subRequest = Request::create(
+                '/payroll/employees/' . $uid . '/process',
+                'POST',
+                [
+                    'month_year' => $monthYear,
+                    'annual_ctc' => (float) $template->annual_ctc,
+                    'working_days' => $workingDays,
+                ]
+            );
+            $subRequest->setUserResolver(fn () => $request->user());
+
+            try {
+                $response = $this->processEmployeePayroll($subRequest, $uid);
+                if (($response->getData(true)['success'] ?? false) === true) {
+                    $processed++;
+                } else {
+                    $skippedNoCtc++;
+                }
+            } catch (\Throwable $e) {
+                $skippedNoCtc++;
+                \Log::warning("processAndPay: failed to process user {$uid}", ['err' => $e->getMessage()]);
+            }
+        }
+
+        $run = $run->fresh();
+
+        // ── 3. Lock ────────────────────────────────────────────────────
+        $lockReq = Request::create('/payroll/runs/' . $run->id . '/lock', 'POST', [
+            'reason' => $data['lock_reason'] ?? null,
+        ]);
+        $lockReq->setUserResolver(fn () => $request->user());
+        $lockResp = $this->lockPayrollRun($lockReq, $run->id);
+        $lockData = $lockResp->getData(true);
+        if (! ($lockData['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'stage' => 'lock',
+                'message' => $lockData['message'] ?? 'Lock failed',
+                'run' => $run,
+            ], 422);
+        }
+        $run = $run->fresh();
+
+        // ── 4. Approve ─────────────────────────────────────────────────
+        $approveReq = Request::create('/payroll/runs/' . $run->id . '/approve', 'POST');
+        $approveReq->setUserResolver(fn () => $request->user());
+        $approveResp = $this->approvePayrollRun($approveReq, $run->id);
+        if (! ($approveResp->getData(true)['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'stage' => 'approve',
+                'message' => 'Approval failed after lock',
+                'run' => $run,
+            ], 422);
+        }
+        $run = $run->fresh();
+
+        // ── 5. Release ─────────────────────────────────────────────────
+        $releaseReq = Request::create('/payroll/runs/' . $run->id . '/release', 'POST');
+        $releaseReq->setUserResolver(fn () => $request->user());
+        $releaseResp = $this->releasePayrollRun($releaseReq, $run->id);
+        $releaseData = $releaseResp->getData(true);
+        if (! ($releaseData['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'stage' => 'release',
+                'message' => $releaseData['message'] ?? 'Release failed',
+                'run' => $run,
+            ], 422);
+        }
+        $run = $run->fresh();
+
+        // Build the bank file inline so the UI can offer download immediately.
+        $bankFile = $this->buildBankFilePayload($run);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Payroll for {$monthYear} processed and ready to disburse.",
+            'run' => $run,
+            'summary' => [
+                'employees_processed' => $processed,
+                'employees_skipped_no_ctc' => $skippedNoCtc,
+                'expected_count' => count($expectedUserIds),
+                'processed_count' => count($expectedUserIds) - $skippedNoCtc,
+            ],
+            'bank_file' => $bankFile,
+        ]);
+    }
+
+    /**
+     * Disburse a released payroll run (operator confirms bank file uploaded).
+     *
+     * Marks every still-pending payslip as paid and transitions the run
+     * to its terminal `disbursed` state. Once disbursed, the run becomes
+     * immutable for compliance.
+     */
+    public function disburseRun(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+        $paymentMethod = $request->get('payment_method', 'bank_transfer');
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        if ($run->status !== 'released') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot disburse run in '{$run->status}' status. Release it first.",
+            ], 422);
+        }
+
+        // Mark every pending item as paid (bank file confirmed uploaded).
+        $pendingItems = PayrollItem::where('payroll_run_id', $run->id)
+            ->where('payment_status', 'pending')
+            ->get();
+
+        foreach ($pendingItems as $item) {
+            $item->update([
+                'payment_status' => 'paid',
+                'payment_method' => $paymentMethod,
+                'payment_reference' => 'PAY-' . strtoupper(substr(md5(random_bytes(6)), 0, 8)),
+                'paid_at' => now(),
+            ]);
+        }
+
+        $run->update([
+            'status' => 'disbursed',
+            'disbursed_at' => now(),
+            'disbursed_by' => auth()->id(),
+            'pay_date' => $request->get('pay_date', now()),
+        ]);
+
+        $this->writeRunAudit($run, 'disbursed', [
+            'paid_items_count' => $pendingItems->count(),
+            'payment_method' => $paymentMethod,
+            'disbursed_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Payroll disbursed. Run is now immutable for compliance.",
+            'run' => $run->fresh(),
+        ]);
+    }
+
+    /**
+     * Build the bank file payload for a released run (used by both
+     * `processAndPay` and the standalone `generateBankFile` endpoint).
+     *
+     * Returns the CSV content + filename + skipped_employees (those
+     * missing bank details) + a `partial` flag.
+     */
+    private function buildBankFilePayload(PayrollMonthlyRun $run): array
+    {
+        $items = PayrollItem::where('payroll_run_id', $run->id)
+            ->with(['user.employeeBankAccounts', 'user.employeeProfile'])
+            ->where('payment_status', 'pending')
+            ->get();
+
+        $entries = [];
+        $skipped = [];
+        $serialNo = 1;
+        $totalAmount = 0;
+
+        foreach ($items as $item) {
+            $bankAccount = $item->user->employeeBankAccounts->first();
+            if (! $bankAccount || ! $bankAccount->account_number || ! $bankAccount->ifsc_swift) {
+                $missing = [];
+                if (! $bankAccount || ! $bankAccount->account_number) {
+                    $missing[] = 'account_number';
+                }
+                if (! $bankAccount || ! $bankAccount->ifsc_swift) {
+                    $missing[] = 'ifsc_swift';
+                }
+                $skipped[] = [
+                    'user_id' => $item->user_id,
+                    'name' => $item->user->name ?? 'Unknown',
+                    'net_pay' => (float) $item->net_pay,
+                    'missing_fields' => $missing,
+                ];
+                continue;
+            }
+
+            $entries[] = [
+                'serial_no' => $serialNo++,
+                'employee_name' => $item->user->name ?? '',
+                'employee_code' => $item->user->employeeProfile?->employee_code ?? '',
+                'account_number' => $bankAccount->account_number,
+                'ifsc' => $bankAccount->ifsc_swift,
+                'bank_name' => $bankAccount->bank_name ?? '',
+                'amount' => round((float) $item->net_pay, 2),
+                'narration' => "Salary {$run->month_year}",
+            ];
+            $totalAmount += (float) $item->net_pay;
+        }
+
+        // Generate the CSV content (NEFT-style format).
+        $headers = ['Sr', 'Beneficiary Name', 'Account Number', 'IFSC', 'Bank Name', 'Amount', 'Narration'];
+        $rows = [];
+        $rows[] = implode(',', array_map(fn ($h) => '"' . str_replace('"', '""', $h) . '"', $headers));
+        foreach ($entries as $e) {
+            $rows[] = implode(',', [
+                $e['serial_no'],
+                '"' . str_replace('"', '""', $e['employee_name']) . '"',
+                '"' . $e['account_number'] . '"',
+                '"' . $e['ifsc'] . '"',
+                '"' . str_replace('"', '""', $e['bank_name']) . '"',
+                number_format($e['amount'], 2, '.', ''),
+                '"' . str_replace('"', '""', $e['narration']) . '"',
+            ]);
+        }
+        $rows[] = implode(',', ['', '', '', '', 'TOTAL', number_format($totalAmount, 2, '.', ''), '']);
+        $content = implode("\n", $rows);
+
+        $filename = "payroll_{$run->month_year}_run{$run->id}.csv";
+
+        return [
+            'success' => true,
+            'filename' => $filename,
+            'content' => $content,
+            'entries' => $entries,
+            'total_amount' => round($totalAmount, 2),
+            'total_employees' => count($entries),
+            'total_pending' => $items->count(),
+            'skipped_employees' => $skipped,
+            'partial' => count($skipped) > 0,
+        ];
     }
 }

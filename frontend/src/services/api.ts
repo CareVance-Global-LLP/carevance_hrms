@@ -1688,11 +1688,108 @@ export const payrollApi = {
   getPayrollRuns: () =>
     api.get<{ runs: any[] }>('/payroll/runs'),
 
+  /**
+   * Atomic "Process & Pay" — creates the run, processes every active
+   * employee, locks, approves, and releases in one call. Returns the
+   * generated bank file inline so the UI can offer download immediately.
+   */
+  processAndPay: (data: {
+    month_year: string;
+    working_days?: number;
+    lock_reason?: string;
+  }) =>
+    api.post<{
+      success: boolean;
+      already_advanced?: boolean;
+      message: string;
+      run: any;
+      summary?: {
+        employees_processed: number;
+        employees_skipped_no_ctc: number;
+        expected_count: number;
+        processed_count: number;
+      };
+      bank_file?: {
+        success: boolean;
+        filename: string;
+        content: string;
+        entries: any[];
+        total_amount: number;
+        total_employees: number;
+        total_pending: number;
+        skipped_employees: Array<{
+          user_id: number;
+          name: string;
+          net_pay: number;
+          missing_fields: string[];
+        }>;
+        partial: boolean;
+      };
+    }>('/payroll/process-and-pay', data),
+
+  /**
+   * Disburse a released payroll run. Operator confirms bank file was
+   * uploaded to the bank portal; marks all items paid and transitions
+   * run to immutable `disbursed` state.
+   */
+  disburseRun: (runId: number, opts?: { payment_method?: string; pay_date?: string }) =>
+    api.post<{ success: boolean; message: string; run: any }>(
+      `/payroll/runs/${runId}/disburse`,
+      { payment_method: opts?.payment_method ?? 'bank_transfer', pay_date: opts?.pay_date },
+    ),
+
   getPayrollRunDetail: (runId: number) =>
     api.get<{ run: any; items: any[] }>(`/payroll/runs/${runId}`),
 
-  lockPayrollRun: (runId: number, notes?: string) =>
-    api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/lock`, { notes }),
+  getRunCompleteness: (runId: number) =>
+    api.get<{
+      success: boolean;
+      run_id: number;
+      month_year: string;
+      status: string;
+      expected_count: number;
+      processed_count: number;
+      missing_count: number;
+      is_complete: boolean;
+      missing_employees: Array<{ id: number; name: string; email: string }>;
+    }>(`/payroll/runs/${runId}/completeness`),
+
+  processRemainingForRun: (runId: number) =>
+    api.post<{
+      success: boolean;
+      message: string;
+      succeeded: number;
+      failed: number;
+      skipped_no_ctc: number;
+      completeness: {
+        expected_count: number;
+        processed_count: number;
+        missing_count: number;
+        is_complete: boolean;
+        missing_employees: Array<{ id: number; name: string; email: string }>;
+      };
+    }>(`/payroll/runs/${runId}/process-remaining`),
+
+  unlockPayrollRun: (runId: number, reason: string) =>
+    api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/unlock`, { reason }),
+
+  lockPayrollRun: (runId: number, opts?: { force?: boolean; reason?: string; notes?: string }) =>
+    api.post<{
+      success: boolean;
+      message: string;
+      run: any;
+      completeness?: {
+        expected_count: number;
+        processed_count: number;
+        missing_count: number;
+        is_complete: boolean;
+        missing_employees: Array<{ id: number; name: string; email: string }>;
+      };
+    }>(`/payroll/runs/${runId}/lock`, {
+      force: opts?.force ? 1 : 0,
+      reason: opts?.reason,
+      notes: opts?.notes,
+    }),
 
   approvePayrollRun: (runId: number, notes?: string) =>
     api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/approve`, { notes }),

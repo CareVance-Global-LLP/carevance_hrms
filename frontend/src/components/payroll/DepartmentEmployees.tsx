@@ -5,7 +5,6 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
-  DollarSign,
   Users,
   ChevronDown,
   Filter,
@@ -21,7 +20,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PayEmployeeModal from './PayEmployeeModal';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import type { PayrollDepartmentEmployee } from '@/types';
 
@@ -42,7 +40,7 @@ function formatMonthLabel(monthYear: string): string {
   return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
-type FilterStatus = 'all' | 'pending' | 'processed' | 'paid';
+type FilterStatus = 'all' | 'pending' | 'paid';
 type SortBy = 'name' | 'ctc' | 'status';
 
 // Employee Card Component
@@ -52,7 +50,6 @@ function EmployeeCard({
   onSelect,
   onClick,
   onProcess,
-  onPay,
   onViewPayslip,
   onDownloadPayslip,
 }: {
@@ -61,13 +58,16 @@ function EmployeeCard({
   onSelect: () => void;
   onClick: () => void;
   onProcess: (e: React.MouseEvent) => void;
-  onPay: (e: React.MouseEvent) => void;
   onViewPayslip: (e: React.MouseEvent) => void;
   onDownloadPayslip: (e: React.MouseEvent) => void;
 }) {
-  const status = employee.payroll_status.is_processed
-    ? (employee.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
-    : 'pending';
+  const isPaid = employee.payroll_status.payment_status === 'paid';
+  // Simplified 2-state model for the perfect flow:
+  //   paid      → disbursed (terminal)
+  //   pending   → not yet in any run
+  // (Once "processed but not paid" became a confusing intermediate state,
+  //  we removed it. Process & Pay goes draft → disbursed atomically.)
+  const status: 'paid' | 'pending' = isPaid ? 'paid' : 'pending';
 
   const statusConfig = {
     paid: {
@@ -77,14 +77,6 @@ function EmployeeCard({
       textColor: 'text-emerald-600',
       borderColor: 'border-emerald-200',
       tooltip: 'Funds have been credited to this employee\'s bank account.',
-    },
-    processed: {
-      icon: CheckCircle2,
-      label: 'Processed',
-      bgColor: 'bg-blue-50',
-      textColor: 'text-blue-600',
-      borderColor: 'border-blue-200',
-      tooltip: 'Salary calculated for this month but payment not yet released. Click "Pay Now" for one-off or process via run detail.',
     },
     pending: {
       icon: Clock,
@@ -198,45 +190,21 @@ function EmployeeCard({
           <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2">
             {status === 'pending' ? (
               <>
-                <Button 
-                  variant="primary" 
-                  size="sm" 
+                <Button
+                  variant="primary"
+                  size="sm"
                   className="flex-1"
                   iconLeft={<Play className="h-4 w-4" />}
                   onClick={onProcess}
                 >
                   {hasCTC ? 'Process Payroll' : 'Set CTC & Process'}
                 </Button>
-                <Button 
-                  variant="secondary" 
-                  size="sm"
-                  onClick={onClick}
-                >
-                  View
-                </Button>
-              </>
-            ) : status === 'processed' ? (
-              <>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  className="flex-1"
-                  iconLeft={<DollarSign className="h-4 w-4" />}
-                  onClick={onPay}
-                >
-                  Pay Now
-                  <InfoTooltip
-                    content="Records this employee as paid (one-off). For bulk payouts, use the bank file from the run detail instead."
-                    title="Pay Now"
-                    size="sm"
-                  />
-                </Button>
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={onClick}
                 >
-                  Edit
+                  View
                 </Button>
               </>
             ) : (
@@ -286,12 +254,6 @@ export default function DepartmentEmployees({
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [showFilters, setShowFilters] = useState(false);
-  const [payingEmployee, setPayingEmployee] = useState<{
-    id: number;
-    name: string;
-    payrollItemId?: number;
-    netPay?: number;
-  } | null>(null);
   // Default working days = days in the selected month (org configures this in settings).
   const [workingDays] = useState<number>(() => {
     const [y, m] = monthYear.split('-').map(Number);
@@ -398,13 +360,11 @@ export default function DepartmentEmployees({
   // Filter and sort employees
   const filteredEmployees = useMemo(() => {
     let filtered = [...employees];
-    
+
     // Apply status filter
     if (filterStatus !== 'all') {
       filtered = filtered.filter(emp => {
-        const status = emp.payroll_status.is_processed 
-          ? (emp.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
-          : 'pending';
+        const status: 'paid' | 'pending' = emp.payroll_status.payment_status === 'paid' ? 'paid' : 'pending';
         return status === filterStatus;
       });
     }
@@ -417,14 +377,10 @@ export default function DepartmentEmployees({
         case 'ctc':
           return (b.annual_ctc || 0) - (a.annual_ctc || 0);
         case 'status': {
-          const statusOrder = { pending: 0, processed: 1, paid: 2 };
-          const aStatus = a.payroll_status.is_processed
-            ? (a.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
-            : 'pending';
-          const bStatus = b.payroll_status.is_processed
-            ? (b.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
-            : 'pending';
-          return statusOrder[aStatus as keyof typeof statusOrder] - statusOrder[bStatus as keyof typeof statusOrder];
+          const statusOrder = { pending: 0, paid: 1 };
+          const aStatus: 'pending' | 'paid' = a.payroll_status.payment_status === 'paid' ? 'paid' : 'pending';
+          const bStatus: 'pending' | 'paid' = b.payroll_status.payment_status === 'paid' ? 'paid' : 'pending';
+          return statusOrder[aStatus] - statusOrder[bStatus];
         }
         default:
           return 0;
@@ -439,13 +395,11 @@ export default function DepartmentEmployees({
     return employees.reduce((acc, emp) => {
       if (emp.payroll_status.payment_status === 'paid') {
         acc.paid++;
-      } else if (emp.payroll_status.is_processed) {
-        acc.processed++;
       } else {
         acc.pending++;
       }
       return acc;
-    }, { pending: 0, processed: 0, paid: 0 });
+    }, { pending: 0, paid: 0 });
   }, [employees]);
 
   // Selection handlers
@@ -517,13 +471,13 @@ export default function DepartmentEmployees({
 
       {/* Status Tabs */}
       <div className="flex flex-wrap gap-2">
-        {(['all', 'pending', 'processed', 'paid'] as FilterStatus[]).map((status) => (
+        {(['all', 'pending', 'paid'] as FilterStatus[]).map((status) => (
           <button
             key={status}
             onClick={() => setFilterStatus(status)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterStatus === status 
-                ? 'bg-blue-600 text-white' 
+              filterStatus === status
+                ? 'bg-blue-600 text-white'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
@@ -631,15 +585,6 @@ export default function DepartmentEmployees({
                   e.stopPropagation();
                   onSelectEmployee(employee.id);
                 }}
-                onPay={(e) => {
-                  e.stopPropagation();
-                  setPayingEmployee({
-                    id: employee.id,
-                    name: employee.name,
-                    payrollItemId: employee.payroll_item_id ?? undefined,
-                    netPay: employee.payroll_status.net_pay,
-                  });
-                }}
                 onViewPayslip={(e) => {
                   e.stopPropagation();
                   void viewPayslipPdf(employee.id, monthYear, employee.name);
@@ -661,10 +606,6 @@ export default function DepartmentEmployees({
             <div className="flex items-center gap-2">
               <div className="h-3 w-3 rounded-full bg-amber-500" />
               <span className="text-sm text-slate-600">{counts.pending} Pending</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full bg-blue-500" />
-              <span className="text-sm text-slate-600">{counts.processed} Processed</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="h-3 w-3 rounded-full bg-emerald-500" />
@@ -690,12 +631,6 @@ export default function DepartmentEmployees({
           )}
         </div>
       )}
-
-      <PayEmployeeModal
-        isOpen={payingEmployee !== null}
-        onClose={() => setPayingEmployee(null)}
-        employee={payingEmployee ? { ...payingEmployee, monthYear } : null}
-      />
     </div>
   );
 }

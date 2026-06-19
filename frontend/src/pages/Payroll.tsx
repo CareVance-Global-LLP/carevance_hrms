@@ -11,6 +11,7 @@ import RunPayrollModal from '@/components/payroll/RunPayrollModal';
 import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
 import PayrollRunDetailModal from '@/components/payroll/PayrollRunDetailModal';
+import ProcessAndPayModal from '@/components/payroll/ProcessAndPayModal';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 
@@ -32,6 +33,14 @@ export default function PayrollPage() {
   const [runDetailId, setRunDetailId] = useState<number | null>(null);
   const [currentStats, setCurrentStats] = useState<PayrollStats | undefined>();
   const [departmentsList, setDepartmentsList] = useState<any[]>([]);
+
+  // Process & Pay modal state (the new perfect flow)
+  const [processAndPayState, setProcessAndPayState] = useState<{
+    isOpen: boolean;
+    monthYear: string;
+    pendingCount: number;
+    expectedNetPay: number;
+  }>({ isOpen: false, monthYear: '', pendingCount: 0, expectedNetPay: 0 });
 
   // Help drawer
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -67,6 +76,15 @@ export default function PayrollPage() {
     setIsRunPayrollModalOpen(true);
   };
 
+  const handleOpenProcessAndPay = (monthYear: string, pendingCount: number, expectedNetPay: number) => {
+    setProcessAndPayState({ isOpen: true, monthYear, pendingCount, expectedNetPay });
+  };
+
+  const handleProcessAndPayComplete = () => {
+    setProcessAndPayState((s) => ({ ...s, isOpen: false }));
+    // Run detail modal will pick up the new run via existing invalidation
+  };
+
   const handleOpenReports = (stats?: PayrollStats) => {
     if (stats) setCurrentStats(stats);
     setIsReportsModalOpen(true);
@@ -86,7 +104,6 @@ export default function PayrollPage() {
 
   const handleOpenWizard = () => {
     setViewMode('dashboard');
-    // The NextStepsCard will show "Start Setup" linking to /payroll/setup
   };
 
   const handlePayrollSuccess = () => {
@@ -123,6 +140,7 @@ export default function PayrollPage() {
             onSelectDepartment={handleSelectDepartment}
             onSelectEmployee={handleSelectEmployee}
             onOpenRunPayroll={handleOpenRunPayroll}
+            onOpenProcessAndPay={handleOpenProcessAndPay}
             onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
             onOpenFilings={handleOpenFilings}
             onOpenWizard={handleOpenWizard}
@@ -184,6 +202,16 @@ export default function PayrollPage() {
         onClose={() => setRunDetailId(null)}
         runId={runDetailId}
         monthYear={selectedMonth}
+      />
+
+      {/* The perfect payroll flow — Process & Pay modal */}
+      <ProcessAndPayModal
+        isOpen={processAndPayState.isOpen}
+        onClose={() => setProcessAndPayState((s) => ({ ...s, isOpen: false }))}
+        monthYear={processAndPayState.monthYear}
+        pendingCount={processAndPayState.pendingCount}
+        expectedNetPay={processAndPayState.expectedNetPay}
+        onComplete={handleProcessAndPayComplete}
       />
 
       {/* Help drawer with glossary, how-to guides, and FAQs */}
