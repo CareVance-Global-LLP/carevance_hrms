@@ -35,6 +35,13 @@ class PayrollMonthlyRun extends Model
         'created_by',
         'approved_by',
         'approved_at',
+        'locked_at',
+        'locked_by',
+        'lock_reason',
+        'released_at',
+        'released_by',
+        'disbursed_at',
+        'disbursed_by',
         'notes',
         'is_full_and_final_run',
     ];
@@ -58,6 +65,9 @@ class PayrollMonthlyRun extends Model
         'total_vpf' => 'decimal:2',
         'total_lwf' => 'decimal:2',
         'approved_at' => 'datetime',
+        'locked_at' => 'datetime',
+        'released_at' => 'datetime',
+        'disbursed_at' => 'datetime',
         'is_full_and_final_run' => 'boolean',
     ];
 
@@ -121,13 +131,27 @@ class PayrollMonthlyRun extends Model
         return $this->status === 'released';
     }
 
-    public function isPaid(): bool
+    public function isDisbursed(): bool
     {
-        return $this->status === 'paid';
+        return $this->status === 'disbursed';
     }
 
     /**
-     * Available status transitions
+     * Terminal state — once disbursed, the run is immutable for compliance.
+     * Used by frontend stepper to show "completed" state and disable further actions.
+     */
+    public function isImmutable(): bool
+    {
+        return $this->status === 'disbursed';
+    }
+
+    /**
+     * Available status transitions.
+     *
+     * Lifecycle: draft → (processing) → locked → approved → released → disbursed
+     * - 'disbursed' is the terminal state and has NO outgoing transitions
+     * - 'locked' can be rolled back to 'draft' via the unlock endpoint (with audit)
+     * - 'approved' can be rolled back to 'locked' if not yet released
      */
     public static function getStatusFlow(): array
     {
@@ -137,8 +161,8 @@ class PayrollMonthlyRun extends Model
             'processed' => ['draft', 'locked'],
             'locked' => ['approved', 'draft'],
             'approved' => ['released', 'locked'],
-            'released' => ['paid', 'approved'],
-            'paid' => [],
+            'released' => ['disbursed', 'approved'],
+            'disbursed' => [],
         ];
     }
 

@@ -83,11 +83,21 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Payroll Run Lifecycle
     Route::get('/runs', [PayrollDepartmentController::class, 'getPayrollRuns']);
     Route::get('/runs/{runId}', [PayrollDepartmentController::class, 'getPayrollRunDetail']);
+    Route::get('/runs/{runId}/completeness', [PayrollDepartmentController::class, 'getRunCompleteness']);
+    Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getRunChecklistStatus']);
+    Route::get('/runs/{runId}/activity', [PayrollDepartmentController::class, 'getRunActivity']);
+    Route::post('/runs/{runId}/process-remaining', [PayrollDepartmentController::class, 'processRemainingEmployees']);
     Route::post('/runs/{runId}/lock', [PayrollDepartmentController::class, 'lockPayrollRun']);
+    Route::post('/runs/{runId}/unlock', [PayrollDepartmentController::class, 'unlockPayrollRun']);
     Route::post('/runs/{runId}/approve', [PayrollDepartmentController::class, 'approvePayrollRun']);
     Route::post('/runs/{runId}/release', [PayrollDepartmentController::class, 'releasePayrollRun']);
+    Route::post('/runs/{runId}/disburse', [PayrollDepartmentController::class, 'disburseRun']);
     Route::post('/runs/{runId}/process-payment', [PayrollDepartmentController::class, 'processRunPayment']);
     Route::post('/items/{itemId}/mark-paid', [PayrollDepartmentController::class, 'markItemPaid']);
+
+    // Atomic "Process & Pay" workflow — replaces the 4-step manual ceremony
+    // with one call: bulk-process → lock → approve → release (with bank file inline).
+    Route::post('/process-and-pay', [PayrollDepartmentController::class, 'processAndPay']);
     
     // Bank File
     Route::get('/runs/{runId}/bank-file', [PayrollDepartmentController::class, 'generateBankFile']);

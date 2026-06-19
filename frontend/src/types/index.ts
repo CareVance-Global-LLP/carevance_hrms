@@ -1377,3 +1377,110 @@ export interface PayrollOrganizationSettings {
   lwfEnabled: boolean;
   isMetroCity: boolean;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Payroll run + item types (consumed by PayrollOutcome, MonthTimeline, etc)
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface PayrollMonthlyRun {
+  id: number;
+  organization_id: number;
+  month_year: string;
+  status: 'draft' | 'locked' | 'approved' | 'released' | 'disbursed' | 'paid';
+  pay_date?: string | null;
+  total_employees?: number;
+  total_gross?: number | string;
+  total_deductions?: number | string;
+  total_net_pay?: number | string;
+  total_employer_contributions?: number | string;
+  total_pf_employee?: number | string;
+  total_pf_employer?: number | string;
+  total_esi_employee?: number | string;
+  total_esi_employer?: number | string;
+  total_pt?: number | string;
+  total_tds?: number | string;
+  total_lwf?: number | string;
+  total_arrears?: number | string;
+  total_variable_pay?: number | string;
+  total_leave_encashment?: number | string;
+  total_nps?: number | string;
+  total_vpf?: number | string;
+  locked_at?: string | null;
+  locked_by?: number | null;
+  lock_reason?: string | null;
+  approved_at?: string | null;
+  approved_by?: number | null;
+  released_at?: string | null;
+  released_by?: number | null;
+  disbursed_at?: string | null;
+  disbursed_by?: number | null;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PayrollItem {
+  id: number;
+  payroll_run_id: number;
+  organization_id: number;
+  user_id: number;
+  month_year: string;
+  total_working_days?: number;
+  days_present?: number;
+  days_absent?: number;
+  lOP_days?: number;
+  basic?: number | string;
+  hra?: number | string;
+  conveyance?: number | string;
+  special_allowance?: number | string;
+  gross_salary?: number | string;
+  pf_employee?: number | string;
+  pf_employer?: number | string;
+  eps?: number | string;
+  epf?: number | string;
+  esi_employee?: number | string;
+  esi_employer?: number | string;
+  pt?: number | string;
+  tds?: number | string;
+  lOP_deduction?: number | string;
+  total_deductions?: number | string;
+  net_pay?: number | string;
+  overtime_pay?: number | string;
+  performance_bonus?: number | string;
+  arrears?: number | string;
+  payment_status?: 'pending' | 'paid' | 'failed';
+  payment_method?: 'bank_transfer' | 'cash' | 'cheque' | 'upi';
+  payment_reference?: string | null;
+  paid_at?: string | null;
+  created_at?: string;
+}
+
+export interface PayrollRunChecklistStep {
+  id: string;
+  title: string;
+  status: 'completed' | 'pending' | 'no_action';
+  detail: string | null;
+  icon: string | null;
+  last_changed_at: string | null;
+  last_changed_by: string | null;
+}
+
+export interface PayrollRunChecklist {
+  success: boolean;
+  run_id: number;
+  month_year: string;
+  status: string;
+  steps: PayrollRunChecklistStep[];
+  completed_count: number;
+  total_count: number;
+  pending_count: number;
+}
+
+export interface PayrollRunActivityEntry {
+  id: number;
+  action: string;
+  actor_name: string | null;
+  metadata: Record<string, unknown> | null;
+  ip_address: string | null;
+  created_at: string;
+}

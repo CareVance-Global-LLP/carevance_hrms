@@ -22,6 +22,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import NextStepsCard from './NextStepsCard';
+import MonthTimeline from './MonthTimeline';
 import { cn } from '@/utils/cn';
 
 import type { PayrollDepartment, PayrollStats } from '@/types';
@@ -32,6 +33,7 @@ interface PayrollDashboardProps {
   onSelectDepartment: (departmentId: number) => void;
   onSelectEmployee: (employeeId: number) => void;
   onOpenRunPayroll: (stats: PayrollStats, departments: PayrollDepartment[]) => void;
+  onOpenProcessAndPay: (monthYear: string, pendingCount: number, expectedNetPay: number) => void;
   onOpenDepartmentTemplates?: () => void;
   onOpenFilings?: () => void;
   onOpenWizard?: () => void;
@@ -191,6 +193,7 @@ export default function PayrollDashboard({
   onMonthChange,
   onSelectDepartment,
   onOpenRunPayroll,
+  onOpenProcessAndPay,
   onOpenDepartmentTemplates,
   onOpenFilings,
   onOpenWizard,
@@ -217,6 +220,20 @@ export default function PayrollDashboard({
     queryKey: ['payroll', 'stats', selectedMonth],
     queryFn: () => payrollApi.getStats({ month_year: selectedMonth }).then((res) => res.data),
   });
+
+  // Lifted up so both MonthTimeline and RecentRuns can share the data
+  const { data: runsData } = useQuery({
+    queryKey: ['payroll', 'runs'],
+    queryFn: () => payrollApi.getPayrollRuns().then((r) => r.data),
+  });
+  const runs = (Array.isArray(runsData) ? runsData : (runsData?.runs ?? [])) as Array<{
+    month_year: string;
+    status: string;
+    id: number;
+    employee_count?: number;
+    total_employees?: number;
+    total_net_pay?: number;
+  }>;
 
   const departments = departmentsData?.departments || [];
   const unassignedCount = departmentsData?.unassigned_count || 0;
@@ -254,8 +271,11 @@ export default function PayrollDashboard({
   );
 
   const handleQuickProcess = () => {
-    if (statsData && departments.length > 0) {
+    if (onOpenRunPayroll && statsData && departments.length > 0) {
       onOpenRunPayroll(statsData, departments);
+    } else {
+      // Fallback to the new Process & Pay modal if the legacy one isn't wired.
+      onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay);
     }
   };
 
@@ -268,24 +288,23 @@ export default function PayrollDashboard({
       {/* Onboarding: Next Steps card for first-time / not-yet-completed users */}
       <NextStepsCard onOpenWizard={onOpenWizard} />
 
-      {/* Month selector + quick action row */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <label className="text-sm font-medium text-slate-700">Month:</label>
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
+      {/* Month timeline (Apr-Mar FY) */}
+      <MonthTimeline
+        selectedMonth={selectedMonth}
+        onMonthChange={setSelectedMonth}
+        runs={runs}
+      />
+
+      {/* Process & Pay primary CTA — sits below the timeline, full-width on mobile */}
+      <div className="flex justify-start">
         <Button
           variant="primary"
           iconLeft={<Play className="h-4 w-4" />}
-          onClick={handleQuickProcess}
+          onClick={() => onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay)}
           disabled={summaryStats.pendingCount === 0}
+          className="shadow-sm whitespace-nowrap"
         >
-          Process All ({summaryStats.pendingCount})
+          Process &amp; Pay ({summaryStats.pendingCount})
         </Button>
       </div>
 
@@ -328,10 +347,10 @@ export default function PayrollDashboard({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <QuickActionCard
               icon={Play}
-              title="Process Pending Payroll"
-              description={`${summaryStats.pendingCount} employees need processing`}
+              title="Process & Pay"
+              description={`${summaryStats.pendingCount} employees ready for ${selectedMonth}`}
               count={summaryStats.pendingCount}
-              action={handleQuickProcess}
+              action={() => onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay)}
               variant="warning"
             />
             <QuickActionCard
@@ -430,7 +449,7 @@ export default function PayrollDashboard({
       </div>
 
       {/* Recent Runs */}
-      <RecentRuns onOpenRunDetail={onOpenRunDetail} />
+      <RecentRuns runs={runs} onOpenRunDetail={onOpenRunDetail} />
 
       {/* Help Text */}
       <SurfaceCard className="p-4 bg-blue-50 border-blue-200">
@@ -451,14 +470,14 @@ export default function PayrollDashboard({
   );
 }
 
-function RecentRuns({ onOpenRunDetail }: { onOpenRunDetail?: (runId: number) => void }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['payroll', 'runs'],
-    queryFn: () => payrollApi.getPayrollRuns().then((r) => r.data),
-  });
-
-  const runs = Array.isArray(data) ? data : (data?.runs ?? []);
-  if (isLoading || runs.length === 0) return null;
+function RecentRuns({
+  runs,
+  onOpenRunDetail,
+}: {
+  runs: Array<{ id: number; month_year?: string; run_month?: string; status?: string; total_employees?: number; employee_count?: number; total_net_pay?: number }>;
+  onOpenRunDetail?: (runId: number) => void;
+}) {
+  if (!runs || runs.length === 0) return null;
 
   const recent = runs.slice(0, 5);
   const statusTone: Record<string, string> = {
@@ -470,6 +489,19 @@ function RecentRuns({ onOpenRunDetail }: { onOpenRunDetail?: (runId: number) => 
     paid: 'bg-emerald-100 text-emerald-700',
   };
 
+  // Render month_year ("2026-06") as "Jun 2026" so users immediately see
+  // which month the run is for without decoding the YYYY-MM format.
+  const formatRunMonth = (raw: string | null | undefined): { short: string; long: string } => {
+    if (!raw) return { short: 'Unknown', long: 'Unknown month' };
+    const [y, m] = raw.split('-').map(Number);
+    if (!y || !m || m < 1 || m > 12) return { short: raw, long: raw };
+    const date = new Date(y, m - 1, 1);
+    return {
+      short: date.toLocaleString('en-US', { month: 'short', year: 'numeric' }),
+      long: date.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+    };
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -478,26 +510,32 @@ function RecentRuns({ onOpenRunDetail }: { onOpenRunDetail?: (runId: number) => 
       </div>
       <SurfaceCard className="p-0 overflow-hidden">
         <div className="divide-y divide-slate-100">
-          {recent.map((r: any) => (
-            <button
-              key={r.id}
-              onClick={() => onOpenRunDetail?.(r.id)}
-              className="w-full flex items-center justify-between p-3 hover:bg-blue-50 transition-colors text-left"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="font-medium text-slate-900">{r.month_year ?? r.run_month ?? 'Unknown month'}</p>
-                <p className="text-xs text-slate-500">Run #{r.id} · {r.employee_count ?? 0} employees</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-semibold text-slate-900">
-                  ₹{Number(r.total_net_pay ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </p>
-                <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${statusTone[r.status] ?? 'bg-slate-100 text-slate-700'}`}>
-                  {r.status ?? 'draft'}
-                </span>
-              </div>
-            </button>
-          ))}
+          {recent.map((r) => {
+            const monthLabel = formatRunMonth(r.month_year ?? r.run_month);
+            return (
+              <button
+                key={r.id}
+                onClick={() => onOpenRunDetail?.(r.id)}
+                className="w-full flex items-center justify-between p-3 hover:bg-blue-50 transition-colors text-left"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-slate-900">{monthLabel.long}</p>
+                  <p className="text-xs text-slate-500">
+                    <span className="font-mono">{r.month_year ?? r.run_month ?? '—'}</span>
+                    {' · '}Run #{r.id}{' · '}{r.total_employees ?? r.employee_count ?? 0} employees
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-slate-900">
+                    ₹{Number(r.total_net_pay ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </p>
+                  <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${statusTone[r.status ?? ''] ?? 'bg-slate-100 text-slate-700'}`}>
+                    {r.status ?? 'draft'}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </SurfaceCard>
     </div>
