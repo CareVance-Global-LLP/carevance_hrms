@@ -84,6 +84,8 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::get('/runs', [PayrollDepartmentController::class, 'getPayrollRuns']);
     Route::get('/runs/{runId}', [PayrollDepartmentController::class, 'getPayrollRunDetail']);
     Route::get('/runs/{runId}/completeness', [PayrollDepartmentController::class, 'getRunCompleteness']);
+    Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getRunChecklistStatus']);
+    Route::get('/runs/{runId}/activity', [PayrollDepartmentController::class, 'getRunActivity']);
     Route::post('/runs/{runId}/process-remaining', [PayrollDepartmentController::class, 'processRemainingEmployees']);
     Route::post('/runs/{runId}/lock', [PayrollDepartmentController::class, 'lockPayrollRun']);
     Route::post('/runs/{runId}/unlock', [PayrollDepartmentController::class, 'unlockPayrollRun']);

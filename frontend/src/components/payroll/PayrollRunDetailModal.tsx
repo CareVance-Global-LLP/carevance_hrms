@@ -12,6 +12,9 @@ import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import { useToast } from '@/components/ui/Toast';
 import PayrollRunLifecycleStepper, { RunLifecycleState } from './PayrollRunLifecycleStepper';
+import PayrollOutcome from './PayrollOutcome';
+import RunPayrollChecklist from './RunPayrollChecklist';
+import RunActivityLog from './RunActivityLog';
 
 interface PayrollRunDetailModalProps {
   isOpen: boolean;
@@ -278,6 +281,9 @@ export default function PayrollRunDetailModal({
                 <PayrollRunLifecycleStepper currentState={currentState} />
               </SurfaceCard>
 
+              {/* Pre-flight checklist (6 steps) */}
+              <RunPayrollChecklist runId={runId!} />
+
               {/* Completeness card — shown when run is draft/locked and incomplete */}
               {isIncomplete && (currentState === 'draft' || currentState === 'locked') && (
                 <CompletenessCard
@@ -291,12 +297,18 @@ export default function PayrollRunDetailModal({
                 />
               )}
 
-              {/* Totals */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <SummaryStat icon={Users} label="Employees" value={totals.employees} />
-                <SummaryStat icon={IndianRupee} label="Gross" value={formatCurrency(totals.gross)} accent="violet" />
-                <SummaryStat icon={IndianRupee} label="Deductions" value={formatCurrency(totals.deductions)} accent="amber" />
-                <SummaryStat icon={IndianRupee} label="Net Pay" value={formatCurrency(totals.net)} accent="emerald" />
+              {/* Quick totals + statutory breakdown (PayrollOutcome) */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <SummaryStat icon={Users} label="Employees" value={totals.employees} />
+                  <SummaryStat icon={IndianRupee} label="Gross" value={formatCurrency(totals.gross)} accent="violet" />
+                  <SummaryStat icon={IndianRupee} label="Deductions" value={formatCurrency(totals.deductions)} accent="amber" />
+                  <SummaryStat icon={IndianRupee} label="Net Pay" value={formatCurrency(totals.net)} accent="emerald" />
+                </div>
+
+                {items.length > 0 && (
+                  <PayrollOutcome run={run as any} items={items as any} />
+                )}
               </div>
 
               {/* Missing bank details warning — only relevant for approved+ */}
@@ -334,28 +346,33 @@ export default function PayrollRunDetailModal({
                 />
               </SurfaceCard>
 
-              {/* Per-employee grid */}
+              {/* Per-employee grid + activity log */}
               {items.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-900 mb-3">Payslips in this run</h4>
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {items.slice(0, 50).map((it: any, idx: number) => (
-                      <div key={it.id ?? idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg text-sm">
-                        <div>
-                          <p className="font-medium text-slate-900">{it.user_name ?? it.employee_name ?? `Employee #${it.user_id}`}</p>
-                          <p className="text-xs text-slate-500">{it.designation ?? it.department ?? ''}</p>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="lg:col-span-2">
+                    <h4 className="text-sm font-semibold text-slate-900 mb-3">Payslips in this run</h4>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {items.slice(0, 50).map((it: any, idx: number) => (
+                        <div key={it.id ?? idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg text-sm">
+                          <div>
+                            <p className="font-medium text-slate-900">{it.user_name ?? it.employee_name ?? `Employee #${it.user_id}`}</p>
+                            <p className="text-xs text-slate-500">{it.designation ?? it.department ?? ''}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold text-emerald-600">{formatCurrency(it.net_pay || 0)}</p>
+                            <p className="text-xs text-slate-500">{it.payment_status ?? 'pending'}</p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-emerald-600">{formatCurrency(it.net_pay || 0)}</p>
-                          <p className="text-xs text-slate-500">{it.payment_status ?? 'pending'}</p>
-                        </div>
-                      </div>
-                    ))}
-                    {items.length > 50 && (
-                      <p className="text-xs text-slate-500 text-center py-2">
-                        + {items.length - 50} more (use Bank File for full export)
-                      </p>
-                    )}
+                      ))}
+                      {items.length > 50 && (
+                        <p className="text-xs text-slate-500 text-center py-2">
+                          + {items.length - 50} more (use Bank File for full export)
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <RunActivityLog runId={runId!} />
                   </div>
                 </div>
               )}

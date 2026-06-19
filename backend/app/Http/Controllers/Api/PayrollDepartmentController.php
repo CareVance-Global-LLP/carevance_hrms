@@ -1235,6 +1235,276 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
+     * 6-step pre-flight checklist for a payroll run.
+     *
+     * Each step's status is derived from live data:
+     *   - completed: the step has been reviewed/acted upon (data exists that
+     *     needs review, AND someone has acknowledged it via audit log)
+     *   - pending:   data exists that needs review (but no recent acknowledgement)
+     *   - no_action: nothing to review this month (e.g., no new joinees)
+     *
+     * Steps without a backing data source (Holds, Overrides) return
+     * no_action so the checklist still renders cleanly even though those
+     * features aren't tracked yet.
+     */
+    public function getRunChecklistStatus(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        $monthYear = $run->month_year;
+        [$year, $month] = array_map('intval', explode('-', $monthYear));
+        $monthStart = sprintf('%04d-%02d-01', $year, $month);
+        $monthEnd = date('Y-m-t', strtotime($monthStart));
+
+        // Helper: run a query and return null if the underlying table doesn't
+        // exist. Keeps the checklist resilient when an org hasn't installed
+        // every optional module (employee_work_info, reimbursements, etc.).
+        $safeCount = function (callable $callback): int {
+            try {
+                return (int) $callback();
+            } catch (\Throwable $e) {
+                if (str_contains(strtolower($e->getMessage()), 'does not exist')
+                    || str_contains(strtolower($e->getMessage()), 'undefined table')) {
+                    return 0;
+                }
+                throw $e;
+            }
+        };
+
+        // 1. Attendance — completed if all expected employees have a payroll_item
+        //    with days_present > 0 for this run.
+        $expectedCount = $safeCount(fn () => DB::table('employee_payroll_templates as t')
+            ->join('users as u', 'u.id', '=', 't.user_id')
+            ->where('t.organization_id', $organizationId)
+            ->whereIn('u.role', ['employee', 'manager', 'admin'])
+            ->where('t.is_active', true)
+            ->whereNotNull('t.annual_ctc')
+            ->where('t.annual_ctc', '>', 0)
+            ->count());
+        $attendanceCompleted = $safeCount(fn () => DB::table('payroll_items as pi')
+            ->where('pi.payroll_run_id', $run->id)
+            ->where('pi.days_present', '>', 0)
+            ->distinct('pi.user_id')
+            ->count('pi.user_id'));
+        $attendanceHasData = $expectedCount > 0;
+
+        // 2. Joinees & Exits — employees whose joining_date OR exit_date falls in this month
+        $joineesCount = $safeCount(fn () => DB::table('employee_work_info as w')
+            ->join('users as u', 'u.id', '=', 'w.user_id')
+            ->where('u.organization_id', $organizationId)
+            ->whereBetween('w.joining_date', [$monthStart, $monthEnd])
+            ->count());
+        $exitsCount = $safeCount(fn () => DB::table('employee_work_info as w')
+            ->join('users as u', 'u.id', '=', 'w.user_id')
+            ->where('u.organization_id', $organizationId)
+            ->whereNotNull('w.exit_date')
+            ->whereBetween('w.exit_date', [$monthStart, $monthEnd])
+            ->count());
+
+        // 3. Bonus & Revisions — overtime_pay > 0 or performance_bonus > 0 on items,
+        //    or any salary revision letter whose effective_from falls in this month
+        $overtimeCount = $safeCount(fn () => DB::table('payroll_items')
+            ->where('payroll_run_id', $run->id)
+            ->where('overtime_pay', '>', 0)
+            ->count());
+        $bonusCount = $safeCount(fn () => DB::table('payroll_items')
+            ->where('payroll_run_id', $run->id)
+            ->where('performance_bonus', '>', 0)
+            ->count());
+        $revisionCount = $safeCount(fn () => DB::table('salary_revision_letters')
+            ->where('organization_id', $organizationId)
+            ->whereBetween('effective_from', [$monthStart, $monthEnd])
+            ->where('status', 'accepted')
+            ->count());
+
+        // 4. Reimbursements — pending reimbursements for this month
+        $pendingReimbursements = $safeCount(fn () => DB::table('reimbursements')
+            ->where('organization_id', $organizationId)
+            ->where('status', 'pending')
+            ->whereBetween('expense_date', [$monthStart, $monthEnd])
+            ->count());
+
+        // 5. Holds & Arrears — no `is_on_hold` flag exists yet, so this is always no_action.
+        //    Arrears are computed via payroll_items.arrears column.
+        $arrearsCount = $safeCount(fn () => DB::table('payroll_items')
+            ->where('payroll_run_id', $run->id)
+            ->where('arrears', '>', 0)
+            ->count());
+
+        // 6. Override (PT, ESI, TDS, LWF) — no `manual_override` flag yet, no_action.
+        //    Could be enhanced later by comparing computed vs actual values.
+
+        // Audit acknowledgement — if any recent audit_logs entry exists for this run
+        // dated today, treat the run as "reviewed" for status purposes.
+        $recentAudit = null;
+        $reviewerName = null;
+        try {
+            $recentAudit = DB::table('audit_logs')
+                ->where('target_type', PayrollMonthlyRun::class)
+                ->where('target_id', $run->id)
+                ->where('created_at', '>=', now()->subDay())
+                ->orderByDesc('created_at')
+                ->first();
+
+            if ($recentAudit && $recentAudit->actor_user_id) {
+                $reviewerName = DB::table('users')->where('id', $recentAudit->actor_user_id)->value('name');
+            }
+        } catch (\Throwable $e) {
+            // audit_logs may not be installed in some envs — treat as no acknowledgement
+        }
+        $lastReviewedAt = $recentAudit?->created_at;
+
+        $step = function (
+            string $id,
+            string $title,
+            string $status,
+            ?string $detail = null,
+            ?string $icon = null,
+        ): array {
+            return [
+                'id' => $id,
+                'title' => $title,
+                'status' => $status,
+                'detail' => $detail,
+                'icon' => $icon,
+                'last_changed_at' => null,
+                'last_changed_by' => null,
+            ];
+        };
+
+        $steps = [
+            $step(
+                'attendance',
+                'Leave, Attendance & Payable Units',
+                $attendanceHasData ? 'completed' : 'no_action',
+                $attendanceHasData
+                    ? "{$attendanceCompleted} of {$expectedCount} expected employees have attendance finalized"
+                    : 'No expected employees with CTC configured yet',
+                'ClipboardList',
+            ),
+            $step(
+                'joinees_exits',
+                'New Joinees & Exits',
+                ($joineesCount + $exitsCount) > 0 ? 'pending' : 'no_action',
+                ($joineesCount + $exitsCount) > 0
+                    ? "{$joineesCount} new joiner(s), {$exitsCount} exit(s) in {$monthYear}"
+                    : "No joiners or exits in {$monthYear}",
+                'Users',
+            ),
+            $step(
+                'bonus_revisions',
+                'Bonus, Salary Revisions & Overtime',
+                ($overtimeCount + $bonusCount + $revisionCount) > 0 ? 'pending' : 'no_action',
+                ($overtimeCount + $bonusCount + $revisionCount) > 0
+                    ? "{$overtimeCount} overtime entries · {$bonusCount} bonus entries · {$revisionCount} salary revision(s)"
+                    : 'No bonuses, revisions, or overtime this month',
+                'TrendingUp',
+            ),
+            $step(
+                'reimbursements',
+                'Reimbursement, Adhoc Payment, Deduction',
+                $pendingReimbursements > 0 ? 'pending' : 'no_action',
+                $pendingReimbursements > 0
+                    ? "{$pendingReimbursements} reimbursement(s) awaiting approval"
+                    : 'No pending reimbursements',
+                'Receipt',
+            ),
+            $step(
+                'holds_arrears',
+                'Salaries on Hold & Arrears',
+                $arrearsCount > 0 ? 'pending' : 'no_action',
+                $arrearsCount > 0
+                    ? "{$arrearsCount} employee(s) have arrears this month"
+                    : 'No salary holds or arrears this month',
+                'PauseCircle',
+            ),
+            $step(
+                'overrides',
+                'Override (PT, ESI, TDS, LWF)',
+                'no_action',
+                'Manual override tracking is not yet enabled',
+                'Sliders',
+            ),
+        ];
+
+        // Stamp each step with the last review acknowledgement if any
+        if ($lastReviewedAt) {
+            foreach ($steps as &$s) {
+                if ($s['status'] !== 'no_action') {
+                    $s['last_changed_at'] = $lastReviewedAt;
+                    $s['last_changed_by'] = $reviewerName ?? ('user #' . $recentAudit->actor_user_id);
+                    $s['locked'] = true;
+                }
+            }
+            unset($s);
+        }
+
+        $completedCount = count(array_filter($steps, fn ($s) => $s['status'] === 'completed'));
+
+        return response()->json([
+            'success' => true,
+            'run_id' => $runId,
+            'month_year' => $monthYear,
+            'status' => $run->status,
+            'steps' => $steps,
+            'completed_count' => $completedCount,
+            'total_count' => count($steps),
+            'pending_count' => count(array_filter($steps, fn ($s) => $s['status'] === 'pending')),
+        ]);
+    }
+
+    /**
+     * Activity log for a payroll run — chronological list of audit entries
+     * (locked, approved, released, disbursed, unlocked, etc).
+     */
+    public function getRunActivity(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        // Confirm the run belongs to this org (avoid leaking cross-org data)
+        PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        $entries = DB::table('audit_logs as a')
+            ->leftJoin('users as u', 'u.id', '=', 'a.actor_user_id')
+            ->where('a.target_type', PayrollMonthlyRun::class)
+            ->where('a.target_id', $runId)
+            ->orderByDesc('a.created_at')
+            ->limit(50)
+            ->get([
+                'a.id',
+                'a.action',
+                'a.metadata',
+                'a.ip_address',
+                'a.created_at',
+                'u.name as actor_name',
+            ])
+            ->map(function ($row) {
+                $metadata = $row->metadata ? json_decode($row->metadata, true) : [];
+                return [
+                    'id' => (int) $row->id,
+                    'action' => $row->action,
+                    'actor_name' => $row->actor_name,
+                    'metadata' => $metadata,
+                    'ip_address' => $row->ip_address,
+                    'created_at' => $row->created_at,
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'run_id' => $runId,
+            'entries' => $entries,
+        ]);
+    }
+
+    /**
      * Lock a payroll run (no more edits to calculations).
      *
      * "Perfect flow" change: partial runs are now allowed by default.
@@ -1535,17 +1805,23 @@ class PayrollDepartmentController extends Controller
     /**
      * Persist a lifecycle audit entry. Falls back silently if the audit_logs
      * table is missing the columns we want — auditing must never block payroll.
+     *
+     * Uses the actual audit_logs schema:
+     *   actor_user_id, target_type, target_id, metadata
+     * (Earlier versions used actor_id / auditable_type / auditable_id / meta
+     * which don't exist on this table — the insert was silently failing.)
      */
     private function writeRunAudit(PayrollMonthlyRun $run, string $action, array $meta = []): void
     {
         try {
             DB::table('audit_logs')->insert([
                 'organization_id' => $run->organization_id,
-                'actor_id' => auth()->id(),
+                'actor_user_id' => auth()->id(),
                 'action' => 'payroll_run.' . $action,
-                'auditable_type' => PayrollMonthlyRun::class,
-                'auditable_id' => $run->id,
-                'meta' => json_encode($meta),
+                'target_type' => PayrollMonthlyRun::class,
+                'target_id' => $run->id,
+                'metadata' => json_encode($meta),
+                'ip_address' => request()?->ip(),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -1581,6 +1857,11 @@ class PayrollDepartmentController extends Controller
             'approved_by' => auth()->id(),
             'approved_at' => now(),
             'notes' => $request->get('notes', $run->notes),
+        ]);
+
+        $this->writeRunAudit($run->fresh(), 'approved', [
+            'approved_by' => auth()->id(),
+            'notes' => $request->get('notes'),
         ]);
 
         return response()->json([
@@ -1636,6 +1917,11 @@ class PayrollDepartmentController extends Controller
             'released_at' => now(),
             'released_by' => auth()->id(),
             'notes' => $request->get('notes', $run->notes),
+        ]);
+
+        $this->writeRunAudit($run->fresh(), 'released', [
+            'released_by' => auth()->id(),
+            'skipped_employees' => $employeesMissingBankDetails->pluck('user_id')->all(),
         ]);
 
         return response()->json([

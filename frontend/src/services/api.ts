@@ -1741,6 +1741,40 @@ export const payrollApi = {
   getPayrollRunDetail: (runId: number) =>
     api.get<{ run: any; items: any[] }>(`/payroll/runs/${runId}`),
 
+  getRunChecklist: (runId: number) =>
+    api.get<{
+      success: boolean;
+      run_id: number;
+      month_year: string;
+      status: string;
+      steps: Array<{
+        id: string;
+        title: string;
+        status: 'completed' | 'pending' | 'no_action';
+        detail: string | null;
+        icon: string | null;
+        last_changed_at: string | null;
+        last_changed_by: string | null;
+      }>;
+      completed_count: number;
+      total_count: number;
+      pending_count: number;
+    }>(`/payroll/runs/${runId}/checklist`),
+
+  getRunActivity: (runId: number) =>
+    api.get<{
+      success: boolean;
+      run_id: number;
+      entries: Array<{
+        id: number;
+        action: string;
+        actor_name: string | null;
+        metadata: Record<string, unknown> | null;
+        ip_address: string | null;
+        created_at: string;
+      }>;
+    }>(`/payroll/runs/${runId}/activity`),
+
   getRunCompleteness: (runId: number) =>
     api.get<{
       success: boolean;
