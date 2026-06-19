@@ -619,24 +619,36 @@ class PayrollDepartmentController extends Controller
             annualTaxExemptions: $taxExemptions
         );
 
-        // Apply deductions based on template settings (use custom percentages from template)
-        // PF: calculateEmployeePF already applies the rate, so don't multiply again
-        $pfAmount = $template->pf_enabled 
-            ? $this->calculator->calculateEmployeePF($template->pf_above_cap ? PHP_FLOAT_MAX : $calculation['components']['earnings']['basic']) 
-            : 0;
-        $esiAmount = $template->esi_enabled && $calculation['monthly']['gross'] <= ($template->esi_threshold ?? 21000) 
-            ? $calculation['monthly']['gross'] * ($template->esi_employee_percentage / 100) 
-            : 0;
-        $ptAmount = $template->pt_enabled 
-            ? \App\Services\PTStateService::calculate($template->pt_state ?? 'maharashtra', $calculation['monthly']['gross']) 
-            : 0;
-        $tdsAmount = $template->tds_enabled 
-            ? $calculation['components']['deductions']['tds'] 
-            : 0;
-
-        // Calculate LOP deduction
+        // Calculate LOP deduction first — PF/ESI/PT apply to actual
+        // payable wages, not the full month's gross. Otherwise an
+        // employee with heavy LOP ends up with total_deductions > gross
+        // and net_pay = 0.
         $lOPDeduction = $calculation['monthly']['gross'] > 0 && $workingDays > 0
             ? ($calculation['monthly']['gross'] / $workingDays) * $lOPDays
+            : 0;
+
+        // Payable wages = gross minus LOP. PF applies to payable basic,
+        // ESI and PT apply to payable gross. When gross is 0 we fall
+        // back to 0 to avoid a div-by-zero on the basic pro-ration.
+        $payableGross = max(0, $calculation['monthly']['gross'] - $lOPDeduction);
+        $payableBasic = $calculation['monthly']['gross'] > 0
+            ? max(0, $calculation['components']['earnings']['basic']
+                - ($calculation['components']['earnings']['basic'] / $calculation['monthly']['gross']) * $lOPDeduction)
+            : 0;
+
+        // Apply deductions based on template settings (use custom percentages from template)
+        // PF: calculateEmployeePF already applies the rate, so don't multiply again
+        $pfAmount = $template->pf_enabled
+            ? $this->calculator->calculateEmployeePF($template->pf_above_cap ? PHP_FLOAT_MAX : $payableBasic)
+            : 0;
+        $esiAmount = $template->esi_enabled && $payableGross <= ($template->esi_threshold ?? 21000)
+            ? $payableGross * ($template->esi_employee_percentage / 100)
+            : 0;
+        $ptAmount = $template->pt_enabled
+            ? \App\Services\PTStateService::calculate($template->pt_state ?? 'maharashtra', $payableGross)
+            : 0;
+        $tdsAmount = $template->tds_enabled
+            ? $calculation['components']['deductions']['tds']
             : 0;
 
         // Calculate overtime pay (assuming 2x rate)

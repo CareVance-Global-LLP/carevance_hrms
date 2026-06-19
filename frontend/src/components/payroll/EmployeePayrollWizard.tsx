@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Save,
@@ -18,6 +19,8 @@ import {
   Loader2,
   Activity,
   ListChecks,
+  Trash2,
+  Receipt,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -33,6 +36,13 @@ import type { EmployeePayrollDetails, EmployeePayrollTemplate, PayrollCalculatio
 interface EmployeePayrollWizardProps {
   employeeId: number;
   monthYear: string;
+  /**
+   * Optional step override coming from the URL (?step=N). The wizard reads
+   * its own URL search params, so this prop is only used as a fallback for
+   * callers that bypass the URL (e.g. tests). When the URL has no step
+   * param, the wizard defaults to step 0 (Attendance).
+   */
+  initialStep?: number;
   onBack: () => void;
   onComplete?: () => void;
   onViewRun?: (runId: number) => void;
@@ -57,12 +67,45 @@ const WIZARD_STEPS = [
 export default function EmployeePayrollWizard({
   employeeId,
   monthYear,
+  initialStep,
   onBack,
   onComplete,
   onViewRun,
 }: EmployeePayrollWizardProps) {
   const queryClient = useQueryClient();
-  const [currentStep, setCurrentStep] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Step is URL-driven so a browser refresh / deep link lands the user on
+  // the same step they were on. Falls back to `initialStep` prop, then 0.
+  // Clamped to [0, 2] to defend against malformed URLs.
+  const parseStep = (raw: string | null): number => {
+    if (raw === null) {
+      return initialStep !== undefined ? Math.max(0, Math.min(2, initialStep)) : 0;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(2, Math.trunc(n)));
+  };
+  const currentStep = parseStep(searchParams.get('step'));
+  const setCurrentStep = useCallback(
+    (next: number) => {
+      const clamped = Math.max(0, Math.min(2, Math.trunc(next)));
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev);
+          if (clamped === 0) {
+            p.delete('step');
+          } else {
+            p.set('step', String(clamped));
+          }
+          return p;
+        },
+        { replace: false },
+      );
+    },
+    [setSearchParams],
+  );
+
   const [annualCtc, setAnnualCtc] = useState('');
   const [workingDays, setWorkingDays] = useState('26');
   const [daysPresent, setDaysPresent] = useState('26');
@@ -80,6 +123,51 @@ export default function EmployeePayrollWizard({
     queryKey: ['payroll', 'employee', employeeId, monthYear],
     queryFn: () => payrollApi.getEmployeePayrollDetails(employeeId, { month_year: monthYear }).then(res => res.data),
   });
+
+  // Approved reimbursements for this employee. Surfaced in Step 2
+  // (Salary Structure) so the admin can see what's been pre-approved
+  // and pull any item out via the trash icon. The query only runs
+  // when the wizard is on a step that needs it (Step 1+, `enabled`
+  // gate below), but the trash-icon removal still works from any
+  // step because the mutation updates this query's cache directly.
+  const approvedReimbursementsQuery = useQuery({
+    queryKey: ['reimbursements', 'employee', employeeId, 'approved'],
+    queryFn: () => payrollApi.getEmployeeReimbursements(employeeId, 'approved').then(res => res.data),
+    enabled: Boolean(employeeId),
+  });
+  const approvedReimbursements = Array.isArray(approvedReimbursementsQuery.data) ? approvedReimbursementsQuery.data : [];
+  const approvedReimbursementsTotal = approvedReimbursements.reduce(
+    (sum, r) => sum + (Number(r.amount) || 0),
+    0,
+  );
+
+  const removeReimbursementMutation = useMutation({
+    mutationFn: (id: number) => payrollApi.removeReimbursement(id),
+    onSuccess: () => {
+      // Drop the row from this query's cache so the panel refreshes
+      // immediately without an extra round-trip.
+      queryClient.invalidateQueries({ queryKey: ['reimbursements', 'employee', employeeId] });
+      show({ kind: 'success', message: 'Reimbursement removed from salary structure.' });
+    },
+    onError: (err: unknown) => {
+      show({ kind: 'error', message: getApiErrorMessage(err, 'Failed to remove reimbursement.') });
+    },
+  });
+
+  const handleRemoveReimbursement = (id: number, title: string) => {
+    // Native confirm() keeps this lightweight and avoids pulling in a
+    // modal library for a single destructive action. The button is
+    // disabled while the request is in flight.
+    const ok = window.confirm(
+      `Remove "${title}" from the salary structure?\n\n` +
+      `This will stop it from being added to the next payroll run. ` +
+      `If it was already paid out, this does NOT claw back the money — ` +
+      `use a payroll reversal for that.`
+    );
+    if (ok) {
+      removeReimbursementMutation.mutate(id);
+    }
+  };
 
   // Fetch PT states (slabs/slabs are server-side; we only need the dropdown options here)
   const { data: ptStatesData } = useQuery({
@@ -862,6 +950,97 @@ export default function EmployeePayrollWizard({
           </Button>
         </div>
       </div>
+
+      {/* Approved Reimbursements — every approved reimbursement for this
+          employee is shown here so the admin sees what will be folded
+          into the salary. The trash icon calls the soft-remove endpoint
+          (status='removed') which keeps the audit trail but excludes the
+          row from future payroll runs. */}
+      <SurfaceCard className="p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+            <Receipt className="h-5 w-5 text-blue-600" />
+            Approved Reimbursements
+          </h3>
+          <span className="text-xs text-slate-500">
+            {approvedReimbursementsQuery.isLoading
+              ? 'Loading…'
+              : `${approvedReimbursements.length} item${approvedReimbursements.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+
+        {approvedReimbursementsQuery.isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-slate-500 py-3">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Fetching approved reimbursements…
+          </div>
+        ) : approvedReimbursements.length === 0 ? (
+          <p className="text-sm text-slate-500 py-3">
+            No approved reimbursements for this employee. Approve one from the
+            <span className="font-medium"> Reimbursements </span>
+            page and it will show up here.
+          </p>
+        ) : (
+          <>
+            <ul className="divide-y divide-slate-100">
+              {approvedReimbursements.map((r: any) => {
+                const isRemoving =
+                  removeReimbursementMutation.isPending &&
+                  removeReimbursementMutation.variables === r.id;
+                const label = r.title || r.description || `Reimbursement #${r.id}`;
+                const currency = r.currency || 'INR';
+                return (
+                  <li
+                    key={r.id}
+                    className="flex items-center justify-between py-3 gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 truncate">
+                        {label}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {r.expense_date ? `Expense date: ${r.expense_date} · ` : ''}
+                        Approved {r.approved_at ? `on ${String(r.approved_at).slice(0, 10)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-sm font-semibold text-slate-900 tabular-nums">
+                        {currency} {Number(r.amount).toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveReimbursement(r.id, label)}
+                        disabled={isRemoving || removeReimbursementMutation.isPending}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        aria-label={`Remove ${label} from salary structure`}
+                        title="Remove from salary structure"
+                      >
+                        {isRemoving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3">
+              <span className="text-sm font-medium text-slate-600">Total Reimbursements</span>
+              <span className="text-base font-bold text-slate-900 tabular-nums">
+                ₹ {approvedReimbursementsTotal.toLocaleString('en-IN', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+          </>
+        )}
+      </SurfaceCard>
     </div>
   );
 

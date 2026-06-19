@@ -10,7 +10,12 @@ class PayrollComplianceSeeder extends Seeder
 {
     public function run(): void
     {
-        // Seed default checklist items for payroll validation
+        // Seed default checklist items for payroll validation.
+        //
+        // payroll_checklist_items.organization_id is a non-null FK (see
+        // migration 2026_06_11_000005_create_payroll_checklist_tables).
+        // Without it the insert fails with a not-null violation. Use
+        // SEED_ORG_ID env var to override the default (org 1 = CareVance).
         $defaultChecks = [
             ['check_code' => 'missing_bank', 'category' => 'bank_details', 'severity' => 'error',
              'label' => 'Missing Bank Accounts', 'description' => 'Employee has no bank account configured for salary transfer',
@@ -41,14 +46,38 @@ class PayrollComplianceSeeder extends Seeder
              'sort_order' => 9, 'is_auto_resolvable' => false],
         ];
 
+        $orgId = (int) (env('SEED_ORG_ID') ?: 1);
+
         foreach ($defaultChecks as $check) {
-            PayrollChecklistItem::firstOrCreate(
-                ['check_code' => $check['check_code']],
-                $check
-            );
+            $existing = PayrollChecklistItem::where('check_code', $check['check_code'])->first();
+            if ($existing) {
+                // Backfill organization_id on legacy rows that were
+                // seeded before this fix.
+                if (empty($existing->organization_id)) {
+                    $existing->organization_id = $orgId;
+                    $existing->save();
+                }
+                continue;
+            }
+
+            PayrollChecklistItem::create(array_merge($check, [
+                'organization_id' => $orgId,
+                'is_active' => true,
+            ]));
         }
 
-        // Seed default FBP components
+// Seed default FBP components.
+        //
+        // Each FBP component row must carry an organization_id because
+        // FbpService::getAllocateComponent() filters by org and the
+        // fbp_components.organization_id column is non-nullable (FK).
+        // Without it the seed (and the FBP page that reads it) crashes
+        // with a 500.
+        //
+        // The fbp_components.code column is globally unique in the
+        // schema, so we look up by code alone. If a row exists but
+        // has the wrong (or null) organization_id we update it. This
+        // keeps the seeder idempotent and repair-safe.
         $defaultFbpComponents = [
             ['code' => 'medical_reimbursement', 'name' => 'Medical Reimbursement', 'category' => 'medical',
              'max_exempt_limit' => 15000, 'requires_proof' => true, 'is_taxable' => false],
@@ -68,11 +97,25 @@ class PayrollComplianceSeeder extends Seeder
              'max_exempt_limit' => null, 'requires_proof' => true, 'is_taxable' => false],
         ];
 
+        $orgId = (int) (env('SEED_ORG_ID') ?: 1);
+
         foreach ($defaultFbpComponents as $comp) {
-            FbpComponent::firstOrCreate(
-                ['code' => $comp['code']],
-                $comp
-            );
+            $existing = FbpComponent::where('code', $comp['code'])->first();
+            if ($existing) {
+                // Backfill organization_id if missing (legacy rows from
+                // before this seeder fix). Don't overwrite other fields
+                // — they may have been edited in the UI.
+                if (empty($existing->organization_id)) {
+                    $existing->organization_id = $orgId;
+                    $existing->save();
+                }
+                continue;
+            }
+
+            FbpComponent::create(array_merge($comp, [
+                'organization_id' => $orgId,
+                'is_active' => true,
+            ]));
         }
     }
 }

@@ -534,6 +534,7 @@ class PayrollController extends Controller
                 'months_count' => $payrollItems->count(),
             ],
             'employee' => [
+                'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'employee_code' => $user->employeeWorkInfo?->employee_code,

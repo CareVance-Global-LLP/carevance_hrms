@@ -36,7 +36,7 @@ class FbpService
         $allocation = FbpAllocation::firstOrNew([
             'user_id' => $userId,
             'fbp_component_id' => $componentId,
-            'financial_year_id' => $financialYearId,
+            'financial_year' => $financialYearId,
             'organization_id' => $orgId,
         ]);
 

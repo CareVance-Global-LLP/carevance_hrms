@@ -194,6 +194,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::delete('/reimbursements/{id}', [ReimbursementController::class, 'destroy']);
     Route::post('/reimbursements/{id}/approve', [ReimbursementController::class, 'approve']);
     Route::post('/reimbursements/{id}/reject', [ReimbursementController::class, 'reject']);
+    Route::post('/reimbursements/{id}/remove', [ReimbursementController::class, 'remove']);
     Route::get('/reimbursements/summary', [ReimbursementController::class, 'getSummary']);
 
     // Tax-Proof Submissions (Form 12BB attachments)

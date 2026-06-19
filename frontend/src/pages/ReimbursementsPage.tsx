@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Receipt, Search, Loader2, Plus, CheckCircle, XCircle, IndianRupee } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
@@ -12,6 +13,7 @@ const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'paid'];
 
 export default function ReimbursementsPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -50,7 +52,33 @@ export default function ReimbursementsPage() {
 
   const approveMutation = useMutation({
     mutationFn: (id: number) => payrollApi.approveReimbursement(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reimbursements'] }),
+    // TanStack Query hands the onSuccess callback the raw AxiosResponse
+    // envelope, so the approve payload lives at `response.data`.
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
+      // After successful approval, redirect the admin straight into the
+      // employee's Salary Structure wizard step so they can immediately
+      // fold the reimbursement into the next payroll run. The wizard
+      // uses 0-indexed steps internally, so step=1 == Salary Structure.
+      //
+      // The backend eager-loads `employee.groups` on the approve
+      // response; we use groups[0].id as the "department" param
+      // because every payroll route is keyed by group_id (see
+      // PayrollDepartmentController::getDepartmentEmployees where
+      // `department_id` is actually groups.id).
+      const employeeId = response?.data?.reimbursement?.employee?.id;
+      const groupId = response?.data?.reimbursement?.employee?.groups?.[0]?.id;
+      if (employeeId && groupId) {
+        navigate(`/payroll?view=employee&dept=${groupId}&emp=${employeeId}&step=1`);
+      } else if (employeeId) {
+        // Employee exists but has no group → can't open the wizard
+        // without a department. Fall back to the dashboard so the
+        // admin isn't left stranded on a route that won't load.
+        navigate('/payroll');
+      }
+      // If employeeId is missing entirely, leave the admin on the
+      // reimbursements list (no navigation). Refetch already handled.
+    },
   });
 
   const rejectMutation = useMutation({

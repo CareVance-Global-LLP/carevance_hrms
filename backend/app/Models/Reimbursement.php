@@ -12,8 +12,8 @@ class Reimbursement extends Model
 
     protected $fillable = [
         'organization_id',
-        'employee_id',
-        'approver_id',
+        'user_id',
+        'approved_by',
         'category',
         'amount',
         'currency',
@@ -24,7 +24,6 @@ class Reimbursement extends Model
         'location',
         'status',
         'approved_at',
-        'notes',
     ];
 
     protected $casts = [
@@ -40,12 +39,12 @@ class Reimbursement extends Model
 
     public function employee(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'employee_id');
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     public function approver(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'approver_id');
+        return $this->belongsTo(User::class, 'approved_by');
     }
 
     public function scopePending($query)

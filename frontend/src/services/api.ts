@@ -2008,6 +2008,18 @@ export const payrollApi = {
     api.post<any>(`/payroll/reimbursements/${id}/approve`),
   rejectReimbursement: (id: number, reason: string) =>
     api.post<any>(`/payroll/reimbursements/${id}/reject`, { reason }),
+  // Soft-remove a previously-approved reimbursement so it stops being
+  // included in the next payroll run. Sets status='removed' on the
+  // server. Idempotent on the backend but the UI treats each click as
+  // a deliberate confirmation.
+  removeReimbursement: (id: number) =>
+    api.post<any>(`/payroll/reimbursements/${id}/remove`),
+  // Used by the Salary Structure wizard to show approved reimbursements
+  // for the current employee.
+  getEmployeeReimbursements: (employeeId: number, status?: 'pending' | 'approved' | 'rejected' | 'removed') =>
+    api.get<any[]>('/payroll/reimbursements', {
+      params: { user_id: employeeId, status: status ?? 'approved' },
+    }),
 
   // ===== Revision Letters (Employee self-service) =====
   myRevisionLetters: () =>

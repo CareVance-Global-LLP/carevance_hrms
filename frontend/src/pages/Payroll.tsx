@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { HelpCircle } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import PayrollDashboard from '@/components/payroll/PayrollDashboard';
@@ -16,16 +17,64 @@ import type { PayrollStats } from '@/types';
 
 type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates' | 'filings';
 
+const VALID_VIEWS: ReadonlySet<ViewMode> = new Set([
+  'dashboard', 'department', 'employee', 'dept-templates', 'filings',
+]);
+
+/**
+ * Helpers for reading/writing the payroll flow's URL state.
+ *
+ * URL contract:
+ *   /payroll                                          → Dashboard
+ *   /payroll?view=department&dept=5                   → Department employees
+ *   /payroll?view=dept-templates                      → Salary templates
+ *   /payroll?view=filings                             → Filings
+ *   /payroll?view=employee&dept=5&emp=12&step=1       → Wizard step 1 (Salary)
+ *
+ * The wizard reads `step` directly via its own useSearchParams; the parent
+ * only needs to round-trip it (it's not read here). View + dept + emp are
+ * the parent's responsibility.
+ */
+function parseView(raw: string | null): ViewMode {
+  if (raw && VALID_VIEWS.has(raw as ViewMode)) return raw as ViewMode;
+  return 'dashboard';
+}
+
+function parseId(raw: string | null): number {
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+
+function parseStep(raw: string | null): number {
+  if (!raw) return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(2, Math.trunc(n)));
+}
+
 export default function PayrollPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState<number>(0);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number>(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Read the four URL-driven values. Defaults keep the dashboard view stable
+  // when the user lands on /payroll with no params.
+  const viewMode = useMemo(() => parseView(searchParams.get('view')), [searchParams]);
+  const selectedDepartmentId = useMemo(
+    () => parseId(searchParams.get('dept')),
+    [searchParams],
+  );
+  const selectedEmployeeId = useMemo(
+    () => parseId(searchParams.get('emp')),
+    [searchParams],
+  );
+  const currentStep = useMemo(() => parseStep(searchParams.get('step')), [searchParams]);
+
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  // Modal states
+  // Modal states (transient, not part of the deep-linkable flow)
   const [isRunPayrollModalOpen, setIsRunPayrollModalOpen] = useState(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -36,29 +85,49 @@ export default function PayrollPage() {
   // Help drawer
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
+  /**
+   * Mutate a single URL param without trampling siblings (so back/forward
+   * through the flow continues to work and the user's current step is
+   * preserved when they navigate between branches).
+   */
+  const updateParams = useCallback(
+    (updates: Record<string, string | number | null>) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          for (const [key, value] of Object.entries(updates)) {
+            if (value === null || value === '' || value === 0) {
+              next.delete(key);
+            } else {
+              next.set(key, String(value));
+            }
+          }
+          return next;
+        },
+        { replace: false },
+      );
+    },
+    [setSearchParams],
+  );
+
   const handleOpenRunDetail = (runId: number) => {
     setRunDetailId(runId);
   };
 
   const handleSelectDepartment = (departmentId: number) => {
-    setSelectedDepartmentId(departmentId);
-    setViewMode('department');
+    updateParams({ view: 'department', dept: departmentId, emp: null, step: null });
   };
 
   const handleSelectEmployee = (employeeId: number) => {
-    setSelectedEmployeeId(employeeId);
-    setViewMode('employee');
+    updateParams({ view: 'employee', emp: employeeId, step: 0 });
   };
 
   const handleBackToDashboard = () => {
-    setViewMode('dashboard');
-    setSelectedDepartmentId(0);
-    setSelectedEmployeeId(0);
+    updateParams({ view: null, dept: null, emp: null, step: null });
   };
 
   const handleBackToDepartment = () => {
-    setViewMode('department');
-    setSelectedEmployeeId(0);
+    updateParams({ view: 'department', emp: null, step: null });
   };
 
   const handleOpenRunPayroll = (stats: PayrollStats, departments: any[]) => {
@@ -77,21 +146,21 @@ export default function PayrollPage() {
   };
 
   const handleOpenDepartmentTemplates = () => {
-    setViewMode('dept-templates');
+    updateParams({ view: 'dept-templates' });
   };
 
   const handleOpenFilings = () => {
-    setViewMode('filings');
+    updateParams({ view: 'filings' });
   };
 
   const handleOpenWizard = () => {
-    setViewMode('dashboard');
     // The NextStepsCard will show "Start Setup" linking to /payroll/setup
+    updateParams({ view: null });
   };
 
   const handlePayrollSuccess = () => {
     setIsRunPayrollModalOpen(false);
-    setViewMode('dashboard');
+    updateParams({ view: null });
   };
 
   const handleSaveSettings = (settings: PayrollOrganizationSettings) => {
@@ -147,8 +216,9 @@ export default function PayrollPage() {
           <EmployeePayrollWizard
             employeeId={selectedEmployeeId}
             monthYear={selectedMonth}
+            initialStep={currentStep}
             onBack={handleBackToDepartment}
-            onComplete={() => setViewMode('department')}
+            onComplete={() => updateParams({ view: 'department', emp: null, step: null })}
             onViewRun={handleOpenRunDetail}
           />
         )}

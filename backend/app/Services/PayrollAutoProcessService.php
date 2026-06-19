@@ -362,17 +362,40 @@ class PayrollAutoProcessService
 
             $gross = $basic + $hra + $conveyance + $medical + max($specialAllowance, 0) + $customEarningsTotal + (float) ($item->overtime_pay ?? 0);
 
-            $pfWages = min($basic, 15000);
+            // LOP deduction must be computed BEFORE PF/ESI/PT — statutory
+            // deductions apply to actual payable wages, not the full
+            // month's gross. Otherwise an employee with heavy LOP ends
+            // up with total_deductions > gross and net_pay = 0.
+            //
+            // Use $gross (not $monthlyCtc) as the basis so the LOP
+            // deduction matches what already exists in the database
+            // for previous runs: lOP_deduction = (gross / totalDays) × lopDays.
+            $lopDeduction = $lopDays > 0 ? round($gross / $totalDays * $lopDays, 2) : 0;
+
+            // Actual payable wages = gross minus LOP
+            $payableGross = max(0, $gross - $lopDeduction);
+            // For PF we pro-rate basic by the same factor that LOP took
+            // off gross. When gross > 0 this is exact; if gross is 0 we
+            // fall back to 0 to avoid a div-by-zero.
+            $payableBasic = $gross > 0
+                ? max(0, $basic - ($basic / $gross) * $lopDeduction)
+                : 0;
+
+            // PF on payable basic (capped at 15000)
+            $pfWages = min($payableBasic, 15000);
             $pfEmployee = $pfEnabled ? round($pfWages * 0.12, 2) : 0;
             $eps = $pfEnabled ? round($pfWages * 0.0833, 2) : 0;
             $epf = $pfEnabled ? round($pfWages * 0.0367, 2) : 0;
             $pfEmployer = $pfEmployee;
 
-            $esiApplicable = $esiEnabled && $gross <= 21000;
-            $esiEmployee = $esiApplicable ? round($gross * 0.0075, 2) : 0;
-            $esiEmployer = $esiApplicable ? round($gross * 0.0325, 2) : 0;
+            // ESI on payable gross (ESI eligibility is also on payable wages)
+            $esiApplicable = $esiEnabled && $payableGross <= 21000;
+            $esiEmployee = $esiApplicable ? round($payableGross * 0.0075, 2) : 0;
+            $esiEmployer = $esiApplicable ? round($payableGross * 0.0325, 2) : 0;
 
-            $pt = $this->calculator->calculatePT($gross, $state);
+            // PT on payable gross (most states have a monthly slab, e.g.
+            // Maharashtra PT is 0 below Rs 5,000, Rs 175 in 5K-10K, Rs 200 above)
+            $pt = $this->calculator->calculatePT($payableGross, $state);
 
             $tds = 0;
             if ($template->tds_enabled) {
@@ -388,7 +411,6 @@ class PayrollAutoProcessService
                 $tds = round(($taxCalc['total_tax'] ?? 0) / 12, 2);
             }
 
-            $lopDeduction = $lopDays > 0 ? round($monthlyCtc / $totalDays * $lopDays, 2) : 0;
             $totalDeductions = $pfEmployee + $esiEmployee + $pt + $tds + $lopDeduction;
             $netPay = max(0, $gross - $totalDeductions);
 
