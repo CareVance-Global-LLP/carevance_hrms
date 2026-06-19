@@ -131,54 +131,15 @@ class UserController extends Controller
         if (!in_array($timezone, timezone_identifiers_list(), true)) {
             $timezone = config('app.timezone');
         }
-        $range = $this->resolvePeriodRange(
-            $period,
-            $timezone,
-            $request->get('start_date'),
-            $request->get('end_date')
-        );
 
-        $activeEntries = TimeEntry::with(['project:id,name', 'task:id,title,project_id', 'task.project:id,name'])
-            ->whereIn('user_id', $users->pluck('id'))
-            ->whereNull('end_time')
-            ->get()
-            ->keyBy('user_id');
-
-        $totalsQuery = TimeEntry::whereIn('user_id', $users->pluck('id'));
-        if ($range) {
-            $totalsQuery->whereBetween('start_time', [$range['start'], $range['end']]);
-        }
-
-        $totalsByUser = $totalsQuery
-            ->selectRaw('user_id, COALESCE(SUM(duration), 0) as total_duration')
-            ->groupBy('user_id')
-            ->get()
-            ->keyBy('user_id');
-
-        $payload = $users->map(function (User $user) use ($activeEntries, $totalsByUser, $timezone) {
-            $activeEntry = $activeEntries->get($user->id);
-            $isWorking = (bool) $activeEntry;
-            $currentDuration = 0;
-            $storedTotalDuration = (int) ($totalsByUser->get($user->id)->total_duration ?? 0);
+        $payload = $users->map(function (User $user) use ($timezone) {
             $departmentName = (string) (
                 $user->employeeWorkInfo?->department?->name
                 ?? $user->groups->first()?->name
                 ?? ''
             );
 
-            if ($activeEntry) {
-                $currentDuration = max(
-                    0,
-                    now()->getTimestamp() - Carbon::parse($activeEntry->start_time)->getTimestamp()
-                );
-            }
-
             return array_merge($user->toArray(), [
-                'is_working' => $isWorking,
-                'current_duration' => (int) $currentDuration,
-                'current_project' => $this->resolveCurrentProjectLabel($activeEntry),
-                'total_duration' => $storedTotalDuration,
-                'total_elapsed_duration' => $storedTotalDuration + (int) $currentDuration,
                 'department' => trim($departmentName),
                 'timezone' => $timezone,
                 'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
@@ -925,17 +886,6 @@ class UserController extends Controller
                 ]
             );
         }
-    }
-
-    private function resolveCurrentProjectLabel(?TimeEntry $activeEntry): ?string
-    {
-        if (! $activeEntry) {
-            return null;
-        }
-
-        return $activeEntry->project?->name
-            ?: $activeEntry->task?->project?->name
-            ?: $activeEntry->task?->title;
     }
 
     private function resolvePeriodRange(string $period, string $timezone, ?string $startDate = null, ?string $endDate = null): ?array

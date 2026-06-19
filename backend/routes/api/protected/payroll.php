@@ -102,6 +102,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Payslips
     Route::post('/generate-payslip', [PayrollController::class, 'generatePayslip']);
     Route::get('/payslip/{userId}/{monthYear}/download', [PayrollController::class, 'downloadPayslipPdf']);
+    Route::get('/payslip/{userId}/{monthYear}/view', [PayrollController::class, 'viewPayslipPdf']);
     
     // Employee Self-Service
     Route::get('/my/payslips', [PayrollController::class, 'myPayslips']);

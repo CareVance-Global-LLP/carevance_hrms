@@ -98,15 +98,12 @@
 <table class="header-table">
   <tr>
     <td class="header-left">
-      @if($logoBase64)
-        <img src="{{ $logoBase64 }}" alt="Logo" class="logo-img"><br>
-      @endif
-      <div class="company-name">{{ $employerName }}</div>
-      <div class="company-address">{!! $companyAddress !!}</div>
+            <div class="company-name">Acme Corp India Pvt. Ltd.</div>
+      <div class="company-address">4th Floor, Tech Park<br>MG Road, Bangalore, Karnataka 560001<br>India</div>
     </td>
     <td class="header-right">
       <div class="payslip-title">Payslip</div>
-      <div class="payslip-subtitle">for {{ $monthYear }}</div>
+      <div class="payslip-subtitle">for 2026-06</div>
     </td>
   </tr>
 </table>
@@ -117,21 +114,21 @@
 <table class="info-bar">
   <tr>
     <td class="label">Employee</td>
-    <td class="value">{{ $employeeName }}</td>
+    <td class="value">Adi Kumar</td>
     <td class="label" style="padding-left:20px;">Designation</td>
-    <td class="value">{{ $designation ?? '—' }}</td>
+    <td class="value">Senior Software Engineer</td>
   </tr>
   <tr>
     <td class="label">Employee ID</td>
-    <td class="value">{{ $employeeCode ?? '—' }}</td>
+    <td class="value">EMP-042</td>
     <td class="label" style="padding-left:20px;">PAN</td>
-    <td class="value">{{ $panNumber ?? '—' }}</td>
+    <td class="value">ABCDE1234F</td>
   </tr>
   <tr>
     <td class="label">Bank Account</td>
-    <td class="value">{{ $bankAccount ?? '—' }}</td>
+    <td class="value">12345678901</td>
     <td class="label" style="padding-left:20px;">IFSC</td>
-    <td class="value">{{ $bankIfsc ?? '—' }}</td>
+    <td class="value">SBIN0001234</td>
   </tr>
 </table>
 
@@ -139,9 +136,9 @@
 <table class="info-bar" style="margin-top:6px;">
   <tr>
     <td class="label">PF Account No.</td>
-    <td class="value">{{ $pfAccountNumber ?? '—' }}</td>
+    <td class="value">KA/BLR/1234567</td>
     <td class="label" style="padding-left:20px;">UAN</td>
-    <td class="value">{{ $uanNumber ?? '—' }}</td>
+    <td class="value">101234567890</td>
   </tr>
 </table>
 
@@ -157,18 +154,39 @@
           <th class="amt">Amount (₹)</th>
           <th class="amt">YTD</th>
         </tr>
-        @forelse($earningsComponents as $comp)
-        <tr>
-          <td>{{ $comp['label'] }}</td>
-          <td class="amt">{{ number_format($comp['amount'], 2) }}</td>
+                <tr>
+          <td>Basic Salary</td>
+          <td class="amt">25,000.00</td>
           <td class="amt text-muted">—</td>
         </tr>
-        @empty
-        <tr><td colspan="3" class="text-muted" style="text-align:center;padding:8px;">No earnings</td></tr>
-        @endforelse
-        <tr class="total-row">
+                <tr>
+          <td>House Rent Allowance</td>
+          <td class="amt">12,500.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr>
+          <td>Conveyance Allowance</td>
+          <td class="amt">1,600.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr>
+          <td>Special Allowance</td>
+          <td class="amt">3,900.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr>
+          <td>Medical Allowance</td>
+          <td class="amt">1,250.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr>
+          <td>Internet Allowance</td>
+          <td class="amt">750.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr class="total-row">
           <td>Gross Salary</td>
-          <td class="amt">{{ number_format($grossSalary, 2) }}</td>
+          <td class="amt">45,000.00</td>
           <td class="amt text-muted">—</td>
         </tr>
       </table>
@@ -183,18 +201,34 @@
           <th class="amt">Amount (₹)</th>
           <th class="amt">YTD</th>
         </tr>
-        @forelse($deductionsComponents as $comp)
-        <tr>
-          <td>{{ $comp['label'] }}</td>
-          <td class="amt">{{ number_format($comp['amount'], 2) }}</td>
+                <tr>
+          <td>Provident Fund</td>
+          <td class="amt">3,000.00</td>
           <td class="amt text-muted">—</td>
         </tr>
-        @empty
-        <tr><td colspan="3" class="text-muted" style="text-align:center;padding:8px;">No deductions</td></tr>
-        @endforelse
-        <tr class="total-row">
+                <tr>
+          <td>Employee State Insurance</td>
+          <td class="amt">750.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr>
+          <td>Professional Tax</td>
+          <td class="amt">200.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr>
+          <td>Income Tax (TDS)</td>
+          <td class="amt">3,800.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr>
+          <td>Loss of Pay</td>
+          <td class="amt">500.00</td>
+          <td class="amt text-muted">—</td>
+        </tr>
+                <tr class="total-row">
           <td>Total Deductions</td>
-          <td class="amt">{{ number_format($totalDeductions, 2) }}</td>
+          <td class="amt">8,250.00</td>
           <td class="amt text-muted">—</td>
         </tr>
       </table>
@@ -207,7 +241,7 @@
   <table>
     <tr>
       <td class="net-pay-label">Net Pay</td>
-      <td class="net-pay-amount">₹ {{ number_format($netPay, 2) }}</td>
+      <td class="net-pay-amount">₹ 36,750.00</td>
     </tr>
   </table>
 </div>
@@ -215,8 +249,8 @@
 <!-- ════════════ FOOTER ════════════ -->
 <div class="footer">
   <strong>This is a computer-generated payslip and does not require signature.</strong><br>
-  Generated on: {{ $generatedAt }}<br>
-  &copy; {{ date('Y') }} {{ $employerName }}. All rights reserved.
+  Generated on: 18 Jun 2026, 03:30 PM<br>
+  &copy; 2026 Acme Corp India Pvt. Ltd.. All rights reserved.
 </div>
 
 </body>

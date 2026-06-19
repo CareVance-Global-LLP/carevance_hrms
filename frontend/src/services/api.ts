@@ -1809,6 +1809,9 @@ export const payrollApi = {
   downloadPayslipPdf: (userId: number, monthYear: string, config?: any) =>
     api.get(`/payroll/payslip/${userId}/${monthYear}/download`, { ...config, responseType: 'blob' }),
 
+  viewPayslipPdf: (userId: number, monthYear: string, config?: any) =>
+    api.get(`/payroll/payslip/${userId}/${monthYear}/view`, { ...config, responseType: 'blob' }),
+
   // Payroll Organization Settings
   getPayrollSettings: () =>
     api.get<{ success: boolean; settings: PayrollOrganizationSettings }>('/payroll/settings'),

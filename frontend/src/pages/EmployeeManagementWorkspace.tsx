@@ -1118,20 +1118,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                   >
                     <option value="default">Default order</option>
                     <option value="name_asc">Name A-Z</option>
-                    <option value="tracked_desc">Tracked time high to low</option>
-                    <option value="working_first">Working first</option>
                   </SelectInput>
                 </div>
               </div>
             )}
             columns={[
+              { key: 'employee_id', header: 'Employee ID', render: (row: any) => <span className="text-sm text-slate-600">{row.employee_id || row.id}</span> },
               { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
               { key: 'role', header: 'Role', render: (row: any) => resolveUserRoleLabel(row, customRolesQuery.data || []) },
               { key: 'department', header: 'Department', render: (row: any) => resolveEmployeeDepartment(row) },
               { key: 'timezone', header: 'Timezone', render: (row: any) => resolveEmployeeTimezone(row) },
-              { key: 'working', header: 'Working', render: (row: any) => (row.is_working ? 'Yes' : 'No') },
-              { key: 'project', header: 'Current Task', render: (row: any) => row.current_task || row.current_project || 'No active timer' },
-              { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.total_elapsed_duration || row.total_duration || 0) },
               {
                 key: 'settings',
                 header: 'Settings',
@@ -1158,39 +1154,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     ),
                   }]
                 : []),
-              ...(canManageDirectoryRoles
-                ? [{
-                    key: 'promote',
-                    header: 'Promote',
-                    render: (row: any) => {
-                      const roleOptions = getRoleDropdownOptions(row);
-                      const currentValue = resolveRoleValue(row, roleOptions);
 
-                      return (
-                        <SelectInput
-                          value={currentValue}
-                          onChange={(event) => {
-                            const val = event.target.value;
-                            if (val.startsWith('custom_')) {
-                              const roleId = parseInt(val.replace('custom_', ''));
-                              updateRoleMutation.mutate({ userId: row.id, roleId });
-                            } else {
-                              updateRoleMutation.mutate({ userId: row.id, role: val });
-                            }
-                          }}
-                          disabled={updateRoleMutation.isPending || roleOptions.length <= 1}
-                          className="min-w-[10rem]"
-                        >
-                          {roleOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </SelectInput>
-                      );
-                    },
-                  }]
-                : []),
             ]}
           />
 

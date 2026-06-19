@@ -13,6 +13,8 @@ import {
   CheckSquare,
   Square,
   Loader2,
+  Download,
+  Eye,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -51,6 +53,8 @@ function EmployeeCard({
   onClick,
   onProcess,
   onPay,
+  onViewPayslip,
+  onDownloadPayslip,
 }: {
   employee: PayrollDepartmentEmployee;
   isSelected: boolean;
@@ -58,6 +62,8 @@ function EmployeeCard({
   onClick: () => void;
   onProcess: (e: React.MouseEvent) => void;
   onPay: (e: React.MouseEvent) => void;
+  onViewPayslip: (e: React.MouseEvent) => void;
+  onDownloadPayslip: (e: React.MouseEvent) => void;
 }) {
   const status = employee.payroll_status.is_processed
     ? (employee.payroll_status.payment_status === 'paid' ? 'paid' : 'processed')
@@ -234,14 +240,33 @@ function EmployeeCard({
                 </Button>
               </>
             ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="flex-1"
-                onClick={onClick}
-              >
-                View Payslip
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="flex-1"
+                  iconLeft={<Eye className="h-4 w-4" />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewPayslip(e);
+                  }}
+                >
+                  View Payslip
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="px-2"
+                  aria-label="Download payslip"
+                  title="Download payslip"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDownloadPayslip(e);
+                  }}
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -300,12 +325,69 @@ export default function DepartmentEmployees({
     processSelectedMutation.mutate(Array.from(selectedEmployees));
   };
 
+  // Fetch payslip PDF as a blob and open it inline in a new browser tab.
+  // We can't just `window.open` the URL because the endpoint is behind
+  // Sanctum auth — the browser won't send the bearer token automatically.
+  // So we fetch with axios (which has the interceptor), wrap the blob in
+  // an object URL, then open it. The browser's built-in PDF viewer
+  // renders it inline.
+  const viewPayslipPdf = async (userId: number, monthYear: string, employeeName: string) => {
+    try {
+      const res = await payrollApi.viewPayslipPdf(userId, monthYear, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      if (blob.size <= 200 || blob.type !== 'application/pdf') {
+        throw new Error('Server did not return a PDF');
+      }
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        // Popup blocked — fall back to triggering a download so the user
+        // at least gets the file.
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `payslip_${monthYear}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+      // Revoke after the new tab has had a chance to load the blob.
+      // 60s is generous for a PDF — the browser keeps its own reference.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      console.error('Failed to view payslip:', err);
+      alert(`Failed to open payslip for ${employeeName}. ${getApiErrorMessage(err, '')}`.trim());
+    }
+  };
+
+  // Fetch payslip PDF as a blob and trigger a Save-As dialog.
+  // Reuses the existing /download endpoint via payrollApi.downloadPayslipPdf.
+  const downloadPayslipPdf = async (userId: number, monthYear: string, employeeName: string) => {
+    try {
+      const res = await payrollApi.downloadPayslipPdf(userId, monthYear, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      if (blob.size <= 200 || blob.type !== 'application/pdf') {
+        throw new Error('Server did not return a PDF');
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payslip_${employeeName.replace(/\s+/g, '_')}_${monthYear}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download payslip:', err);
+      alert(`Failed to download payslip for ${employeeName}. ${getApiErrorMessage(err, '')}`.trim());
+    }
+  };
+
   // Fetch employees
   const { data, isLoading } = useQuery({
     queryKey: ['payroll', 'department', departmentId, 'employees', monthYear, searchQuery],
-    queryFn: () => payrollApi.getDepartmentEmployees(departmentId, { 
+    queryFn: () => payrollApi.getDepartmentEmployees(departmentId, {
       month_year: monthYear,
-      search: searchQuery || undefined 
+      search: searchQuery || undefined
     }).then(res => res.data),
   });
 
@@ -557,6 +639,14 @@ export default function DepartmentEmployees({
                     payrollItemId: employee.payroll_item_id ?? undefined,
                     netPay: employee.payroll_status.net_pay,
                   });
+                }}
+                onViewPayslip={(e) => {
+                  e.stopPropagation();
+                  void viewPayslipPdf(employee.id, monthYear, employee.name);
+                }}
+                onDownloadPayslip={(e) => {
+                  e.stopPropagation();
+                  void downloadPayslipPdf(employee.id, monthYear, employee.name);
                 }}
               />
             ))}

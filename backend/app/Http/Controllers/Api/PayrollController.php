@@ -442,6 +442,41 @@ class PayrollController extends Controller
     }
 
     /**
+     * Generate and stream payslip as PDF for inline browser viewing.
+     * Uses Content-Disposition: inline so the browser renders the PDF
+     * inside a new tab instead of triggering a download dialog. The
+     * downloadPayslipPdf() method above uses 'attachment' for the same
+     * PDF so callers can choose whether to preview or save.
+     */
+    public function viewPayslipPdf(Request $request, int $userId, string $monthYear)
+    {
+        $payrollItem = PayrollItem::where('user_id', $userId)
+            ->whereHas('payrollRun', function ($q) use ($monthYear) {
+                $q->where('month_year', $monthYear);
+            })
+            ->first();
+
+        if (!$payrollItem) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payslip not found for this month',
+            ], 404);
+        }
+
+        $pdfService = new \App\Services\PayrollPdfService();
+        $pdf = $pdfService->generatePayslip($payrollItem);
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            // "inline" tells the browser to render in-tab (which most
+            // browsers do via the built-in PDF viewer). The filename is
+            // still set so the browser uses it if the user chooses
+            // "Save As" from the viewer.
+            'Content-Disposition' => "inline; filename=\"payslip_{$userId}_{$monthYear}.pdf\"",
+        ]);
+    }
+
+    /**
      * Employee self-service: get my payslips.
      */
     public function myPayslips(Request $request): JsonResponse
