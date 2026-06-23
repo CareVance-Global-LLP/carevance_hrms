@@ -84,7 +84,7 @@ export const topNavigation: NavGroup[] = [
     adminOnly: true,
   },
   {
-    label: 'HRMS',
+    label: 'People',
     icon: Users,
     items: [
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },

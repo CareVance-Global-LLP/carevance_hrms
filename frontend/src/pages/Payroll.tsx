@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { HelpCircle } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -13,13 +13,16 @@ import PayrollReportsModal from '@/components/payroll/PayrollReportsModal';
 import PayrollSettingsModal from '@/components/payroll/PayrollSettingsModal';
 import PayrollRunDetailModal from '@/components/payroll/PayrollRunDetailModal';
 import ProcessAndPayModal from '@/components/payroll/ProcessAndPayModal';
+import PayGroupModal from '@/components/payroll/PayGroupModal';
+import PayGroupEmployees from '@/components/payroll/PayGroupEmployees';
+import BulkPayrollMatrix from '@/components/payroll/BulkPayrollMatrix';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 
-type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates' | 'filings';
+type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates' | 'filings' | 'pay-group' | 'bulk-payroll';
 
 const VALID_VIEWS: ReadonlySet<ViewMode> = new Set([
-  'dashboard', 'department', 'employee', 'dept-templates', 'filings',
+  'dashboard', 'department', 'employee', 'dept-templates', 'filings', 'pay-group', 'bulk-payroll',
 ]);
 
 /**
@@ -31,10 +34,12 @@ const VALID_VIEWS: ReadonlySet<ViewMode> = new Set([
  *   /payroll?view=dept-templates                      → Salary templates
  *   /payroll?view=filings                             → Filings
  *   /payroll?view=employee&dept=5&emp=12&step=1       → Wizard step 1 (Salary)
- *
- * The wizard reads `step` directly via its own useSearchParams; the parent
- * only needs to round-trip it (it's not read here). View + dept + emp are
- * the parent's responsibility.
+  *   /payroll?view=pay-group&payGroup=5                → Pay Group employees
+  *   /payroll?view=bulk-payroll&payGroup=5            → Bulk Payroll Matrix (6-step wizard per employee)
+  *
+  * The wizard reads `step` directly via its own useSearchParams; the parent
+  * only needs to round-trip it (it's not read here). View + dept + emp +
+  * payGroup are the parent's responsibility.
  */
 function parseView(raw: string | null): ViewMode {
   if (raw && VALID_VIEWS.has(raw as ViewMode)) return raw as ViewMode;
@@ -69,16 +74,138 @@ export default function PayrollPage() {
     [searchParams],
   );
   const currentStep = useMemo(() => parseStep(searchParams.get('step')), [searchParams]);
+  const selectedPayGroupId = useMemo(
+    () => parseId(searchParams.get('payGroup')),
+    [searchParams],
+  );
 
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  const [selectedMonth, setSelectedMonthRaw] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem('payroll-selected-month');
+      if (saved && /^\d{4}-\d{2}$/.test(saved)) return saved;
+    }
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
+
+  // Wrapper that mirrors the value into localStorage so navigating
+  // away (e.g. clicking Reports) and returning keeps the same month
+  // selected.
+  const setSelectedMonth = useCallback((month: string) => {
+    setSelectedMonthRaw(month);
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('payroll-selected-month', month);
+      }
+    } catch { /* non-fatal — private mode or quota */ }
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Resume wizard position across cross-route navigations
+  // ---------------------------------------------------------------------------
+  // When the user is in the middle of the wizard (e.g. step 3 of 6 for
+  // employee 4 in department 2) and clicks a sidebar link like "Setup
+  // Wizard" (which navigates to /payroll/setup, a *different* route),
+  // this component unmounts. The URL params are lost. When the user
+  // clicks "Payroll Dashboard" again, this component re-mounts on a
+  // bare /payroll URL — `viewMode` resolves to 'dashboard' and the
+  // dashboard main page is shown instead of the wizard.
+  //
+  // We solve this by saving the wizard position to localStorage on
+  // every change, and restoring it on mount when the user lands on a
+  // bare /payroll with no query params.
+  //
+  // The `handleBackToDashboard` action explicitly clears the saved
+  // position so the user is in control of "going to the dashboard
+  // means I want a fresh start."
+  const WIZARD_POS_KEY = 'payroll-wizard-pos';
+  const WIZARD_POS_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+  // 6 steps in the current wizard (0..5). The wizard itself also
+  // clamps to 5 in parseStep, but we re-clamp here defensively.
+  const WIZARD_STEP_MAX = 5;
+
+  // Save the position on every change. We do NOT remove the saved
+  // position when viewMode === 'dashboard' — that would race with the
+  // restore effect below on a fresh mount, because the save effect
+  // runs first and would delete the entry the restore effect is
+  // about to read. The only place we clear the position is
+  // `handleBackToDashboard` (the explicit user action).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (viewMode === 'dashboard') return;
+      window.localStorage.setItem(
+        WIZARD_POS_KEY,
+        JSON.stringify({
+          view: viewMode,
+          dept: selectedDepartmentId,
+          emp: selectedEmployeeId,
+          payGroup: selectedPayGroupId,
+          step: currentStep,
+          savedAt: Date.now(),
+        }),
+      );
+    } catch { /* non-fatal */ }
+  }, [viewMode, selectedDepartmentId, selectedEmployeeId, currentStep]);
+
+  // Restore the position on mount *only* when the user lands on a
+  // bare /payroll URL with no query params. If the URL has params
+  // (e.g. someone shared a deep link), those win.
+  //
+  // This effect runs once on mount; intentionally no deps to avoid
+  // re-runs on every render. The empty-dep array is safe because we
+  // read `searchParams` for the initial check (which is stable for
+  // the duration of the mount) and use `setSearchParams` to
+  // navigate, which doesn't put us in a loop.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hasParam = searchParams.has('view') || searchParams.has('emp');
+    if (hasParam) return;
+    let saved: any = null;
+    try {
+      const raw = window.localStorage.getItem(WIZARD_POS_KEY);
+      if (raw) saved = JSON.parse(raw);
+    } catch { /* ignore corrupt JSON */ }
+    if (!saved) return;
+    // 24-hour expiry on the saved position.
+    if (typeof saved.savedAt !== 'number' || Date.now() - saved.savedAt > WIZARD_POS_MAX_AGE_MS) {
+      try { window.localStorage.removeItem(WIZARD_POS_KEY); } catch { /* ignore */ }
+      return;
+    }
+    // Validate the shape before restoring.
+    const view = saved.view;
+    const isValidView = view && VALID_VIEWS.has(view);
+    const emp = Number(saved.emp);
+    const hasValidEmp = Number.isFinite(emp) && emp > 0;
+    // Pay-group view needs a valid payGroup id but no employee.
+    const payGroup = Number(saved.payGroup);
+    const hasValidPayGroup = Number.isFinite(payGroup) && payGroup > 0;
+    const needsPayGroup = view === 'pay-group' || view === 'bulk-payroll';
+    const needsEmp = view === 'employee' || view === 'department';
+    if (!isValidView || (needsEmp && !hasValidEmp) || (needsPayGroup && !hasValidPayGroup)) {
+      try { window.localStorage.removeItem(WIZARD_POS_KEY); } catch { /* ignore */ }
+      return;
+    }
+    const dept = Number(saved.dept);
+    const step = Math.max(0, Math.min(WIZARD_STEP_MAX, Math.trunc(Number(saved.step ?? 0))));
+    // Only restore wizard-relevant views. 'dashboard' is already what
+    // the user is on, so we skip it (nothing to restore).
+    if (view === 'dashboard') return;
+    updateParams({
+      view,
+      dept: Number.isFinite(dept) && dept > 0 ? dept : null,
+      emp: needsEmp ? emp : null,
+      payGroup: needsPayGroup ? payGroup : null,
+      step: step === 0 ? null : step,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Modal states (transient, not part of the deep-linkable flow)
   const [isRunPayrollModalOpen, setIsRunPayrollModalOpen] = useState(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isCreatePayGroupOpen, setIsCreatePayGroupOpen] = useState(false);
   const [runDetailId, setRunDetailId] = useState<number | null>(null);
   const [currentStats, setCurrentStats] = useState<PayrollStats | undefined>();
   const [departmentsList, setDepartmentsList] = useState<any[]>([]);
@@ -131,12 +258,38 @@ export default function PayrollPage() {
     updateParams({ view: 'employee', emp: employeeId, step: 0 });
   };
 
+  const handleSelectPayGroup = (payGroupId: number) => {
+    updateParams({ view: 'pay-group', payGroup: payGroupId, emp: null, step: null });
+  };
+
+  const handleOpenBulkPayroll = (payGroupId: number) => {
+    updateParams({ view: 'bulk-payroll', payGroup: payGroupId, emp: null, step: null });
+  };
+
   const handleBackToDashboard = () => {
-    updateParams({ view: null, dept: null, emp: null, step: null });
+    // Clear the saved wizard position — clicking the dashboard "back"
+    // button is an explicit signal that the user wants a fresh start
+    // next time they land on /payroll. Without this, the next
+    // cross-route navigation (e.g. into /payroll/setup) followed by
+    // a return would re-resume into the wizard they just left.
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(WIZARD_POS_KEY);
+      }
+    } catch { /* non-fatal */ }
+    updateParams({ view: null, dept: null, emp: null, payGroup: null, step: null });
   };
 
   const handleBackToDepartment = () => {
     updateParams({ view: 'department', emp: null, step: null });
+  };
+
+  const handleBackToPayGroup = () => {
+    // Keep `payGroup` so the URL stays ?view=pay-group&payGroup=N. The
+    // wizard's onBack is wired to this handler when the user came from
+    // a pay group; stripping the payGroup id would drop the user back to
+    // the dashboard and lose the pay-group context.
+    updateParams({ view: 'pay-group', emp: null, step: null });
   };
 
   const handleOpenRunPayroll = (stats: PayrollStats, departments: any[]) => {
@@ -215,11 +368,31 @@ export default function PayrollPage() {
             onOpenFilings={handleOpenFilings}
             onOpenWizard={handleOpenWizard}
             onOpenRunDetail={handleOpenRunDetail}
+            onOpenCreatePayGroup={() => setIsCreatePayGroupOpen(true)}
+            onSelectPayGroup={handleSelectPayGroup}
           />
         )}
 
         {viewMode === 'dept-templates' && (
           <DepartmentTemplates onBack={handleBackToDashboard} />
+        )}
+
+        {viewMode === 'pay-group' && (
+          <PayGroupEmployees
+            payGroupId={selectedPayGroupId}
+            monthYear={selectedMonth}
+            onBack={handleBackToDashboard}
+            onSelectEmployee={handleSelectEmployee}
+            onOpenBulkPayroll={() => handleOpenBulkPayroll(selectedPayGroupId)}
+          />
+        )}
+
+        {viewMode === 'bulk-payroll' && (
+          <BulkPayrollMatrix
+            payGroupId={selectedPayGroupId}
+            monthYear={selectedMonth}
+            onBack={handleBackToPayGroup}
+          />
         )}
 
         {viewMode === 'department' && (
@@ -236,8 +409,19 @@ export default function PayrollPage() {
             employeeId={selectedEmployeeId}
             monthYear={selectedMonth}
             initialStep={currentStep}
-            onBack={handleBackToDepartment}
-            onComplete={() => updateParams({ view: 'department', emp: null, step: null })}
+            // If the user came from a pay group, send them back to
+            // the pay-group employees view. Otherwise, send them back
+            // to the department employees view.
+            onBack={selectedPayGroupId ? handleBackToPayGroup : handleBackToDepartment}
+            backLabel={selectedPayGroupId ? 'Back to Pay Group' : undefined}
+            // The wizard fires onComplete on every step transition
+            // (1-6). We only navigate away when the user actually
+            // processes payroll (step 6).
+            onComplete={(step) => {
+              if (step === 6) {
+                updateParams({ view: 'department', emp: null, step: null });
+              }
+            }}
             onViewRun={handleOpenRunDetail}
           />
         )}
@@ -275,7 +459,7 @@ export default function PayrollPage() {
         monthYear={selectedMonth}
       />
 
-      {/* The perfect payroll flow — Process & Pay modal */}
+      {/* Process & Pay modal — the new perfect flow */}
       <ProcessAndPayModal
         isOpen={processAndPayState.isOpen}
         onClose={() => setProcessAndPayState((s) => ({ ...s, isOpen: false }))}
@@ -283,6 +467,16 @@ export default function PayrollPage() {
         pendingCount={processAndPayState.pendingCount}
         expectedNetPay={processAndPayState.expectedNetPay}
         onComplete={handleProcessAndPayComplete}
+      />
+
+      {/* Create Pay Group modal */}
+      <PayGroupModal
+        isOpen={isCreatePayGroupOpen}
+        onClose={() => setIsCreatePayGroupOpen(false)}
+        monthYear={selectedMonth}
+        onCreated={() => {
+          setIsCreatePayGroupOpen(false);
+        }}
       />
 
       {/* Help drawer with glossary, how-to guides, and FAQs */}

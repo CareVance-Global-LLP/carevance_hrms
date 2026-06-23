@@ -59,12 +59,17 @@ import type {
   PayrollTimeEntry,
   PayrollDepartment,
   PayrollDepartmentEmployee,
+  PayGroupEmployee,
+  PayGroupStepStatus,
   EmployeePayrollDetails,
   EmployeePayrollTemplate,
   ProcessPayrollRequest,
   CalculatePayrollRequest,
   PayrollCalculation,
   PayrollEmployee,
+  AllEmployee,
+  PayGroup,
+  CreatePayGroupPayload,
   UpdatePayrollProfileRequest,
   PTState,
   PTSlab,
@@ -1597,6 +1602,16 @@ export const payrollApi = {
   getEmployeePayrollDetails: (userId: number, params?: { month_year?: string; annual_ctc?: number }) =>
     api.get<EmployeePayrollDetails>(`/payroll/employees/${userId}`, { params }),
 
+  // Combined benefits summary (reimbursements + FBP + loans) for the
+  // 6-step wizard's Steps 3 and 4.
+  getBenefitsSummary: (userId: number) =>
+    api.get<{
+      reimbursements: any[];
+      fbp_allocations: any[];
+      active_loans: any[];
+      totals: { reimbursements: number; fbp: number; monthly_emi: number };
+    }>(`/payroll/employees/${userId}/benefits-summary`),
+
   // Monthly attendance summary (single source of truth for payroll).
   // Returns days AND hours. Default month_year = current month; default
   // user_id = the caller.
@@ -1921,7 +1936,7 @@ export const payrollApi = {
   getMyLoans: () =>
     api.get<{ loans: any[]; active_loan: any | null }>('/payroll/my/loans'),
 
-  listLoans: (params?: { status?: string }) =>
+  listLoans: (params?: { user_id?: number; status?: string }) =>
     api.get<{ loans: any[] }>('/payroll/loans', { params }),
 
   approveLoan: (loanId: number) =>
@@ -2099,10 +2114,95 @@ export const payrollApi = {
     api.post<any>('/payroll/formula-engine/validate', { expression }),
 
   // ===== Pay Groups =====
-  listPayGroups: () =>
-    api.get<any>('/payroll/pay-groups'),
+  listPayGroups: (params?: { month_year?: string }) =>
+    api.get<{ pay_groups: PayGroup[] }>('/payroll/pay-groups', { params }),
   createPayGroup: (data: Record<string, any>) =>
     api.post<any>('/payroll/pay-groups', data),
+  // All employees across the organization (for the Create Pay Group
+  // modal). Supports ?search= (matches name/email/designation) and
+  // ?department_id= filters. Paginated server-side (50 per page by
+  // default); use `page` to fetch subsequent pages.
+  getAllEmployees: (params?: {
+    search?: string;
+    department_id?: number;
+    page?: number;
+    per_page?: number;
+  }) =>
+    api.get<{
+      employees: AllEmployee[];
+      total: number;
+      current_page: number;
+      last_page: number;
+      per_page: number;
+    }>('/payroll/all-employees', { params }),
+  // Create a pay group and assign employees in one call. The backend
+  // auto-derives the `code` and handles re-assignment by closing any
+  // existing active assignment for the same user.
+  assignEmployeesToPayGroup: (data: CreatePayGroupPayload) =>
+    api.post<{
+      success: boolean;
+      pay_group_id: number;
+      pay_group_name: string;
+      pay_group_code: string;
+      assigned_count: number;
+    }>('/payroll/pay-groups/assign', data),
+  // Get the active employees in a pay group with their per-month
+  // payroll status. Response shape mirrors getDepartmentEmployees so
+  // the EmployeeCard component is shared.
+  getPayGroupEmployees: (payGroupId: number, params?: { month_year?: string }) =>
+    api.get<{
+      pay_group: { id: number; name: string; code: string; pay_frequency: string };
+      employees: PayGroupEmployee[];
+    }>(`/payroll/pay-groups/${payGroupId}/employees`, { params }),
+  // Bulk-process payroll for the selected members of a pay group.
+  // Mirrors processSelectedEmployees but validates against
+  // pay-group membership instead of department membership.
+  processPayGroupSelectedEmployees: (
+    payGroupId: number,
+    data: {
+      month_year: string;
+      user_ids: number[];
+      working_days: number;
+      default_annual_ctc?: number;
+      lOP_days?: number;
+      overtime_hours?: number;
+    },
+  ) =>
+    api.post<{
+      success: boolean;
+      message: string;
+      succeeded: Array<{ user_id: number; payroll_item_id: number | null }>;
+      failed: Array<{ user_id: number; reason: string }>;
+    }>(`/payroll/pay-groups/${payGroupId}/process-selected`, data),
+  // Bulk Payroll Matrix — step completion tracking.
+  // Marks a single wizard step (1..6) as complete for one or more
+  // employees in a pay group.
+  completeStep: (
+    payGroupId: number,
+    data: { step: number; user_ids: number[] },
+  ) =>
+    api.post<{
+      success: boolean;
+      step: number;
+      updated_count: number;
+    }>(`/payroll/pay-groups/${payGroupId}/complete-step`, data),
+  // Marks a single wizard step as complete for every active member
+  // of the pay group in one call. Used by the "Done All for Step N"
+  // button in the BulkPayrollMatrix.
+  completeAllSteps: (payGroupId: number, data: { step: number }) =>
+    api.post<{
+      success: boolean;
+      step: number;
+      updated_count: number;
+      total_members: number;
+    }>(`/payroll/pay-groups/${payGroupId}/complete-all-steps`, data),
+  // Returns the per-step completion counts for a pay group. The
+  // BulkPayrollMatrix footer renders "X of Y employees on this
+  // step" from these counts.
+  getStepStatus: (payGroupId: number) =>
+    api.get<PayGroupStepStatus>(
+      `/payroll/pay-groups/${payGroupId}/step-status`,
+    ),
 
   // ===== Compensation =====
   listDailyWageStructures: () =>

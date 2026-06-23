@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PayGroup;
 use App\Models\PayrollFiling;
+use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
+use App\Models\User;
 use App\Services\PayrollFilingService;
 use App\Services\PayrollRegisterService;
 use App\Services\BankIntegrationService;
@@ -417,9 +420,352 @@ class PayrollFilingController extends Controller
         return response()->json(\App\Models\PayGroup::create($data), 201);
     }
 
-    public function listPayGroups()
+    /**
+     * List all active pay groups in the caller's organization with
+     * per-group payroll aggregates for the requested month.
+     *
+     * The response shape mirrors `getDepartments` so the dashboard
+     * can render Pay Group cards in the same structure as
+     * Department cards:
+     *   { pay_groups: [{
+     *       id, name, code, pay_frequency,
+     *       employee_count, processed_count, paid_count, total_net_pay
+     *   }] }
+     *
+     * The totals are computed in two batched queries per group to
+     * avoid N+1 — one to load active assignments, and one to sum
+     * payroll items for the month. Both run in O(1) queries per
+     * group thanks to eager loading of the assignments relation.
+     */
+    public function listPayGroups(Request $request)
     {
-        return response()->json(\App\Models\PayGroup::where('organization_id', auth()->user()->organization_id)->get());
+        $orgId = auth()->user()->organization_id;
+        $monthYear = $request->get('month_year', now()->format('Y-m'));
+
+        $payGroups = PayGroup::where('organization_id', $orgId)
+            ->where('is_active', true)
+            ->with(['assignments' => function ($q) {
+                $q->where('is_active', true);
+            }])
+            ->get()
+            ->map(function ($group) use ($monthYear) {
+                $userIds = $group->assignments->pluck('user_id')->all();
+
+                $items = empty($userIds)
+                    ? collect()
+                    : PayrollItem::whereIn('user_id', $userIds)
+                        ->where('month_year', $monthYear)
+                        ->get();
+
+                $processedCount = $items
+                    ->where('payment_status', '!=', 'pending')
+                    ->count();
+                $paidCount = $items
+                    ->where('payment_status', 'paid')
+                    ->count();
+                $totalNetPay = (float) $items
+                    ->where('payment_status', 'paid')
+                    ->sum('net_pay');
+
+                return [
+                    'id' => $group->id,
+                    'name' => $group->name,
+                    'code' => $group->code,
+                    'pay_frequency' => $group->pay_frequency,
+                    'employee_count' => (int) $userIds ? count($userIds) : 0,
+                    'processed_count' => $processedCount,
+                    'paid_count' => $paidCount,
+                    'total_net_pay' => $totalNetPay,
+                ];
+            })
+            ->values();
+
+        return response()->json(['pay_groups' => $payGroups]);
+    }
+
+    /**
+     * Get the active employees in a pay group along with their
+     * per-month payroll status, so the PayGroupEmployees view can
+     * render the same kind of list as DepartmentEmployees.
+     *
+     * The response shape mirrors PayrollDepartmentEmployee so the
+     * EmployeeCard component can be shared between the two views:
+     *   {
+     *     pay_group: { id, name, code, pay_frequency },
+     *     employees: [{ id, name, email, role, employee_code,
+     *                   designation, department, annual_ctc,
+     *                   net_pay, payment_status, is_processed,
+     *                   is_paid, avatar }]
+     *   }
+     *
+     * Authorization: the pay group must belong to the caller's
+     * organization; otherwise firstOrFail throws a 404.
+     */
+    public function getPayGroupEmployees(int $id, Request $request)
+    {
+        $monthYear = $request->get('month_year', now()->format('Y-m'));
+
+        $payGroup = PayGroup::where('id', $id)
+            ->where('organization_id', $request->user()->organization_id)
+            ->firstOrFail();
+
+        $userIds = $payGroup->assignments()
+            ->where('is_active', true)
+            ->pluck('user_id')
+            ->all();
+
+        if (empty($userIds)) {
+            $employees = collect();
+        } else {
+            // BULK fetch all users with relations (1 query)
+            $users = User::whereIn('id', $userIds)
+                ->with(['employeeProfile', 'employeeWorkInfo', 'groups'])
+                ->get()
+                ->keyBy('id');
+
+            // BULK fetch all payroll items for this month (1 query — fixes N+1)
+            $payrollItems = PayrollItem::whereIn('user_id', $userIds)
+                ->where('month_year', $monthYear)
+                ->get()
+                ->keyBy('user_id');
+
+            // BULK fetch all templates (1 query — fixes N+1)
+            $templates = \App\Models\EmployeePayrollTemplate::where('organization_id', $request->user()->organization_id)
+                ->whereIn('user_id', $userIds)
+                ->get()
+                ->keyBy('user_id');
+
+            $employees = collect($userIds)->map(function ($uid) use ($users, $payrollItems, $templates) {
+                $u = $users->get($uid);
+                if (!$u) return null;
+
+                $item = $payrollItems->get($uid);
+                $template = $templates->get($uid);
+                $group = $u->groups->first();
+
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'role' => $u->role,
+                    'avatar' => $u->avatar,
+                    'employee_code' => $u->employeeWorkInfo?->employee_code,
+                    'designation' => $u->employeeWorkInfo?->designation,
+                    'department' => $group?->name,
+                    'annual_ctc' => (float) ($template?->annual_ctc ?? 0),
+                    'steps_completed' => [
+                        'step1' => (bool) ($template?->step1_completed),
+                        'step2' => (bool) ($template?->step2_completed),
+                        'step3' => (bool) ($template?->step3_completed),
+                        'step4' => (bool) ($template?->step4_completed),
+                        'step5' => (bool) ($template?->step5_completed),
+                        'step6' => (bool) ($template?->step6_completed),
+                    ],
+                    'current_step' => (int) ($template?->current_step ?? 1),
+                    'payroll_status' => [
+                        'is_processed' => $item && $item->payment_status !== 'pending',
+                        'net_pay' => $item ? (float) $item->net_pay : 0,
+                        'payment_status' => $item?->payment_status ?? 'pending',
+                        'gross_salary' => $item ? (float) $item->gross_salary : 0,
+                        'total_deductions' => $item ? (float) $item->total_deductions : 0,
+                    ],
+                ];
+            })->filter()->values();
+        }
+
+        return response()->json([
+            'pay_group' => [
+                'id' => $payGroup->id,
+                'name' => $payGroup->name,
+                'code' => $payGroup->code,
+                'pay_frequency' => $payGroup->pay_frequency,
+            ],
+            'employees' => $employees,
+        ]);
+    }
+
+    /**
+     * Mark a single wizard step as complete for the given employees
+     * in a pay group. Used by the Bulk Payroll Matrix view.
+     *
+     * Body: { step: 1..6, user_ids: number[] }
+     */
+    public function completeStep(Request $request, int $id): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate([
+            'step' => 'required|integer|min:1|max:6',
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+
+        // Verify the pay group belongs to the caller's org.
+        $payGroup = \App\Models\PayGroup::where('id', $id)
+            ->where('organization_id', $organizationId)
+            ->first();
+        if (!$payGroup) {
+            return response()->json(['success' => false, 'message' => 'Pay group not found'], 404);
+        }
+
+        // Verify all submitted user_ids are current active members of
+        // this pay group (prevents arbitrary users from being marked).
+        $userIds = array_values(array_unique(array_map('intval', $data['user_ids'])));
+        $validUserIds = \App\Models\PayGroupAssignment::where('pay_group_id', $id)
+            ->where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->whereIn('user_id', $userIds)
+            ->pluck('user_id')
+            ->all();
+
+        if (count($validUserIds) === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No valid members found in this pay group',
+            ], 422);
+        }
+
+        $column = "step{$data['step']}_completed";
+
+        // BULK ensure templates exist (1 query to find existing, 1 query to create missing)
+        $existing = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $validUserIds)
+            ->pluck('user_id')
+            ->toArray();
+
+        $missing = array_diff($validUserIds, $existing);
+        if (!empty($missing)) {
+            foreach ($missing as $uid) {
+                \App\Models\EmployeePayrollTemplate::getOrCreateForUser($uid, $organizationId);
+            }
+        }
+
+        $updated = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $validUserIds)
+            ->update([$column => true]);
+
+        return response()->json([
+            'success' => true,
+            'step' => $data['step'],
+            'updated_count' => $updated,
+        ]);
+    }
+
+    /**
+     * Mark a single wizard step as complete for every active member
+     * of a pay group in one shot. Used by the Bulk Payroll Matrix's
+     * "Done All for Step N" button.
+     *
+     * Body: { step: 1..6 }
+     */
+    public function completeAllSteps(Request $request, int $id): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate([
+            'step' => 'required|integer|min:1|max:6',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+
+        $payGroup = \App\Models\PayGroup::where('id', $id)
+            ->where('organization_id', $organizationId)
+            ->first();
+        if (!$payGroup) {
+            return response()->json(['success' => false, 'message' => 'Pay group not found'], 404);
+        }
+
+        $userIds = \App\Models\PayGroupAssignment::where('pay_group_id', $id)
+            ->where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->pluck('user_id')
+            ->all();
+
+        if (count($userIds) === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No active members in this pay group',
+            ], 422);
+        }
+
+        $column = "step{$data['step']}_completed";
+
+        // BULK ensure templates exist (1 query to find existing, 1 query to create missing)
+        $existing = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $userIds)
+            ->pluck('user_id')
+            ->toArray();
+
+        $missing = array_diff($userIds, $existing);
+        if (!empty($missing)) {
+            foreach ($missing as $uid) {
+                \App\Models\EmployeePayrollTemplate::getOrCreateForUser($uid, $organizationId);
+            }
+        }
+
+        // BULK update all in 1 query
+        $updated = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $userIds)
+            ->update([$column => true]);
+
+        return response()->json([
+            'success' => true,
+            'step' => $data['step'],
+            'updated_count' => $updated,
+            'total_members' => count($userIds),
+        ]);
+    }
+
+    /**
+     * Get the per-step completion count for a pay group. Returns the
+     * number of members who have completed each step. Used by the
+     * Bulk Payroll Matrix footer to show "X of Y employees on this
+     * step".
+     */
+    public function getStepStatus(Request $request, int $id): \Illuminate\Http\JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $payGroup = \App\Models\PayGroup::where('id', $id)
+            ->where('organization_id', $organizationId)
+            ->first();
+        if (!$payGroup) {
+            return response()->json(['success' => false, 'message' => 'Pay group not found'], 404);
+        }
+
+        $userIds = \App\Models\PayGroupAssignment::where('pay_group_id', $id)
+            ->where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->pluck('user_id')
+            ->all();
+
+        $totalMembers = count($userIds);
+
+        if ($totalMembers === 0) {
+            return response()->json([
+                'pay_group_id' => $id,
+                'total_members' => 0,
+                'steps' => array_fill(1, 6, ['completed_count' => 0, 'pending_count' => 0]),
+            ]);
+        }
+
+        $rows = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $userIds)
+            ->get(['user_id', 'step1_completed', 'step2_completed', 'step3_completed', 'step4_completed', 'step5_completed', 'step6_completed']);
+
+        $steps = [];
+        for ($n = 1; $n <= 6; $n++) {
+            $col = "step{$n}_completed";
+            $completed = $rows->where($col, true)->count();
+            $steps[$n] = [
+                'completed_count' => $completed,
+                'pending_count' => $totalMembers - $completed,
+            ];
+        }
+
+        return response()->json([
+            'pay_group_id' => $id,
+            'total_members' => $totalMembers,
+            'steps' => $steps,
+        ]);
     }
 
     // Daily Wage & CTC Bands

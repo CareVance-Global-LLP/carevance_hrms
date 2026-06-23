@@ -816,8 +816,8 @@ export default function Layout() {
                       }
                       setOpenSidebarGroups(next);
                     }}
-                    className={`flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] transition-colors rounded-md ${
-                      groupActive ? 'text-blue-600 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-[0.08em] transition-colors rounded-md ${
+                      groupActive ? 'text-blue-600 bg-blue-50' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
                     }`}
                   >
                     <span>{group.label}</span>
@@ -832,7 +832,7 @@ export default function Layout() {
                         {sectionGroups ? (
                           sectionGroups.map((sg) => (
                             <div key={sg.label}>
-                              <p className="px-3 pt-3 pb-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                              <p className="px-3 pt-3 pb-1 text-[12px] font-extrabold uppercase tracking-[0.08em] text-slate-700">
                                 {sg.label}
                               </p>
                               {sg.items.map((item) => renderSidebarLink(

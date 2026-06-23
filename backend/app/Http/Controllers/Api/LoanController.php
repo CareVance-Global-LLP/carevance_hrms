@@ -64,14 +64,20 @@ class LoanController extends Controller
 
     /**
      * List all loans for admin review.
+     * Supports filtering by user_id (employee scope) and status.
      */
     public function listLoans(Request $request): JsonResponse
     {
         $organizationId = $request->user()->organization_id;
         $status = $request->get('status');
+        $userId = $request->get('user_id');
 
         $query = EmployeeLoan::with(['user:id,name,email,avatar', 'approvedBy:id,name'])
             ->where('organization_id', $organizationId);
+
+        if ($userId) {
+            $query->where('user_id', (int) $userId);
+        }
 
         if ($status) {
             $query->where('status', $status);

@@ -36,6 +36,26 @@ import type { EmployeePayrollDetails, EmployeePayrollTemplate, PayrollCalculatio
 interface EmployeePayrollWizardProps {
   employeeId: number;
   monthYear: string;
+  hideStepIndicator?: boolean;
+  /**
+   * Controlled step (0-indexed). When provided, the wizard uses this
+   * value as the current step instead of the URL-driven
+   * `?step=N` query param. The BulkPayrollMatrix sets this so the
+   * outer step tabs (1..6 in the matrix) and the inner wizard
+   * content (0..5) stay in lockstep.
+   *
+   * The wizard's "Continue" / "Back" buttons will call `onStepChange`
+   * (instead of `setCurrentStep`) so the parent can drive the next
+   * step.
+   */
+  controlledStep?: number;
+  /**
+   * Called by the wizard's Continue / Back buttons when
+   * `controlledStep` is provided. Receives the new 0-indexed step.
+   * The parent is expected to update its own state and re-render
+   * the wizard with a new `controlledStep`.
+   */
+  onStepChange?: (step: number) => void;
   /**
    * Optional step override coming from the URL (?step=N). The wizard reads
    * its own URL search params, so this prop is only used as a fallback for
@@ -44,7 +64,25 @@ interface EmployeePayrollWizardProps {
    */
   initialStep?: number;
   onBack: () => void;
-  onComplete?: () => void;
+  /**
+   * Label for the post-processing "back" button shown after a payroll
+   * run has been processed. Defaults to "Back to Department".
+   * Set to "Back to Pay Group" when the user came from a pay group.
+   */
+   backLabel?: string;
+  /**
+   * Fired on every step transition. The `step` argument is the
+   * 1-indexed user-facing step number (1..6). Used by the
+   * BulkPayrollMatrix to mark the per-employee per-step completion
+   * flag in the backend.
+   *
+   * Callers that want to react to "payroll has been fully
+   * processed" should check for `step === 6` (the Preview &
+   * Process step). The wizard fires this for steps 1..5 when the
+   * Continue button is clicked and for step 6 after the process
+   * mutation succeeds.
+   */
+  onComplete?: (step: number) => void;
   onViewRun?: (runId: number) => void;
 }
 
@@ -59,37 +97,68 @@ const CTC_PRESETS = [
 ];
 
 const WIZARD_STEPS = [
-  { id: 'attendance', label: 'Attendance', description: 'Verify working days' },
+  { id: 'attendance', label: 'Leave & Attendance', description: 'Verify working days & leave' },
   { id: 'salary', label: 'Salary Structure', description: 'Configure CTC & deductions' },
-  { id: 'review', label: 'Review & Process', description: 'Confirm and save' },
+  { id: 'statutory', label: 'Statutory Compliances', description: 'PF, ESI, PT, TDS, LWF' },
+  { id: 'benefits', label: 'Reimbursements & FBP', description: 'Approved reimbursements and flexible benefits' },
+  { id: 'loans', label: 'Loans & Advances', description: 'Active loans and EMI deductions' },
+  { id: 'review', label: 'Preview & Process', description: 'Confirm and save' },
 ];
 
 export default function EmployeePayrollWizard({
   employeeId,
   monthYear,
+  hideStepIndicator = false,
   initialStep,
+  controlledStep,
+  onStepChange,
   onBack,
+  backLabel = 'Back to Department',
   onComplete,
   onViewRun,
 }: EmployeePayrollWizardProps) {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Step is URL-driven so a browser refresh / deep link lands the user on
-  // the same step they were on. Falls back to `initialStep` prop, then 0.
-  // Clamped to [0, 2] to defend against malformed URLs.
+  // Step resolution:
+  //   - When `controlledStep` is provided, the wizard is fully
+  //     controlled by the parent. The URL ?step=N is ignored and
+  //     internal `setCurrentStep` is a no-op for navigation (only
+  //     `onStepChange` notifies the parent).
+  //   - Otherwise the wizard reads/writes ?step=N directly so a
+  //     browser refresh / deep link lands the user on the same step.
+  // `initialStep` is used as a fallback when neither is set.
+  // Clamped to [0, 5] to defend against malformed URLs.
   const parseStep = (raw: string | null): number => {
     if (raw === null) {
-      return initialStep !== undefined ? Math.max(0, Math.min(2, initialStep)) : 0;
+      return initialStep !== undefined ? Math.max(0, Math.min(5, initialStep)) : 0;
     }
     const n = Number(raw);
     if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.min(2, Math.trunc(n)));
+    return Math.max(0, Math.min(5, Math.trunc(n)));
   };
-  const currentStep = parseStep(searchParams.get('step'));
+  const internalStep = parseStep(searchParams.get('step'));
+  // When controlledStep is provided we clamp it too (defensive
+  // against an out-of-range value from the parent). The parent is
+  // still the source of truth.
+  const currentStep =
+    controlledStep !== undefined
+      ? Math.max(0, Math.min(5, Math.trunc(controlledStep)))
+      : internalStep;
+  const isControlled = controlledStep !== undefined;
+
+  // `setCurrentStep` is a no-op for navigation when controlled. It
+  // still updates the URL ?step= (so deep-linking keeps working)
+  // but the parent renders based on its own state, not the URL.
   const setCurrentStep = useCallback(
     (next: number) => {
-      const clamped = Math.max(0, Math.min(2, Math.trunc(next)));
+      if (isControlled) {
+        // The parent drives step changes via onStepChange; we still
+        // fire it so a stray programmatic call doesn't get lost.
+        onStepChange?.(Math.max(0, Math.min(5, Math.trunc(next))));
+        return;
+      }
+      const clamped = Math.max(0, Math.min(5, Math.trunc(next)));
       setSearchParams(
         (prev) => {
           const p = new URLSearchParams(prev);
@@ -103,20 +172,38 @@ export default function EmployeePayrollWizard({
         { replace: false },
       );
     },
-    [setSearchParams],
+    [setSearchParams, isControlled, onStepChange],
   );
 
   const [annualCtc, setAnnualCtc] = useState('');
   const [workingDays, setWorkingDays] = useState('26');
   const [daysPresent, setDaysPresent] = useState('26');
   const [lOPDays, setLOPDays] = useState('0');
+  const [paidLeaveDays, setPaidLeaveDays] = useState('0');
   const [overtimeHours, setOvertimeHours] = useState('0');
   const [isEditingAttendance, setIsEditingAttendance] = useState(false);
+
+  // Auto-save / resume-draft support. We persist in-progress wizard
+  // form values to localStorage so an admin can navigate away (e.g.
+  // to Compensation, Reports) and come back without losing manual
+  // edits to CTC, attendance, or overtime. The key is per-employee +
+  // per-month, so switching employees clears the old draft.
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const draftKey = `payroll-draft-${employeeId}-${monthYear}`;
   const [template, setTemplate] = useState<EmployeePayrollTemplate | null>(null);
   const [calculation, setCalculation] = useState<PayrollCalculation | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [processedRunId, setProcessedRunId] = useState<number | null>(null);
+
+  // Days Absent is purely derived — Working − Present − Paid Leave.
+  // We don't keep it in state; it recalculates as the inputs change.
+  const absentDays = useMemo(() => {
+    const working = parseInt(workingDays, 10) || 0;
+    const present = parseInt(daysPresent, 10) || 0;
+    const leave = parseFloat(paidLeaveDays) || 0;
+    return Math.max(0, working - present - leave);
+  }, [workingDays, daysPresent, paidLeaveDays]);
 
   // Fetch employee data
   const { data, isLoading } = useQuery({
@@ -168,6 +255,27 @@ export default function EmployeePayrollWizard({
       removeReimbursementMutation.mutate(id);
     }
   };
+
+  // Step 3 (Reimbursements & FBP): fetch FBP allocations for this
+  // employee. We use the same useQuery lifecycle as approved
+  // reimbursements so the trash-icon mutations on the reimbursements
+  // list also invalidate this query.
+  const fbpAllocationsQuery = useQuery({
+    queryKey: ['payroll', 'fbp', 'allocations', employeeId],
+    queryFn: () => payrollApi.getFbpAllocations(employeeId).then((r) => r.data),
+    enabled: Boolean(employeeId),
+  });
+  const fbpAllocations = Array.isArray(fbpAllocationsQuery.data) ? fbpAllocationsQuery.data : [];
+
+  // Step 4 (Loans & Advances): fetch active loans for this employee.
+  // The backend's listLoans now supports ?user_id=X (Phase 7a) so we
+  // pass it explicitly instead of filtering client-side.
+  const loansQuery = useQuery({
+    queryKey: ['payroll', 'loans', 'user', employeeId],
+    queryFn: () => payrollApi.listLoans({ user_id: employeeId, status: 'approved' }).then((r) => r.data?.loans ?? []),
+    enabled: Boolean(employeeId),
+  });
+  const activeLoans = Array.isArray(loansQuery.data) ? loansQuery.data : [];
 
   // Fetch PT states (slabs/slabs are server-side; we only need the dropdown options here)
   const { data: ptStatesData } = useQuery({
@@ -228,6 +336,17 @@ export default function EmployeePayrollWizard({
       overtime_hours: parseFloat(overtimeHours) || 0,
     }),
     onSuccess: (data) => {
+      // Mark step 6 (Preview & Process) done — this is the final
+      // step in the BulkPayrollMatrix. Step 5 was marked by the
+      // Process button onClick handler before the mutation fired.
+      onComplete?.(6);
+      // Clear the saved draft — the run is now persisted server-side,
+      // so there is nothing left to resume.
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(draftKey);
+        }
+      } catch { /* non-fatal */ }
       // Refresh dependent views so the next screen shows fresh data
       queryClient.invalidateQueries({ queryKey: ['payroll', 'department'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
@@ -247,13 +366,99 @@ export default function EmployeePayrollWizard({
     },
   });
 
-  // Initialize from data and auto-calculate
+  // Restore in-progress draft from localStorage on mount. Runs BEFORE the
+  // server-data useEffect below so that server data does not clobber
+  // restored values. We also gate the two overwriting effects on
+  // `hasRestoredDraft` for defense-in-depth.
+  useEffect(() => {
+    if (hasRestoredDraft) return;
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(draftKey) : null;
+    if (!raw) {
+      setHasRestoredDraft(true);
+      return;
+    }
+    try {
+      const draft = JSON.parse(raw) as {
+        annualCtc?: string;
+        workingDays?: string;
+        daysPresent?: string;
+        lOPDays?: string;
+        paidLeaveDays?: string;
+        overtimeHours?: string;
+        currentStep?: number;
+        savedAt?: number;
+      };
+      // 24-hour expiry: stale drafts are discarded.
+      const ageMs = Date.now() - (draft.savedAt ?? 0);
+      if (ageMs > 24 * 60 * 60 * 1000) {
+        try { window.localStorage.removeItem(draftKey); } catch { /* ignore */ }
+        setHasRestoredDraft(true);
+        return;
+      }
+      let restored = false;
+      if (draft.annualCtc) { setAnnualCtc(draft.annualCtc); restored = true; }
+      if (draft.workingDays) { setWorkingDays(draft.workingDays); restored = true; }
+      if (draft.daysPresent) { setDaysPresent(draft.daysPresent); restored = true; }
+      if (draft.lOPDays) { setLOPDays(draft.lOPDays); restored = true; }
+      if (draft.paidLeaveDays) { setPaidLeaveDays(draft.paidLeaveDays); restored = true; }
+      if (draft.overtimeHours !== undefined) { setOvertimeHours(draft.overtimeHours); restored = true; }
+      // Note: we do NOT restore currentStep from the draft because
+      // step is URL-driven and the user may have arrived via a deep
+      // link. Saving the URL ?step= already covers resume.
+      if (restored) {
+        show({
+          kind: 'info',
+          message: 'Draft restored — your previous progress is back.',
+        });
+      }
+    } catch {
+      // Corrupt JSON — discard silently and continue with server data.
+      try { window.localStorage.removeItem(draftKey); } catch { /* ignore */ }
+    } finally {
+      setHasRestoredDraft(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+
+  // Auto-save current form values to localStorage on every change. The
+  // save is cheap (JSON.stringify of a small object) and uses the
+  // per-employee-per-month key so no cross-contamination is possible.
+  useEffect(() => {
+    if (!hasRestoredDraft) return; // don't overwrite the saved draft with the initial empty state
+    if (typeof window === 'undefined') return;
+    try {
+      const draft = {
+        annualCtc,
+        workingDays,
+        daysPresent,
+        lOPDays,
+        paidLeaveDays,
+        overtimeHours,
+        // Save currentStep too so a future enhancement could navigate
+        // the user back; the URL ?step= is the authoritative source today.
+        currentStep,
+        savedAt: Date.now(),
+      };
+      window.localStorage.setItem(draftKey, JSON.stringify(draft));
+    } catch {
+      // localStorage may be full / disabled in private mode — non-fatal.
+    }
+  }, [annualCtc, workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, currentStep, hasRestoredDraft, draftKey]);
+
+  // Initialize from data and auto-calculate. We still seed the template
+  // and the calculation from the server, but we do NOT clobber a
+  // restored `annualCtc` from the draft — gated on `hasRestoredDraft`
+  // so a draft takes precedence over server data.
   useEffect(() => {
     if (data && !template) {
       setTemplate(data.template);
       const savedCtc = data.template.annual_ctc;
       if (savedCtc) {
-        setAnnualCtc(String(savedCtc));
+        // Prefer a value the user already typed (or that a draft
+        // restored) over the server-side value.
+        if (!hasRestoredDraft || !annualCtc) {
+          setAnnualCtc(String(savedCtc));
+        }
         if (data.payroll_preview) {
           setCalculation(data.payroll_preview);
         } else {
@@ -262,40 +467,23 @@ export default function EmployeePayrollWizard({
         }
       }
     }
-  }, [data, template]);
+  }, [data, template, annualCtc, hasRestoredDraft]);
 
-  // Auto-populate attendance from the new monthly attendance summary
-  // (single source of truth — AttendanceRecord / AttendancePunch /
-  // LeaveRequest / AttendanceHoliday). Falls back to the legacy
-  // /8-hours-from-tracked-hours heuristic only when the summary is
-  // missing (e.g., older backend).
+  // Auto-populate attendance from the monthly attendance summary
+  // (single source of truth). Working days, present days, LOP, and
+  // paid leave are pulled verbatim from the backend — but only when
+  // the user has not already entered a value (manual edit) and no
+  // draft was restored. Overtime is manual-only — we do NOT auto-set
+  // it. This preserves the resume-from-draft contract.
   useEffect(() => {
     const summary = data?.attendance_summary;
-    if (summary) {
-      setWorkingDays(String(Math.round(summary.working_days)));
-      setDaysPresent(String(Math.round(summary.present_days)));
-      setLOPDays(String(Math.round(summary.lop_days)));
-      const otHours = Number(summary.hours?.overtime_hours ?? 0);
-      setOvertimeHours(otHours > 0 ? otHours.toFixed(2) : '0');
-      return;
-    }
-
-    if (data?.time_tracking) {
-      const tt = data.time_tracking;
-      const trackedHours = tt.payroll_tracked_hours || tt.total_worked_hours || 0;
-      const calculatedWorkingDays = Math.max(1, Math.ceil(trackedHours / 8));
-      const calculatedDaysPresent = tt.payroll_attendance_days ||
-        Math.min(calculatedWorkingDays, Math.floor(trackedHours / 8));
-      const calculatedLwp = Math.max(0, calculatedWorkingDays - calculatedDaysPresent);
-      const standardHours = calculatedDaysPresent * 8;
-      const calculatedOvertime = Math.max(0, trackedHours - standardHours);
-
-      setWorkingDays(String(calculatedWorkingDays));
-      setDaysPresent(String(calculatedDaysPresent));
-      setLOPDays(String(calculatedLwp));
-      setOvertimeHours(calculatedOvertime > 0 ? calculatedOvertime.toFixed(1) : '0');
-    }
-  }, [data?.attendance_summary, data?.time_tracking]);
+    if (!summary) return;
+    if (hasRestoredDraft) return; // draft already populated these
+    setWorkingDays(String(Math.round(summary.working_days)));
+    setDaysPresent(String(Math.round(summary.present_days)));
+    setLOPDays(String(Math.round(summary.lop_days)));
+    setPaidLeaveDays(String(Math.round(summary.paid_leave_days ?? 0)));
+  }, [data?.attendance_summary, hasRestoredDraft]);
 
   // Auto-trigger calculation when CTC becomes a positive number (after template loads).
   // The 500ms debounce lets the user finish typing before we hit the API.
@@ -372,6 +560,17 @@ export default function EmployeePayrollWizard({
     const newTemplate = { ...template, [field]: value };
     setTemplate(newTemplate);
     updateTemplateMutation.mutate({ [field]: value });
+    // Some fields affect the payroll breakdown (PT, tax regime,
+    // metro-city HRA exemption). Recalculate after the local state
+    // has been updated so the calculate call sees the new value.
+    // Note: PF/ESI/PT/TDS *toggles* are handled in
+    // handleToggleDeduction below — we only re-calc for value
+    // changes here.
+    if (['pt_state', 'tax_regime', 'is_metro_city'].includes(field)) {
+      if (calculation && annualCtc) {
+        setTimeout(calculatePreview, 100);
+      }
+    }
   };
 
   const handleToggleDeduction = (key: keyof EmployeePayrollTemplate, value: boolean) => {
@@ -413,27 +612,13 @@ export default function EmployeePayrollWizard({
             <Clock className="h-5 w-5 text-blue-600" />
             Attendance Details
           </h3>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full flex items-center gap-1">
-              <CheckCircle2 className="h-3 w-3" />
-              Auto-calculated
-            </span>
-          </div>
+          {/* No status pill — per-field hints below explain each value. */}
         </div>
         
-        {/* Auto-calculation Info Banner */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <div className="flex items-start gap-3">
-            <Activity className="h-5 w-5 text-blue-600 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-blue-900">Auto-calculated from Timesheets</p>
-              <p className="text-xs text-blue-700 mt-1">
-                Working days, present days, and overtime are automatically calculated based on the employee's tracked hours.
-                You can manually adjust the values if needed.
-              </p>
-            </div>
-          </div>
-        </div>
+        <p className="text-sm text-slate-600 mb-6">
+          Attendance data is auto-fetched from the attendance system. Use Edit Values to adjust if needed.
+          Overtime hours are entered manually.
+        </p>
 
         {/* Stale-timer warning: surfaced only when the controller actually
             auto-closed one or more running timers in this month. We show
@@ -457,181 +642,49 @@ export default function EmployeePayrollWizard({
           </div>
         )}
         
-        {/* Timesheet Summary Cards — prefer the new attendance_summary
-            (the single source of truth for payroll), fall back to the
-            time_tracking payload for older backend responses. The source
-            label below each value tells the user exactly where the
-            number came from, so "0.0h" no longer looks like a bug. */}
-        {(() => {
-          const summary = data?.attendance_summary;
+        {/* Day-based summary cards. Overtime is intentionally NOT shown
+            here — it's manual-only and lives in the Edit Values panel. */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-xs text-slate-500 mb-1">Working Days</p>
+            <p className="text-2xl font-bold text-slate-800">{workingDays || '0'}</p>
+            <p className="text-xs text-emerald-600 mt-1">Auto</p>
+          </div>
+          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-xs text-slate-500 mb-1">Days Present</p>
+            <p className="text-2xl font-bold text-slate-800">{daysPresent || '0'}</p>
+            <p className="text-xs text-emerald-600 mt-1">Auto</p>
+          </div>
+          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-xs text-slate-500 mb-1">Days on Leave</p>
+            <p className="text-2xl font-bold text-slate-800">{paidLeaveDays || '0'}</p>
+            <p className="text-xs text-emerald-600 mt-1">Auto</p>
+          </div>
+          <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
+            <p className="text-xs text-slate-500 mb-1">Days Absent</p>
+            <p className="text-2xl font-bold text-red-600">{absentDays}</p>
+            <p className="text-xs text-emerald-600 mt-1">Auto</p>
+          </div>
+        </div>
 
-          // Resolve tracked hours, recording which source provided it.
-          let trackedHours = 0;
-          let trackedSource: 'attendance_summary' | 'payroll_tracked_hours' | 'total_worked_hours' | 'none' = 'none';
-          if (summary?.hours?.worked_hours && summary.hours.worked_hours > 0) {
-            trackedHours = summary.hours.worked_hours;
-            trackedSource = 'attendance_summary';
-          } else if (time_tracking.payroll_tracked_hours && time_tracking.payroll_tracked_hours > 0) {
-            trackedHours = time_tracking.payroll_tracked_hours;
-            trackedSource = 'payroll_tracked_hours';
-          } else if (time_tracking.total_worked_hours && time_tracking.total_worked_hours > 0) {
-            trackedHours = time_tracking.total_worked_hours;
-            trackedSource = 'total_worked_hours';
-          }
-
-          // Resolve productive hours, recording source.
-          let productiveHours = 0;
-          let productiveSource: 'attendance_summary' | 'productivity_logs' | 'none' = 'none';
-          if (summary && summary.total_worked_seconds > 0) {
-            productiveHours = Math.round(
-              (summary.total_worked_seconds - (summary.lop_days * 8 * 3600)) / 3600 * 10,
-            ) / 10;
-            productiveSource = 'attendance_summary';
-          } else if (time_tracking.total_productive_hours && time_tracking.total_productive_hours > 0) {
-            productiveHours = time_tracking.total_productive_hours;
-            productiveSource = 'productivity_logs';
-          }
-
-          // Resolve overtime hours.
-          const overtimeHours = summary?.hours?.overtime_hours ?? 0;
-          const overtimeSource: 'attendance_summary' | 'none' =
-            summary?.hours?.overtime_hours ? 'attendance_summary' : 'none';
-
-          // Resolve attendance days.
-          let attendanceDays = 0;
-          let attendanceSource: 'attendance_summary' | 'payroll_attendance_days' | 'derived' | 'none' = 'none';
-          if (summary && summary.working_days > 0) {
-            attendanceDays = Math.round(summary.present_days);
-            attendanceSource = 'attendance_summary';
-          } else if (time_tracking.payroll_attendance_days) {
-            attendanceDays = time_tracking.payroll_attendance_days;
-            attendanceSource = 'payroll_attendance_days';
-          } else if (trackedHours > 0) {
-            attendanceDays = Math.floor(trackedHours / 8);
-            attendanceSource = 'derived';
-          }
-
-          const hasData = trackedHours > 0 || (summary && summary.total_worked_seconds > 0);
-
-          // Anomaly detection: warn the user when the average hours per
-          // working day looks implausible, OR when a timer is still
-          // running (in which case the headline number is ticking up).
-          const attendanceDaysForWarn = summary && summary.working_days > 0
-            ? summary.present_days
-            : attendanceDays;
-          const hoursPerDay = attendanceDaysForWarn > 0
-            ? trackedHours / attendanceDaysForWarn
-            : 0;
-          const suspiciousHours = hoursPerDay > 16;
-          const hasRunningTimer = time_tracking.has_running_timer === true;
-
-          // Human-readable source labels.
-          const SOURCE_LABELS: Record<string, string> = {
-            attendance_summary: 'Source: Attendance summary',
-            payroll_tracked_hours: 'Source: Check-in / check-out (PayrollTimeEntry)',
-            total_worked_hours: 'Source: Timer / stopwatch (TimeEntry)',
-            payroll_attendance_days: 'Source: Check-in / check-out',
-            derived: 'Source: derived from tracked hours (÷ 8)',
-            productivity_logs: 'Source: Activity logs',
-            none: 'No source for this month',
-          };
-
-          return (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <p className="text-xs text-slate-500 mb-1">Total Tracked Hours</p>
-                {hasData ? (
-                  <>
-                    <p className="text-2xl font-bold text-slate-900">{trackedHours.toFixed(1)}h</p>
-                    <p className="text-xs text-slate-400 mt-1" title={trackedSource}>
-                      {SOURCE_LABELS[trackedSource]}
-                    </p>
-                    {(suspiciousHours || hasRunningTimer) && (
-                      <p
-                        className="text-[10px] text-amber-700 mt-1"
-                        title={
-                          hasRunningTimer
-                            ? 'A TimeEntry timer is still running. The hours below are ticking up until it is stopped.'
-                            : `Average ${hoursPerDay.toFixed(1)} h/day is well above 16 h — likely a runaway timer.`
-                        }
-                      >
-                        {hasRunningTimer
-                          ? 'Timer still running — hours will keep climbing'
-                          : 'Unusually high — check for running timers'}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-400">0.0h</p>
-                    <p className="text-xs text-amber-600 mt-1">
-                      No time tracked in {monthYear} — try a different month
-                    </p>
-                  </>
-                )}
-              </div>
-              <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <p className="text-xs text-slate-500 mb-1">Productive Hours</p>
-                {productiveHours > 0 ? (
-                  <>
-                    <p className="text-2xl font-bold text-emerald-600">{productiveHours.toFixed(1)}h</p>
-                    <p className="text-xs text-slate-400 mt-1" title={productiveSource}>
-                      {SOURCE_LABELS[productiveSource]}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-400">0.0h</p>
-                    <p className="text-xs text-amber-500 mt-1">No activity recorded</p>
-                  </>
-                )}
-              </div>
-              <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <p className="text-xs text-slate-500 mb-1">Overtime Hours</p>
-                {overtimeHours > 0 ? (
-                  <>
-                    <p className="text-2xl font-bold text-orange-600">{overtimeHours.toFixed(1)}h</p>
-                    <p className="text-xs text-slate-400 mt-1" title={overtimeSource}>
-                      {SOURCE_LABELS[overtimeSource]}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-400">0.0h</p>
-                    <p className="text-xs text-slate-400 mt-1">Within standard shift</p>
-                  </>
-                )}
-              </div>
-              <div className="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <p className="text-xs text-slate-500 mb-1">Attendance Days</p>
-                {hasData ? (
-                  <>
-                    <p className="text-2xl font-bold text-violet-600">{attendanceDays}</p>
-                    <p className="text-xs text-slate-400 mt-1" title={attendanceSource}>
-                      {SOURCE_LABELS[attendanceSource]}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-slate-400">0</p>
-                    <p className="text-xs text-amber-500 mt-1">No attendance data</p>
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Activity rate — informational only, doesn't affect net pay (per
-            master guide §1: productivity data is display-only). */}
+        {/* Leave Summary + Daily Wages — informational, read-only.
+            Daily wage is derived from the actual worked hours divided by
+            days present (a more honest rate than monthly/working-days
+            which would imply 8h of pay for every working day). */}
         <div className="grid grid-cols-1 gap-4 mb-6">
-          <div className="text-center p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <p className="text-xs text-slate-500 mb-1">
-              Activity Rate <span className="italic text-slate-400">(informational only — does not affect net pay)</span>
-            </p>
-            <p className={`text-2xl font-bold ${time_tracking.activity_percentage > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
-              {(time_tracking.activity_percentage ?? 0).toFixed(0)}%
-            </p>
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-500">Approved Leave (this month)</p>
+                <p className="text-base font-semibold text-slate-900 mt-0.5">
+                  {paidLeaveDays || '0'} paid leave day{paidLeaveDays === '1' ? '' : 's'}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  LOP: {lOPDays || '0'} day{(lOPDays === '0' || lOPDays === '1') ? '' : 's'}
+                </p>
+              </div>
+              <Receipt className="h-7 w-7 text-emerald-300" />
+            </div>
           </div>
         </div>
 
@@ -720,28 +773,25 @@ export default function EmployeePayrollWizard({
               />
               <p className="text-xs text-slate-400 mt-1">Auto-calculated from attendance gaps</p>
             </div>
-            <div className={`p-4 rounded-lg border ${isEditingAttendance ? 'bg-white border-slate-300' : 'bg-emerald-50 border-emerald-200'}`}>
-              <div className="flex items-center justify-between mb-1">
-                <FieldLabel className="mb-0">Overtime Hours</FieldLabel>
-                {!isEditingAttendance && (
-                  <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" />
-                    Auto
-                  </span>
-                )}
-              </div>
-              <TextInput
-                type="number"
-                value={overtimeHours}
-                onChange={(e) => setOvertimeHours(e.target.value)}
-                min="0"
-                step="0.5"
-                placeholder="0"
-                disabled={!isEditingAttendance}
-                className={!isEditingAttendance ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : ''}
-              />
-              <p className="text-xs text-slate-400 mt-1">Auto-calculated hours beyond 8h/day</p>
-            </div>
+               <div className={`p-4 rounded-lg border ${isEditingAttendance ? 'bg-white border-slate-300' : 'bg-emerald-50 border-emerald-200'}`}>
+                 <div className="flex items-center justify-between mb-1">
+                   <FieldLabel className="mb-0">Overtime Hours</FieldLabel>
+                   <span className="text-xs text-blue-600 font-medium flex items-center gap-1">
+                     Manual Entry
+                   </span>
+                 </div>
+                 <TextInput
+                   type="number"
+                   value={overtimeHours}
+                   onChange={(e) => setOvertimeHours(e.target.value)}
+                   min="0"
+                   step="0.5"
+                   placeholder="0"
+                   disabled={!isEditingAttendance}
+                   className={!isEditingAttendance ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : ''}
+                 />
+                 <p className="text-xs text-slate-400 mt-1">Enter overtime hours manually</p>
+               </div>
           </div>
         </div>
       </SurfaceCard>
@@ -923,7 +973,7 @@ export default function EmployeePayrollWizard({
             <button onClick={() => setCalcError(null)} className="text-rose-400 hover:text-rose-600">×</button>
           </div>
         )}
-        <div className="flex justify-between">
+         <div className="flex justify-between">
           <Button variant="secondary" onClick={() => setCurrentStep(0)}>
             Back
           </Button>
@@ -934,6 +984,9 @@ export default function EmployeePayrollWizard({
                 // No preview yet — try to calculate, then advance if it worked.
                 await calculatePreview();
               }
+              // Mark step 1 complete before advancing (BulkPayrollMatrix
+              // uses this to track per-employee per-step progress).
+              onComplete?.(1);
               setCurrentStep(2);
             }}
             disabled={isCalculating || !annualCtc || parseFloat(annualCtc) <= 0}
@@ -943,7 +996,7 @@ export default function EmployeePayrollWizard({
             {isCalculating
               ? 'Calculating…'
               : calculation
-                ? 'Review & Process'
+                ? 'Continue'
                 : parseFloat(annualCtc) > 0
                   ? 'Calculate & Continue'
                   : 'Enter CTC to continue'}
@@ -951,98 +1004,506 @@ export default function EmployeePayrollWizard({
         </div>
       </div>
 
-      {/* Approved Reimbursements — every approved reimbursement for this
-          employee is shown here so the admin sees what will be folded
-          into the salary. The trash icon calls the soft-remove endpoint
-          (status='removed') which keeps the audit trail but excludes the
-          row from future payroll runs. */}
-      <SurfaceCard className="p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-            <Receipt className="h-5 w-5 text-blue-600" />
-            Approved Reimbursements
-          </h3>
-          <span className="text-xs text-slate-500">
-            {approvedReimbursementsQuery.isLoading
-              ? 'Loading…'
-              : `${approvedReimbursements.length} item${approvedReimbursements.length === 1 ? '' : 's'}`}
-          </span>
-        </div>
+    </div>
+  );
 
-        {approvedReimbursementsQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500 py-3">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Fetching approved reimbursements…
+  // Step 2: Statutory Compliances (NEW in 6-step flow)
+  // Read-only review of PF/ESI/PT/TDS contributions computed by
+  // the calculate endpoint. We display what the calculator already
+  // returns so the operator can verify before advancing.
+  const renderStep2Statutory = () => {
+    const c = calculation;
+    const pfE = Number(c?.components?.deductions?.pf_employee ?? 0);
+    const pfER = Number(c?.components?.employer_contributions?.pf_employer ?? 0);
+    const pfEps = Number(c?.components?.employer_contributions?.eps ?? 0);
+    const pfEpf = Number(c?.components?.employer_contributions?.epf ?? 0);
+    const pfEdi = pfEps + pfEpf; // EDLI-like split (EPS + EPF)
+    const esiE = Number(c?.components?.deductions?.esi_employee ?? 0);
+    const esiER = Number(c?.components?.employer_contributions?.esi_employer ?? 0);
+    const pt = Number(c?.components?.deductions?.pt ?? 0);
+    const tds = Number(c?.components?.deductions?.tds ?? 0);
+    const gross = Number(c?.monthly?.gross ?? 0);
+    const pfWageBase = Math.min(gross, 15000);
+    const esiApplies = template?.esi_enabled && gross > 0 && gross <= 21000;
+    const lwfEnabled = Boolean(template?.lwf_enabled);
+
+    return (
+      <div className="space-y-6">
+        <SurfaceCard className="p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-blue-600" />
+              Statutory Compliances
+            </h3>
+            <span className="text-xs text-slate-500">
+              Auto-calculated · read-only
+            </span>
           </div>
-        ) : approvedReimbursements.length === 0 ? (
-          <p className="text-sm text-slate-500 py-3">
-            No approved reimbursements for this employee. Approve one from the
-            <span className="font-medium"> Reimbursements </span>
-            page and it will show up here.
+
+          <p className="text-sm text-slate-600 mb-6">
+            These values are computed by the calculator from your CTC and template settings.
+            They are <strong>read-only</strong> here — adjust them in the previous Salary Structure step.
           </p>
-        ) : (
-          <>
+
+          {/* PF row */}
+          <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-900">Provident Fund (PF)</span>
+                <InfoTooltip content={`Employee contributes 12% of PF wage base (capped at ₹15,000) = ₹${pfWageBase.toFixed(0)}. Employer matches.`} title="PF" />
+              </div>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                {template?.pf_enabled ? 'Applicable' : 'Disabled'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-4 mt-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">Employee</p>
+                <p className="text-base font-semibold text-slate-900">₹ {pfE.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">Employer</p>
+                <p className="text-base font-semibold text-slate-900">₹ {pfER.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">EDLI / EPS-EPF</p>
+                <p className="text-base font-semibold text-slate-900">₹ {pfEdi.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* ESI row */}
+          <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-900">Employee State Insurance (ESI)</span>
+                <InfoTooltip content={`ESI applies when gross ≤ ₹21,000/month. Employee 0.75%, employer 3.25%.`} title="ESI" />
+              </div>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${esiApplies ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                {esiApplies ? 'Applicable' : 'Not applicable'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">Employee</p>
+                <p className="text-base font-semibold text-slate-900">₹ {esiE.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500">Employer</p>
+                <p className="text-base font-semibold text-slate-900">₹ {esiER.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* PT row */}
+          <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-900">Professional Tax (PT)</span>
+                <InfoTooltip content={`State-specific slab. ${template?.pt_state ?? 'Maharashtra'} slab applied automatically.`} title="PT" />
+              </div>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                {template?.pt_enabled ? 'Applicable' : 'Disabled'}
+              </span>
+            </div>
+            <p className="text-base font-semibold text-slate-900">
+              ₹ {pt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+
+          {/* TDS row */}
+          <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-900">Income Tax (TDS)</span>
+                <InfoTooltip content={`Annualized and divided by 12. ${template?.tax_regime === 'old' ? 'Old regime' : 'New regime'} with approved exemptions.`} title="TDS" />
+              </div>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                {template?.tds_enabled ? 'Applicable' : 'Disabled'}
+              </span>
+            </div>
+            <p className="text-base font-semibold text-slate-900">
+              ₹ {tds.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+
+          {/* LWF row (if applicable) */}
+          {lwfEnabled && (
+            <div className="rounded-lg border border-slate-200 bg-white p-4 mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-900">Labour Welfare Fund (LWF)</span>
+                  <InfoTooltip content="State-specific. Usually a small annual amount split monthly. The exact value is finalized when the payroll run is processed and the PayrollItem is written." title="LWF" />
+                </div>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                  Configured
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                LWF amount is computed at payroll-run time (see PayrollItem.total_lwf).
+              </p>
+            </div>
+          )}
+
+          {!c && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+              <InfoTooltip content="Calculations run when you click Calculate on the previous step. If you see this, go back and re-trigger." title="No calculation yet" />
+              <span className="ml-2">No calculation available yet — return to Salary Structure and click Calculate.</span>
+            </div>
+          )}
+        </SurfaceCard>
+
+        <div className="flex flex-col gap-2">
+          {calcError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2 text-sm">
+              <AlertCircle className="h-4 w-4 text-rose-600 flex-shrink-0 mt-0.5" />
+              <p className="text-rose-700 flex-1 break-words">{calcError}</p>
+              <button onClick={() => setCalcError(null)} className="text-rose-400 hover:text-rose-600">×</button>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <Button variant="secondary" onClick={() => setCurrentStep(1)}>
+              Back
+            </Button>
+            <Button
+              variant="primary"
+              onClick={async () => {
+                if (!calculation && parseFloat(annualCtc) > 0 && template) {
+                  await calculatePreview();
+                }
+                onComplete?.(2);
+                setCurrentStep(3);
+              }}
+              disabled={!calculation && (parseFloat(annualCtc) <= 0 || !template)}
+              iconRight={<ChevronRight className="h-4 w-4" />}
+            >
+              Continue
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Step 3: Reimbursements & FBP (NEW in 6-step flow)
+  // Shows the approved reimbursements and active FBP allocations that
+  // will be folded into the salary. Reimbursements keep the trash-icon
+  // removal (soft-state: sets status='removed' on the backend).
+  const renderStep3Benefits = () => {
+    const reimbursementsTotal = approvedReimbursements.reduce(
+      (sum, r) => sum + (Number(r.amount) || 0),
+      0,
+    );
+    const fbpTotal = (fbpAllocations as any[]).reduce(
+      (sum, a) => sum + (Number(a.allocated_amount) || Number(a.amount) || 0),
+      0,
+    );
+    const fbpUtilized = (fbpAllocations as any[]).reduce(
+      (sum, a) => sum + (Number(a.utilized_amount) || 0),
+      0,
+    );
+
+    return (
+      <div className="space-y-6">
+        {/* Reimbursements */}
+        <SurfaceCard className="p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-blue-600" />
+              Approved Reimbursements
+            </h3>
+            <span className="text-xs text-slate-500">
+              {approvedReimbursementsQuery.isLoading
+                ? 'Loading…'
+                : `${approvedReimbursements.length} item${approvedReimbursements.length === 1 ? '' : 's'}`}
+            </span>
+          </div>
+
+          {approvedReimbursementsQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-slate-500 py-3">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Fetching approved reimbursements…
+            </div>
+          ) : approvedReimbursements.length === 0 ? (
+            <p className="text-sm text-slate-500 py-3">
+              No approved reimbursements for this employee. Approve one from the
+              <span className="font-medium"> Reimbursements </span>
+              page and it will show up here.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-slate-100">
+                {approvedReimbursements.map((r: any) => {
+                  const isRemoving =
+                    removeReimbursementMutation.isPending &&
+                    removeReimbursementMutation.variables === r.id;
+                  const label = r.title || r.description || `Reimbursement #${r.id}`;
+                  const currency = r.currency || 'INR';
+                  return (
+                    <li
+                      key={r.id}
+                      className="flex items-center justify-between py-3 gap-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900 truncate">
+                          {label}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {r.expense_date ? `Expense date: ${r.expense_date} · ` : ''}
+                          Approved {r.approved_at ? `on ${String(r.approved_at).slice(0, 10)}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-sm font-semibold text-slate-900 tabular-nums">
+                          {currency} {Number(r.amount).toLocaleString('en-IN', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveReimbursement(r.id, label)}
+                          disabled={isRemoving || removeReimbursementMutation.isPending}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          aria-label={`Remove ${label} from salary structure`}
+                          title="Remove from salary structure"
+                        >
+                          {isRemoving ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3">
+                <span className="text-sm font-medium text-slate-600">Total Reimbursements</span>
+                <span className="text-base font-bold text-slate-900 tabular-nums">
+                  ₹ {reimbursementsTotal.toLocaleString('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
+            </>
+          )}
+        </SurfaceCard>
+
+        {/* FBP allocations */}
+        <SurfaceCard className="p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-blue-600" />
+              Flexible Benefit Plan (FBP) Allocations
+            </h3>
+            <span className="text-xs text-slate-500">
+              {fbpAllocationsQuery.isLoading
+                ? 'Loading…'
+                : `${(fbpAllocations as any[]).length} component${(fbpAllocations as any[]).length === 1 ? '' : 's'}`}
+            </span>
+          </div>
+
+          {fbpAllocationsQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-slate-500 py-3">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Fetching FBP allocations…
+            </div>
+          ) : (fbpAllocations as any[]).length === 0 ? (
+            <p className="text-sm text-slate-500 py-3">
+              No FBP allocations configured. Manage FBP components from the
+              <span className="font-medium"> Salary Templates </span>
+              page.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-slate-100">
+                {(fbpAllocations as any[]).map((alloc: any) => {
+                  const allocated = Number(alloc.allocated_amount ?? alloc.amount ?? 0);
+                  const utilized = Number(alloc.utilized_amount ?? 0);
+                  const available = Math.max(0, allocated - utilized);
+                  const currency = alloc.currency || 'INR';
+                  return (
+                    <li
+                      key={alloc.id}
+                      className="flex items-center justify-between py-3 gap-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-900 truncate">
+                          {alloc.component?.name || alloc.name || `FBP #${alloc.id}`}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Allocated {currency} {allocated.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ·
+                          {' '}Utilized {currency} {utilized.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold text-emerald-600 tabular-nums">
+                          {currency} {available.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[10px] text-slate-400">Available</p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-200 pt-3">
+                <div>
+                  <p className="text-xs text-slate-500">Total Allocated</p>
+                  <p className="text-base font-bold text-slate-900 tabular-nums">
+                    ₹ {fbpTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Total Utilized</p>
+                  <p className="text-base font-bold text-slate-900 tabular-nums">
+                    ₹ {fbpUtilized.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </SurfaceCard>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between">
+            <Button variant="secondary" onClick={() => setCurrentStep(2)}>
+              Back
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                onComplete?.(3);
+                setCurrentStep(4);
+              }}
+              iconRight={<ChevronRight className="h-4 w-4" />}
+            >
+              Continue
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Step 4: Loans & Advances (NEW in 6-step flow)
+  // Read-only list of active loans and pending requests. Each row
+  // shows the EMI deduction that will be auto-applied during process.
+  const renderStep4Loans = () => {
+    const totalEmi = activeLoans.reduce(
+      (sum, l) => sum + (Number((l as any).emi_amount) || 0),
+      0,
+    );
+    return (
+      <div className="space-y-6">
+        <SurfaceCard className="p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-blue-600" />
+              Loans & Advances
+            </h3>
+            <span className="text-xs text-slate-500">
+              {loansQuery.isLoading
+                ? 'Loading…'
+                : `${activeLoans.length} active loan${activeLoans.length === 1 ? '' : 's'}`}
+            </span>
+          </div>
+
+          {loansQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-slate-500 py-3">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Fetching loans…
+            </div>
+          ) : activeLoans.length === 0 ? (
+            <p className="text-sm text-slate-500 py-3">
+              No active loans for this employee. New loan requests can be submitted from
+              the <span className="font-medium"> My Loans </span> page.
+            </p>
+          ) : (
             <ul className="divide-y divide-slate-100">
-              {approvedReimbursements.map((r: any) => {
-                const isRemoving =
-                  removeReimbursementMutation.isPending &&
-                  removeReimbursementMutation.variables === r.id;
-                const label = r.title || r.description || `Reimbursement #${r.id}`;
-                const currency = r.currency || 'INR';
+              {activeLoans.map((loan: any) => {
+                const original = Number(loan.amount) || 0;
+                const emi = Number(loan.emi_amount) || 0;
+                const total = Number(loan.total_installments) || 0;
+                const remaining = Number(loan.remaining_amount) || 0;
+                const paid = Math.max(0, original - remaining);
+                const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
                 return (
                   <li
-                    key={r.id}
-                    className="flex items-center justify-between py-3 gap-3"
+                    key={loan.id}
+                    className="py-4"
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-slate-900 truncate">
-                        {label}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {r.expense_date ? `Expense date: ${r.expense_date} · ` : ''}
-                        Approved {r.approved_at ? `on ${String(r.approved_at).slice(0, 10)}` : ''}
-                      </p>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900 capitalize">
+                          {loan.loan_type === 'advance' ? 'Salary Advance' : 'Loan'}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {loan.purpose || 'No purpose specified'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-rose-600 tabular-nums">
+                          ₹ {emi.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo
+                        </p>
+                        <p className="text-[10px] text-slate-400">EMI deduction</p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="text-sm font-semibold text-slate-900 tabular-nums">
-                        {currency} {Number(r.amount).toLocaleString('en-IN', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveReimbursement(r.id, label)}
-                        disabled={isRemoving || removeReimbursementMutation.isPending}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        aria-label={`Remove ${label} from salary structure`}
-                        title="Remove from salary structure"
-                      >
-                        {isRemoving ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </button>
+                    {/* Progress bar */}
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500"
+                        style={{ width: `${pct}%` }}
+                        role="progressbar"
+                        aria-valuenow={pct}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                      />
                     </div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      {paid} / {total} installments paid ({pct}%) · Remaining ₹ {remaining.toLocaleString('en-IN')}
+                    </p>
                   </li>
                 );
               })}
             </ul>
-            <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3">
-              <span className="text-sm font-medium text-slate-600">Total Reimbursements</span>
-              <span className="text-base font-bold text-slate-900 tabular-nums">
-                ₹ {approvedReimbursementsTotal.toLocaleString('en-IN', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
+          )}
+        </SurfaceCard>
+
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-rose-900">Total Monthly EMI</p>
+              <p className="text-xs text-rose-700">Auto-deducted from salary on process</p>
             </div>
-          </>
-        )}
-      </SurfaceCard>
-    </div>
-  );
+            <p className="text-xl font-bold text-rose-700 tabular-nums">
+              ₹ {totalEmi.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between">
+            <Button variant="secondary" onClick={() => setCurrentStep(3)}>
+              Back
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                onComplete?.(4);
+                setCurrentStep(5);
+              }}
+              iconRight={<ChevronRight className="h-4 w-4" />}
+            >
+              Continue
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Step 3: Review & Process
   const renderStep3 = () => (
@@ -1072,6 +1533,52 @@ export default function EmployeePayrollWizard({
             <SalaryBreakdown calculation={calculation} template={template} />
           </SurfaceCard>
 
+          {/* New in 6-step flow: side-by-side totals for reimbursements,
+              FBP allocations, and active loan EMIs. These are pulled
+              from the same data sources that drive Steps 3 and 4, so the
+              preview is always in sync with what the admin saw there. */}
+          <SurfaceCard className="p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-blue-600" />
+              Earnings & Deductions Summary
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-xs text-emerald-700 font-medium">Reimbursements</p>
+                <p className="text-xl font-bold text-emerald-900 tabular-nums mt-1">
+                  ₹ {approvedReimbursementsTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[11px] text-emerald-700 mt-0.5">
+                  {approvedReimbursements.length} item{approvedReimbursements.length === 1 ? '' : 's'} · added to gross
+                </p>
+              </div>
+              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+                <p className="text-xs text-sky-700 font-medium">FBP Allocations</p>
+                <p className="text-xl font-bold text-sky-900 tabular-nums mt-1">
+                  ₹ {(fbpAllocations as any[]).reduce(
+                    (sum, a) => sum + (Number(a.allocated_amount ?? a.amount) || 0),
+                    0,
+                  ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[11px] text-sky-700 mt-0.5">
+                  {(fbpAllocations as any[]).length} component{(fbpAllocations as any[]).length === 1 ? '' : 's'} · added to gross
+                </p>
+              </div>
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
+                <p className="text-xs text-rose-700 font-medium">Loan EMI</p>
+                <p className="text-xl font-bold text-rose-900 tabular-nums mt-1">
+                  ₹ {activeLoans.reduce(
+                    (sum, l) => sum + (Number((l as any).emi_amount) || 0),
+                    0,
+                  ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[11px] text-rose-700 mt-0.5">
+                  {activeLoans.length} active loan{activeLoans.length === 1 ? '' : 's'} · deducted from net
+                </p>
+              </div>
+            </div>
+          </SurfaceCard>
+
           {/* Confirmation */}
           <SurfaceCard className={`p-6 ${processPayrollMutation.isSuccess ? 'bg-emerald-50 border-emerald-200' : ''}`}>
             {processPayrollMutation.isSuccess ? (
@@ -1095,7 +1602,7 @@ export default function EmployeePayrollWizard({
 
                 <div className="flex justify-center gap-3 flex-wrap">
                   <Button variant="secondary" onClick={onBack}>
-                    Back to Department
+                    {backLabel}
                   </Button>
                   {processedRunId && onViewRun && (
                     <Button
@@ -1123,9 +1630,16 @@ export default function EmployeePayrollWizard({
                   <Button variant="secondary" onClick={() => setCurrentStep(1)}>
                     Back
                   </Button>
-                  <Button 
-                    variant="primary" 
-                    onClick={() => processPayrollMutation.mutate()}
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      // Mark step 5 (Loans & Advances) done before
+                      // processing. Step 6 (Preview & Process) is
+                      // marked done in the mutation onSuccess hook
+                      // below since it's the last step.
+                      onComplete?.(5);
+                      processPayrollMutation.mutate();
+                    }}
                     disabled={processPayrollMutation.isPending}
                     iconLeft={processPayrollMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   >
@@ -1144,7 +1658,20 @@ export default function EmployeePayrollWizard({
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            if (currentStep === 0) {
+              // Step 1 (Attendance) → exit wizard back to department view
+              onBack();
+            } else {
+              // Any later step → navigate to the previous step within
+              // the wizard (steps 1..5 → step - 1)
+              setCurrentStep(currentStep - 1);
+            }
+          }}
+          iconLeft={<ArrowLeft className="h-4 w-4" />}
+        >
           Back
         </Button>
         <div>
@@ -1156,13 +1683,16 @@ export default function EmployeePayrollWizard({
       </div>
 
       {/* Progress Steps */}
-      <ProgressSteps steps={WIZARD_STEPS} currentStep={currentStep} />
+      {!hideStepIndicator && <ProgressSteps steps={WIZARD_STEPS} currentStep={currentStep} />}
 
       {/* Step Content */}
       <div className="mt-8">
         {currentStep === 0 && renderStep1()}
         {currentStep === 1 && renderStep2()}
-        {currentStep === 2 && renderStep3()}
+        {currentStep === 2 && renderStep2Statutory()}
+        {currentStep === 3 && renderStep3Benefits()}
+        {currentStep === 4 && renderStep4Loans()}
+        {currentStep === 5 && renderStep3()}
       </div>
     </div>
   );

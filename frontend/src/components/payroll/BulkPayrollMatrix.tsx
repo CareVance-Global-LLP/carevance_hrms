@@ -1,0 +1,440 @@
+import { useState, useEffect, useMemo } from 'react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Circle,
+  Loader2,
+  Users,
+  CheckSquare,
+  Calculator,
+  Wallet,
+  Receipt,
+  FileText,
+  DollarSign,
+  Play,
+} from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { payrollApi } from '@/services/api';
+import Button from '@/components/ui/Button';
+import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
+import type { PayGroupEmployee } from '@/types';
+import { Virtuoso } from 'react-virtuoso';
+import { cn } from '@/utils/cn';
+
+interface BulkPayrollMatrixProps {
+  payGroupId: number;
+  monthYear: string;
+  onBack: () => void;
+}
+
+// The 6 wizard steps, in order. The number is the 1-indexed
+// user-facing step; the internal currentStep in the wizard is
+// step - 1.
+const WIZARD_STEPS = [
+  { num: 1, label: 'Attendance', short: 'Atten', icon: Calculator },
+  { num: 2, label: 'Salary Structure', short: 'Salary', icon: Wallet },
+  { num: 3, label: 'Statutory', short: 'Stat', icon: Receipt },
+  { num: 4, label: 'Reimbursements', short: 'Reim', icon: DollarSign },
+  { num: 5, label: 'Loans & Advances', short: 'Loans', icon: FileText },
+  { num: 6, label: 'Preview & Process', short: 'Previ', icon: Play },
+] as const;
+
+function formatMonthLabel(monthYear: string): string {
+  const [y, m] = monthYear.split('-').map(Number);
+  if (!y || !m) return monthYear;
+  return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
+export default function BulkPayrollMatrix({
+  payGroupId,
+  monthYear,
+  onBack,
+}: BulkPayrollMatrixProps) {
+  // 1-indexed wizard step (1..6). The wizard's internal currentStep is
+  // this minus 1.
+  const [currentStep, setCurrentStep] = useState(1);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
+  const [payGroupName, setPayGroupName] = useState<string>('Pay Group');
+
+  const queryClient = useQueryClient();
+
+  // Fetch employees with per-step completion status
+  const { data: employeesData, isLoading: isEmployeesLoading } = useQuery({
+    queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
+    queryFn: () =>
+      payrollApi
+        .getPayGroupEmployees(payGroupId, { month_year: monthYear })
+        .then((r) => r.data),
+    enabled: payGroupId > 0,
+  });
+
+  // Per-step completion counts (for the footer "X of Y on this step")
+  const { data: stepStatus } = useQuery({
+    queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
+    queryFn: () => payrollApi.getStepStatus(payGroupId).then((r) => r.data),
+    enabled: payGroupId > 0,
+  });
+
+  // Sync the pay group name + initialize currentStep from the server's
+  // last-known position (first time we see this user, default to 1).
+  useEffect(() => {
+    if (employeesData?.pay_group?.name && payGroupName === 'Pay Group') {
+      setPayGroupName(employeesData.pay_group.name);
+    }
+  }, [employeesData, payGroupName]);
+
+  // Auto-select the first employee with current_step matching the
+  // active step (or the first employee if no step is set).
+  useEffect(() => {
+    if (selectedEmployeeId !== null) return;
+    const list = employeesData?.employees ?? [];
+    if (list.length === 0) return;
+    // Prefer an employee who is still on the current step (so the
+    // user picks up where they left off).
+    const candidate =
+      list.find((e) => e.current_step === currentStep) ?? list[0];
+    setSelectedEmployeeId(candidate.id);
+  }, [employeesData, currentStep, selectedEmployeeId]);
+
+  const employees = employeesData?.employees ?? [];
+  const selectedEmployee = useMemo(
+    () => employees.find((e) => e.id === selectedEmployeeId) ?? null,
+    [employees, selectedEmployeeId],
+  );
+
+  // Mark a single employee's current step as complete. Called when
+  // the wizard's onComplete fires (i.e. the user clicked "Continue"
+  // past a step).
+  const completeStepMutation = useMutation({
+    mutationFn: ({ userId, step }: { userId: number; step: number }) =>
+      payrollApi.completeStep(payGroupId, { step, user_ids: [userId] }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({
+        queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
+      });
+
+      // Auto-advance to the next uncompleted employee on the current step
+      const stepKey = `step${vars.step}` as const;
+      const nextUncompleted = employees?.find(
+        (e) => !e.steps_completed[stepKey] && e.id !== vars.userId
+      );
+      if (nextUncompleted) {
+        setSelectedEmployeeId(nextUncompleted.id);
+      }
+    },
+  });
+
+  // Mark the current step complete for every active member in one
+  // shot. Used by the "Done All for Step N" button in the footer.
+  const completeAllStepsMutation = useMutation({
+    mutationFn: (step: number) =>
+      payrollApi.completeAllSteps(payGroupId, { step }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
+      });
+    },
+  });
+
+  // Step status from the dedicated endpoint (preferred for accuracy)
+  const stepStatusForCurrent = stepStatus?.steps?.[currentStep];
+
+  // Step completion calculations for footer
+  const stepKey = `step${currentStep}` as const;
+  const completedCount = employees?.filter(e => e.steps_completed[stepKey]).length ?? 0;
+  const totalCount = employees?.length ?? 0;
+  const isStepComplete = completedCount === totalCount && totalCount > 0;
+
+  // Process All mutation (placeholder for step 6)
+  const processAllMutation = useMutation({
+    mutationFn: () => payrollApi.completeAllSteps(payGroupId, { step: 6 }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'] });
+    },
+  });
+
+  return (
+    <div className="flex flex-col h-full -m-6">
+      {/* Header */}
+      <div className="flex items-center gap-3 p-6 border-b border-slate-200 bg-white">
+        <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
+          Back to Pay Group
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Bulk Payroll: {payGroupName}
+          </h1>
+          <p className="text-sm text-slate-500">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 mr-2">
+              {formatMonthLabel(monthYear)}
+            </span>
+            {employees.length} {employees.length === 1 ? 'employee' : 'employees'} in group
+          </p>
+        </div>
+      </div>
+
+      {/* Step Tabs — gated: can only click steps whose previous step is 100% done */}
+      <div className="flex border-b border-slate-200 bg-white px-6">
+        {WIZARD_STEPS.map((step) => {
+          const isActive = currentStep === step.num;
+          const Icon = step.icon;
+          const prevStepKey = `step${step.num - 1}` as const;
+          const prevStepDone = step.num === 1 ||
+            employees?.every(e => e.steps_completed[prevStepKey]);
+          const canClick = step.num <= currentStep || prevStepDone;
+          return (
+            <button
+              key={step.num}
+              onClick={() => canClick && setCurrentStep(step.num)}
+              disabled={!canClick}
+              className={cn(
+                'flex-1 flex flex-col items-center gap-1 py-3 px-2 text-sm font-medium border-b-2 transition-colors',
+                isActive
+                  ? 'border-emerald-500 text-emerald-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300',
+                !canClick && 'opacity-40 cursor-not-allowed',
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    'h-6 w-6 rounded-full flex items-center justify-center text-xs font-semibold',
+                    isActive
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-slate-200 text-slate-600',
+                  )}
+                >
+                  {step.num}
+                </span>
+                <Icon className="h-4 w-4" />
+                <span className="hidden sm:inline">{step.short}</span>
+              </div>
+              <span className="text-[10px] sm:text-xs">{step.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Main layout: Left sidebar + Right panel */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left Sidebar — Employee List */}
+        <div className="w-64 border-r border-slate-200 bg-white flex flex-col flex-shrink-0">
+          <div className="p-4 border-b border-slate-200">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Employees
+            </h3>
+            <p className="text-sm text-slate-700 mt-1">
+              {employees.length} in group
+            </p>
+          </div>
+
+          <div className="flex-1">
+            {isEmployeesLoading && (
+              <div className="flex items-center justify-center p-6 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Loading…
+              </div>
+            )}
+
+            {!isEmployeesLoading && employees.length === 0 && (
+              <div className="p-6 text-sm text-slate-500 text-center">
+                No employees in this pay group
+              </div>
+            )}
+
+            {!isEmployeesLoading && employees.length > 0 && (
+              <Virtuoso
+                totalCount={employees.length}
+                itemContent={(index) => {
+                  const emp = employees[index];
+                  const isSelected = selectedEmployeeId === emp.id;
+                  const stepDone = emp.steps_completed[stepKey];
+                  return (
+                    <button
+                      key={emp.id}
+                      onClick={() => setSelectedEmployeeId(emp.id)}
+                      className={cn(
+                        'w-full p-3 flex items-center gap-3 text-left border-b border-slate-100 transition-colors',
+                        isSelected
+                          ? 'bg-emerald-50 border-l-4 border-l-emerald-500'
+                          : 'hover:bg-slate-50 border-l-4 border-l-transparent',
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold',
+                          isSelected
+                            ? 'bg-emerald-500 text-white'
+                            : 'bg-slate-200 text-slate-600',
+                        )}
+                      >
+                        {emp.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm text-slate-900 truncate">
+                          {emp.name}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {emp.designation || emp.email}
+                        </p>
+                      </div>
+                      {stepDone ? (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-500 flex-shrink-0" />
+                      ) : (
+                        <Circle className="h-5 w-5 text-slate-300 flex-shrink-0" />
+                      )}
+                    </button>
+                  );
+                }}
+                style={{ height: '100%' }}
+              />
+            )}
+          </div>
+
+        </div>
+
+        {/* Right Panel — Wizard Content */}
+        <div className="flex-1 overflow-y-auto bg-slate-50 min-w-0">
+          {selectedEmployeeId ? (
+            <div className="p-6">
+              <EmployeePayrollWizard
+                // Key on employee only — NOT on currentStep. With
+                // controlledStep wired, the wizard's internal step is
+                // fully driven by the matrix; remounting on step
+                // change would reset all form state and cause a
+                // visible flicker between the draft restore.
+                key={selectedEmployeeId}
+                employeeId={selectedEmployeeId}
+                monthYear={monthYear}
+                hideStepIndicator={true}
+                initialStep={currentStep - 1}
+                // Controlled step: 0-indexed, derived from the
+                // matrix's 1-indexed currentStep. When the user clicks
+                // Continue inside the wizard, onStepChange fires
+                // (1-indexed from the wizard's perspective) and we
+                // sync the matrix's currentStep. The wizard remounts
+                // ONLY when the user clicks a different employee in
+                // the sidebar.
+                controlledStep={currentStep - 1}
+                onStepChange={(step) => setCurrentStep(step + 1)}
+                onBack={() => setSelectedEmployeeId(null)}
+                backLabel="← Back to List"
+                onComplete={() => {
+                  // Mark this employee + step as complete. The mutation
+                  // onSuccess handler advances the sidebar selection.
+                  completeStepMutation.mutate({
+                    userId: selectedEmployeeId,
+                    step: currentStep,
+                  });
+                }}
+                onViewRun={() => {
+                  /* The matrix view is read-only on the run; the
+                     full lifecycle is available in the dashboard's
+                     RecentRuns section. */
+                }}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full text-slate-400 p-6">
+              <div className="text-center">
+                <Users className="h-12 w-12 mx-auto mb-3 text-slate-300" />
+                <p className="text-sm">Select an employee to start</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Footer — Progress + Continue */}
+      <div className="border-t border-slate-200 p-4 bg-white">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <span>
+                Step <strong>{currentStep}</strong> of 6
+              </span>
+              <span className="text-slate-300">•</span>
+              <span>
+                {completedCount}/{totalCount} completed
+              </span>
+              {completeStepMutation.isPending && (
+                <span className="text-xs text-slate-400 flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  saving…
+                </span>
+              )}
+              {completeAllStepsMutation.isSuccess && (
+                <span className="text-xs text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  all done
+                </span>
+              )}
+            </div>
+            <div className="w-48 h-2 bg-slate-100 rounded-full mt-1.5">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all"
+                style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Done All for Step N */}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => completeAllStepsMutation.mutate(currentStep)}
+              disabled={completeAllStepsMutation.isPending || isStepComplete}
+            >
+              {completeAllStepsMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <CheckSquare className="h-4 w-4 mr-1" />
+              )}
+              Done All for Step {currentStep}
+            </Button>
+
+            {/* Continue to next step — only when 100% done */}
+            {isStepComplete && currentStep < 6 && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCurrentStep(currentStep + 1);
+                  const nextStepKey = `step${currentStep + 1}` as const;
+                  const nextEmp = employees?.find(e => !e.steps_completed[nextStepKey]);
+                  if (nextEmp) setSelectedEmployeeId(nextEmp.id);
+                }}
+              >
+                Continue to Step {currentStep + 1} →
+              </Button>
+            )}
+
+            {/* Process All — only on Step 6 when all done */}
+            {isStepComplete && currentStep === 6 && (
+              <Button
+                size="sm"
+                onClick={() => processAllMutation.mutate()}
+                disabled={processAllMutation.isPending}
+              >
+                {processAllMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  <Play className="h-4 w-4 mr-1" />
+                )}
+                Process All Employees
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

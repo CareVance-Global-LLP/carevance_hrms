@@ -3,10 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\EmployeeLoan;
 use App\Models\EmployeePayrollTemplate;
+use App\Models\FbpAllocation;
 use App\Models\Group;
+use App\Models\PayGroup;
+use App\Models\PayGroupAssignment;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
+use App\Models\Reimbursement;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Attendance\AttendanceService;
@@ -17,6 +22,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class PayrollDepartmentController extends Controller
 {
@@ -254,6 +260,13 @@ class PayrollDepartmentController extends Controller
                         'esi_enabled' => (bool) $template->esi_enabled,
                         'pt_enabled' => (bool) $template->pt_enabled,
                         'tds_enabled' => (bool) $template->tds_enabled,
+                        // Tax/regime/state fields — required for the
+                        // salary-structure form to hydrate the right
+                        // dropdown value (otherwise it always defaults
+                        // to Maharashtra on page load).
+                        'pt_state' => $template->pt_state ?? 'maharashtra',
+                        'tax_regime' => $template->tax_regime ?? 'new',
+                        'is_metro_city' => (bool) ($template->is_metro_city ?? true),
                     ];
                 } catch (\Exception $e) {
                     \Log::error("Error mapping user {$user->id}", [
@@ -335,6 +348,191 @@ class PayrollDepartmentController extends Controller
             'month_year' => $monthYear,
             'is_unassigned' => $departmentId === 0,
         ]);
+    }
+
+    /**
+     * Get all employees in the organization (across all departments)
+     * with just the fields the Create Pay Group modal needs:
+     * id, name, email, role, department name + id, and designation.
+     *
+     * Optional filters:
+     *   - search: matches name, email, or designation (case-insensitive)
+     *   - department_id: restricts to members of a single Group
+     *   - page: 1-indexed page number (default 1)
+     *   - per_page: rows per page (default 50, max 200)
+     *
+     * Response shape (Laravel paginator):
+     *   { employees: AllEmployee[], total, current_page, last_page, per_page }
+     */
+    public function getAllEmployees(Request $request): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+        $search = trim((string) $request->get('search', ''));
+        $departmentId = $request->get('department_id');
+        $perPage = max(1, min(200, (int) $request->get('per_page', 50)));
+
+        $query = User::where('organization_id', $organizationId)
+            ->whereIn('role', ['employee', 'manager', 'admin'])
+            ->with(['employeeWorkInfo', 'groups']);
+
+        if ($departmentId !== null && $departmentId !== '' && (int) $departmentId > 0) {
+            $userIds = DB::table('group_user')
+                ->where('group_id', (int) $departmentId)
+                ->pluck('user_id');
+            $query->whereIn('id', $userIds);
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhereHas(
+                        'employeeWorkInfo',
+                        fn ($w) => $w->where('designation', 'like', "%{$search}%"),
+                    );
+            });
+        }
+
+        $paginator = $query
+            ->orderBy('name')
+            ->paginate($perPage)
+            ->through(function ($u) {
+                $group = $u->groups->first();
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'role' => $u->role,
+                    'department' => $group?->name,
+                    'department_id' => $group?->id,
+                    'designation' => $u->employeeWorkInfo?->designation,
+                ];
+            });
+
+        return response()->json([
+            'employees' => $paginator->items(),
+            'total' => $paginator->total(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+        ]);
+    }
+
+    /**
+     * Create a new pay group and assign the given employees to it in
+     * one transaction. If any of the submitted user_ids belong to a
+     * different organization the whole request is rejected.
+     *
+     * The `code` column has a global unique index, so we auto-derive
+     * a slug from the name and append a numeric suffix on collision.
+     *
+     * Re-assignment semantics: a user can be in at most one active
+     * pay group at a time. If the request contains a user who already
+     * has an active `pay_group_assignments` row, that row is closed
+     * (is_active = false, effective_to = effective_from) before the
+     * new active row is inserted.
+     */
+    public function assignEmployeesToPayGroup(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:120',
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'integer',
+            'effective_from' => 'nullable|date',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+        $userIds = array_values(array_unique(array_map('intval', $data['user_ids'])));
+
+        // Reject users that are not in the caller's organization.
+        $validCount = User::whereIn('id', $userIds)
+            ->where('organization_id', $organizationId)
+            ->count();
+        if ($validCount !== count($userIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'One or more users do not belong to this organization.',
+            ], 422);
+        }
+
+        // Auto-derive a unique `code` from the name.
+        $baseCode = Str::slug($data['name'], '_');
+        if ($baseCode === '') {
+            $baseCode = 'pay_group_' . substr((string) time(), -6);
+        }
+        $code = $baseCode;
+        $suffix = 1;
+        while (PayGroup::where('code', $code)->exists()) {
+            $code = $baseCode . '_' . $suffix;
+            $suffix++;
+        }
+
+        // A user can be in at most one active pay group at a time.
+        //
+        // The schema enforces a PARTIAL UNIQUE index
+        // (user_id, effective_from) WHERE is_active = 1, so only the
+        // active row needs a unique effective_from. Inactive rows are
+        // audit-trail and can share (user_id, effective_from) without
+        // colliding. We close the old active row first (mark it
+        // inactive, set effective_to = today) so the new active row
+        // can be inserted with effective_from = today without
+        // violating the partial index.
+        //
+        // The close is done BEFORE the transaction because the
+        // unique-index check inside a single transaction would see
+        // both rows in the same effective_from pair and reject the
+        // insert.
+        $effectiveFrom = $data['effective_from'] ?? now()->toDateString();
+
+        PayGroupAssignment::where('organization_id', $organizationId)
+            ->whereIn('user_id', $userIds)
+            ->where('is_active', true)
+            ->update([
+                'is_active' => false,
+                'effective_to' => $effectiveFrom,
+            ]);
+
+        try {
+            $newGroup = DB::transaction(function () use ($data, $organizationId, $userIds, $code, $effectiveFrom) {
+                $group = PayGroup::create([
+                    'organization_id' => $organizationId,
+                    'name' => $data['name'],
+                    'code' => $code,
+                    'pay_frequency' => 'monthly',
+                    'pay_day_type' => 'specific',
+                    'is_active' => true,
+                ]);
+
+                foreach ($userIds as $userId) {
+                    PayGroupAssignment::create([
+                        'organization_id' => $organizationId,
+                        'pay_group_id' => $group->id,
+                        'user_id' => $userId,
+                        'effective_from' => $effectiveFrom,
+                        'is_active' => true,
+                    ]);
+                }
+
+                return $group;
+            });
+        } catch (\Exception $e) {
+            \Log::error('Failed to create pay group + assignments', [
+                'organization_id' => $organizationId,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create pay group.',
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'pay_group_id' => $newGroup->id,
+            'pay_group_name' => $newGroup->name,
+            'pay_group_code' => $newGroup->code,
+            'assigned_count' => count($userIds),
+        ], 201);
     }
 
     /**
@@ -531,6 +729,68 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
+     * Combined benefits summary for the wizard steps that show
+     * reimbursements, FBP allocations, and active loans in a single
+     * payload. Used by Steps 3 and 4 of the new 6-step wizard.
+     */
+    public function getBenefitsSummary(Request $request, int $userId): JsonResponse
+    {
+        $user = $request->user();
+
+        // Admin/super_admin can view any employee in the org; employees
+        // are restricted to their own benefits.
+        $isAdmin = in_array($user->role, ['admin', 'super_admin'], true);
+        if (!$isAdmin && $user->id !== $userId) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        // Reimbursements: only approved ones are folded into payroll.
+        $reimbursements = Reimbursement::where('user_id', $userId)
+            ->where('status', 'approved')
+            ->orderByDesc('approved_at')
+            ->get([
+                'id', 'user_id', 'title', 'description', 'category',
+                'amount', 'currency', 'expense_date', 'status',
+                'approved_at', 'approver_id',
+            ]);
+
+        // FBP allocations: only active ones. We also include the
+        // component info (joined) so the frontend can show its name.
+        $fbpAllocations = FbpAllocation::with('component:id,name,code,category,max_exempt_limit,is_active')
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->orderByDesc('allocated_amount')
+            ->get();
+
+        // Active loans: only approved + not exhausted. We expose
+        // monthly EMI and the remaining/paid fields so the wizard can
+        // render the progress bar and total.
+        $activeLoans = EmployeeLoan::where('user_id', $userId)
+            ->where('status', 'approved')
+            ->orderByDesc('created_at')
+            ->get([
+                'id', 'user_id', 'loan_type', 'amount', 'emi_amount',
+                'total_installments', 'remaining_amount', 'purpose',
+                'status', 'created_at',
+            ]);
+
+        $totalReimbursements = (float) $reimbursements->sum('amount');
+        $totalFbp = (float) $fbpAllocations->sum(fn ($a) => (float) ($a->allocated_amount ?? 0));
+        $totalMonthlyEmi = (float) $activeLoans->sum('emi_amount');
+
+        return response()->json([
+            'reimbursements' => $reimbursements,
+            'fbp_allocations' => $fbpAllocations,
+            'active_loans' => $activeLoans,
+            'totals' => [
+                'reimbursements' => round($totalReimbursements, 2),
+                'fbp' => round($totalFbp, 2),
+                'monthly_emi' => round($totalMonthlyEmi, 2),
+            ],
+        ]);
+    }
+
+    /**
      * Process payroll for an employee
      */
     public function processEmployeePayroll(Request $request, int $userId): JsonResponse
@@ -699,7 +959,29 @@ class PayrollDepartmentController extends Controller
         }
 
         $totalDeductions = $pfAmount + $esiAmount + $ptAmount + $tdsAmount + $lOPDeduction + $loanEmiAmount;
-        $grossWithOT = $calculation['monthly']['gross'] + $overtimePay;
+
+        // Include approved reimbursements and active FBP allocations in
+        // the gross. Reimbursements are non-taxable, FBP is allocated
+        // monthly. Both come from the same sources the wizard Steps 3/4
+        // read. This makes the payroll run reflect what the admin saw.
+        $approvedReimbursementsTotal = (float) Reimbursement::where('user_id', $userId)
+            ->where('status', 'approved')
+            ->sum('amount');
+        $fbpAllocationsTotal = (float) FbpAllocation::where('user_id', $userId)
+            ->where('status', 'active')
+            ->sum('allocated_amount');
+        $additionalEarnings = $approvedReimbursementsTotal + $fbpAllocationsTotal;
+
+        // `custom_earnings` is a decimal(12,2) column — write the SUM of
+        // reimbursements + FBP totals as a single float. (Earlier this
+        // code tried to write a nested array, which silently truncated
+        // the column, and referenced $payrollItem before it was
+        // created — both bugs.) The per-component breakdown is still
+        // preserved in the response payload (see "reimbursements_total"
+        // / "fbp_allocations_total" below) and in the payslip row.
+        $customEarningsTotal = round($approvedReimbursementsTotal + $fbpAllocationsTotal, 2);
+
+        $grossWithOT = $calculation['monthly']['gross'] + $overtimePay + $additionalEarnings;
         $netPay = max(0, $grossWithOT - $totalDeductions);
 
         // Create or update payroll item
@@ -735,6 +1017,7 @@ class PayrollDepartmentController extends Controller
                 'tds' => $tdsAmount,
                 'lOP_deduction' => $lOPDeduction,
                 'custom_deductions' => $loanEmiAmount,
+                'custom_earnings' => $customEarningsTotal,
                 'total_deductions' => $totalDeductions,
                 'pf_employer' => $template->pf_enabled ? $calculation['components']['employer_contributions']['pf_employer'] : 0,
                 'eps' => $template->pf_enabled ? $calculation['components']['employer_contributions']['eps'] : 0,
@@ -761,6 +1044,8 @@ class PayrollDepartmentController extends Controller
                 ? "Payroll processed. Auto-closed {$autoClosedTimers} stale running timer(s) in {$request->month_year}."
                 : 'Payroll processed successfully',
             'auto_closed_timers' => $autoClosedTimers,
+            'reimbursements_total' => round($approvedReimbursementsTotal, 2),
+            'fbp_allocations_total' => round($fbpAllocationsTotal, 2),
             'payroll_item' => $payrollItem->fresh(),
         ]);
     }
@@ -897,41 +1182,205 @@ class PayrollDepartmentController extends Controller
         $lOPDays = $data['lOP_days'] ?? 0;
         $overtimeHours = $data['overtime_hours'] ?? 0;
 
-        foreach ($validUserIds as $uid) {
-            $template = EmployeePayrollTemplate::getOrCreateForUser($uid, $organizationId);
-            $annualCtc = $template->annual_ctc ?: ($data['default_annual_ctc'] ?? 0);
+        // Bulk-fetch existing templates in one query, then create any
+        // missing ones. This replaces an N+1 loop of per-user
+        // getOrCreateForUser calls.
+        $existingTemplates = EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $validUserIds)
+            ->get()
+            ->keyBy('user_id');
+        $missingUserIds = array_diff($validUserIds, $existingTemplates->keys()->all());
+        foreach ($missingUserIds as $mid) {
+            EmployeePayrollTemplate::getOrCreateForUser($mid, $organizationId);
+        }
+        // Refresh so we have every member's row in one collection.
+        $existingTemplates = EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $validUserIds)
+            ->get()
+            ->keyBy('user_id');
 
-            if ($annualCtc <= 0) {
-                $failed[] = [
-                    'user_id' => $uid,
-                    'reason' => 'No annual_ctc set on template; pass default_annual_ctc to apply',
-                ];
-                continue;
-            }
+        // Chunk the work so MySQL can release locks between batches
+        // and we don't hold a single transaction open for 100+ users
+        // (which times out the PHP-FPM worker). 20 per chunk matches
+        // the bulk-process UI's default per-page size.
+        foreach (array_chunk($validUserIds, 20) as $chunk) {
+            foreach ($chunk as $uid) {
+                $template = $existingTemplates[$uid];
+                $annualCtc = $template->annual_ctc ?: ($data['default_annual_ctc'] ?? 0);
 
-            $daysPresent = $data['working_days'] - $lOPDays;
-
-            $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', [
-                'month_year' => $data['month_year'],
-                'annual_ctc' => $annualCtc,
-                'working_days' => $data['working_days'],
-                'days_present' => max(0, $daysPresent),
-                'lOP_days' => $lOPDays,
-                'overtime_hours' => $overtimeHours,
-            ]);
-            $subRequest->setUserResolver(fn () => $request->user());
-
-            try {
-                $response = $this->processEmployeePayroll($subRequest, $uid);
-                $payload = $response->getData(true);
-                if (($payload['success'] ?? false) === true) {
-                    $succeeded[] = ['user_id' => $uid, 'payroll_item_id' => $payload['payroll_item']['id'] ?? null];
-                } else {
-                    $failed[] = ['user_id' => $uid, 'reason' => $payload['message'] ?? 'Unknown error'];
+                if ($annualCtc <= 0) {
+                    $failed[] = [
+                        'user_id' => $uid,
+                        'reason' => 'No annual_ctc set on template; pass default_annual_ctc to apply',
+                    ];
+                    continue;
                 }
-            } catch (\Throwable $e) {
-                $failed[] = ['user_id' => $uid, 'reason' => $e->getMessage()];
+
+                $daysPresent = $data['working_days'] - $lOPDays;
+
+                $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', [
+                    'month_year' => $data['month_year'],
+                    'annual_ctc' => $annualCtc,
+                    'working_days' => $data['working_days'],
+                    'days_present' => max(0, $daysPresent),
+                    'lOP_days' => $lOPDays,
+                    'overtime_hours' => $overtimeHours,
+                ]);
+                $subRequest->setUserResolver(fn () => $request->user());
+
+                try {
+                    $response = $this->processEmployeePayroll($subRequest, $uid);
+                    $payload = $response->getData(true);
+                    if (($payload['success'] ?? false) === true) {
+                        $succeeded[] = ['user_id' => $uid, 'payroll_item_id' => $payload['payroll_item']['id'] ?? null];
+                    } else {
+                        $failed[] = ['user_id' => $uid, 'reason' => $payload['message'] ?? 'Unknown error'];
+                    }
+                } catch (\Throwable $e) {
+                    $failed[] = ['user_id' => $uid, 'reason' => $e->getMessage()];
+                }
             }
+            // Brief pause between chunks to let MySQL release locks
+            // and avoid hammering the DB on large batches.
+            usleep(50000); // 50ms
+        }
+
+        return response()->json([
+            'success' => count($failed) === 0,
+            'message' => count($succeeded) . ' processed, ' . count($failed) . ' failed',
+            'succeeded' => $succeeded,
+            'failed' => $failed,
+        ]);
+    }
+
+    /**
+     * Bulk-process payroll for the selected members of a pay group.
+     *
+     * Mirrors processSelectedEmployees but validates the user_ids
+     * against the pay-group's active assignments (which may span
+     * multiple departments) instead of a single department.
+     *
+     * Returns the same { success, succeeded, failed } shape so the
+     * PayGroupEmployees view can share the response handler with
+     * DepartmentEmployees.
+     */
+    public function processPayGroupSelectedEmployees(Request $request, int $payGroupId): JsonResponse
+    {
+        $data = $request->validate([
+            'month_year' => 'required|string',
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'integer|exists:users,id',
+            'working_days' => 'required|integer|min:1',
+            'default_annual_ctc' => 'nullable|numeric|min:0',
+            'lOP_days' => 'nullable|numeric|min:0',
+            'overtime_hours' => 'nullable|numeric|min:0',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+
+        // Verify pay group belongs to the caller's org
+        $payGroup = PayGroup::where('id', $payGroupId)
+            ->where('organization_id', $organizationId)
+            ->first();
+        if (!$payGroup) {
+            return response()->json(['success' => false, 'message' => 'Pay group not found'], 404);
+        }
+
+        // Verify all submitted user_ids are currently active members
+        // of this pay group.
+        $validUserIds = PayGroupAssignment::where('pay_group_id', $payGroupId)
+            ->where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->whereIn('user_id', $data['user_ids'])
+            ->pluck('user_id')
+            ->all();
+
+        if (count($validUserIds) === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No valid users found in this pay group',
+            ], 422);
+        }
+
+        // Early check: if the run is already disbursed, abort the whole batch.
+        // (Same policy as processSelectedEmployees — only the terminal
+        // 'disbursed' state is immutable.)
+        $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $data['month_year'])
+            ->first();
+        if ($existingRun && $existingRun->status === 'disbursed') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot process payroll — run for {$data['month_year']} is already disbursed and immutable for compliance.",
+            ], 422);
+        }
+
+        $succeeded = [];
+        $failed = [];
+        $lOPDays = $data['lOP_days'] ?? 0;
+        $overtimeHours = $data['overtime_hours'] ?? 0;
+
+        // Bulk-fetch existing templates in one query, then create any
+        // missing ones. This replaces an N+1 loop of per-user
+        // getOrCreateForUser calls.
+        $existingTemplates = EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $userIds)
+            ->get()
+            ->keyBy('user_id');
+        $missingUserIds = array_diff($userIds, $existingTemplates->keys()->all());
+        foreach ($missingUserIds as $mid) {
+            EmployeePayrollTemplate::getOrCreateForUser($mid, $organizationId);
+        }
+        // Refresh so we have every member's row in one collection.
+        $existingTemplates = EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $userIds)
+            ->get()
+            ->keyBy('user_id');
+
+        // Chunk the work so MySQL can release locks between batches
+        // and we don't hold a single transaction open for 100+ users
+        // (which times out the PHP-FPM worker). 20 per chunk matches
+        // the bulk-process UI's default per-page size.
+        foreach (array_chunk($userIds, 20) as $chunk) {
+            foreach ($chunk as $uid) {
+                $template = $existingTemplates[$uid];
+                $annualCtc = $template->annual_ctc ?: ($data['default_annual_ctc'] ?? 0);
+
+                if ($annualCtc <= 0) {
+                    $failed[] = [
+                        'user_id' => $uid,
+                        'reason' => 'No annual_ctc set on template; pass default_annual_ctc to apply',
+                    ];
+                    continue;
+                }
+
+                $daysPresent = $data['working_days'] - $lOPDays;
+
+                $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', [
+                    'month_year' => $data['month_year'],
+                    'annual_ctc' => $annualCtc,
+                    'working_days' => $data['working_days'],
+                    'days_present' => max(0, $daysPresent),
+                    'lOP_days' => $lOPDays,
+                    'overtime_hours' => $overtimeHours,
+                ]);
+                $subRequest->setUserResolver(fn () => $request->user());
+
+                try {
+                    $response = $this->processEmployeePayroll($subRequest, $uid);
+                    $payload = $response->getData(true);
+                    if (($payload['success'] ?? false) === true) {
+                        $succeeded[] = ['user_id' => $uid, 'payroll_item_id' => $payload['payroll_item']['id'] ?? null];
+                    } else {
+                        $failed[] = ['user_id' => $uid, 'reason' => $payload['message'] ?? 'Unknown error'];
+                    }
+                } catch (\Throwable $e) {
+                    $failed[] = ['user_id' => $uid, 'reason' => $e->getMessage()];
+                }
+            }
+            // Brief pause between chunks to let MySQL release locks
+            // and avoid hammering the DB on large batches.
+            usleep(50000); // 50ms
         }
 
         return response()->json([

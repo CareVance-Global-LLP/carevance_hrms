@@ -53,6 +53,15 @@ class EmployeePayrollTemplate extends Model
         'is_active',
         'created_by',
         'updated_by',
+        // Per-step completion tracking (used by the Bulk Payroll Matrix
+        // view). Added by migration 2026_06_22_000001.
+        'step1_completed',
+        'step2_completed',
+        'step3_completed',
+        'step4_completed',
+        'step5_completed',
+        'step6_completed',
+        'current_step',
     ];
 
     protected $casts = [
@@ -92,6 +101,13 @@ class EmployeePayrollTemplate extends Model
         'custom_deductions' => 'array',
         'component_settings' => 'array',
         'is_active' => 'boolean',
+        // Per-step completion tracking (Bulk Payroll Matrix)
+        'step1_completed' => 'boolean',
+        'step2_completed' => 'boolean',
+        'step3_completed' => 'boolean',
+        'step4_completed' => 'boolean',
+        'step5_completed' => 'boolean',
+        'step6_completed' => 'boolean',
     ];
 
     public function organization(): BelongsTo
@@ -235,6 +251,18 @@ class EmployeePayrollTemplate extends Model
                     'vpf_percentage' => $orgSettings['vpfPercentage']
                         ?? ($deptTemplate?->vpf_percentage ?? 0),
                 ]);
+
+            // Persist the new template so subsequent reads return it.
+            // Without this, the method built the $settings array but
+            // never created the row, so the next read would still find
+            // nothing and the bug would surface again. (The previous
+            // implementation only worked for users who already had a
+            // template pre-created via some other path.)
+            $settings['organization_id'] = $organizationId;
+            $settings['user_id'] = $userId;
+            $settings['created_by'] = $createdBy;
+            $settings['annual_ctc'] = 0; // explicit — wizard will set it later
+            $template = self::create($settings);
         }
 
         return $template;

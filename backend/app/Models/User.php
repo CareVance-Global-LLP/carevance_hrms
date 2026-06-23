@@ -66,6 +66,17 @@ class User extends Authenticatable
         return $this->hasMany(Payslip::class);
     }
 
+    /**
+     * Payroll items generated for this user. One row per (user, month)
+     * — see the unique-friendly UNIQUE on (user_id, effective_from)
+     * for the pay-group variant, but for PayrollItem there's no such
+     * constraint; the latest one per month is what the UI shows.
+     */
+    public function payrollItems()
+    {
+        return $this->hasMany(PayrollItem::class);
+    }
+
     public function payrolls()
     {
         return $this->hasMany(Payroll::class);

@@ -402,40 +402,18 @@ class PayrollCalculatorService
         return "\u{20B9}" . number_format($amount, 2);
     }
 
+    /**
+     * Compute Professional Tax for a given monthly gross and state.
+     *
+     * DEPRECATED wrapper — kept only because PayrollAutoProcessService
+     * still calls it. New code should call PTStateService::calculate()
+     * directly; this method now just delegates to keep the public
+     * surface stable. The previously-hardcoded slabs for 3 states were
+     * removed because they had drifted from the official rates.
+     */
     public function calculatePT(float $gross, string $state = 'maharashtra'): float
     {
-        $ptSlabs = [
-            'maharashtra' => [
-                ['min' => 0, 'max' => 10000, 'amount' => 0],
-                ['min' => 10001, 'max' => 25000, 'amount' => 110],
-                ['min' => 25001, 'max' => 50000, 'amount' => 200],
-                ['min' => 50001, 'max' => 75000, 'amount' => 300],
-                ['min' => 75001, 'max' => 100000, 'amount' => 350],
-                ['min' => 100001, 'max' => PHP_FLOAT_MAX, 'amount' => 416],
-            ],
-            'karnataka' => [
-                ['min' => 0, 'max' => 15000, 'amount' => 0],
-                ['min' => 15001, 'max' => 20000, 'amount' => 150],
-                ['min' => 20001, 'max' => 40000, 'amount' => 300],
-                ['min' => 40001, 'max' => PHP_FLOAT_MAX, 'amount' => 400],
-            ],
-            'tamilnadu' => [
-                ['min' => 0, 'max' => 21000, 'amount' => 0],
-                ['min' => 21001, 'max' => 30000, 'amount' => 160],
-                ['min' => 30001, 'max' => 45000, 'amount' => 300],
-                ['min' => 45001, 'max' => 60000, 'amount' => 500],
-                ['min' => 60001, 'max' => 75000, 'amount' => 700],
-                ['min' => 75001, 'max' => PHP_FLOAT_MAX, 'amount' => 900],
-            ],
-        ];
-
-        $slabs = $ptSlabs[$state] ?? $ptSlabs['maharashtra'];
-        foreach ($slabs as $slab) {
-            if ($gross >= $slab['min'] && $gross <= $slab['max']) {
-                return (float) $slab['amount'];
-            }
-        }
-        return 0;
+        return PTStateService::calculate($state, $gross);
     }
 
     public function calculateNewRegimeTax(float $annualIncome, array $exemptions = []): array

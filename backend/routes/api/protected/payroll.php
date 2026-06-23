@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollDepartmentController;
 use App\Http\Controllers\Api\PayrollDiagnosticController;
+use App\Http\Controllers\Api\PayrollFilingController;
 use App\Http\Controllers\Api\PayrollOnboardingController;
 use App\Http\Controllers\Api\PerformanceGoalController;
 use App\Http\Controllers\Api\PerformanceReviewController;
@@ -48,9 +49,35 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Departments
     Route::get('/departments', [PayrollDepartmentController::class, 'getDepartments']);
     Route::get('/departments/{departmentId}/employees', [PayrollDepartmentController::class, 'getDepartmentEmployees']);
+
+    // All employees across the organization (used by the Create Pay
+    // Group modal). Supports ?search= and ?department_id= filters.
+    Route::get('/all-employees', [PayrollDepartmentController::class, 'getAllEmployees']);
+
+    // Create a pay group and assign employees in one transaction.
+    // Body: { name: string, user_ids: number[], effective_from?: YYYY-MM-DD }
+    Route::post('/pay-groups/assign', [PayrollDepartmentController::class, 'assignEmployeesToPayGroup']);
+
+    // Pay Group employee list — same shape as getDepartmentEmployees so
+    // the PayGroupEmployees view can share the EmployeeCard component.
+    // Query: ?month_year=YYYY-MM (default: current month)
+    Route::get('/pay-groups/{id}/employees', [PayrollFilingController::class, 'getPayGroupEmployees']);
+
+    // Bulk-process payroll for the selected members of a pay group.
+    // Body: { month_year, user_ids, working_days, default_annual_ctc?, lOP_days?, overtime_hours? }
+    Route::post('/pay-groups/{id}/process-selected', [PayrollDepartmentController::class, 'processPayGroupSelectedEmployees']);
+
+    // Bulk Payroll Matrix — step completion tracking.
+    // Body: { step: 1..6, user_ids: number[] }
+    Route::post('/pay-groups/{id}/complete-step', [PayrollFilingController::class, 'completeStep']);
+    // Body: { step: 1..6 } — applies to every active member of the pay group.
+    Route::post('/pay-groups/{id}/complete-all-steps', [PayrollFilingController::class, 'completeAllSteps']);
+    // Returns per-step completion counts for the BulkPayrollMatrix footer.
+    Route::get('/pay-groups/{id}/step-status', [PayrollFilingController::class, 'getStepStatus']);
     
     // Employee Payroll
     Route::get('/employees/{userId}', [PayrollDepartmentController::class, 'getEmployeePayrollDetails']);
+    Route::get('/employees/{userId}/benefits-summary', [PayrollDepartmentController::class, 'getBenefitsSummary']);
     Route::get('/attendance-summary', [PayrollDepartmentController::class, 'getMonthlyAttendanceSummary']);
     Route::put('/employees/{userId}/template', [PayrollDepartmentController::class, 'updateEmployeeTemplate']);
     Route::patch('/employees/{userId}/ctc', [PayrollDepartmentController::class, 'quickSaveCtc']);

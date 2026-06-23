@@ -1090,6 +1090,53 @@ export interface PayrollEmployee {
   bank_ifsc?: string | null;
 }
 
+/**
+ * Employee row as returned by GET /api/payroll/all-employees for the
+ * Create Pay Group modal. Lighter than PayrollEmployee — just the
+ * fields the picker needs.
+ */
+export interface AllEmployee {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  department: string | null;
+  department_id: number | null;
+  designation: string | null;
+}
+
+/**
+ * Pay group as returned by GET /api/payroll/pay-groups. The
+ * aggregate fields (employee_count, processed_count, paid_count,
+ * total_net_pay) are computed server-side from the active
+ * assignments and PayrollItem rows for the requested month.
+ */
+export interface PayGroup {
+  id: number;
+  organization_id: number;
+  name: string;
+  code: string;
+  pay_frequency: 'monthly' | 'weekly' | 'biweekly' | 'daily';
+  pay_day: number | null;
+  pay_day_type: 'specific' | 'last_working_day' | 'last_day';
+  description: string | null;
+  is_active: boolean;
+  employee_count: number;
+  processed_count: number;
+  paid_count: number;
+  total_net_pay: number;
+}
+
+/**
+ * Body of POST /api/payroll/pay-groups/assign — create a new pay
+ * group and assign employees in one call.
+ */
+export interface CreatePayGroupPayload {
+  name: string;
+  user_ids: number[];
+  effective_from?: string; // YYYY-MM-DD; defaults to today server-side
+}
+
 export interface PayslipData {
   employee: {
     id: number;
@@ -1228,6 +1275,56 @@ export interface PayrollDepartmentEmployee {
   esi_enabled?: boolean;
   pt_enabled?: boolean;
   tds_enabled?: boolean;
+}
+
+/**
+ * Per-step completion record for the Bulk Payroll Matrix view.
+ * One row per employee in the pay group, one boolean per wizard
+ * step. Sourced from employee_payroll_templates.stepN_completed.
+ */
+export interface StepsCompleted {
+  step1: boolean;
+  step2: boolean;
+  step3: boolean;
+  step4: boolean;
+  step5: boolean;
+  step6: boolean;
+}
+
+/**
+ * Employee row as returned by GET /api/payroll/pay-groups/{id}/employees.
+ * Slimmer than PayrollDepartmentEmployee (no time_tracking, no
+ * template controls) because the BulkPayrollMatrix only needs the
+ * fields it actually renders.
+ *
+ * Defined as a structural type rather than a strict interface so the
+ * shared EmployeeCard component (which expects PayrollDepartmentEmployee)
+ * can render PayGroupEmployee rows. The bulk matrix view passes its
+ * employees directly through.
+ */
+export type PayGroupEmployee = Omit<
+  PayrollDepartmentEmployee,
+  'time_tracking' | 'has_template' | 'template_id' | 'payroll_item_id' | 'basic_percentage' | 'hra_percentage' | 'conveyance_allowance' | 'pf_enabled' | 'esi_enabled' | 'pt_enabled' | 'tds_enabled'
+> & {
+  // Per-step completion flags (Bulk Payroll Matrix)
+  steps_completed: StepsCompleted;
+  current_step: number;
+};
+
+/**
+ * Response of GET /api/payroll/pay-groups/{id}/step-status. The
+ * BulkPayrollMatrix footer renders "X of Y employees on this step"
+ * from these counts.
+ */
+export interface PayGroupStepStatus {
+  pay_group_id: number;
+  total_members: number;
+  steps: {
+    [step: number]: {
+      completed_count: number;
+      pending_count: number;
+    };
+  };
 }
 
 export interface EmployeePayrollTemplate {

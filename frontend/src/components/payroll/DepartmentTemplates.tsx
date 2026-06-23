@@ -165,6 +165,10 @@ export default function DepartmentTemplates({ onBack }: DepartmentTemplatesProps
     mutationFn: (data: Record<string, unknown>) =>
       payrollApi.updateEmployeeTemplate(selectedEmployeeId!, data).then(r => r.data),
     onSuccess: () => {
+      // Refresh the department list so the saved `pt_state` is
+      // reflected in subsequent reads (the API now returns it on
+      // the employee list, so the next mount of the wizard will
+      // hydrate the right dropdown value).
       queryClient.invalidateQueries({ queryKey: ['payroll', 'dept-employees', selectedDeptId] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'department-employees', selectedDeptId] });
       setSavedMessage('Employee template saved.');
