@@ -175,6 +175,33 @@ export default function EmployeePayrollWizard({
     [setSearchParams, isControlled, onStepChange],
   );
 
+  /**
+   * Helper for the Continue buttons. In controlled mode (BulkPayrollMatrix)
+   * the wizard's Continue button must NOT advance the step — only the
+   * matrix's outer tabs and the footer's "Continue to Step N" button
+   * advance steps. Otherwise, when the user finishes step N for an
+   * employee, two things happen at once: onComplete marks step N done
+   * (auto-advancing to the next employee) AND setCurrentStep fires
+   * onStepChange (advancing the step). The next employee would see
+   * step N+1's content — wrong.
+   *
+   * In standalone mode (no `controlledStep` prop), this helper is
+   * equivalent to calling setCurrentStep directly.
+   */
+  const handleContinue = useCallback(
+    (nextStep: number, stepNum?: number) => {
+      if (stepNum !== undefined) onComplete?.(stepNum);
+      // In controlled mode, advance only when the matrix has *already*
+      // marked all employees done for the current step and is calling
+      // its own "Continue to Step N" button. The wizard's own Continue
+      // button must not advance the step.
+      if (!isControlled) {
+        setCurrentStep(nextStep);
+      }
+    },
+    [isControlled, onComplete, setCurrentStep],
+  );
+
   const [annualCtc, setAnnualCtc] = useState('');
   const [workingDays, setWorkingDays] = useState('26');
   const [daysPresent, setDaysPresent] = useState('26');
@@ -986,8 +1013,10 @@ export default function EmployeePayrollWizard({
               }
               // Mark step 1 complete before advancing (BulkPayrollMatrix
               // uses this to track per-employee per-step progress).
-              onComplete?.(1);
-              setCurrentStep(2);
+              // handleContinue(2, 1) advances the step ONLY in
+              // standalone mode — in matrix mode it just marks step
+              // 1 done and lets the matrix drive the next step.
+              handleContinue(2, 1);
             }}
             disabled={isCalculating || !annualCtc || parseFloat(annualCtc) <= 0}
             iconLeft={isCalculating ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
@@ -1171,8 +1200,9 @@ export default function EmployeePayrollWizard({
                 if (!calculation && parseFloat(annualCtc) > 0 && template) {
                   await calculatePreview();
                 }
-                onComplete?.(2);
-                setCurrentStep(3);
+                // In matrix mode: mark step 2 done only; matrix drives
+                // the step change.
+                handleContinue(3, 2);
               }}
               disabled={!calculation && (parseFloat(annualCtc) <= 0 || !template)}
               iconRight={<ChevronRight className="h-4 w-4" />}
@@ -1375,8 +1405,8 @@ export default function EmployeePayrollWizard({
             <Button
               variant="primary"
               onClick={() => {
-                onComplete?.(3);
-                setCurrentStep(4);
+                // In matrix mode: mark step 3 done only.
+                handleContinue(4, 3);
               }}
               iconRight={<ChevronRight className="h-4 w-4" />}
             >
@@ -1492,8 +1522,8 @@ export default function EmployeePayrollWizard({
             <Button
               variant="primary"
               onClick={() => {
-                onComplete?.(4);
-                setCurrentStep(5);
+                // In matrix mode: mark step 4 done only.
+                handleContinue(5, 4);
               }}
               iconRight={<ChevronRight className="h-4 w-4" />}
             >
@@ -1636,8 +1666,12 @@ export default function EmployeePayrollWizard({
                       // Mark step 5 (Loans & Advances) done before
                       // processing. Step 6 (Preview & Process) is
                       // marked done in the mutation onSuccess hook
-                      // below since it's the last step.
-                      onComplete?.(5);
+                      // below since it's the last step. We pass the
+                      // next-step index (6) so handleContinue's gated
+                      // logic still applies — in standalone mode it
+                      // would advance; in matrix mode it stays put
+                      // and the matrix drives the next step.
+                      handleContinue(6, 5);
                       processPayrollMutation.mutate();
                     }}
                     disabled={processPayrollMutation.isPending}
