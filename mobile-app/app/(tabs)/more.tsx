@@ -43,7 +43,7 @@ export default function MoreScreen() {
   };
 
   return (
-    <ScrollView style={[s.container, { paddingTop: insets.top + 8 }]} contentContainerStyle={{ paddingBottom: 32 }}>
+    <ScrollView style={[s.container, { paddingTop: insets.top + 8 }]} contentContainerStyle={{ paddingBottom: 110 }}>
       <Text style={s.title}>More</Text>
 
       <View style={s.profileCard}>

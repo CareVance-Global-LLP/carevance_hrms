@@ -198,7 +198,7 @@ export default function AttendanceScreen() {
   return (
     <ScrollView
       style={[s.container, { paddingTop: insets.top + 8 }]}
-      contentContainerStyle={{ paddingBottom: 32 }}
+      contentContainerStyle={{ paddingBottom: 110 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textSecondary} />}
     >
       <Text style={s.title}>Time Tracker</Text>

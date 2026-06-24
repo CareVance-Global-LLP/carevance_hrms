@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@heyputer/puter.js": "^2.5.4",
+    "readline-sync": "^1.4.10"
+  }
+}

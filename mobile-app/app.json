@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "CareVance HRMS",
-    "slug": "carevance-hrms",
+    "slug": "carevance-ios-build",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -11,15 +11,13 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
-      },
-      "bundleIdentifier": "com.carevance.hrms",
-      "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Your location is used to mark attendance and verify you are within the geofence zone.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Background location is used for live GPS tracking during work hours.",
         "NSCameraUsageDescription": "Camera is used for attendance selfie verification.",
-        "NSPhotoLibraryAddUsageDescription": "Photo library access is used to save payslip PDFs."
-      }
+        "NSPhotoLibraryAddUsageDescription": "Photo library access is used to save payslip PDFs.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.carevance.hrms"
     },
     "android": {
       "adaptiveIcon": {
@@ -30,7 +28,11 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
-        "CAMERA"
+        "CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
@@ -38,15 +40,18 @@
       "expo-location",
       "expo-camera",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      "react-native-bottom-tabs"
     ],
+    "experiments": {
+      "typedRoutes": true
+    },
     "extra": {
+      "router": {},
       "eas": {
         "projectId": "9993712d-7d7c-4256-8e4b-54fa349c186c"
       }
     },
-    "experiments": {
-      "typedRoutes": true
-    }
+    "owner": "carevance_ayush"
   }
 }

@@ -41,7 +41,7 @@ export default function TeamScreen() {
   useEffect(() => { fetchMembers(); }, []);
 
   return (
-    <ScrollView style={[s.container, { paddingTop: insets.top + 8 }]} contentContainerStyle={{ paddingBottom: 32 }}
+    <ScrollView style={[s.container, { paddingTop: insets.top + 8 }]} contentContainerStyle={{ paddingBottom: 110 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchMembers(); }} tintColor={colors.textSecondary} />}>
       <Text style={s.title}>Team Members</Text>
       <Text style={s.subtitle}>{members.length} member{members.length !== 1 ? 's' : ''}</Text>

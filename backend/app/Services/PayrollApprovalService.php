@@ -61,13 +61,13 @@ class PayrollApprovalService
         }
 
         DB::transaction(function () use ($workflow, $currentStep, $userId, $action, $comment) {
-            PayrollApprovalAction::create([
-                'workflow_id' => $workflow->id,
-                'step_id' => $currentStep->id,
-                'actor_id' => $userId,
-                'action' => $action, // 'approved' or 'rejected'
-                'comment' => $comment,
-            ]);
+PayrollApprovalAction::create([
+            'workflow_id' => $workflow->id,
+            'step_id' => $currentStep->id,
+            'actor_user_id' => $userId,
+            'action' => $action, // 'approved' or 'rejected'
+            'comment' => $comment,
+        ]);
 
             if ($action === 'rejected') {
                 $workflow->update(['status' => 'rejected']);
