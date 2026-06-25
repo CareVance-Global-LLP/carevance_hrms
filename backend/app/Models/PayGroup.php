@@ -32,4 +32,14 @@ class PayGroup extends Model
     {
         return $this->hasMany(PayGroupAssignment::class);
     }
+
+    public function filingDetails(): HasMany
+    {
+        return $this->hasMany(PayGroupFilingDetail::class);
+    }
+
+    public function getFilingDetailForState(string $stateCode): ?PayGroupFilingDetail
+    {
+        return $this->filingDetails()->where('state_code', $stateCode)->first();
+    }
 }

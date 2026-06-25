@@ -13,6 +13,7 @@ import {
   Clock,
   Briefcase,
   FileText,
+  CreditCard,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -39,6 +40,7 @@ interface PayrollDashboardProps {
   onOpenWizard?: () => void;
   onOpenRunDetail?: (runId: number) => void;
   onOpenCreatePayGroup?: () => void;
+  onOpenEmployeeCards?: () => void;
   onSelectPayGroup?: (payGroupId: number) => void;
 }
 
@@ -284,6 +286,7 @@ export default function PayrollDashboard({
   onOpenRunPayroll,
   onOpenProcessAndPay,
   onOpenDepartmentTemplates,
+  onOpenEmployeeCards,
   onOpenFilings,
   onOpenWizard,
   onOpenRunDetail,
@@ -459,6 +462,13 @@ export default function PayrollDashboard({
             title="Salary Templates"
             description="Edit individual employee salary structures. Pick a department, select an employee, and update their template."
             action={() => onOpenDepartmentTemplates?.()}
+            variant="default"
+          />
+          <QuickActionCard
+            icon={CreditCard}
+            title="Employee Payroll Cards"
+            description="View and manage individual employee CTC, salary components, and payroll config"
+            action={() => onOpenEmployeeCards?.()}
             variant="default"
           />
           <QuickActionCard

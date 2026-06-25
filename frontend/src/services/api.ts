@@ -78,6 +78,16 @@ import type {
   PayslipData,
   PayrollSummary,
   PayrollOrganizationSettings,
+  SalaryStructure,
+  SalaryStructureBreakdown,
+  CreateSalaryStructurePayload,
+  EmployeePayrollCard,
+  EmployeePayrollConfig,
+  UpdateEmployeePayrollCardPayload,
+  PayGroupSettings,
+  CreatePayGroupSettingsPayload,
+  UpdateFilingDetailsPayload,
+  IndianState,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
@@ -2287,6 +2297,60 @@ export const payrollApi = {
     api.post<{ success: boolean; message: string; completed_steps: string[] }>('/payroll/onboarding/unmark-setup-step', { step }),
   markWelcomeSeen: () =>
     api.post<{ success: boolean; message: string }>('/payroll/onboarding/mark-welcome-seen'),
+
+  // Salary Structure Templates
+  getSalaryStructures: () =>
+    api.get<{ success: boolean; templates: SalaryStructure[] }>('/payroll/salary-structures'),
+  createSalaryStructure: (data: CreateSalaryStructurePayload) =>
+    api.post<{ success: boolean; message: string; template: SalaryStructure }>('/payroll/salary-structures', data),
+  getDefaultSalaryStructure: () =>
+    api.get<{ success: boolean; template: SalaryStructure }>('/payroll/salary-structures/default'),
+  getSalaryStructure: (id: number, annualCtc?: number) =>
+    api.get<{ success: boolean; template: SalaryStructure; breakdown?: SalaryStructureBreakdown }>(
+      `/payroll/salary-structures/${id}`,
+      { params: annualCtc ? { annual_ctc: annualCtc } : undefined }
+    ),
+  updateSalaryStructure: (id: number, data: Partial<CreateSalaryStructurePayload>) =>
+    api.put<{ success: boolean; message: string; template: SalaryStructure }>(`/payroll/salary-structures/${id}`, data),
+  deleteSalaryStructure: (id: number) =>
+    api.delete<{ success: boolean; message: string }>(`/payroll/salary-structures/${id}`),
+  previewSalaryStructure: (id: number, annualCtc: number) =>
+    api.post<{ success: boolean; breakdown: SalaryStructureBreakdown; annual_ctc: number }>(
+      `/payroll/salary-structures/${id}/preview`,
+      { annual_ctc: annualCtc }
+    ),
+
+  // Employee Payroll Cards
+  getEmployeePayrollCards: (params?: { department_id?: number; pay_group_id?: number; state?: string }) =>
+    api.get<{ success: boolean; employees: EmployeePayrollCard[] }>('/payroll/employee-cards', { params }),
+  getEmployeePayrollCard: (userId: number) =>
+    api.get<{ success: boolean; employee: any; payroll_config: EmployeePayrollConfig }>(`/payroll/employee-cards/${userId}`),
+  updateEmployeePayrollCard: (userId: number, data: UpdateEmployeePayrollCardPayload) =>
+    api.put<{ success: boolean; employee: any; payroll_config: EmployeePayrollConfig }>(`/payroll/employee-cards/${userId}`, data),
+
+  // Pay Group Settings
+  getPayGroupSettings: () =>
+    api.get<{ success: boolean; pay_groups: PayGroupSettings[] }>('/payroll/pay-group-settings'),
+  createPayGroupSettings: (data: CreatePayGroupSettingsPayload) =>
+    api.post<{ success: boolean; message: string; pay_group: PayGroupSettings }>('/payroll/pay-group-settings', data),
+  getPayGroupSetting: (id: number) =>
+    api.get<{ success: boolean; pay_group: PayGroupSettings }>(`/payroll/pay-group-settings/${id}`),
+  updatePayGroupSettings: (id: number, data: Partial<CreatePayGroupSettingsPayload>) =>
+    api.put<{ success: boolean; message: string; pay_group: PayGroupSettings }>(`/payroll/pay-group-settings/${id}`, data),
+  deletePayGroupSettings: (id: number) =>
+    api.delete<{ success: boolean; message: string }>(`/payroll/pay-group-settings/${id}`),
+  updatePayGroupStatutoryRules: (id: number, data: {
+    pf_enabled?: boolean;
+    esi_enabled?: boolean;
+    pt_enabled?: boolean;
+    lwf_enabled?: boolean;
+    tds_enabled?: boolean;
+  }) =>
+    api.put<{ success: boolean; message: string; statutory_rules: any }>(`/payroll/pay-group-settings/${id}/statutory-rules`, data),
+  updatePayGroupFilingDetails: (id: number, data: UpdateFilingDetailsPayload) =>
+    api.put<{ success: boolean; message: string; pay_group: PayGroupSettings }>(`/payroll/pay-group-settings/${id}/filing-details`, data),
+  getPayGroups: (params?: { is_active?: boolean }) =>
+    api.get<{ success: boolean; pay_groups: PayGroup[] }>('/payroll/pay-groups', { params }),
 };
 
 export default api;

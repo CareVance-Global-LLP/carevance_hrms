@@ -14,6 +14,7 @@ import {
   Loader2,
   Download,
   Eye,
+  Settings,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -25,10 +26,12 @@ import type { PayrollDepartmentEmployee } from '@/types';
 
 interface PayGroupEmployeesProps {
   payGroupId: number;
+  payGroupName?: string;
   monthYear: string;
   onBack: () => void;
   onSelectEmployee: (employeeId: number) => void;
   onOpenBulkPayroll?: () => void;
+  onOpenPayGroupSettings?: (payGroupId: number) => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -241,10 +244,12 @@ function EmployeeCard({
 
 export default function PayGroupEmployees({
   payGroupId,
+  payGroupName: payGroupNameProp,
   monthYear,
   onBack,
   onSelectEmployee,
   onOpenBulkPayroll,
+  onOpenPayGroupSettings,
 }: PayGroupEmployeesProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmployees, setSelectedEmployees] = useState<Set<number>>(new Set());
@@ -422,7 +427,7 @@ export default function PayGroupEmployees({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
-            Back
+            Back to Payroll
           </Button>
           <div>
             <div className="flex items-center gap-2">
@@ -437,29 +442,40 @@ export default function PayGroupEmployees({
           </div>
         </div>
 
-        {selectedEmployees.size > 0 && (
-          <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-lg">
-            <span className="text-sm font-medium text-emerald-900">
-              {selectedEmployees.size} selected
-            </span>
-            <div className="h-4 w-px bg-emerald-200" />
-            <Button
-              variant="primary"
-              size="sm"
-              iconLeft={<Play className="h-4 w-4" />}
-              onClick={() => onOpenBulkPayroll?.()}
-            >
-              Open Bulk Payroll
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelectedEmployees(new Set())}
-            >
-              Clear
-            </Button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft={<Settings className="h-4 w-4" />}
+            onClick={() => onOpenPayGroupSettings?.(payGroupId)}
+          >
+            Settings
+          </Button>
+
+          {selectedEmployees.size > 0 && (
+            <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-lg">
+              <span className="text-sm font-medium text-emerald-900">
+                {selectedEmployees.size} selected
+              </span>
+              <div className="h-4 w-px bg-emerald-200" />
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={<Play className="h-4 w-4" />}
+                onClick={() => onOpenBulkPayroll?.()}
+              >
+                Open Bulk Payroll
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedEmployees(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Status Tabs */}

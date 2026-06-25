@@ -12,6 +12,7 @@ class EmployeePayrollTemplate extends Model
     protected $fillable = [
         'organization_id',
         'user_id',
+        'salary_template_id',
         'annual_ctc',
         'basic_percentage',
         'hra_percentage',
@@ -118,6 +119,11 @@ class EmployeePayrollTemplate extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function salaryTemplate(): BelongsTo
+    {
+        return $this->belongsTo(SalaryTemplate::class, 'salary_template_id');
     }
 
     public function createdBy(): BelongsTo

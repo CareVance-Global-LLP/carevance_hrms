@@ -16,13 +16,17 @@ import ProcessAndPayModal from '@/components/payroll/ProcessAndPayModal';
 import PayGroupModal from '@/components/payroll/PayGroupModal';
 import PayGroupEmployees from '@/components/payroll/PayGroupEmployees';
 import BulkPayrollMatrix from '@/components/payroll/BulkPayrollMatrix';
+
+import EmployeePayrollCards from '@/pages/payroll/EmployeePayrollCards';
+import PayGroupSettings from '@/pages/payroll/PayGroupSettings';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 
-type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates' | 'filings' | 'pay-group' | 'bulk-payroll';
+type ViewMode = 'dashboard' | 'department' | 'employee' | 'dept-templates' | 'filings' | 'pay-group' | 'bulk-payroll' | 'employee-cards' | 'pay-group-settings';
 
 const VALID_VIEWS: ReadonlySet<ViewMode> = new Set([
   'dashboard', 'department', 'employee', 'dept-templates', 'filings', 'pay-group', 'bulk-payroll',
+  'employee-cards', 'pay-group-settings',
 ]);
 
 /**
@@ -124,16 +128,21 @@ export default function PayrollPage() {
   // clamps to 5 in parseStep, but we re-clamp here defensively.
   const WIZARD_STEP_MAX = 5;
 
-  // Save the position on every change. We do NOT remove the saved
-  // position when viewMode === 'dashboard' — that would race with the
-  // restore effect below on a fresh mount, because the save effect
-  // runs first and would delete the entry the restore effect is
-  // about to read. The only place we clear the position is
-  // `handleBackToDashboard` (the explicit user action).
+  // Save the position on every change. We only save wizard-related views
+  // (employee, department, pay-group, bulk-payroll). Standalone views like
+  // dept-templates / employee-cards must NOT be persisted — they are
+  // selected explicitly from the dashboard and restoring them on mount would
+  // incorrectly override a deliberate "go to dashboard" navigation.
+  const WIZARD_VIEWS = new Set(['employee', 'department', 'pay-group', 'bulk-payroll']);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      if (viewMode === 'dashboard') return;
+      if (!WIZARD_VIEWS.has(viewMode)) {
+        // Non-wizard view — clear any stale saved position so it doesn't
+        // interfere later.
+        window.localStorage.removeItem(WIZARD_POS_KEY);
+        return;
+      }
       window.localStorage.setItem(
         WIZARD_POS_KEY,
         JSON.stringify({
@@ -149,14 +158,11 @@ export default function PayrollPage() {
   }, [viewMode, selectedDepartmentId, selectedEmployeeId, currentStep]);
 
   // Restore the position on mount *only* when the user lands on a
-  // bare /payroll URL with no query params. If the URL has params
-  // (e.g. someone shared a deep link), those win.
-  //
-  // This effect runs once on mount; intentionally no deps to avoid
-  // re-runs on every render. The empty-dep array is safe because we
-  // read `searchParams` for the initial check (which is stable for
-  // the duration of the mount) and use `setSearchParams` to
-  // navigate, which doesn't put us in a loop.
+  // bare /payroll URL with no query params AND the saved position is a
+  // wizard-related view. If the saved view is a standalone view (e.g.
+  // dept-templates, employee-cards), we clear localStorage and let the
+  // dashboard show — the user selected that view explicitly from the
+  // dashboard and shouldn't be yanked back into it on next visit.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const hasParam = searchParams.has('view') || searchParams.has('emp');
@@ -172,9 +178,14 @@ export default function PayrollPage() {
       try { window.localStorage.removeItem(WIZARD_POS_KEY); } catch { /* ignore */ }
       return;
     }
-    // Validate the shape before restoring.
+    // Only restore wizard-related views.
     const view = saved.view;
-    const isValidView = view && VALID_VIEWS.has(view);
+    const RESTORABLE_VIEWS = new Set(['employee', 'department', 'pay-group', 'bulk-payroll']);
+    if (!view || !RESTORABLE_VIEWS.has(view)) {
+      try { window.localStorage.removeItem(WIZARD_POS_KEY); } catch { /* ignore */ }
+      return;
+    }
+    // Validate the shape before restoring.
     const emp = Number(saved.emp);
     const hasValidEmp = Number.isFinite(emp) && emp > 0;
     // Pay-group view needs a valid payGroup id but no employee.
@@ -182,15 +193,12 @@ export default function PayrollPage() {
     const hasValidPayGroup = Number.isFinite(payGroup) && payGroup > 0;
     const needsPayGroup = view === 'pay-group' || view === 'bulk-payroll';
     const needsEmp = view === 'employee' || view === 'department';
-    if (!isValidView || (needsEmp && !hasValidEmp) || (needsPayGroup && !hasValidPayGroup)) {
+    if ((needsEmp && !hasValidEmp) || (needsPayGroup && !hasValidPayGroup)) {
       try { window.localStorage.removeItem(WIZARD_POS_KEY); } catch { /* ignore */ }
       return;
     }
     const dept = Number(saved.dept);
     const step = Math.max(0, Math.min(WIZARD_STEP_MAX, Math.trunc(Number(saved.step ?? 0))));
-    // Only restore wizard-relevant views. 'dashboard' is already what
-    // the user is on, so we skip it (nothing to restore).
-    if (view === 'dashboard') return;
     updateParams({
       view,
       dept: Number.isFinite(dept) && dept > 0 ? dept : null,
@@ -324,6 +332,14 @@ export default function PayrollPage() {
     updateParams({ view: 'filings' });
   };
 
+  const handleOpenEmployeeCards = () => {
+    updateParams({ view: 'employee-cards' });
+  };
+
+  const handleOpenPayGroupSettings = (payGroupId: number) => {
+    updateParams({ view: 'pay-group-settings', payGroup: payGroupId });
+  };
+
   const handleOpenWizard = () => {
     // The NextStepsCard will show "Start Setup" linking to /payroll/setup
     updateParams({ view: null });
@@ -365,6 +381,7 @@ export default function PayrollPage() {
             onOpenRunPayroll={handleOpenRunPayroll}
             onOpenProcessAndPay={handleOpenProcessAndPay}
             onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
+            onOpenEmployeeCards={handleOpenEmployeeCards}
             onOpenFilings={handleOpenFilings}
             onOpenWizard={handleOpenWizard}
             onOpenRunDetail={handleOpenRunDetail}
@@ -384,6 +401,7 @@ export default function PayrollPage() {
             onBack={handleBackToDashboard}
             onSelectEmployee={handleSelectEmployee}
             onOpenBulkPayroll={() => handleOpenBulkPayroll(selectedPayGroupId)}
+            onOpenPayGroupSettings={handleOpenPayGroupSettings}
           />
         )}
 
@@ -427,7 +445,15 @@ export default function PayrollPage() {
         )}
 
         {viewMode === 'filings' && (
-          <FilingsDashboard />
+          <FilingsDashboard onBack={handleBackToDashboard} />
+        )}
+
+        {viewMode === 'employee-cards' && (
+          <EmployeePayrollCards onBack={handleBackToDashboard} />
+        )}
+
+        {viewMode === 'pay-group-settings' && (
+          <PayGroupSettings onBack={handleBackToPayGroup} payGroupId={selectedPayGroupId || undefined} />
         )}
       </div>
 
