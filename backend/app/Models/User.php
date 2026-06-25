@@ -102,6 +102,11 @@ class User extends Authenticatable
         return $this->hasOne(EmployeePayrollTemplate::class);
     }
 
+    public function payGroupAssignments(): HasMany
+    {
+        return $this->hasMany(PayGroupAssignment::class);
+    }
+
     public function employeeWorkInfo(): HasOne
     {
         return $this->hasOne(EmployeeWorkInfo::class);

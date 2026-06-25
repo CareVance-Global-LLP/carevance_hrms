@@ -11,6 +11,9 @@ use App\Http\Controllers\Api\ReimbursementController;
 use App\Http\Controllers\Api\EnhancedPayrollController;
 use App\Http\Controllers\Api\TaxProofUploadController;
 use App\Http\Controllers\Api\DepartmentPayrollTemplateController;
+use App\Http\Controllers\Api\SalaryStructureController;
+use App\Http\Controllers\Api\EmployeePayrollCardController;
+use App\Http\Controllers\Api\PayGroupSettingsController;
 use App\Http\Controllers\PayrollAutoProcessController;
 use Illuminate\Support\Facades\Route;
 
@@ -91,6 +94,29 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::get('/department-templates/{departmentId}', [DepartmentPayrollTemplateController::class, 'show']);
     Route::put('/department-templates/{departmentId}', [DepartmentPayrollTemplateController::class, 'upsert']);
     Route::delete('/department-templates/{departmentId}', [DepartmentPayrollTemplateController::class, 'destroy']);
+
+    // Salary Structure Templates
+    Route::get('/salary-structures', [SalaryStructureController::class, 'index']);
+    Route::post('/salary-structures', [SalaryStructureController::class, 'store']);
+    Route::get('/salary-structures/default', [SalaryStructureController::class, 'default']);
+    Route::get('/salary-structures/{id}', [SalaryStructureController::class, 'show']);
+    Route::put('/salary-structures/{id}', [SalaryStructureController::class, 'update']);
+    Route::delete('/salary-structures/{id}', [SalaryStructureController::class, 'destroy']);
+    Route::post('/salary-structures/{id}/preview', [SalaryStructureController::class, 'preview']);
+
+    // Employee Payroll Cards
+    Route::get('/employee-cards', [EmployeePayrollCardController::class, 'index']);
+    Route::get('/employee-cards/{userId}', [EmployeePayrollCardController::class, 'show']);
+    Route::put('/employee-cards/{userId}', [EmployeePayrollCardController::class, 'update']);
+
+    // Pay Group Settings
+    Route::get('/pay-group-settings', [PayGroupSettingsController::class, 'index']);
+    Route::post('/pay-group-settings', [PayGroupSettingsController::class, 'store']);
+    Route::get('/pay-group-settings/{id}', [PayGroupSettingsController::class, 'show']);
+    Route::put('/pay-group-settings/{id}', [PayGroupSettingsController::class, 'update']);
+    Route::delete('/pay-group-settings/{id}', [PayGroupSettingsController::class, 'destroy']);
+    Route::put('/pay-group-settings/{id}/statutory-rules', [PayGroupSettingsController::class, 'updateStatutoryRules']);
+    Route::put('/pay-group-settings/{id}/filing-details', [PayGroupSettingsController::class, 'updateFilingDetails']);
     
     // Time tracking (standalone mode)
     Route::post('/check-in', [PayrollController::class, 'checkIn']);

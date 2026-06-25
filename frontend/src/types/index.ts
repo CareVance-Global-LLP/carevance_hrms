@@ -1581,3 +1581,241 @@ export interface PayrollRunActivityEntry {
   ip_address: string | null;
   created_at: string;
 }
+
+export interface SalaryStructure {
+  id: number;
+  organization_id: number;
+  name: string;
+  description: string | null;
+  currency: string;
+  basic_percentage: number;
+  hra_percentage: number;
+  conveyance_amount: number;
+  da_percentage: number;
+  cca_amount: number;
+  education_allowance: number;
+  internet_allowance: number;
+  meal_allowance: number;
+  transport_allowance: number;
+  uniform_allowance: number;
+  books_periodicals: number;
+  fuel_maintenance: number;
+  nps_percentage: number;
+  vpf_percentage: number;
+  other_earnings: Array<{
+    name: string;
+    type: 'fixed' | 'percentage';
+    value: number;
+  }> | null;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalaryStructureBreakdown {
+  annual_ctc: number;
+  monthly_ctc: number;
+  basic: { annual: number; monthly: number };
+  hra: { annual: number; monthly: number };
+  conveyance: { annual: number; monthly: number };
+  da: { annual: number; monthly: number };
+  cca: { annual: number; monthly: number };
+  education_allowance: { annual: number; monthly: number };
+  internet_allowance: { annual: number; monthly: number };
+  meal_allowance: { annual: number; monthly: number };
+  transport_allowance: { annual: number; monthly: number };
+  uniform_allowance: { annual: number; monthly: number };
+  books_periodicals: { annual: number; monthly: number };
+  fuel_maintenance: { annual: number; monthly: number };
+  nps: { annual: number; monthly: number };
+  vpf: { annual: number; monthly: number };
+  other_earnings: Array<{
+    name: string;
+    type: 'fixed' | 'percentage';
+    annual: number;
+    monthly: number;
+  }>;
+  total_earnings: { annual: number; monthly: number };
+}
+
+export interface CreateSalaryStructurePayload {
+  name: string;
+  description?: string;
+  basic_percentage: number;
+  hra_percentage: number;
+  conveyance_amount?: number;
+  da_percentage?: number;
+  cca_amount?: number;
+  education_allowance?: number;
+  internet_allowance?: number;
+  meal_allowance?: number;
+  transport_allowance?: number;
+  uniform_allowance?: number;
+  books_periodicals?: number;
+  fuel_maintenance?: number;
+  nps_percentage?: number;
+  vpf_percentage?: number;
+  other_earnings?: Array<{
+    name: string;
+    type: 'fixed' | 'percentage';
+    value: number;
+  }>;
+  is_default?: boolean;
+}
+
+export interface EmployeePayrollCard {
+  id: number;
+  name: string;
+  email: string;
+  department: string | null;
+  department_id: number | null;
+  designation: string | null;
+  pay_group: string | null;
+  pay_group_id: number | null;
+  annual_ctc: number | null;
+  salary_structure: string | null;
+  salary_template_id: number | null;
+  state: string | null;
+  tax_regime: 'new' | 'old';
+  is_metro_city: boolean;
+  status: string;
+  template_active: boolean;
+}
+
+export interface EmployeePayrollConfig {
+  annual_ctc: number | null;
+  basic_percentage: number;
+  hra_percentage: number;
+  da_percentage: number;
+  conveyance_allowance: number;
+  salary_template_id: number | null;
+  salary_template: {
+    id: number;
+    name: string;
+    basic_percentage: number;
+    hra_percentage: number;
+    conveyance_amount: number;
+  } | null;
+  pay_group_id: number | null;
+  pay_group: { id: number; name: string; code: string } | null;
+  pt_state: string;
+  tax_regime: 'new' | 'old';
+  is_metro_city: boolean;
+  pf_enabled: boolean;
+  esi_enabled: boolean;
+  pt_enabled: boolean;
+  tds_enabled: boolean;
+  lwf_enabled: boolean;
+  pf_employee_percentage: number;
+  pf_employer_percentage: number;
+  pf_wage_cap: number;
+  esi_employee_percentage: number;
+  esi_employer_percentage: number;
+  esi_threshold: number;
+  is_active: boolean;
+}
+
+export interface UpdateEmployeePayrollCardPayload {
+  annual_ctc?: number;
+  basic_percentage?: number;
+  hra_percentage?: number;
+  da_percentage?: number;
+  conveyance_allowance?: number;
+  salary_template_id?: number;
+  pay_group_id?: number;
+  pt_state?: string;
+  tax_regime?: 'new' | 'old';
+  is_metro_city?: boolean;
+  pf_enabled?: boolean;
+  esi_enabled?: boolean;
+  pt_enabled?: boolean;
+  tds_enabled?: boolean;
+  lwf_enabled?: boolean;
+  pf_employee_percentage?: number;
+  pf_employer_percentage?: number;
+  pf_wage_cap?: number;
+  esi_employee_percentage?: number;
+  esi_employer_percentage?: number;
+  esi_threshold?: number;
+  is_active?: boolean;
+}
+
+export interface PayGroupFilingDetail {
+  id: number;
+  pay_group_id: number;
+  state_code: string;
+  state_name: string;
+  pt_enabled: boolean;
+  pt_establishment_id: string | null;
+  pt_registration_date: string | null;
+  pt_signatory: string | null;
+  lwf_enabled: boolean;
+  lwf_establishment_id: string | null;
+  lwf_registration_date: string | null;
+  lwf_signatory: string | null;
+  pf_registration_number: string | null;
+  pf_group_code: string | null;
+  esi_registration_number: string | null;
+}
+
+export interface PayGroupSettings {
+  id: number;
+  name: string;
+  code: string;
+  description: string | null;
+  pay_frequency: 'monthly' | 'weekly' | 'biweekly';
+  pay_day: number;
+  pay_day_type: 'fixed' | 'last_working' | 'last_day';
+  salary_template_id: number | null;
+  salary_template: { id: number; name: string } | null;
+  statutory_rules: {
+    pf_enabled: boolean;
+    esi_enabled: boolean;
+    pt_enabled: boolean;
+    lwf_enabled: boolean;
+    tds_enabled: boolean;
+  };
+  filing_details: PayGroupFilingDetail[];
+  is_active: boolean;
+}
+
+export interface CreatePayGroupSettingsPayload {
+  name: string;
+  code: string;
+  description?: string;
+  pay_frequency: 'monthly' | 'weekly' | 'biweekly';
+  pay_day?: number;
+  pay_day_type?: 'fixed' | 'last_working' | 'last_day';
+  salary_template_id?: number;
+  statutory_rules?: {
+    pf_enabled?: boolean;
+    esi_enabled?: boolean;
+    pt_enabled?: boolean;
+    lwf_enabled?: boolean;
+    tds_enabled?: boolean;
+  };
+}
+
+export interface UpdateFilingDetailsPayload {
+  filing_details: Array<{
+    state_code: string;
+    state_name: string;
+    pt_enabled?: boolean;
+    pt_establishment_id?: string;
+    pt_registration_date?: string;
+    pt_signatory?: string;
+    lwf_enabled?: boolean;
+    lwf_establishment_id?: string;
+    lwf_registration_date?: string;
+    lwf_signatory?: string;
+    pf_registration_number?: string;
+    pf_group_code?: string;
+    esi_registration_number?: string;
+  }>;
+}
+
+export interface IndianState {
+  code: string;
+  name: string;
+}

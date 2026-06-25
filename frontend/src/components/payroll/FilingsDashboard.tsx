@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Download, Plus, History, Loader2 } from 'lucide-react';
+import { FileText, Download, Plus, History, Loader2, ArrowLeft } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
@@ -82,7 +82,7 @@ function FilingButton({ label, desc, onClick, disabled, needsState, state, onSta
   );
 }
 
-export default function FilingsDashboard() {
+export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   const queryClient = useQueryClient();
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
   const [ptState, setPtState] = useState<string>('');
@@ -140,6 +140,18 @@ export default function FilingsDashboard() {
 
   return (
     <div className="space-y-6">
+      {onBack && (
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            iconLeft={<ArrowLeft className="h-4 w-4" />}
+          >
+            Back to Payroll
+          </Button>
+        </div>
+      )}
       <HowItWorksCard
         intro="Generate statutory returns for any month and download them for upload to the respective portals."
         whatIsThis="Statutory returns required by Indian law — PF, ESI, PT, TDS, LWF, Form 16. Generate the file here, then upload to the appropriate government portal (EPFO, ESIC, TDS-CPC, state commercial tax dept)."
