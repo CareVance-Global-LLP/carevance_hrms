@@ -2098,6 +2098,8 @@ export const payrollApi = {
     api.post<any>('/payroll/reports/bank-reconciliation', { month_year: monthYear }),
 
   // ===== Bank Integration =====
+  listBatches: () =>
+    api.get<any>('/payroll/bank/batches'),
   createTransferBatch: (payrollRunId: number, bankName?: string) =>
     api.post<any>('/payroll/bank/create-batch', { payroll_run_id: payrollRunId, bank_name: bankName }),
   processBatch: (batchId: number) =>
