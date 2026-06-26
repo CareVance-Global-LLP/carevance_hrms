@@ -18,6 +18,7 @@ const STEP_PATHS: Record<string, string> = {
   statutory: '/payroll/setup/statutory',
   pay_schedule: '/payroll/setup/pay-schedule',
   bank: '/payroll/setup/bank',
+  departments: '/payroll/setup/departments',
   test_run: '/payroll/setup/test-run',
 };
 
@@ -29,6 +30,7 @@ const ACTION_LABELS: Record<string, { title: string; description: string; cta: s
   statutory: { title: 'Enter your statutory details', description: 'TAN, PAN, PF/ESI establishment codes used on filings.', cta: 'Add Statutory Details', to: '/payroll/setup/statutory' },
   pay_schedule: { title: 'Set your pay schedule', description: 'Pay day, frequency, attendance cut-off.', cta: 'Set Pay Schedule', to: '/payroll/setup/pay-schedule' },
   bank: { title: 'Configure bank & payout', description: 'Bank account and NEFT/RTGS file format for salary transfers.', cta: 'Configure Bank', to: '/payroll/setup/bank' },
+  departments: { title: 'Department salary templates', description: 'Set default salary structures per department.', cta: 'Configure Departments', to: '/payroll/setup/departments' },
   test_run: { title: 'Run a test calculation', description: 'Verify everything works with a sample payslip before going live.', cta: 'Run Test Calculation', to: '/payroll/setup/test-run' },
   all_done: { title: "You're all set 🎉", description: 'Your payroll is fully configured and running. Explore the rest of the Payroll menu.', cta: 'Explore Payroll', to: '/payroll' },
 };

@@ -9,7 +9,8 @@ export type SetupStepId =
   | 'statutory'
   | 'pay_schedule'
   | 'bank'
-  | 'test_run';
+  | 'test_run'
+  | 'departments';
 
 export interface PayrollOnboardingStatus {
   onboarded: boolean;

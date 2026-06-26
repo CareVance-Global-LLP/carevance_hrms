@@ -12,6 +12,9 @@ import {
   Clock,
   FileText,
   CreditCard,
+  Building2,
+  BookOpen,
+  UserX,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -36,6 +39,8 @@ interface PayrollDashboardProps {
   onOpenCreatePayGroup?: () => void;
   onOpenEmployeeCards?: () => void;
   onSelectPayGroup?: (payGroupId: number) => void;
+  onOpenDepartmentTemplates?: () => void;
+  onOpenUnassignedEmployees?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -198,6 +203,8 @@ export default function PayrollDashboard({
   onOpenRunDetail,
   onOpenCreatePayGroup,
   onSelectPayGroup,
+  onOpenDepartmentTemplates,
+  onOpenUnassignedEmployees,
 }: PayrollDashboardProps) {
   const fallbackMonth = useMemo(() => {
     const now = new Date();
@@ -330,6 +337,20 @@ export default function PayrollDashboard({
             title="Statutory Filings"
             description="Generate PF, ESI, Form 16, 24Q, PT, LWF returns"
             action={() => onOpenFilings?.()}
+            variant="default"
+          />
+          <QuickActionCard
+            icon={BookOpen}
+            title="Salary Templates"
+            description="Create and manage salary component templates for departments"
+            action={() => onOpenDepartmentTemplates?.()}
+            variant="default"
+          />
+          <QuickActionCard
+            icon={UserX}
+            title="View Unassigned Employees"
+            description="Employees without a department assignment"
+            action={() => onOpenUnassignedEmployees?.()}
             variant="default"
           />
         </div>

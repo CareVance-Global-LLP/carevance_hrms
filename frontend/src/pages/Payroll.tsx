@@ -15,15 +15,16 @@ import PayGroupEmployees from '@/components/payroll/PayGroupEmployees';
 import BulkPayrollMatrix from '@/components/payroll/BulkPayrollMatrix';
 
 import EmployeePayrollCards from '@/pages/payroll/EmployeePayrollCards';
+import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
 import PayGroupSettings from '@/pages/payroll/PayGroupSettings';
 import type { PayrollOrganizationSettings } from '@/types';
 import type { PayrollStats } from '@/types';
 
-type ViewMode = 'dashboard' | 'employee' | 'filings' | 'pay-group' | 'bulk-payroll' | 'employee-cards' | 'pay-group-settings';
+type ViewMode = 'dashboard' | 'employee' | 'filings' | 'pay-group' | 'bulk-payroll' | 'employee-cards' | 'pay-group-settings' | 'dept-templates';
 
 const VALID_VIEWS: ReadonlySet<ViewMode> = new Set([
   'dashboard', 'employee', 'filings', 'pay-group', 'bulk-payroll',
-  'employee-cards', 'pay-group-settings',
+  'employee-cards', 'pay-group-settings', 'dept-templates',
 ]);
 
 /**
@@ -246,6 +247,10 @@ export default function PayrollPage() {
     updateParams({ view: 'employee-cards' });
   };
 
+  const handleOpenDepartmentTemplates = () => {
+    updateParams({ view: 'dept-templates' });
+  };
+
   const handleOpenPayGroupSettings = (payGroupId: number) => {
     updateParams({ view: 'pay-group-settings', payGroup: payGroupId });
   };
@@ -288,6 +293,8 @@ export default function PayrollPage() {
             onOpenRunDetail={handleOpenRunDetail}
             onOpenCreatePayGroup={() => setIsCreatePayGroupOpen(true)}
             onSelectPayGroup={handleSelectPayGroup}
+            onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
+            onOpenUnassignedEmployees={handleOpenEmployeeCards}
           />
         )}
 
@@ -333,6 +340,10 @@ export default function PayrollPage() {
 
         {viewMode === 'employee-cards' && (
           <EmployeePayrollCards onBack={handleBackToDashboard} />
+        )}
+
+        {viewMode === 'dept-templates' && (
+          <DepartmentTemplates onBack={handleBackToDashboard} />
         )}
 
         {viewMode === 'pay-group-settings' && (

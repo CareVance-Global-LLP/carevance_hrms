@@ -99,6 +99,7 @@ const SetupStatutory = lazyWithChunkRetry(() => import('@/pages/payroll/setup/Se
 const SetupPaySchedule = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupPaySchedule'));
 const SetupBank = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupBank'));
 const SetupTestRun = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupTestRun'));
+const SetupDepartments = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupDepartments'));
 const TaxSimulatorPage = lazyWithChunkRetry(() => import('@/pages/TaxSimulatorPage'));
 const Loans = lazyWithChunkRetry(() => import('@/pages/Loans'));
 const ArrearsPage = lazyWithChunkRetry(() => import('@/pages/ArrearsPage'));
@@ -632,6 +633,7 @@ function App() {
             <Route path="payroll/setup/statutory" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupStatutory /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/pay-schedule" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupPaySchedule /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/bank" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupBank /></AdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/departments" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupDepartments /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/test-run" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupTestRun /></AdminRoute></PlanFeatureRoute>} />
             <Route path="reimbursements" element={<PlanFeatureRoute feature="payroll"><AdminRoute><ReimbursementsPage /></AdminRoute></PlanFeatureRoute>} />
             <Route path="pre-payroll-checklist" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PrePayrollChecklistPage /></AdminRoute></PlanFeatureRoute>} />

@@ -40,6 +40,7 @@ export const SETUP_STEPS: StepConfig[] = [
   { id: 'statutory', label: 'Statutory Details', description: 'TAN, PAN, establishment codes', path: '/payroll/setup/statutory', icon: ScrollText },
   { id: 'pay_schedule', label: 'Pay Schedule', description: 'Pay day, frequency, cut-off dates', path: '/payroll/setup/pay-schedule', icon: Calendar },
   { id: 'bank', label: 'Bank & Payout', description: 'Bank account, NEFT/RTGS setup', path: '/payroll/setup/bank', icon: Landmark },
+  { id: 'departments', label: 'Department Templates', description: 'Default salary structures per department', path: '/payroll/setup/departments', icon: Building2 },
   { id: 'test_run', label: 'Test Run', description: 'Dry run before going live', path: '/payroll/setup/test-run', icon: Calculator },
 ];
 

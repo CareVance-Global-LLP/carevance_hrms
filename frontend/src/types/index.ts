@@ -1222,6 +1222,15 @@ export interface UpdatePayrollProfileRequest {
 }
 
 // Comprehensive Payroll Types
+export interface PayrollDepartment {
+  id: number;
+  name: string;
+  employee_count: number;
+  processed_count: number;
+  paid_count: number;
+  total_net_pay: number;
+}
+
 export interface PayrollDepartmentEmployee {
   id: number;
   name: string;
