@@ -1002,7 +1002,7 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (targ
         <Button
           variant="ghost"
           size="sm"
-          onClick={onBack}
+          onClick={() => onBack('group')}
           iconLeft={<ArrowLeft className="h-4 w-4" />}
         >
           Back to Pay Group
