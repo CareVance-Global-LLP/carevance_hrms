@@ -35,7 +35,6 @@ interface StepConfig {
 export const SETUP_STEPS: StepConfig[] = [
   { id: 'welcome', label: 'Welcome', description: 'Overview of the setup journey', path: '/payroll/setup', icon: Rocket },
   { id: 'defaults', label: 'Organization Defaults', description: 'Basic %, HRA, working days, PT state', path: '/payroll/setup/defaults', icon: Building2 },
-  { id: 'departments', label: 'Department Templates', description: 'Default salary structure per department', path: '/payroll/setup/departments', icon: Users },
   { id: 'employees', label: 'Employees & CTC', description: 'Add employees and assign their CTC', path: '/payroll/setup/employees', icon: Users },
   { id: 'compliance', label: 'Compliance Toggles', description: 'PF, ESI, PT, TDS, LWF configuration', path: '/payroll/setup/compliance', icon: ClipboardCheck },
   { id: 'statutory', label: 'Statutory Details', description: 'TAN, PAN, establishment codes', path: '/payroll/setup/statutory', icon: ScrollText },

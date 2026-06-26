@@ -57,8 +57,6 @@ import type {
   PayrollDashboardData,
   PayrollStats,
   PayrollTimeEntry,
-  PayrollDepartment,
-  PayrollDepartmentEmployee,
   PayGroupEmployee,
   PayGroupStepStatus,
   EmployeePayrollDetails,
@@ -1601,13 +1599,6 @@ export const payrollApi = {
   getTimeEntries: (params?: { from?: string; to?: string }) =>
     api.get<PayrollTimeEntry[]>('/payroll/time-entries', { params }),
 
-  // Departments
-  getDepartments: (params?: { month_year?: string }) =>
-    api.get<{ departments: PayrollDepartment[]; unassigned_count: number; month_year: string }>('/payroll/departments', { params }),
-
-  getDepartmentEmployees: (departmentId: number, params?: { month_year?: string; search?: string }) =>
-    api.get<{ department_id: number; employees: PayrollDepartmentEmployee[]; month_year: string }>(`/payroll/departments/${departmentId}/employees`, { params }),
-
   // Employee Payroll
   getEmployeePayrollDetails: (userId: number, params?: { month_year?: string; annual_ctc?: number }) =>
     api.get<EmployeePayrollDetails>(`/payroll/employees/${userId}`, { params }),
@@ -1659,26 +1650,10 @@ export const payrollApi = {
   processEmployeePayroll: (userId: number, data: ProcessPayrollRequest) =>
     api.post<{ success: boolean; message: string; payroll_item: any }>(`/payroll/employees/${userId}/process`, data),
 
-  processSelectedEmployees: (departmentId: number, data: { month_year: string; user_ids: number[]; working_days: number; default_annual_ctc?: number; lOP_days?: number; overtime_hours?: number }) =>
-    api.post<{ success: boolean; message: string; succeeded: Array<{ user_id: number; payroll_item_id: number | null }>; failed: Array<{ user_id: number; reason: string }> }>(`/payroll/departments/${departmentId}/process-selected`, data),
-
   // Unified run-payroll entry point (single|department|all). Routes through
   // the same PayrollAutoProcessService::processForUsers, so bulk == individual.
   processScoped: (data: { month_year: string; scope: 'single' | 'department' | 'all'; user_ids?: number[]; department_ids?: number[] }) =>
     api.post<{ success: boolean; run: any; scope: string; user_count: number | null; message: string }>('/payroll/auto/process-scoped', data),
-
-  // Department-level salary template (3-level hierarchy: org -> dept -> employee).
-  listDepartmentTemplates: () =>
-    api.get<{ success: boolean; templates: any[]; departments_without_template: Array<{ id: number; name: string; slug: string }> }>('/payroll/department-templates'),
-
-  getDepartmentTemplate: (departmentId: number) =>
-    api.get<{ success: boolean; template: any }>(`/payroll/department-templates/${departmentId}`),
-
-  upsertDepartmentTemplate: (departmentId: number, data: Record<string, unknown>) =>
-    api.put<{ success: boolean; message: string; template: any }>(`/payroll/department-templates/${departmentId}`, data),
-
-  deleteDepartmentTemplate: (departmentId: number) =>
-    api.delete<{ success: boolean; message: string }>(`/payroll/department-templates/${departmentId}`),
 
   // Calculations
   calculate: (data: CalculatePayrollRequest) =>

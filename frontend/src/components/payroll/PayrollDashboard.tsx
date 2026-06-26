@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import {
   Users,
   Search,
-  Building2,
   ChevronRight,
   Play,
   AlertCircle,
@@ -11,14 +10,12 @@ import {
   Wallet,
   ArrowRight,
   Clock,
-  Briefcase,
   FileText,
   CreditCard,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -26,16 +23,13 @@ import NextStepsCard from './NextStepsCard';
 import MonthTimeline from './MonthTimeline';
 import { cn } from '@/utils/cn';
 
-import type { PayrollDepartment, PayrollStats, PayGroup } from '@/types';
+import type { PayrollStats, PayGroup } from '@/types';
 
 interface PayrollDashboardProps {
   selectedMonth?: string;
   onMonthChange?: (month: string) => void;
-  onSelectDepartment: (departmentId: number) => void;
   onSelectEmployee: (employeeId: number) => void;
-  onOpenRunPayroll: (stats: PayrollStats, departments: PayrollDepartment[]) => void;
   onOpenProcessAndPay: (monthYear: string, pendingCount: number, expectedNetPay: number) => void;
-  onOpenDepartmentTemplates?: () => void;
   onOpenFilings?: () => void;
   onOpenWizard?: () => void;
   onOpenRunDetail?: (runId: number) => void;
@@ -48,92 +42,7 @@ function formatCurrency(amount: number): string {
   return '₹' + Number(amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
-// Department Card Component (kept local — too domain-specific for the shared system)
-function DepartmentCard({
-  department,
-  onClick,
-}: {
-  department: PayrollDepartment;
-  onClick: () => void;
-}) {
-  const progress = department.employee_count > 0
-    ? (department.processed_count / department.employee_count) * 100
-    : 0;
-
-  const isComplete = progress === 100;
-  const hasPending = department.processed_count < department.employee_count;
-
-  return (
-    <SurfaceCard
-      className="p-5 cursor-pointer hover:shadow-lg hover:border-blue-300 transition-all group"
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-            {department.name.charAt(0)}
-          </div>
-          <div>
-            <h3 className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-              {department.name}
-            </h3>
-            <p className="text-sm text-slate-500">
-              {department.employee_count} employees
-            </p>
-          </div>
-        </div>
-        <ChevronRight className="h-5 w-5 text-slate-400 group-hover:text-blue-500 transition-colors" />
-      </div>
-
-      {/* Progress Bar */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between text-xs mb-2">
-          <span className="text-slate-500">Processing Progress</span>
-          <span className={cn('font-medium', isComplete ? 'text-emerald-600' : 'text-amber-600')}>
-            {department.processed_count}/{department.employee_count}
-          </span>
-        </div>
-        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className={cn(
-              'h-full rounded-full transition-all duration-500',
-              isComplete ? 'bg-emerald-500' : 'bg-blue-500',
-            )}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-        <div>
-          <p className="text-xs text-slate-400 mb-1">Total Net Pay</p>
-          <p className="font-semibold text-slate-900">{formatCurrency(department.total_net_pay)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-slate-400 mb-1">Paid</p>
-          <p className="font-semibold text-emerald-600">{department.paid_count} employees</p>
-        </div>
-      </div>
-
-      {/* Status Badge */}
-      <div className="mt-4 flex items-center gap-2">
-        <StatusBadge tone={isComplete ? 'success' : hasPending ? 'warning' : 'neutral'}>
-          {isComplete
-            ? 'Complete'
-            : hasPending
-              ? `${department.employee_count - department.processed_count} pending`
-              : 'Not Started'}
-        </StatusBadge>
-      </div>
-    </SurfaceCard>
-  );
-}
-
-// Pay Group Card Component — same structure as DepartmentCard but
-// with an emerald-to-teal gradient avatar and aggregate fields
-// (employee_count, processed_count, paid_count, total_net_pay)
-// computed server-side for the active month.
+// Pay Group Card Component
 function PayGroupCard({
   payGroup,
   onClick,
@@ -282,10 +191,7 @@ function QuickActionCard({
 export default function PayrollDashboard({
   selectedMonth: selectedMonthProp,
   onMonthChange,
-  onSelectDepartment,
-  onOpenRunPayroll,
   onOpenProcessAndPay,
-  onOpenDepartmentTemplates,
   onOpenEmployeeCards,
   onOpenFilings,
   onOpenWizard,
@@ -293,36 +199,24 @@ export default function PayrollDashboard({
   onOpenCreatePayGroup,
   onSelectPayGroup,
 }: PayrollDashboardProps) {
-  // onSelectEmployee is declared in the interface so the parent (Payroll.tsx)
-  // can still wire it; the legacy dashboard's current widgets don't drill into
-  // a single employee, so we don't destructure it here.
   const fallbackMonth = useMemo(() => {
     const now = new Date();
     return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   }, []);
   const selectedMonth = selectedMonthProp ?? fallbackMonth;
   const setSelectedMonth = (m: string) => onMonthChange?.(m);
-  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch data
-  const { data: departmentsData, isLoading: isDepartmentsLoading } = useQuery({
-    queryKey: ['payroll', 'departments', selectedMonth],
-    queryFn: () => payrollApi.getDepartments({ month_year: selectedMonth }).then((res) => res.data),
-  });
-
   const { data: statsData } = useQuery({
     queryKey: ['payroll', 'stats', selectedMonth],
     queryFn: () => payrollApi.getStats({ month_year: selectedMonth }).then((res) => res.data),
   });
 
-  // Lifted up so both MonthTimeline and RecentRuns can share the data
   const { data: runsData } = useQuery({
     queryKey: ['payroll', 'runs'],
     queryFn: () => payrollApi.getPayrollRuns().then((r) => r.data),
   });
 
-  // Active pay groups for the current month. Re-fetched when the
-  // Create Pay Group modal invalidates the key on success.
   const { data: payGroupsData, isLoading: isPayGroupsLoading } = useQuery({
     queryKey: ['payroll', 'pay-groups', selectedMonth],
     queryFn: () =>
@@ -341,49 +235,16 @@ export default function PayrollDashboard({
     total_net_pay?: number;
   }>;
 
-  const departments = departmentsData?.departments || [];
-  const unassignedCount = departmentsData?.unassigned_count || 0;
-
-  // Calculate summary stats
+  // Calculate summary stats from pay groups
   const summaryStats = useMemo(() => {
-    const totalEmployees = departments.reduce((sum, d) => sum + d.employee_count, 0) + unassignedCount;
-    const processedCount = departments.reduce((sum, d) => sum + d.processed_count, 0);
-    const paidCount = departments.reduce((sum, d) => sum + d.paid_count, 0);
-    const totalNetPay = departments.reduce((sum, d) => sum + d.total_net_pay, 0);
+    const totalEmployees = payGroups.reduce((sum, pg) => sum + pg.employee_count, 0);
+    const processedCount = payGroups.reduce((sum, pg) => sum + pg.processed_count, 0);
+    const paidCount = payGroups.reduce((sum, pg) => sum + pg.paid_count, 0);
+    const totalNetPay = payGroups.reduce((sum, pg) => sum + pg.total_net_pay, 0);
     const pendingCount = Math.max(0, totalEmployees - processedCount);
 
     return { totalEmployees, processedCount, paidCount, totalNetPay, pendingCount };
-  }, [departments, unassignedCount]);
-
-  // Filter and sort departments
-  const filteredDepartments = useMemo(() => {
-    const filtered = departments.filter((dept) =>
-      dept.name.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-
-    return filtered.sort((a, b) => {
-      const aPending = a.employee_count - a.processed_count;
-      const bPending = b.employee_count - b.processed_count;
-      if (aPending > 0 && bPending === 0) return -1;
-      if (aPending === 0 && bPending > 0) return 1;
-      return b.employee_count - a.employee_count;
-    });
-  }, [departments, searchQuery]);
-
-  // Get departments needing attention
-  const departmentsNeedingAttention = useMemo(
-    () => filteredDepartments.filter((d) => d.processed_count < d.employee_count),
-    [filteredDepartments],
-  );
-
-  const handleQuickProcess = () => {
-    if (onOpenRunPayroll && statsData && departments.length > 0) {
-      onOpenRunPayroll(statsData, departments);
-    } else {
-      // Fallback to the new Process & Pay modal if the legacy one isn't wired.
-      onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay);
-    }
-  };
+  }, [payGroups]);
 
   const paidPct = summaryStats.totalEmployees > 0
     ? Math.round((summaryStats.paidCount / summaryStats.totalEmployees) * 100)
@@ -401,7 +262,7 @@ export default function PayrollDashboard({
         runs={runs}
       />
 
-      {/* Process & Pay primary CTA — sits below the timeline, full-width on mobile */}
+      {/* Process & Pay primary CTA */}
       <div className="flex justify-start">
         <Button
           variant="primary"
@@ -414,7 +275,7 @@ export default function PayrollDashboard({
         </Button>
       </div>
 
-      {/* Quick Stats (design system MetricCard) */}
+      {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           label="Total Net Pay"
@@ -446,7 +307,7 @@ export default function PayrollDashboard({
         />
       </div>
 
-      {/* Quick Actions — Always available */}
+      {/* Quick Actions */}
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -455,13 +316,6 @@ export default function PayrollDashboard({
             title="Create Pay Group"
             description="Group employees for a shared pay schedule"
             action={() => onOpenCreatePayGroup?.()}
-            variant="default"
-          />
-          <QuickActionCard
-            icon={Building2}
-            title="Salary Templates"
-            description="Edit individual employee salary structures. Pick a department, select an employee, and update their template."
-            action={() => onOpenDepartmentTemplates?.()}
             variant="default"
           />
           <QuickActionCard
@@ -481,7 +335,7 @@ export default function PayrollDashboard({
         </div>
       </div>
 
-      {/* Needs Attention — only when there is pending payroll work */}
+      {/* Needs Attention */}
       {summaryStats.pendingCount > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Needs Attention</h2>
@@ -495,14 +349,6 @@ export default function PayrollDashboard({
               variant="warning"
             />
             <QuickActionCard
-              icon={Briefcase}
-              title="View Unassigned Employees"
-              description={`${unassignedCount} employees without department`}
-              count={unassignedCount > 0 ? unassignedCount : undefined}
-              action={() => onSelectDepartment(0)}
-              variant={unassignedCount > 0 ? 'danger' : 'default'}
-            />
-            <QuickActionCard
               icon={DollarSign}
               title="Review Payroll Reports"
               description="View detailed payroll analytics"
@@ -514,66 +360,6 @@ export default function PayrollDashboard({
           </div>
         </div>
       )}
-
-      {/* Departments Section */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              {departmentsNeedingAttention.length > 0 ? 'Needs Attention' : 'All Departments'}
-            </h2>
-            <p className="text-sm text-slate-500">
-              {departmentsNeedingAttention.length > 0
-                ? `${departmentsNeedingAttention.length} departments have pending payrolls`
-                : 'Select a department to view employees'}
-            </p>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <TextInput
-              placeholder="Search departments..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-full sm:w-64"
-            />
-          </div>
-        </div>
-
-        {/* Departments Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {isDepartmentsLoading ? (
-            Array.from({ length: 3 }).map((_, i) => (
-              <SurfaceCard key={i} className="p-5 animate-pulse">
-                <div className="h-12 w-12 bg-slate-200 rounded-xl mb-4" />
-                <div className="h-5 bg-slate-200 rounded w-1/2 mb-2" />
-                <div className="h-4 bg-slate-200 rounded w-1/3" />
-              </SurfaceCard>
-            ))
-          ) : filteredDepartments.length === 0 ? (
-            <div className="col-span-full text-center py-12 text-slate-500">
-              <Building2 className="h-12 w-12 mx-auto mb-3 text-slate-300" />
-              <p className="font-medium">No departments found</p>
-              <p className="text-sm">Create departments to organize payroll</p>
-            </div>
-          ) : (
-            filteredDepartments.map((dept) => (
-              <DepartmentCard
-                key={dept.id}
-                department={dept}
-                onClick={() => onSelectDepartment(dept.id)}
-              />
-            ))
-          )}
-        </div>
-
-        {departmentsNeedingAttention.length > 0 && departmentsNeedingAttention.length < filteredDepartments.length && (
-          <div className="text-center pt-4">
-            <Button variant="ghost" onClick={() => setSearchQuery('')}>
-              View All {filteredDepartments.length} Departments
-            </Button>
-          </div>
-        )}
-      </div>
 
       {/* Pay Groups Section */}
       {(isPayGroupsLoading || payGroups.length > 0) && (
@@ -622,7 +408,7 @@ export default function PayrollDashboard({
           <div>
             <h4 className="text-sm font-medium text-blue-900">How to process payroll</h4>
             <ol className="text-sm text-blue-700 mt-1 space-y-1 list-decimal list-inside">
-              <li>Click on a department with pending employees</li>
+              <li>Create a pay group and assign employees</li>
               <li>Select employees to process or process all at once</li>
               <li>Review the run — Lock → Approve → Release → Disburse</li>
               <li>Generate bank file and upload to your banking portal</li>
@@ -643,7 +429,7 @@ function RecentRuns({
 }) {
   if (!runs || runs.length === 0) return null;
 
-  const recent = runs.slice(0, 5);
+  const recent = runs;
   const statusTone: Record<string, string> = {
     draft: 'bg-slate-100 text-slate-700',
     locked: 'bg-amber-100 text-amber-700',
@@ -653,8 +439,6 @@ function RecentRuns({
     paid: 'bg-emerald-100 text-emerald-700',
   };
 
-  // Render month_year ("2026-06") as "Jun 2026" so users immediately see
-  // which month the run is for without decoding the YYYY-MM format.
   const formatRunMonth = (raw: string | null | undefined): { short: string; long: string } => {
     if (!raw) return { short: 'Unknown', long: 'Unknown month' };
     const [y, m] = raw.split('-').map(Number);
@@ -669,11 +453,11 @@ function RecentRuns({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">Recent Payroll Runs</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Payroll Run History</h2>
         <p className="text-xs text-slate-500">Click a run to view its lifecycle, lock/approve, or download bank file</p>
       </div>
       <SurfaceCard className="p-0 overflow-hidden">
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
           {recent.map((r) => {
             const monthLabel = formatRunMonth(r.month_year ?? r.run_month);
             return (

@@ -67,8 +67,8 @@ export default function PayrollRunDetailModal({
     queryClient.invalidateQueries({ queryKey: ['payroll', 'run-missing-bank', runId] });
     queryClient.invalidateQueries({ queryKey: ['payroll', 'run-completeness', runId] });
     queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
-    queryClient.invalidateQueries({ queryKey: ['payroll', 'department'] });
     queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+    queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
   };
 
   const lockMutation = useMutation({

@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { X, Download, FileText, TrendingUp, Users, IndianRupee, Calendar, FileSpreadsheet, FileDown, Loader2 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { payrollApi } from '@/services/api';
+import { X, Download, FileText, TrendingUp, IndianRupee, Calendar, FileSpreadsheet, FileDown, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import type { PayrollStats } from '@/types';
@@ -25,13 +23,6 @@ interface ReportType {
 export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear }: PayrollReportsModalProps) {
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
 
-  // Fetch department data for reports
-  const { data: departmentsData } = useQuery({
-    queryKey: ['payroll', 'departments', monthYear],
-    queryFn: () => payrollApi.getDepartments({ month_year: monthYear }).then(res => res.data),
-    enabled: isOpen,
-  });
-
   // Early return must be after all hooks
   if (!isOpen) {
     return null;
@@ -44,14 +35,6 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
       description: 'Overall payroll statistics and breakdown by earnings/deductions',
       icon: TrendingUp,
       color: 'blue',
-      format: 'csv',
-    },
-    {
-      id: 'department',
-      title: 'Department-wise Payroll',
-      description: 'Payroll breakdown by department with employee counts',
-      icon: Users,
-      color: 'violet',
       format: 'csv',
     },
     {
@@ -89,20 +72,17 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
   ];
 
   const generateCSV = (reportId: string): string => {
-    const departments = departmentsData?.departments || [];
     const month = monthYear || new Date().toISOString().slice(0, 7);
     
     switch (reportId) {
       case 'summary':
         return generateSummaryReport(stats, month);
-      case 'department':
-        return generateDepartmentReport(departments, month);
       case 'deductions':
         return generateDeductionsReport(stats, month);
       case 'bank':
-        return generateBankReport(departments, month);
+        return generateBankReport(stats, month);
       case 'register':
-        return generateRegisterReport(stats, departments, month);
+        return generateRegisterReport(stats, month);
       default:
         return '';
     }
@@ -127,37 +107,6 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
     return lines.map(line => line.join(',')).join('\n');
   };
 
-  const generateDepartmentReport = (departments: any[], month?: string): string => {
-    const lines = [
-      ['CareVance HRMS - Department-wise Payroll Report'],
-      [`Month: ${month}`],
-      [`Generated on: ${new Date().toLocaleString()}`],
-      [''],
-      ['Department', 'Employees', 'Processed', 'Paid', 'Net Pay (₹)'],
-    ];
-    
-    departments.forEach(dept => {
-      lines.push([
-        dept.name,
-        String(dept.employee_count),
-        String(dept.processed_count),
-        String(dept.paid_count),
-        String(dept.total_net_pay)
-      ]);
-    });
-    
-    // Add total row
-    const totalEmployees = departments.reduce((sum, d) => sum + d.employee_count, 0);
-    const totalProcessed = departments.reduce((sum, d) => sum + d.processed_count, 0);
-    const totalPaid = departments.reduce((sum, d) => sum + d.paid_count, 0);
-    const totalNetPay = departments.reduce((sum, d) => sum + d.total_net_pay, 0);
-    
-    lines.push(['']);
-    lines.push(['TOTAL', String(totalEmployees), String(totalProcessed), String(totalPaid), String(totalNetPay)]);
-    
-    return lines.map(line => line.join(',')).join('\n');
-  };
-
   const generateDeductionsReport = (stats?: PayrollStats, month?: string): string => {
     const lines = [
       ['CareVance HRMS - Statutory Deductions Report'],
@@ -175,32 +124,22 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
     return lines.map(line => line.join(',')).join('\n');
   };
 
-  const generateBankReport = (departments: any[], month?: string): string => {
-    const totalEmployees = departments.reduce((sum, d) => sum + d.employee_count, 0);
-    const totalNetPay = departments.reduce((sum, d) => sum + d.total_net_pay, 0);
+  const generateBankReport = (stats?: PayrollStats, month?: string): string => {
     const lines = [
       ['CareVance HRMS - Bank Transfer Report'],
       [`Month: ${month}`],
       [`Generated on: ${new Date().toLocaleString()}`],
       [''],
-      ['Department-wise Summary'],
-      ['Department', 'Employees', 'Processed', 'Net Pay (₹)'],
+      ['Total Employees', String(stats?.total_employees || 0)],
+      ['Net Pay', `₹${(stats?.total_net_pay || 0).toLocaleString('en-IN')}`],
+      [''],
+      ['Note: Employee-wise bank details are available in employee profiles.'],
+      ['Use the "Bank Transfer" action in Payroll Run to generate NEFT file.'],
     ];
-    
-    departments.forEach(dept => {
-      lines.push([dept.name, String(dept.employee_count), String(dept.processed_count), String(dept.total_net_pay)]);
-    });
-    
-    lines.push(['']);
-    lines.push(['TOTAL', String(totalEmployees), String(totalEmployees), String(totalNetPay)]);
-    lines.push(['']);
-    lines.push(['Note: Employee-wise bank details are available in employee profiles.']);
-    lines.push(['Use the "Bank Transfer" action in Payroll Run to generate NEFT file.']);
-    
     return lines.map(line => line.join(',')).join('\n');
   };
 
-  const generateRegisterReport = (stats: PayrollStats | undefined, departments: any[], month?: string): string => {
+  const generateRegisterReport = (stats: PayrollStats | undefined, month?: string): string => {
     const lines = [
       ['CareVance HRMS - Payroll Register'],
       [`Month: ${month}`],
@@ -212,15 +151,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
       ['Gross Salary', `₹${(stats?.total_gross || 0).toLocaleString('en-IN')}`],
       ['Total Deductions', `₹${(stats?.total_deductions || 0).toLocaleString('en-IN')}`],
       ['Net Pay', `₹${(stats?.total_net_pay || 0).toLocaleString('en-IN')}`],
-      [''],
-      ['Department Breakdown'],
-      ['Department', 'Employees', 'Processed', 'Net Pay (₹)'],
     ];
-    
-    departments.forEach(dept => {
-      lines.push([dept.name, String(dept.employee_count), String(dept.processed_count), String(dept.total_net_pay)]);
-    });
-    
     return lines.map(line => line.join(',')).join('\n');
   };
 

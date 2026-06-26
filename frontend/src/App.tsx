@@ -93,7 +93,6 @@ const TaxProofsReview = lazyWithChunkRetry(() => import('@/pages/TaxProofsReview
 // Payroll Setup (page-based onboarding)
 const SetupWelcome = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupWelcome'));
 const SetupDefaults = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupDefaults'));
-const SetupDepartments = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupDepartments'));
 const SetupEmployees = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupEmployees'));
 const SetupCompliance = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupCompliance'));
 const SetupStatutory = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupStatutory'));
@@ -628,7 +627,6 @@ function App() {
             {/* Payroll Setup (page-based onboarding) */}
             <Route path="payroll/setup" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupWelcome /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/defaults" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupDefaults /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/departments" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupDepartments /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/employees" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupEmployees /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/compliance" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupCompliance /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/statutory" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupStatutory /></AdminRoute></PlanFeatureRoute>} />

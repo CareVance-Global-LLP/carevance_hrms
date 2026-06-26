@@ -13,7 +13,6 @@ interface NextStepsCardProps {
 const STEP_PATHS: Record<string, string> = {
   welcome: '/payroll/setup',
   defaults: '/payroll/setup/defaults',
-  departments: '/payroll/setup/departments',
   employees: '/payroll/setup/employees',
   compliance: '/payroll/setup/compliance',
   statutory: '/payroll/setup/statutory',
@@ -23,9 +22,8 @@ const STEP_PATHS: Record<string, string> = {
 };
 
 const ACTION_LABELS: Record<string, { title: string; description: string; cta: string; to: string }> = {
-  welcome: { title: 'Welcome — start the setup journey', description: 'A guided tour of all 9 setup steps.', cta: 'Open Setup', to: '/payroll/setup' },
+  welcome: { title: 'Welcome — start the setup journey', description: 'A guided tour of all 8 setup steps.', cta: 'Open Setup', to: '/payroll/setup' },
   defaults: { title: 'Configure your payroll defaults', description: 'Set Basic %, HRA %, working days, PT state and compliance toggles.', cta: 'Configure Defaults', to: '/payroll/setup/defaults' },
-  departments: { title: 'Set up department templates', description: 'Define default salary structure per department.', cta: 'Set Up Departments', to: '/payroll/setup/departments' },
   employees: { title: 'Add CTCs for your employees', description: 'Set the annual CTC and tax regime for each employee.', cta: 'Add Employees', to: '/payroll/setup/employees' },
   compliance: { title: 'Configure compliance toggles', description: 'PF, ESI, PT, TDS, LWF on/off per organization.', cta: 'Configure Compliance', to: '/payroll/setup/compliance' },
   statutory: { title: 'Enter your statutory details', description: 'TAN, PAN, PF/ESI establishment codes used on filings.', cta: 'Add Statutory Details', to: '/payroll/setup/statutory' },

@@ -4,7 +4,6 @@ import { payrollApi } from '@/services/api';
 export type SetupStepId =
   | 'welcome'
   | 'defaults'
-  | 'departments'
   | 'employees'
   | 'compliance'
   | 'statutory'

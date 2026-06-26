@@ -20,6 +20,8 @@ import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
 import type { PayGroupEmployee } from '@/types';
 import { Virtuoso } from 'react-virtuoso';
 import { cn } from '@/utils/cn';
+import { useToast } from '@/components/ui/Toast';
+import { getApiErrorMessage } from '@/services/api';
 
 interface BulkPayrollMatrixProps {
   payGroupId: number;
@@ -57,6 +59,7 @@ export default function BulkPayrollMatrix({
   const [payGroupName, setPayGroupName] = useState<string>('Pay Group');
 
   const queryClient = useQueryClient();
+  const { show } = useToast();
 
   // Fetch employees with per-step completion status
   const { data: employeesData, isLoading: isEmployeesLoading } = useQuery({
@@ -151,12 +154,34 @@ export default function BulkPayrollMatrix({
   const totalCount = employees?.length ?? 0;
   const isStepComplete = completedCount === totalCount && totalCount > 0;
 
-  // Process All mutation (placeholder for step 6)
+  // Process All mutation — actually processes payroll for all employees
+  // in the pay group (not just marking step 6 complete).
   const processAllMutation = useMutation({
-    mutationFn: () => payrollApi.completeAllSteps(payGroupId, { step: 6 }),
-    onSuccess: () => {
+    mutationFn: () => {
+      const userIds = employees?.map((e) => e.id) ?? [];
+      return payrollApi.processPayGroupSelectedEmployees(payGroupId, {
+        month_year: monthYear,
+        user_ids: userIds,
+        working_days: 26,
+      });
+    },
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+      const succeeded = (data as any)?.succeeded?.length ?? 0;
+      const failed = (data as any)?.failed?.length ?? 0;
+      show({
+        kind: failed > 0 ? 'warning' : 'success',
+        message: `Payroll processed: ${succeeded} succeeded${failed > 0 ? `, ${failed} failed` : ''}`,
+      });
+    },
+    onError: (err: unknown) => {
+      show({
+        kind: 'error',
+        message: getApiErrorMessage(err, 'Failed to process payroll for pay group.'),
+      });
     },
   });
 
@@ -420,6 +445,7 @@ export default function BulkPayrollMatrix({
             {/* Process All — only on Step 6 when all done */}
             {isStepComplete && currentStep === 6 && (
               <Button
+                variant="primary"
                 size="sm"
                 onClick={() => processAllMutation.mutate()}
                 disabled={processAllMutation.isPending}

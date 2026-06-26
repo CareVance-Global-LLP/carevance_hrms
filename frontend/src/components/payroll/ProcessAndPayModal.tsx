@@ -3,7 +3,7 @@ import {
   X, Play, Loader2, IndianRupee, Users, AlertTriangle, Landmark,
   Check, Download, Wallet, Info, ChevronDown, ChevronUp, FileText,
 } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -51,6 +51,7 @@ export default function ProcessAndPayModal({
   onComplete,
 }: ProcessAndPayModalProps) {
   const { show } = useToast();
+  const queryClient = useQueryClient();
   const [stage, setStage] = useState<Stage>('review');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +65,10 @@ export default function ProcessAndPayModal({
     onSuccess: (data: any) => {
       setResult(data);
       setStage('ready');
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'run-detail'] });
       show({
         kind: 'success',
         message: data?.already_advanced
@@ -84,6 +89,10 @@ export default function ProcessAndPayModal({
     mutationFn: (runId: number) => payrollApi.disburseRun(runId).then((r) => r.data),
     onSuccess: () => {
       setStage('done');
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'run-detail'] });
       show({ kind: 'success', message: 'Payroll disbursed. Run is now immutable for compliance.' });
       onComplete?.();
     },

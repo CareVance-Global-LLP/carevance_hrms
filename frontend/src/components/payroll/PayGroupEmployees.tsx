@@ -22,7 +22,6 @@ import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import InfoTooltip from '@/components/ui/InfoTooltip';
-import type { PayrollDepartmentEmployee } from '@/types';
 
 interface PayGroupEmployeesProps {
   payGroupId: number;
@@ -58,7 +57,7 @@ function EmployeeCard({
   onViewPayslip,
   onDownloadPayslip,
 }: {
-  employee: PayrollDepartmentEmployee;
+  employee: any;
   isSelected: boolean;
   onSelect: () => void;
   onClick: () => void;
@@ -275,7 +274,6 @@ export default function PayGroupEmployees({
       queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'employees'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'department'] });
       if (data?.failed?.length > 0) {
         const reasons = data.failed.map((f: { user_id: number; reason: string }) => `#${f.user_id}: ${f.reason}`).join('\n');
         alert(`Processed ${data.succeeded.length} • Failed ${data.failed.length}\n\n${reasons}`);
@@ -356,8 +354,7 @@ export default function PayGroupEmployees({
       return (
         emp.name.toLowerCase().includes(q) ||
         emp.email.toLowerCase().includes(q) ||
-        (emp.designation ?? '').toLowerCase().includes(q) ||
-        (emp.department ?? '').toLowerCase().includes(q)
+        (emp.designation ?? '').toLowerCase().includes(q)
       );
     });
   }, [employees, searchQuery]);
@@ -530,7 +527,7 @@ export default function PayGroupEmployees({
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <TextInput
-            placeholder="Search by name, email, department, or designation..."
+            placeholder="Search by name, email, or designation..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 w-full sm:w-72"
@@ -587,7 +584,7 @@ export default function PayGroupEmployees({
             {filteredEmployees.map((employee) => (
               <EmployeeCard
                 key={employee.id}
-                employee={employee as unknown as PayrollDepartmentEmployee}
+                employee={employee as any}
                 isSelected={selectedEmployees.has(employee.id)}
                 onSelect={() => toggleSelect(employee.id)}
                 onClick={() => onSelectEmployee(employee.id)}

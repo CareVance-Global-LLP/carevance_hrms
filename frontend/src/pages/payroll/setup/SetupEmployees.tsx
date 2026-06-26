@@ -95,7 +95,6 @@ export default function SetupEmployees() {
 
       queryClient.invalidateQueries({ queryKey: ['payroll'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'onboarding-status'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'department'] });
       setCtcs({});
       setRegimes({});
 

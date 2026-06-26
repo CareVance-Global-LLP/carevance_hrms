@@ -5,7 +5,6 @@ import {
   CheckCircle,
   Search,
   Users,
-  Building2,
   UserX,
   ChevronDown,
 } from 'lucide-react';
@@ -17,7 +16,7 @@ import {
 } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
-import type { AllEmployee, PayrollDepartment } from '@/types';
+import type { AllEmployee } from '@/types';
 
 interface PayGroupModalProps {
   isOpen: boolean;
@@ -45,7 +44,6 @@ export default function PayGroupModal({
   // ALL useState hooks at the top
   const [name, setName] = useState('');
   const [search, setSearch] = useState('');
-  const [selectedDeptId, setSelectedDeptId] = useState<'all' | number>('all');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
   const [step, setStep] = useState<'configure' | 'success'>('configure');
@@ -64,7 +62,6 @@ export default function PayGroupModal({
     if (isOpen) {
       setName('');
       setSearch('');
-      setSelectedDeptId('all');
       setSelectedIds(new Set());
       setPage(1);
       setStep('configure');
@@ -75,32 +72,17 @@ export default function PayGroupModal({
   // When filters change, jump back to page 1.
   useEffect(() => {
     setPage(1);
-  }, [deferredSearch, selectedDeptId]);
-
-  // Departments for the filter dropdown. Fetched once when the modal
-  // opens; cached for the rest of the session.
-  const { data: departmentsData } = useQuery({
-    queryKey: ['payroll', 'departments', monthYear],
-    queryFn: () => payrollApi.getDepartments({ month_year: monthYear }).then((r) => r.data),
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const departments: PayrollDepartment[] = useMemo(
-    () => (departmentsData?.departments ?? []) as PayrollDepartment[],
-    [departmentsData],
-  );
+  }, [deferredSearch]);
 
   // Employees for the picker. Refetches on filter / page change.
   // We use `placeholderData: keepPreviousData` so a "Load More"
   // click doesn't blank the table during the next-page fetch.
   const employeesQuery = useQuery({
-    queryKey: ['payroll', 'all-employees', deferredSearch, selectedDeptId, page],
+    queryKey: ['payroll', 'all-employees', deferredSearch, page],
     queryFn: () =>
       payrollApi
         .getAllEmployees({
           search: deferredSearch || undefined,
-          department_id: selectedDeptId === 'all' ? undefined : selectedDeptId,
           page,
           per_page: PAGE_SIZE,
         })
@@ -288,7 +270,7 @@ export default function PayGroupModal({
                 />
               </div>
 
-              {/* Search + Department filter */}
+              {/* Search */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
                   <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -296,27 +278,9 @@ export default function PayGroupModal({
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by name, email, department, or designation..."
+                    placeholder="Search by name, email, or designation..."
                     className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
-                </div>
-                <div className="relative sm:w-56">
-                  <Building2 className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <select
-                    value={selectedDeptId === 'all' ? 'all' : String(selectedDeptId)}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setSelectedDeptId(v === 'all' ? 'all' : Number(v));
-                    }}
-                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
-                  >
-                    <option value="all">All Departments</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={String(d.id)}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
 
@@ -357,11 +321,10 @@ export default function PayGroupModal({
               {/* Employee list (table-style, fills remaining height) */}
               <div className="flex-1 min-h-0 border border-slate-200 rounded-lg overflow-hidden flex flex-col bg-white">
                 {/* Sticky table-style header */}
-                <div className="sticky top-0 z-10 grid grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-200">
+                <div className="sticky top-0 z-10 grid grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)] gap-3 items-center px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border-b border-slate-200">
                   <div className="w-4" />
                   <div>Name</div>
                   <div>Email</div>
-                  <div>Department</div>
                   <div>Designation</div>
                 </div>
 
@@ -386,8 +349,8 @@ export default function PayGroupModal({
                           No employees found
                         </h4>
                         <p className="text-xs text-slate-500 max-w-xs">
-                          {deferredSearch || selectedDeptId !== 'all'
-                            ? 'Try a different search term or pick "All Departments".'
+                          {deferredSearch
+                            ? 'Try a different search term.'
                             : 'No employees are available in this organization yet.'}
                         </p>
                       </div>
@@ -400,7 +363,7 @@ export default function PayGroupModal({
                       return (
                         <label
                           key={emp.id}
-                          className={`grid grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center px-3 py-2.5 cursor-pointer hover:bg-slate-50 transition-colors ${
+                          className={`grid grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)] gap-3 items-center px-3 py-2.5 cursor-pointer hover:bg-slate-50 transition-colors ${
                             checked ? 'bg-blue-50' : ''
                           }`}
                         >
@@ -415,9 +378,6 @@ export default function PayGroupModal({
                           </div>
                           <div className="text-xs text-slate-500 truncate">
                             {emp.email}
-                          </div>
-                          <div className="text-xs text-slate-700 truncate">
-                            {emp.department ?? '—'}
                           </div>
                           <div className="text-xs text-slate-500 truncate">
                             {emp.designation ?? emp.role}
@@ -503,7 +463,7 @@ function SkeletonRows({ count }: { count: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="grid grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 items-center px-3 py-2.5 animate-pulse"
+          className="grid grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,1fr)] gap-3 items-center px-3 py-2.5 animate-pulse"
         >
           <div className="h-4 w-4 bg-slate-200 rounded" />
           <div className="h-3 bg-slate-200 rounded w-3/4" />

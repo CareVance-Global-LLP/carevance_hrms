@@ -66,7 +66,7 @@ interface EmployeePayrollWizardProps {
   onBack: () => void;
   /**
    * Label for the post-processing "back" button shown after a payroll
-   * run has been processed. Defaults to "Back to Department".
+   * run has been processed. Defaults to "Back to Dashboard".
    * Set to "Back to Pay Group" when the user came from a pay group.
    */
    backLabel?: string;
@@ -113,7 +113,7 @@ export default function EmployeePayrollWizard({
   controlledStep,
   onStepChange,
   onBack,
-  backLabel = 'Back to Department',
+  backLabel = 'Back to Dashboard',
   onComplete,
   onViewRun,
 }: EmployeePayrollWizardProps) {
@@ -375,7 +375,6 @@ export default function EmployeePayrollWizard({
         }
       } catch { /* non-fatal */ }
       // Refresh dependent views so the next screen shows fresh data
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'department'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'run-detail'] });
@@ -620,6 +619,8 @@ export default function EmployeePayrollWizard({
   // Get employee data safely
   const employee = data?.employee;
   const time_tracking = data?.time_tracking;
+  const existingPayroll = data?.existing_payroll;
+  const isAlreadyProcessed = Boolean(existingPayroll && existingPayroll.id);
 
   // Loading state - must be after all hooks
   if (isLoading || !data || !template || !employee) {
@@ -1402,16 +1403,17 @@ export default function EmployeePayrollWizard({
             <Button variant="secondary" onClick={() => setCurrentStep(2)}>
               Back
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                // In matrix mode: mark step 3 done only.
-                handleContinue(4, 3);
-              }}
-              iconRight={<ChevronRight className="h-4 w-4" />}
-            >
-              Continue
-            </Button>
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      handleContinue(6, 5);
+                      processPayrollMutation.mutate();
+                    }}
+                    disabled={processPayrollMutation.isPending || !annualCtc || parseFloat(annualCtc) <= 0}
+                    iconLeft={processPayrollMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  >
+                    {processPayrollMutation.isPending ? 'Processing...' : 'Process Payroll'}
+                  </Button>
           </div>
         </div>
       </div>
@@ -1610,7 +1612,7 @@ export default function EmployeePayrollWizard({
           </SurfaceCard>
 
           {/* Confirmation */}
-          <SurfaceCard className={`p-6 ${processPayrollMutation.isSuccess ? 'bg-emerald-50 border-emerald-200' : ''}`}>
+          <SurfaceCard className={`p-6 ${processPayrollMutation.isSuccess || isAlreadyProcessed ? 'bg-emerald-50 border-emerald-200' : ''}`}>
             {processPayrollMutation.isSuccess ? (
               <div className="text-center py-2">
                 <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-emerald-600" />
@@ -1648,6 +1650,37 @@ export default function EmployeePayrollWizard({
                   Tip: you can always re-open this run from <strong>Recent Payroll Runs</strong> on the dashboard.
                 </p>
               </div>
+            ) : isAlreadyProcessed ? (
+              <div className="text-center py-2">
+                <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-emerald-600" />
+                <h3 className="text-lg font-semibold text-emerald-900 mb-2">Payroll Already Processed</h3>
+                <p className="text-emerald-700 mb-5">
+                  Payroll for {monthYear} has already been processed.
+                  Net Pay: ₹{Number(existingPayroll?.net_pay ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+
+                <div className="bg-white border border-blue-200 rounded-lg p-4 mb-5 text-left max-w-md mx-auto">
+                  <div className="flex items-center gap-2 mb-3">
+                    <ListChecks className="h-4 w-4 text-blue-600" />
+                    <p className="text-sm font-semibold text-blue-900">What's next?</p>
+                  </div>
+                  <ol className="text-sm text-slate-700 space-y-1.5">
+                    <li className="flex gap-2"><span className="font-semibold text-blue-600">1.</span> <span><strong>Lock</strong> the run to finalize calculations.</span></li>
+                    <li className="flex gap-2"><span className="font-semibold text-blue-600">2.</span> <span><strong>Approve</strong> as admin / manager.</span></li>
+                    <li className="flex gap-2"><span className="font-semibold text-blue-600">3.</span> <span><strong>Release</strong> to generate the bank file.</span></li>
+                    <li className="flex gap-2"><span className="font-semibold text-blue-600">4.</span> <span><strong>Disburse</strong> via your banking portal.</span></li>
+                  </ol>
+                </div>
+
+                <div className="flex justify-center gap-3 flex-wrap">
+                  <Button variant="secondary" onClick={onBack}>
+                    {backLabel}
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500 mt-4">
+                  View this run from <strong>Recent Payroll Runs</strong> on the dashboard.
+                </p>
+              </div>
             ) : (
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -1674,7 +1707,7 @@ export default function EmployeePayrollWizard({
                       handleContinue(6, 5);
                       processPayrollMutation.mutate();
                     }}
-                    disabled={processPayrollMutation.isPending}
+                    disabled={processPayrollMutation.isPending || !annualCtc || parseFloat(annualCtc) <= 0}
                     iconLeft={processPayrollMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   >
                     {processPayrollMutation.isPending ? 'Processing...' : 'Process Payroll'}
@@ -1696,7 +1729,7 @@ export default function EmployeePayrollWizard({
           variant="ghost"
           onClick={() => {
             if (currentStep === 0) {
-              // Step 1 (Attendance) → exit wizard back to department view
+              // Step 1 (Attendance) → exit wizard back
               onBack();
             } else {
               // Any later step → navigate to the previous step within
@@ -1711,7 +1744,7 @@ export default function EmployeePayrollWizard({
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{employee.name}</h1>
           <p className="text-sm text-slate-500">
-            {employee.designation || employee.role} • {employee.department || 'No Department'}
+            {employee.designation || employee.role}
           </p>
         </div>
       </div>

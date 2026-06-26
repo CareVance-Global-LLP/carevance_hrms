@@ -8,7 +8,6 @@ import Button from '@/components/ui/Button';
 
 const PREVIEW_STEPS = [
   { icon: Building2, label: 'Organization Defaults', desc: 'Set Basic %, HRA %, working days, PT state', tooltip: 'Default salary structure that applies to every new employee. Sets the headline structure of every payslip.' },
-  { icon: Users, label: 'Department Templates', desc: 'Default salary structure per department', tooltip: 'Override org defaults per department. Useful when different teams have different pay mixes.' },
   { icon: UsersIcon, label: 'Employees & CTC', desc: 'Add employees and assign their annual CTC', tooltip: 'Enter each employee\'s Cost to Company and tax regime. CTC drives PF, ESI, and tax calculations.' },
   { icon: ClipboardCheck, label: 'Compliance Toggles', desc: 'Configure PF, ESI, PT, TDS, LWF', tooltip: 'Choose which statutory deductions apply. PF and ESI are mandatory once you cross the employee/salary thresholds.' },
   { icon: ScrollText, label: 'Statutory Details', desc: 'Set TAN, PAN, establishment codes', tooltip: 'Government IDs (TAN, PAN, PF/ESI codes) required on every statutory filing.' },
@@ -36,9 +35,9 @@ export default function SetupWelcome() {
             <Sparkles className="h-7 w-7" />
           </div>
           <div className="flex-1">
-            <h3 className="text-xl font-bold text-slate-900">Set up payroll in 9 simple steps</h3>
+            <h3 className="text-xl font-bold text-slate-900">Set up payroll in 8 simple steps</h3>
             <p className="text-sm text-slate-600 mt-1">
-              We'll guide you through setting up defaults, departments, employees, compliance, and a test run.
+              We'll guide you through setting up defaults, employees, compliance, and a test run.
               Each step is independent — you can skip around and come back later.
             </p>
             <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
@@ -46,7 +45,7 @@ export default function SetupWelcome() {
                 <Clock className="h-3 w-3" /> ~15 minutes total
               </span>
               <span className="flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-emerald-500" /> {completedCount}/9 complete
+                <CheckCircle2 className="h-3 w-3 text-emerald-500" /> {completedCount}/8 complete
               </span>
             </div>
           </div>

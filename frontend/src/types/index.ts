@@ -1222,15 +1222,6 @@ export interface UpdatePayrollProfileRequest {
 }
 
 // Comprehensive Payroll Types
-export interface PayrollDepartment {
-  id: number;
-  name: string;
-  employee_count: number;
-  processed_count: number;
-  paid_count: number;
-  total_net_pay: number;
-}
-
 export interface PayrollDepartmentEmployee {
   id: number;
   name: string;
@@ -1296,11 +1287,6 @@ export interface StepsCompleted {
  * Slimmer than PayrollDepartmentEmployee (no time_tracking, no
  * template controls) because the BulkPayrollMatrix only needs the
  * fields it actually renders.
- *
- * Defined as a structural type rather than a strict interface so the
- * shared EmployeeCard component (which expects PayrollDepartmentEmployee)
- * can render PayGroupEmployee rows. The bulk matrix view passes its
- * employees directly through.
  */
 export type PayGroupEmployee = Omit<
   PayrollDepartmentEmployee,
