@@ -2324,6 +2324,18 @@ export const payrollApi = {
     tds_enabled?: boolean;
   }) =>
     api.put<{ success: boolean; message: string; statutory_rules: any }>(`/payroll/pay-group-settings/${id}/statutory-rules`, data),
+
+  // Payslip Management
+  generatePayslips: (data: { pay_group_id: number; pay_month: number; pay_year: number }) =>
+    api.post<{ success: boolean; message: string; data: any }>('/payroll/payslips/generate', data),
+  listPayslips: (params: { pay_group_id: number; pay_month: number; pay_year: number }) =>
+    api.get<{ success: boolean; data: any[] }>('/payroll/payslips', { params }),
+  getPayslip: (id: number) =>
+    api.get<{ success: boolean; data: any }>(`/payroll/payslips/${id}`),
+  downloadPayslipPdfById: (id: number) =>
+    api.get<{ success: boolean; url: string }>(`/payroll/payslips/${id}/pdf`),
+  getPayslipYtd: (id: number, payYear: number) =>
+    api.get<{ success: boolean; data: any[] }>(`/payroll/payslips/${id}/ytd`, { params: { pay_year: payYear } }),
   updatePayGroupFilingDetails: (id: number, data: UpdateFilingDetailsPayload) =>
     api.put<{ success: boolean; message: string; pay_group: PayGroupSettings }>(`/payroll/pay-group-settings/${id}/filing-details`, data),
   getPayGroups: (params?: { is_active?: boolean }) =>

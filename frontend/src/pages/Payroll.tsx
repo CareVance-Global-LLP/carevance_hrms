@@ -77,11 +77,18 @@ export default function PayrollPage() {
     return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   });
 
-  const setSelectedMonth = useCallback((m: string) => {
-    setSelectedMonthRaw(m);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('payroll-selected-month', m);
-    }
+  const [bulkSelectedEmployeeIds, setBulkSelectedEmployeeIds] = useState<number[]>([]);
+
+  // Wrapper that mirrors the value into localStorage so navigating
+  // away (e.g. clicking Reports) and returning keeps the same month
+  // selected.
+  const setSelectedMonth = useCallback((month: string) => {
+    setSelectedMonthRaw(month);
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('payroll-selected-month', month);
+      }
+    } catch { /* non-fatal — private mode or quota */ }
   }, []);
 
   const WIZARD_POS_KEY = 'payroll-wizard-pos';
@@ -196,7 +203,8 @@ export default function PayrollPage() {
     updateParams({ view: 'pay-group', payGroup: payGroupId, emp: null, step: null });
   };
 
-  const handleOpenBulkPayroll = (payGroupId: number) => {
+  const handleOpenBulkPayroll = (payGroupId: number, selectedIds: number[]) => {
+    setBulkSelectedEmployeeIds(selectedIds);
     updateParams({ view: 'bulk-payroll', payGroup: payGroupId, emp: null, step: null });
   };
 
@@ -289,7 +297,7 @@ export default function PayrollPage() {
             monthYear={selectedMonth}
             onBack={handleBackToDashboard}
             onSelectEmployee={handleSelectEmployee}
-            onOpenBulkPayroll={() => handleOpenBulkPayroll(selectedPayGroupId)}
+            onOpenBulkPayroll={(selectedIds) => handleOpenBulkPayroll(selectedPayGroupId, selectedIds)}
             onOpenPayGroupSettings={handleOpenPayGroupSettings}
           />
         )}
@@ -299,6 +307,7 @@ export default function PayrollPage() {
             payGroupId={selectedPayGroupId}
             monthYear={selectedMonth}
             onBack={handleBackToPayGroup}
+            selectedEmployeeIds={bulkSelectedEmployeeIds}
           />
         )}
 

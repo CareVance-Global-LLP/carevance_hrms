@@ -381,20 +381,22 @@ class PayrollAutoProcessService
                 ? max(0, $basic - ($basic / $gross) * $lopDeduction)
                 : 0;
 
-            // PF on payable basic (capped at 15000)
-            $pfWages = min($payableBasic, 15000);
+            // PF on earned basic (pro-rated for days present, BEFORE LOP deduction).
+            // PF applies to actual wages for days worked — LOP is unpaid absence
+            // but the employee still earns PF on the days they were present.
+            // If 1 out of 22 days was worked, PF = 1/22 of the monthly PF amount.
+            $pfWages = min($basic, 15000);
             $pfEmployee = $pfEnabled ? round($pfWages * 0.12, 2) : 0;
             $eps = $pfEnabled ? round($pfWages * 0.0833, 2) : 0;
             $epf = $pfEnabled ? round($pfWages * 0.0367, 2) : 0;
             $pfEmployer = $pfEmployee;
 
-            // ESI on payable gross (ESI eligibility is also on payable wages)
+            // ESI on payable gross (ESI eligibility is on payable wages after LOP)
             $esiApplicable = $esiEnabled && $payableGross <= 21000;
             $esiEmployee = $esiApplicable ? round($payableGross * 0.0075, 2) : 0;
             $esiEmployer = $esiApplicable ? round($payableGross * 0.0325, 2) : 0;
 
-            // PT on payable gross (most states have a monthly slab, e.g.
-            // Maharashtra PT is 0 below Rs 5,000, Rs 175 in 5K-10K, Rs 200 above)
+            // PT on payable gross — applied to actual earned wages (after LOP)
             $pt = $this->calculator->calculatePT($payableGross, $state);
 
             $tds = 0;

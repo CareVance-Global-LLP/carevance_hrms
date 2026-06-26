@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollDepartmentController;
 use App\Http\Controllers\Api\PayrollDiagnosticController;
+use App\Http\Controllers\Api\PayslipController;
 use App\Http\Controllers\Api\PayrollFilingController;
 use App\Http\Controllers\Api\PayrollOnboardingController;
 use App\Http\Controllers\Api\PerformanceGoalController;
@@ -270,6 +271,13 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::get('/tax-proofs/{id}', [TaxProofUploadController::class, 'show']);
     Route::get('/tax-proofs/{id}/download', [TaxProofUploadController::class, 'download']);
     Route::delete('/tax-proofs/{id}', [TaxProofUploadController::class, 'destroy']);
+
+    // Payslip Management
+    Route::post('/payslips/generate', [PayslipController::class, 'generate']);
+    Route::get('/payslips', [PayslipController::class, 'index']);
+    Route::get('/payslips/{id}', [PayslipController::class, 'show']);
+    Route::get('/payslips/{id}/pdf', [PayslipController::class, 'downloadPdf']);
+    Route::get('/payslips/{id}/ytd', [PayslipController::class, 'ytd']);
 
     // Admin-only endpoints
     Route::post('/tax-proofs/bulk-approve', [TaxProofUploadController::class, 'bulkApprove']);

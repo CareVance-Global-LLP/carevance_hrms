@@ -27,6 +27,7 @@ interface BulkPayrollMatrixProps {
   payGroupId: number;
   monthYear: string;
   onBack: () => void;
+  selectedEmployeeIds?: number[]; // empty/undefined = show all (backwards compat)
 }
 
 // The 6 wizard steps, in order. The number is the 1-indexed
@@ -51,6 +52,7 @@ export default function BulkPayrollMatrix({
   payGroupId,
   monthYear,
   onBack,
+  selectedEmployeeIds,
 }: BulkPayrollMatrixProps) {
   // 1-indexed wizard step (1..6). The wizard's internal currentStep is
   // this minus 1.
@@ -86,20 +88,39 @@ export default function BulkPayrollMatrix({
     }
   }, [employeesData, payGroupName]);
 
+  // Derive the full employee list BEFORE the auto-select effect
+  // so we can filter when selectedEmployeeIds is provided.
+  const allEmployees = employeesData?.employees ?? [];
+
   // Auto-select the first employee with current_step matching the
   // active step (or the first employee if no step is set).
+  // When selectedEmployeeIds is set, prefer employees from that list.
   useEffect(() => {
     if (selectedEmployeeId !== null) return;
-    const list = employeesData?.employees ?? [];
-    if (list.length === 0) return;
-    // Prefer an employee who is still on the current step (so the
-    // user picks up where they left off).
-    const candidate =
-      list.find((e) => e.current_step === currentStep) ?? list[0];
-    setSelectedEmployeeId(candidate.id);
-  }, [employeesData, currentStep, selectedEmployeeId]);
+    if (allEmployees.length === 0) return;
 
-  const employees = employeesData?.employees ?? [];
+    // Filter to only selected employees when prop is provided
+    const filteredEmployees = selectedEmployeeIds && selectedEmployeeIds.length > 0
+      ? allEmployees.filter(e => selectedEmployeeIds.includes(e.id))
+      : allEmployees;
+
+    if (filteredEmployees.length === 0) return;
+
+    // Prefer an employee still on current step, then first pending, then first
+    const candidate =
+      filteredEmployees.find((e) => e.current_step === currentStep && e.payroll_status?.payment_status !== 'paid')
+      ?? filteredEmployees.find((e) => e.payroll_status?.payment_status !== 'paid')
+      ?? filteredEmployees.find((e) => e.current_step === currentStep)
+      ?? filteredEmployees[0];
+    setSelectedEmployeeId(candidate.id);
+  }, [employeesData, currentStep, selectedEmployeeId, selectedEmployeeIds]);
+
+  // Filter to only selected employees when selectedEmployeeIds is provided
+  const employees = useMemo(() => {
+    if (!selectedEmployeeIds || selectedEmployeeIds.length === 0) return allEmployees;
+    const idSet = new Set(selectedEmployeeIds);
+    return allEmployees.filter(e => idSet.has(e.id));
+  }, [allEmployees, selectedEmployeeIds]);
   const selectedEmployee = useMemo(
     () => employees.find((e) => e.id === selectedEmployeeId) ?? null,
     [employees, selectedEmployeeId],
@@ -200,7 +221,9 @@ export default function BulkPayrollMatrix({
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 mr-2">
               {formatMonthLabel(monthYear)}
             </span>
-            {employees.length} {employees.length === 1 ? 'employee' : 'employees'} in group
+            {selectedEmployeeIds && selectedEmployeeIds.length > 0
+              ? `${employees.length} of ${allEmployees.length} selected`
+              : `${employees.length} ${employees.length === 1 ? 'employee' : 'employees'} in group`}
           </p>
         </div>
       </div>
@@ -257,7 +280,9 @@ export default function BulkPayrollMatrix({
               Employees
             </h3>
             <p className="text-sm text-slate-700 mt-1">
-              {employees.length} in group
+              {selectedEmployeeIds && selectedEmployeeIds.length > 0
+                ? `${employees.length} selected`
+                : `${employees.length} in group`}
             </p>
           </div>
 

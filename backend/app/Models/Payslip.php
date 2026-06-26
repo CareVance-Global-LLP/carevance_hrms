@@ -11,34 +11,71 @@ class Payslip extends Model
     use HasFactory;
 
     protected $fillable = [
-        'organization_id',
+        'pay_group_id',
         'user_id',
-        'payroll_profile_id',
-        'pay_run_id',
-        'payroll_month',
-        'payslip_code',
-        'gross_pay',
-        'total_deductions',
-        'net_pay',
+        'employee_id',
+        'pay_month',
+        'pay_year',
+        'payslip_number',
         'status',
-        'generated_at',
-        'generated_by',
-        'published_at',
-        'metadata',
+        'total_days',
+        'days_present',
+        'paid_leave',
+        'lop_days',
+        'half_days',
+        'overtime_hours',
+        'earnings',
+        'total_earnings',
+        'deductions',
+        'total_deductions',
+        'net_payable',
+        'net_pay_words',
+        'pf_ee',
+        'pf_er',
+        'edli',
+        'admin_charges',
+        'esi_ee',
+        'esi_er',
+        'pt_amount',
+        'lwf_ee',
+        'lwf_er',
+        'tds',
+        'loan_emi',
+        'advance_recovery',
+        'late_penalty',
+        'employer_contribution',
+        'total_employer_contribution',
+        'ytd_gross',
+        'ytd_deductions',
+        'ytd_net',
+        'ytd_pf_ee',
+        'ytd_esi_ee',
+        'ytd_pt',
+        'ytd_lwf',
+        'pdf_path',
+        'pdf_generated_at',
     ];
 
     protected $casts = [
-        'gross_pay' => 'decimal:2',
-        'total_deductions' => 'decimal:2',
-        'net_pay' => 'decimal:2',
-        'generated_at' => 'datetime',
-        'published_at' => 'datetime',
-        'metadata' => 'array',
+        'earnings' => 'array',
+        'deductions' => 'array',
+        'employer_contribution' => 'array',
+        'total_days' => 'decimal:1',
+        'days_present' => 'decimal:1',
+        'paid_leave' => 'decimal:1',
+        'lop_days' => 'decimal:1',
+        'overtime_hours' => 'decimal:1',
+        'pdf_generated_at' => 'datetime',
     ];
 
-    public function organization(): BelongsTo
+    public function payGroup(): BelongsTo
     {
-        return $this->belongsTo(Organization::class);
+        return $this->belongsTo(PayGroup::class, 'pay_group_id');
+    }
+
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'employee_id');
     }
 
     public function user(): BelongsTo
@@ -46,18 +83,24 @@ class Payslip extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function payrollProfile(): BelongsTo
+    /**
+     * Generate payslip number in format: PAY-YYYY-MM-XXXXX
+     */
+    public static function generateNumber(int $payMonth, int $payYear): string
     {
-        return $this->belongsTo(PayrollProfile::class);
-    }
+        $prefix = 'PAY-' . $payYear . '-' . str_pad($payMonth, 2, '0', STR_PAD_LEFT) . '-';
 
-    public function payRun(): BelongsTo
-    {
-        return $this->belongsTo(PayrollMonthlyRun::class, 'pay_run_id');
-    }
+        $last = self::where('pay_month', $payMonth)
+            ->where('pay_year', $payYear)
+            ->orderBy('id', 'desc')
+            ->value('payslip_number');
 
-    public function generator(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'generated_by');
+        if ($last) {
+            $seq = (int) substr($last, -5) + 1;
+        } else {
+            $seq = 1;
+        }
+
+        return $prefix . str_pad($seq, 5, '0', STR_PAD_LEFT);
     }
 }
