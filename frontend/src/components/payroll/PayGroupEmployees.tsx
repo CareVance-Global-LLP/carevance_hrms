@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   ArrowLeft,
   Search,
@@ -30,7 +30,7 @@ interface PayGroupEmployeesProps {
   monthYear: string;
   onBack: () => void;
   onSelectEmployee: (employeeId: number) => void;
-  onOpenBulkPayroll?: () => void;
+  onOpenBulkPayroll?: (selectedEmployeeIds: number[]) => void;
   onOpenPayGroupSettings?: (payGroupId: number) => void;
 }
 
@@ -101,13 +101,17 @@ function EmployeeCard({
       }`}
     >
       <div className="flex items-start gap-4">
-        {/* Checkbox */}
+        {/* Checkbox — disabled if already paid */}
         <button
-          onClick={(e) => { e.stopPropagation(); onSelect(); }}
-          className="mt-1 flex-shrink-0"
+          onClick={(e) => { e.stopPropagation(); if (!isPaid) onSelect(); }}
+          className={`mt-1 flex-shrink-0 ${isPaid ? 'cursor-not-allowed opacity-40' : ''}`}
+          disabled={isPaid}
+          title={isPaid ? 'Already paid for this month — cannot be selected' : undefined}
         >
           {isSelected ? (
             <CheckSquare className="h-5 w-5 text-emerald-600" />
+          ) : isPaid ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-300" />
           ) : (
             <Square className="h-5 w-5 text-slate-300 hover:text-slate-400" />
           )}
@@ -115,8 +119,12 @@ function EmployeeCard({
 
         {/* Avatar */}
         <div
-          className="h-12 w-12 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center flex-shrink-0 cursor-pointer"
-          onClick={onClick}
+          className={`h-12 w-12 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center flex-shrink-0 ${
+            isPaid ? 'cursor-default' : 'cursor-pointer'
+          }`}
+          onClick={() => {
+            if (!isPaid) onClick();
+          }}
         >
           {employee.avatar ? (
             <img src={employee.avatar} alt={employee.name} className="h-12 w-12 rounded-full" />
@@ -132,12 +140,22 @@ function EmployeeCard({
           <div className="flex items-start justify-between">
             <div>
               <h3
-                className="font-semibold text-slate-900 cursor-pointer hover:text-emerald-600 transition-colors"
-                onClick={onClick}
-              >
-                {employee.name}
-              </h3>
-              <p className="text-sm text-slate-500 truncate">
+                              className={`font-semibold transition-colors ${
+                                isPaid
+                                  ? 'text-slate-500 cursor-default'
+                                  : 'text-slate-900 cursor-pointer hover:text-emerald-600'
+                              }`}
+                              onClick={() => {
+                                if (isPaid) {
+                                  alert(`Payroll already processed for ${employee.name} this month.`);
+                                } else {
+                                  onClick();
+                                }
+                              }}
+                            >
+                              {employee.name}
+                            </h3>
+              <p className={`text-sm truncate ${isPaid ? 'text-slate-400' : 'text-slate-500'}`}>
                 {employee.designation || employee.email}
               </p>
               {employee.employee_code && (
@@ -348,6 +366,21 @@ export default function PayGroupEmployees({
   const employees = data?.employees || [];
   const payGroupName = data?.pay_group?.name ?? 'Pay Group';
 
+  // Auto-deselect any employees that are already paid (prevents stale selection)
+  useEffect(() => {
+    if (employees.length === 0 || selectedEmployees.size === 0) return;
+    const paidIds = new Set(
+      employees
+        .filter(e => e.payroll_status?.payment_status === 'paid')
+        .map(e => e.id)
+    );
+    if (paidIds.size === 0) return;
+    const cleaned = new Set([...selectedEmployees].filter(id => !paidIds.has(id)));
+    if (cleaned.size !== selectedEmployees.size) {
+      setSelectedEmployees(cleaned);
+    }
+  }, [employees]);
+
   // Client-side search filter (matches DepartmentEmployees pattern)
   const searchFilteredEmployees = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -405,12 +438,16 @@ export default function PayGroupEmployees({
     );
   }, [employees]);
 
-  // Selection handlers
+  // Selection handlers — only unpaid (pending) employees are selectable
   const toggleSelectAll = () => {
-    if (selectedEmployees.size === filteredEmployees.length) {
+    const selectableIds = filteredEmployees
+      .filter(e => e.payroll_status?.payment_status !== 'paid')
+      .map(e => e.id);
+
+    if (selectedEmployees.size === selectableIds.length && selectableIds.every(id => selectedEmployees.has(id))) {
       setSelectedEmployees(new Set());
     } else {
-      setSelectedEmployees(new Set(filteredEmployees.map((e) => e.id)));
+      setSelectedEmployees(new Set(selectableIds));
     }
   };
 
@@ -455,14 +492,14 @@ export default function PayGroupEmployees({
           {selectedEmployees.size > 0 && (
             <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-lg">
               <span className="text-sm font-medium text-emerald-900">
-                {selectedEmployees.size} selected
+                {selectedEmployees.size} pending selected
               </span>
               <div className="h-4 w-px bg-emerald-200" />
               <Button
                 variant="primary"
                 size="sm"
                 iconLeft={<Play className="h-4 w-4" />}
-                onClick={() => onOpenBulkPayroll?.()}
+                onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
               >
                 Open Bulk Payroll
               </Button>
@@ -632,7 +669,7 @@ export default function PayGroupEmployees({
                 variant="primary"
                 size="sm"
                 iconLeft={<Play className="h-4 w-4" />}
-                onClick={() => onOpenBulkPayroll?.()}
+                onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
               >
                 Open Bulk Payroll
               </Button>
