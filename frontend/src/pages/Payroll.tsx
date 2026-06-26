@@ -457,7 +457,10 @@ export default function PayrollPage() {
         )}
 
         {viewMode === 'pay-group-settings' && (
-          <PayGroupSettings onBack={handleBackToPayGroup} payGroupId={selectedPayGroupId || undefined} />
+          <PayGroupSettings
+            onBack={(target) => target === 'dashboard' ? handleBackToDashboard() : handleBackToPayGroup()}
+            payGroupId={selectedPayGroupId || undefined}
+          />
         )}
       </div>
 
