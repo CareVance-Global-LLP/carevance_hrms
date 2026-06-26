@@ -511,8 +511,8 @@ function StateWiseTaxConfig({
                             {editingSlabs ? (
                               <input
                                 type="number"
-                                value={slab.min_income}
-                                onChange={(e) => updateSlab(idx, 'min_income', Number(e.target.value))}
+                                value={slab.min_income === 0 ? '' : slab.min_income}
+                                onChange={(e) => updateSlab(idx, 'min_income', e.target.value === '' ? 0 : Number(e.target.value))}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
                               />
                             ) : (
@@ -540,8 +540,8 @@ function StateWiseTaxConfig({
                             {editingSlabs ? (
                               <input
                                 type="number"
-                                value={slab.monthly_tax}
-                                onChange={(e) => updateSlab(idx, 'monthly_tax', Number(e.target.value))}
+                                value={slab.monthly_tax === 0 ? '' : slab.monthly_tax}
+                                onChange={(e) => updateSlab(idx, 'monthly_tax', e.target.value === '' ? 0 : Number(e.target.value))}
                                 className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-right"
                               />
                             ) : (
@@ -689,7 +689,7 @@ function StateWiseTaxConfig({
   );
 }
 
-export default function PayGroupSettings({ onBack, payGroupId }: { onBack: () => void; payGroupId?: number }) {
+export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (target?: 'dashboard' | 'group') => void; payGroupId?: number }) {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -826,7 +826,7 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: () =>
       queryClient.invalidateQueries({ queryKey: ['pay-group-settings'] });
       setExpandedId(null);
       setShowDeleteConfirm(false);
-      onBack();
+      onBack('dashboard');
     },
   });
 
@@ -1002,7 +1002,7 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: () =>
         <Button
           variant="ghost"
           size="sm"
-          onClick={onBack}
+          onClick={() => onBack('group')}
           iconLeft={<ArrowLeft className="h-4 w-4" />}
         >
           Back to Pay Group

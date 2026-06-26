@@ -4,6 +4,12 @@ import { Plus, Copy, Pencil, Trash2, Calculator, ChevronDown, ChevronRight, X, S
 import { payrollApi } from '@/services/api';
 import type { SalaryStructure, SalaryStructureBreakdown, CreateSalaryStructurePayload } from '@/types';
 
+interface OtherEarning {
+  name: string;
+  type: 'fixed' | 'percentage';
+  value: number;
+}
+
 interface FormData {
   name: string;
   description: string;
@@ -21,6 +27,7 @@ interface FormData {
   fuel_maintenance: number;
   nps_percentage: number;
   vpf_percentage: number;
+  other_earnings: OtherEarning[];
   is_default: boolean;
 }
 
@@ -41,8 +48,161 @@ const defaultFormData: FormData = {
   fuel_maintenance: 0,
   nps_percentage: 0,
   vpf_percentage: 0,
+  other_earnings: [],
   is_default: false,
 };
+
+// ── Keka-style input helpers ──────────────────────────────────
+
+function PctInput({
+  value,
+  onChange,
+  label,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  label: string;
+}) {
+  const [display, setDisplay] = useState(value === 0 ? '' : String(value));
+
+  useEffect(() => {
+    setDisplay(value === 0 ? '' : String(value));
+  }, [value]);
+
+  return (
+    <div className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-sm text-gray-700">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          value={display}
+          onChange={(e) => {
+            setDisplay(e.target.value);
+            onChange(e.target.value === '' ? 0 : Number(e.target.value));
+          }}
+          onBlur={() => setDisplay(value === 0 ? '' : String(value))}
+          className="w-20 text-right px-2 py-1 border border-gray-200 rounded-lg text-sm
+                     focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400
+                     outline-none transition-all
+                     [&::-webkit-inner-spin-button]:appearance-none
+                     [&::-webkit-outer-spin-button]:appearance-none"
+          min={0}
+          max={100}
+        />
+        <span className="text-sm text-gray-400 w-4">%</span>
+      </div>
+    </div>
+  );
+}
+
+function RupeeInput({
+  value,
+  onChange,
+  label,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  label: string;
+}) {
+  const [display, setDisplay] = useState(value === 0 ? '' : String(value));
+
+  useEffect(() => {
+    setDisplay(value === 0 ? '' : String(value));
+  }, [value]);
+
+  return (
+    <div className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-sm text-gray-700">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm text-gray-400">₹</span>
+        <input
+          type="number"
+          value={display}
+          onChange={(e) => {
+            setDisplay(e.target.value);
+            onChange(e.target.value === '' ? 0 : Number(e.target.value));
+          }}
+          onBlur={() => setDisplay(value === 0 ? '' : String(value))}
+          className="w-24 text-right px-2 py-1 border border-gray-200 rounded-lg text-sm
+                     focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400
+                     outline-none transition-all
+                     [&::-webkit-inner-spin-button]:appearance-none
+                     [&::-webkit-outer-spin-button]:appearance-none"
+          min={0}
+        />
+      </div>
+    </div>
+  );
+}
+
+function OtherEarningRow({
+  item,
+  index,
+  onChange,
+  onRemove,
+}: {
+  item: OtherEarning;
+  index: number;
+  onChange: (i: number, field: string, val: any) => void;
+  onRemove: (i: number) => void;
+}) {
+  const [nameDisplay, setNameDisplay] = useState(item.name);
+  const [valDisplay, setValDisplay] = useState(item.value === 0 ? '' : String(item.value));
+
+  useEffect(() => {
+    setNameDisplay(item.name);
+    setValDisplay(item.value === 0 ? '' : String(item.value));
+  }, [item.name, item.value]);
+
+  return (
+    <div className="flex items-center gap-2 py-2">
+      <input
+        type="text"
+        value={nameDisplay}
+        onChange={(e) => {
+          setNameDisplay(e.target.value);
+          onChange(index, 'name', e.target.value);
+        }}
+        placeholder="Component name"
+        className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm
+                   focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
+      />
+      <select
+        value={item.type}
+        onChange={(e) => onChange(index, 'type', e.target.value)}
+        className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white
+                   focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
+      >
+        <option value="fixed">₹ Fixed</option>
+        <option value="percentage">% %</option>
+      </select>
+      <div className="flex items-center gap-1">
+        {item.type === 'fixed' && <span className="text-sm text-gray-400">₹</span>}
+        <input
+          type="number"
+          value={valDisplay}
+          onChange={(e) => {
+            setValDisplay(e.target.value);
+            onChange(index, 'value', e.target.value === '' ? 0 : Number(e.target.value));
+          }}
+          onBlur={() => setValDisplay(item.value === 0 ? '' : String(item.value))}
+          className="w-20 text-right px-2 py-1.5 border border-gray-200 rounded-lg text-sm
+                     focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none
+                     [&::-webkit-inner-spin-button]:appearance-none
+                     [&::-webkit-outer-spin-button]:appearance-none"
+          min={0}
+        />
+        {item.type === 'percentage' && <span className="text-sm text-gray-400">%</span>}
+      </div>
+      <button
+        onClick={() => onRemove(index)}
+        className="p-1 text-gray-300 hover:text-red-500 transition-colors"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
 
 export default function SalaryStructureTemplates() {
   const queryClient = useQueryClient();
@@ -124,6 +284,7 @@ export default function SalaryStructureTemplates() {
         fuel_maintenance: original.fuel_maintenance,
         nps_percentage: original.nps_percentage,
         vpf_percentage: original.vpf_percentage,
+        other_earnings: original.other_earnings ?? [],
       };
       return payrollApi.createSalaryStructure(payload);
     },
@@ -151,6 +312,7 @@ export default function SalaryStructureTemplates() {
       fuel_maintenance: structure.fuel_maintenance,
       nps_percentage: structure.nps_percentage,
       vpf_percentage: structure.vpf_percentage,
+      other_earnings: structure.other_earnings ?? [],
       is_default: structure.is_default,
     });
   };
@@ -377,14 +539,16 @@ export default function SalaryStructureTemplates() {
               </button>
             </div>
 
-            <div className="px-6 py-4 space-y-4">
+            <div className="px-6 py-4 space-y-5">
+              {/* Name & Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm
+                             focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
                   placeholder="e.g., Standard 50-50"
                 />
               </div>
@@ -394,111 +558,94 @@ export default function SalaryStructureTemplates() {
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm
+                             focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 outline-none"
                   rows={2}
                   placeholder="Optional description"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Basic %</label>
-                  <input
-                    type="number"
-                    value={formData.basic_percentage}
-                    onChange={(e) => setFormData({ ...formData, basic_percentage: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    min="0"
-                    max="100"
-                    step="1"
-                  />
+              {/* ── Salary Components Card ── */}
+              <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  Salary Components
+                </h4>
+
+                {/* Percentage-based */}
+                <PctInput label="Basic %" value={formData.basic_percentage} onChange={(v) => setFormData({ ...formData, basic_percentage: v })} />
+                <PctInput label="HRA %" value={formData.hra_percentage} onChange={(v) => setFormData({ ...formData, hra_percentage: v })} />
+                <PctInput label="DA %" value={formData.da_percentage} onChange={(v) => setFormData({ ...formData, da_percentage: v })} />
+                <PctInput label="NPS %" value={formData.nps_percentage} onChange={(v) => setFormData({ ...formData, nps_percentage: v })} />
+                <PctInput label="VPF %" value={formData.vpf_percentage} onChange={(v) => setFormData({ ...formData, vpf_percentage: v })} />
+
+                {/* Divider */}
+                <div className="flex items-center gap-3 my-3">
+                  <div className="flex-1 border-t border-gray-200"></div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">Fixed Amounts (₹/month)</span>
+                  <div className="flex-1 border-t border-gray-200"></div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">HRA %</label>
-                  <input
-                    type="number"
-                    value={formData.hra_percentage}
-                    onChange={(e) => setFormData({ ...formData, hra_percentage: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    min="0"
-                    max="100"
-                    step="1"
-                  />
+
+                {/* Fixed amounts */}
+                <RupeeInput label="Conveyance" value={formData.conveyance_amount} onChange={(v) => setFormData({ ...formData, conveyance_amount: v })} />
+                <RupeeInput label="CCA" value={formData.cca_amount} onChange={(v) => setFormData({ ...formData, cca_amount: v })} />
+                <RupeeInput label="Education Allowance" value={formData.education_allowance} onChange={(v) => setFormData({ ...formData, education_allowance: v })} />
+                <RupeeInput label="Internet Allowance" value={formData.internet_allowance} onChange={(v) => setFormData({ ...formData, internet_allowance: v })} />
+                <RupeeInput label="Meal Allowance" value={formData.meal_allowance} onChange={(v) => setFormData({ ...formData, meal_allowance: v })} />
+                <RupeeInput label="Transport Allowance" value={formData.transport_allowance} onChange={(v) => setFormData({ ...formData, transport_allowance: v })} />
+                <RupeeInput label="Uniform Allowance" value={formData.uniform_allowance} onChange={(v) => setFormData({ ...formData, uniform_allowance: v })} />
+                <RupeeInput label="Books & Periodicals" value={formData.books_periodicals} onChange={(v) => setFormData({ ...formData, books_periodicals: v })} />
+                <RupeeInput label="Fuel & Maintenance" value={formData.fuel_maintenance} onChange={(v) => setFormData({ ...formData, fuel_maintenance: v })} />
+
+                {/* ── Other Earnings ── */}
+                <div className="flex items-center gap-3 my-3">
+                  <div className="flex-1 border-t border-gray-200"></div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">Other Earnings</span>
+                  <div className="flex-1 border-t border-gray-200"></div>
                 </div>
+
+                {formData.other_earnings.length > 0 && (
+                  <div className="space-y-1">
+                    {formData.other_earnings.map((item, idx) => (
+                      <OtherEarningRow
+                        key={idx}
+                        item={item}
+                        index={idx}
+                        onChange={(i, field, val) => {
+                          const updated = [...formData.other_earnings];
+                          (updated[i] as any)[field] = val;
+                          setFormData({ ...formData, other_earnings: updated });
+                        }}
+                        onRemove={(i) => {
+                          setFormData({
+                            ...formData,
+                            other_earnings: formData.other_earnings.filter((_, j) => j !== i),
+                          });
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      other_earnings: [
+                        ...formData.other_earnings,
+                        { name: '', type: 'fixed', value: 0 },
+                      ],
+                    })
+                  }
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+                             text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg
+                             hover:bg-indigo-100 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Earning
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Conveyance (₹/month)</label>
-                  <input
-                    type="number"
-                    value={formData.conveyance_amount}
-                    onChange={(e) => setFormData({ ...formData, conveyance_amount: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">DA %</label>
-                  <input
-                    type="number"
-                    value={formData.da_percentage}
-                    onChange={(e) => setFormData({ ...formData, da_percentage: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    min="0"
-                    max="100"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">CCA (₹/month)</label>
-                  <input
-                    type="number"
-                    value={formData.cca_amount}
-                    onChange={(e) => setFormData({ ...formData, cca_amount: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Education Allowance</label>
-                  <input
-                    type="number"
-                    value={formData.education_allowance}
-                    onChange={(e) => setFormData({ ...formData, education_allowance: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    min="0"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">NPS %</label>
-                  <input
-                    type="number"
-                    value={formData.nps_percentage}
-                    onChange={(e) => setFormData({ ...formData, nps_percentage: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    min="0"
-                    max="100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">VPF %</label>
-                  <input
-                    type="number"
-                    value={formData.vpf_percentage}
-                    onChange={(e) => setFormData({ ...formData, vpf_percentage: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    min="0"
-                    max="100"
-                  />
-                </div>
-              </div>
-
+              {/* Default checkbox */}
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
