@@ -7,6 +7,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import HowItWorksCard from './HowItWorksCard';
 import { useToast } from '@/components/ui/Toast';
+import type { FormulaEvaluateResult, FormulaValidateResult } from '@/types';
 
 const EXAMPLE_FORMULAS = [
   { label: 'HRA (50% of Basic)', expr: 'basic * 0.5', vars: { basic: 50000 } },
@@ -19,26 +20,12 @@ const EXAMPLE_FORMULAS = [
   { label: 'Taxable Income (New)', expr: 'max(0, annual_gross - 75000)', vars: { annual_gross: 1200000 } },
 ];
 
-interface EvaluateResult {
-  success: boolean;
-  result?: number;
-  expression?: string;
-  variables_used?: Record<string, number>;
-  error?: string;
-}
-
-interface ValidateResult {
-  valid: boolean;
-  errors?: string[];
-  parsed?: string;
-}
-
 export default function FormulaEngine() {
   const { show } = useToast();
   const [expression, setExpression] = useState('basic * 0.5');
   const [variablesJson, setVariablesJson] = useState('{"basic": 50000}');
-  const [evalResult, setEvalResult] = useState<EvalResult | null>(null);
-  const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
+  const [evalResult, setEvalResult] = useState<FormulaEvaluateResult | null>(null);
+  const [validateResult, setValidateResult] = useState<FormulaValidateResult | null>(null);
 
   const evaluateMutation = useMutation({
     mutationFn: () => {
@@ -51,7 +38,7 @@ export default function FormulaEngine() {
       return payrollApi.evaluateFormula(expression, vars);
     },
     onSuccess: (data) => {
-      setEvalResult(data as EvaluateResult);
+      setEvalResult(data as FormulaEvaluateResult);
       if (data.success) {
         show({ kind: 'success', message: `Formula evaluated successfully`, durationMs: 3000 });
       }
@@ -64,7 +51,7 @@ export default function FormulaEngine() {
   const validateMutation = useMutation({
     mutationFn: () => payrollApi.validateFormula(expression),
     onSuccess: (data) => {
-      setValidateResult(data as ValidateResult);
+      setValidateResult(data as FormulaValidateResult);
     },
     onError: (e: any) => {
       setValidateResult({ valid: false, errors: [e.message || 'Validation failed'] });

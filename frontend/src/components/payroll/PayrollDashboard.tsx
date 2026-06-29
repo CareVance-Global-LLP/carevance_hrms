@@ -41,6 +41,7 @@ interface PayrollDashboardProps {
   onSelectPayGroup?: (payGroupId: number) => void;
   onOpenDepartmentTemplates?: () => void;
   onOpenUnassignedEmployees?: () => void;
+  onOpenReports?: (stats: { totalEmployees: number; processedCount: number; paidCount: number; totalNetPay: number; pendingCount: number }) => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -205,6 +206,7 @@ export default function PayrollDashboard({
   onSelectPayGroup,
   onOpenDepartmentTemplates,
   onOpenUnassignedEmployees,
+  onOpenReports,
 }: PayrollDashboardProps) {
   const fallbackMonth = useMemo(() => {
     const now = new Date();
@@ -373,9 +375,7 @@ export default function PayrollDashboard({
               icon={DollarSign}
               title="Review Payroll Reports"
               description="View detailed payroll analytics"
-              action={() => {
-                /* open reports */
-              }}
+              action={() => onOpenReports?.(summaryStats)}
               variant="default"
             />
           </div>

@@ -56,13 +56,12 @@ export default function FormulaEnginePage() {
       });
       return payrollApi.evaluateFormula(expression, vars);
     },
-    onSuccess: (response) => {
-      const data = response.data;
+    onSuccess: (data) => {
       setEvaluateResult({
         success: true,
-        result: data.result ?? data.value,
+        result: data.result,
         expression: data.expression ?? expression,
-        variables_used: data.variables_used ?? data.variables,
+        variables_used: data.variables_used ? Object.keys(data.variables_used) : undefined,
       });
       setValidateResult(null);
     },
@@ -79,12 +78,10 @@ export default function FormulaEnginePage() {
 
   const validateMutation = useMutation({
     mutationFn: () => payrollApi.validateFormula(expression),
-    onSuccess: (response) => {
-      const data = response.data;
+    onSuccess: (data) => {
       setValidateResult({
         valid: data.valid !== false,
-        parsed: data.parsed ?? data.expression,
-        variables: data.variables ?? data.variables_used,
+        parsed: data.parsed,
       });
       setEvaluateResult(null);
     },

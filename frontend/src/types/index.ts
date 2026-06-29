@@ -1103,6 +1103,7 @@ export interface AllEmployee {
   department: string | null;
   department_id: number | null;
   designation: string | null;
+  employee_code?: string | null;
 }
 
 /**
@@ -1813,4 +1814,18 @@ export interface UpdateFilingDetailsPayload {
 export interface IndianState {
   code: string;
   name: string;
+}
+
+export interface FormulaEvaluateResult {
+  success: boolean;
+  result?: number;
+  expression?: string;
+  variables_used?: Record<string, number>;
+  error?: string;
+}
+
+export interface FormulaValidateResult {
+  valid: boolean;
+  errors?: string[];
+  parsed?: string;
 }

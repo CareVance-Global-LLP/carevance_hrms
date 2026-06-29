@@ -6,22 +6,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
-import { Search, UserPlus, Calendar, Mail, Building2, Clock, ArrowLeft, Download } from 'lucide-react';
+import { Search, UserPlus, Calendar, Building2, Clock, ArrowLeft, Mail } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { formatDate } from '@/lib/dateTime';
 import { resolveUserRoleLabel } from '@/lib/permissions';
-
-interface HireRecord {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
-  department: string;
-  employee_code?: string;
-  joining_date?: string;
-  created_at: string;
-  avatar?: string;
-}
 
 const resolveEmployeeDepartment = (employee: any) =>
   String(
@@ -34,7 +22,7 @@ const resolveEmployeeDepartment = (employee: any) =>
   ).trim() || 'Unassigned';
 
 export default function NewHiresPage() {
-  const { user, isLoading: isAuthLoading, isAuthenticated } = useAuth();
+  const { isLoading: isAuthLoading, isAuthenticated } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState<'7' | '30' | '90' | '365' | 'all'>('30');
 
@@ -47,14 +35,7 @@ export default function NewHiresPage() {
     enabled: isAuthenticated && !isAuthLoading,
   });
 
-  if (isAuthLoading) {
-    return <PageLoadingState label="Checking authentication..." />;
-  }
-
-  if (!isAuthenticated) {
-    return <PageErrorState message="Please log in to view this page." />;
-  }
-
+  // Compute filtered hires unconditionally to satisfy hooks rules
   const dateRangeLabel = useMemo(() => {
     switch (dateRange) {
       case '7': return 'Last 7 days';

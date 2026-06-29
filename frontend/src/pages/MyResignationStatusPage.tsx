@@ -6,7 +6,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
 import { Calendar, CheckCircle2, Clock, AlertTriangle, ArrowRight, History } from 'lucide-react';
 import { hasAdminAccess } from '@/lib/permissions';
-import { Navigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 interface ResignationData {
   id: number;
@@ -23,15 +23,18 @@ interface ResignationData {
 
 export default function MyResignationStatusPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [currentResignation, setCurrentResignation] = useState<ResignationData | null>(null);
   const [resignationHistory, setResignationHistory] = useState<ResignationData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
 
   // Redirect admin users - they don't need this
-  if (hasAdminAccess(user)) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  useEffect(() => {
+    if (hasAdminAccess(user)) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
 
   useEffect(() => {
     const loadResignationData = async () => {

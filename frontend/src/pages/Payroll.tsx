@@ -15,16 +15,16 @@ import PayGroupEmployees from '@/components/payroll/PayGroupEmployees';
 import BulkPayrollMatrix from '@/components/payroll/BulkPayrollMatrix';
 
 import EmployeePayrollCards from '@/pages/payroll/EmployeePayrollCards';
-import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
 import PayGroupSettings from '@/pages/payroll/PayGroupSettings';
-import type { PayrollOrganizationSettings } from '@/types';
-import type { PayrollStats } from '@/types';
+import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
+import UnassignedEmployees from '@/components/payroll/UnassignedEmployees';
+import type { PayrollOrganizationSettings, PayrollStats } from '@/types';
 
-type ViewMode = 'dashboard' | 'employee' | 'filings' | 'pay-group' | 'bulk-payroll' | 'employee-cards' | 'pay-group-settings' | 'dept-templates';
+type ViewMode = 'dashboard' | 'employee' | 'filings' | 'pay-group' | 'bulk-payroll' | 'employee-cards' | 'pay-group-settings' | 'dept-templates' | 'unassigned-employees';
 
 const VALID_VIEWS: ReadonlySet<ViewMode> = new Set([
   'dashboard', 'employee', 'filings', 'pay-group', 'bulk-payroll',
-  'employee-cards', 'pay-group-settings', 'dept-templates',
+  'employee-cards', 'pay-group-settings', 'dept-templates', 'unassigned-employees',
 ]);
 
 /**
@@ -230,8 +230,8 @@ export default function PayrollPage() {
     setProcessAndPayState((s) => ({ ...s, isOpen: false }));
   };
 
-  const handleOpenReports = (stats?: PayrollStats) => {
-    if (stats) setCurrentStats(stats);
+  const handleOpenReports = (stats?: PayrollStats | { totalEmployees: number; processedCount: number; paidCount: number; totalNetPay: number; pendingCount: number }) => {
+    if (stats) setCurrentStats(stats as PayrollStats);
     setIsReportsModalOpen(true);
   };
 
@@ -249,6 +249,10 @@ export default function PayrollPage() {
 
   const handleOpenDepartmentTemplates = () => {
     updateParams({ view: 'dept-templates' });
+  };
+
+  const handleOpenUnassignedEmployees = () => {
+    updateParams({ view: 'unassigned-employees' });
   };
 
   const handleOpenPayGroupSettings = (payGroupId: number) => {
@@ -293,8 +297,9 @@ export default function PayrollPage() {
             onOpenRunDetail={handleOpenRunDetail}
             onOpenCreatePayGroup={() => setIsCreatePayGroupOpen(true)}
             onSelectPayGroup={handleSelectPayGroup}
+            onOpenReports={handleOpenReports}
             onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
-            onOpenUnassignedEmployees={handleOpenEmployeeCards}
+            onOpenUnassignedEmployees={handleOpenUnassignedEmployees}
           />
         )}
 
@@ -344,6 +349,10 @@ export default function PayrollPage() {
 
         {viewMode === 'dept-templates' && (
           <DepartmentTemplates onBack={handleBackToDashboard} />
+        )}
+
+        {viewMode === 'unassigned-employees' && (
+          <UnassignedEmployees onBack={handleBackToDashboard} />
         )}
 
         {viewMode === 'pay-group-settings' && (

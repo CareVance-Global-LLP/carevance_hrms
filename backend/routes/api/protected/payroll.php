@@ -58,6 +58,9 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Group modal). Supports ?search= and ?department_id= filters.
     Route::get('/all-employees', [PayrollDepartmentController::class, 'getAllEmployees']);
 
+    // Employees not assigned to any pay group
+    Route::get('/unassigned-employees', [PayrollDepartmentController::class, 'getUnassignedEmployees']);
+
     // Create a pay group and assign employees in one transaction.
     // Body: { name: string, user_ids: number[], effective_from?: YYYY-MM-DD }
     Route::post('/pay-groups/assign', [PayrollDepartmentController::class, 'assignEmployeesToPayGroup']);

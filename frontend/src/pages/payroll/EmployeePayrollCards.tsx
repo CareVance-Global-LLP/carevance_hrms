@@ -41,16 +41,16 @@ interface EmployeePayrollCardsProps {
 export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsProps) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
+  const [selectedPayGroupId, setSelectedPayGroupId] = useState<number | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
   const [empForm, setEmpForm] = useState<EmpFormState>(defaultEmpForm);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Department templates → department sidebar
-  const { data: deptData, isLoading: deptsLoading } = useQuery({
-    queryKey: ['payroll', 'department-templates'],
-    queryFn: () => payrollApi.listDepartmentTemplates().then(r => r.data),
+  // Pay groups → sidebar
+  const { data: payGroupsData, isLoading: payGroupsLoading } = useQuery({
+    queryKey: ['payroll', 'pay-groups-payroll-cards'],
+    queryFn: () => payrollApi.listPayGroups().then(r => r.data),
   });
 
   // Salary structure templates → dropdown
@@ -61,34 +61,21 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
 
   const salaryStructures = structuresData?.templates || [];
 
-  const departmentsList = useMemo(() => {
-    const existingTemplates = (deptData?.templates || []) as Array<any>;
-    const covered = existingTemplates.map(t => ({
-      id: t.department_id,
-      name: t.department?.name || `Dept #${t.department_id}`,
-    }));
-    const missing = (deptData?.departments_without_template || []).map((d: any) => ({
-      id: d.id,
-      name: d.name,
-    }));
-    const all = [...covered, ...missing];
-    const seen = new Set<number>();
-    return all.filter(d => {
-      if (seen.has(d.id)) return false;
-      seen.add(d.id);
-      return true;
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [deptData]);
+  const payGroupsList = useMemo(
+    () => (payGroupsData?.pay_groups || []) as Array<{ id: number; name: string; employee_count: number }>,
+    [payGroupsData],
+  );
 
   useEffect(() => {
-    if (selectedDeptId == null && departmentsList.length > 0) {
-      setSelectedDeptId(departmentsList[0].id);
+    if (selectedPayGroupId == null && payGroupsList.length > 0) {
+      setSelectedPayGroupId(payGroupsList[0].id);
     }
-  }, [departmentsList, selectedDeptId]);
+  }, [payGroupsList, selectedPayGroupId]);
 
   const { data: employeesData, isLoading: loadingEmployees } = useQuery({
-    queryKey: ['employee-payroll-cards', selectedDeptId],
-    queryFn: () => payrollApi.getEmployeePayrollCards({ department_id: selectedDeptId || undefined }),
+    queryKey: ['employee-payroll-cards', selectedPayGroupId],
+    queryFn: () => payrollApi.getEmployeePayrollCards({ pay_group_id: selectedPayGroupId || undefined }),
+    enabled: !!selectedPayGroupId,
   });
 
   const { data: employeeDetail, isLoading: loadingDetail, isError: detailError, error: detailErrorMsg } = useQuery({
@@ -125,13 +112,13 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
 
   const selectedEmployee = employeeDetail?.data?.employee;
   const payrollConfig = employeeDetail?.data?.payroll_config;
-  const selectedDept = departmentsList.find(d => d.id === selectedDeptId) || null;
+  const selectedPayGroup = payGroupsList.find(g => g.id === selectedPayGroupId) || null;
 
   useEffect(() => {
     setSelectedEmployeeId(null);
     setSavedMessage(null);
     setErrorMessage(null);
-  }, [selectedDeptId]);
+  }, [selectedPayGroupId]);
 
   // Sync form with loaded employee detail
   useEffect(() => {
@@ -154,7 +141,7 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
     saveMutation.mutate({ userId: selectedEmployeeId, data: empForm });
   };
 
-  if (loadingEmployees && departmentsList.length === 0) {
+  if (loadingEmployees && payGroupsList.length === 0) {
     return (
       <div className="p-8">
         <div className="animate-pulse space-y-4">
@@ -178,35 +165,35 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
         </Button>
       </div>
       <div className="flex h-[calc(100vh-12rem)]">
-      {/* Department sidebar */}
+      {/* Pay Group sidebar */}
       <div className="w-48 border-r border-gray-200 flex flex-col">
         <div className="p-3 border-b border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-700">Departments</h3>
+          <h3 className="text-sm font-semibold text-gray-700">Pay Groups</h3>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {deptsLoading ? (
+          {payGroupsLoading ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             </div>
-          ) : departmentsList.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-6 px-2">No departments found.</p>
+          ) : payGroupsList.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-6 px-2">No pay groups found.</p>
           ) : (
             <div className="space-y-0.5 p-1">
-              {departmentsList.map(d => {
-                const empCount = d.id === selectedDeptId ? employees.length : null;
+              {payGroupsList.map(g => {
+                const empCount = g.id === selectedPayGroupId ? employees.length : null;
                 return (
                   <button
-                    key={d.id}
-                    onClick={() => setSelectedDeptId(d.id)}
+                    key={g.id}
+                    onClick={() => setSelectedPayGroupId(g.id)}
                     className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-sm transition-colors ${
-                      selectedDeptId === d.id
+                      selectedPayGroupId === g.id
                         ? 'bg-blue-50 text-blue-900 border border-blue-200'
                         : 'hover:bg-gray-50 text-gray-700 border border-transparent'
                     }`}
                   >
                     <span className="truncate flex items-center gap-2">
                       <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
-                      {d.name}
+                      {g.name}
                     </span>
                     {empCount != null && (
                       <span className="text-[10px] text-gray-400 flex-shrink-0">{empCount}</span>
@@ -223,7 +210,7 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
       <div className="w-1/3 border-r border-gray-200 flex flex-col">
         <div className="p-3 border-b border-gray-200">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">
-            {selectedDept ? `${selectedDept.name} — Employees` : 'Employees'}
+            {selectedPayGroup ? `${selectedPayGroup.name} — Employees` : 'Employees'}
           </h3>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -238,14 +225,14 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {!selectedDept ? (
-            <p className="text-sm text-gray-400 text-center py-6">Select a department to view employees.</p>
+          {!selectedPayGroup ? (
+            <p className="text-sm text-gray-400 text-center py-6">Select a pay group to view employees.</p>
           ) : loadingEmployees ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             </div>
           ) : filteredEmployees.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-6">No employees in this department.</p>
+            <p className="text-sm text-gray-400 text-center py-6">No employees in this pay group.</p>
           ) : (
             <div className="divide-y divide-gray-100">
               {filteredEmployees.map((emp) => (

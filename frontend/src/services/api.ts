@@ -2118,9 +2118,9 @@ export const payrollApi = {
 
   // ===== Formula Engine =====
   evaluateFormula: (expression: string, variables?: Record<string, number>) =>
-    api.post<any>('/payroll/formula-engine/evaluate', { expression, variables }),
+    api.post<{ success: boolean; result?: number; expression?: string; variables_used?: Record<string, number>; error?: string }>('/payroll/formula-engine/evaluate', { expression, variables }).then(r => r.data),
   validateFormula: (expression: string) =>
-    api.post<any>('/payroll/formula-engine/validate', { expression }),
+    api.post<{ valid: boolean; errors?: string[]; parsed?: string }>('/payroll/formula-engine/validate', { expression }).then(r => r.data),
 
   // ===== Pay Groups =====
   listPayGroups: (params?: { month_year?: string }) =>
@@ -2144,6 +2144,9 @@ export const payrollApi = {
       last_page: number;
       per_page: number;
     }>('/payroll/all-employees', { params }),
+  // Employees not assigned to any pay group
+  getUnassignedEmployees: () =>
+    api.get<{ employees: AllEmployee[] }>('/payroll/unassigned-employees'),
   // Create a pay group and assign employees in one call. The backend
   // auto-derives the `code` and handles re-assignment by closing any
   // existing active assignment for the same user.

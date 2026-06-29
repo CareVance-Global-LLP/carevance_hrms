@@ -6,23 +6,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
-import { Search, UserMinus, Calendar, AlertCircle, Clock, ArrowLeft, Building2, Mail, CheckCircle2 } from 'lucide-react';
+import { Search, UserMinus, Calendar, AlertCircle, Clock, ArrowLeft, Building2, CheckCircle2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { formatDate } from '@/lib/dateTime';
-
-interface ExitRecord {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
-  department: string;
-  employee_code?: string;
-  employment_status?: 'active' | 'inactive' | 'notice' | 'exited';
-  exit_date?: string;
-  joining_date?: string;
-  created_at: string;
-  avatar?: string;
-}
 
 const resolveEmployeeDepartment = (employee: any) =>
   String(
@@ -35,7 +21,7 @@ const resolveEmployeeDepartment = (employee: any) =>
   ).trim() || 'Unassigned';
 
 export default function ResignationsPage() {
-  const { user, isLoading: isAuthLoading, isAuthenticated } = useAuth();
+  const { isLoading: isAuthLoading, isAuthenticated } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'notice' | 'exited'>('all');
 
@@ -48,14 +34,7 @@ export default function ResignationsPage() {
     enabled: isAuthenticated && !isAuthLoading,
   });
 
-  if (isAuthLoading) {
-    return <PageLoadingState label="Checking authentication..." />;
-  }
-
-  if (!isAuthenticated) {
-    return <PageErrorState message="Please log in to view this page." />;
-  }
-
+  // Compute exit data unconditionally to satisfy hooks rules
   const exitData = useMemo(() => {
     const inNotice = employees.filter((e: any) => 
       e.employment_status === 'notice' && !e.exit_date
@@ -118,6 +97,14 @@ export default function ResignationsPage() {
     const diffTime = exit.getTime() - join.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
+
+  if (isAuthLoading) {
+    return <PageLoadingState label="Checking authentication..." />;
+  }
+
+  if (!isAuthenticated) {
+    return <PageErrorState message="Please log in to view this page." />;
+  }
 
   if (isLoading) {
     return <PageLoadingState label="Loading employee data..." />;

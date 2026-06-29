@@ -419,6 +419,43 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
+     * Employees not assigned to any pay group.
+     *
+     * Returns a flat list of users in the current organization who have
+     * no active pay_group_assignments row.
+     */
+    public function getUnassignedEmployees(Request $request): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        // Get all user IDs that have an active pay group assignment
+        $assignedUserIds = DB::table('pay_group_assignments')
+            ->where('is_active', true)
+            ->pluck('user_id');
+
+        // Return users in this org who are employees/managers and have no active assignment
+        $employees = User::where('organization_id', $organizationId)
+            ->whereIn('role', ['employee', 'manager'])
+            ->whereNotIn('id', $assignedUserIds)
+            ->with(['employeeWorkInfo'])
+            ->orderBy('name')
+            ->get()
+            ->map(fn ($u) => [
+                'id' => $u->id,
+                'name' => $u->name,
+                'email' => $u->email,
+                'role' => $u->role,
+                'designation' => $u->employeeWorkInfo?->designation,
+                'employee_code' => $u->employeeWorkInfo?->employee_code,
+            ]);
+
+        return response()->json([
+            'employees' => $employees,
+            'total' => $employees->count(),
+        ]);
+    }
+
+    /**
      * Create a new pay group and assign the given employees to it in
      * one transaction. If any of the submitted user_ids belong to a
      * different organization the whole request is rejected.

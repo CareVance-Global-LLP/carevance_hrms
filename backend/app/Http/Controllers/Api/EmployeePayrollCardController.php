@@ -26,9 +26,7 @@ class EmployeePayrollCardController extends Controller
 
         $query = User::query()
             ->with(['employeeProfile', 'employeePayrollTemplate', 'payGroupAssignments.payGroup', 'groups'])
-            ->where('organization_id', $user->organization_id)
-            ->whereHas('employeeProfile')
-            ->whereHas('groups');
+            ->where('organization_id', $user->organization_id);
 
         if ($departmentId) {
             $query->whereHas('groups', function ($q) use ($departmentId) {
@@ -38,7 +36,8 @@ class EmployeePayrollCardController extends Controller
 
         if ($payGroupId) {
             $query->whereHas('payGroupAssignments', function ($q) use ($payGroupId) {
-                $q->where('pay_group_id', $payGroupId);
+                $q->where('pay_group_id', $payGroupId)
+                  ->where('is_active', true);
             });
         }
 

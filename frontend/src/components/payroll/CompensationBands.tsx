@@ -52,7 +52,7 @@ export default function CompensationBands() {
 
   // Find CTC Band mutation
   const findBandMutation = useMutation({
-    mutationFn: (ctc: number) => payrollApi.findCtcBand({ annual_ctc: ctc }),
+    mutationFn: (ctc: number) => payrollApi.findCtcBand(ctc),
     onSuccess: (data) => {
       show({ kind: 'success', message: 'Band found successfully', durationMs: 3000 });
     },

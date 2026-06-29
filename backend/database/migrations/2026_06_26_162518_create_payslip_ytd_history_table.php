@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('payslip_ytd_history', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('employee_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('employee_id')->constrained('users')->cascadeOnDelete();
             $table->unsignedTinyInteger('pay_month');
             $table->unsignedSmallInteger('pay_year');
             $table->decimal('gross', 12, 2)->default(0);
