@@ -179,6 +179,7 @@ class UserController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
+            'phone' => 'nullable|string|max:64',
             'role' => 'nullable|in:admin,manager,employee,client',
             'password' => 'nullable|string|min:8',
             'settings' => 'nullable|array',
@@ -201,10 +202,16 @@ class UserController extends Controller
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
+            'phone' => $validated['phone'] ?? null,
             'password' => Hash::make($validated['password'] ?? Str::random(12)),
             'role' => $selectedRole,
             'organization_id' => $currentUser->organization_id,
             'settings' => $normalizedSettings,
+        ]);
+
+        // Auto-create EmployeeProfile so work-info endpoint works
+        $user->employeeProfile()->create([
+            'organization_id' => $currentUser->organization_id,
         ]);
 
         if (array_key_exists('group_ids', $validated)) {
@@ -239,7 +246,21 @@ class UserController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        return response()->json($user->load('groups:id,name,slug'));
+        $user->load(['groups:id,name,slug', 'employeeWorkInfo']);
+
+        $workInfo = $user->employeeWorkInfo;
+
+        return response()->json(array_merge(
+            $user->toArray(),
+            [
+                'phone' => $user->phone,
+                'employee_code' => $workInfo?->employee_code,
+                'designation' => $workInfo?->designation,
+                'joining_date' => $workInfo?->joining_date,
+                'work_location' => $workInfo?->work_location ?? $workInfo?->work_mode,
+                'department_ids' => $user->groups->pluck('id')->toArray(),
+            ]
+        ));
     }
 
     public function update(Request $request, User $user)
@@ -921,5 +942,91 @@ class UserController extends Controller
             ],
             default => null,
         };
+    }
+
+    /**
+     * Check if an email belongs to an incomplete user (created but no profile)
+     *
+     * GET /api/users/check-incomplete?email=xxx
+     */
+    public function checkIncomplete(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $email = strtolower(trim($request->email));
+
+        $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
+
+        if (! $user) {
+            return response()->json([
+                'exists' => false,
+                'incomplete' => false,
+            ]);
+        }
+
+        // Check completion status
+        $hasProfile = false;
+
+        try {
+            $hasProfile = method_exists($user, 'employeeProfile')
+                && $user->employeeProfile()->exists();
+        } catch (\Exception $e) {}
+
+        // Incomplete = no employee profile (Step 3 never completed)
+        // Password and work_info can exist from Steps 1-2
+        $incomplete = ! $hasProfile;
+
+        return response()->json([
+            'exists' => true,
+            'incomplete' => $incomplete,
+            'userId' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+        ]);
+    }
+
+    /**
+     * Delete an incomplete/orphan user (no profile, no work info)
+     *
+     * DELETE /api/users/{id}/incomplete
+     */
+    public function deleteIncomplete($id)
+    {
+        $user = User::find($id);
+
+        if (! $user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        // Only delete if incomplete (match checkIncomplete logic)
+        $hasProfile = false;
+
+        try {
+            $hasProfile = method_exists($user, 'employeeProfile')
+                && $user->employeeProfile()->exists();
+        } catch (\Exception $e) {}
+
+        if ($hasProfile) {
+            return response()->json([
+                'message' => 'Cannot delete user with completed profile. Please contact support.',
+            ], 400);
+        }
+
+        // Delete orphan work_info records too
+        try {
+            if (method_exists($user, 'employeeWorkInfo') && $user->employeeWorkInfo) {
+                $user->employeeWorkInfo()->delete();
+            }
+        } catch (\Exception $e) {}
+
+        // Delete the orphan user
+        $user->delete();
+
+        return response()->json([
+            'message' => 'Incomplete user removed. You can now try again.',
+            'deleted' => true,
+        ]);
     }
 }

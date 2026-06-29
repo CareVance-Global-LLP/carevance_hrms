@@ -8,6 +8,11 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/users', [UserController::class, 'index']);
 Route::post('/users', [UserController::class, 'store'])->middleware('role:admin');
+
+// ⚠️ MUST be BEFORE /users/{user} — otherwise Laravel matches "check-incomplete" as a {user} ID
+Route::get('/users/check-incomplete', [UserController::class, 'checkIncomplete']);
+Route::delete('/users/{id}/incomplete', [UserController::class, 'deleteIncomplete']);
+
 Route::get('/users/{user}', [UserController::class, 'show']);
 Route::get('/users/{user}/groups', [UserController::class, 'groups']);
 Route::match(['put', 'patch'], '/users/{user}', [UserController::class, 'update'])->middleware('role:admin,manager');

@@ -1,0 +1,95 @@
+export interface OtherEarning {
+  name: string;
+  type: 'fixed' | 'percentage';
+  value: number;
+}
+
+export interface AddUserWizardForm {
+  // Step 1: Basic Info (Required)
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  role: 'employee' | 'manager' | 'admin';
+  departmentIds: number[];
+  designation: string;
+  joiningDate: string;
+  workLocation: 'office' | 'remote' | 'hybrid';
+  timezone: string;
+  employeeCode: string;
+
+  // Step 2: Auto-generated (Read-only)
+  userId: number | null;
+
+  // Step 3: Profile (All Optional)
+  gender: 'male' | 'female' | 'other' | '';
+  dateOfBirth: string;
+  personalEmail: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  pincode: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  emergencyRelationship: string;
+  idType: 'aadhaar' | 'pan' | 'passport' | 'driving_license' | 'voter_id' | '';
+  idNumber: string;
+  idProofFile: File | null;
+  resumeFile: File | null;
+  experienceCertFile: File | null;
+  educationCertFile: File | null;
+  accountHolderName: string;
+  bankName: string;
+  accountNumber: string;
+  ifscCode: string;
+  branchName: string;
+  accountType: 'savings' | 'current';
+  bankProofFile: File | null;
+  isDefaultAccount: boolean;
+}
+
+export const defaultForm: AddUserWizardForm = {
+  // Step 1
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  role: 'employee',
+  departmentIds: [],
+  designation: '',
+  joiningDate: new Date().toISOString().split('T')[0],
+  workLocation: 'office',
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+  employeeCode: '',
+
+  // Step 2
+  userId: null,
+
+  // Step 3
+  gender: '',
+  dateOfBirth: '',
+  personalEmail: '',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  pincode: '',
+  emergencyContactName: '',
+  emergencyContactPhone: '',
+  emergencyRelationship: '',
+  idType: '',
+  idNumber: '',
+  idProofFile: null,
+  resumeFile: null,
+  experienceCertFile: null,
+  educationCertFile: null,
+  accountHolderName: '',
+  bankName: '',
+  accountNumber: '',
+  ifscCode: '',
+  branchName: '',
+  accountType: 'savings',
+  bankProofFile: null,
+  isDefaultAccount: true,
+};

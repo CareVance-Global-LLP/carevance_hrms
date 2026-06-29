@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, UserPlus, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -75,7 +76,32 @@ export default function AddUserDrawer({
   const queryClient = useQueryClient();
   const storedDefaults = useMemo(() => addUserService.loadDefaults(), []);
 
-  const [activeTab, setActiveTab] = useState<AddUserTab>('email');
+  // ✅ Persist tab in URL search params
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const getInitialTab = (): AddUserTab => {
+    const tabFromUrl = searchParams.get('tab') as AddUserTab | null;
+    if (tabFromUrl && ['email', 'link', 'csv', 'custom'].includes(tabFromUrl)) {
+      return tabFromUrl;
+    }
+    return 'email';
+  };
+
+  const [activeTab, setActiveTabState] = useState<AddUserTab>(getInitialTab);
+
+  // ✅ Wrapper that updates both state and URL
+  const setActiveTab = (tab: AddUserTab) => {
+    setActiveTabState(tab);
+    setSearchParams({ tab }, { replace: true });
+  };
+
+  // ✅ Sync URL on mount (handles browser back/forward)
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab') as AddUserTab | null;
+    if (tabFromUrl && ['email', 'link', 'csv', 'custom'].includes(tabFromUrl)) {
+      setActiveTabState(tabFromUrl);
+    }
+  }, [searchParams]);
   const [emails, setEmails] = useState<string[]>([]);
   const [invalidEmails, setInvalidEmails] = useState<string[]>([]);
   const [role, setRole] = useState<InviteUserRole>('employee');

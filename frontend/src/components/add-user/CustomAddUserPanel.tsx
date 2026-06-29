@@ -1,1053 +1,589 @@
-import { useState, useCallback } from 'react';
-import { Loader2, UserPlus, CheckCircle2, AlertCircle, User, Mail, Lock, Phone, MapPin, Briefcase, Calendar, FileText, Building2, CreditCard, Shield, Upload } from 'lucide-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Button from '@/components/ui/Button';
-import { TextInput, SelectInput, ToggleInput } from '@/components/ui/FormField';
-import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
-import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
-import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
-import type { InviteUserRole, InviteOption, AdditionalInviteSettings } from '@/services/addUser';
+import { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
+import api from '../../services/api';
+import { WizardProgress } from './steps/WizardProgress';
+import { WizardActions } from './steps/WizardActions';
+import { Step1BasicInfo } from './steps/Step1BasicInfo';
+import { Step2AccountCreated } from './steps/Step2AccountCreated';
+import { Step3Profile } from './steps/Step3Profile';
+import { defaultForm, type AddUserWizardForm } from './steps/types';
 
-interface CustomAddUserForm {
-  // Account Info (Basic)
-  email: string;
-  password: string;
-  confirmPassword: string;
-  role: InviteUserRole;
-  
-  // Employee Details (Personal)
-  firstName: string;
-  lastName: string;
-  gender: 'male' | 'female' | 'other' | '';
-  dateOfBirth: string;
-  phone: string;
-  personalEmail: string;
-  address: string;
-  city: string;
-  state: string;
-  pincode: string;
-  emergencyContact: string;
-  emergencyNumber: string;
-  relationship: string;
-  
-  // Work Information
-  employeeCode: string;
-  designation: string;
-  departmentIds: number[];
-  employmentType: 'full_time' | 'part_time' | 'contract' | 'intern' | '';
-  workLocation: string;
-  expectedStartTime: string;
-  timezone: string;
-  joiningDate: string;
-  
-  // Government IDs
-  idType: 'aadhaar' | 'pan' | 'passport' | 'driving_license' | 'voter_id' | '';
-  idNumber: string;
-  idProofFile: File | null;
-  
-  // Bank Account Details
-  accountHolderName: string;
-  bankName: string;
-  accountNumber: string;
-  ifscCode: string;
-  branchName: string;
-  accountType: 'savings' | 'current';
-  bankProofFile: File | null;
-  isDefaultAccount: boolean;
-  
-  // Documents
-  documentTitle: string;
-  documentCategory: string;
-  documentFile: File | null;
-  
-  // Settings
-  settings: AdditionalInviteSettings;
+// ── Helper: Extract user-friendly error message ────────────
+
+function extractErrorMessage(error: any): string {
+  if (!error.response) {
+    return 'Network error. Please check your connection.';
+  }
+
+  const { status, data } = error.response;
+
+  if (status === 422) {
+    const errors = data?.errors;
+    if (errors && typeof errors === 'object') {
+      const firstField = Object.keys(errors)[0];
+      const firstMessage = errors[firstField]?.[0];
+      if (firstMessage) return firstMessage;
+    }
+    return data?.message || 'Please check your input and try again.';
+  }
+
+  if (status === 401) return 'Your session has expired. Please log in again.';
+  if (status === 403) return 'You do not have permission to perform this action.';
+  if (status === 404) return 'The requested resource was not found.';
+  if (status === 409) return data?.message || 'This record already exists.';
+  if (status === 429) return 'Too many requests. Please wait a moment and try again.';
+  if (status === 500) return 'Something went wrong on our end. Please try again later.';
+
+  return data?.message || `Something went wrong (Error ${status}).`;
 }
+
+// ── Helper: Extract field-specific errors ──────────────────
+
+function extractFieldErrors(error: any): Partial<Record<keyof AddUserWizardForm, string>> {
+  const fieldErrors: Partial<Record<keyof AddUserWizardForm, string>> = {};
+
+  if (error.response?.status !== 422) return fieldErrors;
+
+  const errors = error.response?.data?.errors;
+  if (!errors || typeof errors !== 'object') return fieldErrors;
+
+  const fieldMapping: Record<string, keyof AddUserWizardForm> = {
+    name: 'firstName',
+    first_name: 'firstName',
+    last_name: 'lastName',
+    email: 'email',
+    phone: 'phone',
+    role: 'role',
+    designation: 'designation',
+    joining_date: 'joiningDate',
+    work_location: 'workLocation',
+    timezone: 'timezone',
+    department_ids: 'departmentIds',
+    group_ids: 'departmentIds',
+    employee_code: 'employeeCode',
+  };
+
+  Object.entries(errors).forEach(([field, messages]) => {
+    const formField = fieldMapping[field];
+    if (formField && Array.isArray(messages) && messages.length > 0) {
+      fieldErrors[formField] = messages[0];
+    }
+  });
+
+  return fieldErrors;
+}
+
+type WizardStep = 1 | 2 | 3 | 'completed';
 
 interface CustomAddUserPanelProps {
   organizationId: number;
-  allowedRoles: InviteUserRole[];
+  allowedRoles: string[];
   onSuccess: () => void;
   onError: (message: string) => void;
 }
 
-const browserTimezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+// ── Validation helpers ──────────────────────────────────────
 
-const defaultForm: CustomAddUserForm = {
-  email: '',
-  password: '',
-  confirmPassword: '',
-  role: 'employee',
-  firstName: '',
-  lastName: '',
-  gender: '',
-  dateOfBirth: '',
-  phone: '',
-  personalEmail: '',
-  address: '',
-  city: '',
-  state: '',
-  pincode: '',
-  emergencyContact: '',
-  emergencyNumber: '',
-  relationship: '',
-  employeeCode: '',
-  designation: '',
-  departmentIds: [],
-  employmentType: '',
-  workLocation: '',
-  expectedStartTime: '',
-  timezone: browserTimezone && COMMON_TIMEZONES.includes(browserTimezone) ? browserTimezone : DEFAULT_APP_TIMEZONE,
-  joiningDate: new Date().toISOString().split('T')[0],
-  idType: '',
-  idNumber: '',
-  idProofFile: null,
-  accountHolderName: '',
-  bankName: '',
-  accountNumber: '',
-  ifscCode: '',
-  branchName: '',
-  accountType: 'savings',
-  bankProofFile: null,
-  isDefaultAccount: true,
-  documentTitle: '',
-  documentCategory: 'other',
-  documentFile: null,
-  settings: {
-    monitoringInterval: 10,
-    canEditTime: false,
-    attendanceMonitoring: true,
-    payrollVisibility: false,
-    taskAssignmentAccess: true,
-    timezone: browserTimezone && COMMON_TIMEZONES.includes(browserTimezone) ? browserTimezone : DEFAULT_APP_TIMEZONE,
-  },
+const isValidEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const isValidPhone = (phone: string): boolean => /^[+]?[\d\s-]{10,}$/.test(phone);
+
+const canProceedFromStep1 = (form: AddUserWizardForm): boolean => {
+  return (
+    form.firstName.trim() !== '' &&
+    form.email.trim() !== '' &&
+    isValidEmail(form.email) &&
+    form.phone.trim() !== '' &&
+    isValidPhone(form.phone) &&
+    form.departmentIds.length > 0 &&
+    form.designation.trim() !== '' &&
+    form.joiningDate !== '' &&
+    new Date(form.joiningDate) <= new Date()
+  );
 };
 
-const monitoringIntervalOptions = [
-  { value: 1, label: 'Every 1 minute' },
-  { value: 3, label: 'Every 3 minutes' },
-  { value: 5, label: 'Every 5 minutes' },
-  { value: 10, label: 'Every 10 minutes' },
-  { value: 15, label: 'Every 15 minutes' },
-  { value: 30, label: 'Every 30 minutes' },
-];
+const validateStep1 = (form: AddUserWizardForm): Partial<Record<keyof AddUserWizardForm, string>> => {
+  const errors: Partial<Record<keyof AddUserWizardForm, string>> = {};
 
-const accountTypeOptions = [
-  { value: 'savings', label: 'Savings Account' },
-  { value: 'current', label: 'Current Account' },
-];
+  if (!form.firstName.trim()) {
+    errors.firstName = 'First name is required';
+  }
+  if (!form.email.trim()) {
+    errors.email = 'Email is required';
+  } else if (!isValidEmail(form.email)) {
+    errors.email = 'Please enter a valid email';
+  }
+  if (!form.phone.trim()) {
+    errors.phone = 'Phone number is required';
+  } else if (!isValidPhone(form.phone)) {
+    errors.phone = 'Please enter a valid phone number';
+  }
+  if (form.departmentIds.length === 0) {
+    errors.departmentIds = 'Please select at least one department';
+  }
+  if (!form.designation.trim()) {
+    errors.designation = 'Designation is required';
+  }
+  if (!form.joiningDate) {
+    errors.joiningDate = 'Joining date is required';
+  } else if (new Date(form.joiningDate) > new Date()) {
+    errors.joiningDate = 'Joining date cannot be in the future';
+  }
 
-const genderOptions = [
-  { value: '', label: 'Select gender' },
-  { value: 'male', label: 'Male' },
-  { value: 'female', label: 'Female' },
-  { value: 'other', label: 'Other' },
-];
+  return errors;
+};
 
-const idTypeOptions = [
-  { value: '', label: 'Select ID type' },
-  { value: 'aadhaar', label: 'Aadhaar' },
-  { value: 'pan', label: 'PAN' },
-  { value: 'passport', label: 'Passport' },
-  { value: 'driving_license', label: 'Driving License' },
-  { value: 'voter_id', label: 'Voter ID' },
-];
+const hasAnyStep3Data = (form: AddUserWizardForm): boolean => {
+  return (
+    form.gender !== '' ||
+    form.dateOfBirth !== '' ||
+    form.personalEmail !== '' ||
+    form.addressLine1 !== '' ||
+    form.city !== '' ||
+    form.state !== '' ||
+    form.pincode !== '' ||
+    form.emergencyContactName !== '' ||
+    form.idType !== '' ||
+    form.accountNumber !== ''
+  );
+};
 
-const employmentTypeOptions = [
-  { value: '', label: 'Select employment type' },
-  { value: 'full_time', label: 'Full Time' },
-  { value: 'part_time', label: 'Part Time' },
-  { value: 'contract', label: 'Contract' },
-  { value: 'intern', label: 'Intern' },
-];
+// ── localStorage helpers ───────────────────────────────────
 
-const documentCategoryOptions = [
-  { value: 'other', label: 'Other' },
-  { value: 'experience_certificate', label: 'Experience Certificate' },
-  { value: 'education_certificate', label: 'Education Certificate' },
-  { value: 'offer_letter', label: 'Offer Letter' },
-  { value: 'resume', label: 'Resume' },
-];
+const STORAGE_KEY = 'add-user-wizard-state';
 
-const indianStates = [
-  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 
-  'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 
-  'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 
-  'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 
-  'Uttarakhand', 'West Bengal', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Puducherry'
-];
+interface PersistedWizardState {
+  step: 1 | 2 | 3;
+  form: Partial<AddUserWizardForm>;
+  userId: number | null;
+  createdAt: string;
+}
 
-const relationshipOptions = [
-  { value: '', label: 'Select relationship' },
-  { value: 'spouse', label: 'Spouse' },
-  { value: 'parent', label: 'Parent' },
-  { value: 'child', label: 'Child' },
-  { value: 'sibling', label: 'Sibling' },
-  { value: 'friend', label: 'Friend' },
-  { value: 'other', label: 'Other' },
-];
+function loadWizardState(): PersistedWizardState | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return null;
+    const state = JSON.parse(stored) as PersistedWizardState;
+    // Expire after 24 hours
+    if (state.createdAt) {
+      const hoursDiff = (Date.now() - new Date(state.createdAt).getTime()) / (1000 * 60 * 60);
+      if (hoursDiff > 24) {
+        localStorage.removeItem(STORAGE_KEY);
+        return null;
+      }
+    }
+    return state;
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    return null;
+  }
+}
+
+function saveWizardState(state: PersistedWizardState): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, createdAt: new Date().toISOString() }));
+  } catch {
+    // localStorage full or unavailable
+  }
+}
+
+function clearWizardState(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+// ── Main Component ──────────────────────────────────────────
 
 export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuccess, onError }: CustomAddUserPanelProps) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<CustomAddUserForm>({ ...defaultForm });
-  const [errors, setErrors] = useState<Partial<Record<keyof CustomAddUserForm, string>>>({});
-  const [showGroupModal, setShowGroupModal] = useState(false);
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [createdUserEmail, setCreatedUserEmail] = useState<string | null>(null);
 
-  const groupsQuery = useQuery({
-    queryKey: ['add-user-groups'],
-    queryFn: async () => {
-      const response = await fetch('/api/groups');
-      const data = await response.json();
-      return (data.data || []).map((group: any) => ({
-        id: group.id,
-        name: group.name,
-        description: `${group.users?.length || 0} member${group.users?.length === 1 ? '' : 's'}`,
-      })) satisfies InviteOption[];
-    },
+  // ✅ Load persisted state on mount
+  const persistedState = loadWizardState();
+
+  const [currentStep, setCurrentStep] = useState<WizardStep>(
+    persistedState?.step && [1, 2, 3].includes(persistedState.step) ? persistedState.step : 1
+  );
+  const [form, setForm] = useState<AddUserWizardForm>({
+    ...defaultForm,
+    ...(persistedState?.form ?? {}),
   });
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [errors, setErrors] = useState<Partial<Record<keyof AddUserWizardForm, string>>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-
-
-  const validateForm = (): boolean => {
-    const newErrors: Partial<Record<keyof CustomAddUserForm, string>> = {};
-
-    if (!form.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      newErrors.email = 'Please enter a valid email address';
+  // ✅ Welcome back message if resuming from persisted state
+  useEffect(() => {
+    if (persistedState?.step && persistedState.step >= 2 && persistedState.form?.email) {
+      setFeedback({
+        type: 'success',
+        message: `Welcome back! Continuing setup for ${persistedState.form.email}.`,
+      });
     }
+  }, []);
 
-    if (!form.password) {
-      newErrors.password = 'Password is required';
-    } else if (form.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    }
+  // ❌ REMOVED: Old disabled saveWizardState usage — now we save properly below
 
-    if (form.password !== form.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
-
-    if (!form.firstName.trim() && !form.lastName.trim()) {
-      newErrors.firstName = 'First name or last name is required';
-    }
-
-    if (form.phone && !/^[+]?[\d\s-]{10,}$/.test(form.phone)) {
-      newErrors.phone = 'Please enter a valid phone number';
-    }
-
-    if (form.accountNumber && !/^\d{9,18}$/.test(form.accountNumber)) {
-      newErrors.accountNumber = 'Please enter a valid account number (9-18 digits)';
-    }
-
-    if (form.ifscCode && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(form.ifscCode.toUpperCase())) {
-      newErrors.ifscCode = 'Please enter a valid IFSC code';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  // ── API: Create user (Step 1) ────────────────────────────
 
   const createUserMutation = useMutation({
-    mutationFn: async (formData: CustomAddUserForm) => {
+    mutationFn: async (formData: AddUserWizardForm) => {
       const fullName = `${formData.firstName} ${formData.lastName}`.trim();
-      
-      // Step 1: Create user
-      const userResponse = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: fullName || formData.email.split('@')[0],
-          email: formData.email,
-          password: formData.password,
-          role: formData.role,
-          group_ids: formData.departmentIds,
-          settings: {
-            monitoring_interval_minutes: formData.settings.monitoringInterval,
-            can_edit_time: formData.settings.canEditTime,
-            attendance_monitoring: formData.settings.attendanceMonitoring,
-            payroll_visibility: formData.settings.payrollVisibility,
-            task_assignment_access: formData.settings.taskAssignmentAccess,
-            timezone: formData.settings.timezone,
-          },
-        }),
+
+      // Step A: Create user
+      const userResponse = await api.post('/users', {
+        name: fullName || formData.email.split('@')[0],
+        email: formData.email,
+        phone: formData.phone,
+        role: formData.role,
+        group_ids: formData.departmentIds,
+        settings: {
+          timezone: formData.timezone,
+          attendance_monitoring: true,
+          payroll_visibility: false,
+          can_edit_time: false,
+          task_assignment_access: true,
+          monitoring_interval_minutes: 10,
+        },
       });
 
-      if (!userResponse.ok) {
-        const errorData = await userResponse.json();
-        throw new Error(errorData.message || 'Failed to create user');
-      }
+      const userId = userResponse.data?.id || userResponse.data?.data?.id;
 
-      const userData = await userResponse.json();
-      const userId = userData.id;
-
-      // Step 2: Update profile
-      await fetch(`/api/employees/${userId}/profile`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          first_name: formData.firstName || undefined,
-          last_name: formData.lastName || undefined,
-          gender: formData.gender || undefined,
-          phone: formData.phone || undefined,
-          personal_email: formData.personalEmail || undefined,
-          date_of_birth: formData.dateOfBirth || undefined,
-          address: formData.address || undefined,
-          city: formData.city || undefined,
-          state: formData.state || undefined,
-          pincode: formData.pincode || undefined,
-          emergency_contact_name: formData.emergencyContact || undefined,
-          emergency_contact_number: formData.emergencyNumber || undefined,
-          emergency_contact_relationship: formData.relationship || undefined,
-        }),
-      });
-
-      // Step 3: Update work info
-      await fetch(`/api/employees/${userId}/work-info`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Step B: Save employee code + work info if provided
+      if (userId && (formData.employeeCode || formData.designation || formData.joiningDate || formData.workLocation)) {
+        await api.put(`/employees/${userId}/work-info`, {
           employee_code: formData.employeeCode || undefined,
           designation: formData.designation || undefined,
           joining_date: formData.joiningDate || undefined,
-          employment_type: formData.employmentType || undefined,
           work_location: formData.workLocation || undefined,
-          expected_start_time: formData.expectedStartTime || undefined,
-          timezone: formData.timezone || undefined,
-        }),
-      });
-
-      // Step 4: Add Government ID if provided
-      if (formData.idType && formData.idNumber) {
-        const idFormData = new FormData();
-        idFormData.append('id_type', formData.idType);
-        idFormData.append('id_number', formData.idNumber);
-        if (formData.idProofFile) {
-          idFormData.append('proof_document', formData.idProofFile);
-        }
-        
-        await fetch(`/api/employees/${userId}/government-ids`, {
-          method: 'POST',
-          body: idFormData,
         });
       }
 
-      // Step 5: Create bank account if details provided
-      if (formData.accountNumber && formData.ifscCode) {
-        const bankFormData = new FormData();
-        bankFormData.append('account_holder_name', formData.accountHolderName || fullName || formData.email.split('@')[0]);
-        bankFormData.append('bank_name', formData.bankName);
-        bankFormData.append('account_number', formData.accountNumber);
-        bankFormData.append('ifsc_swift', formData.ifscCode.toUpperCase());
-        bankFormData.append('branch_name', formData.branchName);
-        bankFormData.append('account_type', formData.accountType);
-        bankFormData.append('is_primary', formData.isDefaultAccount.toString());
-        if (formData.bankProofFile) {
-          bankFormData.append('proof_document', formData.bankProofFile);
-        }
-        
-        await fetch(`/api/employees/${userId}/bank-accounts`, {
-          method: 'POST',
-          body: bankFormData,
-        });
-      }
-
-      // Step 6: Upload document if provided
-      if (formData.documentFile && formData.documentTitle) {
-        const docFormData = new FormData();
-        docFormData.append('title', formData.documentTitle);
-        docFormData.append('category', formData.documentCategory);
-        docFormData.append('file', formData.documentFile);
-        
-        await fetch(`/api/employees/${userId}/documents`, {
-          method: 'POST',
-          body: docFormData,
-        });
-      }
-
-      return userData;
-    },
-    onSuccess: (data) => {
-      setCreatedUserEmail(data.email);
-      setFeedback({
-        type: 'success',
-        message: `User ${data.name} (${data.email}) has been created successfully with all details.`,
-      });
-      queryClient.invalidateQueries({ queryKey: ['add-user-members', organizationId] });
-      queryClient.invalidateQueries({ queryKey: ['add-user-groups'] });
-      onSuccess();
-    },
-    onError: (error: any) => {
-      const message = error?.message || 'Failed to create user. Please try again.';
-      setFeedback({ type: 'error', message });
-      onError(message);
+      return { ...userResponse.data, userId };
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (validateForm()) {
-      createUserMutation.mutate(form);
+  // ── API: Save profile data (Step 3) ──────────────────────
+
+  const saveStep3Data = async (formData: AddUserWizardForm): Promise<void> => {
+    if (!formData.userId) return;
+
+    const promises: Promise<any>[] = [];
+
+    // Save profile if any personal data provided
+    if (formData.gender || formData.dateOfBirth || formData.addressLine1 || formData.city) {
+      promises.push(
+        api.put(`/employees/${formData.userId}/profile`, {
+          gender: formData.gender || undefined,
+          date_of_birth: formData.dateOfBirth || undefined,
+          personal_email: formData.personalEmail || undefined,
+          address: [formData.addressLine1, formData.addressLine2].filter(Boolean).join(', ') || undefined,
+          city: formData.city || undefined,
+          state: formData.state || undefined,
+          pincode: formData.pincode || undefined,
+          emergency_contact_name: formData.emergencyContactName || undefined,
+          emergency_contact_number: formData.emergencyContactPhone || undefined,
+          emergency_contact_relationship: formData.emergencyRelationship || undefined,
+        })
+      );
+    }
+
+    // Upload government ID if provided
+    if (formData.idType && formData.idNumber) {
+      const idFormData = new FormData();
+      idFormData.append('id_type', formData.idType);
+      idFormData.append('id_number', formData.idNumber);
+      if (formData.idProofFile) {
+        idFormData.append('proof_document', formData.idProofFile);
+      }
+      promises.push(
+        api.post(`/employees/${formData.userId}/government-ids`, idFormData)
+      );
+    }
+
+    // Save bank account if provided
+    if (formData.accountNumber && formData.ifscCode) {
+      const bankFormData = new FormData();
+      bankFormData.append('account_holder_name', formData.accountHolderName || `${formData.firstName} ${formData.lastName}`);
+      bankFormData.append('bank_name', formData.bankName);
+      bankFormData.append('account_number', formData.accountNumber);
+      bankFormData.append('ifsc_swift', formData.ifscCode.toUpperCase());
+      bankFormData.append('branch_name', formData.branchName);
+      bankFormData.append('account_type', formData.accountType);
+      bankFormData.append('is_primary', formData.isDefaultAccount.toString());
+      if (formData.bankProofFile) {
+        bankFormData.append('proof_document', formData.bankProofFile);
+      }
+      promises.push(
+        api.post(`/employees/${formData.userId}/bank-accounts`, bankFormData)
+      );
+    }
+
+    // Upload documents
+    const documentFiles = [
+      { file: formData.resumeFile, title: 'Resume', category: 'resume' },
+      { file: formData.experienceCertFile, title: 'Experience Certificate', category: 'experience_certificate' },
+      { file: formData.educationCertFile, title: 'Education Certificate', category: 'education_certificate' },
+    ];
+    for (const doc of documentFiles) {
+      if (doc.file) {
+        const docFormData = new FormData();
+        docFormData.append('title', doc.title);
+        docFormData.append('category', doc.category);
+        docFormData.append('file', doc.file);
+        promises.push(
+          api.post(`/employees/${formData.userId}/documents`, docFormData)
+        );
+      }
+    }
+
+    await Promise.allSettled(promises);
+  };
+
+  // ── Navigation handlers ───────────────────────────────────
+
+  const handleNext = async () => {
+    if (currentStep === 1) {
+      if (!canProceedFromStep1(form)) {
+        setErrors(validateStep1(form));
+        return;
+      }
+
+      // ✅ If user was already created (resuming from Step 2), just proceed
+      if (form.userId) {
+        setCompletedSteps((prev) => new Set(prev).add(1));
+        setCurrentStep(2);
+        return;
+      }
+
+      setIsSubmitting(true);
+      setErrors({});
+      try {
+        const result = await createUserMutation.mutateAsync(form);
+        setForm((prev) => ({
+          ...prev,
+          userId: result.userId || result.id,
+        }));
+        setCompletedSteps((prev) => new Set(prev).add(1));
+        setCurrentStep(2);
+        // ✅ Persist state after Step 1 succeeds
+        const userId = result.userId || result.id;
+        saveWizardState({
+          step: 2,
+          form: { ...form, userId },
+          userId,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (error: any) {
+        const status = error.response?.status;
+        const errors = error.response?.data?.errors || {};
+        const message = error.response?.data?.message || '';
+
+        // Detect "email already taken" — set incompleteUser so Step1BasicInfo shows resume UI
+        const isEmailTaken =
+          status === 422 && (
+            message.toLowerCase().includes('already') ||
+            JSON.stringify(errors).toLowerCase().includes('already')
+          );
+
+        if (isEmailTaken) {
+          setFeedback({
+            type: 'error',
+            message: `An account with "${form.email}" already exists. Check the email field for options.`,
+          });
+        } else {
+          const errorMessage = extractErrorMessage(error);
+          const fieldErrors = extractFieldErrors(error);
+          if (Object.keys(fieldErrors).length > 0) {
+            setErrors(fieldErrors);
+          } else {
+            setErrors({ email: errorMessage });
+          }
+        }
+      } finally {
+        setIsSubmitting(false);
+      }
+    } else if (currentStep === 2) {
+      setCompletedSteps((prev) => new Set(prev).add(2));
+      setCurrentStep(3);
+    } else if (currentStep === 3) {
+      setIsSubmitting(true);
+      try {
+        if (hasAnyStep3Data(form)) {
+          await saveStep3Data(form);
+        }
+
+        // ✅ Send invitation ONLY after ALL steps complete
+        if (form.userId && form.email) {
+          try {
+            await api.post('/invites/send', {
+              email: form.email,
+              role: form.role,
+            });
+          } catch (inviteError) {
+            console.warn('Failed to send invitation email:', inviteError);
+          }
+        }
+
+        setCompletedSteps((prev) => new Set(prev).add(3));
+        setCurrentStep('completed');
+        clearWizardState();
+      } catch (error) {
+        console.warn('Step 3 save warning:', error);
+
+        // ✅ Even if Step 3 data fails, still try to send invite
+        if (form.userId && form.email) {
+          try {
+            await api.post('/invites/send', {
+              email: form.email,
+              role: form.role,
+            });
+          } catch (inviteError) {
+            console.warn('Failed to send invitation email:', inviteError);
+          }
+        }
+
+        setCompletedSteps((prev) => new Set(prev).add(3));
+        setCurrentStep('completed');
+        clearWizardState();
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
-  const handleReset = () => {
-    setForm({ ...defaultForm });
+  const handleBack = () => {
     setErrors({});
     setFeedback(null);
-    setCreatedUserEmail(null);
+    if (currentStep === 2) setCurrentStep(1);
+    else if (currentStep === 3) setCurrentStep(2);
   };
 
-  const updateFormField = <K extends keyof CustomAddUserForm>(field: K, value: CustomAddUserForm[K]) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
+  const handleSkip = () => {
+    if (currentStep === 3) {
+      setCompletedSteps((prev) => new Set(prev).add(3));
+      setCurrentStep('completed');
     }
   };
 
-  const updateSettingsField = <K extends keyof AdditionalInviteSettings>(field: K, value: AdditionalInviteSettings[K]) => {
-    setForm((prev) => ({
-      ...prev,
-      settings: { ...prev.settings, [field]: value },
-    }));
+  // ✅ Resume from Step 2 when incomplete user is detected
+  const handleResumeFromStep2 = async (userId: number) => {
+    setIsSubmitting(true);
+    try {
+      const response = await api.get(`/users/${userId}`);
+      const userData = response.data;
+
+      const updatedForm = {
+        ...form,
+        userId,
+        firstName: userData.name?.split(' ')[0] || form.firstName,
+        lastName: userData.name?.split(' ').slice(1).join(' ') || form.lastName,
+        email: userData.email || form.email,
+        phone: userData.phone || form.phone,
+        role: userData.role || form.role,
+        designation: userData.designation || form.designation,
+        departmentIds: userData.department_ids || form.departmentIds,
+        joiningDate: userData.joining_date || form.joiningDate,
+        workLocation: userData.work_location || form.workLocation,
+        employeeCode: userData.employee_code || form.employeeCode,
+      };
+
+      setForm(updatedForm);
+      setCompletedSteps(new Set([1]));
+      setCurrentStep(2);
+
+      saveWizardState({
+        step: 2,
+        form: updatedForm,
+        userId,
+        createdAt: new Date().toISOString(),
+      });
+
+      setFeedback({
+        type: 'success',
+        message: `Resuming setup for ${userData.email || form.email}.`,
+      });
+    } catch (error) {
+      console.warn('Failed to load user data:', error);
+      setForm((prev) => ({ ...prev, userId }));
+      setCompletedSteps(new Set([1]));
+      setCurrentStep(2);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const SectionHeader = useCallback(({ icon: Icon, title, subtitle }: { icon: any, title: string, subtitle: string }) => (
-    <div className="flex items-center gap-3 mb-6">
-      <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-        <Icon className="h-5 w-5 text-blue-600" />
-      </div>
-      <div>
-        <h3 className="font-semibold text-gray-900">{title}</h3>
-        <p className="text-sm text-gray-500">{subtitle}</p>
-      </div>
-    </div>
-  ), []);
-
-  const FormRow = useCallback(({ children, className = '' }: { children: React.ReactNode, className?: string }) => (
-    <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 ${className}`}>
-      {children}
-    </div>
-  ), []);
-
-  const FieldContainer = useCallback(({ label, children, required = false, error }: { label: string, children: React.ReactNode, required?: boolean, error?: string }) => (
-    <div>
-      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-        {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      {children}
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-    </div>
-  ), []);
+  const handleComplete = () => {
+    queryClient.invalidateQueries({ queryKey: ['add-user-members', organizationId] });
+    queryClient.invalidateQueries({ queryKey: ['add-user-groups'] });
+    queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] });
+    queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organizationId] });
+    onSuccess();
+  };
 
   return (
-    <div className="space-y-6 max-h-[calc(100vh-16rem)] overflow-y-auto pr-2">
-      {/* Feedback Banner */}
+    <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+      {/* Wizard Progress */}
+      {currentStep !== 'completed' && (
+        <WizardProgress currentStep={currentStep as number} completedSteps={completedSteps} />
+      )}
+
+      {/* Feedback banner */}
       {feedback && (
-        <div className={`p-4 rounded-lg flex items-start gap-3 ${
-          feedback.type === 'success' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-        }`}>
+        <div
+          className={`mx-6 mt-4 px-4 py-3 rounded-lg flex items-center gap-2 text-sm ${
+            feedback.type === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}
+        >
           {feedback.type === 'success' ? (
-            <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5" />
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
           ) : (
-            <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
           )}
-          <div className="flex-1">
-            <p className={feedback.type === 'success' ? 'text-green-800' : 'text-red-800'}>
-              {feedback.message}
-            </p>
-            {createdUserEmail && (
-              <p className="text-sm text-green-600 mt-1">
-                User can now login with email: <strong>{createdUserEmail}</strong>
-              </p>
-            )}
-          </div>
+          {feedback.message}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Account Info Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <SectionHeader 
-            icon={User} 
-            title="Account Information" 
-            subtitle="Login credentials and access level"
-          />
-          
-          <FormRow>
-            <FieldContainer label="Email Address" required error={errors.email}>
-              <TextInput
-                type="email"
-                placeholder="user@example.com"
-                value={form.email}
-                onChange={(e) => updateFormField('email', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Password" required error={errors.password}>
-              <TextInput
-                type="password"
-                placeholder="Min 8 characters"
-                value={form.password}
-                onChange={(e) => updateFormField('password', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Confirm Password" required error={errors.confirmPassword}>
-              <TextInput
-                type="password"
-                placeholder="Re-enter password"
-                value={form.confirmPassword}
-                onChange={(e) => updateFormField('confirmPassword', e.target.value)}
-              />
-            </FieldContainer>
-          </FormRow>
-
-          <div className="mt-4 md:w-1/3">
-            <FieldContainer label="Role" required>
-              <SelectInput
-                value={form.role}
-                onChange={(e) => updateFormField('role', e.target.value as InviteUserRole)}
-              >
-                {allowedRoles.includes('employee') && <option value="employee">Employee</option>}
-                {allowedRoles.includes('manager') && <option value="manager">Manager</option>}
-                {allowedRoles.includes('admin') && <option value="admin">Admin</option>}
-              </SelectInput>
-            </FieldContainer>
+      {/* Step content */}
+      {currentStep === 1 && (
+        <Step1BasicInfo form={form} setForm={setForm} errors={errors} setErrors={setErrors} onResumeFromStep2={handleResumeFromStep2} />
+      )}
+      {currentStep === 2 && <Step2AccountCreated form={form} />}
+      {currentStep === 3 && <Step3Profile form={form} setForm={setForm} />}
+      {currentStep === 'completed' && (
+        <div className="px-6 py-12 flex flex-col items-center justify-center text-center space-y-4">
+          <div className="h-16 w-16 rounded-full bg-emerald-100 flex items-center justify-center">
+            <CheckCircle2 className="h-10 w-10 text-emerald-500" />
           </div>
-        </div>
-
-        {/* Employee Details Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <SectionHeader 
-            icon={User} 
-            title="Employee Details" 
-            subtitle="Personal information and contact details"
-          />
-          
-          <FormRow>
-            <FieldContainer label="First Name" error={errors.firstName}>
-              <TextInput
-                placeholder="Enter first name"
-                value={form.firstName}
-                onChange={(e) => updateFormField('firstName', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Last Name">
-              <TextInput
-                placeholder="Enter last name"
-                value={form.lastName}
-                onChange={(e) => updateFormField('lastName', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Gender">
-              <SelectInput
-                value={form.gender}
-                onChange={(e) => updateFormField('gender', e.target.value as any)}
-              >
-                {genderOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </SelectInput>
-            </FieldContainer>
-          </FormRow>
-
-          <FormRow className="mt-4">
-            <FieldContainer label="Date of Birth">
-              <TextInput
-                type="date"
-                value={form.dateOfBirth}
-                onChange={(e) => updateFormField('dateOfBirth', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Phone" error={errors.phone}>
-              <TextInput
-                type="tel"
-                placeholder="+91 9876543210"
-                value={form.phone}
-                onChange={(e) => updateFormField('phone', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Personal Email">
-              <TextInput
-                type="email"
-                placeholder="personal@example.com"
-                value={form.personalEmail}
-                onChange={(e) => updateFormField('personalEmail', e.target.value)}
-              />
-            </FieldContainer>
-          </FormRow>
-
-          <FormRow className="mt-4">
-            <FieldContainer label="Address Line">
-              <TextInput
-                placeholder="Street address"
-                value={form.address}
-                onChange={(e) => updateFormField('address', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="City">
-              <TextInput
-                placeholder="City name"
-                value={form.city}
-                onChange={(e) => updateFormField('city', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="State">
-              <SelectInput
-                value={form.state}
-                onChange={(e) => updateFormField('state', e.target.value)}
-              >
-                <option value="">Select state</option>
-                {indianStates.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </SelectInput>
-            </FieldContainer>
-          </FormRow>
-
-          <FormRow className="mt-4">
-            <FieldContainer label="Postal Code">
-              <TextInput
-                placeholder="6-digit pincode"
-                value={form.pincode}
-                onChange={(e) => updateFormField('pincode', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Emergency Contact">
-              <TextInput
-                placeholder="Contact person name"
-                value={form.emergencyContact}
-                onChange={(e) => updateFormField('emergencyContact', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Emergency Number">
-              <TextInput
-                type="tel"
-                placeholder="+91 9876543210"
-                value={form.emergencyNumber}
-                onChange={(e) => updateFormField('emergencyNumber', e.target.value)}
-              />
-            </FieldContainer>
-          </FormRow>
-
-          <div className="mt-4 md:w-1/3">
-            <FieldContainer label="Relationship">
-              <SelectInput
-                value={form.relationship}
-                onChange={(e) => updateFormField('relationship', e.target.value)}
-              >
-                {relationshipOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </SelectInput>
-            </FieldContainer>
-          </div>
-        </div>
-
-        {/* Work Information Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <SectionHeader 
-            icon={Briefcase} 
-            title="Work Information" 
-            subtitle="Employment details, work schedule, and timezone settings"
-          />
-          
-          <FormRow>
-            <FieldContainer label="Employee Code">
-              <TextInput
-                placeholder="e.g., EMP001"
-                value={form.employeeCode}
-                onChange={(e) => updateFormField('employeeCode', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Designation">
-              <TextInput
-                placeholder="e.g., Software Engineer"
-                value={form.designation}
-                onChange={(e) => updateFormField('designation', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Department">
-              <GroupMultiSelect
-                options={groupsQuery.data || []}
-                selectedIds={form.departmentIds}
-                onChange={(ids) => updateFormField('departmentIds', ids)}
-                onCreateNew={() => setShowGroupModal(true)}
-                isLoading={groupsQuery.isLoading}
-              />
-            </FieldContainer>
-          </FormRow>
-
-          <FormRow className="mt-4">
-            <FieldContainer label="Employment Type">
-              <SelectInput
-                value={form.employmentType}
-                onChange={(e) => updateFormField('employmentType', e.target.value as any)}
-              >
-                {employmentTypeOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </SelectInput>
-            </FieldContainer>
-            
-            <FieldContainer label="Work Location">
-              <TextInput
-                placeholder="e.g., Mumbai Office"
-                value={form.workLocation}
-                onChange={(e) => updateFormField('workLocation', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Expected Start Time">
-              <TextInput
-                type="time"
-                value={form.expectedStartTime}
-                onChange={(e) => updateFormField('expectedStartTime', e.target.value)}
-              />
-            </FieldContainer>
-          </FormRow>
-
-          <FormRow className="mt-4">
-            <FieldContainer label="Expected Timezone">
-              <SelectInput
-                value={form.timezone}
-                onChange={(e) => updateFormField('timezone', e.target.value)}
-              >
-                <option value="">Use organization default</option>
-                {COMMON_TIMEZONES.map(tz => (
-                  <option key={tz} value={tz}>{tz}</option>
-                ))}
-              </SelectInput>
-            </FieldContainer>
-            
-            <FieldContainer label="Joining Date">
-              <TextInput
-                type="date"
-                value={form.joiningDate}
-                onChange={(e) => updateFormField('joiningDate', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <div></div>
-          </FormRow>
-        </div>
-
-        {/* Government IDs Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <SectionHeader 
-            icon={Shield} 
-            title="Government IDs" 
-            subtitle="Add Aadhaar, PAN, and other government identification documents"
-          />
-          
-          <FormRow>
-            <FieldContainer label="ID Type">
-              <SelectInput
-                value={form.idType}
-                onChange={(e) => updateFormField('idType', e.target.value as any)}
-              >
-                {idTypeOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </SelectInput>
-            </FieldContainer>
-            
-            <FieldContainer label="ID Number">
-              <TextInput
-                placeholder="Enter ID number"
-                value={form.idNumber}
-                onChange={(e) => updateFormField('idNumber', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Proof Document">
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => updateFormField('idProofFile', e.target.files?.[0] || null)}
-                  className="hidden"
-                  id="id-proof-file"
-                />
-                <label
-                  htmlFor="id-proof-file"
-                  className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors bg-white shadow-sm"
-                >
-                  <Upload className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">
-                    {form.idProofFile ? form.idProofFile.name : 'Choose File'}
-                  </span>
-                </label>
-                {form.idProofFile && (
-                  <button
-                    type="button"
-                    onClick={() => updateFormField('idProofFile', null)}
-                    className="text-sm text-red-600 hover:text-red-800"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            </FieldContainer>
-          </FormRow>
-        </div>
-
-        {/* Bank Account Details Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <SectionHeader 
-            icon={CreditCard} 
-            title="Bank Account Details" 
-            subtitle="Add bank account for salary payouts"
-          />
-          
-          <FormRow>
-            <FieldContainer label="Bank Name">
-              <TextInput
-                placeholder="e.g., State Bank of India"
-                value={form.bankName}
-                onChange={(e) => updateFormField('bankName', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Account Number" error={errors.accountNumber}>
-              <TextInput
-                placeholder="Enter account number"
-                value={form.accountNumber}
-                onChange={(e) => updateFormField('accountNumber', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="IFSC Code" error={errors.ifscCode}>
-              <TextInput
-                placeholder="e.g., SBIN0001234"
-                value={form.ifscCode}
-                onChange={(e) => updateFormField('ifscCode', e.target.value.toUpperCase())}
-              />
-            </FieldContainer>
-          </FormRow>
-
-          <FormRow className="mt-4">
-            <FieldContainer label="Branch Name">
-              <TextInput
-                placeholder="Branch name"
-                value={form.branchName}
-                onChange={(e) => updateFormField('branchName', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Account Type">
-              <SelectInput
-                value={form.accountType}
-                onChange={(e) => updateFormField('accountType', e.target.value as 'savings' | 'current')}
-              >
-                {accountTypeOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </SelectInput>
-            </FieldContainer>
-            
-            <FieldContainer label="Proof Document (Optional)">
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => updateFormField('bankProofFile', e.target.files?.[0] || null)}
-                  className="hidden"
-                  id="bank-proof-file"
-                />
-                <label
-                  htmlFor="bank-proof-file"
-                  className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors bg-white shadow-sm"
-                >
-                  <Upload className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">
-                    {form.bankProofFile ? form.bankProofFile.name : 'Choose File'}
-                  </span>
-                </label>
-                {form.bankProofFile && (
-                  <button
-                    type="button"
-                    onClick={() => updateFormField('bankProofFile', null)}
-                    className="text-sm text-red-600 hover:text-red-800"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            </FieldContainer>
-          </FormRow>
-
-          <div className="mt-4 flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="default-account"
-              checked={form.isDefaultAccount}
-              onChange={(e) => updateFormField('isDefaultAccount', e.target.checked)}
-              className="h-4 w-4 text-sky-600 focus:ring-sky-500 border-slate-300 rounded"
-            />
-            <label htmlFor="default-account" className="text-sm text-gray-700">
-              Set as default account
-            </label>
-          </div>
-        </div>
-
-        {/* Documents Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <SectionHeader 
-            icon={FileText} 
-            title="Documents" 
-            subtitle="Upload and manage employee documents"
-          />
-          
-          <FormRow>
-            <FieldContainer label="Document Title">
-              <TextInput
-                placeholder="e.g., Experience Certificate"
-                value={form.documentTitle}
-                onChange={(e) => updateFormField('documentTitle', e.target.value)}
-              />
-            </FieldContainer>
-            
-            <FieldContainer label="Category">
-              <SelectInput
-                value={form.documentCategory}
-                onChange={(e) => updateFormField('documentCategory', e.target.value)}
-              >
-                {documentCategoryOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </SelectInput>
-            </FieldContainer>
-            
-            <FieldContainer label="File">
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                  onChange={(e) => updateFormField('documentFile', e.target.files?.[0] || null)}
-                  className="hidden"
-                  id="document-file"
-                />
-                <label
-                  htmlFor="document-file"
-                  className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors bg-white shadow-sm"
-                >
-                  <Upload className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">
-                    {form.documentFile ? form.documentFile.name : 'Choose File'}
-                  </span>
-                </label>
-                {form.documentFile && (
-                  <button
-                    type="button"
-                    onClick={() => updateFormField('documentFile', null)}
-                    className="text-sm text-red-600 hover:text-red-800"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            </FieldContainer>
-          </FormRow>
-        </div>
-
-        {/* Settings Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <SectionHeader 
-            icon={Shield} 
-            title="User Settings" 
-            subtitle="Configure user permissions and monitoring"
-          />
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-                Screenshot Monitoring Interval
-              </label>
-              <SelectInput
-                value={form.settings.monitoringInterval}
-                onChange={(e) => updateSettingsField('monitoringInterval', parseInt(e.target.value) as any)}
-              >
-                {monitoringIntervalOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </SelectInput>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700">Can Edit Time</span>
-                <ToggleInput
-                  checked={form.settings.canEditTime}
-                  onChange={(checked) => updateSettingsField('canEditTime', checked)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700">Attendance Monitoring</span>
-                <ToggleInput
-                  checked={form.settings.attendanceMonitoring}
-                  onChange={(checked) => updateSettingsField('attendanceMonitoring', checked)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700">Payroll Visibility</span>
-                <ToggleInput
-                  checked={form.settings.payrollVisibility}
-                  onChange={(checked) => updateSettingsField('payrollVisibility', checked)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700">Task Assignment Access</span>
-                <ToggleInput
-                  checked={form.settings.taskAssignmentAccess}
-                  onChange={(checked) => updateSettingsField('taskAssignmentAccess', checked)}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+          <h3 className="text-xl font-semibold text-gray-900">User Created Successfully!</h3>
+          <p className="text-sm text-gray-500 max-w-sm">
+            {form.firstName} {form.lastName} ({form.employeeCode}) has been added.
+          </p>
           <button
-            type="button"
-            onClick={handleReset}
-            className="px-4 py-2 text-gray-600 hover:text-gray-900 font-medium"
+            onClick={handleComplete}
+            className="px-6 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors"
           >
-            Reset
+            Done
           </button>
-          <Button
-            type="submit"
-            variant="primary"
-            iconLeft={createUserMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-            disabled={createUserMutation.isPending}
-          >
-            {createUserMutation.isPending ? 'Creating User...' : 'Create User'}
-          </Button>
         </div>
-      </form>
+      )}
 
-      {/* Quick Create Group Modal */}
-      {showGroupModal && (
-        <QuickCreateGroupDialog
-          open={showGroupModal}
-          onClose={() => setShowGroupModal(false)}
-          onCreated={() => {
-            queryClient.invalidateQueries({ queryKey: ['add-user-groups'] });
-          }}
+      {/* Wizard Actions */}
+      {currentStep !== 'completed' && (
+        <WizardActions
+          currentStep={currentStep}
+          showBack={currentStep === 2 || currentStep === 3}
+          showSkip={currentStep === 3}
+          isSubmitting={isSubmitting}
+          onBack={handleBack}
+          onNext={handleNext}
+          onSkip={handleSkip}
+          nextLabel={currentStep === 1 ? (form.userId ? 'Continue' : 'Create Account') : currentStep === 3 ? 'Complete' : 'Continue'}
         />
       )}
     </div>
