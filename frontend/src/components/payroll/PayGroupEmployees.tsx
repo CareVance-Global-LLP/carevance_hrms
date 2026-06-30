@@ -14,6 +14,7 @@ import {
   Download,
   Eye,
   Settings,
+  UserPlus,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -21,6 +22,7 @@ import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import AddEmployeeToPayGroupModal from './AddEmployeeToPayGroupModal';
 
 interface PayGroupEmployeesProps {
   payGroupId: number;
@@ -116,14 +118,7 @@ function EmployeeCard({
         </button>
 
         {/* Avatar */}
-        <div
-          className={`h-12 w-12 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center flex-shrink-0 ${
-            isPaid ? 'cursor-default' : 'cursor-pointer'
-          }`}
-          onClick={() => {
-            if (!isPaid) onClick();
-          }}
-        >
+        <div className="h-12 w-12 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center flex-shrink-0">
           {employee.avatar ? (
             <img src={employee.avatar} alt={employee.name} className="h-12 w-12 rounded-full" />
           ) : (
@@ -138,21 +133,12 @@ function EmployeeCard({
           <div className="flex items-start justify-between">
             <div>
               <h3
-                              className={`font-semibold transition-colors ${
-                                isPaid
-                                  ? 'text-slate-500 cursor-default'
-                                  : 'text-slate-900 cursor-pointer hover:text-emerald-600'
-                              }`}
-                              onClick={() => {
-                                if (isPaid) {
-                                  alert(`Payroll already processed for ${employee.name} this month.`);
-                                } else {
-                                  onClick();
-                                }
-                              }}
-                            >
-                              {employee.name}
-                            </h3>
+                className={`font-semibold ${
+                  isPaid ? 'text-slate-500' : 'text-slate-900'
+                }`}
+              >
+                {employee.name}
+              </h3>
               <p className={`text-sm truncate ${isPaid ? 'text-slate-400' : 'text-slate-500'}`}>
                 {employee.designation || employee.email}
               </p>
@@ -267,11 +253,12 @@ export default function PayGroupEmployees({
   onOpenBulkPayroll,
   onOpenPayGroupSettings,
 }: PayGroupEmployeesProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedEmployees, setSelectedEmployees] = useState<Set<number>>(new Set());
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
-  const [sortBy, setSortBy] = useState<SortBy>('name');
-  const [showFilters, setShowFilters] = useState(false);
+   const [searchQuery, setSearchQuery] = useState('');
+   const [selectedEmployees, setSelectedEmployees] = useState<Set<number>>(new Set());
+   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+   const [sortBy, setSortBy] = useState<SortBy>('name');
+   const [showFilters, setShowFilters] = useState(false);
+   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
 
   // Payslip PDF (same blob + open-in-new-tab pattern as DepartmentEmployees)
   const viewPayslipPdf = async (userId: number, monthYearArg: string, employeeName: string) => {
@@ -442,15 +429,24 @@ export default function PayGroupEmployees({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            iconLeft={<Settings className="h-4 w-4" />}
-            onClick={() => onOpenPayGroupSettings?.(payGroupId)}
-          >
-            Settings
-          </Button>
+         <div className="flex items-center gap-2">
+           <Button
+             variant="primary"
+             size="sm"
+             iconLeft={<UserPlus className="h-4 w-4" />}
+             onClick={() => setShowAddEmployeeModal(true)}
+           >
+             Add Employee
+           </Button>
+
+           <Button
+             variant="ghost"
+             size="sm"
+             iconLeft={<Settings className="h-4 w-4" />}
+             onClick={() => onOpenPayGroupSettings?.(payGroupId)}
+           >
+             Settings
+           </Button>
 
           {selectedEmployees.size > 0 && (
             <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-lg">
@@ -464,7 +460,7 @@ export default function PayGroupEmployees({
                 iconLeft={<Play className="h-4 w-4" />}
                 onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
               >
-                Open Bulk Payroll
+                Run Payroll
               </Button>
               <Button
                 variant="ghost"
@@ -609,37 +605,45 @@ export default function PayGroupEmployees({
         )}
       </div>
 
-      {/* Summary Footer */}
-      {employees.length > 0 && (
-        <div className="bg-slate-50 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full bg-amber-500" />
-              <span className="text-sm text-slate-600">{counts.pending} Pending</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full bg-emerald-500" />
-              <span className="text-sm text-slate-600">{counts.paid} Paid</span>
-            </div>
-          </div>
+       {/* Summary Footer */}
+       {employees.length > 0 && (
+         <div className="bg-slate-50 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
+           <div className="flex items-center gap-6">
+             <div className="flex items-center gap-2">
+               <div className="h-3 w-3 rounded-full bg-amber-500" />
+               <span className="text-sm text-slate-600">{counts.pending} Pending</span>
+             </div>
+             <div className="flex items-center gap-2">
+               <div className="h-3 w-3 rounded-full bg-emerald-500" />
+               <span className="text-sm text-slate-600">{counts.paid} Paid</span>
+             </div>
+           </div>
 
-          {selectedEmployees.size > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-600">
-                {selectedEmployees.size} employees selected
-              </span>
-              <Button
-                variant="primary"
-                size="sm"
-                iconLeft={<Play className="h-4 w-4" />}
-                onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
-              >
-                Open Bulk Payroll
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+           {selectedEmployees.size > 0 && (
+             <div className="flex items-center gap-3">
+               <span className="text-sm text-slate-600">
+                 {selectedEmployees.size} employees selected
+               </span>
+               <Button
+                 variant="primary"
+                 size="sm"
+                 iconLeft={<Play className="h-4 w-4" />}
+                 onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
+               >
+                 Run Payroll
+               </Button>
+             </div>
+           )}
+         </div>
+       )}
+
+       <AddEmployeeToPayGroupModal
+         isOpen={showAddEmployeeModal}
+         onClose={() => setShowAddEmployeeModal(false)}
+         payGroupId={payGroupId}
+         payGroupName={payGroupName}
+         onSuccess={() => setShowAddEmployeeModal(false)}
+       />
+     </div>
+   );
 }
