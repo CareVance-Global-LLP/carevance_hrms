@@ -593,7 +593,7 @@ function App() {
             <Route path="invoices" element={<AdminRoute><Invoices /></AdminRoute>} />
             <Route path="user-management" element={<Navigate to="/employees" replace />} />
             <Route path="employees" element={<AdminRoute><EmployeeManagementWorkspace mode="employees" /></AdminRoute>} />
-            <Route path="employees/:employeeId" element={<AdminRoute><EmployeePersonalDetailsPage /></AdminRoute>} />
+            <Route path="employees/:employeeCode" element={<AdminRoute><EmployeePersonalDetailsPage /></AdminRoute>} />
             <Route path="employees/teams" element={<AdminRoute><EmployeeManagementWorkspace mode="teams" /></AdminRoute>} />
             <Route path="employees/invitations" element={<AdminRoute><EmployeeManagementWorkspace mode="invitations" /></AdminRoute>} />
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />

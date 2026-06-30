@@ -573,6 +573,96 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
+     * Assign an employee to an existing pay group + salary structure.
+     */
+    public function assignEmployeeToExistingPayGroup(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'pay_group_id' => 'required|integer|exists:pay_groups,id',
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'integer',
+            'salary_structure_id' => 'nullable|integer|exists:salary_templates,id',
+            'effective_from' => 'nullable|date',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+        $userIds = array_values(array_unique(array_map('intval', $data['user_ids'])));
+        $effectiveFrom = $data['effective_from'] ?? now()->toDateString();
+
+        $validCount = User::whereIn('id', $userIds)
+            ->where('organization_id', $organizationId)
+            ->count();
+        if ($validCount !== count($userIds)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'One or more users do not belong to this organization.',
+            ], 422);
+        }
+
+        $payGroup = PayGroup::where('organization_id', $organizationId)
+            ->where('id', $data['pay_group_id'])
+            ->firstOrFail();
+
+        try {
+            DB::transaction(function () use ($organizationId, $userIds, $payGroup, $effectiveFrom) {
+                foreach ($userIds as $userId) {
+                    PayGroupAssignment::where('organization_id', $organizationId)
+                        ->where('user_id', $userId)
+                        ->where('is_active', true)
+                        ->update([
+                            'is_active' => false,
+                            'effective_to' => $effectiveFrom,
+                        ]);
+
+                    PayGroupAssignment::create([
+                        'organization_id' => $organizationId,
+                        'pay_group_id' => $payGroup->id,
+                        'user_id' => $userId,
+                        'effective_from' => $effectiveFrom,
+                        'is_active' => true,
+                    ]);
+                }
+            });
+
+            if (!empty($data['salary_structure_id'])) {
+                foreach ($userIds as $userId) {
+                    $template = EmployeePayrollTemplate::getOrCreateForUser(
+                        $userId,
+                        $organizationId,
+                        auth()->id()
+                    );
+                    $template->salary_template_id = $data['salary_structure_id'];
+                    $template->save();
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'pay_group_id' => $payGroup->id,
+                'pay_group_name' => $payGroup->name,
+                'pay_group_code' => $payGroup->code,
+                'assigned_count' => count($userIds),
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Failed to assign employee to existing pay group', [
+                'organization_id' => $organizationId,
+                'pay_group_id' => $data['pay_group_id'],
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to assign employee to pay group. Please check that the pay group and salary structure exist.',
+            ], 422);
+        }
+    }
+
+    /**
      * Get employee payroll details with time tracking
      */
     public function getEmployeePayrollDetails(Request $request, int $userId): JsonResponse
@@ -1184,7 +1274,7 @@ class PayrollDepartmentController extends Controller
      * Quick-save CTC for an employee (inline update from Roster card).
      * Validates run is not paid/released before persisting.
      */
-    public function quickSaveCtc(Request $request, int $userId): JsonResponse
+    public function quickSaveCtc(Request $request, int|string $userId): JsonResponse
     {
         $data = $request->validate([
             'annual_ctc' => 'required|numeric|min:0',
@@ -1193,9 +1283,17 @@ class PayrollDepartmentController extends Controller
 
         $organizationId = $request->user()->organization_id;
 
-        $user = User::where('organization_id', $organizationId)
-            ->where('id', $userId)
-            ->firstOrFail();
+        if (is_numeric($userId)) {
+            $user = User::where('organization_id', $organizationId)
+                ->where('id', (int) $userId)
+                ->firstOrFail();
+        } else {
+            $user = User::where('organization_id', $organizationId)
+                ->whereHas('employeeWorkInfo', fn ($q) => $q->where('employee_code', $userId))
+                ->firstOrFail();
+        }
+
+        $userId = $user->id;
 
         // Immutability: reject if the run is already paid or released.
         $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)

@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
-import api from '../../services/api';
+import api, { payrollApi } from '../../services/api';
 import { WizardProgress } from './steps/WizardProgress';
 import { WizardActions } from './steps/WizardActions';
 import { Step1BasicInfo } from './steps/Step1BasicInfo';
 import { Step2AccountCreated } from './steps/Step2AccountCreated';
 import { Step3Profile } from './steps/Step3Profile';
-import { defaultForm, type AddUserWizardForm } from './steps/types';
+import { defaultForm, type AddUserWizardForm, type IncompleteUserCheck } from './steps/types';
+import EmployeeDetailsSection from '@/components/EmployeeDetailsSection';
 
 // ── Helper: Extract user-friendly error message ────────────
 
@@ -88,7 +89,11 @@ interface CustomAddUserPanelProps {
 const isValidEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const isValidPhone = (phone: string): boolean => /^[+]?[\d\s-]{10,}$/.test(phone);
 
-const canProceedFromStep1 = (form: AddUserWizardForm): boolean => {
+const canProceedFromStep1 = (form: AddUserWizardForm, incompleteUser: IncompleteUserCheck | null): boolean => {
+  // Block submission if email already exists as a complete account in this org
+  if (incompleteUser?.exists && !incompleteUser?.incomplete) {
+    return false;
+  }
   return (
     form.firstName.trim() !== '' &&
     form.email.trim() !== '' &&
@@ -214,6 +219,7 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
   const [errors, setErrors] = useState<Partial<Record<keyof AddUserWizardForm, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [incompleteUser, setIncompleteUser] = useState<IncompleteUserCheck | null>(null);
 
   // ✅ Welcome back message if resuming from persisted state
   useEffect(() => {
@@ -252,14 +258,62 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
       const userId = userResponse.data?.id || userResponse.data?.data?.id;
 
-      // Step B: Save employee code + work info if provided
-      if (userId && (formData.employeeCode || formData.designation || formData.joiningDate || formData.workLocation)) {
-        await api.put(`/employees/${userId}/work-info`, {
-          employee_code: formData.employeeCode || undefined,
-          designation: formData.designation || undefined,
-          joining_date: formData.joiningDate || undefined,
-          work_location: formData.workLocation || undefined,
-        });
+      // Step B–E: Save profile, work-info, CTC, pay group
+      // If any step fails AFTER user is created, attempt rollback (delete orphaned user)
+      if (userId) {
+        try {
+          await api.put(`/employees/${userId}/profile`, {
+            first_name: formData.firstName || undefined,
+            last_name: formData.lastName || undefined,
+            phone: formData.phone || undefined,
+            personal_email: formData.email || undefined,
+          });
+
+          if (formData.employeeCode || formData.designation || formData.joiningDate || formData.workLocation) {
+            const employeeCode = formData.employeeCode
+              ? `${formData.employeeCode}-${Date.now().toString(36).slice(-4).toUpperCase()}`
+              : undefined;
+            await api.put(`/employees/${userId}/work-info`, {
+              employee_code: employeeCode,
+              designation: formData.designation || undefined,
+              joining_date: formData.joiningDate || undefined,
+              work_location: formData.workLocation || undefined,
+            });
+          }
+
+          if (formData.annualCtc) {
+            const monthYear = new Date().toISOString().slice(0, 7);
+            await api.patch(`/payroll/employees/${userId}/ctc`, {
+              annual_ctc: formData.annualCtc,
+              month_year: monthYear,
+            });
+          }
+
+          if (formData.payGroupId || formData.salaryStructureId) {
+            await payrollApi.assignEmployeeToExistingPayGroup({
+              pay_group_id: formData.payGroupId!,
+              user_ids: [userId],
+              salary_structure_id: formData.salaryStructureId || undefined,
+            });
+          }
+        } catch (postCreateError: any) {
+          // Rollback: delete the orphaned user so the email can be retried.
+          // Only roll back on 422 (validation/data errors the user can fix).
+          // On 500 (server error), keep the user — it's not the user's fault
+          // and deleting it just loses data for no reason.
+          const status = postCreateError.response?.status;
+          if (status && status < 500) {
+            try {
+              await api.delete(`/users/${userId}`);
+            } catch {
+              // Best-effort cleanup; ignore failures
+            }
+          } else {
+            // Clear userId from form so the banner/check re-triggers fresh
+            setForm((prev) => ({ ...prev, userId: null }));
+          }
+          throw postCreateError;
+        }
       }
 
       return { ...userResponse.data, userId };
@@ -347,7 +401,7 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
   const handleNext = async () => {
     if (currentStep === 1) {
-      if (!canProceedFromStep1(form)) {
+      if (!canProceedFromStep1(form, incompleteUser)) {
         setErrors(validateStep1(form));
         return;
       }
@@ -361,6 +415,7 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
       setIsSubmitting(true);
       setErrors({});
+      setIncompleteUser(null);
       try {
         const result = await createUserMutation.mutateAsync(form);
         setForm((prev) => ({
@@ -378,30 +433,12 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
           createdAt: new Date().toISOString(),
         });
       } catch (error: any) {
-        const status = error.response?.status;
-        const errors = error.response?.data?.errors || {};
-        const message = error.response?.data?.message || '';
-
-        // Detect "email already taken" — set incompleteUser so Step1BasicInfo shows resume UI
-        const isEmailTaken =
-          status === 422 && (
-            message.toLowerCase().includes('already') ||
-            JSON.stringify(errors).toLowerCase().includes('already')
-          );
-
-        if (isEmailTaken) {
-          setFeedback({
-            type: 'error',
-            message: `An account with "${form.email}" already exists. Check the email field for options.`,
-          });
+        const errorMessage = extractErrorMessage(error);
+        const fieldErrors = extractFieldErrors(error);
+        if (Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
         } else {
-          const errorMessage = extractErrorMessage(error);
-          const fieldErrors = extractFieldErrors(error);
-          if (Object.keys(fieldErrors).length > 0) {
-            setErrors(fieldErrors);
-          } else {
-            setErrors({ email: errorMessage });
-          }
+          setErrors({ email: errorMessage });
         }
       } finally {
         setIsSubmitting(false);
@@ -422,6 +459,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
             await api.post('/invites/send', {
               email: form.email,
               role: form.role,
+              first_name: form.firstName,
+              last_name: form.lastName,
+              employee_code: form.employeeCode,
+              is_new_user: true,
             });
           } catch (inviteError) {
             console.warn('Failed to send invitation email:', inviteError);
@@ -440,6 +481,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
             await api.post('/invites/send', {
               email: form.email,
               role: form.role,
+              first_name: form.firstName,
+              last_name: form.lastName,
+              employee_code: form.employeeCode,
+              is_new_user: true,
             });
           } catch (inviteError) {
             console.warn('Failed to send invitation email:', inviteError);
@@ -524,6 +569,15 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
     onSuccess();
   };
 
+  const handleAddAnother = () => {
+    setCurrentStep(1);
+    setForm({ ...defaultForm });
+    setCompletedSteps(new Set());
+    setErrors({});
+    setFeedback(null);
+    clearWizardState();
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
       {/* Wizard Progress */}
@@ -551,25 +605,36 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
       {/* Step content */}
       {currentStep === 1 && (
-        <Step1BasicInfo form={form} setForm={setForm} errors={errors} setErrors={setErrors} onResumeFromStep2={handleResumeFromStep2} />
+        <Step1BasicInfo form={form} setForm={setForm} errors={errors} setErrors={setErrors} onResumeFromStep2={handleResumeFromStep2} incompleteUser={incompleteUser} setIncompleteUser={setIncompleteUser} />
       )}
       {currentStep === 2 && <Step2AccountCreated form={form} />}
       {currentStep === 3 && <Step3Profile form={form} setForm={setForm} />}
       {currentStep === 'completed' && (
-        <div className="px-6 py-12 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="h-16 w-16 rounded-full bg-emerald-100 flex items-center justify-center">
-            <CheckCircle2 className="h-10 w-10 text-emerald-500" />
+        <div className="space-y-4">
+          <div className="px-6 py-4 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-emerald-900">User Created Successfully!</h3>
+                <p className="text-sm text-emerald-700">
+                  {form.firstName} {form.lastName} ({form.employeeCode || 'No code'}) has been added. Invitation email sent to {form.email}.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleAddAnother}
+              className="px-4 py-2 text-sm font-medium text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors whitespace-nowrap"
+            >
+              + Add Another
+            </button>
           </div>
-          <h3 className="text-xl font-semibold text-gray-900">User Created Successfully!</h3>
-          <p className="text-sm text-gray-500 max-w-sm">
-            {form.firstName} {form.lastName} ({form.employeeCode}) has been added.
-          </p>
-          <button
-            onClick={handleComplete}
-            className="px-6 py-2.5 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors"
-          >
-            Done
-          </button>
+          {form.userId && (
+            <div className="p-4">
+              <EmployeeDetailsSection employeeCode={form.employeeCode || String(form.userId)} />
+            </div>
+          )}
         </div>
       )}
 

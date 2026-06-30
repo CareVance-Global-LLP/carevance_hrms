@@ -16,7 +16,7 @@ class EmployeeWorkspaceController extends Controller
     ) {
     }
 
-    public function show(Request $request, int $id)
+    public function show(Request $request, int|string $id)
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
@@ -29,7 +29,7 @@ class EmployeeWorkspaceController extends Controller
         );
     }
 
-    public function updateProfile(Request $request, int $id)
+    public function updateProfile(Request $request, int|string $id)
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
@@ -60,7 +60,7 @@ class EmployeeWorkspaceController extends Controller
         return response()->json($profile);
     }
 
-    public function updateWorkInfo(Request $request, int $id)
+    public function updateWorkInfo(Request $request, int|string $id)
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
@@ -84,13 +84,17 @@ class EmployeeWorkspaceController extends Controller
             'work_mode' => 'nullable|in:office,remote,hybrid',
         ]);
 
-        $workInfo = $this->employeeWorkspaceService->upsertWorkInfo($employee, $data);
+        try {
+            $workInfo = $this->employeeWorkspaceService->upsertWorkInfo($employee, $data);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
         $this->employeeWorkspaceService->recordActivity($employee, $currentUser, 'employee.work_info_updated', 'Updated work information.', $data);
 
         return response()->json($workInfo);
     }
 
-    public function storeGovernmentId(Request $request, int $id)
+    public function storeGovernmentId(Request $request, int|string $id)
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
@@ -144,7 +148,7 @@ class EmployeeWorkspaceController extends Controller
         return response()->json($record, isset($data['id']) ? 200 : 201);
     }
 
-    public function storeBankAccount(Request $request, int $id)
+    public function storeBankAccount(Request $request, int|string $id)
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
@@ -225,7 +229,7 @@ class EmployeeWorkspaceController extends Controller
         return response()->json($record, isset($data['id']) ? 200 : 201);
     }
 
-    public function storeDocument(Request $request, int $id)
+    public function storeDocument(Request $request, int|string $id)
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
@@ -250,7 +254,7 @@ class EmployeeWorkspaceController extends Controller
         return response()->json($document, 201);
     }
 
-    public function downloadDocument(Request $request, int $id, int $documentId)
+    public function downloadDocument(Request $request, int|string $id, int $documentId)
     {
         $currentUser = $request->user();
         $employee = $this->employee($currentUser?->organization_id, $id);
@@ -270,15 +274,22 @@ class EmployeeWorkspaceController extends Controller
         return $this->employeeWorkspaceService->documentResponse($document);
     }
 
-    private function employee(?int $organizationId, int $id): ?User
+    private function employee(?int $organizationId, int|string $id): ?User
     {
         if (!$organizationId) {
             return null;
         }
 
+        if (is_numeric($id)) {
+            return User::query()
+                ->where('organization_id', $organizationId)
+                ->find((int) $id);
+        }
+
         return User::query()
             ->where('organization_id', $organizationId)
-            ->find($id);
+            ->whereHas('employeeWorkInfo', fn ($q) => $q->where('employee_code', $id))
+            ->first();
     }
 
     private function canManage(User $user): bool
@@ -313,6 +324,10 @@ class EmployeeWorkspaceController extends Controller
 
     private function canEditProfile(User $actor, User $employee): bool
     {
-        return $actor->id === $employee->id;
+        if ($actor->id === $employee->id) {
+            return true;
+        }
+
+        return $this->canManageEmployee($actor, $employee);
     }
 }

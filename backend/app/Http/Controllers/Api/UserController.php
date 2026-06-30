@@ -957,7 +957,9 @@ class UserController extends Controller
 
         $email = strtolower(trim($request->email));
 
-        $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
+        $user = User::where('organization_id', $request->user()->organization_id)
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->first();
 
         if (! $user) {
             return response()->json([

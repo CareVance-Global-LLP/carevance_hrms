@@ -1,19 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Hash, AlertTriangle, XCircle } from 'lucide-react';
-import { groupApi } from '../../../services/api';
+import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Hash, AlertTriangle, XCircle, IndianRupee, Users, FileStack } from 'lucide-react';
+import { groupApi, payrollApi } from '../../../services/api';
 import api from '../../../services/api';
 import CustomSelect from '../../../components/ui/CustomSelect';
-import type { AddUserWizardForm } from './types';
-
-interface IncompleteUserCheck {
-  exists: boolean;
-  incomplete: boolean;
-  userId?: number;
-  name?: string;
-  email?: string;
-  step?: number;
-}
+import type { AddUserWizardForm, IncompleteUserCheck } from './types';
 
 interface Step1Props {
   form: AddUserWizardForm;
@@ -21,6 +12,8 @@ interface Step1Props {
   errors: Partial<Record<keyof AddUserWizardForm, string>>;
   setErrors: React.Dispatch<React.SetStateAction<Partial<Record<keyof AddUserWizardForm, string>>>>;
   onResumeFromStep2?: (userId: number) => void;
+  incompleteUser: IncompleteUserCheck | null;
+  setIncompleteUser: React.Dispatch<React.SetStateAction<IncompleteUserCheck | null>>;
 }
 
 const WORK_LOCATIONS = [
@@ -49,7 +42,7 @@ const TIMEZONES = [
   { value: 'Australia/Sydney', label: 'AEST (UTC+10) — Sydney' },
 ];
 
-export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromStep2 }: Step1Props) {
+export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromStep2, incompleteUser, setIncompleteUser }: Step1Props) {
   // Fetch departments from backend API
   const { data: departments, isLoading: departmentsLoading } = useQuery({
     queryKey: ['add-user-groups'],
@@ -59,6 +52,26 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         id: group.id,
         name: group.name,
       }));
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Fetch pay groups from backend API
+  const { data: payGroups, isLoading: payGroupsLoading } = useQuery({
+    queryKey: ['add-user-pay-groups'],
+    queryFn: async () => {
+      const response = await payrollApi.getPayGroups({ is_active: true });
+      return response.data?.pay_groups || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Fetch salary structures from backend API
+  const { data: salaryStructures, isLoading: salaryStructuresLoading } = useQuery({
+    queryKey: ['add-user-salary-structures'],
+    queryFn: async () => {
+      const response = await payrollApi.getSalaryStructures();
+      return response.data?.templates || [];
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -75,8 +88,6 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
     }
   };
 
-  // ✅ Check for incomplete user on email blur
-  const [incompleteUser, setIncompleteUser] = useState<IncompleteUserCheck | null>(null);
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
 
   const [checkingEmail, setCheckingEmail] = useState(false);
@@ -361,6 +372,87 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           placeholder="Select timezone"
         />
         <p className="mt-1 text-xs text-gray-400">Auto-detected from browser. Change if needed.</p>
+      </div>
+
+      {/* Payroll & Compensation */}
+      <div className="border-t border-gray-100 pt-5 mt-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700 mb-4">Payroll & Compensation</p>
+
+        {/* Annual CTC */}
+        <div className="mb-4">
+          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+            <IndianRupee className="h-3.5 w-3.5 text-gray-400" />
+            Annual CTC <span className="text-xs text-gray-400 font-normal">(optional)</span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="1000"
+            value={form.annualCtc || ''}
+            onChange={(e) => setForm((p) => ({ ...p, annualCtc: e.target.value ? Number(e.target.value) : null }))}
+            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+            placeholder="e.g., 600000"
+          />
+          <p className="mt-1 text-xs text-gray-400">Annual cost to company in INR</p>
+        </div>
+
+        {/* Pay Group */}
+        <div className="mb-4">
+          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+            <Users className="h-3.5 w-3.5 text-gray-400" />
+            Pay Group <span className="text-xs text-gray-400 font-normal">(optional)</span>
+          </label>
+          {payGroupsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading pay groups...
+            </div>
+          ) : payGroups && payGroups.length > 0 ? (
+            <CustomSelect
+              options={[
+                { value: '', label: 'Select pay group (optional)' },
+                ...payGroups.map((pg: any) => ({ value: String(pg.id), label: `${pg.name} (${pg.code})` })),
+              ]}
+              value={form.payGroupId ? String(form.payGroupId) : ''}
+              onChange={(value) => setForm((p) => ({ ...p, payGroupId: value ? Number(value) : null }))}
+              placeholder="Select pay group"
+              dropDirection="down"
+            />
+          ) : (
+            <div className="text-sm text-gray-500 py-2 bg-gray-50 rounded-lg px-3">
+              No pay groups found. Create one in Payroll → Pay Groups.
+            </div>
+          )}
+        </div>
+
+        {/* Salary Structure */}
+        <div className="mb-4">
+          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+            <FileStack className="h-3.5 w-3.5 text-gray-400" />
+            Salary Structure <span className="text-xs text-gray-400 font-normal">(optional)</span>
+          </label>
+          {salaryStructuresLoading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading salary structures...
+            </div>
+          ) : salaryStructures && salaryStructures.length > 0 ? (
+            <CustomSelect
+              options={[
+                { value: '', label: 'Select salary structure (optional)' },
+                ...salaryStructures.map((ss: any) => ({ value: String(ss.id), label: ss.name })),
+              ]}
+              value={form.salaryStructureId ? String(form.salaryStructureId) : ''}
+              onChange={(value) => setForm((p) => ({ ...p, salaryStructureId: value ? Number(value) : null }))}
+              placeholder="Select salary structure"
+              dropDirection="down"
+            />
+          ) : (
+            <div className="text-sm text-gray-500 py-2 bg-gray-50 rounded-lg px-3">
+              No salary structures found. Create one in Payroll → Salary Structures.
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Existing User Modal Popup — shows for ANY existing user */}

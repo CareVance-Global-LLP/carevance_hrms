@@ -484,16 +484,16 @@ export const userApi = {
 };
 
 export const employeeWorkspaceApi = {
-  getWorkspace: (id: number, params?: { payroll_month?: string }) =>
+  getWorkspace: (id: number | string, params?: { payroll_month?: string }) =>
     api.get<EmployeeWorkspacePayload>(`/employees/${id}/workspace`, { params }),
 
-  updateProfile: (id: number, data: Partial<EmployeeProfileDetails>) =>
+  updateProfile: (id: number | string, data: Partial<EmployeeProfileDetails>) =>
     api.put<EmployeeProfileDetails>(`/employees/${id}/profile`, data),
 
-  updateWorkInfo: (id: number, data: Partial<EmployeeWorkInfo>) =>
+  updateWorkInfo: (id: number | string, data: Partial<EmployeeWorkInfo>) =>
     api.put<EmployeeWorkInfo>(`/employees/${id}/work-info`, data),
 
-  saveGovernmentId: (id: number, data: Record<string, any> & { proof_file?: File | null }) => {
+  saveGovernmentId: (id: number | string, data: Record<string, any> & { proof_file?: File | null }) => {
     const formData = new FormData();
     Object.entries(data).forEach(([key, value]) => {
       if (value === undefined || value === null || value === '') return;
@@ -508,7 +508,7 @@ export const employeeWorkspaceApi = {
     });
   },
 
-  saveBankAccount: (id: number, data: Record<string, any> & { proof_file?: File | null }) => {
+  saveBankAccount: (id: number | string, data: Record<string, any> & { proof_file?: File | null }) => {
     const formData = new FormData();
     Object.entries(data).forEach(([key, value]) => {
       if (value === undefined || value === null || value === '') return;
@@ -527,7 +527,7 @@ export const employeeWorkspaceApi = {
     });
   },
 
-  uploadDocument: (id: number, data: { title: string; category: string; review_status?: string; notes?: string; file: File }) => {
+  uploadDocument: (id: number | string, data: { title: string; category: string; review_status?: string; notes?: string; file: File }) => {
     const formData = new FormData();
     formData.append('title', data.title);
     formData.append('category', data.category);
@@ -539,7 +539,7 @@ export const employeeWorkspaceApi = {
     });
   },
 
-  downloadDocument: (employeeId: number, documentId: number) =>
+  downloadDocument: (employeeId: number | string, documentId: number) =>
     api.get<Blob>(`/employees/${employeeId}/documents/${documentId}/download`, {
       responseType: 'blob' as AxiosRequestConfig['responseType'],
     }),
@@ -2160,6 +2160,14 @@ export const payrollApi = {
       pay_group_code: string;
       assigned_count: number;
     }>('/payroll/pay-groups/assign', data),
+  assignEmployeeToExistingPayGroup: (data: { pay_group_id: number; user_ids: number[]; salary_structure_id?: number; effective_from?: string }) =>
+    api.post<{
+      success: boolean;
+      pay_group_id: number;
+      pay_group_name: string;
+      pay_group_code: string;
+      assigned_count: number;
+    }>('/payroll/pay-groups/assign-existing', data),
   // Get the active employees in a pay group with their per-month
   // payroll status. Response shape mirrors getDepartmentEmployees so
   // the EmployeeCard component is shared.

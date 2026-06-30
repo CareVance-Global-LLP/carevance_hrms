@@ -66,6 +66,9 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Body: { name: string, user_ids: number[], effective_from?: YYYY-MM-DD }
     Route::post('/pay-groups/assign', [PayrollDepartmentController::class, 'assignEmployeesToPayGroup']);
 
+    // Assign an employee to an existing pay group + salary structure
+    Route::post('/pay-groups/assign-existing', [PayrollDepartmentController::class, 'assignEmployeeToExistingPayGroup']);
+
     // Pay Group employee list — same shape as getDepartmentEmployees so
     // the PayGroupEmployees view can share the EmployeeCard component.
     // Query: ?month_year=YYYY-MM (default: current month)

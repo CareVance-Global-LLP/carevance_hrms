@@ -4,6 +4,15 @@ export interface OtherEarning {
   value: number;
 }
 
+export interface IncompleteUserCheck {
+  exists: boolean;
+  incomplete: boolean;
+  userId?: number;
+  name?: string;
+  email?: string;
+  step?: number;
+}
+
 export interface AddUserWizardForm {
   // Step 1: Basic Info (Required)
   firstName: string;
@@ -17,6 +26,11 @@ export interface AddUserWizardForm {
   workLocation: 'office' | 'remote' | 'hybrid';
   timezone: string;
   employeeCode: string;
+
+  // Step 1: Payroll Info (Optional)
+  annualCtc: number | null;
+  payGroupId: number | null;
+  salaryStructureId: number | null;
 
   // Step 2: Auto-generated (Read-only)
   userId: number | null;
@@ -62,6 +76,11 @@ export const defaultForm: AddUserWizardForm = {
   workLocation: 'office',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
   employeeCode: '',
+
+  // Step 1: Payroll Info
+  annualCtc: null,
+  payGroupId: null,
+  salaryStructureId: null,
 
   // Step 2
   userId: null,

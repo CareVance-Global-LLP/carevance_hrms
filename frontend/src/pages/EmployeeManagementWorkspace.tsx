@@ -1123,8 +1123,8 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               </div>
             )}
             columns={[
-              { key: 'employee_id', header: 'Employee ID', render: (row: any) => <span className="text-sm text-slate-600">{row.employee_id || row.id}</span> },
-              { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
+              { key: 'employee_id', header: 'Employee Code', render: (row: any) => <span className="text-sm text-slate-600 font-mono">{row.employee_work_info?.employee_code || row.employeeWorkInfo?.employee_code || '—'}</span> },
+              { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.employee_work_info?.employee_code || row.employeeWorkInfo?.employee_code || row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
               { key: 'role', header: 'Role', render: (row: any) => resolveUserRoleLabel(row, customRolesQuery.data || []) },
               { key: 'department', header: 'Department', render: (row: any) => resolveEmployeeDepartment(row) },
               { key: 'timezone', header: 'Timezone', render: (row: any) => resolveEmployeeTimezone(row) },

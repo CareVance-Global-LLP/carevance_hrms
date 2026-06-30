@@ -1,22 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Briefcase, FileText, CreditCard, Building2 } from 'lucide-react';
+import { Briefcase, FileText, CreditCard, Building2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccess } from '@/lib/permissions';
-import { employeeWorkspaceApi, userApi } from '@/services/api';
+import { employeeWorkspaceApi } from '@/services/api';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
 import { usePlan } from '@/hooks/usePlan';
 
 const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-export default function EmployeePersonalDetailsPage() {
-  const { employeeCode } = useParams();
+interface EmployeeDetailsSectionProps {
+  employeeCode: string;
+  showHeader?: boolean;
+  editable?: boolean;
+}
+
+export default function EmployeeDetailsSection({ employeeCode, showHeader = false, editable }: EmployeeDetailsSectionProps) {
+  const id = employeeCode;
   const { user } = useAuth();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [aboutForm, setAboutForm] = useState<Record<string, string>>({});
@@ -33,11 +36,7 @@ export default function EmployeePersonalDetailsPage() {
   });
   const [docForm, setDocForm] = useState<Record<string, any>>({ title: '', category: 'other', review_status: 'pending', file: null });
 
-  // The route param is employeeCode — pass it directly to the API (backend accepts code or ID)
-  const id = employeeCode;
-
-  // Detail page is read-only — only view employee details
-  const canEditOwnProfile = false;
+  const canEditOwnProfile = editable ? true : false;
   const { hasFeature } = usePlan();
   const hasPayrollFeature = hasFeature('payroll');
 
@@ -94,10 +93,7 @@ export default function EmployeePersonalDetailsPage() {
       await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
     },
     onError: (error: any) => {
-      setFeedback({
-        tone: 'error',
-        message: error?.response?.data?.message || 'Could not save personal details.',
-      });
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save personal details.' });
     },
   });
 
@@ -111,10 +107,7 @@ export default function EmployeePersonalDetailsPage() {
       await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
     },
     onError: (error: any) => {
-      setFeedback({
-        tone: 'error',
-        message: error?.response?.data?.message || 'Could not save work information.',
-      });
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save work information.' });
     },
   });
 
@@ -129,10 +122,7 @@ export default function EmployeePersonalDetailsPage() {
       await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
     },
     onError: (error: any) => {
-      setFeedback({
-        tone: 'error',
-        message: error?.response?.data?.message || 'Could not save government ID.',
-      });
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save government ID.' });
     },
   });
 
@@ -146,10 +136,7 @@ export default function EmployeePersonalDetailsPage() {
       await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
     },
     onError: (error: any) => {
-      setFeedback({
-        tone: 'error',
-        message: error?.response?.data?.message || 'Could not save bank details.',
-      });
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save bank details.' });
     },
   });
 
@@ -170,28 +157,30 @@ export default function EmployeePersonalDetailsPage() {
       await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
     },
     onError: (error: any) => {
-      setFeedback({
-        tone: 'error',
-        message: error?.response?.data?.message || 'Could not upload document.',
-      });
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not upload document.' });
     },
   });
 
-  if (workspaceQuery.isLoading) return <PageLoadingState label="Loading employee details..." />;
+  if (workspaceQuery.isLoading) {
+    return <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading employee details...</div>;
+  }
+
   if (workspaceQuery.isError || !workspaceQuery.data) {
     return (
-      <PageErrorState
-        message={(workspaceQuery.error as any)?.response?.data?.message || 'Failed to load employee details.'}
-        onRetry={() => void workspaceQuery.refetch()}
-      />
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-sm text-red-700">Failed to load employee details.</p>
+        <Button variant="secondary" className="mt-3" onClick={() => void workspaceQuery.refetch()}>Retry</Button>
+      </div>
     );
   }
 
   const data = workspaceQuery.data;
 
-  const canEditWorkInfo = canAccess(user, 'employee.edit') ||
+  const canEditWorkInfo = editable ? true : (
+    canAccess(user, 'employee.edit') ||
     user?.role === 'admin' ||
-    (user?.role === 'manager' && (data.employee as any)?.reporting_manager_id === user?.id);
+    (user?.role === 'manager' && (data.employee as any)?.reporting_manager_id === user?.id)
+  );
 
   const aboutSummaryFields = [
     { label: 'First Name', value: data.about?.first_name },
@@ -220,64 +209,57 @@ export default function EmployeePersonalDetailsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <Button variant="secondary" onClick={() => navigate('/employees')}>
-          <ArrowLeft className="h-4 w-4" />
-          Back to Employees
-        </Button>
-      </div>
+      {showHeader && (
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Employee Details</p>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-950">{data.employee?.name || 'Employee'}</h1>
+          <p className="mt-1 text-sm text-slate-500">{data.employee?.email || ''}</p>
 
-      {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Employee Details</p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-950">{data.employee?.name || 'Employee'}</h1>
-        <p className="mt-1 text-sm text-slate-500">{data.employee?.email || ''}</p>
-
-        {canEditOwnProfile ? (
-          <>
-            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {Object.keys(aboutForm).map((key) => (
-                <div key={key}>
-                  <FieldLabel>{labelize(key)}</FieldLabel>
-                  {key === 'gender' ? (
-                    <SelectInput
-                      value={aboutForm[key] || ''}
-                      onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
-                    >
-                      <option value="">Select gender</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                      <option value="prefer_not_to_say">Prefer not to say</option>
-                    </SelectInput>
-                  ) : (
-                    <TextInput
-                      type={key.includes('date') ? 'date' : key.includes('email') ? 'email' : 'text'}
-                      value={aboutForm[key] || ''}
-                      onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
-                    />
-                  )}
+          {canEditOwnProfile ? (
+            <>
+              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {Object.keys(aboutForm).map((key) => (
+                  <div key={key}>
+                    <FieldLabel>{labelize(key)}</FieldLabel>
+                    {key === 'gender' ? (
+                      <SelectInput
+                        value={aboutForm[key] || ''}
+                        onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
+                      >
+                        <option value="">Select gender</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                        <option value="prefer_not_to_say">Prefer not to say</option>
+                      </SelectInput>
+                    ) : (
+                      <TextInput
+                        type={key.includes('date') ? 'date' : key.includes('email') ? 'email' : 'text'}
+                        value={aboutForm[key] || ''}
+                        onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6">
+                <Button onClick={() => saveAboutMutation.mutate()} disabled={saveAboutMutation.isPending}>
+                  {saveAboutMutation.isPending ? 'Saving...' : 'Save Personal Info'}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {aboutSummaryFields.map((field) => (
+                <div key={field.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{field.label}</p>
+                  <p className="mt-2 text-sm font-medium text-slate-950">{field.value || 'Not added yet'}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-6">
-              <Button onClick={() => saveAboutMutation.mutate()} disabled={saveAboutMutation.isPending}>
-                {saveAboutMutation.isPending ? 'Saving...' : 'Save Personal Info'}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {aboutSummaryFields.map((field) => (
-              <div key={field.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{field.label}</p>
-                <p className="mt-2 text-sm font-medium text-slate-950">{field.value || 'Not added yet'}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+      )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2">

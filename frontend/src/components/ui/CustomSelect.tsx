@@ -16,6 +16,7 @@ interface CustomSelectProps {
   disabled?: boolean;
   className?: string;
   id?: string;
+  dropDirection?: 'auto' | 'up' | 'down';
 }
 
 export default function CustomSelect({
@@ -26,6 +27,7 @@ export default function CustomSelect({
   disabled = false,
   className,
   id,
+  dropDirection = 'auto',
 }: CustomSelectProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -38,17 +40,38 @@ export default function CustomSelect({
   // Calculate position when opening
   useEffect(() => {
     if (open && buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect();
-      const panelHeight = 300; // max-h-72 = 18rem
-      const fitsBelow = rect.bottom + panelHeight < window.innerHeight;
-      const top = fitsBelow ? rect.bottom + 4 : rect.top - panelHeight - 4;
-      setPanelPos({
-        top,
-        left: rect.left,
-        width: rect.width,
-      });
+      const calculatePosition = () => {
+        const rect = buttonRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const panelHeight = 300; // max-h-72 = 18rem
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        let top: number;
+        if (dropDirection === 'down') {
+          top = rect.bottom + 4;
+        } else if (dropDirection === 'up') {
+          top = rect.top - panelHeight - 4;
+        } else if (spaceBelow >= panelHeight) {
+          top = rect.bottom + 4;
+        } else if (spaceAbove >= panelHeight) {
+          top = rect.top - panelHeight - 4;
+        } else {
+          top = Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - panelHeight - 8));
+        }
+
+        setPanelPos({
+          top,
+          left: rect.left,
+          width: rect.width,
+        });
+      };
+
+      // Calculate immediately and again after a frame to ensure correct position
+      calculatePosition();
+      requestAnimationFrame(calculatePosition);
     }
-  }, [open]);
+  }, [open, dropDirection]);
 
   // Close on outside click
   useEffect(() => {

@@ -174,6 +174,19 @@ class EmployeeWorkspaceService
             $data['reporting_manager_id'] = $resolvedManagerId;
         }
 
+        // Check for duplicate employee_code within the same organization
+        if (!empty($data['employee_code'])) {
+            $existing = EmployeeWorkInfo::query()
+                ->where('organization_id', $employee->organization_id)
+                ->where('employee_code', $data['employee_code'])
+                ->where('user_id', '!=', $employee->id)
+                ->exists();
+
+            if ($existing) {
+                throw new \InvalidArgumentException("Employee code '{$data['employee_code']}' is already assigned to another employee in this organization.");
+            }
+        }
+
         $workInfo = EmployeeWorkInfo::query()->firstOrNew([
             'organization_id' => $employee->organization_id,
             'user_id' => $employee->id,
