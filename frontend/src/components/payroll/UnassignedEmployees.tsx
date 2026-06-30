@@ -4,15 +4,12 @@ import { Search, UserX, Users, ArrowLeft, Loader2 } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
-import { useToast } from '@/components/ui/Toast';
 
 interface UnassignedEmployeesProps {
   onBack: () => void;
 }
 
 export default function UnassignedEmployees({ onBack }: UnassignedEmployeesProps) {
-  const { show } = useToast();
   const [search, setSearch] = useState('');
 
   const { data, isLoading, error } = useQuery({

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Calendar, CheckCircle, Lock, Send, DollarSign, FileDown, Download, AlertCircle, History, Loader2 } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
@@ -18,7 +18,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 
 export default function PayrollRunHistory() {
   const queryClient = useQueryClient();
-  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const { data: runsData, isLoading } = useQuery({

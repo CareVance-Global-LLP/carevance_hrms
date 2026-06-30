@@ -1,5 +1,5 @@
 import {
-  Wallet, Calculator, Shield, MapPin, Layers, IndianRupee, Users,
+  Wallet, Calculator, Shield, MapPin, Layers,
 } from 'lucide-react';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';

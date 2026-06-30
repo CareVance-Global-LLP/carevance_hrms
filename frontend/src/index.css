@@ -5,24 +5,41 @@
 @tailwind utilities;
 
 :root {
-  --primary: #2f6feb;
-  --primary-dark: #1f56c2;
-  --secondary: #64748B;
+  /* Brand Colors (from palette) */
+  --brand-primary: #5D969D;
+  --brand-primary-dark: #4A7A80;
+  --brand-primary-light: #7AADB3;
+  --brand-accent: #E3A842;
+  --brand-accent-dark: #C8923A;
+  --brand-accent-light: #F0C06A;
+
+  /* Legacy aliases (for backward compatibility) */
+  --primary: #5D969D;
+  --primary-dark: #4A7A80;
+
+  --secondary: #9B9498;
   --success: #10B981;
-  --warning: #F59E0B;
+  --warning: #E3A842;
   --danger: #EF4444;
-  --background: #f3f6fb;
+  --background: #F5F7F8;
   --surface: #FFFFFF;
-  --text-primary: #1E293B;
-  --text-secondary: #64748B;
-  --border: #E2E8F0;
-  --contrast-text-primary: #020617;
+  --text-primary: #000000;
+  --text-secondary: #9B9498;
+  --border: #E2E5E7;
+  --contrast-text-primary: #000000;
   --contrast-text-secondary: #334155;
-  --contrast-text-muted: #475569;
-  --contrast-text-accent: #0369a1;
-  --contrast-text-inverse: #f8fafc;
-  --contrast-border-soft: rgba(148, 163, 184, 0.24);
-  --contrast-elevated: rgba(255, 255, 255, 0.92);
+  --contrast-text-muted: #64748B;
+  --contrast-text-accent: #5D969D;
+  --contrast-text-inverse: #ffffff;
+  --contrast-border-soft: rgba(155, 148, 152, 0.18);
+  --contrast-elevated: rgba(255, 255, 255, 0.95);
+
+  /* Sidebar (Keka-style dark) */
+  --sidebar-bg: #1A2332;
+  --sidebar-hover: #243044;
+  --sidebar-active: #5D969D;
+  --sidebar-text: rgba(255,255,255,0.7);
+  --sidebar-text-active: #ffffff;
 }
 
 * {
@@ -35,10 +52,10 @@ body {
   font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: var(--background);
+  background-color: #F5F7F8;
   background-image:
-    radial-gradient(circle at 20% -10%, rgba(47, 111, 235, 0.12), transparent 30%),
-    radial-gradient(circle at 80% -20%, rgba(16, 185, 129, 0.08), transparent 35%);
+    radial-gradient(circle at 20% -10%, rgba(93, 150, 157, 0.08), transparent 30%),
+    radial-gradient(circle at 80% -20%, rgba(227, 168, 66, 0.05), transparent 35%);
   color: var(--text-primary);
   text-rendering: optimizeLegibility;
 }
@@ -104,6 +121,106 @@ code {
   animation: slideIn 0.3s ease-in-out;
 }
 
+/* Chart reload animations — Keka-style smooth grow */
+@keyframes chartBarGrow {
+  from {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+  to {
+    transform: scaleY(1);
+    transform-origin: bottom;
+  }
+}
+
+@keyframes chartLineDraw {
+  from {
+    stroke-dashoffset: 1000;
+    stroke-dasharray: 1000;
+  }
+  to {
+    stroke-dashoffset: 0;
+    stroke-dasharray: 1000;
+  }
+}
+
+@keyframes chartPieSlice {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes countUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-chart-bar {
+  animation: chartBarGrow 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-chart-line {
+  animation: chartLineDraw 1.2s ease-out forwards;
+}
+
+.animate-chart-pie {
+  animation: chartPieSlice 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-count-up {
+  animation: countUp 0.4s ease-out forwards;
+}
+
+/* Staggered animation delay utility */
+.animate-delay-100 { animation-delay: 0.1s; }
+.animate-delay-200 { animation-delay: 0.2s; }
+.animate-delay-300 { animation-delay: 0.3s; }
+.animate-delay-400 { animation-delay: 0.4s; }
+.animate-delay-500 { animation-delay: 0.5s; }
+
+/* Recharts override for smooth animations */
+.recharts-bar-rectangle {
+  transition: all 0.3s ease;
+}
+
+.recharts-bar-rectangle:hover {
+  filter: brightness(1.1);
+}
+
+.recharts-line-curve {
+  transition: all 0.3s ease;
+}
+
+.recharts-active-dot {
+  animation: pulseGlow 1.5s ease-in-out infinite;
+}
+
 /* Timer display */
 .timer-display {
   font-variant-numeric: tabular-nums;
@@ -118,8 +235,44 @@ code {
 
 .card-hover:hover {
   transform: translateY(-3px);
+  border-color: rgba(93, 150, 157, 0.3);
+  box-shadow: 0 14px 30px -14px rgba(93, 150, 157, 0.25), 0 8px 16px -12px rgba(15, 23, 42, 0.15);
+}
+
+.premium-ring {
+  position: relative;
+}
+
+.premium-ring::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(93, 150, 157, 0.5), rgba(227, 168, 66, 0.4), rgba(15, 23, 42, 0.05));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.particle {
+  position: absolute;
+  left: var(--left);
+  top: 100%;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(93, 150, 157, 0.6), rgba(93, 150, 157, 0));
+  opacity: 0.45;
+  animation: particleFloat var(--duration) linear infinite;
+  animation-delay: var(--delay);
+}
+
+.card-hover:hover {
+  transform: translateY(-3px);
   border-color: #cbdcf9;
-  box-shadow: 0 14px 30px -14px rgba(37, 99, 235, 0.35), 0 8px 16px -12px rgba(15, 23, 42, 0.35);
+  box-shadow: 0 14px 30px -14px rgba(93, 150, 157, 0.25), 0 8px 16px -12px rgba(15, 23, 42, 0.15);
 }
 
 /* Status badges */
@@ -140,7 +293,7 @@ code {
 }
 
 .badge-info {
-  @apply bg-blue-100 text-blue-800;
+  @apply bg-[rgba(93,150,157,0.1)] text-[#5D969D];
 }
 
 .badge-gray {
@@ -154,12 +307,12 @@ button, input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(47, 111, 235, 0.16);
+  box-shadow: 0 0 0 3px rgba(93, 150, 157, 0.16);
 }
 
 ::selection {
-  background: rgba(47, 111, 235, 0.2);
-  color: #0f172a;
+  background: rgba(93, 150, 157, 0.2);
+  color: #000000;
 }
 
 .glass-panel {

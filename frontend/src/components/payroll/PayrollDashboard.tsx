@@ -1,7 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   Users,
-  Search,
   ChevronRight,
   Play,
   AlertCircle,
@@ -12,9 +11,9 @@ import {
   Clock,
   FileText,
   CreditCard,
-  Building2,
   BookOpen,
   UserX,
+  Settings2,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -26,7 +25,7 @@ import NextStepsCard from './NextStepsCard';
 import MonthTimeline from './MonthTimeline';
 import { cn } from '@/utils/cn';
 
-import type { PayrollStats, PayGroup } from '@/types';
+import type { PayGroup } from '@/types';
 
 interface PayrollDashboardProps {
   selectedMonth?: string;
@@ -42,6 +41,7 @@ interface PayrollDashboardProps {
   onOpenDepartmentTemplates?: () => void;
   onOpenUnassignedEmployees?: () => void;
   onOpenReports?: (stats: { totalEmployees: number; processedCount: number; paidCount: number; totalNetPay: number; pendingCount: number }) => void;
+  onOpenSalaryComponents?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -207,6 +207,7 @@ export default function PayrollDashboard({
   onOpenDepartmentTemplates,
   onOpenUnassignedEmployees,
   onOpenReports,
+  onOpenSalaryComponents,
 }: PayrollDashboardProps) {
   const fallbackMonth = useMemo(() => {
     const now = new Date();
@@ -215,12 +216,7 @@ export default function PayrollDashboard({
   const selectedMonth = selectedMonthProp ?? fallbackMonth;
   const setSelectedMonth = (m: string) => onMonthChange?.(m);
 
-  // Fetch data
-  const { data: statsData } = useQuery({
-    queryKey: ['payroll', 'stats', selectedMonth],
-    queryFn: () => payrollApi.getStats({ month_year: selectedMonth }).then((res) => res.data),
-  });
-
+  // Fetch data (runs for timeline, pay groups for stats & grid)
   const { data: runsData } = useQuery({
     queryKey: ['payroll', 'runs'],
     queryFn: () => payrollApi.getPayrollRuns().then((r) => r.data),
@@ -325,6 +321,13 @@ export default function PayrollDashboard({
             title="Create Pay Group"
             description="Group employees for a shared pay schedule"
             action={() => onOpenCreatePayGroup?.()}
+            variant="default"
+          />
+          <QuickActionCard
+            icon={Settings2}
+            title="Salary Components"
+            description="Enable/disable earnings, deductions, and formula-based components"
+            action={() => onOpenSalaryComponents?.()}
             variant="default"
           />
           <QuickActionCard

@@ -257,7 +257,7 @@ function getLwfConfig(stateCode: string) {
 function hasPt(stateCode: string): boolean {
   const slabs = DEFAULT_PT_SLABS[stateCode];
   return slabs !== undefined && slabs.length > 0;
-};
+}
 
 function StateWiseTaxConfig({
   filingReferenceData,

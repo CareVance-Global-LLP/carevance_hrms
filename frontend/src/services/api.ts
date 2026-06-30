@@ -87,6 +87,8 @@ import type {
   PayGroupSettings,
   CreatePayGroupSettingsPayload,
   UpdateFilingDetailsPayload,
+  SalaryComponent,
+  SalaryFormula,
   IndianState,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
@@ -2365,6 +2367,37 @@ export const payrollApi = {
     api.put<{ success: boolean; message: string; pay_group: PayGroupSettings }>(`/payroll/pay-group-settings/${id}/filing-details`, data),
   getPayGroups: (params?: { is_active?: boolean }) =>
     api.get<{ success: boolean; pay_groups: PayGroup[] }>('/payroll/pay-groups', { params }),
+
+  // ===== Salary Components (org-level component manager) =====
+  listSalaryComponents: () =>
+    api.get<{ success: boolean; components: SalaryComponent[] }>('/payroll/salary-components').then(r => r.data),
+  getSalaryComponent: (id: number) =>
+    api.get<{ success: boolean; component: SalaryComponent }>(`/payroll/salary-components/${id}`).then(r => r.data),
+  createSalaryComponent: (data: {
+    name: string;
+    code: string;
+    category: 'earning' | 'deduction';
+    value_type: 'flat' | 'percentage' | 'formula';
+    calculation_basis?: string;
+    default_value?: number;
+    is_taxable?: boolean;
+    is_compliance_component?: boolean;
+  }) => api.post<{ success: boolean; message: string; component: SalaryComponent }>('/payroll/salary-components', data).then(r => r.data),
+  updateSalaryComponent: (id: number, data: Record<string, unknown>) =>
+    api.put<{ success: boolean; message: string; component: SalaryComponent }>(`/payroll/salary-components/${id}`, data).then(r => r.data),
+  deleteSalaryComponent: (id: number) =>
+    api.delete<{ success: boolean; message: string }>(`/payroll/salary-components/${id}`).then(r => r.data),
+  toggleSalaryComponent: (id: number) =>
+    api.post<{ success: boolean; message: string; component: SalaryComponent }>(`/payroll/salary-components/${id}/toggle`).then(r => r.data),
+  saveComponentFormula: (componentId: number, data: { formula_expression: string; description?: string }) =>
+    api.post<{ success: boolean; message: string; formula: SalaryFormula; component: SalaryComponent }>(
+      `/payroll/salary-components/${componentId}/formula`, data).then(r => r.data),
+  deleteComponentFormula: (componentId: number, formulaId: number) =>
+    api.delete<{ success: boolean; message: string }>(
+      `/payroll/salary-components/${componentId}/formula/${formulaId}`).then(r => r.data),
+  validateComponentFormula: (componentId: number, data: { formula_expression: string }) =>
+    api.post<{ success: boolean; valid: boolean; message: string }>(
+      `/payroll/salary-components/${componentId}/formula/validate`, data).then(r => r.data),
 };
 
 export default api;

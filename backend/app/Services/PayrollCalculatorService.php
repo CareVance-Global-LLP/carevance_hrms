@@ -3,11 +3,26 @@
 namespace App\Services;
 
 use App\Models\EmployeeTaxDeclaration;
+use App\Models\SalaryComponent;
 use App\Models\SalaryFormula;
 use Carbon\Carbon;
 
 class PayrollCalculatorService
 {
+    private ?SalaryFormulaEngine $formulaEngine = null;
+
+    public function setFormulaEngine(SalaryFormulaEngine $engine): void
+    {
+        $this->formulaEngine = $engine;
+    }
+
+    private function getFormulaEngine(): SalaryFormulaEngine
+    {
+        if (!$this->formulaEngine) {
+            $this->formulaEngine = new SalaryFormulaEngine();
+        }
+        return $this->formulaEngine;
+    }
     const PF_WAGE_CAP = 15000;
     const EMPLOYEE_PF_RATE = 0.12;
     const EMPLOYER_PF_RATE = 0.12;
@@ -581,8 +596,83 @@ class PayrollCalculatorService
         return $this->getCurrentFinancialYear();
     }
 
-    public function resolveSalaryFormula(int $templateId, array $context = []): array
+    /**
+     * Resolve formula-based salary components for an organization.
+     *
+     * Fetches active SalaryComponent records that have an associated
+     * SalaryFormula, evaluates each formula against the provided context
+     * (basic, hra, gross, etc.), and returns an array of resolved values
+     * keyed by component code.
+     *
+     * @param int   $organizationId
+     * @param array $context  ['basic' => x, 'hra' => y, 'gross' => z, ...]
+     * @return array ['BASIC' => 50000, 'HRA' => 25000, ...]
+     */
+    public function resolveSalaryFormula(int $organizationId, array $context = []): array
     {
-        return [];
+        $engine = $this->getFormulaEngine();
+
+        // Load active components that have formulas
+        $components = SalaryComponent::where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->whereHas('formulas', function ($q) {
+                $q->where('is_active', true);
+            })
+            ->with(['formulas' => function ($q) {
+                $q->where('is_active', true)->orderBy('id');
+            }])
+            ->get();
+
+        if ($components->isEmpty()) {
+            return [];
+        }
+
+        // Build variable context for the formula engine
+        $variables = [
+            'CTC'         => $context['ctc'] ?? 0,
+            'MonthlyCTC'  => ($context['ctc'] ?? 0) / 12,
+            'Basic'       => $context['basic'] ?? 0,
+            'HRA'         => $context['hra'] ?? 0,
+            'Conveyance'  => $context['conveyance'] ?? 0,
+            'Medical'     => $context['medical'] ?? 0,
+            'Special'     => $context['special_allowance'] ?? 0,
+            'Gross'       => $context['gross'] ?? 0,
+            'BasicPct'    => $context['basic_percentage'] ?? 40,
+            'HRAPct'      => $context['hra_percentage'] ?? 50,
+            'PF'          => $context['pf'] ?? 0,
+            'ESI'         => $context['esi'] ?? 0,
+            'PT'          => $context['pt'] ?? 0,
+            'TDS'         => $context['tds'] ?? 0,
+            'NetPay'      => $context['net_pay'] ?? 0,
+            'LOP'         => $context['lop_days'] ?? 0,
+            'WorkingDays' => $context['working_days'] ?? 26,
+            'PresentDays' => $context['days_present'] ?? 0,
+        ];
+
+        $engine->setVariables($variables);
+
+        $resolved = [];
+        foreach ($components as $component) {
+            $formula = $component->formulas->first();
+            if (!$formula) {
+                continue;
+            }
+
+            try {
+                $value = $engine->evaluate($formula->formula_expression);
+                $resolved[$component->code] = [
+                    'id'       => $component->id,
+                    'name'     => $component->name,
+                    'code'     => $component->code,
+                    'category' => $component->category,
+                    'value'    => round($value, 2),
+                ];
+            } catch (\Throwable $e) {
+                // Log but don't fail the entire payroll run
+                \Log::warning("Salary formula evaluation failed for component {$component->code}: " . $e->getMessage());
+            }
+        }
+
+        return $resolved;
     }
 }

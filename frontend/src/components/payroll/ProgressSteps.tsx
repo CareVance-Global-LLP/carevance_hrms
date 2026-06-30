@@ -1,4 +1,4 @@
-import { Check, Circle } from 'lucide-react';
+import { Check } from 'lucide-react';
 
 interface Step {
   id: string;
@@ -19,7 +19,6 @@ export default function ProgressSteps({ steps, currentStep }: ProgressStepsProps
         {steps.map((step, index) => {
           const isCompleted = index < currentStep;
           const isCurrent = index === currentStep;
-          const isPending = index > currentStep;
 
           return (
             <div key={step.id} className="flex items-center flex-1">

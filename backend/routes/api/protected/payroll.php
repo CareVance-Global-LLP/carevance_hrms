@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\EnhancedPayrollController;
 use App\Http\Controllers\Api\TaxProofUploadController;
 use App\Http\Controllers\Api\DepartmentPayrollTemplateController;
 use App\Http\Controllers\Api\SalaryStructureController;
+use App\Http\Controllers\Api\SalaryComponentController;
 use App\Http\Controllers\Api\EmployeePayrollCardController;
 use App\Http\Controllers\Api\PayGroupSettingsController;
 use App\Http\Controllers\PayrollAutoProcessController;
@@ -121,6 +122,19 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::delete('/pay-group-settings/{id}', [PayGroupSettingsController::class, 'destroy']);
     Route::put('/pay-group-settings/{id}/statutory-rules', [PayGroupSettingsController::class, 'updateStatutoryRules']);
     Route::put('/pay-group-settings/{id}/filing-details', [PayGroupSettingsController::class, 'updateFilingDetails']);
+
+    // Salary Components (org-level component manager)
+    Route::get('/salary-components', [SalaryComponentController::class, 'index']);
+    Route::post('/salary-components', [SalaryComponentController::class, 'store']);
+    Route::get('/salary-components/{id}', [SalaryComponentController::class, 'show']);
+    Route::put('/salary-components/{id}', [SalaryComponentController::class, 'update']);
+    Route::delete('/salary-components/{id}', [SalaryComponentController::class, 'destroy']);
+    Route::post('/salary-components/{id}/toggle', [SalaryComponentController::class, 'toggle']);
+
+    // Salary Formulas (linked to components)
+    Route::post('/salary-components/{componentId}/formula', [SalaryComponentController::class, 'saveFormula']);
+    Route::delete('/salary-components/{componentId}/formula/{formulaId}', [SalaryComponentController::class, 'deleteFormula']);
+    Route::post('/salary-components/{componentId}/formula/validate', [SalaryComponentController::class, 'validateFormula']);
     
     // Time tracking (standalone mode)
     Route::post('/check-in', [PayrollController::class, 'checkIn']);

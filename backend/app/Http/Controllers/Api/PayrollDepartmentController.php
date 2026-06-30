@@ -1034,7 +1034,50 @@ class PayrollDepartmentController extends Controller
         // / "fbp_allocations_total" below) and in the payslip row.
         $customEarningsTotal = round($approvedReimbursementsTotal + $fbpAllocationsTotal, 2);
 
-        $grossWithOT = $calculation['monthly']['gross'] + $overtimePay + $additionalEarnings;
+        // Resolve formula-based salary components (org-level custom heads).
+        // These are components defined in SalaryComponent with associated
+        // SalaryFormula records — e.g. LTA = CTC * 0.08, Bonus = IF(CTC > 500000, 50000, 0).
+        $formulaEarnings = 0;
+        $formulaDeductions = 0;
+        $formulaComponents = [];
+        try {
+            $formulaResults = $this->calculator->resolveSalaryFormula(
+                $organizationId,
+                [
+                    'ctc'              => (float) $request->annual_ctc,
+                    'basic'            => $calculation['components']['earnings']['basic'],
+                    'hra'              => $calculation['components']['earnings']['hra'],
+                    'conveyance'       => $calculation['components']['earnings']['conveyance'],
+                    'medical'          => $template->medical_allowance ?? 0,
+                    'special_allowance' => $calculation['components']['earnings']['special_allowance'],
+                    'gross'            => $calculation['monthly']['gross'],
+                    'basic_percentage' => $template->basic_percentage ?? 40,
+                    'hra_percentage'   => $template->hra_percentage ?? 50,
+                    'pf'               => $pfAmount,
+                    'esi'              => $esiAmount,
+                    'pt'               => $ptAmount,
+                    'tds'              => $tdsAmount,
+                    'net_pay'          => $netPay,
+                    'lop_days'         => $lOPDays,
+                    'working_days'     => $workingDays,
+                    'days_present'     => $daysPresent,
+                ]
+            );
+
+            foreach ($formulaResults as $code => $component) {
+                $formulaComponents[] = $component;
+                if ($component['category'] === 'deduction') {
+                    $formulaDeductions += $component['value'];
+                } else {
+                    $formulaEarnings += $component['value'];
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Formula component resolution failed: ' . $e->getMessage());
+        }
+
+        $grossWithOT = $calculation['monthly']['gross'] + $overtimePay + $additionalEarnings + $formulaEarnings;
+        $totalDeductions += $formulaDeductions;
         $netPay = max(0, $grossWithOT - $totalDeductions);
 
         // Create or update payroll item
@@ -1082,6 +1125,10 @@ class PayrollDepartmentController extends Controller
                     + $calculation['components']['employer_contributions']['gratuity'],
                 'net_pay' => $netPay,
                 'template_snapshot' => $template->toArray(),
+                'additional_components' => array_merge(
+                    $formulaComponents,
+                    $customDeductions
+                ),
             ]
         );
 
@@ -1099,6 +1146,9 @@ class PayrollDepartmentController extends Controller
             'auto_closed_timers' => $autoClosedTimers,
             'reimbursements_total' => round($approvedReimbursementsTotal, 2),
             'fbp_allocations_total' => round($fbpAllocationsTotal, 2),
+            'formula_components' => $formulaComponents,
+            'formula_earnings_total' => round($formulaEarnings, 2),
+            'formula_deductions_total' => round($formulaDeductions, 2),
             'payroll_item' => $payrollItem->fresh(),
         ]);
     }

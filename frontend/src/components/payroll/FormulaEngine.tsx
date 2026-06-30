@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlaskConical, Play, CheckCircle, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { FlaskConical, Play, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';

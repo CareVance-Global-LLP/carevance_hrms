@@ -108,7 +108,6 @@ export default function RunPayrollChecklist({ runId, className }: RunPayrollChec
       {/* Step grid: 2x3 on desktop, 1-col on mobile */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {steps.map((step) => {
-          const style = STATUS_STYLE[step.status] ?? STATUS_STYLE.no_action;
           const Icon = ICON_MAP[step.icon ?? 'ClipboardList'] ?? ClipboardList;
           return (
             <div

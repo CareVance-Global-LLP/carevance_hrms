@@ -1,4 +1,4 @@
-import { useState, ReactNode } from 'react';
+import { useState } from 'react';
 import { ChevronDown, ChevronUp, Lightbulb, Calendar, AlertTriangle, ArrowRight } from 'lucide-react';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { cn } from '@/utils/cn';

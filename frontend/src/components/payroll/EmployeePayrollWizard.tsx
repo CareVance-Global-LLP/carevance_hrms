@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Save,
   Calculator,
-  User,
   Clock,
   CheckCircle2,
   AlertCircle,
@@ -15,7 +14,6 @@ import {
   ChevronRight,
   DollarSign,
   Wallet,
-  Play,
   Loader2,
   Activity,
   ListChecks,
@@ -31,7 +29,7 @@ import ProgressSteps from './ProgressSteps';
 import SalaryBreakdown from './SalaryBreakdown';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import { useToast } from '@/components/ui/Toast';
-import type { EmployeePayrollDetails, EmployeePayrollTemplate, PayrollCalculation } from '@/types';
+import type { EmployeePayrollTemplate, PayrollCalculation } from '@/types';
 
 interface EmployeePayrollWizardProps {
   employeeId: number;
@@ -618,7 +616,6 @@ export default function EmployeePayrollWizard({
 
   // Get employee data safely
   const employee = data?.employee;
-  const time_tracking = data?.time_tracking;
   const existingPayroll = data?.existing_payroll;
   const isAlreadyProcessed = Boolean(existingPayroll && existingPayroll.id);
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { X, HelpCircle, BookOpen, Calendar, FileText, Calculator, Users, ChevronRight, Sparkles, MessageSquare, Phone } from 'lucide-react';
-import { PAYROLL_GLOSSARY, COMPLIANCE_DEADLINES, PAYROLL_FAQS, HOW_TO_PROCESS, getGlossaryBySection } from '@/data/payrollGlossary';
+import { X, HelpCircle, BookOpen, Calendar, Calculator, ChevronRight, Sparkles, MessageSquare, Phone } from 'lucide-react';
+import { COMPLIANCE_DEADLINES, PAYROLL_FAQS, HOW_TO_PROCESS, getGlossaryBySection } from '@/data/payrollGlossary';
 
 interface HelpDrawerProps {
   isOpen: boolean;

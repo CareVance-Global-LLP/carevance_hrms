@@ -38,7 +38,7 @@ interface EmployeesPage {
 export default function PayGroupModal({
   isOpen,
   onClose,
-  monthYear,
+  monthYear: _monthYear,
   onCreated,
 }: PayGroupModalProps) {
   // ALL useState hooks at the top

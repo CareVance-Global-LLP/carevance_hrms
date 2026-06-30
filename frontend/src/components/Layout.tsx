@@ -741,19 +741,18 @@ export default function Layout() {
       <Link
         key={`${item.label}-${item.to}`}
         to={item.to}
-        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] font-medium transition ${
+        className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${
           active
-            ? 'bg-blue-600 text-white shadow-sm'
+            ? 'bg-[var(--brand-primary)] text-white shadow-md shadow-[var(--brand-primary)]/20'
             : nested
-              ? 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-              : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'
+              ? 'text-[var(--text-secondary)] hover:bg-[var(--border)] hover:text-[var(--text-primary)]'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--border)] hover:text-[var(--text-primary)]'
         }`}
       >
-        <ChevronRight className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-white' : 'text-slate-300'}`} />
-        <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-white' : 'text-slate-500'}`} />
+        <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-white' : 'text-[var(--secondary)]'}`} />
         <span className="truncate">{item.label}</span>
         {item.unreadCount ? (
-          <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? 'bg-white/20 text-white' : 'bg-rose-600 text-white'}`}>
+          <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? 'bg-white/20 text-white' : 'bg-[var(--danger)] text-white'}`}>
             {item.unreadCount > 99 ? '99+' : item.unreadCount}
           </span>
         ) : null}
@@ -766,10 +765,10 @@ export default function Layout() {
 
   if (!isDesktopShell) {
     return (
-      <div className={`min-h-screen bg-[#f5f7fb] ${showSidebar ? 'lg:grid lg:grid-cols-[232px_minmax(0,1fr)]' : ''}`}>
+      <div className={`min-h-screen bg-[#F5F7F8] ${showSidebar ? 'lg:grid lg:grid-cols-[232px_minmax(0,1fr)]' : ''}`}>
         {showSidebar && (
-          <aside className="hidden h-screen border-r border-slate-200 bg-white lg:sticky lg:top-0 lg:flex lg:flex-col">
-          <div className="flex h-16 items-center border-b border-slate-100 px-5">
+          <aside className="hidden h-screen lg:sticky lg:top-0 lg:flex lg:flex-col" style={{ background: 'var(--sidebar-bg)' }}>
+          <div className="flex h-16 items-center border-b border-white/10 px-5">
             <BrandLogo variant="full" size="sm" className="max-w-[9.75rem]" />
           </div>
 
@@ -817,7 +816,7 @@ export default function Layout() {
                       setOpenSidebarGroups(next);
                     }}
                     className={`flex w-full items-center justify-between px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-[0.08em] transition-colors rounded-md ${
-                      groupActive ? 'text-blue-600 bg-blue-50' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                      groupActive ? 'text-[var(--brand-primary-light)] bg-white/5' : 'text-white/50 hover:text-white/80 hover:bg-white/5'
                     }`}
                   >
                     <span>{group.label}</span>
@@ -832,7 +831,7 @@ export default function Layout() {
                         {sectionGroups ? (
                           sectionGroups.map((sg) => (
                             <div key={sg.label}>
-                              <p className="px-3 pt-3 pb-1 text-[12px] font-extrabold uppercase tracking-[0.08em] text-slate-700">
+                              <p className="px-3 pt-3 pb-1 text-[12px] font-extrabold uppercase tracking-[0.08em] text-white/40">
                                 {sg.label}
                               </p>
                               {sg.items.map((item) => renderSidebarLink(

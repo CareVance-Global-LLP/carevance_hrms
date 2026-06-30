@@ -450,7 +450,6 @@ interface CompletenessCardProps {
 
 function CompletenessCard({
   expected,
-  processed,
   missing,
   missingEmployees,
   isProcessing,
@@ -685,7 +684,7 @@ interface MissingBankCardProps {
   showToast: (t: { kind?: 'success' | 'error' | 'warning' | 'info'; message: string; durationMs?: number }) => void;
 }
 
-function MissingBankCard({ missingEmployees, runId, onAdded, showToast }: MissingBankCardProps) {
+function MissingBankCard({ missingEmployees, runId: _runId, onAdded, showToast }: MissingBankCardProps) {
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
 
   return (
@@ -762,7 +761,7 @@ function BankDetailsInlineForm({ userId, userName, onSaved, showToast }: BankDet
   const [ifscSwift, setIfscSwift] = useState('');
   const [branch, setBranch] = useState('');
   const [accountType, setAccountType] = useState('savings');
-  const [payoutMethod, setPayoutMethod] = useState('bank_transfer');
+  const [payoutMethod] = useState('bank_transfer');
 
   const saveMutation = useMutation({
     mutationFn: () => employeeWorkspaceApi.saveBankAccount(userId, {

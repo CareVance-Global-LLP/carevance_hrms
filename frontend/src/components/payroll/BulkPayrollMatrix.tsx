@@ -17,7 +17,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
-import type { PayGroupEmployee } from '@/types';
 import { Virtuoso } from 'react-virtuoso';
 import { cn } from '@/utils/cn';
 import { useToast } from '@/components/ui/Toast';
@@ -73,13 +72,6 @@ export default function BulkPayrollMatrix({
     enabled: payGroupId > 0,
   });
 
-  // Per-step completion counts (for the footer "X of Y on this step")
-  const { data: stepStatus } = useQuery({
-    queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
-    queryFn: () => payrollApi.getStepStatus(payGroupId).then((r) => r.data),
-    enabled: payGroupId > 0,
-  });
-
   // Sync the pay group name + initialize currentStep from the server's
   // last-known position (first time we see this user, default to 1).
   useEffect(() => {
@@ -121,10 +113,6 @@ export default function BulkPayrollMatrix({
     const idSet = new Set(selectedEmployeeIds);
     return allEmployees.filter(e => idSet.has(e.id));
   }, [allEmployees, selectedEmployeeIds]);
-  const selectedEmployee = useMemo(
-    () => employees.find((e) => e.id === selectedEmployeeId) ?? null,
-    [employees, selectedEmployeeId],
-  );
 
   // Mark a single employee's current step as complete. Called when
   // the wizard's onComplete fires (i.e. the user clicked "Continue"
@@ -165,9 +153,6 @@ export default function BulkPayrollMatrix({
       });
     },
   });
-
-  // Step status from the dedicated endpoint (preferred for accuracy)
-  const stepStatusForCurrent = stepStatus?.steps?.[currentStep];
 
   // Step completion calculations for footer
   const stepKey = `step${currentStep}` as const;

@@ -1914,7 +1914,7 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)]">
         <Card id="attendance-overview" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <AttendancePieChart items={attendancePieItems} />
+          <AttendanceTrendChart items={attendancePieItems} />
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             {[
               ['Present on time', attendanceOnTimeDays],

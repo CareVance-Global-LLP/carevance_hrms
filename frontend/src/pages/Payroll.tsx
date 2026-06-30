@@ -16,15 +16,16 @@ import BulkPayrollMatrix from '@/components/payroll/BulkPayrollMatrix';
 
 import EmployeePayrollCards from '@/pages/payroll/EmployeePayrollCards';
 import PayGroupSettings from '@/pages/payroll/PayGroupSettings';
+import SalaryComponents from '@/pages/payroll/SalaryComponents';
 import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
 import UnassignedEmployees from '@/components/payroll/UnassignedEmployees';
 import type { PayrollOrganizationSettings, PayrollStats } from '@/types';
 
-type ViewMode = 'dashboard' | 'employee' | 'filings' | 'pay-group' | 'bulk-payroll' | 'employee-cards' | 'pay-group-settings' | 'dept-templates' | 'unassigned-employees';
+type ViewMode = 'dashboard' | 'employee' | 'filings' | 'pay-group' | 'bulk-payroll' | 'employee-cards' | 'pay-group-settings' | 'dept-templates' | 'unassigned-employees' | 'salary-components';
 
 const VALID_VIEWS: ReadonlySet<ViewMode> = new Set([
   'dashboard', 'employee', 'filings', 'pay-group', 'bulk-payroll',
-  'employee-cards', 'pay-group-settings', 'dept-templates', 'unassigned-employees',
+  'employee-cards', 'pay-group-settings', 'dept-templates', 'unassigned-employees', 'salary-components',
 ]);
 
 /**
@@ -235,10 +236,6 @@ export default function PayrollPage() {
     setIsReportsModalOpen(true);
   };
 
-  const handleOpenSettings = () => {
-    setIsSettingsModalOpen(true);
-  };
-
   const handleOpenFilings = () => {
     updateParams({ view: 'filings' });
   };
@@ -300,6 +297,7 @@ export default function PayrollPage() {
             onOpenReports={handleOpenReports}
             onOpenDepartmentTemplates={handleOpenDepartmentTemplates}
             onOpenUnassignedEmployees={handleOpenUnassignedEmployees}
+            onOpenSalaryComponents={() => updateParams({ view: 'salary-components' })}
           />
         )}
 
@@ -353,6 +351,10 @@ export default function PayrollPage() {
 
         {viewMode === 'unassigned-employees' && (
           <UnassignedEmployees onBack={handleBackToDashboard} />
+        )}
+
+        {viewMode === 'salary-components' && (
+          <SalaryComponents />
         )}
 
         {viewMode === 'pay-group-settings' && (

@@ -6,7 +6,6 @@ import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 
 interface NextStepsCardProps {
-  // Deprecated: Wizard was replaced by /payroll/setup page-based flow
   onOpenWizard?: () => void;
 }
 
@@ -35,7 +34,7 @@ const ACTION_LABELS: Record<string, { title: string; description: string; cta: s
   all_done: { title: "You're all set 🎉", description: 'Your payroll is fully configured and running. Explore the rest of the Payroll menu.', cta: 'Explore Payroll', to: '/payroll' },
 };
 
-export default function NextStepsCard({ onOpenWizard }: NextStepsCardProps) {
+export default function NextStepsCard(_: NextStepsCardProps) {
   const navigate = useNavigate();
   const { status, dismiss, isMutating, isFirstTime } = usePayrollOnboarding();
   const [dismissed, setDismissed] = useState(false);
@@ -70,13 +69,9 @@ export default function NextStepsCard({ onOpenWizard }: NextStepsCardProps) {
               <span className="text-xs font-normal text-slate-500">({completedCount} of {totalCount} steps complete)</span>
             </h3>
             <button
-              onClick={async () => {
-                try {
-                  await dismiss();
-                  setDismissed(true);
-                } catch (e) {
-                  // ignore
-                }
+              onClick={() => {
+                dismiss();
+                setDismissed(true);
               }}
               className="text-slate-400 hover:text-slate-600 transition-colors p-1"
               aria-label="Dismiss for now"
@@ -89,7 +84,7 @@ export default function NextStepsCard({ onOpenWizard }: NextStepsCardProps) {
           {/* Progress bar */}
           <div className="mt-3 h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all"
+              className="h-full bg-gradient-to-r from-[#5D969D] to-emerald-500 transition-all"
               style={{ width: `${status.completion_percentage}%` }}
             />
           </div>

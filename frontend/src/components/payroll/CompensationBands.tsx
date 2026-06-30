@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { BarChart3, Search, TrendingUp, Loader2, IndianRupee, CheckCircle } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -32,7 +32,6 @@ interface CtcBand {
 
 export default function CompensationBands() {
   const { show } = useToast();
-  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('ctc-bands');
   const [annualCtc, setAnnualCtc] = useState('');
 
@@ -53,7 +52,7 @@ export default function CompensationBands() {
   // Find CTC Band mutation
   const findBandMutation = useMutation({
     mutationFn: (ctc: number) => payrollApi.findCtcBand(ctc),
-    onSuccess: (data) => {
+    onSuccess: (_data) => {
       show({ kind: 'success', message: 'Band found successfully', durationMs: 3000 });
     },
     onError: (e: any) => {

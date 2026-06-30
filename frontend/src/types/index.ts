@@ -1829,3 +1829,39 @@ export interface FormulaValidateResult {
   errors?: string[];
   parsed?: string;
 }
+
+// ===== Salary Component Types (org-level component manager) =====
+
+export interface SalaryFormula {
+  id: number;
+  organization_id: number;
+  salary_component_id: number;
+  name: string;
+  formula_expression: string;
+  description?: string;
+  effective_from?: string;
+  effective_to?: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SalaryComponent {
+  id: number;
+  organization_id: number;
+  name: string;
+  code: string;
+  category: 'earning' | 'deduction';
+  impact?: string;
+  value_type: 'flat' | 'percentage' | 'formula';
+  calculation_basis?: 'ctc' | 'basic' | 'gross' | null;
+  default_value: number;
+  is_taxable: boolean;
+  is_compliance_component: boolean;
+  is_system_default: boolean;
+  is_active: boolean;
+  meta?: Record<string, unknown> | null;
+  formulas?: SalaryFormula[];
+  created_at?: string;
+  updated_at?: string;
+}

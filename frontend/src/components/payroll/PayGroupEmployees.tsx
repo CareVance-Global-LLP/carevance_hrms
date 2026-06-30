@@ -11,12 +11,11 @@ import {
   Play,
   CheckSquare,
   Square,
-  Loader2,
   Download,
   Eye,
   Settings,
 } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
@@ -261,7 +260,7 @@ function EmployeeCard({
 
 export default function PayGroupEmployees({
   payGroupId,
-  payGroupName: payGroupNameProp,
+  payGroupName: _payGroupNameProp,
   monthYear,
   onBack,
   onSelectEmployee,
@@ -273,39 +272,6 @@ export default function PayGroupEmployees({
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [showFilters, setShowFilters] = useState(false);
-  // Default working days = days in the selected month
-  const [workingDays] = useState<number>(() => {
-    const [y, m] = monthYear.split('-').map(Number);
-    return new Date(y, m, 0).getDate();
-  });
-  const queryClient = useQueryClient();
-
-  // Bulk process mutation (pay-group-scoped)
-  const processSelectedMutation = useMutation({
-    mutationFn: (userIds: number[]) =>
-      payrollApi.processPayGroupSelectedEmployees(payGroupId, {
-        month_year: monthYear,
-        user_ids: userIds,
-        working_days: workingDays,
-      }).then((r) => r.data),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'employees'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
-      if (data?.failed?.length > 0) {
-        const reasons = data.failed.map((f: { user_id: number; reason: string }) => `#${f.user_id}: ${f.reason}`).join('\n');
-        alert(`Processed ${data.succeeded.length} • Failed ${data.failed.length}\n\n${reasons}`);
-      }
-    },
-    onError: (err: any) => {
-      alert(getApiErrorMessage(err, 'Bulk process failed. The run may already be paid or released.'));
-    },
-  });
-
-  const handleProcessSelected = () => {
-    if (selectedEmployees.size === 0) return;
-    processSelectedMutation.mutate(Array.from(selectedEmployees));
-  };
 
   // Payslip PDF (same blob + open-in-new-tab pattern as DepartmentEmployees)
   const viewPayslipPdf = async (userId: number, monthYearArg: string, employeeName: string) => {

@@ -2100,7 +2100,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                           dataKey="value"
                           nameKey="label"
                           stroke="none"
-                          isAnimationActive={false}
+                          isAnimationActive={true}
                         >
                           {attendanceComposition.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
