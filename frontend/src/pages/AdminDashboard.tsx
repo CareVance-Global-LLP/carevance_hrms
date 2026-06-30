@@ -536,38 +536,103 @@ const DonutChart = ({ items }: { items: Array<{ label: string; value: number; co
   );
 };
 
-const AttendanceTrendChart = ({ items }: { items: Array<{ label: string; value: number; color: string; bgClass: string }> }) => {
+function buildDailyAttendanceTrend(calendarDays: any[]) {
+  return calendarDays.map((day) => {
+    const dateStr = String(day.date || '').slice(0, 10);
+    const d = new Date(dateStr + 'T00:00:00');
+    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    const presentCount = Number(day.present_count ?? 0);
+    const lateCount = Number(day.late_count ?? 0);
+    const absentCount = Number(day.absent_count ?? 0);
+    const totalCount = Number(day.total_employees ?? 0);
+
+    return { date: dateStr, label, present: presentCount, late: lateCount, absent: absentCount, total: totalCount };
+  });
+}
+
+const AttendanceTrendChart = ({
+  items,
+  dailyData,
+  rangeLabel,
+}: {
+  items: Array<{ label: string; value: number; color: string; bgClass: string }>;
+  dailyData: Array<{ date: string; label: string; present: number; late: number; absent: number; total: number }>;
+  rangeLabel: string;
+}) => {
   const total = items.reduce((sum, item) => sum + Math.max(0, Number(item.value || 0)), 0);
-  if (total <= 0) {
+  if (total <= 0 || dailyData.length === 0) {
     return <EmptyInline>No attendance data yet</EmptyInline>;
   }
 
-  const trendData = generateTrendFromTotal(total, items);
-  const avgPercent = trendData.length > 0 ? Math.round(trendData.reduce((s, d) => s + d.percentage, 0) / trendData.length) : 0;
+  const chartData = dailyData
+    .filter((d) => (d.present + d.late + d.absent) > 0)
+    .map((d) => {
+      const working = d.present + d.late + d.absent;
+      const pct = working > 0 ? Math.round(((d.present + d.late) / working) * 100) : 0;
+      return {
+        date: d.label,
+        percentage: pct,
+        present: d.present,
+        late: d.late,
+        absent: d.absent,
+      };
+    });
+
+  if (chartData.length === 0) {
+    return <EmptyInline>No working days in range</EmptyInline>;
+  }
+
+  const avgPercent = chartData.length > 0
+    ? Math.round(chartData.reduce((s, d) => s + d.percentage, 0) / chartData.length)
+    : 0;
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
+    const data = payload[0]?.payload;
+    if (!data) return null;
     return (
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-2xl">
         <p className="text-sm font-bold text-slate-900">{label}</p>
-        <div className="mt-2 space-y-1">
+        <div className="mt-2 space-y-1.5">
           <div className="flex items-center justify-between gap-6">
-            <span className="text-xs text-slate-500">Attendance</span>
-            <span className="text-xs font-semibold text-slate-900">{payload[0].value}%</span>
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-green-600" />
+              <span className="text-xs text-slate-600">Present</span>
+            </div>
+            <span className="text-xs font-semibold text-green-600">{data.present}</span>
+          </div>
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-orange-500" />
+              <span className="text-xs text-slate-600">Present Late</span>
+            </div>
+            <span className="text-xs font-semibold text-orange-500">{data.late}</span>
+          </div>
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-red-600" />
+              <span className="text-xs text-slate-600">Absent</span>
+            </div>
+            <span className="text-xs font-semibold text-red-600">{data.absent}</span>
           </div>
         </div>
       </div>
     );
   };
 
+  const skipInterval = chartData.length > 30 ? Math.ceil(chartData.length / 12)
+    : chartData.length > 14 ? Math.ceil(chartData.length / 8)
+    : 0;
+
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs text-slate-500">Avg: {avgPercent}%</span>
-        <span className="text-xs font-medium text-emerald-600">Last 7 days</span>
+        <span className="text-xs font-medium text-emerald-600">{rangeLabel}</span>
       </div>
-      <ResponsiveContainer width="100%" height={180}>
-        <AreaChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="attGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#5D969D" stopOpacity={0.18} />
@@ -575,16 +640,31 @@ const AttendanceTrendChart = ({ items }: { items: Array<{ label: string; value: 
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#94a3b8" axisLine={false} tickLine={false} />
-          <YAxis domain={[70, 100]} tick={{ fontSize: 10 }} stroke="#94a3b8" axisLine={false} tickLine={false} width={32} />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 10 }}
+            stroke="#94a3b8"
+            axisLine={false}
+            tickLine={false}
+            interval={skipInterval}
+          />
+          <YAxis
+            domain={[0, 100]}
+            tick={{ fontSize: 10 }}
+            stroke="#94a3b8"
+            axisLine={false}
+            tickLine={false}
+            width={32}
+            tickFormatter={(v) => `${v}%`}
+          />
           <Tooltip content={<CustomTooltip />} />
           <Area
             type="monotone"
             dataKey="percentage"
             stroke="#5D969D"
-            strokeWidth={2.5}
+            strokeWidth={2}
             fill="url(#attGrad)"
-            dot={{ fill: "#5D969D", r: 3, strokeWidth: 0 }}
+            dot={chartData.length <= 15 ? { fill: "#5D969D", r: 2.5, strokeWidth: 0 } : false}
             activeDot={{ r: 5, fill: "#5D969D", stroke: "#fff", strokeWidth: 2 }}
             isAnimationActive={true}
             animationDuration={1200}
@@ -608,18 +688,6 @@ const AttendanceTrendChart = ({ items }: { items: Array<{ label: string; value: 
     </div>
   );
 };
-
-function generateTrendFromTotal(total: number, items: Array<{ label: string; value: number }>) {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const present = items.find((i) => i.label === "Present")?.value ?? 0;
-  const late = items.find((i) => i.label === "Present Late")?.value ?? 0;
-  const avg = total > 0 ? Math.round(((present + late) / Math.max(total, 1)) * 100) : 85;
-  const variation = [+3, +1, +2, 0, -1, -5, -8];
-  return days.map((day, i) => ({
-    date: day,
-    percentage: Math.min(100, Math.max(70, avg + (variation[i] || 0))),
-  }));
-}
 
 export default function AdminDashboard() {
   const { user, organization } = useAuth();
@@ -751,7 +819,11 @@ export default function AdminDashboard() {
           ? Promise.all(enumerateMonths(selectedRange).map((month) =>
             attendanceApi.calendar({ month, user_id: selectedEmployeeId, scope: 'selected' })
           ))
-          : Promise.resolve([]),
+          : dashboardScope === 'overall'
+            ? Promise.all(enumerateMonths(selectedRange).map((month) =>
+              attendanceApi.calendar({ month, scope: 'overall' })
+            ))
+            : Promise.resolve([]),
       ]);
 
       const overallPayload = overallResponse.status === 'fulfilled' ? overallResponse.value.data : { summary: {}, by_day: [], by_user: [] };
@@ -1918,7 +1990,11 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)]">
         <Card id="attendance-overview" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <AttendanceTrendChart items={attendancePieItems} />
+          <AttendanceTrendChart
+            items={attendancePieItems}
+            dailyData={buildDailyAttendanceTrend(calendarDaysInRange)}
+            rangeLabel={selectedRangeLabel}
+          />
           <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             {[
               ['Present on time', attendanceOnTimeDays],

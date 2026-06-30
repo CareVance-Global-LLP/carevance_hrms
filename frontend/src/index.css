@@ -7,7 +7,7 @@
 :root {
   /* Brand Colors (from palette) */
   --brand-primary: #5D969D;
-  --brand-primary-dark: #4A7A80;
+  --brand-primary-dark: #5D969D;
   --brand-primary-light: #7AADB3;
   --brand-accent: #E3A842;
   --brand-accent-dark: #C8923A;
@@ -15,7 +15,7 @@
 
   /* Legacy aliases (for backward compatibility) */
   --primary: #5D969D;
-  --primary-dark: #4A7A80;
+  --primary-dark: #5D969D;
 
   --secondary: #9B9498;
   --success: #10B981;

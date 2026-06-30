@@ -62,7 +62,7 @@ function ExpenseCard({
     }
   };
 
-  const categoryLabel = CATEGORIES.find((c) => c.value === expense.category)?.label || expense.category;
+  const categoryLabel = CATEGORIES.find((c) => c.value === expense.category)?.label || expense.category || '—';
 
   return (
     <div className="border border-slate-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
@@ -76,11 +76,11 @@ function ExpenseCard({
           </div>
           <div className="flex items-baseline gap-2">
             <h3 className="text-lg font-semibold text-slate-900">
-              {expense.currency} {expense.amount.toFixed(2)}
+              {expense.currency} {Number(expense.amount).toFixed(2)}
             </h3>
-            <span className="text-sm text-slate-500">
-              {new Date(expense.expense_date).toLocaleDateString()}
-            </span>
+             <span className="text-sm text-slate-500">
+               {expense.expense_date ? new Date(expense.expense_date).toLocaleDateString() : '—'}
+             </span>
           </div>
           <p className="text-sm text-slate-600 mt-1 line-clamp-2">{expense.description}</p>
           {expense.merchant_name && (
@@ -132,9 +132,9 @@ function ExpenseCard({
             </div>
             <div>
               <span className="text-slate-500">Date:</span>
-              <span className="ml-2 text-slate-900">
-                {new Date(expense.expense_date).toLocaleDateString()}
-              </span>
+               <span className="ml-2 text-slate-900">
+                 {expense.expense_date ? new Date(expense.expense_date).toLocaleDateString() : '—'}
+               </span>
             </div>
             {expense.location && (
               <div>
@@ -204,6 +204,7 @@ export default function ExpensesPage() {
     queryKey: ['expense-summary'],
     queryFn: () => expenseApi.getSummary(),
     retry: false,
+    onError: () => {},
   });
 
   const payrollUnavailable = isExpensesError && (expensesError as any)?.response?.status === 403;
