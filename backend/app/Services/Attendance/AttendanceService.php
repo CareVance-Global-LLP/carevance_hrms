@@ -391,6 +391,8 @@ class AttendanceService
                 $late++;
             }
 
+            $isLate = $record && (int) $record->late_minutes > 0;
+
             $days[] = [
                 'date' => $dateStr,
                 'status' => $status,
@@ -404,6 +406,10 @@ class AttendanceService
                 'check_out_at' => $record?->check_out_at,
                 'late_minutes' => (int) ($record?->late_minutes ?? 0),
                 'worked_seconds' => $record ? $this->calculateEffectiveWorkedSeconds($record) : 0,
+                'present_count' => ($status === 'present' || $status === 'checked_in') && !$isLate ? 1 : 0,
+                'late_count' => ($status === 'present' || $status === 'checked_in') && $isLate ? 1 : 0,
+                'absent_count' => $status === 'none' && !$isWeekend && !$isLeave && !$isHoliday ? 1 : 0,
+                'total_employees' => 1,
                 'holiday' => $holiday ? [
                     'id' => $holiday->id,
                     'date' => $dateStr,
@@ -561,13 +567,23 @@ class AttendanceService
             $isWeekend = $date->isWeekend();
             $dayRecords = $recordsByDate->get($dateStr, collect());
             $presentCount = $dayRecords->filter(fn ($record) => (bool) $record->check_in_at)->count();
-            $lateCount = $dayRecords->filter(fn ($record) => (int) $record->late_minutes > 0)->count();
+            $lateCount = $dayRecords->filter(fn ($record) => (int) $record->late_minutes > 0 && (bool) $record->check_in_at)->count();
+            $onTimeCount = $presentCount - $lateCount;
             $workedSeconds = (int) $dayRecords->sum(fn ($record) => (int) ($record->worked_seconds ?? 0) + (int) ($record->manual_adjustment_seconds ?? 0));
             $leaveMeta = $leaveCountsByDate->get($dateStr, ['units' => 0.0, 'half_day_count' => 0, 'full_day_count' => 0]);
             $leaveUnits = (float) ($leaveMeta['units'] ?? 0);
             $hasHalfLeave = (int) ($leaveMeta['half_day_count'] ?? 0) > 0;
             $holiday = $holidayByDate->get($dateStr);
             $isHoliday = (bool) $holiday;
+
+            // Compute per-category counts for overall mode
+            $absentCount = $totalEmployees - $onTimeCount - $lateCount;
+            if ($hasHalfLeave) {
+                $absentCount = max(0, $absentCount - $leaveMeta['half_day_count']);
+            } elseif ($leaveUnits > 0) {
+                $approxLeaveDays = (int) ceil($leaveUnits);
+                $absentCount = max(0, $absentCount - $approxLeaveDays);
+            }
 
             if ($isHoliday) {
                 $status = 'holiday';
@@ -615,6 +631,10 @@ class AttendanceService
                 'check_out_at' => null,
                 'late_minutes' => $lateCount,
                 'worked_seconds' => $workedSeconds,
+                'present_count' => $onTimeCount,
+                'late_count' => $lateCount,
+                'absent_count' => $absentCount,
+                'total_employees' => $totalEmployees,
                 'holiday' => $holiday ? [
                     'id' => $holiday->id,
                     'date' => $dateStr,
