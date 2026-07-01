@@ -204,8 +204,7 @@ export default function ExpensesPage() {
     queryKey: ['expense-summary'],
     queryFn: () => expenseApi.getSummary(),
     retry: false,
-    onError: () => {},
-  });
+  }) as { data: any; isError: boolean };
 
   const payrollUnavailable = isExpensesError && (expensesError as any)?.response?.status === 403;
 

@@ -20,8 +20,7 @@ class CheckPayrollPlan
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $payrollDevMode = config('app.env') !== 'production'
-            && (bool) env('PAYROLL_DEV_MODE', false);
+        $payrollDevMode = (bool) env('PAYROLL_DEV_MODE', false);
 
         if (! $payrollDevMode && ! PlanService::hasFeature($organization, 'payroll')) {
             return response()->json([

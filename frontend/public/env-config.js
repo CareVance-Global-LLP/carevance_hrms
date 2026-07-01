@@ -22,3 +22,7 @@ window.__APP_CONFIG__ = window.__APP_CONFIG__ || {};
     config.VITE_DESKTOP_DOWNLOAD_URL = 'http://127.0.0.1:8000/api/downloads/desktop/windows';
   }
 })(window.__APP_CONFIG__);
+
+// ── Feature toggles (edit per-deployment, no rebuild needed) ──────────
+// Set to "true" to enable payroll on this deployment.
+window.__APP_CONFIG__.VITE_PAYROLL_ENABLED = "true";

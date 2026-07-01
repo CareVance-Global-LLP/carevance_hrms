@@ -8,7 +8,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('leave_encashments', function (Blueprint $table) {
+        if (!Schema::hasTable('leave_encashments')) {
+            Schema::create('leave_encashments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
@@ -45,6 +46,7 @@ return new class extends Migration
             $table->index(['payroll_run_id'], 'leave_enc_run_idx');
             $table->index(['month_year'], 'leave_enc_month_idx');
         });
+        }
     }
 
     public function down(): void
