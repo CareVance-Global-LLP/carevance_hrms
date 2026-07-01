@@ -5,7 +5,7 @@ interface MetricCardProps {
   label: string;
   value: string | number;
   hint?: string;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   accent?: 'sky' | 'emerald' | 'violet' | 'amber' | 'rose' | 'slate';
 }
 
@@ -29,13 +29,17 @@ export default function MetricCard({
     <SurfaceCard className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</p>
-          <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
-          {hint ? <p className="mt-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{hint}</p> : null}
+          <p className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+            {label}
+          </p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+          {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
         </div>
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accentClasses[accent]}`}>
-          <Icon className="h-5 w-5" />
-        </div>
+        {Icon ? (
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accentClasses[accent]}`}>
+            <Icon className="h-5 w-5" />
+          </div>
+        ) : null}
       </div>
     </SurfaceCard>
   );

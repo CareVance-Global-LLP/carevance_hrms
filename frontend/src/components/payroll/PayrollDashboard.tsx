@@ -23,9 +23,10 @@ import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import NextStepsCard from './NextStepsCard';
 import MonthTimeline from './MonthTimeline';
+import CompensationAnalytics from './CompensationAnalytics';
 import { cn } from '@/utils/cn';
 
-import type { PayGroup } from '@/types';
+import type { PayGroup, PayrollMonthlyRun, PayrollDepartment } from '@/types';
 
 interface PayrollDashboardProps {
   selectedMonth?: string;
@@ -240,7 +241,17 @@ export default function PayrollDashboard({
     total_net_pay?: number;
   }>;
 
-  // Calculate summary stats from pay groups
+  // Fetch departments for CompensationAnalytics
+  const { data: deptsData } = useQuery({
+    queryKey: ['payroll', 'departments', selectedMonth],
+    queryFn: () =>
+      payrollApi.getDepartments({ month_year: selectedMonth }).then((r) => r.data),
+  });
+  const departments: PayrollDepartment[] = useMemo(
+    () => (deptsData?.departments ?? []) as PayrollDepartment[],
+    [deptsData],
+  );
+
   const summaryStats = useMemo(() => {
     const totalEmployees = payGroups.reduce((sum, pg) => sum + pg.employee_count, 0);
     const processedCount = payGroups.reduce((sum, pg) => sum + pg.processed_count, 0);
@@ -311,6 +322,13 @@ export default function PayrollDashboard({
           accent="emerald"
         />
       </div>
+
+      {/* Compensation Analytics Charts */}
+      <CompensationAnalytics
+        departments={departments}
+        runs={runs as Partial<PayrollMonthlyRun>[]}
+        summaryStats={summaryStats}
+      />
 
       {/* Quick Actions */}
       <div className="space-y-3">

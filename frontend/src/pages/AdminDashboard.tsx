@@ -1174,7 +1174,7 @@ export default function AdminDashboard() {
     }));
 
   const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
-  const absentPercent = totalEmployees ? Math.round((attendanceAbsentDays / totalEmployees) * 100) : 0;
+  const absentPercent = totalEmployees ? Math.round((absentCount / totalEmployees) * 100) : 0;
   const presentLatePercent = totalEmployees ? Math.round((finalPresentLateInRange / totalEmployees) * 100) : 0;
   const IDLE_SOURCE_LABELS: Record<'overall' | 'insights' | 'org' | 'none', string> = {
     overall: 'Source: per-user (reports/overall)',
@@ -1552,7 +1552,7 @@ export default function AdminDashboard() {
     { label: 'Not started', value: notWorkingCount, color: 'bg-slate-400' },
     { label: 'Present late', value: finalPresentLateInRange, color: 'bg-rose-500' },
     { label: 'On leave', value: onLeave, color: 'bg-amber-500' },
-    { label: 'Absent', value: attendanceAbsentDays, color: 'bg-red-500' },
+    { label: 'Absent', value: absentCount, color: 'bg-red-500' },
   ];
   const taskStatusCounts: Record<string, number> = data.tasks.reduce((acc: Record<string, number>, task: any) => {
     const status = String(task.status || 'todo').toLowerCase();
@@ -1961,7 +1961,7 @@ export default function AdminDashboard() {
         />
         <KpiCard
           label="Absent"
-          value={attendanceAbsentDays}
+          value={absentCount}
           hint={`${absentPercent}% of total`}
           icon={Calendar}
           tint="bg-red-50 text-red-600"

@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   X, Lock, ShieldCheck, Send, Loader2, IndianRupee, Users, Calendar, FileText,
   AlertCircle, AlertTriangle, Landmark, Plus, Check, Unlock, Wallet, PlayCircle,
-  ListChecks, Info,
+  ListChecks, Info, LayoutDashboard, Search, ArrowUpDown, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, employeeWorkspaceApi, getApiErrorMessage } from '@/services/api';
@@ -11,6 +11,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import { useToast } from '@/components/ui/Toast';
+import { cn } from '@/utils/cn';
 import PayrollRunLifecycleStepper, { RunLifecycleState } from './PayrollRunLifecycleStepper';
 import PayrollOutcome from './PayrollOutcome';
 import RunPayrollChecklist from './RunPayrollChecklist';
@@ -40,6 +41,7 @@ export default function PayrollRunDetailModal({
   const [showDisburseConfirm, setShowDisburseConfirm] = useState(false);
   const [unlockReason, setUnlockReason] = useState('');
   const [partialLockData, setPartialLockData] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'employees' | 'activity'>('overview');
 
   const { data: detailData, isLoading } = useQuery({
     queryKey: ['payroll', 'run-detail', runId],
@@ -212,11 +214,39 @@ export default function PayrollRunDetailModal({
   const missingEmployees: any[] = missingBank?.missing_employees ?? [];
   const missingCount = missingBank?.missing_count ?? 0;
 
+  const toFiniteMoney = (v: unknown): number => {
+    const n = typeof v === 'string' ? parseFloat(v) : (v as number);
+    return Number.isFinite(n) ? (n as number) : 0;
+  };
+
+  const runGrossFromBackend = toFiniteMoney((run as any)?.total_gross ?? (run as any)?.gross_total);
+  const runDeductionsFromBackend = toFiniteMoney((run as any)?.total_deductions);
+  const runNetFromBackend = toFiniteMoney((run as any)?.total_net_pay);
+
+  const itemsGross = items.reduce(
+    (s: number, i: any) =>
+      s +
+      toFiniteMoney(
+        i.gross_salary ??
+          i.total_earnings ??
+          i.basic_salary ??
+          toFiniteMoney(i.basic) +
+            toFiniteMoney(i.hra) +
+            toFiniteMoney(i.special_allowance) +
+            toFiniteMoney(i.conveyance),
+      ),
+    0,
+  );
+
   const totals = {
     employees: items.length,
-    gross: items.reduce((s: number, i: any) => s + (i.gross_salary || i.basic_salary || 0), 0),
-    deductions: items.reduce((s: number, i: any) => s + (i.total_deductions || 0), 0),
-    net: items.reduce((s: number, i: any) => s + (i.net_pay || 0), 0),
+    gross: itemsGross > 0 ? itemsGross : runGrossFromBackend,
+    deductions:
+      items.reduce((s: number, i: any) => s + toFiniteMoney(i.total_deductions), 0) ||
+      runDeductionsFromBackend,
+    net:
+      items.reduce((s: number, i: any) => s + toFiniteMoney(i.net_pay), 0) ||
+      runNetFromBackend,
   };
 
   const isMutating =
@@ -234,25 +264,28 @@ export default function PayrollRunDetailModal({
   const missingForCompletion = completenessInfo?.missing_count ?? 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <SurfaceCard className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-slate-200 p-5 flex items-center justify-between z-10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50">
+      <SurfaceCard className="w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between z-10 flex-shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <FileText className="h-5 w-5 text-blue-600" />
-              Payroll Run Detail
+              Run #{run?.id ?? '—'} · {run?.month_year ?? monthYear ?? 'Unknown month'}
               <InfoTooltip
                 content="Every payroll run moves through 5 stages. Disbursed runs are immutable for compliance — you can't delete or re-process them."
                 title="Run lifecycle"
               />
             </h2>
-            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
               <Calendar className="h-3 w-3" />
-              {run?.month_year ?? monthYear ?? 'Unknown month'}
-              {run?.id && <> · Run #{run.id}</>}
-              {expectedCount > 0 && (
-                <> · {processedCount}/{expectedCount} employees</>
-              )}
+              {expectedCount > 0
+                ? `${processedCount}/${expectedCount} employees processed`
+                : `${totals.employees} employee${totals.employees === 1 ? '' : 's'}`}
+              <span className="ml-1 text-slate-300">·</span>
+              <span className="uppercase tracking-wider">
+                Step {(['draft', 'locked', 'approved', 'released', 'disbursed'].indexOf(currentState) + 1)} of 5
+              </span>
             </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg" aria-label="Close">
@@ -260,131 +293,170 @@ export default function PayrollRunDetailModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
-          {error && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-rose-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-rose-700 flex-1">{error}</p>
-              <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600">×</button>
-            </div>
-          )}
+        {error && (
+          <div className="mx-5 mt-3 mb-0 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-rose-600 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-rose-700 flex-1">{error}</p>
+            <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600">×</button>
+          </div>
+        )}
 
-          {isLoading ? (
-            <div className="text-center py-12">
-              <Loader2 className="h-8 w-8 text-blue-600 animate-spin mx-auto mb-3" />
-              <p className="text-sm text-slate-500">Loading run details…</p>
-            </div>
-          ) : (
-            <>
-              {/* Lifecycle Stepper */}
-              <SurfaceCard className="p-5 bg-slate-50">
-                <PayrollRunLifecycleStepper currentState={currentState} />
-              </SurfaceCard>
+        {isLoading ? (
+          <div className="text-center py-12 flex-1">
+            <Loader2 className="h-8 w-8 text-blue-600 animate-spin mx-auto mb-3" />
+            <p className="text-sm text-slate-500">Loading run details…</p>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-0">
+              {/* ── LEFT SIDEBAR (sticky) ──────────────────────────── */}
+              <aside className="border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50/60 p-5 space-y-5 lg:sticky lg:top-0 lg:self-start">
+                {/* Lifecycle */}
+                <section>
+                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                    Lifecycle
+                  </h3>
+                  <PayrollRunLifecycleStepper
+                    currentState={currentState}
+                    completedAt={{
+                      ...((run?.locked_at && { locked: run.locked_at }) as any),
+                      ...((run?.approved_at && { approved: run.approved_at }) as any),
+                      ...((run?.released_at && { released: run.released_at }) as any),
+                      ...((run?.disbursed_at && { disbursed: run.disbursed_at }) as any),
+                    }}
+                  />
+                </section>
 
-              {/* Pre-flight checklist (6 steps) */}
-              <RunPayrollChecklist runId={runId!} />
-
-              {/* Completeness card — shown when run is draft/locked and incomplete */}
-              {isIncomplete && (currentState === 'draft' || currentState === 'locked') && (
-                <CompletenessCard
-                  expected={expectedCount}
-                  processed={processedCount}
-                  missing={missingForCompletion}
-                  missingEmployees={completenessInfo?.missing_employees ?? []}
-                  isProcessing={processRemainingMutation.isPending}
-                  onProcessRemaining={() => processRemainingMutation.mutate()}
-                  state={currentState}
-                />
-              )}
-
-              {/* Quick totals + statutory breakdown (PayrollOutcome) */}
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <SummaryStat icon={Users} label="Employees" value={totals.employees} />
-                  <SummaryStat icon={IndianRupee} label="Gross" value={formatCurrency(totals.gross)} accent="violet" />
-                  <SummaryStat icon={IndianRupee} label="Deductions" value={formatCurrency(totals.deductions)} accent="amber" />
-                  <SummaryStat icon={IndianRupee} label="Net Pay" value={formatCurrency(totals.net)} accent="emerald" />
-                </div>
-
-                {items.length > 0 && (
-                  <PayrollOutcome run={run as any} items={items as any} />
-                )}
-              </div>
-
-              {/* Missing bank details warning — only relevant for approved+ */}
-              {missingCount > 0 && (currentState === 'approved' || currentState === 'released') && (
-                <MissingBankCard
-                  missingEmployees={missingEmployees}
-                  runId={runId}
-                  onAdded={() => invalidateAll()}
-                  showToast={show}
-                />
-              )}
-
-              {/* Action Bar — drives lifecycle transitions */}
-              <SurfaceCard className="p-4 border-blue-200 bg-blue-50/40">
-                <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                  <ListChecks className="h-4 w-4 text-blue-600" />
-                  Next steps
-                </h4>
-                <ActionBar
-                  currentState={currentState}
-                  isIncomplete={!!isIncomplete}
-                  isMutating={isMutating}
-                  itemsCount={items.length}
-                  onLock={() => lockMutation.mutate(undefined)}
-                  onUnlockClick={() => setShowUnlockDialog(true)}
-                  onApprove={() => approveMutation.mutate()}
-                  onRelease={() => releaseMutation.mutate()}
-                  onDisburseClick={() => setShowDisburseConfirm(true)}
-                  onDownloadBankFile={handleDownloadBankFile}
-                  lockPending={lockMutation.isPending}
-                  unlockPending={unlockMutation.isPending}
-                  approvePending={approveMutation.isPending}
-                  releasePending={releaseMutation.isPending}
-                  disbursePending={disburseMutation.isPending}
-                />
-              </SurfaceCard>
-
-              {/* Per-employee grid + activity log */}
-              {items.length > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="lg:col-span-2">
-                    <h4 className="text-sm font-semibold text-slate-900 mb-3">Payslips in this run</h4>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                      {items.slice(0, 50).map((it: any, idx: number) => (
-                        <div key={it.id ?? idx} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg text-sm">
-                          <div>
-                            <p className="font-medium text-slate-900">{it.user_name ?? it.employee_name ?? `Employee #${it.user_id}`}</p>
-                            <p className="text-xs text-slate-500">{it.designation ?? it.department ?? ''}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-emerald-600">{formatCurrency(it.net_pay || 0)}</p>
-                            <p className="text-xs text-slate-500">{it.payment_status ?? 'pending'}</p>
-                          </div>
-                        </div>
-                      ))}
-                      {items.length > 50 && (
-                        <p className="text-xs text-slate-500 text-center py-2">
-                          + {items.length - 50} more (use Bank File for full export)
-                        </p>
-                      )}
+                {/* Summary */}
+                <section className="pt-4 border-t border-slate-200">
+                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                    Summary
+                  </h3>
+                  <dl className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <dt className="text-slate-500">Employees</dt>
+                      <dd className="font-semibold text-slate-900">{totals.employees}</dd>
                     </div>
-                  </div>
-                  <div>
-                    <RunActivityLog runId={runId!} />
-                  </div>
-                </div>
-              )}
+                    <div className="flex items-center justify-between">
+                      <dt className="text-slate-500">Gross</dt>
+                      <dd className="font-semibold text-slate-900">{formatCurrency(totals.gross)}</dd>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <dt className="text-slate-500">Deductions</dt>
+                      <dd className="font-semibold text-amber-600">{formatCurrency(totals.deductions)}</dd>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                      <dt className="text-slate-700 font-medium">Net Pay</dt>
+                      <dd className="font-bold text-emerald-600">{formatCurrency(totals.net)}</dd>
+                    </div>
+                  </dl>
+                </section>
 
-              {!isLoading && items.length === 0 && (
-                <div className="text-center py-8 text-slate-500 text-sm">
-                  No payslips in this run yet. Process employees to populate this run.
+                {/* Actions */}
+                <section className="pt-4 border-t border-slate-200">
+                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                    Next steps
+                  </h3>
+                  <ActionBar
+                    currentState={currentState}
+                    isIncomplete={!!isIncomplete}
+                    isMutating={isMutating}
+                    itemsCount={items.length}
+                    onLock={() => lockMutation.mutate(undefined)}
+                    onUnlockClick={() => setShowUnlockDialog(true)}
+                    onApprove={() => approveMutation.mutate()}
+                    onRelease={() => releaseMutation.mutate()}
+                    onDisburseClick={() => setShowDisburseConfirm(true)}
+                    onDownloadBankFile={handleDownloadBankFile}
+                    lockPending={lockMutation.isPending}
+                    unlockPending={unlockMutation.isPending}
+                    approvePending={approveMutation.isPending}
+                    releasePending={releaseMutation.isPending}
+                    disbursePending={disburseMutation.isPending}
+                  />
+                </section>
+              </aside>
+
+              {/* ── RIGHT PANEL ───────────────────────────────────── */}
+              <section className="p-5 space-y-5">
+                {/* Tabs */}
+                <div className="flex items-center gap-1 border-b border-slate-200 -mb-px">
+                  <TabButton
+                    label="Overview"
+                    icon={LayoutDashboard}
+                    active={activeTab === 'overview'}
+                    onClick={() => setActiveTab('overview')}
+                  />
+                  <TabButton
+                    label={`Employees (${items.length})`}
+                    icon={Users}
+                    active={activeTab === 'employees'}
+                    onClick={() => setActiveTab('employees')}
+                    disabled={items.length === 0}
+                  />
+                  <TabButton
+                    label="Activity"
+                    icon={ListChecks}
+                    active={activeTab === 'activity'}
+                    onClick={() => setActiveTab('activity')}
+                  />
                 </div>
-              )}
-            </>
-          )}
-        </div>
+
+                {activeTab === 'overview' && (
+                  <div className="space-y-5">
+                    {/* Pre-flight checklist */}
+                    <RunPayrollChecklist runId={runId!} />
+
+                    {/* Completeness */}
+                    {isIncomplete && (currentState === 'draft' || currentState === 'locked') && (
+                      <CompletenessCard
+                        expected={expectedCount}
+                        processed={processedCount}
+                        missing={missingForCompletion}
+                        missingEmployees={completenessInfo?.missing_employees ?? []}
+                        isProcessing={processRemainingMutation.isPending}
+                        onProcessRemaining={() => processRemainingMutation.mutate()}
+                        state={currentState}
+                      />
+                    )}
+
+                    {/* Financial summary */}
+                    <FinancialSummaryCard totals={totals} />
+
+                    {/* Statutory breakdown (existing component) */}
+                    {items.length > 0 && (
+                      <PayrollOutcome run={run as any} items={items as any} />
+                    )}
+
+                    {/* Missing bank details */}
+                    {missingCount > 0 && (currentState === 'approved' || currentState === 'released') && (
+                      <MissingBankCard
+                        missingEmployees={missingEmployees}
+                        runId={runId}
+                        onAdded={() => invalidateAll()}
+                        showToast={show}
+                      />
+                    )}
+                  </div>
+                )}
+
+                {activeTab === 'employees' && (
+                  <EmployeesTable items={items} formatCurrency={formatCurrency} />
+                )}
+
+                {activeTab === 'activity' && (
+                  <RunActivityLog runId={runId!} />
+                )}
+
+                {items.length === 0 && !isLoading && activeTab === 'overview' && (
+                  <div className="text-center py-8 text-slate-500 text-sm">
+                    No payslips in this run yet. Process employees to populate this run.
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        )}
       </SurfaceCard>
 
       {/* Disburse confirmation dialog */}
@@ -1007,32 +1079,280 @@ function PartialLockDialog({ data, onCancel, onConfirm, isPending }: PartialLock
   );
 }
 
-function SummaryStat({
-  icon: Icon,
-  label,
-  value,
-  accent = 'blue',
-}: {
-  icon: any;
+interface TabButtonProps {
   label: string;
-  value: string | number;
-  accent?: 'blue' | 'emerald' | 'amber' | 'violet';
-}) {
-  const colors = {
-    blue: 'bg-blue-50 text-blue-600',
-    emerald: 'bg-emerald-50 text-emerald-600',
-    amber: 'bg-amber-50 text-amber-600',
-    violet: 'bg-violet-50 text-violet-600',
-  };
+  icon: any;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+function TabButton({ label, icon: Icon, active, disabled, onClick }: TabButtonProps) {
   return (
-    <SurfaceCard className="p-3">
-      <div className="flex items-center gap-2 mb-1">
-        <div className={`h-6 w-6 rounded flex items-center justify-center ${colors[accent]}`}>
-          <Icon className="h-3.5 w-3.5" />
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'flex items-center gap-2 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+        active
+          ? 'border-blue-600 text-blue-700'
+          : 'border-transparent text-slate-500 hover:text-slate-700',
+        disabled && 'opacity-40 cursor-not-allowed hover:text-slate-500',
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}
+
+interface FinancialSummaryCardProps {
+  totals: { gross: number; deductions: number; net: number };
+}
+
+function FinancialSummaryCard({ totals }: FinancialSummaryCardProps) {
+  const employerContrib = Math.max(0, totals.gross - totals.deductions - totals.net);
+  return (
+    <SurfaceCard className="p-4">
+      <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+        <IndianRupee className="h-4 w-4 text-blue-600" />
+        Financial Summary
+      </h4>
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between py-2 border-b border-slate-100">
+          <span className="text-sm font-medium text-slate-700">Total Payroll Cost</span>
+          <span className="text-lg font-bold text-slate-900">
+            {formatCurrency(totals.gross)}
+          </span>
         </div>
-        <p className="text-xs font-medium text-slate-500">{label}</p>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-slate-600 pl-3">· Employee Take-home</span>
+          <span className="text-sm font-semibold text-emerald-600">
+            {formatCurrency(totals.net)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-slate-600 pl-3">· Statutory Deductions</span>
+          <span className="text-sm font-semibold text-amber-600">
+            {formatCurrency(totals.deductions)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-slate-600 pl-3">· Employer Contributions</span>
+          <span className="text-sm font-semibold text-violet-600">
+            {formatCurrency(employerContrib)}
+          </span>
+        </div>
       </div>
-      <p className="text-lg font-bold text-slate-900">{value}</p>
     </SurfaceCard>
+  );
+}
+
+interface EmployeesTableProps {
+  items: any[];
+  formatCurrency: (n: number) => string;
+}
+
+type SortKey = 'name' | 'department' | 'gross' | 'deductions' | 'net_pay' | 'status';
+type SortDir = 'asc' | 'desc';
+
+function EmployeesTable({ items, formatCurrency }: EmployeesTableProps) {
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid' | 'failed'>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('net_pay');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((it) => {
+      if (q) {
+        const name = String(it.employee_name ?? it.user_name ?? '').toLowerCase();
+        const dept = String(it.department ?? '').toLowerCase();
+        if (!name.includes(q) && !dept.includes(q)) return false;
+      }
+      if (statusFilter !== 'all') {
+        const ps = String(it.payment_status ?? 'pending').toLowerCase();
+        if (statusFilter === 'paid' && ps !== 'paid' && ps !== 'disbursed') return false;
+        if (statusFilter === 'pending' && (ps === 'paid' || ps === 'disbursed')) return false;
+        if (statusFilter === 'failed' && ps !== 'failed') return false;
+      }
+      return true;
+    });
+  }, [items, query, statusFilter]);
+
+  const sorted = useMemo(() => {
+    const out = [...filtered];
+    out.sort((a, b) => {
+      let av: any;
+      let bv: any;
+      switch (sortKey) {
+        case 'name':
+          av = String(a.employee_name ?? a.user_name ?? '').toLowerCase();
+          bv = String(b.employee_name ?? b.user_name ?? '').toLowerCase();
+          break;
+        case 'department':
+          av = String(a.department ?? '').toLowerCase();
+          bv = String(b.department ?? '').toLowerCase();
+          break;
+        case 'gross':
+          av = Number(a.gross_salary ?? 0);
+          bv = Number(b.gross_salary ?? 0);
+          break;
+        case 'deductions':
+          av = Number(a.total_deductions ?? 0);
+          bv = Number(b.total_deductions ?? 0);
+          break;
+        case 'net_pay':
+          av = Number(a.net_pay ?? 0);
+          bv = Number(b.net_pay ?? 0);
+          break;
+        case 'status':
+          av = String(a.payment_status ?? 'pending').toLowerCase();
+          bv = String(b.payment_status ?? 'pending').toLowerCase();
+          break;
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return out;
+  }, [filtered, sortKey, sortDir]);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' || key === 'department' || key === 'status' ? 'asc' : 'desc');
+    }
+  }
+
+  function SortHeader({ k, label, align = 'left' }: { k: SortKey; label: string; align?: 'left' | 'right' }) {
+    const active = sortKey === k;
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(k)}
+        className={cn(
+          'flex items-center gap-1 text-xs font-semibold uppercase tracking-wider hover:text-blue-700',
+          align === 'right' && 'ml-auto',
+          active ? 'text-blue-700' : 'text-slate-500',
+        )}
+      >
+        {label}
+        {active ? (
+          sortDir === 'asc' ? (
+            <ChevronUp className="h-3 w-3" />
+          ) : (
+            <ChevronDown className="h-3 w-3" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-50" />
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name or department…"
+            className="w-full pl-10 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as any)}
+          className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All status</option>
+          <option value="paid">Paid</option>
+          <option value="pending">Pending</option>
+          <option value="failed">Failed</option>
+        </select>
+      </div>
+
+      <div className="border border-slate-200 rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="px-3 py-2 text-left"><SortHeader k="name" label="Employee" /></th>
+                <th className="px-3 py-2 text-left"><SortHeader k="department" label="Department" /></th>
+                <th className="px-3 py-2 text-right"><SortHeader k="gross" label="Gross" align="right" /></th>
+                <th className="px-3 py-2 text-right"><SortHeader k="deductions" label="Deduct." align="right" /></th>
+                <th className="px-3 py-2 text-right"><SortHeader k="net_pay" label="Net Pay" align="right" /></th>
+                <th className="px-3 py-2 text-left"><SortHeader k="status" label="Status" /></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-500">
+                    No employees match your filters.
+                  </td>
+                </tr>
+              ) : (
+                sorted.map((it, idx) => {
+                  const name = it.employee_name ?? it.user_name ?? `Employee #${it.user_id}`;
+                  const initials = String(name)
+                    .split(' ')
+                    .map((s) => s[0])
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .join('')
+                    .toUpperCase();
+                  const ps = String(it.payment_status ?? 'pending').toLowerCase();
+                  const psTone =
+                    ps === 'paid' || ps === 'disbursed'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : ps === 'failed'
+                        ? 'bg-rose-100 text-rose-700'
+                        : 'bg-amber-100 text-amber-700';
+                  return (
+                    <tr key={it.id ?? idx} className="hover:bg-slate-50/60">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-white text-xs font-semibold flex items-center justify-center flex-shrink-0">
+                            {initials || '?'}
+                          </div>
+                          <span className="font-medium text-slate-900 truncate">{name}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {it.department ?? <span className="text-slate-400">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right text-slate-700">
+                        {formatCurrency(Number(it.gross_salary ?? 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right text-amber-600">
+                        {formatCurrency(Number(it.total_deductions ?? 0))}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-emerald-600">
+                        {formatCurrency(Number(it.net_pay ?? 0))}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={cn('inline-block px-2 py-0.5 rounded-full text-[11px] font-medium capitalize', psTone)}>
+                          {it.payment_status ?? 'pending'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
+          <span>Showing {sorted.length} of {items.length}</span>
+        </div>
+      </div>
+    </div>
   );
 }
