@@ -397,11 +397,33 @@ export const PAYROLL_GLOSSARY: GlossaryEntry[] = [
     section: 'feature',
   },
   {
+    key: 'pay_group',
+    term: 'Pay Group',
+    short: 'A named group of employees who share the same pay schedule, frequency, and processing rules.',
+    full: 'Pay Groups organize employees by how and when they get paid. All employees in a Pay Group are processed together in payroll runs. You can create multiple Pay Groups (e.g., "Monthly Salaried", "Weekly Staff") each with different pay schedules and frequencies.',
+    related: ['pay_frequency', 'pay_day', 'processing_buffer'],
+    section: 'feature',
+  },
+  {
     key: 'run_lifecycle',
     term: 'Payroll Run Lifecycle',
     short: 'Draft → Locked → Approved → Released → Disbursed.',
     full: 'Every payroll run moves through 5 stages: (1) Draft — calculated but not finalized, (2) Locked — finalized, no more edits, (3) Approved — manager/admin sign-off, (4) Released — bank file generated, (5) Disbursed — funds credited to employees. Disbursed runs are immutable for compliance.',
     section: 'run',
+  },
+  {
+    key: 'salary_charts',
+    term: 'Salary Visualization Charts',
+    short: 'Visual representations of earnings and deductions in payroll breakdowns.',
+    full: 'Interactive charts that display salary components visually, making it easier to understand the distribution of earnings and deductions. These charts appear in the salary breakdown section of employee payroll wizards and test runs.',
+    section: 'feature',
+  },
+  {
+    key: 'dashboard_visuals',
+    term: 'Payroll Dashboard Visuals',
+    short: 'Enhanced data visualization in payroll dashboards and reports.',
+    full: 'Improved visual presentation of payroll data including charts, graphs, and organized layouts that help HR professionals quickly understand payroll metrics and trends.',
+    section: 'feature',
   },
   {
     key: 'bank_file',
@@ -450,7 +472,7 @@ export const COMPLIANCE_DEADLINES = [
 export const PAYROLL_FAQS = [
   {
     q: 'My employee has no CTC yet. How do I add one?',
-    a: 'Go to Setup Wizard → Step 4 (Employees & CTC), enter their annual CTC, and Save. The template will be auto-created. You can also do it inline from the department view — click "Set CTC & Process" on any employee card.',
+    a: 'Go to Setup Wizard → Step 4 (Employees & CTC), enter their annual CTC, and Save. The template will be auto-created. You can also do it inline from the Pay Group view — click "Set CTC & Process" on any employee card within a Pay Group.',
   },
   {
     q: 'How do I undo a payroll run?',
@@ -462,7 +484,7 @@ export const PAYROLL_FAQS = [
   },
   {
     q: 'How is monthly TDS calculated?',
-    a: 'Annual tax is projected from (current month\'s income × 12) minus exemptions declared in Form 12BB. Then divided by 12 for monthly TDS. Adjusted at year-end via Form 16/ITR.',
+    a: 'Annual tax is projected from (current month\'s income × 12) minus exemptions declared in Form 12BB. Then divided by 12 for monthly TDS. Adjusted at year-end via Form 16/ITR. You can visualize this breakdown in the salary charts during payroll processing.',
   },
   {
     q: 'Can I generate Form 16 for a specific employee?',
@@ -472,13 +494,18 @@ export const PAYROLL_FAQS = [
     q: 'What happens if I change a default after employees already have CTCs?',
     a: 'Existing employees keep their old template values. To propagate the new default, go to that setup step and click "Save & Apply to All Employees" — it will update all employees whose values match the previous defaults (custom overrides are preserved).',
   },
+  {
+    q: 'Why are there charts in the salary breakdown?',
+    a: 'The visual charts help you quickly understand how salary components are distributed between earnings and deductions. This makes it easier to verify calculations and explain payroll breakdowns to employees.',
+  },
 ];
 
 export const HOW_TO_PROCESS = [
   { step: 1, title: 'Pick the month', desc: 'Select the month you want to process on the dashboard. Default is the current month.' },
-  { step: 2, title: 'Click a department with pending employees', desc: 'Departments are sorted with the most pending first. Click into one to see employees.' },
-  { step: 3, title: 'Set CTC for anyone missing it', desc: 'Employees without CTC show "CTC not set". Click "Set CTC & Process" to enter it inline.' },
-  { step: 4, title: 'Process selected employees', desc: 'Tick checkboxes for the employees to process, then click "Process Selected". The system calculates Gross → PF/ESI/PT/TDS → Net for each.' },
-  { step: 5, title: 'Review, lock, and approve', desc: 'Open the run from the dashboard. Review the breakdown, then Lock → Approve → Release in sequence.' },
-  { step: 6, title: 'Disburse via bank file', desc: 'After Release, generate the bank file in your bank\'s format (NEFT/RTGS/CSV). Upload to your banking portal.' },
+  { step: 2, title: 'Create or select a Pay Group', desc: 'Pay Groups organize employees by pay schedule. Click "Create Pay Group" to make a new one, or select an existing group from the dashboard.' },
+  { step: 3, title: 'Add employees to the Pay Group', desc: 'Assign employees to the selected Pay Group. All employees in a group are processed together with the same schedule.' },
+  { step: 4, title: 'Set CTC for anyone missing it', desc: 'Within the Pay Group, employees without CTC show "CTC not set". Click "Set CTC & Process" to enter it inline.' },
+  { step: 5, title: 'Process selected employees', desc: 'Tick checkboxes for the employees to process, then click "Process Selected". The system calculates Gross → PF/ESI/PT/TDS → Net for each, with visual charts showing the breakdown.' },
+  { step: 6, title: 'Review, lock, and approve', desc: 'Open the run from the dashboard. Review the breakdown with enhanced visualizations, then Lock → Approve → Release in sequence.' },
+  { step: 7, title: 'Disburse via bank file', desc: 'After Release, generate the bank file in your bank\'s format (NEFT/RTGS/CSV). Upload to your banking portal.' },
 ];

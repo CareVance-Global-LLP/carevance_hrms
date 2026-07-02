@@ -6,7 +6,7 @@ import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
 import { employeeWorkspaceApi, productivityClassificationApi, settingsApi, supportApi, organizationApi } from '@/services/api';
 import type { ProductivityClassificationItem } from '@/types';
-import { ArrowRight, User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy, Trash2, AlertTriangle } from 'lucide-react';
+import { ArrowRight, User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy, Trash2, AlertTriangle, Sparkles } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
@@ -210,6 +210,7 @@ export default function SettingsPage() {
     ...(isStrictAdminUser ? [{ id: 'billing', name: 'Billing', icon: CreditCard }] : []),
     ...(hasDesktopBrowserTracking ? [{ id: 'browser-tracking', name: 'Browser Tracking', icon: Link2 }] : []),
     ...(canManageProductivity ? [{ id: 'productivity', name: 'Productivity', icon: Briefcase }] : []),
+    ...(isStrictAdminUser && import.meta.env.DEV ? [{ id: 'development', name: 'Development', icon: Sparkles }] : []),
   ];
   const allowedTabIds = useMemo(() => new Set(tabs.map((tab) => tab.id)), [tabs]);
 
@@ -1368,6 +1369,57 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {activeTab === 'development' && hasStrictAdminAccess(user) && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Development Settings</h2>
+                <p className="mt-1 text-sm text-slate-500">Settings for developers and testing purposes.</p>
+              </div>
+              
+              <div className="rounded-lg border border-slate-200 bg-white p-6">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-medium text-slate-900">Condensed Navigation Mode</h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Enable condensed navigation to reduce sidebar clutter during development. 
+                      This mode shows a simplified view of payroll features.
+                    </p>
+                  </div>
+                  <ToggleInput 
+                    checked={localStorage.getItem('devModeNavigation') === 'true'}
+                    onChange={(checked) => {
+                      if (checked) {
+                        localStorage.setItem('devModeNavigation', 'true');
+                      } else {
+                        localStorage.removeItem('devModeNavigation');
+                      }
+                      // Reload the page to apply changes
+                      window.location.reload();
+                    }}
+                  />
+                </div>
+              </div>
+              
+              <div className="rounded-lg border border-slate-200 bg-white p-6">
+                <h3 className="font-medium text-slate-900 mb-2">Environment Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-slate-500">Payroll Enabled:</p>
+                    <p className="font-medium">{import.meta.env.VITE_PAYROLL_ENABLED?.toString() || 'false'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Development Mode:</p>
+                    <p className="font-medium">{import.meta.env.DEV ? 'Yes' : 'No'}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Condensed Navigation:</p>
+                    <p className="font-medium">{localStorage.getItem('devModeNavigation') === 'true' ? 'Enabled' : 'Disabled'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {activeTab === 'productivity' && hasStrictAdminAccess(user) && (
             <div className="space-y-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

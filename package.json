@@ -2,6 +2,7 @@
   "type": "module",
   "dependencies": {
     "@heyputer/puter.js": "^2.5.4",
-    "readline-sync": "^1.4.10"
+    "readline-sync": "^1.4.10",
+    "recharts": "^3.9.1"
   }
 }

@@ -19,6 +19,8 @@ import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import StatusBadge from '@/components/ui/StatusBadge';
 import BrandLogo from '@/components/branding/BrandLogo';
 import { topNavigation } from '@/navigation/dashboardNavigation';
+import { condensedNavigation } from '@/navigation/condensedNavigation';
+import { devModeNavigation } from '@/lib/runtimeConfig';
 import { cn } from '@/utils/cn';
 import {
   Bell,
@@ -188,8 +190,10 @@ export default function Layout() {
 
   const primaryNavigation = useMemo(
     () => {
+      const baseNavigation = devModeNavigation ? condensedNavigation : topNavigation;
+      
       const navigationGroups = isSuperAdminView
-        ? topNavigation.filter((group) => group.superAdminOnly)
+        ? baseNavigation.filter((group) => group.superAdminOnly)
         : isDesktopShell
         ? [
             {
@@ -211,14 +215,15 @@ export default function Layout() {
               externalPath: '/dashboard',
               external: true,
               icon: LayoutDashboard,
-            },
+            },
+
             {
               label: 'Chat',
               to: '/chat',
               icon: MessageSquare,
             },
           ]
-        : topNavigation;
+        : baseNavigation;
 
       return navigationGroups
         .filter((group) => {
@@ -294,7 +299,7 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, isEmployeeOrManagerView, pendingApprovals, unreadChatMessages, hasFeature, user]
+    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, isEmployeeOrManagerView, pendingApprovals, unreadChatMessages, hasFeature, user, devModeNavigation]
   );
 
   const globalSuggestions = useMemo<GlobalSuggestion[]>(

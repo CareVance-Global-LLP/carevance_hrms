@@ -28,7 +28,7 @@ export default function ArrearsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => payrollApi.requestLoan(data),
+    mutationFn: (data: any) => payrollApi.createArrear(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['arrears'] });
     },

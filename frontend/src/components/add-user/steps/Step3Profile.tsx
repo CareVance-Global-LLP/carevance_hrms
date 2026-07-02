@@ -23,7 +23,11 @@ export function Step3Profile({ form }: Step3Props) {
         </p>
       </div>
       <div className="p-4">
-        <EmployeeDetailsSection employeeCode={form.employeeCode || String(form.userId)} editable />
+        <EmployeeDetailsSection
+          userId={form.userId}
+          employeeCode={form.employeeCode || String(form.userId ?? '')}
+          editable
+        />
       </div>
     </div>
   );

@@ -12,13 +12,23 @@ import { usePlan } from '@/hooks/usePlan';
 const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 interface EmployeeDetailsSectionProps {
-  employeeCode: string;
+  /**
+   * Primary key used for the workspace lookup. When provided, takes
+   * precedence over `employeeCode`. Numeric user IDs are the most
+   * reliable way to identify a user across the codebase.
+   */
+  userId?: number | null;
+  /** String employee code. Used as a display label only when no display name is available. */
+  employeeCode?: string;
   showHeader?: boolean;
   editable?: boolean;
 }
 
-export default function EmployeeDetailsSection({ employeeCode, showHeader = false, editable }: EmployeeDetailsSectionProps) {
-  const id = employeeCode;
+export default function EmployeeDetailsSection({ userId, employeeCode, showHeader = false, editable }: EmployeeDetailsSectionProps) {
+  // Use the numeric userId as the lookup key whenever available — it's
+  // always accurate, while employee_code strings can be mangled or
+  // omitted for new users.
+  const id = userId != null ? String(userId) : (employeeCode ?? '');
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);

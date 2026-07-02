@@ -270,11 +270,8 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
           });
 
           if (formData.employeeCode || formData.designation || formData.joiningDate || formData.workLocation) {
-            const employeeCode = formData.employeeCode
-              ? `${formData.employeeCode}-${Date.now().toString(36).slice(-4).toUpperCase()}`
-              : undefined;
             await api.put(`/employees/${userId}/work-info`, {
-              employee_code: employeeCode,
+              employee_code: formData.employeeCode || undefined,
               designation: formData.designation || undefined,
               joining_date: formData.joiningDate || undefined,
               work_location: formData.workLocation || undefined,
@@ -289,28 +286,39 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
             });
           }
 
-          if (formData.payGroupId || formData.salaryStructureId) {
+          // ✅ Only attempt pay-group/salary-structure assignment when
+          // payGroupId is actually set. Avoids sending `pay_group_id: null`
+          // to a required|integer field.
+          if (formData.payGroupId) {
             await payrollApi.assignEmployeeToExistingPayGroup({
-              pay_group_id: formData.payGroupId!,
+              pay_group_id: formData.payGroupId,
               user_ids: [userId],
-              salary_structure_id: formData.salaryStructureId || undefined,
+              ...(formData.salaryStructureId
+                ? { salary_structure_id: formData.salaryStructureId }
+                : {}),
             });
           }
         } catch (postCreateError: any) {
-          // Rollback: delete the orphaned user so the email can be retried.
-          // Only roll back on 422 (validation/data errors the user can fix).
-          // On 500 (server error), keep the user — it's not the user's fault
-          // and deleting it just loses data for no reason.
+          // Rollback policy:
+          //  - 422 on profile/work-info/CTC = user-fixable, roll back the user.
+          //  - 5xx = server error, keep the user (it's not the user's fault).
+          //  - Failures on pay-group assignment only — don't roll back; the
+          //    user is already created and registered, just keep them and
+          //    surface the error so they can re-assign later.
           const status = postCreateError.response?.status;
-          if (status && status < 500) {
-            try {
-              await api.delete(`/users/${userId}`);
-            } catch {
-              // Best-effort cleanup; ignore failures
+          const errorEndpoint = postCreateError.response?.config?.url || '';
+          const wasAssignmentFailure = errorEndpoint.includes('/pay-groups/assign-existing');
+          if (!wasAssignmentFailure) {
+            if (status && status < 500) {
+              try {
+                await api.delete(`/users/${userId}`);
+              } catch {
+                // Best-effort cleanup; ignore failures
+              }
+            } else {
+              // Clear userId from form so the banner/check re-triggers fresh
+              setForm((prev) => ({ ...prev, userId: null }));
             }
-          } else {
-            // Clear userId from form so the banner/check re-triggers fresh
-            setForm((prev) => ({ ...prev, userId: null }));
           }
           throw postCreateError;
         }
@@ -426,6 +434,14 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         setCurrentStep(2);
         // ✅ Persist state after Step 1 succeeds
         const userId = result.userId || result.id;
+        // ✅ Refresh downstream caches so the Payroll dashboard, pay-groups
+        // grid, and unassigned-employees list all reflect the new user /
+        // pay-group assignment immediately.
+        queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
+        queryClient.invalidateQueries({ queryKey: ['payroll', 'unassigned-employees'] });
+        queryClient.invalidateQueries({ queryKey: ['payroll', 'dashboard'] });
+        queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+        queryClient.invalidateQueries({ queryKey: ['employee-payroll-cards'] });
         saveWizardState({
           step: 2,
           form: { ...form, userId },
@@ -632,7 +648,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
           </div>
           {form.userId && (
             <div className="p-4">
-              <EmployeeDetailsSection employeeCode={form.employeeCode || String(form.userId)} />
+              <EmployeeDetailsSection
+                userId={form.userId}
+                employeeCode={form.employeeCode || String(form.userId)}
+              />
             </div>
           )}
         </div>

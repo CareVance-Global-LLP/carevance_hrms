@@ -82,6 +82,8 @@ interface EmployeePayrollWizardProps {
    */
   onComplete?: (step: number) => void;
   onViewRun?: (runId: number) => void;
+  /** When true, all employees have completed this step - hide Continue buttons */
+  isStepCompleteForAll?: boolean;
 }
 
 const CTC_PRESETS = [
@@ -114,6 +116,7 @@ export default function EmployeePayrollWizard({
   backLabel = 'Back to Dashboard',
   onComplete,
   onViewRun,
+  isStepCompleteForAll = false,
 }: EmployeePayrollWizardProps) {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -188,7 +191,9 @@ export default function EmployeePayrollWizard({
    */
   const handleContinue = useCallback(
     (nextStep: number, stepNum?: number) => {
-      if (stepNum !== undefined) onComplete?.(stepNum);
+      if (stepNum !== undefined) {
+        onComplete?.(stepNum);
+      }
       // In controlled mode, advance only when the matrix has *already*
       // marked all employees done for the current step and is calling
       // its own "Continue to Step N" button. The wizard's own Continue
@@ -208,13 +213,6 @@ export default function EmployeePayrollWizard({
   const [overtimeHours, setOvertimeHours] = useState('0');
   const [isEditingAttendance, setIsEditingAttendance] = useState(false);
 
-  // Auto-save / resume-draft support. We persist in-progress wizard
-  // form values to localStorage so an admin can navigate away (e.g.
-  // to Compensation, Reports) and come back without losing manual
-  // edits to CTC, attendance, or overtime. The key is per-employee +
-  // per-month, so switching employees clears the old draft.
-  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
-  const draftKey = `payroll-draft-${employeeId}-${monthYear}`;
   const [template, setTemplate] = useState<EmployeePayrollTemplate | null>(null);
   const [calculation, setCalculation] = useState<PayrollCalculation | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
@@ -365,13 +363,7 @@ export default function EmployeePayrollWizard({
       // step in the BulkPayrollMatrix. Step 5 was marked by the
       // Process button onClick handler before the mutation fired.
       onComplete?.(6);
-      // Clear the saved draft — the run is now persisted server-side,
-      // so there is nothing left to resume.
-      try {
-        if (typeof window !== 'undefined') {
-          window.localStorage.removeItem(draftKey);
-        }
-      } catch { /* non-fatal */ }
+      
       // Refresh dependent views so the next screen shows fresh data
       queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
@@ -390,99 +382,17 @@ export default function EmployeePayrollWizard({
     },
   });
 
-  // Restore in-progress draft from localStorage on mount. Runs BEFORE the
-  // server-data useEffect below so that server data does not clobber
-  // restored values. We also gate the two overwriting effects on
-  // `hasRestoredDraft` for defense-in-depth.
-  useEffect(() => {
-    if (hasRestoredDraft) return;
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(draftKey) : null;
-    if (!raw) {
-      setHasRestoredDraft(true);
-      return;
-    }
-    try {
-      const draft = JSON.parse(raw) as {
-        annualCtc?: string;
-        workingDays?: string;
-        daysPresent?: string;
-        lOPDays?: string;
-        paidLeaveDays?: string;
-        overtimeHours?: string;
-        currentStep?: number;
-        savedAt?: number;
-      };
-      // 24-hour expiry: stale drafts are discarded.
-      const ageMs = Date.now() - (draft.savedAt ?? 0);
-      if (ageMs > 24 * 60 * 60 * 1000) {
-        try { window.localStorage.removeItem(draftKey); } catch { /* ignore */ }
-        setHasRestoredDraft(true);
-        return;
-      }
-      let restored = false;
-      if (draft.annualCtc) { setAnnualCtc(draft.annualCtc); restored = true; }
-      if (draft.workingDays) { setWorkingDays(draft.workingDays); restored = true; }
-      if (draft.daysPresent) { setDaysPresent(draft.daysPresent); restored = true; }
-      if (draft.lOPDays) { setLOPDays(draft.lOPDays); restored = true; }
-      if (draft.paidLeaveDays) { setPaidLeaveDays(draft.paidLeaveDays); restored = true; }
-      if (draft.overtimeHours !== undefined) { setOvertimeHours(draft.overtimeHours); restored = true; }
-      // Note: we do NOT restore currentStep from the draft because
-      // step is URL-driven and the user may have arrived via a deep
-      // link. Saving the URL ?step= already covers resume.
-      if (restored) {
-        show({
-          kind: 'info',
-          message: 'Draft restored — your previous progress is back.',
-        });
-      }
-    } catch {
-      // Corrupt JSON — discard silently and continue with server data.
-      try { window.localStorage.removeItem(draftKey); } catch { /* ignore */ }
-    } finally {
-      setHasRestoredDraft(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftKey]);
+  
 
-  // Auto-save current form values to localStorage on every change. The
-  // save is cheap (JSON.stringify of a small object) and uses the
-  // per-employee-per-month key so no cross-contamination is possible.
-  useEffect(() => {
-    if (!hasRestoredDraft) return; // don't overwrite the saved draft with the initial empty state
-    if (typeof window === 'undefined') return;
-    try {
-      const draft = {
-        annualCtc,
-        workingDays,
-        daysPresent,
-        lOPDays,
-        paidLeaveDays,
-        overtimeHours,
-        // Save currentStep too so a future enhancement could navigate
-        // the user back; the URL ?step= is the authoritative source today.
-        currentStep,
-        savedAt: Date.now(),
-      };
-      window.localStorage.setItem(draftKey, JSON.stringify(draft));
-    } catch {
-      // localStorage may be full / disabled in private mode — non-fatal.
-    }
-  }, [annualCtc, workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, currentStep, hasRestoredDraft, draftKey]);
+  
 
-  // Initialize from data and auto-calculate. We still seed the template
-  // and the calculation from the server, but we do NOT clobber a
-  // restored `annualCtc` from the draft — gated on `hasRestoredDraft`
-  // so a draft takes precedence over server data.
+  // Initialize from data and auto-calculate.
   useEffect(() => {
     if (data && !template) {
       setTemplate(data.template);
       const savedCtc = data.template.annual_ctc;
       if (savedCtc) {
-        // Prefer a value the user already typed (or that a draft
-        // restored) over the server-side value.
-        if (!hasRestoredDraft || !annualCtc) {
-          setAnnualCtc(String(savedCtc));
-        }
+        setAnnualCtc(String(savedCtc));
         if (data.payroll_preview) {
           setCalculation(data.payroll_preview);
         } else {
@@ -491,23 +401,19 @@ export default function EmployeePayrollWizard({
         }
       }
     }
-  }, [data, template, annualCtc, hasRestoredDraft]);
+  }, [data, template, annualCtc]);
 
   // Auto-populate attendance from the monthly attendance summary
   // (single source of truth). Working days, present days, LOP, and
-  // paid leave are pulled verbatim from the backend — but only when
-  // the user has not already entered a value (manual edit) and no
-  // draft was restored. Overtime is manual-only — we do NOT auto-set
-  // it. This preserves the resume-from-draft contract.
+  // paid leave are pulled verbatim from the backend.
   useEffect(() => {
     const summary = data?.attendance_summary;
     if (!summary) return;
-    if (hasRestoredDraft) return; // draft already populated these
     setWorkingDays(String(Math.round(summary.working_days)));
     setDaysPresent(String(Math.round(summary.present_days)));
     setLOPDays(String(Math.round(summary.lop_days)));
     setPaidLeaveDays(String(Math.round(summary.paid_leave_days ?? 0)));
-  }, [data?.attendance_summary, hasRestoredDraft]);
+  }, [data?.attendance_summary]);
 
   // Auto-trigger calculation when CTC becomes a positive number (after template loads).
   // The 500ms debounce lets the user finish typing before we hit the API.
@@ -821,15 +727,17 @@ export default function EmployeePayrollWizard({
         </div>
       </SurfaceCard>
 
-      <div className="flex justify-end">
-        <Button 
-          variant="primary" 
-          onClick={() => setCurrentStep(1)}
-          iconRight={<ChevronRight className="h-4 w-4" />}
-        >
-          Continue to Salary Structure
-        </Button>
-      </div>
+      {!isStepCompleteForAll && (
+        <div className="flex justify-end">
+          <Button 
+            variant="primary" 
+            onClick={() => handleContinue(1, 0)}
+            iconRight={<ChevronRight className="h-4 w-4" />}
+          >
+            Continue to Next Employee
+          </Button>
+        </div>
+      )}
     </div>
   );
 
@@ -1002,32 +910,34 @@ export default function EmployeePayrollWizard({
           <Button variant="secondary" onClick={() => setCurrentStep(0)}>
             Back
           </Button>
-          <Button
-            variant="primary"
-            onClick={async () => {
-              if (!calculation && parseFloat(annualCtc) > 0 && template) {
-                // No preview yet — try to calculate, then advance if it worked.
-                await calculatePreview();
-              }
-              // Mark step 1 complete before advancing (BulkPayrollMatrix
-              // uses this to track per-employee per-step progress).
-              // handleContinue(2, 1) advances the step ONLY in
-              // standalone mode — in matrix mode it just marks step
-              // 1 done and lets the matrix drive the next step.
-              handleContinue(2, 1);
-            }}
-            disabled={isCalculating || !annualCtc || parseFloat(annualCtc) <= 0}
-            iconLeft={isCalculating ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
-            iconRight={!isCalculating ? <ChevronRight className="h-4 w-4" /> : undefined}
-          >
-            {isCalculating
-              ? 'Calculating…'
-              : calculation
-                ? 'Continue'
-                : parseFloat(annualCtc) > 0
-                  ? 'Calculate & Continue'
-                  : 'Enter CTC to continue'}
-          </Button>
+          {!isStepCompleteForAll && (
+            <Button
+              variant="primary"
+              onClick={async () => {
+                if (!calculation && parseFloat(annualCtc) > 0 && template) {
+                  // No preview yet — try to calculate, then advance if it worked.
+                  await calculatePreview();
+                }
+                // Mark step 1 complete before advancing (BulkPayrollMatrix
+                // uses this to track per-employee per-step progress).
+                // handleContinue(2, 1) advances the step ONLY in
+                // standalone mode — in matrix mode it just marks step
+                // 1 done and lets the matrix drive the next step.
+                handleContinue(2, 1);
+              }}
+              disabled={isCalculating || !annualCtc || parseFloat(annualCtc) <= 0}
+              iconLeft={isCalculating ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+              iconRight={!isCalculating ? <ChevronRight className="h-4 w-4" /> : undefined}
+            >
+              {isCalculating
+                ? 'Calculating…'
+                : calculation
+                  ? 'Continue to Next Employee'
+                  : parseFloat(annualCtc) > 0
+                    ? 'Calculate & Continue'
+                    : 'Enter CTC to continue'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1192,21 +1102,23 @@ export default function EmployeePayrollWizard({
             <Button variant="secondary" onClick={() => setCurrentStep(1)}>
               Back
             </Button>
-            <Button
-              variant="primary"
-              onClick={async () => {
-                if (!calculation && parseFloat(annualCtc) > 0 && template) {
-                  await calculatePreview();
-                }
-                // In matrix mode: mark step 2 done only; matrix drives
-                // the step change.
-                handleContinue(3, 2);
-              }}
-              disabled={!calculation && (parseFloat(annualCtc) <= 0 || !template)}
-              iconRight={<ChevronRight className="h-4 w-4" />}
-            >
-              Continue
-            </Button>
+            {!isStepCompleteForAll && (
+              <Button
+                variant="primary"
+                onClick={async () => {
+                  if (!calculation && parseFloat(annualCtc) > 0 && template) {
+                    await calculatePreview();
+                  }
+                  // In matrix mode: mark step 2 done only; matrix drives
+                  // the step change.
+                  handleContinue(3, 2);
+                }}
+                disabled={!calculation && (parseFloat(annualCtc) <= 0 || !template)}
+                iconRight={<ChevronRight className="h-4 w-4" />}
+              >
+                Continue to Next Employee
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1400,17 +1312,15 @@ export default function EmployeePayrollWizard({
             <Button variant="secondary" onClick={() => setCurrentStep(2)}>
               Back
             </Button>
-                  <Button
-                    variant="primary"
-                    onClick={() => {
-                      handleContinue(6, 5);
-                      processPayrollMutation.mutate();
-                    }}
-                    disabled={processPayrollMutation.isPending || !annualCtc || parseFloat(annualCtc) <= 0}
-                    iconLeft={processPayrollMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  >
-                    {processPayrollMutation.isPending ? 'Processing...' : 'Process Payroll'}
-                  </Button>
+            {!isStepCompleteForAll && (
+              <Button
+                variant="primary"
+                onClick={() => handleContinue(4, 3)}
+                iconRight={<ChevronRight className="h-4 w-4" />}
+              >
+                Continue to Next Employee
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1687,7 +1597,7 @@ export default function EmployeePayrollWizard({
                   </p>
                 </div>
                 <div className="flex gap-3">
-                  <Button variant="secondary" onClick={() => setCurrentStep(1)}>
+                  <Button variant="secondary" onClick={() => setCurrentStep(4)}>
                     Back
                   </Button>
                   <Button

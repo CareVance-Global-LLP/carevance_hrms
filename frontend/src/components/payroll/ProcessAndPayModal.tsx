@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   X, Play, Loader2, IndianRupee, Users, AlertTriangle, Landmark,
   Check, Download, Wallet, Info, ChevronDown, ChevronUp, FileText,
+  BarChart3, Calendar, Clock, Shield
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -174,40 +175,112 @@ export default function ProcessAndPayModal({
           {/* Stage: Review (before process) */}
           {stage === 'review' && (
             <>
-              <SurfaceCard className="p-4 bg-slate-50">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500 mb-1">Employees to process</p>
-                    <p className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                      <Users className="h-5 w-5 text-slate-400" />
-                      {pendingCount}
-                    </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <SurfaceCard className="p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">Employees to process</p>
+                      <p className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                        <Users className="h-5 w-5 text-slate-400" />
+                        {pendingCount}
+                      </p>
+                    </div>
+                    <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center">
+                      <Users className="h-6 w-6 text-blue-600" />
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-500 mb-1">Estimated net pay</p>
-                    <p className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                      <IndianRupee className="h-5 w-5 text-slate-400" />
-                      {formatCurrency(expectedNetPay)}
-                    </p>
+                </SurfaceCard>
+                
+                <SurfaceCard className="p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-slate-500 mb-1">Estimated net pay</p>
+                      <p className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                        <IndianRupee className="h-5 w-5 text-slate-400" />
+                        {formatCurrency(expectedNetPay)}
+                      </p>
+                    </div>
+                    <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center">
+                      <IndianRupee className="h-6 w-6 text-green-600" />
+                    </div>
+                  </div>
+                </SurfaceCard>
+              </div>
+
+              <SurfaceCard className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <BarChart3 className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-slate-900 mb-2">Payroll Overview</h3>
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                      <div className="p-3 bg-white rounded-lg">
+                        <Calendar className="h-5 w-5 text-slate-400 mx-auto mb-1" />
+                        <p className="text-xs text-slate-500">Period</p>
+                        <p className="font-semibold text-slate-900">{formatMonthLabel(monthYear)}</p>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg">
+                        <Clock className="h-5 w-5 text-slate-400 mx-auto mb-1" />
+                        <p className="text-xs text-slate-500">Status</p>
+                        <p className="font-semibold text-slate-900">Pending</p>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg">
+                        <Shield className="h-5 w-5 text-slate-400 mx-auto mb-1" />
+                        <p className="text-xs text-slate-500">Compliance</p>
+                        <p className="font-semibold text-slate-900">Ready</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </SurfaceCard>
 
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900 flex items-start gap-2">
-                <Info className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold">What happens when you click Process &amp; Pay:</p>
-                  <ol className="text-xs mt-1 list-decimal list-inside space-y-0.5 text-blue-800">
-                    <li>Calculates payroll for every active employee</li>
-                    <li>Locks the numbers (no further edits)</li>
-                    <li>Auto-approves as your org's authorized signatory</li>
-                    <li>Generates the bank file (NEFT format) with auto-skip for missing bank details</li>
-                  </ol>
-                  <p className="text-xs mt-2 text-blue-700">
-                    You'll then download the bank file, upload to your bank's portal, and click "I uploaded to bank" to finalize.
-                  </p>
+              <SurfaceCard className="p-4 border border-slate-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="font-semibold text-slate-900 mb-2">Process & Pay Workflow</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="flex items-start gap-2">
+                        <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-xs font-bold text-blue-600">1</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-slate-900">Calculate Payroll</p>
+                          <p className="text-xs text-slate-500">Apply all components and deductions</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-xs font-bold text-blue-600">2</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-slate-900">Lock Numbers</p>
+                          <p className="text-xs text-slate-500">Immutable for compliance</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-xs font-bold text-blue-600">3</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-slate-900">Generate Bank File</p>
+                          <p className="text-xs text-slate-500">NEFT format with auto-skipping</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-xs font-bold text-blue-600">4</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm text-slate-900">Upload & Confirm</p>
+                          <p className="text-xs text-slate-500">Mark as disbursed after bank upload</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </SurfaceCard>
 
               <div className="flex items-center justify-end gap-2 pt-2">
                 <Button variant="ghost" onClick={handleClose}>Cancel</Button>
@@ -225,98 +298,177 @@ export default function ProcessAndPayModal({
 
           {/* Stage: Processing (in-flight) */}
           {stage === 'processing' && (
-            <div className="text-center py-12">
-              <Loader2 className="h-12 w-12 text-blue-600 animate-spin mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Processing payroll…</h3>
-              <p className="text-sm text-slate-600">
-                Calculating salaries, applying PF/ESI/PT/TDS, locking the run, generating bank file.
-              </p>
-              <p className="text-xs text-slate-400 mt-2">This usually takes 5–15 seconds.</p>
+            <div className="py-8">
+              <div className="text-center mb-8">
+                <Loader2 className="h-12 w-12 text-blue-600 animate-spin mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">Processing payroll…</h3>
+                <p className="text-sm text-slate-600 max-w-md mx-auto">
+                  Calculating salaries, applying PF/ESI/PT/TDS, locking the run, generating bank file.
+                </p>
+                <p className="text-xs text-slate-400 mt-2">This usually takes 5–15 seconds.</p>
+              </div>
+              
+              <div className="max-w-md mx-auto">
+                <div className="flex justify-between mb-2">
+                  <span className="text-sm font-medium text-slate-700">Progress</span>
+                  <span className="text-sm text-slate-500">4/4 steps</span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-2.5">
+                  <div className="bg-blue-600 h-2.5 rounded-full animate-pulse" style={{ width: '75%' }}></div>
+                </div>
+                
+                <div className="grid grid-cols-4 gap-2 mt-4">
+                  {['Calculating', 'Locking', 'Approving', 'Generating'].map((step, index) => (
+                    <div key={index} className="text-center">
+                      <div className={`h-8 w-8 rounded-full flex items-center justify-center mx-auto mb-1 ${
+                        index < 3 ? 'bg-emerald-100' : 'bg-blue-100'
+                      }`}>
+                        {index < 3 ? (
+                          <Check className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-600">{step}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
           {/* Stage: Ready (after process, before disburse) */}
           {stage === 'ready' && run && (
             <>
-              <SurfaceCard className="p-5 bg-emerald-50 border-emerald-200">
-                <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                    <Check className="h-5 w-5 text-emerald-600" />
+              <SurfaceCard className="p-5 bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200 rounded-lg">
+                <div className="flex items-start gap-4">
+                  <div className="h-12 w-12 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                    <Check className="h-6 w-6 text-emerald-600" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-lg font-semibold text-emerald-900">Payroll processed. Ready to pay.</p>
-                    <p className="text-sm text-emerald-700 mt-0.5">
+                    <h3 className="text-lg font-bold text-emerald-900">Payroll Processed Successfully</h3>
+                    <p className="text-sm text-emerald-700 mt-1">
                       {summary?.employees_processed ?? 0} employees processed.
                       {summary?.employees_skipped_no_ctc > 0 && ` ${summary.employees_skipped_no_ctc} skipped (no CTC).`}
                     </p>
+                    
+                    <div className="grid grid-cols-3 gap-3 mt-4">
+                      <div className="p-3 bg-white rounded-lg border border-emerald-100">
+                        <p className="text-xs text-emerald-600 mb-1">Processed</p>
+                        <p className="font-bold text-emerald-900">{summary?.employees_processed ?? 0}</p>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg border border-amber-100">
+                        <p className="text-xs text-amber-600 mb-1">Skipped</p>
+                        <p className="font-bold text-amber-900">{summary?.employees_skipped_no_ctc ?? 0}</p>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg border border-blue-100">
+                        <p className="text-xs text-blue-600 mb-1">Net Pay</p>
+                        <p className="font-bold text-blue-900">{formatCurrency(summary?.total_net_pay ?? 0)}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </SurfaceCard>
 
               {/* Bank file download */}
               {bankFile && (
-                <SurfaceCard className="p-4 border-blue-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <Landmark className="h-5 w-5 text-blue-600" />
-                    <p className="text-sm font-semibold text-slate-900">Bank file ready</p>
+                <SurfaceCard className="p-5 border border-slate-200 rounded-lg">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                      <Landmark className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-slate-900">Bank File Ready</h3>
+                      <p className="text-xs text-slate-500">Upload to your bank's corporate portal</p>
+                    </div>
                   </div>
-                  <div className="bg-slate-50 rounded-lg p-3 mb-3">
-                    <p className="text-xs text-slate-600">Filename</p>
-                    <p className="font-mono text-sm text-slate-900">{bankFile.filename}</p>
-                    <div className="grid grid-cols-3 gap-3 mt-3">
+                  
+                  <div className="bg-slate-50 rounded-lg p-4 mb-4">
+                    <div className="flex justify-between items-start mb-3">
                       <div>
-                        <p className="text-xs text-slate-500">Entries</p>
-                        <p className="font-semibold text-slate-900">{bankFile.total_employees}</p>
+                        <p className="text-xs text-slate-500">File Name</p>
+                        <p className="font-mono text-sm text-slate-900 break-all">{bankFile.filename}</p>
                       </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Total</p>
-                        <p className="font-semibold text-slate-900">{formatCurrency(bankFile.total_amount)}</p>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        iconLeft={<Download className="h-4 w-4" />}
+                        onClick={handleDownloadBankFile}
+                      >
+                        Download
+                      </Button>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="p-3 bg-white rounded-lg border">
+                        <p className="text-xs text-slate-500 mb-1">Entries</p>
+                        <p className="text-xl font-bold text-slate-900">{bankFile.total_employees}</p>
                       </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Skipped</p>
-                        <p className={`font-semibold ${skipped.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
+                      <div className="p-3 bg-white rounded-lg border">
+                        <p className="text-xs text-slate-500 mb-1">Total Amount</p>
+                        <p className="text-xl font-bold text-slate-900">{formatCurrency(bankFile.total_amount)}</p>
+                      </div>
+                      <div className="p-3 bg-white rounded-lg border">
+                        <p className="text-xs text-slate-500 mb-1">Skipped</p>
+                        <p className={`text-xl font-bold ${skipped.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
                           {skipped.length}
                         </p>
                       </div>
                     </div>
                   </div>
-                  <Button
-                    variant="primary"
-                    iconLeft={<Download className="h-4 w-4" />}
-                    onClick={handleDownloadBankFile}
-                  >
-                    Download Bank File (CSV)
-                  </Button>
-                  <p className="text-xs text-slate-500 mt-2">
-                    Upload this to your bank's corporate portal (HDFC, ICICI, SBI, etc.).
-                  </p>
+                  
+                  <div className="flex items-center justify-between pt-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center">
+                        <Info className="h-3 w-3 text-blue-600" />
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Supported banks: HDFC, ICICI, SBI, Axis, Kotak
+                      </p>
+                    </div>
+                  </div>
                 </SurfaceCard>
               )}
 
               {/* Skipped employees */}
               {skipped.length > 0 && (
-                <SurfaceCard className="p-4 bg-amber-50 border-amber-200">
-                  <div className="flex items-start gap-2 mb-3">
-                    <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <SurfaceCard className="p-5 bg-amber-50 border-amber-200 rounded-lg">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                      <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    </div>
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-amber-900">
-                        {skipped.length} employee{skipped.length === 1 ? '' : 's'} skipped from bank file
-                      </p>
-                      <p className="text-xs text-amber-800 mt-0.5">
-                        They will be excluded from this disbursement. Pay them separately (cash/cheque/UPI) or wait until they add bank details.
+                      <h3 className="text-base font-semibold text-amber-900">
+                        {skipped.length} Employee{skipped.length === 1 ? '' : 's'} Skipped
+                      </h3>
+                      <p className="text-sm text-amber-800 mt-1">
+                        These employees will be excluded from this disbursement. Pay them separately (cash/cheque/UPI) or wait until they add bank details.
                       </p>
                     </div>
                   </div>
-                  <ul className="space-y-1 text-sm">
-                    {skipped.map((emp: any) => (
-                      <li key={emp.user_id} className="flex items-center justify-between bg-white rounded px-3 py-2">
-                        <span className="text-slate-900">{emp.name}</span>
-                        <span className="text-xs text-amber-700">
-                          missing: {emp.missing_fields?.join(', ')}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  
+                  <div className="max-h-60 overflow-y-auto border border-amber-200 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-amber-100 sticky top-0">
+                        <tr>
+                          <th className="text-left p-3 font-medium text-amber-900">Employee</th>
+                          <th className="text-left p-3 font-medium text-amber-900">Missing Information</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-amber-100">
+                        {skipped.map((emp: any) => (
+                          <tr key={emp.user_id} className="bg-white hover:bg-amber-50">
+                            <td className="p-3 font-medium text-slate-900">{emp.name}</td>
+                            <td className="p-3 text-amber-700">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">
+                                {emp.missing_fields?.join(', ')}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </SurfaceCard>
               )}
 
@@ -343,25 +495,39 @@ export default function ProcessAndPayModal({
               </details>
 
               {/* Primary action: confirm bank upload + disburse */}
-              <SurfaceCard className="p-4 border-blue-200 bg-blue-50/40">
-                <div className="flex items-start gap-3 mb-3">
-                  <Wallet className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <SurfaceCard className="p-5 border border-slate-200 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <Wallet className="h-6 w-6 text-blue-600" />
+                  </div>
                   <div className="flex-1">
-                    <p className="text-sm font-semibold text-slate-900">After uploading to bank:</p>
-                    <p className="text-xs text-slate-600 mt-0.5">
+                    <h3 className="text-base font-bold text-slate-900">Confirm Bank Upload</h3>
+                    <p className="text-sm text-slate-600 mt-1">
                       Once the bank processes the file (usually next business day), click below to mark all payslips as paid and lock the run.
                     </p>
+                    
+                    <div className="mt-4 p-3 bg-white rounded-lg border border-blue-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Shield className="h-4 w-4 text-blue-600" />
+                        <span className="text-sm font-medium text-blue-900">Compliance Note</span>
+                      </div>
+                      <p className="text-xs text-blue-800">
+                        After clicking this button, the payroll run becomes immutable for compliance purposes. 
+                        All statutory reports (PF ECR, ESI, PT) will be generated from this locked data.
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center justify-end gap-3 pt-2">
                   <Button variant="ghost" onClick={handleClose}>Close for now</Button>
                   <Button
                     variant="primary"
-                    iconLeft={disburseMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+                    size="lg"
+                    iconLeft={disburseMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     onClick={handleConfirmUploaded}
                     disabled={disburseMutation.isPending}
                   >
-                    {disburseMutation.isPending ? 'Marking…' : 'I uploaded to bank — mark disbursed'}
+                    {disburseMutation.isPending ? 'Marking as Disbursed…' : 'Confirm Upload & Mark Disbursed'}
                   </Button>
                 </div>
               </SurfaceCard>
@@ -378,17 +544,42 @@ export default function ProcessAndPayModal({
 
           {/* Stage: Done */}
           {stage === 'done' && (
-            <div className="text-center py-12">
-              <div className="h-16 w-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
-                <Check className="h-8 w-8 text-emerald-600" />
+            <div className="text-center py-8">
+              <div className="relative inline-block">
+                <div className="h-20 w-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                  <Check className="h-10 w-10 text-emerald-600" />
+                </div>
+                <div className="absolute -top-2 -right-2 h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center">
+                  <Shield className="h-4 w-4 text-white" />
+                </div>
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Disbursed ✅</h3>
-              <p className="text-sm text-slate-600 max-w-md mx-auto">
-                This run is now <strong>immutable for compliance</strong>. PF ECR, ESI contribution,
-                and PT return will be generated from this run for statutory filing.
+              
+              <h3 className="text-2xl font-bold text-slate-900 mb-3">Payroll Disbursed Successfully</h3>
+              <p className="text-base text-slate-600 max-w-md mx-auto mb-6">
+                This payroll run is now <span className="font-semibold text-emerald-700">locked for compliance</span>. 
+                All statutory reports will be generated from this immutable data.
               </p>
-              <Button variant="primary" className="mt-6" onClick={handleClose}>
-                Done
+              
+              <div className="max-w-md mx-auto grid grid-cols-3 gap-4 mb-8">
+                <div className="p-3 bg-white rounded-lg border">
+                  <FileText className="h-6 w-6 text-blue-600 mx-auto mb-2" />
+                  <p className="text-xs text-slate-500">PF ECR</p>
+                  <p className="text-sm font-semibold text-slate-900 mt-1">Ready</p>
+                </div>
+                <div className="p-3 bg-white rounded-lg border">
+                  <FileText className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
+                  <p className="text-xs text-slate-500">ESI Return</p>
+                  <p className="text-sm font-semibold text-slate-900 mt-1">Ready</p>
+                </div>
+                <div className="p-3 bg-white rounded-lg border">
+                  <FileText className="h-6 w-6 text-amber-600 mx-auto mb-2" />
+                  <p className="text-xs text-slate-500">PT Return</p>
+                  <p className="text-sm font-semibold text-slate-900 mt-1">Ready</p>
+                </div>
+              </div>
+              
+              <Button variant="primary" size="lg" className="mt-2" onClick={handleClose}>
+                Close & View Payroll Runs
               </Button>
             </div>
           )}

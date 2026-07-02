@@ -15,6 +15,7 @@ type AppRuntimeConfig = {
   VITE_LOCK_SCREEN_AUTO_STOP_THRESHOLD_SECONDS?: string;
   VITE_IDLE_GUARD_INTERVAL_MS?: string;
   VITE_PAYROLL_ENABLED?: string;
+  VITE_DEV_MODE_NAVIGATION?: string;
 };
 
 const runtimeConfig: AppRuntimeConfig =
@@ -162,6 +163,20 @@ export const payrollEnabled = resolveBooleanConfigValue(
   import.meta.env.VITE_PAYROLL_ENABLED,
   false
 );
+
+export const devModeNavigation = (() => {
+  // Check localStorage first for development override
+  if (typeof window !== 'undefined' && localStorage.getItem('devModeNavigation') === 'true') {
+    return true;
+  }
+  
+  // Fall back to environment variables
+  return resolveBooleanConfigValue(
+    runtimeConfig.VITE_DEV_MODE_NAVIGATION,
+    import.meta.env.VITE_DEV_MODE_NAVIGATION,
+    false
+  );
+})();
 
 export const idleGuardIntervalMs = resolveNumericConfigValue(
   runtimeConfig.VITE_IDLE_GUARD_INTERVAL_MS,

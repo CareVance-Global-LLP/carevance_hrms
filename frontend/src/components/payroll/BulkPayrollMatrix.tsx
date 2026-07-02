@@ -117,9 +117,13 @@ export default function BulkPayrollMatrix({
   // Mark a single employee's current step as complete. Called when
   // the wizard's onComplete fires (i.e. the user clicked "Continue"
   // past a step).
-  const completeStepMutation = useMutation({
-    mutationFn: ({ userId, step }: { userId: number; step: number }) =>
-      payrollApi.completeStep(payGroupId, { step, user_ids: [userId] }),
+const completeStepMutation = useMutation({
+    mutationFn: ({ userId, step }: { userId: number; step: number }) => {
+      return payrollApi.completeStep(payGroupId, { step, user_ids: [userId] });
+    },
+    onError: (error) => {
+      console.log('completeStep mutation error:', error);
+    },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({
         queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
@@ -128,13 +132,41 @@ export default function BulkPayrollMatrix({
         queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
       });
 
-      // Auto-advance to the next uncompleted employee on the current step
+      // Auto-advance to the next employee who hasn't completed the current step
       const stepKey = `step${vars.step}` as const;
-      const nextUncompleted = employees?.find(
-        (e) => !e.steps_completed[stepKey] && e.id !== vars.userId
-      );
-      if (nextUncompleted) {
-        setSelectedEmployeeId(nextUncompleted.id);
+      
+      // Create updated employee list with the current step marked as complete for the current user
+      const updatedEmployees = employees?.map(e => {
+          if (e.id === vars.userId) {
+            return {
+              ...e,
+              steps_completed: {
+                ...e.steps_completed,
+                [stepKey]: true
+              }
+            };
+          }
+          return e;
+        }) ?? [];
+      
+      // Find next employee who hasn't completed this step (using updated data)
+      // First, find the index of current employee
+      const currentIndex = updatedEmployees.findIndex(e => e.id === vars.userId);
+      
+      // Look for next employee AFTER the current one in the array
+      let nextEmployee = null;
+      for (let i = 1; i <= updatedEmployees.length; i++) {
+        const checkIndex = (currentIndex + i) % updatedEmployees.length;
+        const e = updatedEmployees[checkIndex];
+        // Skip current user and find the next one
+        if (e.id !== vars.userId) {
+          nextEmployee = e;
+          break;
+        }
+      }
+      
+      if (nextEmployee) {
+        setSelectedEmployeeId(nextEmployee.id);
       }
     },
   });
@@ -156,7 +188,9 @@ export default function BulkPayrollMatrix({
 
   // Step completion calculations for footer
   const stepKey = `step${currentStep}` as const;
-  const completedCount = employees?.filter(e => e.steps_completed[stepKey]).length ?? 0;
+  
+  // Count steps as completed - count employees who have marked this step complete
+  const completedCount = employees?.filter(e => e.steps_completed[stepKey] === true).length ?? 0;
   const totalCount = employees?.length ?? 0;
   const isStepComplete = completedCount === totalCount && totalCount > 0;
 
@@ -219,8 +253,9 @@ export default function BulkPayrollMatrix({
           const isActive = currentStep === step.num;
           const Icon = step.icon;
           const prevStepKey = `step${step.num - 1}` as const;
+          // Check if all employees have completed the previous step
           const prevStepDone = step.num === 1 ||
-            employees?.every(e => e.steps_completed[prevStepKey]);
+            employees?.every(e => e.steps_completed[prevStepKey] === true);
           const canClick = step.num <= currentStep || prevStepDone;
           return (
             <button
@@ -228,7 +263,7 @@ export default function BulkPayrollMatrix({
               onClick={() => canClick && setCurrentStep(step.num)}
               disabled={!canClick}
               className={cn(
-                'flex-1 flex flex-col items-center gap-1 py-3 px-2 text-sm font-medium border-b-2 transition-colors',
+                'flex-1 flex flex-col items-center gap-1 py-3 px-2 text-sm font-medium border-b-2 transition-colors relative',
                 isActive
                   ? 'border-emerald-500 text-emerald-700'
                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300',
@@ -238,18 +273,25 @@ export default function BulkPayrollMatrix({
               <div className="flex items-center gap-2">
                 <span
                   className={cn(
-                    'h-6 w-6 rounded-full flex items-center justify-center text-xs font-semibold',
+                    'h-6 w-6 rounded-full flex items-center justify-center text-xs font-semibold transition-all',
                     isActive
-                      ? 'bg-emerald-500 text-white'
+                      ? 'bg-emerald-500 text-white scale-110 shadow-sm'
                       : 'bg-slate-200 text-slate-600',
                   )}
                 >
                   {step.num}
                 </span>
                 <Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{step.short}</span>
+                <span className="hidden sm:inline font-medium">{step.short}</span>
               </div>
               <span className="text-[10px] sm:text-xs">{step.label}</span>
+              
+              {/* Progress indicator for non-active steps */}
+              {!isActive && prevStepDone && step.num > currentStep && (
+                <div className="absolute top-1 right-1">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                </div>
+              )}
             </button>
           );
         })}
@@ -275,62 +317,84 @@ export default function BulkPayrollMatrix({
             {isEmployeesLoading && (
               <div className="flex items-center justify-center p-6 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Loading…
+                Loading employees…
               </div>
             )}
 
             {!isEmployeesLoading && employees.length === 0 && (
               <div className="p-6 text-sm text-slate-500 text-center">
-                No employees in this pay group
+                <Users className="h-8 w-8 mx-auto text-slate-300 mb-2" />
+                <p>No employees in this pay group</p>
+                <p className="text-xs mt-1">Add employees to the pay group to process payroll</p>
               </div>
             )}
 
             {!isEmployeesLoading && employees.length > 0 && (
-              <Virtuoso
-                totalCount={employees.length}
-                itemContent={(index) => {
-                  const emp = employees[index];
-                  const isSelected = selectedEmployeeId === emp.id;
-                  const stepDone = emp.steps_completed[stepKey];
-                  return (
-                    <button
-                      key={emp.id}
-                      onClick={() => setSelectedEmployeeId(emp.id)}
-                      className={cn(
-                        'w-full p-3 flex items-center gap-3 text-left border-b border-slate-100 transition-colors',
-                        isSelected
-                          ? 'bg-emerald-50 border-l-4 border-l-emerald-500'
-                          : 'hover:bg-slate-50 border-l-4 border-l-transparent',
-                      )}
-                    >
-                      <div
+              <div className="p-2 h-full">
+                <Virtuoso
+                  totalCount={employees.length}
+itemContent={(index) => {
+                      const emp = employees[index];
+                     const isSelected = selectedEmployeeId === emp.id;
+                     // Show step as done only if:
+                     // 1. This is NOT a fresh payroll month (hasAnyProcessedPayroll)
+// 2. Employee has marked this step complete
+                      // Show checkmark if employee has completed this step (for both fresh payroll and re-runs)
+                      const stepDone = emp.steps_completed[stepKey] === true;
+                    
+                    // Get employee initials
+                    const initials = emp.name
+                      .split(' ')
+                      .map(n => n.charAt(0).toUpperCase())
+                      .join('')
+                      .substring(0, 2);
+                    
+                    return (
+                      <button
+                        key={emp.id}
+                        onClick={() => setSelectedEmployeeId(emp.id)}
                         className={cn(
-                          'h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold',
+                          'w-full p-3 flex items-center gap-3 text-left rounded-lg transition-all mb-1',
                           isSelected
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-slate-200 text-slate-600',
+                            ? 'bg-emerald-50 border border-emerald-200 shadow-sm'
+                            : 'hover:bg-slate-50 border border-transparent',
                         )}
                       >
-                        {emp.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm text-slate-900 truncate">
-                          {emp.name}
-                        </p>
-                        <p className="text-xs text-slate-500 truncate">
-                          {emp.designation || emp.email}
-                        </p>
-                      </div>
-                      {stepDone ? (
-                        <CheckCircle2 className="h-5 w-5 text-emerald-500 flex-shrink-0" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-slate-300 flex-shrink-0" />
-                      )}
-                    </button>
-                  );
-                }}
-                style={{ height: '100%' }}
-              />
+                        <div
+                          className={cn(
+                            'h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold transition-all',
+                            isSelected
+                              ? 'bg-emerald-500 text-white shadow-sm'
+                              : 'bg-slate-200 text-slate-600',
+                          )}
+                        >
+                          {initials || emp.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm text-slate-900 truncate">
+                            {emp.name}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {emp.designation || emp.email || 'No designation'}
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {stepDone ? (
+                            <div className="h-6 w-6 rounded-full bg-emerald-100 flex items-center justify-center">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            </div>
+                          ) : (
+                            <div className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center">
+                              <Circle className="h-3 w-3 text-slate-400" />
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  }}
+                  style={{ height: 'calc(100% - 1rem)' }}
+                />
+              </div>
             )}
           </div>
 
@@ -341,6 +405,7 @@ export default function BulkPayrollMatrix({
           {selectedEmployeeId ? (
             <div className="p-6">
               <EmployeePayrollWizard
+                   isStepCompleteForAll={isStepComplete}
                 // Key on employee only — NOT on currentStep. With
                 // controlledStep wired, the wizard's internal step is
                 // fully driven by the matrix; remounting on step
@@ -442,8 +507,10 @@ export default function BulkPayrollMatrix({
               <Button
                 size="sm"
                 onClick={() => {
-                  setCurrentStep(currentStep + 1);
-                  const nextStepKey = `step${currentStep + 1}` as const;
+                  const nextStep = currentStep + 1;
+                  setCurrentStep(nextStep);
+                  const nextStepKey = `step${nextStep}` as const;
+                  // Find next employee who hasn't completed the next step
                   const nextEmp = employees?.find(e => !e.steps_completed[nextStepKey]);
                   if (nextEmp) setSelectedEmployeeId(nextEmp.id);
                 }}

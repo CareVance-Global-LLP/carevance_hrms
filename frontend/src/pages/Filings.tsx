@@ -1,20 +1,14 @@
 import { useState } from 'react';
-import { FileText, Gift, Calculator, FileSpreadsheet, Landmark, Upload } from 'lucide-react';
+import { FileText, Landmark, Upload } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilingsDashboard from '@/components/payroll/FilingsDashboard';
-import FbpDashboard from '@/components/payroll/FbpDashboard';
-import TaxSimulator from '@/components/payroll/TaxSimulator';
-import PayrollRegisterReport from '@/components/payroll/PayrollRegisterReport';
 import BankPayoutDashboard from '@/components/payroll/BankPayoutDashboard';
 import ProofDocumentsCenter from '@/components/payroll/ProofDocumentsCenter';
 
-type Tab = 'filings' | 'fbp' | 'tax-simulator' | 'reports' | 'bank-payout' | 'proofs';
+type Tab = 'filings' | 'bank-payout' | 'proofs';
 
 const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'filings', label: 'Statutory Filings', icon: FileText },
-  { key: 'fbp', label: 'FBP Management', icon: Gift },
-  { key: 'tax-simulator', label: 'Tax Simulator', icon: Calculator },
-  { key: 'reports', label: 'Reports & Registers', icon: FileSpreadsheet },
   { key: 'bank-payout', label: 'Bank Payout', icon: Landmark },
   { key: 'proofs', label: 'Proof Documents', icon: Upload },
 ];
@@ -51,9 +45,6 @@ export default function Filings() {
         </div>
 
         {activeTab === 'filings' && <FilingsDashboard />}
-        {activeTab === 'fbp' && <FbpDashboard />}
-        {activeTab === 'tax-simulator' && <TaxSimulator />}
-        {activeTab === 'reports' && <PayrollRegisterReport />}
         {activeTab === 'bank-payout' && <BankPayoutDashboard />}
         {activeTab === 'proofs' && <ProofDocumentsCenter />}
       </div>

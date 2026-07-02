@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Calculator, CheckCircle2, AlertCircle, Loader2, IndianRupee, ArrowRight, PartyPopper } from 'lucide-react';
+import { Calculator, CheckCircle2, AlertCircle, Loader2, IndianRupee, ArrowRight } from 'lucide-react';
 import SetupLayout, { StepHeader } from './SetupLayout';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import Button from '@/components/ui/Button';
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import SalaryBreakdown from '@/components/payroll/SalaryBreakdown';
 import { payrollApi } from '@/services/api';
 import { usePayrollOnboarding } from '@/hooks/usePayrollOnboarding';
 
@@ -162,43 +163,7 @@ export default function SetupTestRun() {
             <h3 className="text-sm font-semibold text-slate-900">Salary Breakdown Preview</h3>
             <CheckCircle2 className="h-5 w-5 text-emerald-500" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-2">Earnings</h4>
-              <div className="space-y-2 text-sm">
-                <Row label="Basic" value={calcPreview.components?.earnings?.basic} />
-                <Row label="HRA" value={calcPreview.components?.earnings?.hra} />
-                <Row label="Conveyance" value={calcPreview.components?.earnings?.conveyance} />
-                <Row label="Special Allowance" value={calcPreview.components?.earnings?.special_allowance} />
-                <div className="border-t pt-2 mt-2">
-                  <Row label="Monthly Gross" value={calcPreview.monthly?.gross} bold />
-                </div>
-              </div>
-            </div>
-            <div>
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-rose-700 mb-2">Deductions</h4>
-              <div className="space-y-2 text-sm">
-                <Row label="PF (Employee)" value={calcPreview.components?.deductions?.pf_employee} />
-                <Row label="ESI (Employee)" value={calcPreview.components?.deductions?.esi_employee} />
-                <Row label="Professional Tax" value={calcPreview.components?.deductions?.pt} />
-                <Row label="TDS" value={calcPreview.components?.deductions?.tds} />
-                <div className="border-t pt-2 mt-2">
-                  <Row label="Total Deductions" value={calcPreview.monthly?.total_deductions} bold />
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <PartyPopper className="h-5 w-5 text-emerald-600" />
-                <span className="text-sm font-semibold text-emerald-900">Net Take-Home</span>
-              </div>
-              <span className="text-2xl font-bold text-emerald-700">
-                ₹{Number(calcPreview.monthly?.net || 0).toLocaleString('en-IN')}
-              </span>
-            </div>
-          </div>
+          <SalaryBreakdown calculation={calcPreview} />
         </SurfaceCard>
       )}
 
@@ -216,14 +181,5 @@ export default function SetupTestRun() {
         </Button>
       </div>
     </SetupLayout>
-  );
-}
-
-function Row({ label, value, bold }: { label: string; value?: number; bold?: boolean }) {
-  return (
-    <div className={`flex justify-between ${bold ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
-      <span>{label}</span>
-      <span>₹{Number(value || 0).toLocaleString('en-IN')}</span>
-    </div>
   );
 }

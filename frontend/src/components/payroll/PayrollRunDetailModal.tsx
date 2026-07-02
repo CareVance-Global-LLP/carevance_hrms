@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   X, Lock, ShieldCheck, Send, Loader2, IndianRupee, Users, Calendar, FileText,
   AlertCircle, AlertTriangle, Landmark, Plus, Check, Unlock, Wallet, PlayCircle,
-  ListChecks, Info, LayoutDashboard, Search, ArrowUpDown, ChevronUp, ChevronDown,
+  ListChecks, Info, LayoutDashboard, Search, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, employeeWorkspaceApi, getApiErrorMessage } from '@/services/api';
@@ -327,30 +327,38 @@ export default function PayrollRunDetailModal({
                   />
                 </section>
 
-                {/* Summary */}
-                <section className="pt-4 border-t border-slate-200">
-                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                    Summary
-                  </h3>
-                  <dl className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <dt className="text-slate-500">Employees</dt>
-                      <dd className="font-semibold text-slate-900">{totals.employees}</dd>
+              {/* Summary */}
+              <section className="pt-4 border-t border-slate-200">
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                  Summary
+                </h3>
+                <div className="space-y-3">
+                  <div className="p-3 bg-white rounded-lg border">
+                    <p className="text-xs text-slate-500 mb-1">Employees</p>
+                    <p className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                      <Users className="h-5 w-5 text-slate-400" />
+                      {totals.employees}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="p-3 bg-white rounded-lg border">
+                      <p className="text-xs text-slate-500 mb-1">Gross Pay</p>
+                      <p className="text-lg font-bold text-slate-900">{formatCurrency(totals.gross)}</p>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <dt className="text-slate-500">Gross</dt>
-                      <dd className="font-semibold text-slate-900">{formatCurrency(totals.gross)}</dd>
+                    
+                    <div className="p-3 bg-white rounded-lg border">
+                      <p className="text-xs text-slate-500 mb-1">Deductions</p>
+                      <p className="text-lg font-bold text-amber-600">{formatCurrency(totals.deductions)}</p>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <dt className="text-slate-500">Deductions</dt>
-                      <dd className="font-semibold text-amber-600">{formatCurrency(totals.deductions)}</dd>
+                    
+                    <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                      <p className="text-xs text-emerald-600 mb-1">Net Pay</p>
+                      <p className="text-lg font-bold text-emerald-700">{formatCurrency(totals.net)}</p>
                     </div>
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                      <dt className="text-slate-700 font-medium">Net Pay</dt>
-                      <dd className="font-bold text-emerald-600">{formatCurrency(totals.net)}</dd>
-                    </div>
-                  </dl>
-                </section>
+                  </div>
+                </div>
+              </section>
 
                 {/* Actions */}
                 <section className="pt-4 border-t border-slate-200">
@@ -522,48 +530,67 @@ interface CompletenessCardProps {
 
 function CompletenessCard({
   expected,
+  processed,
   missing,
   missingEmployees,
   isProcessing,
   onProcessRemaining,
   state,
 }: CompletenessCardProps) {
+  const progressPercentage = expected > 0 ? (processed / expected) * 100 : 0;
+  
   return (
-    <SurfaceCard className="p-4 bg-amber-50 border-amber-200">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+    <SurfaceCard className="p-5 bg-amber-50 border-amber-200 rounded-lg">
+      <div className="flex items-start gap-4">
+        <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+          <AlertTriangle className="h-5 w-5 text-amber-600" />
+        </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-amber-900">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-base font-bold text-amber-900">Run Completeness</h3>
+            <span className="text-sm font-semibold text-amber-800">{processed}/{expected}</span>
+          </div>
+          
+          <div className="w-full bg-amber-200 rounded-full h-2 mb-3">
+            <div 
+              className="bg-amber-500 h-2 rounded-full" 
+              style={{ width: `${progressPercentage}%` }}
+            ></div>
+          </div>
+          
+          <p className="text-sm text-amber-800 mb-4">
             {missing} of {expected} expected employees haven't been processed for this run
           </p>
-          <p className="text-xs text-amber-800 mt-1">
+          
+          <p className="text-xs text-amber-700 mb-4">
             {state === 'draft'
               ? 'Process all expected employees before locking. You can use "Process Remaining" to fill the gaps automatically.'
               : 'This run was force-locked with missing employees. To include them, unlock the run, then process the remaining employees.'}
           </p>
 
           {missingEmployees.length > 0 && (
-            <details className="mt-3">
-              <summary className="text-xs font-medium text-amber-900 cursor-pointer hover:underline">
-                Show {missingEmployees.length} missing employee{missingEmployees.length === 1 ? '' : 's'}
-              </summary>
-              <ul className="mt-2 space-y-1 text-xs text-amber-900">
-                {missingEmployees.slice(0, 10).map((emp) => (
-                  <li key={emp.id} className="flex items-center gap-2">
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                    <span className="font-medium">{emp.name}</span>
-                    <span className="text-amber-700">({emp.email})</span>
-                  </li>
-                ))}
-                {missingEmployees.length > 10 && (
-                  <li className="text-amber-700 italic">+ {missingEmployees.length - 10} more…</li>
-                )}
-              </ul>
-            </details>
+            <div className="mb-4">
+              <h4 className="text-xs font-semibold text-amber-900 mb-2">
+                Missing Employees ({missingEmployees.length})
+              </h4>
+              <div className="max-h-32 overflow-y-auto border border-amber-200 rounded-lg bg-white">
+                <ul className="divide-y divide-amber-100">
+                  {missingEmployees.slice(0, 10).map((emp) => (
+                    <li key={emp.id} className="p-2 text-sm">
+                      <span className="font-medium text-amber-900">{emp.name}</span>
+                      <span className="text-amber-700 block">({emp.email})</span>
+                    </li>
+                  ))}
+                  {missingEmployees.length > 10 && (
+                    <li className="p-2 text-xs text-amber-700 italic">+ {missingEmployees.length - 10} more…</li>
+                  )}
+                </ul>
+              </div>
+            </div>
           )}
 
           {state === 'draft' && expected > 0 && (
-            <div className="mt-3 flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <Button
                 variant="primary"
                 size="sm"
@@ -760,60 +787,71 @@ function MissingBankCard({ missingEmployees, runId: _runId, onAdded, showToast }
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
 
   return (
-    <SurfaceCard className="p-4 bg-amber-50 border-amber-200">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+    <SurfaceCard className="p-5 bg-amber-50 border-amber-200 rounded-lg">
+      <div className="flex items-start gap-4 mb-4">
+        <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+          <AlertTriangle className="h-5 w-5 text-amber-600" />
+        </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-amber-900">
-            {missingEmployees.length} employee{missingEmployees.length === 1 ? '' : 's'} missing bank details
-          </p>
-          <p className="text-xs text-amber-800 mt-1">
+          <h3 className="text-base font-bold text-amber-900 mb-1">
+            {missingEmployees.length} Employee{missingEmployees.length === 1 ? '' : 's'} Missing Bank Details
+          </h3>
+          <p className="text-sm text-amber-800">
             Bank file will exclude them until their account number & IFSC are added.
           </p>
-          <ul className="mt-3 space-y-2">
-            {missingEmployees.map((emp: any) => (
-              <li key={emp.user_id} className="bg-white border border-amber-200 rounded-lg overflow-hidden">
-                <div className="flex items-center justify-between p-3">
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-900 text-sm truncate">{emp.name}</p>
-                    <p className="text-xs text-slate-500 truncate">
-                      {emp.email}
-                      {emp.missing_fields?.length > 0 && (
-                        <> · missing: {emp.missing_fields.join(', ')}</>
-                      )}
-                      {emp.has_partial_account && emp.missing_fields?.length === 0 && (
-                        <> · partial account on file</>
-                      )}
-                    </p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    iconLeft={<Plus className="h-3 w-3" />}
-                    onClick={() => setExpandedUserId(expandedUserId === emp.user_id ? null : emp.user_id)}
-                  >
-                    {expandedUserId === emp.user_id ? 'Cancel' : 'Add Bank Details'}
-                  </Button>
-                </div>
-                {expandedUserId === emp.user_id && (
-                  <BankDetailsInlineForm
-                    userId={emp.user_id}
-                    userName={emp.name}
-                    onSaved={() => {
-                      setExpandedUserId(null);
-                      onAdded();
-                      showToast({
-                        kind: 'success',
-                        message: `Bank details saved for ${emp.name}.`,
-                      });
-                    }}
-                    showToast={showToast}
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
         </div>
+      </div>
+      
+      <div className="space-y-3">
+        {missingEmployees.map((emp: any) => (
+          <div key={emp.user_id} className="bg-white border border-amber-200 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-slate-900 text-sm truncate">{emp.name}</p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-slate-100 text-slate-800">
+                    {emp.email}
+                  </span>
+                  {emp.missing_fields?.length > 0 && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">
+                      Missing: {emp.missing_fields.join(', ')}
+                    </span>
+                  )}
+                  {emp.has_partial_account && emp.missing_fields?.length === 0 && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                      Partial account on file
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<Plus className="h-3 w-3" />}
+                onClick={() => setExpandedUserId(expandedUserId === emp.user_id ? null : emp.user_id)}
+              >
+                {expandedUserId === emp.user_id ? 'Cancel' : 'Add Details'}
+              </Button>
+            </div>
+            {expandedUserId === emp.user_id && (
+              <div className="border-t border-amber-200 p-4 bg-amber-50">
+                <BankDetailsInlineForm
+                  userId={emp.user_id}
+                  userName={emp.name}
+                  onSaved={() => {
+                    setExpandedUserId(null);
+                    onAdded();
+                    showToast({
+                      kind: 'success',
+                      message: `Bank details saved for ${emp.name}.`,
+                    });
+                  }}
+                  showToast={showToast}
+                />
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </SurfaceCard>
   );
@@ -1113,36 +1151,82 @@ interface FinancialSummaryCardProps {
 
 function FinancialSummaryCard({ totals }: FinancialSummaryCardProps) {
   const employerContrib = Math.max(0, totals.gross - totals.deductions - totals.net);
+  
+  // Calculate percentages for visual representation
+  const netPercentage = totals.gross > 0 ? (totals.net / totals.gross) * 100 : 0;
+  const deductionPercentage = totals.gross > 0 ? (totals.deductions / totals.gross) * 100 : 0;
+  const employerPercentage = totals.gross > 0 ? (employerContrib / totals.gross) * 100 : 0;
+  
   return (
-    <SurfaceCard className="p-4">
-      <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-        <IndianRupee className="h-4 w-4 text-blue-600" />
-        Financial Summary
-      </h4>
-      <div className="space-y-2.5">
-        <div className="flex items-center justify-between py-2 border-b border-slate-100">
-          <span className="text-sm font-medium text-slate-700">Total Payroll Cost</span>
-          <span className="text-lg font-bold text-slate-900">
-            {formatCurrency(totals.gross)}
-          </span>
+    <SurfaceCard className="p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
+          <IndianRupee className="h-5 w-5 text-blue-600" />
+          Financial Summary
+        </h4>
+        <div className="text-right">
+          <p className="text-xs text-slate-500">Total Cost</p>
+          <p className="text-lg font-bold text-slate-900">{formatCurrency(totals.gross)}</p>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-600 pl-3">· Employee Take-home</span>
-          <span className="text-sm font-semibold text-emerald-600">
-            {formatCurrency(totals.net)}
-          </span>
+      </div>
+      
+      <div className="space-y-4">
+        {/* Employee Take-home */}
+        <div>
+          <div className="flex justify-between mb-1">
+            <span className="text-sm font-medium text-slate-700">Employee Take-home</span>
+            <span className="text-sm font-semibold text-emerald-600">{formatCurrency(totals.net)}</span>
+          </div>
+          <div className="w-full bg-slate-200 rounded-full h-2">
+            <div 
+              className="bg-emerald-500 h-2 rounded-full" 
+              style={{ width: `${netPercentage}%` }}
+            ></div>
+          </div>
+          <div className="text-right mt-1">
+            <span className="text-xs text-slate-500">{netPercentage.toFixed(1)}% of total</span>
+          </div>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-600 pl-3">· Statutory Deductions</span>
-          <span className="text-sm font-semibold text-amber-600">
-            {formatCurrency(totals.deductions)}
-          </span>
+        
+        {/* Statutory Deductions */}
+        <div>
+          <div className="flex justify-between mb-1">
+            <span className="text-sm font-medium text-slate-700">Statutory Deductions</span>
+            <span className="text-sm font-semibold text-amber-600">{formatCurrency(totals.deductions)}</span>
+          </div>
+          <div className="w-full bg-slate-200 rounded-full h-2">
+            <div 
+              className="bg-amber-500 h-2 rounded-full" 
+              style={{ width: `${deductionPercentage}%` }}
+            ></div>
+          </div>
+          <div className="text-right mt-1">
+            <span className="text-xs text-slate-500">{deductionPercentage.toFixed(1)}% of total</span>
+          </div>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-600 pl-3">· Employer Contributions</span>
-          <span className="text-sm font-semibold text-violet-600">
-            {formatCurrency(employerContrib)}
-          </span>
+        
+        {/* Employer Contributions */}
+        <div>
+          <div className="flex justify-between mb-1">
+            <span className="text-sm font-medium text-slate-700">Employer Contributions</span>
+            <span className="text-sm font-semibold text-violet-600">{formatCurrency(employerContrib)}</span>
+          </div>
+          <div className="w-full bg-slate-200 rounded-full h-2">
+            <div 
+              className="bg-violet-500 h-2 rounded-full" 
+              style={{ width: `${employerPercentage}%` }}
+            ></div>
+          </div>
+          <div className="text-right mt-1">
+            <span className="text-xs text-slate-500">{employerPercentage.toFixed(1)}% of total</span>
+          </div>
+        </div>
+      </div>
+      
+      <div className="mt-4 pt-3 border-t border-slate-200">
+        <div className="flex justify-between">
+          <span className="text-sm font-medium text-slate-700">Net Pay to Employees</span>
+          <span className="text-base font-bold text-emerald-700">{formatCurrency(totals.net)}</span>
         </div>
       </div>
     </SurfaceCard>
@@ -1235,67 +1319,82 @@ function EmployeesTable({ items, formatCurrency }: EmployeesTableProps) {
         type="button"
         onClick={() => toggleSort(k)}
         className={cn(
-          'flex items-center gap-1 text-xs font-semibold uppercase tracking-wider hover:text-blue-700',
+          'flex items-center gap-1 text-xs font-semibold uppercase tracking-wider hover:text-blue-700 transition-colors',
           align === 'right' && 'ml-auto',
           active ? 'text-blue-700' : 'text-slate-500',
         )}
       >
         {label}
-        {active ? (
-          sortDir === 'asc' ? (
-            <ChevronUp className="h-3 w-3" />
-          ) : (
-            <ChevronDown className="h-3 w-3" />
-          )
-        ) : (
-          <ArrowUpDown className="h-3 w-3 opacity-50" />
-        )}
+        <span className="flex flex-col">
+          <ChevronUp className={cn(
+            'h-2.5 w-2.5 -mb-1',
+            active && sortDir === 'asc' ? 'text-blue-700' : 'text-slate-300'
+          )} />
+          <ChevronDown className={cn(
+            'h-2.5 w-2.5 -mt-1',
+            active && sortDir === 'desc' ? 'text-blue-700' : 'text-slate-300'
+          )} />
+        </span>
       </button>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1 min-w-[180px]">
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name or department…"
-            className="w-full pl-10 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as any)}
-          className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-4 py-2.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
         >
-          <option value="all">All status</option>
+          <option value="all">All Status</option>
           <option value="paid">Paid</option>
           <option value="pending">Pending</option>
           <option value="failed">Failed</option>
         </select>
       </div>
 
-      <div className="border border-slate-200 rounded-lg overflow-hidden">
+      <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
+          <table className="w-full">
+            <thead className="bg-slate-50 sticky top-0">
               <tr>
-                <th className="px-3 py-2 text-left"><SortHeader k="name" label="Employee" /></th>
-                <th className="px-3 py-2 text-left"><SortHeader k="department" label="Department" /></th>
-                <th className="px-3 py-2 text-right"><SortHeader k="gross" label="Gross" align="right" /></th>
-                <th className="px-3 py-2 text-right"><SortHeader k="deductions" label="Deduct." align="right" /></th>
-                <th className="px-3 py-2 text-right"><SortHeader k="net_pay" label="Net Pay" align="right" /></th>
-                <th className="px-3 py-2 text-left"><SortHeader k="status" label="Status" /></th>
+                <th className="px-5 py-3.5 text-left font-semibold text-xs uppercase tracking-wider text-slate-500">
+                  <SortHeader k="name" label="Employee" />
+                </th>
+                <th className="px-5 py-3.5 text-left font-semibold text-xs uppercase tracking-wider text-slate-500">
+                  <SortHeader k="department" label="Department" />
+                </th>
+                <th className="px-5 py-3.5 text-right font-semibold text-xs uppercase tracking-wider text-slate-500">
+                  <SortHeader k="gross" label="Gross" align="right" />
+                </th>
+                <th className="px-5 py-3.5 text-right font-semibold text-xs uppercase tracking-wider text-slate-500">
+                  <SortHeader k="deductions" label="Deductions" align="right" />
+                </th>
+                <th className="px-5 py-3.5 text-right font-semibold text-xs uppercase tracking-wider text-slate-500">
+                  <SortHeader k="net_pay" label="Net Pay" align="right" />
+                </th>
+                <th className="px-5 py-3.5 text-left font-semibold text-xs uppercase tracking-wider text-slate-500">
+                  <SortHeader k="status" label="Status" />
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-200 bg-white">
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-500">
-                    No employees match your filters.
+                  <td colSpan={6} className="px-5 py-16 text-center">
+                    <Users className="h-12 w-12 mx-auto text-slate-300 mb-3" />
+                    <p className="text-sm font-medium text-slate-500">No employees found</p>
+                    <p className="text-xs text-slate-400 mt-1">Try adjusting your search or filter criteria</p>
                   </td>
                 </tr>
               ) : (
@@ -1311,35 +1410,45 @@ function EmployeesTable({ items, formatCurrency }: EmployeesTableProps) {
                   const ps = String(it.payment_status ?? 'pending').toLowerCase();
                   const psTone =
                     ps === 'paid' || ps === 'disbursed'
-                      ? 'bg-emerald-100 text-emerald-700'
+                      ? 'bg-emerald-100 text-emerald-800' 
                       : ps === 'failed'
-                        ? 'bg-rose-100 text-rose-700'
-                        : 'bg-amber-100 text-amber-700';
+                        ? 'bg-rose-100 text-rose-800'
+                        : 'bg-amber-100 text-amber-800';
                   return (
-                    <tr key={it.id ?? idx} className="hover:bg-slate-50/60">
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-white text-xs font-semibold flex items-center justify-center flex-shrink-0">
+                    <tr key={it.id ?? idx} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-white text-sm font-semibold flex items-center justify-center flex-shrink-0">
                             {initials || '?'}
                           </div>
-                          <span className="font-medium text-slate-900 truncate">{name}</span>
+                          <div>
+                            <div className="font-medium text-slate-900 text-sm">
+                              {name}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {it.designation || 'No designation'}
+                            </div>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {it.department ?? <span className="text-slate-400">—</span>}
+                      <td className="px-5 py-4 text-sm text-slate-600">
+                        {it.department || '—'}
                       </td>
-                      <td className="px-3 py-2 text-right text-slate-700">
+                      <td className="px-5 py-4 text-right text-sm font-medium text-slate-900">
                         {formatCurrency(Number(it.gross_salary ?? 0))}
                       </td>
-                      <td className="px-3 py-2 text-right text-amber-600">
+                      <td className="px-5 py-4 text-right text-sm font-medium text-amber-600">
                         {formatCurrency(Number(it.total_deductions ?? 0))}
                       </td>
-                      <td className="px-3 py-2 text-right font-semibold text-emerald-600">
+                      <td className="px-5 py-4 text-right text-sm font-bold text-emerald-600">
                         {formatCurrency(Number(it.net_pay ?? 0))}
                       </td>
-                      <td className="px-3 py-2">
-                        <span className={cn('inline-block px-2 py-0.5 rounded-full text-[11px] font-medium capitalize', psTone)}>
-                          {it.payment_status ?? 'pending'}
+                      <td className="px-5 py-4">
+                        <span className={cn(
+                          'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize',
+                          psTone
+                        )}>
+                          {it.payment_status === 'disbursed' ? 'Paid' : it.payment_status || 'Pending'}
                         </span>
                       </td>
                     </tr>
@@ -1349,9 +1458,14 @@ function EmployeesTable({ items, formatCurrency }: EmployeesTableProps) {
             </tbody>
           </table>
         </div>
-        <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
-          <span>Showing {sorted.length} of {items.length}</span>
-        </div>
+        
+        {sorted.length > 0 && (
+          <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span>Showing {sorted.length} of {items.length} employees</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
