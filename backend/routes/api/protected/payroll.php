@@ -268,6 +268,12 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
         Route::post('/generate-filings', [PayrollAutoProcessController::class, 'autoGenerateFilings']);
         Route::post('/validate-run', [PayrollAutoProcessController::class, 'validateRun']);
         Route::get('/checklist-status/{runId}', [PayrollAutoProcessController::class, 'checklistStatus']);
+        
+        // Simplified Attendance Sync Routes (NEW)
+        Route::post('/runs/{runId}/sync-attendance', [PayrollAutoProcessController::class, 'syncAttendanceForRun']);
+        Route::post('/runs/{runId}/employees/{userId}/sync-attendance', [PayrollAutoProcessController::class, 'syncAttendanceForUser']);
+        Route::get('/runs/{runId}/attendance/status', [PayrollAutoProcessController::class, 'getAttendanceSyncStatus']);
+        Route::get('/runs/{runId}/reconciliation', [PayrollAutoProcessController::class, 'getReconciliationReport']);
     });
 
     // Reimbursements

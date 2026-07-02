@@ -243,4 +243,230 @@ class PayrollAutoProcessController extends Controller
 
         return response()->json($status);
     }
+
+    /**
+     * Sync attendance for all employees in a payroll run.
+     * Uses the simplified attendance calculation (check-in based).
+     */
+    public function syncAttendanceForRun(Request $request, int $runId): JsonResponse
+    {
+        $orgId = Auth::user()->organization_id;
+        $run = PayrollMonthlyRun::where('organization_id', $orgId)->findOrFail($runId);
+
+        // Re-run attendance sync for all items in the run
+        $items = \App\Models\PayrollItem::where('payroll_run_id', $run->id)->get();
+        $syncedCount = 0;
+        $reconciliationCount = 0;
+
+        foreach ($items as $item) {
+            $user = \App\Models\User::find($item->user_id);
+            if (!$user) continue;
+
+            $summary = app(\App\Services\Attendance\AttendanceService::class)
+                ->monthlyAttendanceSummary($user, $run->month_year);
+
+            // Update with both legacy and simplified fields
+            $updateData = [
+                'total_working_days' => (float) $summary['working_days'],
+                'days_present' => (float) ($summary['legacy_present_days'] ?? $summary['present_days']),
+                'days_absent' => (float) ($summary['legacy_lop_days'] ?? $summary['total_lop_days']),
+                'days_leave' => (float) $summary['paid_leave_days'],
+                'lOP_days' => (float) ($summary['legacy_lop_days'] ?? $summary['total_lop_days']),
+                'total_worked_seconds' => (int) ($summary['total_worked_seconds'] ?? 0),
+                'overtime_seconds' => (int) ($summary['overtime_seconds'] ?? 0),
+                
+                // Simplified fields
+                'present_days' => (float) $summary['present_days'],
+                'paid_leave_days' => (float) $summary['paid_leave_days'],
+                'unpaid_leave_days' => (float) $summary['unpaid_leave_days'],
+                'half_day_present' => (float) $summary['half_day_present'],
+                'half_day_absent' => (float) $summary['half_day_absent'],
+                'absent_days' => (float) $summary['absent_days'],
+                'total_payable_days' => (float) $summary['total_payable_days'],
+                'total_lop_days' => (float) $summary['total_lop_days'],
+                'attendance_calculation_mode' => $summary['calculation_mode'] ?? 'simplified',
+            ];
+
+            $item->update($updateData);
+            $syncedCount++;
+
+            // Check for reconciliation
+            $legacyPresent = $summary['legacy_present_days'] ?? $summary['present_days'];
+            $newPresent = $summary['present_days'];
+            
+            if (abs($legacyPresent - $newPresent) > 0.01) {
+                \App\Models\PayrollReconciliation::create([
+                    'payroll_item_id' => $item->id,
+                    'old_present_days' => $legacyPresent,
+                    'new_present_days' => $newPresent,
+                    'difference' => $legacyPresent - $newPresent,
+                    'month_year' => $run->month_year,
+                    'debug_info' => [
+                        'summary' => $summary,
+                        'user_id' => $user->id,
+                        'timestamp' => now()->toDateTimeString(),
+                    ],
+                ]);
+                $reconciliationCount++;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Attendance synced successfully',
+            'run_id' => $runId,
+            'month_year' => $run->month_year,
+            'employees_synced' => $syncedCount,
+            'reconciliation_entries' => $reconciliationCount,
+        ]);
+    }
+
+    /**
+     * Sync attendance for a specific employee in a payroll run.
+     */
+    public function syncAttendanceForUser(Request $request, int $runId, int $userId): JsonResponse
+    {
+        $orgId = Auth::user()->organization_id;
+        $run = PayrollMonthlyRun::where('organization_id', $orgId)->findOrFail($runId);
+        
+        $item = \App\Models\PayrollItem::where('payroll_run_id', $runId)
+            ->where('user_id', $userId)
+            ->firstOrFail();
+
+        $user = \App\Models\User::find($userId);
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found',
+            ], 404);
+        }
+
+        $summary = app(\App\Services\Attendance\AttendanceService::class)
+            ->monthlyAttendanceSummary($user, $run->month_year);
+
+        // Update with both legacy and simplified fields
+        $updateData = [
+            'total_working_days' => (float) $summary['working_days'],
+            'days_present' => (float) ($summary['legacy_present_days'] ?? $summary['present_days']),
+            'days_absent' => (float) ($summary['legacy_lop_days'] ?? $summary['total_lop_days']),
+            'days_leave' => (float) $summary['paid_leave_days'],
+            'lOP_days' => (float) ($summary['legacy_lop_days'] ?? $summary['total_lop_days']),
+            'total_worked_seconds' => (int) ($summary['total_worked_seconds'] ?? 0),
+            'overtime_seconds' => (int) ($summary['overtime_seconds'] ?? 0),
+            
+            // Simplified fields
+            'present_days' => (float) $summary['present_days'],
+            'paid_leave_days' => (float) $summary['paid_leave_days'],
+            'unpaid_leave_days' => (float) $summary['unpaid_leave_days'],
+            'half_day_present' => (float) $summary['half_day_present'],
+            'half_day_absent' => (float) $summary['half_day_absent'],
+            'absent_days' => (float) $summary['absent_days'],
+            'total_payable_days' => (float) $summary['total_payable_days'],
+            'total_lop_days' => (float) $summary['total_lop_days'],
+            'attendance_calculation_mode' => $summary['calculation_mode'] ?? 'simplified',
+        ];
+
+        $item->update($updateData);
+
+        // Check for reconciliation
+        $hasReconciliation = false;
+        $legacyPresent = $summary['legacy_present_days'] ?? $summary['present_days'];
+        $newPresent = $summary['present_days'];
+        
+        if (abs($legacyPresent - $newPresent) > 0.01) {
+            \App\Models\PayrollReconciliation::create([
+                'payroll_item_id' => $item->id,
+                'old_present_days' => $legacyPresent,
+                'new_present_days' => $newPresent,
+                'difference' => $legacyPresent - $newPresent,
+                'month_year' => $run->month_year,
+                'debug_info' => [
+                    'summary' => $summary,
+                    'user_id' => $userId,
+                    'timestamp' => now()->toDateTimeString(),
+                ],
+            ]);
+            $hasReconciliation = true;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Attendance synced for user',
+            'run_id' => $runId,
+            'user_id' => $userId,
+            'month_year' => $run->month_year,
+            'attendance_summary' => $summary,
+            'has_reconciliation' => $hasReconciliation,
+        ]);
+    }
+
+    /**
+     * Get attendance sync status for a payroll run.
+     */
+    public function getAttendanceSyncStatus(Request $request, int $runId): JsonResponse
+    {
+        $orgId = Auth::user()->organization_id;
+        $run = PayrollMonthlyRun::where('organization_id', $orgId)->findOrFail($runId);
+
+        $items = \App\Models\PayrollItem::where('payroll_run_id', $run->id)->get();
+        
+        $totalEmployees = $items->count();
+        $usingSimplified = $items->where('attendance_calculation_mode', 'simplified')->count();
+        $usingLegacy = $items->where('attendance_calculation_mode', '!=', 'simplified')->count();
+        $notSynced = $items->whereNull('attendance_calculation_mode')->count();
+
+        // Get reconciliation data
+        $reconciliationCount = \App\Models\PayrollReconciliation::where('month_year', $run->month_year)->count();
+        
+        // Calculate average differences
+        $avgDifference = \App\Models\PayrollReconciliation::where('month_year', $run->month_year)
+            ->avg('difference') ?? 0;
+
+        return response()->json([
+            'success' => true,
+            'run_id' => $runId,
+            'month_year' => $run->month_year,
+            'summary' => [
+                'total_employees' => $totalEmployees,
+                'using_simplified' => $usingSimplified,
+                'using_legacy' => $usingLegacy,
+                'not_synced' => $notSynced,
+            ],
+            'reconciliation' => [
+                'total_entries' => $reconciliationCount,
+                'average_difference_days' => round($avgDifference, 2),
+            ],
+        ]);
+    }
+
+    /**
+     * Get reconciliation report for a payroll run.
+     */
+    public function getReconciliationReport(Request $request, int $runId): JsonResponse
+    {
+        $orgId = Auth::user()->organization_id;
+        $run = PayrollMonthlyRun::where('organization_id', $orgId)->findOrFail($runId);
+
+        $reconciliations = \App\Models\PayrollReconciliation::where('month_year', $run->month_year)
+            ->with('payrollItem.user')
+            ->get()
+            ->map(function ($rec) {
+                return [
+                    'id' => $rec->id,
+                    'employee_name' => $rec->payrollItem->user->name ?? 'Unknown',
+                    'old_present_days' => $rec->old_present_days,
+                    'new_present_days' => $rec->new_present_days,
+                    'difference' => $rec->difference,
+                    'created_at' => $rec->created_at->toDateTimeString(),
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'run_id' => $runId,
+            'month_year' => $run->month_year,
+            'reconciliations' => $reconciliations,
+            'total_count' => $reconciliations->count(),
+        ]);
+    }
 }

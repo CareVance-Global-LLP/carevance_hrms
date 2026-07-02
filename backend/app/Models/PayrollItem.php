@@ -85,6 +85,16 @@ class PayrollItem extends Model
         'paid_at',
         'template_snapshot',
         'additional_components',
+        // Simplified attendance fields
+        'present_days',
+        'paid_leave_days',
+        'unpaid_leave_days',
+        'half_day_present',
+        'half_day_absent',
+        'absent_days',
+        'total_payable_days',
+        'total_lop_days',
+        'attendance_calculation_mode',
     ];
 
     protected $casts = [
@@ -147,6 +157,15 @@ class PayrollItem extends Model
         'paid_at' => 'datetime',
         'template_snapshot' => 'array',
         'additional_components' => 'array',
+        // Simplified attendance fields
+        'present_days' => 'decimal:2',
+        'paid_leave_days' => 'decimal:2',
+        'unpaid_leave_days' => 'decimal:2',
+        'half_day_present' => 'decimal:2',
+        'half_day_absent' => 'decimal:2',
+        'absent_days' => 'decimal:2',
+        'total_payable_days' => 'decimal:2',
+        'total_lop_days' => 'decimal:2',
     ];
 
     /**

@@ -727,14 +727,14 @@ export default function EmployeePayrollWizard({
         </div>
       </SurfaceCard>
 
-      {!isStepCompleteForAll && (
+       {!isStepCompleteForAll && (
         <div className="flex justify-end">
           <Button 
             variant="primary" 
             onClick={() => handleContinue(1, 0)}
             iconRight={<ChevronRight className="h-4 w-4" />}
           >
-            Continue to Next Employee
+            Continue
           </Button>
         </div>
       )}
@@ -932,7 +932,7 @@ export default function EmployeePayrollWizard({
               {isCalculating
                 ? 'Calculating…'
                 : calculation
-                  ? 'Continue to Next Employee'
+                  ? 'Continue'
                   : parseFloat(annualCtc) > 0
                     ? 'Calculate & Continue'
                     : 'Enter CTC to continue'}
@@ -1116,7 +1116,7 @@ export default function EmployeePayrollWizard({
                 disabled={!calculation && (parseFloat(annualCtc) <= 0 || !template)}
                 iconRight={<ChevronRight className="h-4 w-4" />}
               >
-                Continue to Next Employee
+                Continue
               </Button>
             )}
           </div>
@@ -1318,7 +1318,7 @@ export default function EmployeePayrollWizard({
                 onClick={() => handleContinue(4, 3)}
                 iconRight={<ChevronRight className="h-4 w-4" />}
               >
-                Continue to Next Employee
+                Continue
               </Button>
             )}
           </div>

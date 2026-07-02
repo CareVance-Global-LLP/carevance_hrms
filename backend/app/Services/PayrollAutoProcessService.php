@@ -167,10 +167,14 @@ class PayrollAutoProcessService
      *
      * Payroll is a CONSUMER of attendance — this method never writes back to
      * the attendance tables.
+     * 
+     * UPDATED: Now populates both legacy and simplified attendance fields.
+     * The simplified fields use check-in existence instead of hours worked.
      */
     private function autoSyncAttendance(PayrollMonthlyRun $run): void
     {
         $items = PayrollItem::where('payroll_run_id', $run->id)->get();
+        
         foreach ($items as $item) {
             $user = User::find($item->user_id);
             if (!$user) {
@@ -179,15 +183,50 @@ class PayrollAutoProcessService
 
             $summary = $this->attendance->monthlyAttendanceSummary($user, $run->month_year);
 
-            $item->update([
+            // Prepare update data with both legacy and simplified fields
+            $updateData = [
+                // Legacy fields (keep for backward compatibility)
                 'total_working_days' => (float) $summary['working_days'],
-                'days_present' => (float) $summary['present_days'],
-                'days_absent' => (float) $summary['lop_days'],
+                'days_present' => (float) ($summary['legacy_present_days'] ?? $summary['present_days']),
+                'days_absent' => (float) ($summary['legacy_lop_days'] ?? $summary['total_lop_days']),
                 'days_leave' => (float) $summary['paid_leave_days'],
-                'lOP_days' => (float) $summary['lop_days'],
-                'total_worked_seconds' => (int) $summary['total_worked_seconds'],
-                'overtime_seconds' => (int) $summary['overtime_seconds'],
-            ]);
+                'lOP_days' => (float) ($summary['legacy_lop_days'] ?? $summary['total_lop_days']),
+                'total_worked_seconds' => (int) ($summary['total_worked_seconds'] ?? 0),
+                'overtime_seconds' => (int) ($summary['overtime_seconds'] ?? 0),
+                
+                // New simplified attendance fields
+                'present_days' => (float) $summary['present_days'],
+                'paid_leave_days' => (float) $summary['paid_leave_days'],
+                'unpaid_leave_days' => (float) $summary['unpaid_leave_days'],
+                'half_day_present' => (float) $summary['half_day_present'],
+                'half_day_absent' => (float) $summary['half_day_absent'],
+                'absent_days' => (float) $summary['absent_days'],
+                'total_payable_days' => (float) $summary['total_payable_days'],
+                'total_lop_days' => (float) $summary['total_lop_days'],
+                'attendance_calculation_mode' => $summary['calculation_mode'] ?? 'simplified',
+            ];
+
+            $item->update($updateData);
+
+            // Log reconciliation data if there's a significant difference
+            // between legacy and simplified calculations
+            $legacyPresent = $summary['legacy_present_days'] ?? $summary['present_days'];
+            $newPresent = $summary['present_days'];
+            
+            if (abs($legacyPresent - $newPresent) > 0.01) {
+                \App\Models\PayrollReconciliation::create([
+                    'payroll_item_id' => $item->id,
+                    'old_present_days' => $legacyPresent,
+                    'new_present_days' => $newPresent,
+                    'difference' => $legacyPresent - $newPresent,
+                    'month_year' => $run->month_year,
+                    'debug_info' => [
+                        'summary' => $summary,
+                        'user_id' => $user->id,
+                        'timestamp' => now()->toDateTimeString(),
+                    ],
+                ]);
+            }
         }
     }
 

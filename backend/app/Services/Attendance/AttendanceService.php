@@ -1139,7 +1139,15 @@ class AttendanceService
      *     'attendance_source'       => 'tracker' | 'no_records',
      *   ]
      */
-    public function monthlyAttendanceSummary(User $user, string $monthYear): array
+    /**
+     * Calculate simplified attendance metrics.
+     * This is used by payroll system to calculate present/absent days.
+     * 
+     * @param User $user
+     * @param string $monthYear Format: YYYY-MM
+     * @return array Simplified attendance summary with present_days, paid_leave_days, etc.
+     */
+    public function calculateSimplifiedAttendance(User $user, string $monthYear): array
     {
         [$year, $month] = array_map('intval', explode('-', $monthYear));
         if ($year < 1970 || $month < 1 || $month > 12) {
@@ -1148,11 +1156,8 @@ class AttendanceService
 
         $start = Carbon::create($year, $month, 1)->startOfDay();
         $end = $start->copy()->endOfMonth()->endOfDay();
-        $shiftTarget = $this->shiftTargetSeconds();
-        $halfTarget = (int) floor($shiftTarget / 2);
 
-        // Holidays in the month for this org (and the user's country filter,
-        // which AttendanceHoliday::countryForSettings() resolves for us).
+        // Load holidays
         $country = AttendanceHoliday::countryForSettings(
             is_array($user->organization?->settings) ? $user->organization->settings : []
         );
@@ -1168,7 +1173,7 @@ class AttendanceService
             ->map(fn ($d) => Carbon::parse($d)->toDateString())
             ->flip();
 
-        // Pre-load approved leaves in the month.
+        // Load approved leaves
         $approvedLeaves = LeaveRequest::where('organization_id', $user->organization_id)
             ->where('user_id', $user->id)
             ->where('status', 'approved')
@@ -1178,7 +1183,7 @@ class AttendanceService
             })
             ->get();
 
-        // Pre-load attendance records with their punches.
+        // Load attendance records - simplified: just check if check-in exists
         $records = AttendanceRecord::where('organization_id', $user->organization_id)
             ->where('user_id', $user->id)
             ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
@@ -1186,17 +1191,19 @@ class AttendanceService
             ->get()
             ->keyBy(fn (AttendanceRecord $r) => $r->attendance_date->toDateString());
 
+        // Initialize counters
         $presentDays = 0.0;
         $paidLeaveDays = 0.0;
-        $lopDays = 0.0;
-        $halfDays = 0;
-        $lateCount = 0;
-        $unregularizedAbsences = 0;
-        $overtimeSeconds = 0;
-        $totalWorkedSeconds = 0;
+        $unpaidLeaveDays = 0.0;
+        $halfDayPresent = 0.0;
+        $halfDayAbsent = 0.0;
+        $absentDays = 0.0;
+        $totalPayableDays = 0.0;
+        $totalLopDays = 0.0;
         $workingDays = 0.0;
         $weekendDays = 0;
         $holidayCount = 0;
+        $lateCount = 0;
 
         foreach (CarbonPeriod::create($start, $end) as $date) {
             $dateStr = $date->toDateString();
@@ -1210,59 +1217,60 @@ class AttendanceService
                 $weekendDays++;
             }
             if ($isWeekend || $isHoliday) {
-                // Weekends/holidays are not payable work days and not LOP.
                 continue;
             }
 
             $workingDays += 1.0;
 
             $record = $records->get($dateStr);
-            $worked = $record ? $this->calculateEffectiveWorkedSeconds($record) : 0;
-            $totalWorkedSeconds += $worked;
+            $hasCheckIn = $record !== null;
+            
             if ($record && (int) ($record->late_minutes ?? 0) > 0) {
                 $lateCount++;
             }
 
-            // Approved leave for this date (any of the overlapping approved
-            // leaves may be a half-day).
+            // Get leave units for this date
             $leaveUnits = 0.0;
             foreach ($approvedLeaves as $leave) {
                 $units = $leave->unitsForDate($date);
                 if ($units > 0 && $units > $leaveUnits) {
-                    $leaveUnits = $units; // use the largest single leave claim
+                    $leaveUnits = $units;
                 }
             }
 
-            if ($worked >= $shiftTarget) {
-                $presentDays += 1.0;
-                $overtimeSeconds += max(0, $worked - $shiftTarget);
-            } elseif ($worked >= $halfTarget) {
-                // Half day present; remaining 0.5 of the working day
-                $presentDays += 0.5;
-                $halfDays++;
-                if ($leaveUnits >= 0.5) {
-                    $paidLeaveDays += 0.5;
-                } else {
-                    $lopDays += 0.5;
-                }
-            } elseif ($worked > 0) {
-                // Worked a little but didn't reach half — count as half-LOP
-                $presentDays += 0.25; // partial credit
-                $lopDays += 0.75;
-            } else {
-                // Worked 0 seconds.
-                if ($leaveUnits >= 1.0) {
+            // Simplified logic:
+            // 1. If check-in exists: present
+            // 2. If approved leave exists: paid/unpaid based on leave type
+            // 3. Otherwise: absent (LOP)
+            
+            if ($leaveUnits >= 1.0) {
+                // Full day leave - check if paid or unpaid
+                $leaveForDate = $approvedLeaves->first(fn ($l) => $l->unitsForDate($date) >= 1.0);
+                if ($leaveForDate && in_array($leaveForDate->leave_type, ['casual', 'sick', 'earned', 'annual'])) {
                     $paidLeaveDays += 1.0;
-                } elseif ($leaveUnits >= 0.5) {
-                    $paidLeaveDays += 0.5;
-                    $lopDays += 0.5;
-                    $halfDays++;
                 } else {
-                    $lopDays += 1.0;
-                    $unregularizedAbsences++;
+                    $unpaidLeaveDays += 1.0;
                 }
+            } elseif ($leaveUnits >= 0.5) {
+                // Half day leave
+                $leaveForDate = $approvedLeaves->first(fn ($l) => $l->unitsForDate($date) >= 0.5);
+                if ($leaveForDate && in_array($leaveForDate->leave_type, ['casual', 'sick', 'earned', 'annual'])) {
+                    $halfDayPresent += 0.5;
+                } else {
+                    $halfDayAbsent += 0.5;
+                }
+            } elseif ($hasCheckIn) {
+                // Has check-in, no leave
+                $presentDays += 1.0;
+            } else {
+                // No check-in, no leave
+                $absentDays += 1.0;
             }
         }
+
+        // Calculate totals
+        $totalPayableDays = $presentDays + $paidLeaveDays + $halfDayPresent;
+        $totalLopDays = $absentDays + $unpaidLeaveDays + $halfDayAbsent;
 
         return [
             'month_year' => $monthYear,
@@ -1270,16 +1278,31 @@ class AttendanceService
             'working_days' => round($workingDays, 2),
             'holidays' => $holidayCount,
             'weekend_days' => $weekendDays,
+            
+            // Simplified metrics (new)
             'present_days' => round($presentDays, 2),
-            'absent_days' => round($lopDays, 2),
             'paid_leave_days' => round($paidLeaveDays, 2),
-            'lop_days' => round($lopDays, 2),
-            'half_days' => $halfDays,
+            'unpaid_leave_days' => round($unpaidLeaveDays, 2),
+            'half_day_present' => round($halfDayPresent, 2),
+            'half_day_absent' => round($halfDayAbsent, 2),
+            'absent_days' => round($absentDays, 2),
+            'total_payable_days' => round($totalPayableDays, 2),
+            'total_lop_days' => round($totalLopDays, 2),
+            
+            // Legacy metrics for backward compatibility
+            'legacy_present_days' => round($presentDays + $halfDayPresent, 2),
+            'legacy_lop_days' => round($absentDays + $unpaidLeaveDays + $halfDayAbsent, 2),
+            
             'late_count' => $lateCount,
-            'unregularized_absences' => $unregularizedAbsences,
-            'overtime_seconds' => $overtimeSeconds,
-            'total_worked_seconds' => $totalWorkedSeconds,
             'attendance_source' => $records->isNotEmpty() ? 'tracker' : 'no_records',
+            'calculation_mode' => 'simplified',
         ];
+    }
+
+    public function monthlyAttendanceSummary(User $user, string $monthYear): array
+    {
+        // For now, use the simplified calculation
+        // This can be switched back to hours-based if needed
+        return $this->calculateSimplifiedAttendance($user, $monthYear);
     }
 }
