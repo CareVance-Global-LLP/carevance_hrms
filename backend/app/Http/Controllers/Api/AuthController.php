@@ -212,16 +212,11 @@ class AuthController extends Controller
             $user->save();
         }
 
-        // Check if user has an organization
+        // Load user organization (if exists)
         $user->load('organization');
         
-        if (!$user->organization) {
-            return $this->errorResponse(
-                'You do not have an active workspace. Please sign up to start your free trial.',
-                403,
-                ['error_code' => 'NO_ORGANIZATION']
-            );
-        }
+        // Note: We allow login even without organization - frontend will handle redirect to workspace creation
+        // This allows users who had their org deleted or are pending invitation acceptance to still log in
 
         $token = $this->apiTokenService->issue(
             $user,

@@ -164,6 +164,12 @@ class OAuthController extends Controller
                 'message' => 'Invalid token signature',
             ], 401);
         } catch (\Exception $e) {
+            \Log::error('Google OAuth verification failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'class' => get_class($e),
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Google authentication failed: ' . $e->getMessage(),
