@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Building2, Percent, MapPin, IndianRupee, Loader2, CheckCircle } from 'lucide-react';
+import { X, Save, Building2, Percent, MapPin, IndianRupee, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
@@ -141,7 +141,7 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
               {/* Error Message */}
               {saveMutation.isError && (
                 <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 flex items-center gap-3">
-                  <CheckCircle className="h-5 w-5 text-rose-600" />
+                  <AlertCircle className="h-5 w-5 text-rose-600" />
                   <p className="text-sm text-rose-800">Failed to save settings. Please try again.</p>
                 </div>
               )}

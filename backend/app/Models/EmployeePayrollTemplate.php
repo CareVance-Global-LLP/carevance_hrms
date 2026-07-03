@@ -269,6 +269,28 @@ class EmployeePayrollTemplate extends Model
             $settings['created_by'] = $createdBy;
             $settings['annual_ctc'] = 0; // explicit — wizard will set it later
             $template = self::create($settings);
+
+            // Auto-assign the organisation's default salary template so
+            // every new employee gets one out of the box. The admin can
+            // override it later from the employee payroll card.
+            $defaultSalaryTemplate = \App\Models\SalaryTemplate::where('organization_id', $organizationId)
+                ->where('is_default', true)
+                ->first();
+            if ($defaultSalaryTemplate) {
+                $template->salary_template_id = $defaultSalaryTemplate->id;
+                $template->save();
+            }
+        } elseif (empty($template->salary_template_id)) {
+            // Existing template but no salary structure assigned yet
+            // (created before the default-assignment logic). Backfill
+            // the default now so the employee card shows it.
+            $defaultSalaryTemplate = \App\Models\SalaryTemplate::where('organization_id', $organizationId)
+                ->where('is_default', true)
+                ->first();
+            if ($defaultSalaryTemplate) {
+                $template->salary_template_id = $defaultSalaryTemplate->id;
+                $template->save();
+            }
         }
 
         return $template;

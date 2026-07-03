@@ -47,8 +47,20 @@ class EmployeePayrollCardController extends Controller
             });
         }
 
-        $employees = $query->get()->map(function ($emp) {
+        $employees = $query->get()->map(function ($emp) use ($user) {
             $template = $emp->employeePayrollTemplate;
+
+            // Backfill default salary template for existing employees
+            if ($template && empty($template->salary_template_id)) {
+                $defaultST = SalaryTemplate::where('organization_id', $user->organization_id)
+                    ->where('is_default', true)
+                    ->first();
+                if ($defaultST) {
+                    $template->salary_template_id = $defaultST->id;
+                    $template->save();
+                }
+            }
+
             $payGroupAssignment = $emp->payGroupAssignments->first();
             $payGroup = $payGroupAssignment?->payGroup;
             $salaryTemplate = $template?->salary_template_id
@@ -100,6 +112,20 @@ class EmployeePayrollCardController extends Controller
         }
 
         $template = $employee->employeePayrollTemplate;
+
+        // Backfill default salary template for existing employees
+        // whose template was created before the auto-assignment logic.
+        if ($template && empty($template->salary_template_id)) {
+            $defaultST = \App\Models\SalaryTemplate::where('organization_id', $user->organization_id)
+                ->where('is_default', true)
+                ->first();
+            if ($defaultST) {
+                $template->salary_template_id = $defaultST->id;
+                $template->save();
+                $template->load('salaryTemplate');
+            }
+        }
+
         $payGroupAssignment = $employee->payGroupAssignments->first();
 
         $payGroup = null;

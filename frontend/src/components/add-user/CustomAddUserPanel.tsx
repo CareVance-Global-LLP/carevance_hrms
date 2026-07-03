@@ -297,6 +297,13 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
                 ? { salary_structure_id: formData.salaryStructureId }
                 : {}),
             });
+          } else if (formData.salaryStructureId) {
+            // No pay group selected, but admin picked a salary
+            // structure — assign it directly on the employee's
+            // payroll template so the selection isn't silently lost.
+            await payrollApi.updateEmployeePayrollCard(userId, {
+              salary_template_id: formData.salaryStructureId,
+            });
           }
         } catch (postCreateError: any) {
           // Rollback policy:

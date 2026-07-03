@@ -2146,9 +2146,19 @@ export const payrollApi = {
       last_page: number;
       per_page: number;
     }>('/payroll/all-employees', { params }),
-  // Employees not assigned to any pay group
-  getUnassignedEmployees: () =>
-    api.get<{ employees: AllEmployee[] }>('/payroll/unassigned-employees'),
+  // Employees not assigned to any pay group (paginated, searchable)
+  getUnassignedEmployees: (params?: {
+    search?: string;
+    page?: number;
+    per_page?: number;
+  }) =>
+    api.get<{
+      employees: AllEmployee[];
+      total: number;
+      current_page: number;
+      last_page: number;
+      per_page: number;
+    }>('/payroll/unassigned-employees', { params }),
   // Create a pay group and assign employees in one call. The backend
   // auto-derives the `code` and handles re-assignment by closing any
   // existing active assignment for the same user.

@@ -17,6 +17,27 @@ class PayrollFilingService
 {
     protected PayrollCalculatorService $calculator;
 
+    /**
+     * State-wise LWF rate config (employee share, monthly).
+     * Central reference — keep in sync with SalaryCalculationService::calculateLwf().
+     */
+    public const LWF_CONFIG = [
+        'maharashtra' => 50,
+        'gujarat' => 50,
+        'karnataka' => 15,
+        'andhra_pradesh' => 20,
+        'telangana' => 20,
+        'tamil_nadu' => 25,
+        'west_bengal' => 10,
+        'kerala' => 20,
+        'bihar' => 10,
+        'delhi' => 6,
+        'madhya_pradesh' => 18.75,
+        'rajasthan' => 10,
+        'goa' => 15,
+        'odisha' => 10,
+    ];
+
     public function __construct(PayrollCalculatorService $calculator)
     {
         $this->calculator = $calculator;
@@ -387,7 +408,8 @@ class PayrollFilingService
         $lines[] = "EMP_CODE\tNAME\tLWF_AMOUNT";
 
         foreach ($items as $item) {
-            $lwfAmount = $item->gross_salary > 0 ? ($item->gross_salary <= 15000 ? 12 : 36) : 0;
+            $state = strtolower($item->user->employeeProfile->state ?? 'others');
+            $lwfAmount = $item->gross_salary > 0 ? (self::LWF_CONFIG[$state] ?? 0) : 0;
             $lines[] = sprintf("%s\t%s\t%d", $item->user->employeeWorkInfo->employee_code ?? '', $item->user->name, $lwfAmount);
         }
 
@@ -426,7 +448,11 @@ class PayrollFilingService
 
         foreach ($items as $item) {
             $bonusPercent = 8.33;
-            $bonusAmount = $item->basic * ($bonusPercent / 100);
+            // Payment of Bonus Act: bonus is 8.33% of annual wages,
+            // where monthly wages are capped at ₹7,000.
+            $monthlyWages = min($item->basic, 7000);
+            $annualWages = $monthlyWages * 12;
+            $bonusAmount = $annualWages * ($bonusPercent / 100);
             $lines[] = sprintf(
                 "%s\t%s\t%s\t%.2f\t%.2f%%\t%.2f",
                 $item->user->employeeWorkInfo->employee_code ?? '',
@@ -519,10 +545,8 @@ class PayrollFilingService
         [$year, $month] = explode('-', $monthYear);
         $y = (int) $year;
         $m = (int) $month;
-        if ($m >= 4) {
-            return $y . '-' . ($y + 1);
-        }
-        return ($y - 1) . '-' . $y;
+        $start = $m >= 4 ? $y : ($y - 1);
+        return $start . '-' . substr($start + 1, -2);
     }
 
     /**
@@ -530,15 +554,26 @@ class PayrollFilingService
      * Example: getFinancialYearRange('2025-2026') => ['2025-04', '2026-03']
      */
     private function getFinancialYearRange(string $financialYear): array
-    {
-        if (!preg_match('/^(\d{4})-(\d{4})$/', $financialYear, $m)) {
-            throw new \InvalidArgumentException("Invalid financial year format: {$financialYear} (expected YYYY-YYYY)");
+        {
+            // Accept both YYYY-YY (short) and YYYY-YYYY (long, for backward compat)
+            if (!preg_match('/^(\\d{4})-(\\d{2,4})$/', $financialYear, $m)) {
+                throw new \InvalidArgumentException("Invalid financial year format: {$financialYear} (expected YYYY-YY or YYYY-YYYY)");
+            }
+            $startYear = (int) $m[1];
+            $endYear = (int) $m[2];
+            if ($endYear >= 100) {
+                // Long format YYYY-YYYY — validate end = start + 1
+                if ($endYear !== $startYear + 1) {
+                    throw new \InvalidArgumentException("Financial year end ({$endYear}) must be start + 1 ({$startYear})");
+                }
+            } else {
+                // Short format YYYY-YY — reconstruct full year
+                $century = (int) substr((string) $startYear, 0, 2);
+                $endYear = (int) ($century . sprintf('%02d', $endYear));
+                if ($endYear !== $startYear + 1) {
+                    throw new \InvalidArgumentException("Financial year end ({$endYear}) must be start + 1 ({$startYear})");
+                }
+            }
+            return [sprintf('%d-04', $startYear), sprintf('%d-03', $endYear)];
         }
-        $startYear = (int) $m[1];
-        $endYear = (int) $m[2];
-        if ($endYear !== $startYear + 1) {
-            throw new \InvalidArgumentException("Financial year end ({$endYear}) must be start + 1 ({$startYear})");
-        }
-        return [sprintf('%d-04', $startYear), sprintf('%d-03', $endYear)];
     }
-}

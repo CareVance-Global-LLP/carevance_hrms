@@ -75,7 +75,14 @@ class Payslip extends Model
 
     public function employee(): BelongsTo
     {
-        return $this->belongsTo(Employee::class, 'employee_id');
+        // Bug 6: there is no Employee model in this codebase — the
+        // canonical employee record lives on the User table. The
+        // Payslip's `employee_id` column aliased `user_id` for legacy
+        // reasons, so the relationship resolves to User. If a real
+        // Employee model is ever introduced (e.g. a separate HRIS
+        // import table), wire it here instead of crashing on
+        // "Class App\Models\Employee not found".
+        return $this->belongsTo(User::class, 'employee_id');
     }
 
     public function user(): BelongsTo

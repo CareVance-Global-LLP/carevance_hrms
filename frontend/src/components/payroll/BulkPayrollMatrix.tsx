@@ -62,6 +62,36 @@ export default function BulkPayrollMatrix({
   const queryClient = useQueryClient();
   const { show } = useToast();
 
+  // Mark the current step complete for every active member in one
+  // shot. Used by the "Done All for Step N" button in the footer.
+  // Declared up here (rather than next to `completeStepMutation`)
+  // because the step-change `useEffect` below calls
+  // `completeAllStepsMutation.reset()` and ordering the declaration
+  // *after* the effect would hit a temporal-dead-zone error.
+  const completeAllStepsMutation = useMutation({
+    mutationFn: (step: number) =>
+      payrollApi.completeAllSteps(payGroupId, { step }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
+      });
+    },
+  });
+
+  // Reset "all done" badge when the user navigates steps. Without
+  // this, `completeAllStepsMutation.isSuccess` stays true forever
+  // after the first "Done All" click — the badge "all done" keeps
+  // showing on every subsequent step. Resetting on step change gives
+  // a clean slate so the badge re-appears only when the user clicks
+  // "Done All" again on the *current* step.
+  useEffect(() => {
+    completeAllStepsMutation.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep]);
+
   // Fetch employees with per-step completion status
   const { data: employeesData, isLoading: isEmployeesLoading } = useQuery({
     queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
@@ -114,10 +144,28 @@ export default function BulkPayrollMatrix({
     return allEmployees.filter(e => idSet.has(e.id));
   }, [allEmployees, selectedEmployeeIds]);
 
+  // Step-completion calculations used in several places below.
+  // Declared at the top of the function so it lives in scope for the
+  // per-employee flag, the footer counter, and the employee sidebar.
+  const stepKey = `step${currentStep}` as const;
+
+  // Per-employee step completion flag. The wizard uses this to swap
+  // its Continue button out for a disabled "Completed" pill when
+  // the currently selected employee has already finished the
+  // current step. Distinct from `isStepComplete` (all employees done)
+  // and from `isStepCompleteForAll` (the same group-wide flag).
+  const selectedEmployee =
+    selectedEmployeeId !== null
+      ? (employees ?? []).find((e) => e.id === selectedEmployeeId) ?? null
+      : null;
+  const isStepDoneForEmployee =
+    Boolean(selectedEmployee) &&
+    selectedEmployee!.steps_completed?.[stepKey] === true;
+
   // Mark a single employee's current step as complete. Called when
   // the wizard's onComplete fires (i.e. the user clicked "Continue"
   // past a step).
-const completeStepMutation = useMutation({
+  const completeStepMutation = useMutation({
     mutationFn: ({ userId, step }: { userId: number; step: number }) => {
       return payrollApi.completeStep(payGroupId, { step, user_ids: [userId] });
     },
@@ -171,24 +219,6 @@ const completeStepMutation = useMutation({
     },
   });
 
-  // Mark the current step complete for every active member in one
-  // shot. Used by the "Done All for Step N" button in the footer.
-  const completeAllStepsMutation = useMutation({
-    mutationFn: (step: number) =>
-      payrollApi.completeAllSteps(payGroupId, { step }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
-      });
-    },
-  });
-
-  // Step completion calculations for footer
-  const stepKey = `step${currentStep}` as const;
-  
   // Count steps as completed - count employees who have marked this step complete
   const completedCount = employees?.filter(e => e.steps_completed[stepKey] === true).length ?? 0;
   const totalCount = employees?.length ?? 0;
@@ -406,6 +436,7 @@ itemContent={(index) => {
             <div className="p-6">
               <EmployeePayrollWizard
                    isStepCompleteForAll={isStepComplete}
+                   isStepDoneForEmployee={isStepDoneForEmployee}
                 // Key on employee only — NOT on currentStep. With
                 // controlledStep wired, the wizard's internal step is
                 // fully driven by the matrix; remounting on step

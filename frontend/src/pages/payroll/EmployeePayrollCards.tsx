@@ -4,23 +4,7 @@ import { Search, Save, Users, Loader2, Building2, ArrowLeft } from 'lucide-react
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
-
-const INDIAN_STATES = [
-  { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
-  { value: 'bihar', label: 'Bihar' },
-  { value: 'delhi', label: 'Delhi' },
-  { value: 'gujarat', label: 'Gujarat' },
-  { value: 'karnataka', label: 'Karnataka' },
-  { value: 'kerala', label: 'Kerala' },
-  { value: 'madhya_pradesh', label: 'Madhya Pradesh' },
-  { value: 'maharashtra', label: 'Maharashtra' },
-  { value: 'punjab', label: 'Punjab' },
-  { value: 'rajasthan', label: 'Rajasthan' },
-  { value: 'tamil_nadu', label: 'Tamil Nadu' },
-  { value: 'telangana', label: 'Telangana' },
-  { value: 'uttar_pradesh', label: 'Uttar Pradesh' },
-  { value: 'west_bengal', label: 'West Bengal' },
-];
+import { INDIAN_STATES } from '@/constants/indianStates';
 
 interface EmpFormState {
   annual_ctc: number;

@@ -74,14 +74,15 @@ export default function PayGroupModal({
     setPage(1);
   }, [deferredSearch]);
 
-  // Employees for the picker. Refetches on filter / page change.
+  // Employees for the picker. Only shows employees NOT already in a
+  // pay group. Refetches on filter / page change.
   // We use `placeholderData: keepPreviousData` so a "Load More"
   // click doesn't blank the table during the next-page fetch.
   const employeesQuery = useQuery({
-    queryKey: ['payroll', 'all-employees', deferredSearch, page],
+    queryKey: ['payroll', 'unassigned-employees', deferredSearch, page],
     queryFn: () =>
       payrollApi
-        .getAllEmployees({
+        .getUnassignedEmployees({
           search: deferredSearch || undefined,
           page,
           per_page: PAGE_SIZE,
@@ -117,7 +118,7 @@ export default function PayGroupModal({
       // Refresh the pay-groups list (used elsewhere) and the
       // employee summaries so the new assignments are visible.
       queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'all-employees'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'unassigned-employees'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'dashboard'] });
     },
     onError: (err) => {

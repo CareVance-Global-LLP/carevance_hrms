@@ -24,6 +24,13 @@ class TaxSimulatorService
 
         $oldTax = $oldRegime['total_tax'] ?? 0;
         $newTax = $newRegime['total_tax'] ?? 0;
+        // total_tax from the calculator ALREADY includes 4% cess
+        // (PayrollCalculatorService::calculateOldRegimeTax / calculateNewRegimeTax
+        //  add cess before returning `total_tax`). Do NOT re-apply cess here
+        // — that previously caused double-cess billing. Cess is broken out
+        // for display only.
+        $oldCess = $oldRegime['cess'] ?? round($oldTax - ($oldRegime['tax_before_cess'] ?? 0), 2);
+        $newCess = $newRegime['cess'] ?? round($newTax - ($newRegime['tax_before_cess'] ?? 0), 2);
 
         return [
             'annual_ctc' => $annualCtc,
@@ -31,24 +38,24 @@ class TaxSimulatorService
                 'gross_income' => $annualCtc,
                 'standard_deduction' => $standardDeductionOld,
                 'taxable_income' => $taxableOld,
-                'tax' => $oldTax,
-                'cess' => $oldTax * 0.04,
-                'total_tax' => $oldTax * 1.04,
-                'take_home' => $annualCtc - ($oldTax * 1.04),
-                'effective_rate' => $annualCtc > 0 ? round(($oldTax * 1.04 / $annualCtc) * 100, 2) : 0,
+                'tax' => $oldRegime['tax_before_cess'] ?? $oldTax,
+                'cess' => $oldCess,
+                'total_tax' => $oldTax,
+                'take_home' => $annualCtc - $oldTax,
+                'effective_rate' => $annualCtc > 0 ? round(($oldTax / $annualCtc) * 100, 2) : 0,
             ],
             'new_regime' => [
                 'gross_income' => $annualCtc,
                 'standard_deduction' => $standardDeductionNew,
                 'taxable_income' => $taxableNew,
-                'tax' => $newTax,
-                'cess' => $newTax * 0.04,
-                'total_tax' => $newTax * 1.04,
-                'take_home' => $annualCtc - ($newTax * 1.04),
-                'effective_rate' => $annualCtc > 0 ? round(($newTax * 1.04 / $annualCtc) * 100, 2) : 0,
+                'tax' => $newRegime['tax_before_cess'] ?? $newTax,
+                'cess' => $newCess,
+                'total_tax' => $newTax,
+                'take_home' => $annualCtc - $newTax,
+                'effective_rate' => $annualCtc > 0 ? round(($newTax / $annualCtc) * 100, 2) : 0,
             ],
-            'difference' => ($oldTax * 1.04) - ($newTax * 1.04),
-            'recommendation' => ($oldTax * 1.04) < ($newTax * 1.04) ? 'old' : 'new',
+            'difference' => $oldTax - $newTax,
+            'recommendation' => $oldTax < $newTax ? 'old' : 'new',
             'exemptions_applied' => $exemptions,
         ];
     }

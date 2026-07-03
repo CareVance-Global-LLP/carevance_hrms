@@ -84,6 +84,20 @@ interface EmployeePayrollWizardProps {
   onViewRun?: (runId: number) => void;
   /** When true, all employees have completed this step - hide Continue buttons */
   isStepCompleteForAll?: boolean;
+  /**
+   * Per-employee completion flag. When `true`, the current employee has
+   * already finished the wizard step currently in view — the Continue
+   * button on every step should be hidden (or replaced with a disabled
+   * "Completed" pill) so the operator can't advance without reason.
+   *
+   * Distinct from `isStepCompleteForAll` which means *every* employee in
+   * the pay group is done — that flag drives the matrix footer's
+   * "Continue to Step N+1" button and globally hides the wizard's own
+   * Continue. `isStepDoneForEmployee` is finer-grained: it's checked
+   * for the *currently selected* employee only and runs the same code
+   * path whether or not the group is fully done.
+   */
+  isStepDoneForEmployee?: boolean;
 }
 
 const CTC_PRESETS = [
@@ -117,6 +131,7 @@ export default function EmployeePayrollWizard({
   onComplete,
   onViewRun,
   isStepCompleteForAll = false,
+  isStepDoneForEmployee = false,
 }: EmployeePayrollWizardProps) {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -240,10 +255,16 @@ export default function EmployeePayrollWizard({
   // when the wizard is on a step that needs it (Step 1+, `enabled`
   // gate below), but the trash-icon removal still works from any
   // step because the mutation updates this query's cache directly.
+  //
+  // Step gating: this list is also re-rendered on the Preview step
+  // (step 5, 0-indexed = 4) inside the Earnings & Deductions summary
+  // card. So we only fetch on steps 2 and 4 (Reimbursements + the
+  // summary card). Fetching on every step would issue 3-4 redundant
+  // GETs when the user might also click through salary/loans/etc.
   const approvedReimbursementsQuery = useQuery({
     queryKey: ['reimbursements', 'employee', employeeId, 'approved'],
     queryFn: () => payrollApi.getEmployeeReimbursements(employeeId, 'approved').then(res => res.data),
-    enabled: Boolean(employeeId),
+    enabled: Boolean(employeeId) && (currentStep === 2 || currentStep === 4),
   });
   const approvedReimbursements = Array.isArray(approvedReimbursementsQuery.data) ? approvedReimbursementsQuery.data : [];
   const approvedReimbursementsTotal = approvedReimbursements.reduce(
@@ -283,20 +304,27 @@ export default function EmployeePayrollWizard({
   // employee. We use the same useQuery lifecycle as approved
   // reimbursements so the trash-icon mutations on the reimbursements
   // list also invalidate this query.
+  //
+  // Same step gating as reimbursements: only needed on the
+  // Reimbursements step (3, 0-indexed = 2) and the Preview step
+  // (5, 0-indexed = 4) summary card.
   const fbpAllocationsQuery = useQuery({
     queryKey: ['payroll', 'fbp', 'allocations', employeeId],
     queryFn: () => payrollApi.getFbpAllocations(employeeId).then((r) => r.data),
-    enabled: Boolean(employeeId),
+    enabled: Boolean(employeeId) && (currentStep === 2 || currentStep === 4),
   });
   const fbpAllocations = Array.isArray(fbpAllocationsQuery.data) ? fbpAllocationsQuery.data : [];
 
   // Step 4 (Loans & Advances): fetch active loans for this employee.
   // The backend's listLoans now supports ?user_id=X (Phase 7a) so we
   // pass it explicitly instead of filtering client-side.
+  // Step gating: the Loans list renders on step 4 (0-indexed = 3)
+  // and the EMI totals also show in the Preview step (0-indexed = 4)
+  // summary card.
   const loansQuery = useQuery({
     queryKey: ['payroll', 'loans', 'user', employeeId],
     queryFn: () => payrollApi.listLoans({ user_id: employeeId, status: 'approved' }).then((r) => r.data?.loans ?? []),
-    enabled: Boolean(employeeId),
+    enabled: Boolean(employeeId) && (currentStep === 3 || currentStep === 4),
   });
   const activeLoans = Array.isArray(loansQuery.data) ? loansQuery.data : [];
 
@@ -348,6 +376,9 @@ export default function EmployeePayrollWizard({
   // Process payroll mutation
   const { show } = useToast();
 
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
+  const draftKey = `payroll-draft-${employeeId}-${monthYear}`;
+
   const processPayrollMutation = useMutation({
     mutationFn: () => payrollApi.processEmployeePayroll(employeeId, {
       user_id: employeeId,
@@ -358,35 +389,140 @@ export default function EmployeePayrollWizard({
       lOP_days: parseFloat(lOPDays) || 0,
       overtime_hours: parseFloat(overtimeHours) || 0,
     }),
-    onSuccess: (data) => {
-      // Mark step 6 (Preview & Process) done — this is the final
-      // step in the BulkPayrollMatrix. Step 5 was marked by the
-      // Process button onClick handler before the mutation fired.
+    onSuccess: () => {
       onComplete?.(6);
-      
-      // Refresh dependent views so the next screen shows fresh data
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'run-detail'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'employee', employeeId, monthYear] });
-      // Capture the run id so the success view can offer to open the lifecycle stepper
-      setProcessedRunId((data as any)?.payroll_item?.payroll_run_id ?? null);
-      // Note: don't auto-navigate. Let the success view render so the user
-      // can act (view lifecycle / go back manually).
+      show({
+        kind: 'success',
+        message: 'Payroll processed successfully. Lock the run from the run detail to finalize.',
+      });
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(draftKey);
+        }
+      } catch { /* ignore */ }
     },
-    onError: (err: any) => {
+    // Surface failures with a toast. Without this, the `try { await
+    // mutateAsync() } catch {}` block in the Process button silently
+    // swallows errors and the operator sees nothing — the click
+    // appears to have no effect at all. With this, even if the error
+    // path in `mutateAsync` is "swallowed" by the click handler, the
+    // toast still tells the user *why* the click failed.
+    onError: (err: unknown) => {
       show({
         kind: 'error',
-        message: getApiErrorMessage(err, 'Failed to process payroll. Please check the run status and try again.'),
+        message: getApiErrorMessage(err, 'Failed to process payroll. Verify CTC, attendance and statutory settings, then retry.'),
       });
     },
   });
 
-  
+  // Restore in-progress draft from localStorage on mount. Runs BEFORE the
+  // server-data useEffect below so that server data does not clobber
+  // restored values. We also gate the two overwriting effects on
+  // `hasRestoredDraft` for defense-in-depth.
+  useEffect(() => {
+    if (hasRestoredDraft) return;
+    // In bulk mode (controlledStep is set by BulkPayrollMatrix), always
+    // use fresh server data — never restore stale localStorage drafts.
+    if (controlledStep !== undefined) {
+      setHasRestoredDraft(true);
+      return;
+    }
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(draftKey) : null;
+    if (!raw) {
+      setHasRestoredDraft(true);
+      return;
+    }
+    try {
+      const draft = JSON.parse(raw) as {
+        annualCtc?: string;
+        workingDays?: string;
+        daysPresent?: string;
+        lOPDays?: string;
+        paidLeaveDays?: string;
+        overtimeHours?: string;
+        currentStep?: number;
+        savedAt?: number;
+      };
+      // 24-hour expiry: stale drafts are discarded.
+      const ageMs = Date.now() - (draft.savedAt ?? 0);
+      if (ageMs > 24 * 60 * 60 * 1000) {
+        try { window.localStorage.removeItem(draftKey); } catch { /* ignore */ }
+        setHasRestoredDraft(true);
+        return;
+      }
+      let restored = false;
+      if (draft.annualCtc) { setAnnualCtc(draft.annualCtc); restored = true; }
+      if (draft.workingDays) { setWorkingDays(draft.workingDays); restored = true; }
+      if (draft.daysPresent) { setDaysPresent(draft.daysPresent); restored = true; }
+      if (draft.lOPDays) { setLOPDays(draft.lOPDays); restored = true; }
+      if (draft.paidLeaveDays) { setPaidLeaveDays(draft.paidLeaveDays); restored = true; }
+      if (draft.overtimeHours !== undefined) { setOvertimeHours(draft.overtimeHours); restored = true; }
+      // Note: we do NOT restore currentStep from the draft because
+      // step is URL-driven and the user may have arrived via a deep
+      // link. Saving the URL ?step= already covers resume.
+      if (restored) {
+        show({
+          kind: 'info',
+          message: 'Draft restored — your previous progress is back.',
+        });
+      }
+    } catch {
+      // Corrupt JSON — discard silently and continue with server data.
+      try { window.localStorage.removeItem(draftKey); } catch { /* ignore */ }
+    } finally {
+      setHasRestoredDraft(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
 
-  
+  // Auto-save current form values to localStorage on every change. The
+  // save is cheap (JSON.stringify of a small object) and uses the
+  // per-employee-per-month key so no cross-contamination is possible.
+  useEffect(() => {
+    if (!hasRestoredDraft) return; // don't overwrite the saved draft with the initial empty state
+    if (controlledStep !== undefined) return; // bulk mode: no drafts
+    if (typeof window === 'undefined') return;
+    try {
+      const draft = {
+        annualCtc,
+        workingDays,
+        daysPresent,
+        lOPDays,
+        paidLeaveDays,
+        overtimeHours,
+        // Save currentStep too so a future enhancement could navigate
+        // the user back; the URL ?step= is the authoritative source today.
+        currentStep,
+        savedAt: Date.now(),
+      };
+      window.localStorage.setItem(draftKey, JSON.stringify(draft));
+    } catch {
+      // localStorage may be full / disabled in private mode — non-fatal.
+    }
+  }, [annualCtc, workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, currentStep, hasRestoredDraft, draftKey]);
 
   // Initialize from data and auto-calculate.
+  //
+  // History: a previous version of this effect contained a
+  //   `else { setTimeout(calculatePreview, 200); }`
+  // fallback for the case where the backend didn't return a
+  // `payroll_preview`. That fallback was a stale-closure trap:
+  // `calculatePreview` reads `annualCtc` and `template` from
+  // its enclosing render — but the `setTemplate` and
+  // `setAnnualCtc` calls just above this branch schedule state
+  // updates that don't take effect until the *next* render. The
+  // 200ms timeout fires before that next render, sees
+  // `!annualCtc || !template`, and exits early without
+  // computing. Symptom: after the wizard remounts (user clicks
+  // "Back to List" then re-selects an employee), the salary
+  // breakdown stays blank until the user manually edits CTC.
+  //
+  // Removing the fallback is safe because the auto-calc
+  // effect below (line ~533) depends on `[annualCtc]`. When
+  // `setAnnualCtc` runs and React commits the next render,
+  // that effect fires with both `template` and `annualCtc`
+  // already set — so the calculation runs once, correctly,
+  // without the closure race.
   useEffect(() => {
     if (data && !template) {
       setTemplate(data.template);
@@ -395,10 +531,10 @@ export default function EmployeePayrollWizard({
         setAnnualCtc(String(savedCtc));
         if (data.payroll_preview) {
           setCalculation(data.payroll_preview);
-        } else {
-          // Auto-trigger calculation if backend didn't return a preview
-          setTimeout(calculatePreview, 200);
         }
+        // No `else` branch — the auto-calc effect below handles
+        // the missing-preview case, and only after the
+        // `setAnnualCtc` above has been committed.
       }
     }
   }, [data, template, annualCtc]);
@@ -727,17 +863,25 @@ export default function EmployeePayrollWizard({
         </div>
       </SurfaceCard>
 
-       {!isStepCompleteForAll && (
-        <div className="flex justify-end">
-          <Button 
-            variant="primary" 
+      <div className="flex justify-end">
+        {isStepDoneForEmployee ? (
+          <Button
+            variant="secondary"
+            disabled
+            iconLeft={<CheckCircle2 className="h-4 w-4" />}
+          >
+            Completed
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
             onClick={() => handleContinue(1, 0)}
             iconRight={<ChevronRight className="h-4 w-4" />}
           >
-            Continue
+            Continue to Salary Structure
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 
@@ -795,7 +939,7 @@ export default function EmployeePayrollWizard({
             </div>
             <TextInput
               type="number"
-              value={template.basic_percentage}
+              value={template?.basic_percentage ?? 0}
               onChange={(e) => handleUpdateTemplate('basic_percentage', parseFloat(e.target.value) || 0)}
               min="0"
               max="100"
@@ -808,7 +952,7 @@ export default function EmployeePayrollWizard({
             </div>
             <TextInput
               type="number"
-              value={template.hra_percentage}
+              value={template?.hra_percentage ?? 0}
               onChange={(e) => handleUpdateTemplate('hra_percentage', parseFloat(e.target.value) || 0)}
               min="0"
               max="100"
@@ -821,7 +965,7 @@ export default function EmployeePayrollWizard({
             </div>
             <TextInput
               type="number"
-              value={template.conveyance_allowance}
+              value={template?.conveyance_allowance ?? 0}
               onChange={(e) => handleUpdateTemplate('conveyance_allowance', parseFloat(e.target.value) || 0)}
             />
           </div>
@@ -911,32 +1055,32 @@ export default function EmployeePayrollWizard({
             Back
           </Button>
           {!isStepCompleteForAll && (
-            <Button
-              variant="primary"
-              onClick={async () => {
-                if (!calculation && parseFloat(annualCtc) > 0 && template) {
-                  // No preview yet — try to calculate, then advance if it worked.
-                  await calculatePreview();
-                }
-                // Mark step 1 complete before advancing (BulkPayrollMatrix
-                // uses this to track per-employee per-step progress).
-                // handleContinue(2, 1) advances the step ONLY in
-                // standalone mode — in matrix mode it just marks step
-                // 1 done and lets the matrix drive the next step.
-                handleContinue(2, 1);
-              }}
-              disabled={isCalculating || !annualCtc || parseFloat(annualCtc) <= 0}
-              iconLeft={isCalculating ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
-              iconRight={!isCalculating ? <ChevronRight className="h-4 w-4" /> : undefined}
-            >
-              {isCalculating
-                ? 'Calculating…'
-                : calculation
-                  ? 'Continue'
-                  : parseFloat(annualCtc) > 0
-                    ? 'Calculate & Continue'
-                    : 'Enter CTC to continue'}
-            </Button>
+            isStepDoneForEmployee ? (
+              <Button
+                variant="secondary"
+                disabled
+                iconLeft={<CheckCircle2 className="h-4 w-4" />}
+              >
+                Completed
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={async () => {
+                  if (!calculation && parseFloat(annualCtc) > 0 && template) {
+                    await calculatePreview();
+                  }
+                  handleContinue(2, 1);
+                }}
+                disabled={isCalculating || !annualCtc || parseFloat(annualCtc) <= 0}
+                iconLeft={isCalculating ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+                iconRight={!isCalculating ? <ChevronRight className="h-4 w-4" /> : undefined}
+              >
+                {isCalculating
+                  ? 'Calculating…'
+                  : 'Continue to Statutory'}
+              </Button>
+            )
           )}
         </div>
       </div>
@@ -1103,21 +1247,29 @@ export default function EmployeePayrollWizard({
               Back
             </Button>
             {!isStepCompleteForAll && (
-              <Button
-                variant="primary"
-                onClick={async () => {
-                  if (!calculation && parseFloat(annualCtc) > 0 && template) {
-                    await calculatePreview();
-                  }
-                  // In matrix mode: mark step 2 done only; matrix drives
-                  // the step change.
-                  handleContinue(3, 2);
-                }}
-                disabled={!calculation && (parseFloat(annualCtc) <= 0 || !template)}
-                iconRight={<ChevronRight className="h-4 w-4" />}
-              >
-                Continue
-              </Button>
+              isStepDoneForEmployee ? (
+                <Button
+                  variant="secondary"
+                  disabled
+                  iconLeft={<CheckCircle2 className="h-4 w-4" />}
+                >
+                  Completed
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={async () => {
+                    if (!calculation && parseFloat(annualCtc) > 0 && template) {
+                      await calculatePreview();
+                    }
+                    handleContinue(3, 2);
+                  }}
+                  disabled={!calculation && (parseFloat(annualCtc) <= 0 || !template)}
+                  iconRight={<ChevronRight className="h-4 w-4" />}
+                >
+                  Continue to Reimbursements
+                </Button>
+              )
             )}
           </div>
         </div>
@@ -1313,13 +1465,23 @@ export default function EmployeePayrollWizard({
               Back
             </Button>
             {!isStepCompleteForAll && (
-              <Button
-                variant="primary"
-                onClick={() => handleContinue(4, 3)}
-                iconRight={<ChevronRight className="h-4 w-4" />}
-              >
-                Continue
-              </Button>
+              isStepDoneForEmployee ? (
+                <Button
+                  variant="secondary"
+                  disabled
+                  iconLeft={<CheckCircle2 className="h-4 w-4" />}
+                >
+                  Completed
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={() => handleContinue(4, 3)}
+                  iconRight={<ChevronRight className="h-4 w-4" />}
+                >
+                  Continue to Loans & Advances
+                </Button>
+              )
             )}
           </div>
         </div>
@@ -1428,16 +1590,27 @@ export default function EmployeePayrollWizard({
             <Button variant="secondary" onClick={() => setCurrentStep(3)}>
               Back
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                // In matrix mode: mark step 4 done only.
-                handleContinue(5, 4);
-              }}
-              iconRight={<ChevronRight className="h-4 w-4" />}
-            >
-              Continue
-            </Button>
+            {!isStepCompleteForAll && (
+              isStepDoneForEmployee ? (
+                <Button
+                  variant="secondary"
+                  disabled
+                  iconLeft={<CheckCircle2 className="h-4 w-4" />}
+                >
+                  Completed
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    handleContinue(5, 4);
+                  }}
+                  iconRight={<ChevronRight className="h-4 w-4" />}
+                >
+                  Continue to Preview & Process
+                </Button>
+              )
+            )}
           </div>
         </div>
       </div>
@@ -1445,81 +1618,172 @@ export default function EmployeePayrollWizard({
   };
 
   // Step 3: Review & Process
-  const renderStep3 = () => (
-    <div className="space-y-6">
-      {!calculation ? (
-        <SurfaceCard className="p-8 text-center">
-          <AlertCircle className="h-12 w-12 mx-auto mb-3 text-amber-500" />
-          <h3 className="font-semibold text-slate-900 mb-2">Calculation Required</h3>
-          <p className="text-slate-500 mb-4">Please enter CTC and configure salary structure first</p>
-          <Button variant="primary" onClick={() => setCurrentStep(1)}>
-            Go to Salary Structure
+  //
+  // Loading-order note: when the wizard mounts (or remounts after the
+  // user clicks "Back to List" and re-selects an employee), THREE
+  // pieces of state arrive on different ticks:
+  //   1. `data` from React Query — the employee, template, payroll preview
+  //   2. `calculation` — derived from `data.payroll_preview` or a fresh
+  //      /payroll/calculate call triggered by the auto-calc effect
+  //   3. `processingRunId` (when applicable) — from existing/past run
+  //
+  // The top-level loading guard at line ~600 handles step 1. But Step 6
+  // (this view) has the inverse problem: `data` and `template` may
+  // already be present while `calculation` is still `null` for one
+  // tick — exactly long enough to flash the "Calculation Required"
+  // empty state at the user. The empty state is misleading: it implies
+  // the user hasn't entered CTC, when in reality:
+  //   (a) `payroll_preview` hasn't yet been hydrated from the API
+  //       response, or
+  //   (b) for a brand-new run no preview exists and the auto-calc
+  //       effect is mid-flight, or
+  //   (c) the employee was already processed in a prior month — the
+  //       backend returns a snapshot but `calculation` state is fresh.
+  //
+  // Show a spinner in every case where `data` is loaded but
+  // `calculation` hasn't arrived yet. Once calculation lands (or the
+  // payroll was already processed), show the actual breakdown.
+  const renderStep3 = () => {
+    if (!calculation) {
+      // Already processed → don't show the empty state at all, jump
+      // straight to the breakdown skeleton. The auto-calc effect will
+      // populate `calculation` shortly; in the meanwhile we show a
+      // skeleton/spinner so the user sees a loading shimmer instead of
+      // a "Calculation Required" error message that isn't actually true.
+      if (isAlreadyProcessed) {
+        return (
+          <div className="space-y-6">
+            <SurfaceCard className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                  <Wallet className="h-5 w-5 text-blue-600" />
+                  Salary Breakdown Preview
+                </h3>
+              </div>
+              <div className="flex items-center gap-3 py-6 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading breakdown for already-processed payroll…
+              </div>
+            </SurfaceCard>
+            {/* Confirmation card still shows the "Already Processed"
+                success card so the user can act (View Run / Back). */}
+            <SurfaceCard className="p-6 bg-emerald-50 border-emerald-200">
+              <div className="text-center py-2">
+                <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-emerald-600" />
+                <h3 className="text-lg font-semibold text-emerald-900 mb-2">Payroll Already Processed</h3>
+                <p className="text-emerald-700 mb-5">
+                  Payroll for {monthYear} has already been processed.
+                  Net Pay: ₹{Number(existingPayroll?.net_pay ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <div className="flex justify-center gap-3 flex-wrap">
+                  <Button variant="secondary" onClick={onBack}>
+                    {backLabel}
+                  </Button>
+                </div>
+              </div>
+            </SurfaceCard>
+          </div>
+        );
+      }
+
+      // Brand-new month: `data` has loaded but the auto-calc effect
+      // hasn't yet fired (or is mid-flight). Show a spinner so we
+      // never flash the misleading "Calculation Required" empty
+      // state at the operator.
+      if (data && parseFloat(annualCtc) > 0 && template) {
+        return (
+          <div className="space-y-6">
+            <SurfaceCard className="p-8 text-center">
+              <Loader2 className="h-8 w-8 mx-auto mb-3 text-blue-600 animate-spin" />
+              <p className="font-semibold text-slate-900 mb-1">Calculating salary breakdown…</p>
+              <p className="text-sm text-slate-500">Auto-running once results arrive.</p>
+            </SurfaceCard>
+          </div>
+        );
+      }
+
+      // Genuine empty state — no data, no template, no CTC. The user
+      // genuinely needs to fill in the salary structure. This path
+      // is reached only on a *first visit* of a fresh employee where
+      // they have NOT yet opened Step 2.
+      return (
+        <div className="space-y-6">
+          <SurfaceCard className="p-8 text-center">
+            <AlertCircle className="h-12 w-12 mx-auto mb-3 text-amber-500" />
+            <h3 className="font-semibold text-slate-900 mb-2">Calculation Required</h3>
+            <p className="text-slate-500 mb-4">Please enter CTC and configure salary structure first</p>
+            <Button variant="primary" onClick={() => setCurrentStep(1)}>
+              Go to Salary Structure
+            </Button>
+          </SurfaceCard>
+        </div>
+      );
+    }
+
+  return (
+    <>
+      <SurfaceCard className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-blue-600" />
+            Salary Breakdown Preview
+          </h3>
+          <Button variant="secondary" size="sm" onClick={() => setCurrentStep(1)}>
+            Edit
           </Button>
-        </SurfaceCard>
-      ) : (
-        <>
-          <SurfaceCard className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                <Wallet className="h-5 w-5 text-blue-600" />
-                Salary Breakdown Preview
-              </h3>
-              <Button variant="secondary" size="sm" onClick={() => setCurrentStep(1)}>
-                Edit
-              </Button>
-            </div>
-            
-            <SalaryBreakdown calculation={calculation} template={template} />
-          </SurfaceCard>
+        </div>
 
-          {/* New in 6-step flow: side-by-side totals for reimbursements,
-              FBP allocations, and active loan EMIs. These are pulled
-              from the same data sources that drive Steps 3 and 4, so the
-              preview is always in sync with what the admin saw there. */}
-          <SurfaceCard className="p-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <ListChecks className="h-5 w-5 text-blue-600" />
-              Earnings & Deductions Summary
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                <p className="text-xs text-emerald-700 font-medium">Reimbursements</p>
-                <p className="text-xl font-bold text-emerald-900 tabular-nums mt-1">
-                  ₹ {approvedReimbursementsTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-                <p className="text-[11px] text-emerald-700 mt-0.5">
-                  {approvedReimbursements.length} item{approvedReimbursements.length === 1 ? '' : 's'} · added to gross
-                </p>
-              </div>
-              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
-                <p className="text-xs text-sky-700 font-medium">FBP Allocations</p>
-                <p className="text-xl font-bold text-sky-900 tabular-nums mt-1">
-                  ₹ {(fbpAllocations as any[]).reduce(
-                    (sum, a) => sum + (Number(a.allocated_amount ?? a.amount) || 0),
-                    0,
-                  ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-                <p className="text-[11px] text-sky-700 mt-0.5">
-                  {(fbpAllocations as any[]).length} component{(fbpAllocations as any[]).length === 1 ? '' : 's'} · added to gross
-                </p>
-              </div>
-              <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
-                <p className="text-xs text-rose-700 font-medium">Loan EMI</p>
-                <p className="text-xl font-bold text-rose-900 tabular-nums mt-1">
-                  ₹ {activeLoans.reduce(
-                    (sum, l) => sum + (Number((l as any).emi_amount) || 0),
-                    0,
-                  ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-                <p className="text-[11px] text-rose-700 mt-0.5">
-                  {activeLoans.length} active loan{activeLoans.length === 1 ? '' : 's'} · deducted from net
-                </p>
-              </div>
-            </div>
-          </SurfaceCard>
+        <SalaryBreakdown calculation={calculation} template={template} />
+      </SurfaceCard>
 
-          {/* Confirmation */}
-          <SurfaceCard className={`p-6 ${processPayrollMutation.isSuccess || isAlreadyProcessed ? 'bg-emerald-50 border-emerald-200' : ''}`}>
+      {/* New in 6-step flow: side-by-side totals for reimbursements,
+          FBP allocations, and active loan EMIs. These are pulled
+          from the same data sources that drive Steps 3 and 4, so the
+          preview is always in sync with what the admin saw there. */}
+      <SurfaceCard className="p-6">
+        <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+          <ListChecks className="h-5 w-5 text-blue-600" />
+          Earnings & Deductions Summary
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-xs text-emerald-700 font-medium">Reimbursements</p>
+            <p className="text-xl font-bold text-emerald-900 tabular-nums mt-1">
+              ₹ {approvedReimbursementsTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className="text-[11px] text-emerald-700 mt-0.5">
+              {approvedReimbursements.length} item{approvedReimbursements.length === 1 ? '' : 's'} · added to gross
+            </p>
+          </div>
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+            <p className="text-xs text-sky-700 font-medium">FBP Allocations</p>
+            <p className="text-xl font-bold text-sky-900 tabular-nums mt-1">
+              ₹ {(fbpAllocations as any[]).reduce(
+                (sum, a) => sum + (Number(a.allocated_amount ?? a.amount) || 0),
+                0,
+              ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className="text-[11px] text-sky-700 mt-0.5">
+              {(fbpAllocations as any[]).length} component{(fbpAllocations as any[]).length === 1 ? '' : 's'} · added to gross
+            </p>
+          </div>
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
+            <p className="text-xs text-rose-700 font-medium">Loan EMI</p>
+            <p className="text-xl font-bold text-rose-900 tabular-nums mt-1">
+              ₹ {activeLoans.reduce(
+                (sum, l) => sum + (Number((l as any).emi_amount) || 0),
+                0,
+              ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className="text-[11px] text-rose-700 mt-0.5">
+              {activeLoans.length} active loan{activeLoans.length === 1 ? '' : 's'} · deducted from net
+            </p>
+          </div>
+        </div>
+      </SurfaceCard>
+
+      {/* Confirmation */}
+      <SurfaceCard className={`p-6 ${processPayrollMutation.isSuccess || isAlreadyProcessed ? 'bg-emerald-50 border-emerald-200' : ''}`}>
             {processPayrollMutation.isSuccess ? (
               <div className="text-center py-2">
                 <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-emerald-600" />
@@ -1602,17 +1866,27 @@ export default function EmployeePayrollWizard({
                   </Button>
                   <Button
                     variant="primary"
-                    onClick={() => {
-                      // Mark step 5 (Loans & Advances) done before
-                      // processing. Step 6 (Preview & Process) is
-                      // marked done in the mutation onSuccess hook
-                      // below since it's the last step. We pass the
-                      // next-step index (6) so handleContinue's gated
-                      // logic still applies — in standalone mode it
-                      // would advance; in matrix mode it stays put
-                      // and the matrix drives the next step.
-                      handleContinue(6, 5);
-                      processPayrollMutation.mutate();
+                    onClick={async () => {
+                      // Sequence the two side effects to avoid firing
+                      // `handleContinue` (which triggers the per-employee
+                      // step-complete mutation) before we know whether
+                      // *process* actually succeeded. If process throws,
+                      // we never mark step 5 done — the operator gets a
+                      // chance to retry. mutateAsync throws on failure
+                      // and the mutation's onError toast already shows.
+                      try {
+                        await processPayrollMutation.mutateAsync();
+                        // Mark step 5 (Loans & Advances) done — step 6
+                        // (Preview & Process) is marked done inside the
+                        // mutation's onSuccess hook. handleContinue(6,5)
+                        // is a no-op in controlled mode (the wizard does
+                        // not advance itself in matrix mode) and only
+                        // calls onComplete?.(5) to record per-employee
+                        // progress.
+                        handleContinue(6, 5);
+                      } catch {
+                        // onError already surfaces a toast; nothing to do.
+                      }
                     }}
                     disabled={processPayrollMutation.isPending || !annualCtc || parseFloat(annualCtc) <= 0}
                     iconLeft={processPayrollMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1623,10 +1897,9 @@ export default function EmployeePayrollWizard({
               </div>
             )}
           </SurfaceCard>
-        </>
-      )}
-    </div>
+    </>
   );
+};
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -1668,6 +1941,7 @@ export default function EmployeePayrollWizard({
         {currentStep === 4 && renderStep4Loans()}
         {currentStep === 5 && renderStep3()}
       </div>
+
     </div>
   );
 }

@@ -233,7 +233,11 @@ class PayGroupSettingsController extends Controller
             return response()->json(['message' => 'Pay group not found.'], 404);
         }
 
-        $payGroup->update(['is_active' => false]);
+        // Hard-delete the pay group. The database cascade on
+        // pay_group_assignments.pay_group_id will automatically remove
+        // all assignment rows, freeing those employees to appear in
+        // the unassigned-employees list for new pay groups.
+        $payGroup->delete();
 
         return response()->json([
             'success' => true,
