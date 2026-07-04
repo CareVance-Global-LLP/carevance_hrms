@@ -553,24 +553,15 @@ class PayrollFilingController extends Controller
                     'designation' => $u->employeeWorkInfo?->designation,
                     'department' => $group?->name,
                     'annual_ctc' => (float) ($template?->annual_ctc ?? 0),
-                    'steps_completed' => ($item && $item->payment_status !== 'pending') ? [
+                    'steps_completed' => [
                         'step1' => (bool) ($template?->step1_completed),
                         'step2' => (bool) ($template?->step2_completed),
                         'step3' => (bool) ($template?->step3_completed),
                         'step4' => (bool) ($template?->step4_completed),
                         'step5' => (bool) ($template?->step5_completed),
                         'step6' => (bool) ($template?->step6_completed),
-                    ] : [
-                        'step1' => false,
-                        'step2' => false,
-                        'step3' => false,
-                        'step4' => false,
-                        'step5' => false,
-                        'step6' => false,
                     ],
-                    'current_step' => ($item && $item->payment_status !== 'pending')
-                        ? (int) ($template?->current_step ?? 1)
-                        : 1,
+                    'current_step' => (int) ($template?->current_step ?? 1),
                     'payroll_status' => [
                         'is_processed' => $item && $item->payment_status !== 'pending',
                         'net_pay' => $item ? (float) $item->net_pay : 0,

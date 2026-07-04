@@ -3,7 +3,6 @@ import { X, Download, FileText, TrendingUp, IndianRupee, Calendar, FileSpreadshe
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import type { PayrollStats } from '@/types';
-import { useToast } from '@/components/ui/Toast';
 
 interface PayrollReportsModalProps {
   isOpen: boolean;
@@ -23,7 +22,6 @@ interface ReportType {
 
 export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear }: PayrollReportsModalProps) {
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null);
-  const { show } = useToast();
 
   // Early return must be after all hooks
   if (!isOpen) {
@@ -162,7 +160,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
     // In a production app, you'd use a library like jsPDF or server-side generation
     
     if (reportId === 'payslips') {
-      show({ kind: 'info', message: 'Bulk payslip PDF generation is not implemented yet. Please download individual payslips from employee profiles.' });
+      alert('Bulk payslip PDF generation is not implemented yet. Please download individual payslips from employee profiles.');
       return;
     }
     
@@ -236,7 +234,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
       }
     } catch (error) {
       console.error('Failed to download report:', error);
-      show({ kind: 'error', message: 'Failed to download report. Please try again.' });
+      alert('Failed to download report. Please try again.');
     } finally {
       setTimeout(() => setDownloadingReport(null), 1000);
     }

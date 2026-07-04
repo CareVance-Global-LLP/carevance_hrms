@@ -260,7 +260,6 @@ export default function CompensationAnalytics({
   const trendData = useMemo(() => {
     return runs
       .filter((r) => r.month_year)
-      .sort((a, b) => (a.month_year ?? '').localeCompare(b.month_year ?? ''))
       .slice(-6)
       .map((r) => ({
         month: formatMonthLabel(r.month_year ?? ''),

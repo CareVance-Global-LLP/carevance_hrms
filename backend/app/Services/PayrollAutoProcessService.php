@@ -420,11 +420,11 @@ class PayrollAutoProcessService
                 ? max(0, $basic - ($basic / $gross) * $lopDeduction)
                 : 0;
 
-            // PF on full basic (pre-LOP), capped at ₹15,000 — EPF Act
-            // requires PF on the statutory wage base regardless of unpaid
-            // absence. LOP affects net pay but not PF liability.
-            $fullMonthlyBasic = round($monthlyCtc * $basicPct, 2);
-            $pfWages = min($fullMonthlyBasic, 15000);
+            // PF on earned basic (pro-rated for days present, BEFORE LOP deduction).
+            // PF applies to actual wages for days worked — LOP is unpaid absence
+            // but the employee still earns PF on the days they were present.
+            // If 1 out of 22 days was worked, PF = 1/22 of the monthly PF amount.
+            $pfWages = min($basic, 15000);
             $pfEmployee = $pfEnabled ? round($pfWages * 0.12, 2) : 0;
             $eps = $pfEnabled ? round($pfWages * 0.0833, 2) : 0;
             $epf = $pfEnabled ? round($pfWages * 0.0367, 2) : 0;
@@ -452,31 +452,7 @@ class PayrollAutoProcessService
                 $tds = round(($taxCalc['total_tax'] ?? 0) / 12, 2);
             }
 
-            // Garnishment / court-ordered deductions (child support, etc.) — cap at 50% of disposable income
-            $garnishmentTotal = 0;
-            // $netPay not yet computed — use netBeforeGarn = gross - nonGarnDeductions as proxy
-            $garnishmentBase = max(0, $gross - ($pfEmployee + $esiEmployee + $pt + $tds + $lopDeduction));
-            $garnishments = \App\Models\Garnishment::where('user_id', $item->user_id)
-                ->where('status', 'active')
-                ->where('start_date', '<=', $run->month_year)
-                ->where(function ($q) {
-                    $q->whereNull('end_date')->orWhere('end_date', '>=', $run->month_year);
-                })->get();
-            foreach ($garnishments as $g) {
-                $amount = min($g->monthly_amount ?? 0, $g->max_amount ?? $g->monthly_amount ?? 0, $garnishmentBase * 0.5);
-                if ($g->remaining_amount !== null) {
-                    $amount = min($amount, $g->remaining_amount);
-                }
-                if ($amount > 0) {
-                    $g->increment('cumulative_recovered', $amount);
-                    if ($g->total_amount && $g->cumulative_recovered >= $g->total_amount) {
-                        $g->update(['status' => 'completed']);
-                    }
-                    $garnishmentTotal += $amount;
-                }
-            }
-
-            $totalDeductions = $pfEmployee + $esiEmployee + $pt + $tds + $lopDeduction + $garnishmentTotal;
+            $totalDeductions = $pfEmployee + $esiEmployee + $pt + $tds + $lopDeduction;
             $netPay = max(0, $gross - $totalDeductions);
 
             $gratuity = round($basic * 0.0481, 2);

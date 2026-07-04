@@ -56,10 +56,10 @@ class ArrearCalculatorService
 
                 $calculation = $this->calculator->calculatePayroll(
                     annualCtc: $currentCtc,
-                    stateCode: $currentTemplate->pt_state ?? 'maharashtra',
-                    isMetroCity: $currentTemplate->is_metro_city ?? true,
+                    state: $currentTemplate->pt_state ?? 'maharashtra',
+                    isMetro: $currentTemplate->is_metro_city ?? true,
                     taxRegime: $currentTemplate->tax_regime ?? 'new',
-                    customConfig: [
+                    config: [
                         'basic_percentage' => $currentTemplate->basic_percentage ?? 40,
                         'hra_percentage' => $currentTemplate->hra_percentage ?? 50,
                         'pf_enabled' => $currentTemplate->pf_enabled,

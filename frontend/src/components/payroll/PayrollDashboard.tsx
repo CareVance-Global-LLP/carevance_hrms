@@ -14,7 +14,6 @@ import {
   BookOpen,
   UserX,
   Settings2,
-  Download,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -233,14 +232,6 @@ export default function PayrollDashboard({
     () => (payGroupsData?.pay_groups ?? []) as PayGroup[],
     [payGroupsData],
   );
-
-  // Org-wide employee count (not limited to pay groups).
-  const { data: statsData } = useQuery({
-    queryKey: ['payroll', 'stats', selectedMonth],
-    queryFn: () => payrollApi.getStats({ month_year: selectedMonth }).then((r) => r.data),
-    staleTime: 60_000,
-  });
-
   const runs = (Array.isArray(runsData) ? runsData : (runsData?.runs ?? [])) as Array<{
     month_year: string;
     status: string;
@@ -262,72 +253,18 @@ export default function PayrollDashboard({
   );
 
   const summaryStats = useMemo(() => {
-    // Use org-wide count from the stats endpoint, not the pay-group
-    // subset. This ensures "Total Employees" shows every employee in
-    // the organization regardless of pay group assignment.
-    const totalEmployees = statsData?.total_employees ?? 0;
+    const totalEmployees = payGroups.reduce((sum, pg) => sum + pg.employee_count, 0);
     const processedCount = payGroups.reduce((sum, pg) => sum + pg.processed_count, 0);
     const paidCount = payGroups.reduce((sum, pg) => sum + pg.paid_count, 0);
     const totalNetPay = payGroups.reduce((sum, pg) => sum + pg.total_net_pay, 0);
     const pendingCount = Math.max(0, totalEmployees - processedCount);
 
     return { totalEmployees, processedCount, paidCount, totalNetPay, pendingCount };
-  }, [payGroups, statsData]);
+  }, [payGroups]);
 
   const paidPct = summaryStats.totalEmployees > 0
     ? Math.round((summaryStats.paidCount / summaryStats.totalEmployees) * 100)
     : 0;
-
-  const prevMonthRun = useMemo(() => {
-    const sorted = [...runs]
-      .filter((r) => r.month_year && r.month_year < selectedMonth)
-      .sort((a, b) => (b.month_year ?? '').localeCompare(a.month_year ?? ''));
-    return sorted[0] ?? null;
-  }, [runs, selectedMonth]);
-
-  const netPayBadge = useMemo(() => {
-    if (!prevMonthRun || !prevMonthRun.total_net_pay || summaryStats.totalNetPay === 0) return null;
-    const prev = Number(prevMonthRun.total_net_pay);
-    const curr = summaryStats.totalNetPay;
-    if (prev === 0) return null;
-    const pct = ((curr - prev) / prev) * 100;
-    const rounded = Math.abs(pct) < 0.1 ? '0.0' : Math.abs(pct).toFixed(1);
-    return {
-      text: `${rounded}% vs last month`,
-      trend: pct > 0 ? ('up' as const) : pct < 0 ? ('down' as const) : ('neutral' as const),
-    };
-  }, [prevMonthRun, summaryStats.totalNetPay]);
-
-  const handleExportSummary = () => {
-    const rows: string[][] = [
-      ['CareVance HRMS - Payroll Summary'],
-      ['Month', selectedMonth],
-      ['Generated', new Date().toLocaleString()],
-      [''],
-      ['Metric', 'Value'],
-      ['Total Employees', String(summaryStats.totalEmployees)],
-      ['Processed', String(summaryStats.processedCount)],
-      ['Paid', String(summaryStats.paidCount)],
-      ['Pending', String(summaryStats.pendingCount)],
-      ['Total Net Pay', `Rs.${summaryStats.totalNetPay.toLocaleString('en-IN')}`],
-      [''],
-      ['Department Breakdown'],
-      ['Department', 'Employees', 'Net Pay'],
-      ...departments.map((d) => [
-        d.name,
-        String(d.employee_count),
-        `Rs.${Number(d.total_net_pay || 0).toLocaleString('en-IN')}`,
-      ]),
-    ];
-    const csv = rows.map((r) => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `payroll_summary_${selectedMonth}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -342,7 +279,7 @@ export default function PayrollDashboard({
       />
 
       {/* Process & Pay primary CTA */}
-      <div className="flex justify-start gap-3">
+      <div className="flex justify-start">
         <Button
           variant="primary"
           iconLeft={<Play className="h-4 w-4" />}
@@ -352,14 +289,6 @@ export default function PayrollDashboard({
         >
           Process &amp; Pay ({summaryStats.pendingCount})
         </Button>
-        <Button
-          variant="secondary"
-          iconLeft={<Download className="h-4 w-4" />}
-          onClick={handleExportSummary}
-          className="shadow-sm whitespace-nowrap"
-        >
-          Export Summary
-        </Button>
       </div>
 
       {/* Quick Stats */}
@@ -368,7 +297,6 @@ export default function PayrollDashboard({
           label="Total Net Pay"
           value={formatCurrency(summaryStats.totalNetPay)}
           hint={`${summaryStats.processedCount} employees processed`}
-          badge={netPayBadge ?? undefined}
           icon={Wallet}
           accent="emerald"
         />

@@ -282,7 +282,7 @@ class PayrollCalculatorService
         $surchargeRate = 0.0;
         $capped = false;
         foreach (self::SURCHARGE_SLABS as $slab) {
-            if ($totalIncome >= $slab['min'] && $totalIncome <= $slab['max']) {
+            if ($totalIncome > $slab['min'] && $totalIncome <= $slab['max']) {
                 $surchargeRate = $slab['rate'];
                 $capped = ($regime === 'new' || ($slab['capped'] ?? false) === 'old');
                 break;
@@ -440,12 +440,13 @@ class PayrollCalculatorService
         // New regime slabs (Sec 115BAC) — FY 2024-25, contiguous boundaries.
         // The rebate u/s 87A is on TOTAL income (annualIncome), not on taxable income.
         $slabs = [
-            ['min' => 0,         'max' => 300000,    'rate' => 0],
-            ['min' => 300000,    'max' => 700000,    'rate' => 0.05],
-            ['min' => 700000,    'max' => 1000000,   'rate' => 0.10],
-            ['min' => 1000000,   'max' => 1200000,   'rate' => 0.15],
-            ['min' => 1200000,   'max' => 1500000,   'rate' => 0.20],
-            ['min' => 1500000,   'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
+            ['min' => 0,         'max' => 400000,    'rate' => 0],
+            ['min' => 400000,    'max' => 800000,    'rate' => 0.05],
+            ['min' => 800000,    'max' => 1200000,   'rate' => 0.10],
+            ['min' => 1200000,   'max' => 1600000,   'rate' => 0.15],
+            ['min' => 1600000,   'max' => 2000000,   'rate' => 0.20],
+            ['min' => 2000000,   'max' => 2400000,   'rate' => 0.25],
+            ['min' => 2400000,   'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
         ];
 
         $tax = 0;

@@ -39,13 +39,7 @@ class SalaryCalculationService
         // 2. Calculate earnings — pro-rata based on days actually worked
         $proRataFactor = $totalDays > 0 ? $workingDays / $totalDays : 1;
 
-        // Compute monthly values from annual CTC.
-        // Bug 7: $annualCtc was used on previous lines without ever being
-        // assigned — every component was NaN/0. Pull it from the template
-        // (stored as the canonical salary source of truth), then guard
-        // against a missing/wrong-typed value so callers don't silently
-        // see a 0-salary run.
-        $annualCtc = (float) ($template->annual_ctc ?? 0);
+        // Compute monthly values from annual CTC
         $monthlyCtc = $annualCtc / 12;
         $basic = $monthlyCtc * ($template->basic_percentage / 100);
         $hra = $basic * (($template->hra_percentage ?? 50) / 100);
@@ -430,35 +424,30 @@ class SalaryCalculationService
             'Seventeen', 'Eighteen', 'Nineteen'];
         $tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
 
+        function convertBelow1000($n, $ones, $tens) {
+            if ($n == 0) return '';
+            if ($n < 20) return $ones[$n];
+            if ($n < 100) return $tens[intdiv($n, 10)] . ($n % 10 ? ' ' . $ones[$n % 10] : '');
+            return $ones[intdiv($n, 100)] . ' Hundred' . ($n % 100 ? ' ' . convertBelow1000($n % 100, $ones, $tens) : '');
+        }
+
         $parts = [];
         if ($amount >= 10000000) {
-            $parts[] = $this->convertBelow1000(intdiv($amount, 10000000), $ones, $tens) . ' Crore';
+            $parts[] = convertBelow1000(intdiv($amount, 10000000), $ones, $tens) . ' Crore';
             $amount %= 10000000;
         }
         if ($amount >= 100000) {
-            $parts[] = $this->convertBelow1000(intdiv($amount, 100000), $ones, $tens) . ' Lakh';
+            $parts[] = convertBelow1000(intdiv($amount, 100000), $ones, $tens) . ' Lakh';
             $amount %= 100000;
         }
         if ($amount >= 1000) {
-            $parts[] = $this->convertBelow1000(intdiv($amount, 1000), $ones, $tens) . ' Thousand';
+            $parts[] = convertBelow1000(intdiv($amount, 1000), $ones, $tens) . ' Thousand';
             $amount %= 1000;
         }
         if ($amount > 0) {
-            $parts[] = $this->convertBelow1000($amount, $ones, $tens);
+            $parts[] = convertBelow1000($amount, $ones, $tens);
         }
 
         return implode(' ', $parts) . ' Rupees Only';
-    }
-
-    /**
-     * Convert a number below 1000 to words (extracted from numberToWords to avoid
-     * PHP's "Cannot redeclare function" error on repeated calls).
-     */
-    private function convertBelow1000(int $n, array $ones, array $tens): string
-    {
-        if ($n == 0) return '';
-        if ($n < 20) return $ones[$n];
-        if ($n < 100) return $tens[intdiv($n, 10)] . ($n % 10 ? ' ' . $ones[$n % 10] : '');
-        return $ones[intdiv($n, 100)] . ' Hundred' . ($n % 100 ? ' ' . $this->convertBelow1000($n % 100, $ones, $tens) : '');
     }
 }

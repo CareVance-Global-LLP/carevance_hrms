@@ -1238,7 +1238,7 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (targ
                 Are you sure you want to delete <span className="font-semibold text-gray-900">{scopedGroups[0]?.name}</span>?
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                This action will permanently delete the pay group and remove all employee assignments. You can reassign employees to a new pay group afterward.
+                This action will deactivate the pay group. Employees assigned to this group will need to be reassigned.
               </p>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">

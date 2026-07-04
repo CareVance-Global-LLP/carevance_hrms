@@ -51,7 +51,7 @@ class FbpService
     {
         $claim = FbpClaim::create($data);
 
-        $allocation = FbpAllocation::find($claim->fbp_allocation_id);
+        $allocation = FbpClaim::find($claim->fbp_allocation_id);
         if ($allocation) {
             $allocation->increment('claimed_amount', $data['claimed_amount']);
         }

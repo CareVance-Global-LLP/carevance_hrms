@@ -29,15 +29,15 @@ class SalaryRevisionService
 
         $oldBreakdown = $this->calculator->calculatePayroll(
             annualCtc: $oldCtc,
-            stateCode: $template->pt_state ?? 'maharashtra',
-            isMetroCity: $template->is_metro_city ?? true,
+            state: $template->pt_state ?? 'maharashtra',
+            isMetro: $template->is_metro_city ?? true,
             taxRegime: $template->tax_regime ?? 'new',
         );
 
         $newBreakdown = $this->calculator->calculatePayroll(
             annualCtc: $newCtc,
-            stateCode: $template->pt_state ?? 'maharashtra',
-            isMetroCity: $template->is_metro_city ?? true,
+            state: $template->pt_state ?? 'maharashtra',
+            isMetro: $template->is_metro_city ?? true,
             taxRegime: $template->tax_regime ?? 'new',
         );
 

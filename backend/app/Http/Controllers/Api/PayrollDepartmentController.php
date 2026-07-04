@@ -428,57 +428,30 @@ class PayrollDepartmentController extends Controller
     {
         $organizationId = $request->user()->organization_id;
 
-        $data = $request->validate([
-            'search'   => 'nullable|string|max:100',
-            'page'     => 'nullable|integer|min:1',
-            'per_page' => 'nullable|integer|min:1|max:100',
-        ]);
-
-        $search = $data['search'] ?? null;
-        $page   = (int) ($data['page'] ?? 1);
-        $perPage = (int) ($data['per_page'] ?? 50);
-
-        // Get user IDs that have an active assignment to an ACTIVE
-        // pay group. Deactivated or deleted pay groups should not
-        // block employees from appearing in the unassigned list.
+        // Get all user IDs that have an active pay group assignment
         $assignedUserIds = DB::table('pay_group_assignments')
-            ->join('pay_groups', 'pay_groups.id', '=', 'pay_group_assignments.pay_group_id')
-            ->where('pay_group_assignments.is_active', true)
-            ->where('pay_groups.is_active', true)
-            ->pluck('pay_group_assignments.user_id');
+            ->where('is_active', true)
+            ->pluck('user_id');
 
-        // Include all roles that appear in the payroll module (matches
-        // the role list used by getAllEmployees and getPayrollStats).
-        $query = User::where('organization_id', $organizationId)
-            ->whereIn('role', ['employee', 'manager', 'admin'])
+        // Return users in this org who are employees/managers and have no active assignment
+        $employees = User::where('organization_id', $organizationId)
+            ->whereIn('role', ['employee', 'manager'])
             ->whereNotIn('id', $assignedUserIds)
             ->with(['employeeWorkInfo'])
-            ->orderBy('name');
-
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
-            });
-        }
-
-        $paginated = $query->paginate($perPage, ['*'], 'page', $page);
-
-        $employees = $paginated->getCollection()->map(fn ($u) => [
-            'id'            => $u->id,
-            'name'          => $u->name,
-            'email'         => $u->email,
-            'role'          => $u->role,
-            'designation'   => $u->employeeWorkInfo?->designation,
-            'employee_code' => $u->employeeWorkInfo?->employee_code,
-        ]);
+            ->orderBy('name')
+            ->get()
+            ->map(fn ($u) => [
+                'id' => $u->id,
+                'name' => $u->name,
+                'email' => $u->email,
+                'role' => $u->role,
+                'designation' => $u->employeeWorkInfo?->designation,
+                'employee_code' => $u->employeeWorkInfo?->employee_code,
+            ]);
 
         return response()->json([
-            'employees'    => $employees,
-            'total'        => $paginated->total(),
-            'current_page' => $paginated->currentPage(),
-            'last_page'    => $paginated->lastPage(),
-            'per_page'     => $paginated->perPage(),
+            'employees' => $employees,
+            'total' => $employees->count(),
         ]);
     }
 
@@ -1079,8 +1052,8 @@ class PayrollDepartmentController extends Controller
             ? $payableGross * ($template->esi_employee_percentage / 100)
             : 0;
         $ptAmount = $template->pt_enabled
-                    ? \App\Services\PTStateService::calculate($template->pt_state ?? 'maharashtra', $payableGross, $request->month_year ? (int) date('n', strtotime($request->month_year)) : null)
-                    : 0;
+            ? \App\Services\PTStateService::calculate($template->pt_state ?? 'maharashtra', $payableGross)
+            : 0;
         $tdsAmount = $template->tds_enabled
             ? $calculation['components']['deductions']['tds']
             : 0;
@@ -1150,11 +1123,6 @@ class PayrollDepartmentController extends Controller
         // preserved in the response payload (see "reimbursements_total"
         // / "fbp_allocations_total" below) and in the payslip row.
         $customEarningsTotal = round($approvedReimbursementsTotal + $fbpAllocationsTotal, 2);
-
-        // Preliminary net_pay for formula resolution context. This will
-        // be recalculated below after formula components are applied.
-        $grossWithOT = $calculation['monthly']['gross'] + $overtimePay + $additionalEarnings;
-        $netPay = max(0, $grossWithOT - $totalDeductions);
 
         // Resolve formula-based salary components (org-level custom heads).
         // These are components defined in SalaryComponent with associated
@@ -1557,16 +1525,16 @@ class PayrollDepartmentController extends Controller
         // missing ones. This replaces an N+1 loop of per-user
         // getOrCreateForUser calls.
         $existingTemplates = EmployeePayrollTemplate::where('organization_id', $organizationId)
-            ->whereIn('user_id', $validUserIds)
+            ->whereIn('user_id', $userIds)
             ->get()
             ->keyBy('user_id');
-        $missingUserIds = array_diff($validUserIds, $existingTemplates->keys()->all());
+        $missingUserIds = array_diff($userIds, $existingTemplates->keys()->all());
         foreach ($missingUserIds as $mid) {
             EmployeePayrollTemplate::getOrCreateForUser($mid, $organizationId);
         }
         // Refresh so we have every member's row in one collection.
         $existingTemplates = EmployeePayrollTemplate::where('organization_id', $organizationId)
-            ->whereIn('user_id', $validUserIds)
+            ->whereIn('user_id', $userIds)
             ->get()
             ->keyBy('user_id');
 
@@ -1574,7 +1542,7 @@ class PayrollDepartmentController extends Controller
         // and we don't hold a single transaction open for 100+ users
         // (which times out the PHP-FPM worker). 20 per chunk matches
         // the bulk-process UI's default per-page size.
-        foreach (array_chunk($validUserIds, 20) as $chunk) {
+        foreach (array_chunk($userIds, 20) as $chunk) {
             foreach ($chunk as $uid) {
                 $template = $existingTemplates[$uid];
                 $annualCtc = $template->annual_ctc ?: ($data['default_annual_ctc'] ?? 0);
@@ -2218,14 +2186,14 @@ class PayrollDepartmentController extends Controller
             ->where('id', $runId)
             ->firstOrFail();
 
-        if (!$run->canTransitionTo('locked')) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Cannot lock run in '{$run->status}' status",
-                    ], 422);
-                }
+        if (!in_array($run->status, ['draft', 'processing'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot lock run in '{$run->status}' status",
+            ], 422);
+        }
 
-                // Completeness check: count expected vs processed employees.
+        // Completeness check: count expected vs processed employees.
         $completeness = $this->getRunCompletenessData($organizationId, $run);
 
         // Lock the run regardless of completeness — partial is allowed.
@@ -2539,12 +2507,12 @@ class PayrollDepartmentController extends Controller
             ->where('id', $runId)
             ->firstOrFail();
 
-        if (!$run->canTransitionTo('approved')) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Cannot approve run in '{$run->status}' status. Must be 'locked' first.",
-                    ], 422);
-                }
+        if ($run->status !== 'locked') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot approve run in '{$run->status}' status. Must be 'locked' first.",
+            ], 422);
+        }
 
         $run->update([
             'status' => 'approved',
@@ -2585,14 +2553,14 @@ class PayrollDepartmentController extends Controller
             ->where('id', $runId)
             ->firstOrFail();
 
-        if (!$run->canTransitionTo('released')) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Cannot release run in '{$run->status}' status. Must be 'approved' first.",
-                    ], 422);
-                }
+        if (!in_array($run->status, ['approved', 'locked'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot release run in '{$run->status}' status. Must be 'approved' first.",
+            ], 422);
+        }
 
-                // Identify employees missing bank details. Auto-skip them from the
+        // Identify employees missing bank details. Auto-skip them from the
         // bank file (don't block the whole run). Return them so the UI can
         // show "These N employees will need a separate payment".
         $employeesMissingBankDetails = PayrollItem::where('payroll_run_id', $run->id)
@@ -3049,105 +3017,90 @@ class PayrollDepartmentController extends Controller
         $missingUserIds = array_values(array_diff($expectedUserIds, $processedUserIds));
 
         $processed = 0;
-                $skippedNoCtc = 0;
+        $skippedNoCtc = 0;
 
-                DB::beginTransaction();
-                try {
-                    foreach ($missingUserIds as $uid) {
-                        $template = EmployeePayrollTemplate::where('user_id', $uid)
-                            ->where('organization_id', $organizationId)
-                            ->first();
-                        if (! $template || ! $template->annual_ctc || $template->annual_ctc <= 0) {
-                            $skippedNoCtc++;
-                            continue;
-                        }
+        foreach ($missingUserIds as $uid) {
+            $template = EmployeePayrollTemplate::where('user_id', $uid)
+                ->where('organization_id', $organizationId)
+                ->first();
+            if (! $template || ! $template->annual_ctc || $template->annual_ctc <= 0) {
+                $skippedNoCtc++;
+                continue;
+            }
 
-                        $subRequest = Request::create(
-                            '/payroll/employees/' . $uid . '/process',
-                            'POST',
-                            [
-                                'month_year' => $monthYear,
-                                'annual_ctc' => (float) $template->annual_ctc,
-                                'working_days' => $workingDays,
-                            ]
-                        );
-                        $subRequest->setUserResolver(fn () => $request->user());
+            $subRequest = Request::create(
+                '/payroll/employees/' . $uid . '/process',
+                'POST',
+                [
+                    'month_year' => $monthYear,
+                    'annual_ctc' => (float) $template->annual_ctc,
+                    'working_days' => $workingDays,
+                ]
+            );
+            $subRequest->setUserResolver(fn () => $request->user());
 
-                        try {
-                            $response = $this->processEmployeePayroll($subRequest, $uid);
-                            if (($response->getData(true)['success'] ?? false) === true) {
-                                $processed++;
-                            } else {
-                                $skippedNoCtc++;
-                            }
-                        } catch (\Throwable $e) {
-                            $skippedNoCtc++;
-                            \Log::warning("processAndPay: failed to process user {$uid}", ['err' => $e->getMessage()]);
-                        }
-                    }
-
-                    $run = $run->fresh();
-
-                    // ── 3. Lock ────────────────────────────────────────────────────
-                    $lockReq = Request::create('/payroll/runs/' . $run->id . '/lock', 'POST', [
-                        'reason' => $data['lock_reason'] ?? null,
-                    ]);
-                    $lockReq->setUserResolver(fn () => $request->user());
-                    $lockResp = $this->lockPayrollRun($lockReq, $run->id);
-                    $lockData = $lockResp->getData(true);
-                    if (! ($lockData['success'] ?? false)) {
-                        DB::rollBack();
-                        return response()->json([
-                            'success' => false,
-                            'stage' => 'lock',
-                            'message' => $lockData['message'] ?? 'Lock failed',
-                            'run' => $run,
-                        ], 422);
-                    }
-                    $run = $run->fresh();
-
-                    // ── 4. Approve ─────────────────────────────────────────────────
-                    $approveReq = Request::create('/payroll/runs/' . $run->id . '/approve', 'POST');
-                    $approveReq->setUserResolver(fn () => $request->user());
-                    $approveResp = $this->approvePayrollRun($approveReq, $run->id);
-                    if (! ($approveResp->getData(true)['success'] ?? false)) {
-                        DB::rollBack();
-                        return response()->json([
-                            'success' => false,
-                            'stage' => 'approve',
-                            'message' => 'Approval failed after lock',
-                            'run' => $run,
-                        ], 422);
-                    }
-                    $run = $run->fresh();
-
-                    // ── 5. Release ─────────────────────────────────────────────────
-                    $releaseReq = Request::create('/payroll/runs/' . $run->id . '/release', 'POST');
-                    $releaseReq->setUserResolver(fn () => $request->user());
-                    $releaseResp = $this->releasePayrollRun($releaseReq, $run->id);
-                    $releaseData = $releaseResp->getData(true);
-                    if (! ($releaseData['success'] ?? false)) {
-                        DB::rollBack();
-                        return response()->json([
-                            'success' => false,
-                            'stage' => 'release',
-                            'message' => $releaseData['message'] ?? 'Release failed',
-                            'run' => $run,
-                        ], 422);
-                    }
-                    $run = $run->fresh();
-
-                    DB::commit();
-                } catch (\Throwable $e) {
-                    DB::rollBack();
-                    \Log::error("processAndPay: transaction rolled back", ['error' => $e->getMessage()]);
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Payroll processing failed: ' . $e->getMessage(),
-                    ], 500);
+            try {
+                $response = $this->processEmployeePayroll($subRequest, $uid);
+                if (($response->getData(true)['success'] ?? false) === true) {
+                    $processed++;
+                } else {
+                    $skippedNoCtc++;
                 }
+            } catch (\Throwable $e) {
+                $skippedNoCtc++;
+                \Log::warning("processAndPay: failed to process user {$uid}", ['err' => $e->getMessage()]);
+            }
+        }
 
-                // Build the bank file inline so the UI can offer download immediately.
+        $run = $run->fresh();
+
+        // ── 3. Lock ────────────────────────────────────────────────────
+        $lockReq = Request::create('/payroll/runs/' . $run->id . '/lock', 'POST', [
+            'reason' => $data['lock_reason'] ?? null,
+        ]);
+        $lockReq->setUserResolver(fn () => $request->user());
+        $lockResp = $this->lockPayrollRun($lockReq, $run->id);
+        $lockData = $lockResp->getData(true);
+        if (! ($lockData['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'stage' => 'lock',
+                'message' => $lockData['message'] ?? 'Lock failed',
+                'run' => $run,
+            ], 422);
+        }
+        $run = $run->fresh();
+
+        // ── 4. Approve ─────────────────────────────────────────────────
+        $approveReq = Request::create('/payroll/runs/' . $run->id . '/approve', 'POST');
+        $approveReq->setUserResolver(fn () => $request->user());
+        $approveResp = $this->approvePayrollRun($approveReq, $run->id);
+        if (! ($approveResp->getData(true)['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'stage' => 'approve',
+                'message' => 'Approval failed after lock',
+                'run' => $run,
+            ], 422);
+        }
+        $run = $run->fresh();
+
+        // ── 5. Release ─────────────────────────────────────────────────
+        $releaseReq = Request::create('/payroll/runs/' . $run->id . '/release', 'POST');
+        $releaseReq->setUserResolver(fn () => $request->user());
+        $releaseResp = $this->releasePayrollRun($releaseReq, $run->id);
+        $releaseData = $releaseResp->getData(true);
+        if (! ($releaseData['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'stage' => 'release',
+                'message' => $releaseData['message'] ?? 'Release failed',
+                'run' => $run,
+            ], 422);
+        }
+        $run = $run->fresh();
+
+        // Build the bank file inline so the UI can offer download immediately.
         $bankFile = $this->buildBankFilePayload($run);
 
         return response()->json([
@@ -3180,12 +3133,12 @@ class PayrollDepartmentController extends Controller
             ->where('id', $runId)
             ->firstOrFail();
 
-        if (!$run->canTransitionTo('disbursed')) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Cannot disburse run in '{$run->status}' status. Release it first.",
-                    ], 422);
-                }
+        if ($run->status !== 'released') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot disburse run in '{$run->status}' status. Release it first.",
+            ], 422);
+        }
 
         // Mark every pending item as paid (bank file confirmed uploaded).
         $pendingItems = PayrollItem::where('payroll_run_id', $run->id)
