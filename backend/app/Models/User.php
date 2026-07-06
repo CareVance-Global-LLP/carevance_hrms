@@ -308,6 +308,12 @@ class User extends Authenticatable
 
     public function sendEmailVerificationNotification(): void
     {
+        \Illuminate\Support\Facades\Log::info('DEBUG: Starting email verification notification', [
+            'email' => $this->email,
+            'mail_driver' => config('mail.default'),
+            'environment' => app()->environment(),
+        ]);
+
         $verificationUrl = URL::temporarySignedRoute(
             'api.verification.verify',
             now()->addMinutes((int) config('carevance.auth.email_verification_expire_minutes', 1440)),
@@ -317,7 +323,23 @@ class User extends Authenticatable
             ]
         );
 
-        Mail::to($this->email)->queue(new VerifyEmailMail($this, $verificationUrl));
+        \Illuminate\Support\Facades\Log::info('DEBUG: Verification URL generated', ['url' => $verificationUrl]);
+
+        // Use send() for immediate delivery, or queue() for background processing
+        // For localhost development, send() ensures immediate delivery
+        if (config('mail.default') === 'log' || app()->environment('local')) {
+            \Illuminate\Support\Facades\Log::info('DEBUG: Sending email via send() method');
+            try {
+                Mail::to($this->email)->send(new VerifyEmailMail($this, $verificationUrl));
+                \Illuminate\Support\Facades\Log::info('DEBUG: Email sent successfully');
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('DEBUG: Email sending failed', ['error' => $e->getMessage()]);
+                throw $e;
+            }
+        } else {
+            \Illuminate\Support\Facades\Log::info('DEBUG: Queueing email');
+            Mail::to($this->email)->queue(new VerifyEmailMail($this, $verificationUrl));
+        }
     }
 
     public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
@@ -327,7 +349,12 @@ class User extends Authenticatable
             'email' => $this->email,
         ]);
 
-        Mail::to($this->email)->queue(new PasswordResetMail($this, $resetUrl));
+        // Use send() for immediate delivery in local environment
+        if (config('mail.default') === 'log' || app()->environment('local')) {
+            Mail::to($this->email)->send(new PasswordResetMail($this, $resetUrl));
+        } else {
+            Mail::to($this->email)->queue(new PasswordResetMail($this, $resetUrl));
+        }
     }
 
     public function customRole(): BelongsTo

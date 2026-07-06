@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\InteractsWithApiResponses;
 use App\Http\Controllers\Controller;
+use App\Services\Billing\PlanService;
 use App\Services\Billing\WorkspaceBillingService;
 use Illuminate\Http\Request;
 
@@ -69,7 +70,7 @@ class BillingController extends Controller
         $requestedSeats = (int) ($request->input('seats') ?? 0);
 
         $plans = config('carevance.plans', []);
-        $currentPlanCode = $organization->plan_code ?? 'basic';
+        $currentPlanCode = $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking');
         $currentPlanConfig = $plans[$currentPlanCode] ?? [];
         $targetPlanConfig = $plans[$targetPlanCode] ?? [];
 
@@ -108,8 +109,27 @@ class BillingController extends Controller
         } else {
             $diffPerUser = $targetPricePerUser - $currentPricePerUser;
 
-            if ($diffPerUser <= 0) {
-                return $this->errorResponse('Target plan must be higher than current plan.', 400);
+            if ($diffPerUser < 0) {
+                // Downgrade: Schedule for next billing cycle (no refund)
+                $organization->update([
+                    'subscription_intent' => 'downgrade',
+                    'pending_plan_code' => $targetPlanCode,
+                    'pending_billing_cycle' => $billingCycle,
+                    'pending_seats' => $seats,
+                    'pending_upgrade_amount' => 0,
+                    'pending_effective_date' => $organization->subscription_expires_at,
+                ]);
+
+                return $this->successResponse([
+                    'payment_intent_id' => null,
+                    'amount' => 0,
+                    'currency' => 'INR',
+                    'current_plan' => $currentPlanCode,
+                    'target_plan' => $targetPlanCode,
+                    'type' => 'scheduled_downgrade',
+                    'message' => 'Downgrade scheduled. Will take effect at next billing cycle.',
+                    'effective_date' => $organization->subscription_expires_at?->toDateString(),
+                ]);
             }
 
             $expiresAt = $organization->subscription_expires_at;
@@ -230,7 +250,7 @@ class BillingController extends Controller
         }
 
         $plans = config('carevance.plans', []);
-        $currentPlanCode = $organization->plan_code ?? 'basic';
+        $currentPlanCode = $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking');
         $currentPlanConfig = $plans[$currentPlanCode] ?? [];
 
         $pricePerUser = (int) ($currentPlanConfig[$billingCycle === 'yearly' ? 'yearly_price' : 'monthly_price'] ?? 0);
@@ -289,6 +309,77 @@ class BillingController extends Controller
         ], 'Seats added successfully. Your workspace now has ' . $seats . ' seats.');
     }
 
+    public function reduceSeats(Request $request)
+    {
+        $user = $request->user();
+        $organization = $user?->organization;
+
+        if (!$organization) {
+            return $this->errorResponse('No organization found.', 404);
+        }
+
+        $requestedSeats = (int) ($request->input('seats') ?? 0);
+
+        if ($requestedSeats >= $organization->max_seats) {
+            return $this->errorResponse('New seat count must be less than current seats.', 400);
+        }
+
+        // Minimum seats based on plan type
+        $plans = config('carevance.plans', []);
+        $currentPlanCode = $organization->plan_code ?? 'basic_tracking';
+        $currentPlanConfig = $plans[$currentPlanCode] ?? [];
+        $isPayrollPlan = PlanService::isPayrollPlan($currentPlanCode);
+        $minSeats = $isPayrollPlan ? ($currentPlanConfig['max_seats'] ?? 50) : 10;
+
+        if ($requestedSeats < $minSeats) {
+            return $this->errorResponse("Minimum {$minSeats} seats required for your plan.", 400);
+        }
+
+        // Schedule seat reduction for next billing cycle (no refund)
+        $organization->update([
+            'subscription_intent' => 'reduce_seats',
+            'pending_seats' => $requestedSeats,
+            'pending_effective_date' => $organization->subscription_expires_at,
+        ]);
+
+        return $this->successResponse([
+            'current_seats' => $organization->max_seats,
+            'new_seats' => $requestedSeats,
+            'seats_to_reduce' => $organization->max_seats - $requestedSeats,
+            'type' => 'scheduled_seat_reduction',
+            'message' => 'Seat reduction scheduled. Will take effect at next billing cycle with no refund.',
+            'effective_date' => $organization->subscription_expires_at?->toDateString(),
+        ]);
+    }
+
+    public function confirmReduceSeats(Request $request)
+    {
+        $user = $request->user();
+        $organization = $user?->organization;
+
+        if (!$organization) {
+            return $this->errorResponse('No organization found.', 404);
+        }
+
+        if ($organization->subscription_intent !== 'reduce_seats') {
+            return $this->errorResponse('No pending seat reduction found.', 400);
+        }
+
+        $seats = $organization->pending_seats ?? $organization->max_seats;
+
+        $organization->update([
+            'max_seats' => $seats,
+            'subscription_intent' => 'paid',
+            'pending_seats' => null,
+            'pending_effective_date' => null,
+        ]);
+
+        return $this->successResponse([
+            'subscription_status' => 'active',
+            'max_seats' => $seats,
+        ], 'Seat reduction applied. Your workspace now has ' . $seats . ' seats.');
+    }
+
     public function cancelPlan(Request $request)
     {
         $user = $request->user();
@@ -302,16 +393,28 @@ class BillingController extends Controller
             return $this->errorResponse('Cannot cancel a trial subscription.', 400);
         }
 
-        if ($organization->plan_code === 'basic') {
-            return $this->errorResponse('Cannot cancel the Basic plan.', 400);
+        $currentPlanCode = $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking');
+        
+        // Normalize legacy plan codes
+        $legacyMapping = [
+            'basic' => 'basic_tracking',
+            'advanced_tracker' => 'advance_tracking',
+        ];
+        $currentPlanCode = $legacyMapping[$currentPlanCode] ?? $currentPlanCode;
+        
+        if ($currentPlanCode === 'basic_tracking' || $currentPlanCode === 'basic_payroll') {
+            return $this->errorResponse('Cannot cancel Basic plans. Please downgrade instead.', 400);
         }
 
-        // Shift to 14-day Basic trial
+        // Shift to 14-day trial based on current plan type
         $trialDays = (int) config('carevance.trial_days', 14);
         $trialEndsAt = now()->addDays($trialDays)->toDateString();
+        
+        // Determine trial plan based on current plan
+        $trialPlan = PlanService::isPayrollPlan($currentPlanCode) ? 'basic_payroll' : 'basic_tracking';
 
         $organization->update([
-            'plan_code' => 'basic',
+            'plan_code' => $trialPlan,
             'subscription_status' => 'trial',
             'subscription_intent' => 'trial',
             'max_seats' => 5,
@@ -327,10 +430,10 @@ class BillingController extends Controller
 
         return $this->successResponse([
             'subscription_status' => 'trial',
-            'plan_code' => 'basic',
+            'plan_code' => $trialPlan,
             'trial_ends_at' => $trialEndsAt,
             'max_seats' => 5,
-        ], 'Plan cancelled successfully. Your workspace has been shifted to a 14-day Basic trial.');
+        ], 'Plan cancelled successfully. Your workspace has been shifted to a 14-day trial.');
     }
 
     public function cancelPendingUpgrade(Request $request)
@@ -408,7 +511,7 @@ class BillingController extends Controller
             $orderData = [
                 'amount' => $amount,
                 'currency' => $currency,
-                'plan_code' => $organization->pending_plan_code ?? $organization->plan_code ?? 'basic',
+                'plan_code' => $organization->pending_plan_code ?? $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking'),
                 'billing_cycle' => $organization->pending_billing_cycle ?? $organization->billing_cycle ?? 'monthly',
                 'seats' => $organization->pending_seats ?? $organization->max_seats ?? 10,
                 'payment_type' => $paymentType,
@@ -565,7 +668,7 @@ class BillingController extends Controller
     private function activateSubscription($organization): void
     {
         $billingCycle = $organization->pending_billing_cycle ?? $organization->billing_cycle ?? 'monthly';
-        $planCode = $organization->pending_plan_code ?? $organization->plan_code ?? 'basic';
+        $planCode = $organization->pending_plan_code ?? $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking');
         $seats = $organization->pending_seats ?? $organization->max_seats ?? 10;
 
         $organization->update([

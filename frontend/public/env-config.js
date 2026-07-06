@@ -25,4 +25,5 @@ window.__APP_CONFIG__ = window.__APP_CONFIG__ || {};
 
 // ── Feature toggles (edit per-deployment, no rebuild needed) ──────────
 // Set to "true" to enable payroll on this deployment.
-window.__APP_CONFIG__.VITE_PAYROLL_ENABLED = "true";
+// For localhost: set to "false" to hide payroll for non-payroll plans
+window.__APP_CONFIG__.VITE_PAYROLL_ENABLED = "false";

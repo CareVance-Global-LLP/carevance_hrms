@@ -31,7 +31,7 @@ export default function CheckoutPage() {
   const isUpgradeMode = !!(isModeUpgrade || isAlreadySignedUp || organization);
   const isTrial = !isFreshSignup && organization?.subscription_status === 'trial';
 
-  const initialPlanCode = searchParams.get('plan') || 'basic';
+  const initialPlanCode = searchParams.get('plan') || 'basic_tracking';
   const initialInterval = (searchParams.get('interval') as PricingBillingCycle | null) || 'monthly';
   const [selectedPlanCode, setSelectedPlanCode] = useState(initialPlanCode);
   const plan = getPricingPlan(selectedPlanCode);
@@ -41,7 +41,7 @@ export default function CheckoutPage() {
   const [snapshotData, setSnapshotData] = useState<any>(null);
 
   const isNewPaidSignup = organization?.subscription_status === 'inactive' && organization?.subscription_intent === 'paid';
-  const currentPlan = organization ? getPricingPlan(organization.plan_code || 'basic') : null;
+  const currentPlan = organization ? getPricingPlan(organization.plan_code || 'basic_tracking') : null;
   const monthsRemaining = organization?.subscription_expires_at
     ? getMonthsRemaining(organization.subscription_expires_at, billingCycle)
     : 1;
@@ -49,10 +49,24 @@ export default function CheckoutPage() {
   const pricePerUser = getPricePerUserPerMonth(plan, billingCycle);
 
   const usedSeats = snapshotData?.plan?.used_seats ?? snapshotData?.plan?.users_count ?? 0;
-  const currentMaxSeats = isFreshSignup ? MIN_SEATS : (organization?.max_seats ?? MIN_SEATS);
-  const minSeats = isTrial ? Math.max(TRIAL_SEATS - usedSeats, 1) : Math.max(currentMaxSeats, MIN_SEATS);
-  const defaultSeats = isTrial ? Math.max(usedSeats, TRIAL_SEATS) : currentMaxSeats;
-  const [seats, setSeats] = useState(defaultSeats);
+  const currentMaxSeats = isFreshSignup 
+    ? (plan.pricePerSeat ? MIN_SEATS : (plan.includedSeats ?? 50))
+    : (organization?.max_seats ?? (plan.pricePerSeat ? MIN_SEATS : (plan.includedSeats ?? 50)));
+  
+  // Calculate minimum seats based on plan type
+  const getMinSeatsForPlan = (p: typeof plan) => {
+    if (isTrial) return Math.max(TRIAL_SEATS - usedSeats, 1);
+    return p.pricePerSeat ? Math.max(currentMaxSeats, MIN_SEATS) : (p.includedSeats ?? 50);
+  };
+  
+  const minSeats = getMinSeatsForPlan(plan);
+  const [seats, setSeats] = useState(minSeats);
+  
+  // Update seats when plan changes
+  useEffect(() => {
+    const newMin = getMinSeatsForPlan(plan);
+    setSeats(newMin);
+  }, [plan.code]);
 
   const shouldProrate = isUpgradeMode && currentPlan && !isTrial && !isNewPaidSignup;
   const total = shouldProrate
@@ -148,9 +162,9 @@ export default function CheckoutPage() {
               ? isTrial
                 ? 'Your trial is active. Select a plan to continue with full features.'
                 : isNewPaidSignup
-                  ? `Select your ${plan.label} plan`
-                  : `Upgrading from ${currentPlan?.label || 'Basic'} to ${plan.label}`
-              : `${plan.label} plan · ${PRICE_CURRENCY}${pricePerUser}/user/month`
+                  ? `Select your ${plan.label} ${plan.type === 'payroll' ? 'Payroll' : 'Tracking'} plan`
+                  : `Upgrading from ${currentPlan?.label || 'Basic'} ${currentPlan?.type === 'payroll' ? 'Payroll' : 'Tracking'} to ${plan.label} ${plan.type === 'payroll' ? 'Payroll' : 'Tracking'}`
+              : `${plan.label} ${plan.type === 'payroll' ? 'Payroll' : 'Tracking'} plan · ${plan.pricePerSeat ? `${PRICE_CURRENCY}${pricePerUser}/user/month` : `${PRICE_CURRENCY}${plan.monthlyPrice?.toLocaleString('en-IN')}/month`}`
             }
           </p>
 
@@ -164,6 +178,10 @@ export default function CheckoutPage() {
                 return true;
               }).map((p) => {
                 const active = p.code === selectedPlanCode;
+                const priceDisplay = p.pricePerSeat 
+                  ? `${getPlanPrice(p, billingCycle)}/user/month`
+                  : `${PRICE_CURRENCY}${p.monthlyPrice?.toLocaleString('en-IN')}/month`;
+                const planTypeLabel = p.type === 'tracking' ? 'Tracking' : 'Payroll';
                 return (
                   <button
                     key={p.code}
@@ -175,8 +193,9 @@ export default function CheckoutPage() {
                         : 'border-slate-200/90 bg-white/85 hover:border-slate-300'
                     }`}
                   >
-                    <p className="text-sm font-semibold text-slate-950">{p.label}</p>
-                    <p className="mt-1 text-xs leading-6 text-slate-500">{getPlanPrice(p, billingCycle)}/user/month</p>
+                    <p className="text-sm font-semibold text-slate-950">{p.label} {planTypeLabel}</p>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-600">{p.tagline}</p>
+                    <p className="mt-1 text-xs leading-6 text-slate-500">{priceDisplay}</p>
                   </button>
                 );
               })}
@@ -187,16 +206,28 @@ export default function CheckoutPage() {
                 <>
                   <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
                     <span className="text-sm text-slate-600">Current plan</span>
-                    <span className="text-sm font-semibold">{currentPlan.label} ({PRICE_CURRENCY}{getPricePerUserPerMonth(currentPlan, billingCycle)}/user/month)</span>
+                    <span className="text-sm font-semibold">
+                      {currentPlan.label} {currentPlan.pricePerSeat 
+                        ? `(${PRICE_CURRENCY}${getPricePerUserPerMonth(currentPlan, billingCycle)}/user/month)`
+                        : `(${PRICE_CURRENCY}${currentPlan.monthlyPrice?.toLocaleString('en-IN')}/month)`
+                      }
+                    </span>
                   </div>
                   <div className="flex items-center justify-between rounded-2xl bg-sky-50 px-5 py-4">
                     <span className="text-sm text-sky-700">Upgrading to</span>
-                    <span className="text-sm font-semibold text-sky-700">{plan.label} ({PRICE_CURRENCY}{getPricePerUserPerMonth(plan, billingCycle)}/user/month)</span>
+                    <span className="text-sm font-semibold text-sky-700">
+                      {plan.label} {plan.pricePerSeat 
+                        ? `(${PRICE_CURRENCY}${getPricePerUserPerMonth(plan, billingCycle)}/user/month)`
+                        : `(${PRICE_CURRENCY}${plan.monthlyPrice?.toLocaleString('en-IN')}/month)`
+                      }
+                    </span>
                   </div>
-                  <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-5 py-4">
-                    <span className="text-sm text-amber-700">Price difference</span>
-                    <span className="text-sm font-semibold text-amber-700">{PRICE_CURRENCY}{getPricePerUserPerMonth(plan, billingCycle) - getPricePerUserPerMonth(currentPlan, billingCycle)}/user/month</span>
-                  </div>
+                  {currentPlan.pricePerSeat && plan.pricePerSeat && (
+                    <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-5 py-4">
+                      <span className="text-sm text-amber-700">Price difference</span>
+                      <span className="text-sm font-semibold text-amber-700">{PRICE_CURRENCY}{getPricePerUserPerMonth(plan, billingCycle) - getPricePerUserPerMonth(currentPlan, billingCycle)}/user/month</span>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -205,8 +236,13 @@ export default function CheckoutPage() {
                     <span className="text-sm font-semibold">{plan.label}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
-                    <span className="text-sm text-slate-600">Price per user</span>
-                    <span className="text-sm font-semibold">{getPlanPrice(plan, billingCycle)}</span>
+                    <span className="text-sm text-slate-600">{plan.pricePerSeat ? 'Price per user' : 'Base price'}</span>
+                    <span className="text-sm font-semibold">
+                      {plan.pricePerSeat 
+                        ? getPlanPrice(plan, billingCycle)
+                        : `${PRICE_CURRENCY}${plan.monthlyPrice?.toLocaleString('en-IN')}/month`
+                      }
+                    </span>
                   </div>
                 </>
               )}
@@ -218,7 +254,9 @@ export default function CheckoutPage() {
 
             <div className="mt-6">
               <label className="mb-2 block text-sm font-semibold text-slate-800">
-                Number of seats (min {minSeats})
+                {!plan.pricePerSeat && plan.includedSeats
+                  ? `Number of seats (includes ${plan.includedSeats})`
+                  : `Number of seats (min ${minSeats})`}
                 {isTrial && usedSeats > 0 && (
                   <span className="ml-1 text-xs font-normal text-slate-500">· You have {usedSeats} employee(s), need {minSeats} more to reach minimum</span>
                 )}
@@ -250,11 +288,14 @@ export default function CheckoutPage() {
                           const existingSeats = Math.min(seats, currentMaxSeats);
                           const newSeats = Math.max(0, seats - currentMaxSeats);
                           const diffPerUser = getPricePerUserPerMonth(plan, billingCycle) - getPricePerUserPerMonth(currentPlan, billingCycle);
+                          const newPlanPrice = getPricePerUserPerMonth(plan, billingCycle);
+                          
                           const existingCost = diffPerUser * existingSeats * monthsRemaining;
-                          const newCost = getPricePerUserPerMonth(plan, billingCycle) * newSeats * monthsRemaining;
+                          const newCost = newPlanPrice * newSeats * monthsRemaining;
+                          const actualTotal = existingCost + newCost;
                           
                           if (newSeats > 0) {
-                            return `Upgrade cost: ${PRICE_CURRENCY}${existingCost.toLocaleString('en-IN')} (${existingSeats} existing seats × ${PRICE_CURRENCY}${diffPerUser}) + ${PRICE_CURRENCY}${newCost.toLocaleString('en-IN')} (${newSeats} new seat${newSeats > 1 ? 's' : ''} × ${PRICE_CURRENCY}${getPricePerUserPerMonth(plan, billingCycle)}) × ${monthsRemaining} month${monthsRemaining > 1 ? 's' : ''} remaining`;
+                            return `Upgrade cost: ${PRICE_CURRENCY}${actualTotal.toLocaleString('en-IN')} (${existingSeats} existing seats upgrade × ${PRICE_CURRENCY}${diffPerUser}/user + ${newSeats} new seat${newSeats > 1 ? 's' : ''} × ${PRICE_CURRENCY}${newPlanPrice}/user) × ${monthsRemaining} month${monthsRemaining > 1 ? 's' : ''}`;
                           }
                           return `Upgrade cost: ${PRICE_CURRENCY}${diffPerUser}/user × ${seats} seats × ${monthsRemaining} month${monthsRemaining > 1 ? 's' : ''} remaining`;
                         })()

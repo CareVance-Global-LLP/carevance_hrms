@@ -5,7 +5,7 @@ return [
 
     'trial_days' => (int) env('SAAS_TRIAL_DAYS', 14),
 
-    'default_plan' => (string) env('SAAS_DEFAULT_PLAN', 'basic'),
+    'default_plan' => (string) env('SAAS_DEFAULT_PLAN', 'basic_tracking'),
 
     'default_billing_cycle' => (string) env('SAAS_DEFAULT_BILLING_CYCLE', 'monthly'),
 
@@ -46,29 +46,62 @@ return [
     ],
 
     'plans' => [
-        'basic' => [
-            'label' => 'Basic',
-            'description' => 'Core monitoring, attendance, and reporting for growing teams.',
-            'monthly_price' => 300,
-            'yearly_price' => 270,
+        // Tracking Plans
+        'basic_tracking' => [
+            'label' => 'Basic Tracking',
+            'description' => 'Essential time tracking and HR features for growing teams.',
+            'monthly_price' => 399,
+            'yearly_price' => 359,
             'trial_available' => true,
             'contact_sales_only' => false,
+            'max_seats' => -1, // Unlimited
+            'type' => 'tracking',
         ],
-        'advanced_tracker' => [
-            'label' => 'Advanced Tracker',
-            'description' => 'Everything in Basic plus chat, leave management, projects, and task tracking.',
-            'monthly_price' => 450,
-            'yearly_price' => 400,
+        'advance_tracking' => [
+            'label' => 'Advance Tracking',
+            'description' => 'Full tracking with screenshots, automation, and advanced productivity features.',
+            'monthly_price' => 599,
+            'yearly_price' => 539,
             'trial_available' => false,
             'contact_sales_only' => false,
+            'max_seats' => -1, // Unlimited
+            'type' => 'tracking',
         ],
+        
+        // Payroll Plans
+        'basic_payroll' => [
+            'label' => 'Basic Payroll',
+            'description' => 'Complete HR + Payroll automation with compliance for teams.',
+            'monthly_price' => 3999,
+            'yearly_price' => 43189, // 10% discount
+            'trial_available' => true,
+            'contact_sales_only' => false,
+            'max_seats' => 50,
+            'extra_seat_price' => 79,
+            'type' => 'payroll',
+        ],
+        'professional_payroll' => [
+            'label' => 'Professional Payroll',
+            'description' => 'Full suite with advanced HRMS, analytics, and dedicated support.',
+            'monthly_price' => 5999,
+            'yearly_price' => 64789, // 10% discount
+            'trial_available' => false,
+            'contact_sales_only' => false,
+            'max_seats' => 50,
+            'extra_seat_price' => 119,
+            'type' => 'payroll',
+        ],
+        
+        // Enterprise
         'enterprise' => [
             'label' => 'Enterprise',
-            'description' => 'For larger organizations that want custom rollout, controls, and support.',
+            'description' => 'Custom solution with dedicated support, SLA, and white-label options.',
             'monthly_price' => 0,
             'yearly_price' => 0,
             'trial_available' => false,
             'contact_sales_only' => true,
+            'max_seats' => -1, // Unlimited
+            'type' => 'payroll',
         ],
     ],
 ];

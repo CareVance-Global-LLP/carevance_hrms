@@ -74,7 +74,8 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
   const [email, setEmail] = useState(googleEmail || emailParam);
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
-  const [planCode, setPlanCode] = useState(initialMode === 'trial' ? 'basic' : getPricingPlan(initialPlanCode).code);
+  const [planCode, setPlanCode] = useState(initialMode === 'trial' ? 'basic_tracking' : getPricingPlan(initialPlanCode).code);
+  const [trialPlan, setTrialPlan] = useState<'basic_tracking' | 'basic_payroll'>('basic_tracking');
   const [signupMode, setSignupMode] = useState<SignupMode>(initialMode);
   const [billingCycle, setBillingCycle] = useState<PricingBillingCycle>(initialInterval);
   const [seats, setSeats] = useState(Math.max(initialSeats, initialMode === 'trial' ? TRIAL_SEATS : MIN_SEATS));
@@ -103,12 +104,12 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
 
   useEffect(() => {
     if (signupMode === 'trial') {
-      setPlanCode('basic');
+      setPlanCode(trialPlan);
       setSeats(TRIAL_SEATS);
     } else {
       setSeats((s) => Math.max(s, MIN_SEATS));
     }
-  }, [signupMode]);
+  }, [signupMode, trialPlan]);
 
   // Sync name/email from Google query params or email param when they change (e.g. redirect from Google login or login page)
   useEffect(() => {
@@ -197,6 +198,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
         password_confirmation: passwordConfirmation,
         plan_code: planCode,
         signup_mode: signupMode,
+        trial_plan: signupMode === 'trial' ? trialPlan : undefined,
         billing_cycle: billingCycle,
         seats,
         timezone: browserTimezone,
@@ -322,7 +324,62 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                 ) : isTrialMode ? (
                   <div className="rounded-[24px] border border-emerald-200 bg-emerald-50/85 px-5 py-5">
                     <p className="text-sm font-semibold text-emerald-800">14-day free trial</p>
-                    <p className="mt-1 text-xs leading-6 text-emerald-700">Basic plan with 5 seats. No credit card required. Full access expires in 14 days.</p>
+                    <p className="mt-1 text-xs leading-6 text-emerald-700">Choose what to try. No credit card required. Full access expires in 14 days.</p>
+                    
+                    {/* Trial Plan Selection */}
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <label className={`cursor-pointer rounded-[16px] border px-4 py-3 transition ${
+                        trialPlan === 'basic_tracking' 
+                          ? 'border-emerald-300 bg-emerald-100/50' 
+                          : 'border-emerald-200/50 bg-white/50 hover:bg-emerald-50/50'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="trial_plan"
+                          value="basic_tracking"
+                          checked={trialPlan === 'basic_tracking'}
+                          onChange={(e) => setTrialPlan(e.target.value as 'basic_tracking' | 'basic_payroll')}
+                          className="sr-only"
+                        />
+                        <div className="flex items-center gap-3">
+                          <div className={`h-4 w-4 rounded-full border-2 ${
+                            trialPlan === 'basic_tracking' 
+                              ? 'border-emerald-500 bg-emerald-500' 
+                              : 'border-emerald-300'
+                          }`} />
+                          <div>
+                            <p className="text-sm font-semibold text-emerald-900">Basic Tracking</p>
+                            <p className="text-xs text-emerald-700/70">5 seats · ₹399 value</p>
+                          </div>
+                        </div>
+                      </label>
+                      
+                      <label className={`cursor-pointer rounded-[16px] border px-4 py-3 transition ${
+                        trialPlan === 'basic_payroll' 
+                          ? 'border-emerald-300 bg-emerald-100/50' 
+                          : 'border-emerald-200/50 bg-white/50 hover:bg-emerald-50/50'
+                      }`}>
+                        <input
+                          type="radio"
+                          name="trial_plan"
+                          value="basic_payroll"
+                          checked={trialPlan === 'basic_payroll'}
+                          onChange={(e) => setTrialPlan(e.target.value as 'basic_tracking' | 'basic_payroll')}
+                          className="sr-only"
+                        />
+                        <div className="flex items-center gap-3">
+                          <div className={`h-4 w-4 rounded-full border-2 ${
+                            trialPlan === 'basic_payroll' 
+                              ? 'border-emerald-500 bg-emerald-500' 
+                              : 'border-emerald-300'
+                          }`} />
+                          <div>
+                            <p className="text-sm font-semibold text-emerald-900">Basic Payroll</p>
+                            <p className="text-xs text-emerald-700/70">5 seats · ₹3,999 value</p>
+                          </div>
+                        </div>
+                      </label>
+                    </div>
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-3">

@@ -238,7 +238,8 @@ export const pricingPlans: PricingPlan[] = [
     code: 'basic_tracking',
     type: 'tracking',
     label: 'BASIC',
-    tagline: 'Only Tracking',
+    shortDescription: 'Time tracking & productivity',
+    tagline: 'Tracking Only',
     monthlyPrice: 399,
     yearlyPrice: 359,
     pricePerSeat: true,
@@ -250,7 +251,8 @@ export const pricingPlans: PricingPlan[] = [
     code: 'advance_tracking',
     type: 'tracking',
     label: 'ADVANCE',
-    tagline: 'Only Tracking',
+    shortDescription: 'Advanced tracking & insights',
+    tagline: 'Tracking Only',
     monthlyPrice: 599,
     yearlyPrice: 539,
     pricePerSeat: true,
@@ -264,24 +266,26 @@ export const pricingPlans: PricingPlan[] = [
     code: 'basic_payroll',
     type: 'payroll',
     label: 'BASIC',
-    tagline: 'Tracker + Payroll',
-    monthlyPrice: null,
-    yearlyPrice: null,
+    shortDescription: 'Payroll + HRMS for teams',
+    tagline: 'Payroll + Tracking',
+    monthlyPrice: 3999,
+    yearlyPrice: 43189, // 10% discount: 3999 * 12 * 0.90
     pricePerSeat: false,
     basePrice: 3999,
     includedSeats: 50,
     extraSeatPrice: 79,
     modules: basicPayrollModules,
     ctaLabel: 'Get Started',
-    trialAvailable: false,
+    trialAvailable: true,
   },
   {
     code: 'professional_payroll',
     type: 'payroll',
     label: 'PROFESSIONAL',
-    tagline: 'Tracker + Payroll',
-    monthlyPrice: null,
-    yearlyPrice: null,
+    shortDescription: 'Full HRMS with analytics',
+    tagline: 'Payroll + Tracking',
+    monthlyPrice: 5999,
+    yearlyPrice: 64789, // 10% discount: 5999 * 12 * 0.90
     pricePerSeat: false,
     basePrice: 5999,
     includedSeats: 50,
@@ -291,6 +295,37 @@ export const pricingPlans: PricingPlan[] = [
     badge: 'Full Suite',
     highlighted: true,
     trialAvailable: false,
+  },
+  {
+    code: 'enterprise',
+    type: 'payroll',
+    label: 'ENTERPRISE',
+    tagline: 'Custom Solution',
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    pricePerSeat: false,
+    basePrice: 0,
+    includedSeats: 50,
+    extraSeatPrice: 0,
+    modules: [
+      {
+        name: 'Custom Enterprise',
+        icon: 'Star',
+        features: [
+          'Everything in Professional',
+          'Dedicated Account Manager',
+          'Custom Integrations',
+          'SLA Support',
+          'White Label Options',
+          'Custom Pricing',
+        ],
+      },
+    ],
+    ctaLabel: 'Contact Sales',
+    enterpriseContactOnly: true,
+    trialAvailable: false,
+    badge: 'Custom',
+    highlighted: false,
   },
 ];
 
@@ -352,10 +387,24 @@ export function calculateUpgradeCost(
   if (isTrial) {
     return calculateTotal(targetPlan, seats, billingCycle);
   }
-  const currentPrice = calculateTotal(currentPlan, seats, billingCycle) / (billingCycle === 'yearly' ? 12 : 1);
-  const targetPrice = calculateTotal(targetPlan, seats, billingCycle) / (billingCycle === 'yearly' ? 12 : 1);
-  const diffPerMonth = targetPrice - currentPrice;
-  return diffPerMonth * monthsRemaining;
+  
+  const targetPricePerUser = billingCycle === 'yearly' 
+    ? (targetPlan.yearlyPrice ?? targetPlan.monthlyPrice ?? 0)
+    : (targetPlan.monthlyPrice ?? 0);
+  const currentPricePerUser = billingCycle === 'yearly'
+    ? (currentPlan.yearlyPrice ?? currentPlan.monthlyPrice ?? 0)
+    : (currentPlan.monthlyPrice ?? 0);
+  
+  const existingSeats = Math.min(seats, currentMaxSeats);
+  const newSeats = Math.max(0, seats - currentMaxSeats);
+  
+  // Existing seats: pay the difference between plans
+  const existingSeatCost = (targetPricePerUser - currentPricePerUser) * existingSeats;
+  // New seats: pay full price of new plan
+  const newSeatCost = targetPricePerUser * newSeats;
+  
+  const totalCostPerMonth = existingSeatCost + newSeatCost;
+  return totalCostPerMonth * monthsRemaining;
 }
 
 export function getMonthsRemaining(subscriptionExpiresAt: string | null, billingCycle: PricingBillingCycle): number {

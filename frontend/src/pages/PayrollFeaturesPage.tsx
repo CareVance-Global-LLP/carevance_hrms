@@ -25,7 +25,8 @@ const PayrollFeaturesPage: React.FC = () => {
       features: [
         { name: 'My Payroll', path: '/my-payroll', icon: Wallet, description: 'View your personal payroll information' },
         { name: 'Payroll Dashboard', path: '/payroll', icon: Wallet, description: 'Manage overall payroll operations' },
-        { name: 'Setup Wizard', path: '/payroll/setup', icon: Sparkles, description: 'Configure payroll settings and preferences' },
+        // TEMPORARILY DISABLED: Setup Wizard hidden
+        // { name: 'Setup Wizard', path: '/payroll/setup', icon: Sparkles, description: 'Configure payroll settings and preferences' },
       ],
     },
     {

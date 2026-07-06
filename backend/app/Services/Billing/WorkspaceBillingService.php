@@ -16,7 +16,7 @@ class WorkspaceBillingService
         $status = (string) ($organization->subscription_status ?: 'trial');
         $isTrial = $status === 'trial';
 
-        $planCode = $isTrial ? 'trial' : (string) ($organization->plan_code ?: config('carevance.default_plan', 'basic'));
+        $planCode = $isTrial ? 'trial' : (string) ($organization->plan_code ?: config('carevance.default_plan', 'basic_tracking'));
         $planConfig = $isTrial ? ['label' => 'Trial', 'description' => '14-day free trial with limited features.'] : ($plans[$planCode] ?? []);
 
         $trialEndsAt = $organization->trial_ends_at ?? $organization->subscription_expires_at;

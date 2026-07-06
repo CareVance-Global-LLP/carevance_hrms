@@ -279,7 +279,7 @@ class OAuthController extends Controller
                     ]);
                 }
 
-                $planCode = $signupMode === 'trial' ? 'basic' : ((string) ($request->input('plan_code') ?? config('carevance.default_plan', 'basic')));
+                $planCode = $signupMode === 'trial' ? 'basic_tracking' : ((string) ($request->input('plan_code') ?? config('carevance.default_plan', 'basic_tracking')));
                 $billingCycle = (string) ($request->input('billing_cycle') ?? config('carevance.default_billing_cycle', 'monthly'));
                 $seats = $signupMode === 'trial' ? 5 : max(10, (int) ($request->input('seats') ?? 10));
                 $trialDays = max(1, (int) config('carevance.trial_days', 14));

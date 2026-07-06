@@ -106,7 +106,7 @@ class SuperAdminController extends Controller
             'state' => 'nullable|string|max:100',
             'postal_code' => 'nullable|string|max:20',
             'country' => 'nullable|string|max:100',
-            'plan_code' => 'required|string|in:basic,advanced_tracker,growth,enterprise',
+            'plan_code' => 'required|string|in:basic_tracking,advance_tracking,basic_payroll,professional_payroll,enterprise',
             'seats' => 'required|integer|min:1|max:1000',
             'admin_name' => 'required|string|max:255',
             'admin_email' => 'required|email|max:255|unique:users,email',

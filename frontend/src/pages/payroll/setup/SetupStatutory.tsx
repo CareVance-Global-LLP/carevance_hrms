@@ -9,6 +9,13 @@ import InfoTooltip from '@/components/ui/InfoTooltip';
 import { payrollApi } from '@/services/api';
 import { usePayrollOnboarding } from '@/hooks/usePayrollOnboarding';
 
+// Validation regex patterns
+const VALIDATORS = {
+  tan: /^[A-Z]{4}[0-9]{5}[A-Z]$/,
+  pan: /^[A-Z]{5}[0-9]{4}[A-Z]$/,
+  esi: /^[0-9]{17}$/,
+};
+
 export default function SetupStatutory() {
   const queryClient = useQueryClient();
   const { status, markSetupStep } = usePayrollOnboarding();
@@ -16,6 +23,7 @@ export default function SetupStatutory() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const [tan, setTan] = useState('');
   const [pan, setPan] = useState('');
@@ -23,6 +31,21 @@ export default function SetupStatutory() {
   const [esiCode, setEsiCode] = useState('');
   const [ptRegNumber, setPtRegNumber] = useState('');
   const [lwfRegNumber, setLwfRegNumber] = useState('');
+
+  const validateField = (field: string, value: string): string | null => {
+    if (!value) return null; // Empty is allowed
+    
+    switch (field) {
+      case 'tan':
+        return VALIDATORS.tan.test(value) ? null : 'Invalid TAN format. Expected: ABCD12345E';
+      case 'pan':
+        return VALIDATORS.pan.test(value) ? null : 'Invalid PAN format. Expected: ABCDE1234F';
+      case 'esi':
+        return VALIDATORS.esi.test(value) ? null : 'ESI code must be exactly 17 digits';
+      default:
+        return null;
+    }
+  };
 
   // Pre-fill from existing org settings
   const { data: settingsData } = useQuery({
@@ -44,6 +67,25 @@ export default function SetupStatutory() {
     setError(null);
     setSuccess(null);
     setSubmitting(true);
+    setValidationErrors({});
+    
+    // Validate all fields
+    const errors: Record<string, string> = {};
+    const tanError = validateField('tan', tan);
+    const panError = validateField('pan', pan);
+    const esiError = validateField('esi', esiCode);
+    
+    if (tanError) errors.tan = tanError;
+    if (panError) errors.pan = panError;
+    if (esiError) errors.esi = esiError;
+    
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      setError('Please fix the validation errors before saving.');
+      setSubmitting(false);
+      return;
+    }
+    
     try {
       await payrollApi.updatePayrollSettings({
         statutory: {
@@ -105,11 +147,21 @@ export default function SetupStatutory() {
             </div>
             <TextInput
               value={tan}
-              onChange={(e) => setTan(e.target.value.toUpperCase())}
+              onChange={(e) => {
+                setTan(e.target.value.toUpperCase());
+                if (validationErrors.tan) {
+                  setValidationErrors(prev => ({ ...prev, tan: '' }));
+                }
+              }}
               placeholder="e.g. ABCD12345E"
               maxLength={10}
+              className={validationErrors.tan ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500' : ''}
             />
-            <p className="text-xs text-slate-400 mt-1">Required for TDS filings (Form 24Q, 26Q)</p>
+            {validationErrors.tan ? (
+              <p className="text-xs text-rose-600 mt-1">{validationErrors.tan}</p>
+            ) : (
+              <p className="text-xs text-slate-400 mt-1">Required for TDS filings (Form 24Q, 26Q)</p>
+            )}
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -118,11 +170,21 @@ export default function SetupStatutory() {
             </div>
             <TextInput
               value={pan}
-              onChange={(e) => setPan(e.target.value.toUpperCase())}
+              onChange={(e) => {
+                setPan(e.target.value.toUpperCase());
+                if (validationErrors.pan) {
+                  setValidationErrors(prev => ({ ...prev, pan: '' }));
+                }
+              }}
               placeholder="e.g. ABCDE1234F"
               maxLength={10}
+              className={validationErrors.pan ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500' : ''}
             />
-            <p className="text-xs text-slate-400 mt-1">Used on payslips and filings</p>
+            {validationErrors.pan ? (
+              <p className="text-xs text-rose-600 mt-1">{validationErrors.pan}</p>
+            ) : (
+              <p className="text-xs text-slate-400 mt-1">Used on payslips and filings</p>
+            )}
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -143,10 +205,22 @@ export default function SetupStatutory() {
             </div>
             <TextInput
               value={esiCode}
-              onChange={(e) => setEsiCode(e.target.value.toUpperCase())}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, ''); // Only allow digits
+                setEsiCode(value);
+                if (validationErrors.esi) {
+                  setValidationErrors(prev => ({ ...prev, esi: '' }));
+                }
+              }}
               placeholder="e.g. 12345678901234567"
+              maxLength={17}
+              className={validationErrors.esi ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500' : ''}
             />
-            <p className="text-xs text-slate-400 mt-1">17-digit code from ESIC</p>
+            {validationErrors.esi ? (
+              <p className="text-xs text-rose-600 mt-1">{validationErrors.esi}</p>
+            ) : (
+              <p className="text-xs text-slate-400 mt-1">17-digit code from ESIC</p>
+            )}
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">

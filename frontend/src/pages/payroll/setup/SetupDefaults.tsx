@@ -20,11 +20,6 @@ export default function SetupDefaults() {
   const [workingDays, setWorkingDays] = useState('26');
   const [ptState, setPtState] = useState('maharashtra');
   const [taxRegime, setTaxRegime] = useState<'new' | 'old'>('new');
-  const [pfEnabled, setPfEnabled] = useState(true);
-  const [esiEnabled, setEsiEnabled] = useState(true);
-  const [ptEnabled, setPtEnabled] = useState(true);
-  const [tdsEnabled, setTdsEnabled] = useState(true);
-  const [lwfEnabled, setLwfEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -44,11 +39,6 @@ export default function SetupDefaults() {
     if (s.workingDaysPerMonth !== undefined) setWorkingDays(String(s.workingDaysPerMonth));
     if (s.defaultState) setPtState(s.defaultState);
     if (s.defaultTaxRegime) setTaxRegime(s.defaultTaxRegime);
-    if (typeof s.pfEnabled === 'boolean') setPfEnabled(s.pfEnabled);
-    if (typeof s.esiEnabled === 'boolean') setEsiEnabled(s.esiEnabled);
-    if (typeof s.ptEnabled === 'boolean') setPtEnabled(s.ptEnabled);
-    if (typeof s.tdsEnabled === 'boolean') setTdsEnabled(s.tdsEnabled);
-    if (typeof s.lwfEnabled === 'boolean') setLwfEnabled(s.lwfEnabled);
   }, [settingsData]);
 
   const { data: ptStatesData } = useQuery({
@@ -86,11 +76,6 @@ export default function SetupDefaults() {
         workingDaysPerMonth: parseInt(workingDays) || 26,
         defaultState: ptState,
         defaultTaxRegime: taxRegime,
-        pfEnabled,
-        esiEnabled,
-        ptEnabled,
-        tdsEnabled,
-        lwfEnabled,
       } as any);
       await markSetupStep('defaults');
       invalidateAllPayrollCaches();
@@ -119,11 +104,6 @@ export default function SetupDefaults() {
         workingDaysPerMonth: parseInt(workingDays) || 26,
         defaultState: ptState,
         defaultTaxRegime: taxRegime,
-        pfEnabled,
-        esiEnabled,
-        ptEnabled,
-        tdsEnabled,
-        lwfEnabled,
       } as any);
       const res = await payrollApi.applySettingsToAllEmployees(false);
       invalidateAllPayrollCaches();
@@ -233,35 +213,6 @@ export default function SetupDefaults() {
             </SelectInput>
             <p className="text-xs text-slate-400 mt-1">Employees can change this later</p>
           </div>
-        </div>
-      </SurfaceCard>
-
-      <SurfaceCard className="p-6 mb-6">
-        <h3 className="text-sm font-semibold text-slate-900 mb-1">Statutory Compliance Toggles</h3>
-        <p className="text-xs text-slate-500 mb-4">Enable/disable deductions. You can change these per-employee too.</p>
-        <div className="space-y-3">
-          {[
-            { key: 'pf', label: 'Provident Fund (PF)', desc: '12% employee + 12% employer', state: pfEnabled, set: setPfEnabled },
-            { key: 'esi', label: 'Employee State Insurance (ESI)', desc: '0.75% employee + 3.25% employer (if gross ≤ ₹21,000)', state: esiEnabled, set: setEsiEnabled },
-            { key: 'pt', label: 'Professional Tax (PT)', desc: 'State-specific amount (₹0 to ₹200/mo)', state: ptEnabled, set: setPtEnabled },
-            { key: 'tds', label: 'Tax Deducted at Source (TDS)', desc: 'Income tax based on regime', state: tdsEnabled, set: setTdsEnabled },
-            { key: 'lwf', label: 'Labour Welfare Fund (LWF)', desc: 'Annual state-specific contribution', state: lwfEnabled, set: setLwfEnabled },
-          ].map(item => (
-            <div key={item.key} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-              <div>
-                <p className="text-sm font-medium text-slate-900">{item.label}</p>
-                <p className="text-xs text-slate-500">{item.desc}</p>
-              </div>
-              <button
-                onClick={() => item.set(!item.state)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${item.state ? 'bg-blue-600' : 'bg-slate-300'}`}
-                role="switch"
-                aria-checked={item.state}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${item.state ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-          ))}
         </div>
       </SurfaceCard>
 

@@ -41,7 +41,8 @@ class AuthController extends Controller
         $validated = $request->validated();
         $organizationName = trim((string) ($validated['company_name'] ?? $validated['organization_name'] ?? ''));
         $signupMode = (string) ($validated['signup_mode'] ?? 'trial');
-        $planCode = $signupMode === 'trial' ? 'basic' : (string) ($validated['plan_code'] ?? config('carevance.default_plan', 'basic'));
+        $trialPlan = (string) ($validated['trial_plan'] ?? 'basic_tracking');
+        $planCode = $signupMode === 'trial' ? $trialPlan : (string) ($validated['plan_code'] ?? config('carevance.default_plan', 'basic_tracking'));
         $billingCycle = $validated['billing_cycle'] ?? config('carevance.default_billing_cycle', 'monthly');
         $trialDays = max(1, (int) config('carevance.trial_days', 14));
         $seats = $signupMode === 'trial' ? 5 : max(10, (int) ($validated['seats'] ?? 10));
