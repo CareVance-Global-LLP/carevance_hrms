@@ -209,8 +209,8 @@ export default function BillingSettingsPage() {
                   </>
                 ) : (
                   <>
-                    {/* Only show upgrade to Advance Tracking if on Basic plan and NOT on Advance already */}
-                    {(planCode === 'basic_tracking' || planCode === 'basic') && planCode !== 'advance_tracking' && planCode !== 'advanced_tracker' && (
+                    {/* Only show upgrade to Advance Tracking if on Basic plan */}
+                    {(planCode === 'basic_tracking' || planCode === 'basic') && (
                       <Link
                         to={buildUpgradePath('advance_tracking', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
                         className="flex items-center justify-between rounded-[22px] border border-sky-200/90 bg-sky-50/80 px-4 py-4 text-sm font-semibold text-sky-800 transition hover:-translate-y-0.5 hover:border-sky-600"
