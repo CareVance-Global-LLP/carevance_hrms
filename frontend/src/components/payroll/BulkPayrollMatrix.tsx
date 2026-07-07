@@ -247,15 +247,29 @@ const completeStepMutation = useMutation({
         </div>
       </div>
 
+
+      
       {/* Step Tabs — gated: can only click steps whose previous step is 100% done */}
       <div className="flex border-b border-slate-200 bg-white px-6">
         {WIZARD_STEPS.map((step) => {
           const isActive = currentStep === step.num;
           const Icon = step.icon;
           const prevStepKey = `step${step.num - 1}` as const;
-          // Check if all employees have completed the previous step
+          const stepKey = `step${step.num}` as const;
+          
+          // Check if all employees have completed the previous step (for navigation gating)
           const prevStepDone = step.num === 1 ||
-            employees?.every(e => e.steps_completed[prevStepKey] === true);
+            (employees?.length > 0 && employees?.every(e => e.steps_completed?.[prevStepKey] === true));
+          
+          // Check if all employees have completed THIS specific step (for tick indicator)
+          const isStepCompleted = employees?.length > 0 && 
+            employees?.every(e => e.steps_completed?.[stepKey] === true);
+          
+          // Debug logging
+          if (employees?.length > 0 && currentStep === 1) {
+            console.log(`Step ${step.num}: stepKey=${stepKey}, isStepCompleted=${isStepCompleted}`);
+          }
+          
           const canClick = step.num <= currentStep || prevStepDone;
           return (
             <button
@@ -286,8 +300,9 @@ const completeStepMutation = useMutation({
               </div>
               <span className="text-[10px] sm:text-xs">{step.label}</span>
               
-              {/* Progress indicator for non-active steps */}
-              {!isActive && prevStepDone && step.num > currentStep && (
+              {/* Progress indicator for completed steps */}
+              {/* Show tick only if THIS step is completed by ALL employees */}
+              {!isActive && isStepCompleted && (
                 <div className="absolute top-1 right-1">
                   <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                 </div>

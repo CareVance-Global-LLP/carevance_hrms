@@ -16,8 +16,20 @@ class WorkspaceBillingService
         $status = (string) ($organization->subscription_status ?: 'trial');
         $isTrial = $status === 'trial';
 
-        $planCode = $isTrial ? 'trial' : (string) ($organization->plan_code ?: config('carevance.default_plan', 'basic_tracking'));
-        $planConfig = $isTrial ? ['label' => 'Trial', 'description' => '14-day free trial with limited features.'] : ($plans[$planCode] ?? []);
+        // Get the actual plan code from database, even during trial
+        $actualPlanCode = (string) ($organization->plan_code ?: config('carevance.default_plan', 'basic_tracking'));
+        
+        // For display purposes during trial, show the actual plan type (Tracking vs Payroll)
+        if ($isTrial) {
+            $isPayrollTrial = PlanService::isPayrollPlan($actualPlanCode);
+            $planCode = $actualPlanCode; // Keep the actual plan code for reference
+            $planConfig = $isPayrollTrial 
+                ? ['label' => 'Payroll Trial', 'description' => '14-day free trial of Basic Payroll with full HR + Payroll features.']
+                : ['label' => 'Tracking Trial', 'description' => '14-day free trial of Basic Tracking with time tracking and HR features.'];
+        } else {
+            $planCode = $actualPlanCode;
+            $planConfig = $plans[$planCode] ?? [];
+        }
 
         $trialEndsAt = $organization->trial_ends_at ?? $organization->subscription_expires_at;
         $usedSeats = $organization->users()->count();
