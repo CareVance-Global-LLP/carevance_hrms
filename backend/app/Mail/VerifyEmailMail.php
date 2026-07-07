@@ -10,7 +10,7 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class VerifyEmailMail extends Mailable implements ShouldQueue
+class VerifyEmailMail extends Mailable
 {
     use Queueable, SerializesModels;
 
@@ -22,6 +22,11 @@ class VerifyEmailMail extends Mailable implements ShouldQueue
 
     public function envelope(): Envelope
     {
+        \Illuminate\Support\Facades\Log::info('DEBUG: VerifyEmailMail envelope() called', [
+            'to' => $this->user->email,
+            'subject' => 'Verify your CareVance email',
+        ]);
+        
         return new Envelope(
             subject: 'Verify your CareVance email',
         );

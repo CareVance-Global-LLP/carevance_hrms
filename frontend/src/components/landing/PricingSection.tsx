@@ -167,34 +167,35 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
         </div>
 
         {/* Billing cycle + seats */}
-        <div className="mt-6 flex flex-col items-center justify-center gap-4 sm:flex-row">
-          {planType === 'tracking' && (
-            <>
-              <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-                {(['monthly', 'yearly'] as PricingBillingCycle[]).map((cycle) => (
-                  <button
-                    key={cycle}
-                    type="button"
-                    onClick={() => setBillingCycle(cycle)}
-                    className={`rounded-md px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-                      billingCycle === cycle
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-900'
-                    }`}
-                  >
-                    {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
-                    {cycle === 'yearly' && (
-                      <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-white/80">Save 10%</span>
-                    )}
-                  </button>
-                ))}
-              </div>
+        <div className="mt-6 flex flex-col items-center justify-center gap-4 sm:flex-row flex-wrap">
+          {/* Billing cycle toggle - now for ALL plan types */}
+          <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            {(['monthly', 'yearly'] as PricingBillingCycle[]).map((cycle) => (
+              <button
+                key={cycle}
+                type="button"
+                onClick={() => setBillingCycle(cycle)}
+                className={`rounded-md px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+                  billingCycle === cycle
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
+                {cycle === 'yearly' && (
+                  <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-white/80">
+                    Save 10%
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
 
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <span>Seats:</span>
-                <SeatCounter value={seats} onChange={setSeats} min={MIN_SEATS} />
-              </div>
-            </>
+          {planType === 'tracking' && (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <span>Seats:</span>
+              <SeatCounter value={seats} onChange={setSeats} min={MIN_SEATS} />
+            </div>
           )}
           {planType === 'payroll' && (
             <p className="text-sm text-slate-500">
@@ -314,18 +315,29 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
 
                   {/* CTA */}
                   <div className="mt-6">
-                    <Link
-                      to={buildCheckoutPath(plan.code, billingCycle)}
-                      onClick={() => { analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'buy-now' }); }}
-                      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold shadow-sm transition-all duration-200 ${
-                        isHighlighted
-                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 hover:shadow-md'
-                          : 'border-2 border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {plan.ctaLabel}
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
+                    {plan.enterpriseContactOnly ? (
+                      <Link
+                        to="/contact-sales"
+                        onClick={() => { analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'contact-sales' }); }}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-slate-700 to-slate-800 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:from-slate-800 hover:to-slate-900 hover:shadow-md"
+                      >
+                        {plan.ctaLabel}
+                        <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    ) : (
+                      <Link
+                        to={buildCheckoutPath(plan.code, billingCycle)}
+                        onClick={() => { analytics.trackEvent('pricing_cta_clicked', { plan_code: plan.code, action: 'buy-now' }); }}
+                        className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold shadow-sm transition-all duration-200 ${
+                          isHighlighted
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 hover:shadow-md'
+                            : 'border-2 border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {plan.ctaLabel}
+                        <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>

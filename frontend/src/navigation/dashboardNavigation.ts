@@ -169,7 +169,8 @@ export const topNavigation: NavGroup[] = [
       // Overview
       { label: 'My Payroll', to: '/my-payroll', icon: Wallet, planFeature: 'payroll', section: 'Overview' },
       { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll', strictAdminOnly: true, section: 'Overview' },
-      { label: 'Setup Wizard', to: '/payroll/setup', icon: Sparkles, planFeature: 'payroll', strictAdminOnly: true, section: 'Overview' },
+      // TEMPORARILY DISABLED: Setup Wizard hidden
+      // { label: 'Setup Wizard', to: '/payroll/setup', icon: Sparkles, planFeature: 'payroll', strictAdminOnly: true, section: 'Overview' },
       // Tax
       { label: 'Tax Declarations', to: '/tax-declarations', icon: FileText, planFeature: 'payroll', section: 'Tax' },
       { label: 'Tax Proofs Review', to: '/tax-proofs', icon: FileText, planFeature: 'payroll', strictAdminOnly: true, section: 'Tax' },

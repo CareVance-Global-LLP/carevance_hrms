@@ -44,3 +44,53 @@ Route::post('/auth/google/login', [OAuthController::class, 'verifyGoogleToken'])
 
 // Razorpay webhook (public endpoint for payment callbacks)
 Route::post('/webhooks/razorpay', [\App\Http\Controllers\Api\BillingController::class, 'razorpayWebhook']);
+
+// Test email route for debugging
+Route::post('/test/email', function (\Illuminate\Http\Request $request) {
+    $email = $request->input('email', 'test@example.com');
+    $name = $request->input('name', 'Test User');
+    
+    try {
+        \Illuminate\Support\Facades\Mail::raw('Test email from CareVance at ' . now(), function ($message) use ($email) {
+            $message->to($email)
+                    ->subject('Test Email');
+        });
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Test email sent. Check your logs at: storage/logs/laravel.log',
+            'mail_driver' => config('mail.default'),
+            'to' => $email,
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'mail_driver' => config('mail.default'),
+        ], 500);
+    }
+});
+
+// Check email log - show last email
+Route::get('/test/email-log', function () {
+    $logFile = storage_path('logs/laravel.log');
+    
+    if (!file_exists($logFile)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Log file not found',
+        ]);
+    }
+    
+    $content = file_get_contents($logFile);
+    
+    // Find email-related log entries
+    preg_match_all('/\[.*?\].*?(?:To:|From:|Subject:|Mail|email).*?(?=\n\[|$)/is', $content, $matches);
+    
+    return response()->json([
+        'success' => true,
+        'mail_driver' => config('mail.default'),
+        'log_file' => $logFile,
+        'recent_emails' => array_slice($matches[0], -5), // Last 5 email-related entries
+    ]);
+});

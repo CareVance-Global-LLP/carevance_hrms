@@ -63,9 +63,9 @@ export default function PaymentPage() {
   const isTrial = organization.subscription_status === 'trial';
   const isNewPaidSignup = organization.subscription_status === 'inactive' && organization.subscription_intent === 'paid';
 
-  const planCode = isNewPaidSignup
-    ? (organization.plan_code || 'basic')
-    : (organization.pending_plan_code || 'basic');
+    const planCode = isNewPaidSignup
+    ? (organization.plan_code || 'basic_tracking')
+    : (organization.pending_plan_code || 'basic_tracking');
   const targetPlan = getPricingPlan(planCode);
   const billingCycle = (organization.pending_billing_cycle || organization.billing_cycle || 'monthly') as PricingBillingCycle;
   const seats = organization.pending_seats || organization.max_seats || 10;
@@ -238,7 +238,7 @@ export default function PaymentPage() {
             <>
               <div className="flex items-center justify-between rounded-xl bg-slate-50 px-5 py-4">
                 <span className="text-sm text-slate-600">Current plan</span>
-                <span className="text-sm font-semibold">{getPricingPlan(organization.plan_code || 'basic').label}</span>
+                <span className="text-sm font-semibold">{getPricingPlan(organization.plan_code || 'basic_tracking').label}</span>
               </div>
               <div className="flex items-center justify-between rounded-xl bg-sky-50 px-5 py-4">
                 <span className="text-sm text-sky-700">Selected plan</span>

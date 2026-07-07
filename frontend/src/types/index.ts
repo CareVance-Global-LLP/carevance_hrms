@@ -478,6 +478,7 @@ export interface OwnerSignupRequest {
   password_confirmation: string;
   plan_code: string;
   signup_mode: 'trial' | 'paid';
+  trial_plan?: 'basic_tracking' | 'basic_payroll';
   billing_cycle?: 'monthly' | 'yearly';
   seats?: number;
   terms_accepted?: boolean;

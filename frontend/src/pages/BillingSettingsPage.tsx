@@ -20,6 +20,8 @@ export default function BillingSettingsPage() {
   const navigate = useNavigate();
 
   const [showAddSeatsModal, setShowAddSeatsModal] = useState(false);
+  const [showReduceSeatsModal, setShowReduceSeatsModal] = useState(false);
+  const [seatsToReduce, setSeatsToReduce] = useState(0);
   const [showCancelPlanModal, setShowCancelPlanModal] = useState(false);
   const [seatsToAdd, setSeatsToAdd] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -59,6 +61,7 @@ export default function BillingSettingsPage() {
   const isTrial = plan?.status === 'trial';
   const billingCycle = (plan?.billing_cycle as PricingBillingCycle) || 'monthly';
   const pricePerUser = getPricePerUserPerMonth(selectedPlan, billingCycle);
+  const isPayrollPlan = selectedPlan.type === 'payroll';
   const totalMonths = billingCycle === 'yearly' ? 12 : 1;
   const addSeatsCost = seatsToAdd * pricePerUser * totalMonths;
 
@@ -183,43 +186,78 @@ export default function BillingSettingsPage() {
                   <Plus className="h-4 w-4" />
                 </button>
 
+                {!isTrial && (
+                  <button
+                    onClick={() => setShowReduceSeatsModal(true)}
+                    className="flex w-full items-center justify-between rounded-[22px] border border-amber-200/90 bg-amber-50/80 px-4 py-4 text-sm font-semibold text-amber-800 transition hover:-translate-y-0.5 hover:border-amber-600"
+                  >
+                    Reduce Seats
+                    <span className="text-xs font-normal text-amber-600">(No refund)</span>
+                  </button>
+                )}
+
                 {isTrial ? (
                   <>
                     <p className="text-sm text-slate-600">Your trial is active. Upgrade to a paid plan to continue with full features.</p>
                     <Link
-                      to={buildUpgradePath('basic', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
+                      to={buildUpgradePath('basic_tracking', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
                       className="flex items-center justify-between rounded-[22px] border border-sky-200/90 bg-sky-50/80 px-4 py-4 text-sm font-semibold text-sky-800 transition hover:-translate-y-0.5 hover:border-sky-600"
                     >
                       Upgrade Plan
                       <ArrowRight className="h-4 w-4" />
                     </Link>
                   </>
-                ) : (() => {
-                  const upgradeInfo = getUpgradeInfo(planCode);
-                  if (!upgradeInfo) return null;
-
-                  if (upgradeInfo.target === 'enterprise') {
-                    return (
-                      <a
-                        href={`mailto:${pricingUi.contactEmail}?subject=CareVance%20Enterprise%20Upgrade%20Request`}
+                ) : (
+                  <>
+                    {/* Only show upgrade to Advance Tracking if on Basic plan */}
+                    {(planCode === 'basic_tracking' || planCode === 'basic') && (
+                      <Link
+                        to={buildUpgradePath('advance_tracking', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
                         className="flex items-center justify-between rounded-[22px] border border-sky-200/90 bg-sky-50/80 px-4 py-4 text-sm font-semibold text-sky-800 transition hover:-translate-y-0.5 hover:border-sky-600"
                       >
-                        {upgradeInfo.label}
-                        <Mail className="h-4 w-4" />
-                      </a>
-                    );
-                  }
-
-                  return (
-                    <Link
-                      to={buildUpgradePath(upgradeInfo.target, (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
-                      className="flex items-center justify-between rounded-[22px] border border-sky-200/90 bg-sky-50/80 px-4 py-4 text-sm font-semibold text-sky-800 transition hover:-translate-y-0.5 hover:border-sky-600"
-                    >
-                      {upgradeInfo.label}
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  );
-                })()}
+                        Upgrade to Advance Tracking
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    )}
+                    
+                    {/* Show downgrade option if on Advance Tracking */}
+                    {(planCode === 'advance_tracking' || planCode === 'advanced_tracker') && (
+                      <Link
+                        to={buildUpgradePath('basic_tracking', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
+                        className="flex items-center justify-between rounded-[22px] border border-slate-200/90 bg-slate-50/80 px-4 py-4 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-slate-950"
+                      >
+                        Downgrade to Basic Tracking
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    )}
+                    
+                    {/* 
+                      NOTE: Direct upgrade from Tracking to Payroll is disabled.
+                      Users should only upgrade to Payroll after their current 
+                      Tracking subscription ends or through the plan expiration flow.
+                      
+                      To re-enable direct payroll upgrades, uncomment the block below:
+                    */}
+                    {/* 
+                    {planCode !== 'basic_payroll' && planCode !== 'professional_payroll' && planCode !== 'enterprise' && (
+                      <>
+                        <Link
+                          to={buildUpgradePath('basic_payroll', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
+                          className="flex items-center justify-between rounded-[22px] border border-emerald-200/90 bg-emerald-50/80 px-4 py-4 text-sm font-semibold text-emerald-800 transition hover:-translate-y-0.5 hover:border-emerald-600"
+                        >
+                          Upgrade to Basic Payroll
+                          <ArrowRight className="h-4 w-4" />
+                        </Link>
+                        <Link
+                          to={buildUpgradePath('professional_payroll', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
+                          className="flex items-center justify-between rounded-[22px] border border-violet-200/90 bg-violet-50/80 px-4 py-4 text-sm font-semibold text-violet-800 transition hover:-translate-y-0.5 hover:border-violet-600"
+                        >
+                          Upgrade to Professional Payroll
+                          <ArrowRight className="h-4 w-4" />
+                        </Link>
+                      </>
+                    )}
+                    */}
                     <Link
                       to="/pricing"
                       className="flex items-center justify-between rounded-[22px] border border-slate-200/90 bg-white/90 px-4 py-4 text-sm font-semibold text-slate-800 transition hover:-translate-y-0.5 hover:border-slate-950"
@@ -347,6 +385,109 @@ export default function BillingSettingsPage() {
                 </>
               )}
             </button>
+          </div>
+        </div>
+      )}
+
+      {showReduceSeatsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.3)] sm:p-8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold tracking-[-0.04em]">Reduce Seats</h2>
+              <button
+                onClick={() => {
+                  setShowReduceSeatsModal(false);
+                  setSeatsToReduce(0);
+                }}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              >
+                <span className="sr-only">Close</span>
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mt-6">
+              <p className="text-sm text-slate-600">
+                Current seats: <span className="font-semibold text-slate-900">{maxSeats}</span>
+              </p>
+              
+              <div className="mt-4">
+                <label className="mb-2 block text-sm font-semibold text-slate-800">
+                  New seat count
+                </label>
+                <input
+                  type="number"
+                  min={isPayrollPlan ? 50 : 10}
+                  max={maxSeats - 1}
+                  value={seatsToReduce || ''}
+                  onChange={(e) => setSeatsToReduce(parseInt(e.target.value) || 0)}
+                  className="block w-full rounded-[22px] border border-slate-200/90 bg-white/85 py-4 px-4 text-sm text-slate-950 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
+                  placeholder="Enter new seat count"
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  Minimum {isPayrollPlan ? 50 : 10} seats required
+                </p>
+              </div>
+
+              <div className="mt-4 rounded-[16px] border border-amber-200/50 bg-amber-50/50 p-4">
+                <p className="text-sm text-amber-800">
+                  <span className="font-semibold">No refund policy:</span> Seat reduction will take effect at your next billing cycle. No refund will be issued for the reduced seats.
+                </p>
+              </div>
+            </div>
+
+            {processingError && (
+              <p className="mt-4 text-center text-sm text-red-600">{processingError}</p>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowReduceSeatsModal(false);
+                  setSeatsToReduce(0);
+                  setProcessingError('');
+                }}
+                disabled={isProcessing}
+                className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (seatsToReduce < (isPayrollPlan ? 50 : 10) || seatsToReduce >= maxSeats) {
+                    setProcessingError(`Invalid seat count. Must be between ${isPayrollPlan ? 50 : 10} and ${maxSeats - 1}.`);
+                    return;
+                  }
+                  
+                  setIsProcessing(true);
+                  setProcessingError('');
+                  
+                  try {
+                    await billingApi.reduceSeats(seatsToReduce);
+                    setShowReduceSeatsModal(false);
+                    // Reload billing snapshot
+                    const response = await billingApi.current();
+                    setSnapshot(response.data);
+                  } catch (err: any) {
+                    setProcessingError(err?.response?.data?.message || 'Failed to reduce seats. Please try again.');
+                  } finally {
+                    setIsProcessing(false);
+                  }
+                }}
+                disabled={isProcessing || !seatsToReduce}
+                className="flex-1 rounded-full bg-amber-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-70"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Processing...
+                  </>
+                ) : (
+                  'Confirm Reduction'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

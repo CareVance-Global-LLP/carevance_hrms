@@ -190,45 +190,6 @@ export default function SetupPaySchedule() {
         </div>
       </SurfaceCard>
 
-      <SurfaceCard className="p-6 mb-6">
-        <h3 className="text-sm font-semibold text-slate-900 mb-4">Attendance & Working Days</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <FieldLabel>Working Days per Month</FieldLabel>
-            <TextInput
-              type="number"
-              value={workingDays}
-              onChange={(e) => setWorkingDays(e.target.value)}
-              min="1"
-              max="31"
-            />
-            <p className="text-xs text-slate-400 mt-1">Usually 26 (Mon-Sat)</p>
-          </div>
-          <div>
-            <FieldLabel>Cut-off Day of Month</FieldLabel>
-            <TextInput
-              type="number"
-              value={cutoffDay}
-              onChange={(e) => setCutoffDay(e.target.value)}
-              min="1"
-              max="31"
-            />
-            <p className="text-xs text-slate-400 mt-1">Attendance after this day goes to next month's payroll</p>
-          </div>
-          <div>
-            <FieldLabel>Processing Buffer (days)</FieldLabel>
-            <TextInput
-              type="number"
-              value={processingBuffer}
-              onChange={(e) => setProcessingBuffer(e.target.value)}
-              min="1"
-              max="10"
-            />
-            <p className="text-xs text-slate-400 mt-1">Days between cut-off and pay day for processing</p>
-          </div>
-        </div>
-      </SurfaceCard>
-
       <div className="flex justify-end">
         <Button
           variant="primary"

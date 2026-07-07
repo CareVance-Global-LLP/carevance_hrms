@@ -737,11 +737,11 @@ export default function EmployeePayrollWizard({
         </div>
       </SurfaceCard>
 
-       {!isStepCompleteForAll && (
+        {!isStepCompleteForAll && (
         <div className="flex justify-end">
           <Button 
             variant="primary" 
-            onClick={() => handleContinue(1, 0)}
+            onClick={() => handleContinue(1, 1)}
             iconRight={<ChevronRight className="h-4 w-4" />}
           >
             Continue
@@ -928,12 +928,12 @@ export default function EmployeePayrollWizard({
                   // No preview yet — try to calculate, then advance if it worked.
                   await calculatePreview();
                 }
-                // Mark step 1 complete before advancing (BulkPayrollMatrix
+                // Mark step 2 complete before advancing (BulkPayrollMatrix
                 // uses this to track per-employee per-step progress).
-                // handleContinue(2, 1) advances the step ONLY in
+                // handleContinue(2, 2) advances the step ONLY in
                 // standalone mode — in matrix mode it just marks step
-                // 1 done and lets the matrix drive the next step.
-                handleContinue(2, 1);
+                // 2 done and lets the matrix drive the next step.
+                handleContinue(2, 2);
               }}
               disabled={isCalculating || !annualCtc || parseFloat(annualCtc) <= 0}
               iconLeft={isCalculating ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
@@ -1119,9 +1119,9 @@ export default function EmployeePayrollWizard({
                   if (!calculation && parseFloat(annualCtc) > 0 && template) {
                     await calculatePreview();
                   }
-                  // In matrix mode: mark step 2 done only; matrix drives
+                  // In matrix mode: mark step 3 done only; matrix drives
                   // the step change.
-                  handleContinue(3, 2);
+                  handleContinue(3, 3);
                 }}
                 disabled={!calculation && (parseFloat(annualCtc) <= 0 || !template)}
                 iconRight={<ChevronRight className="h-4 w-4" />}
@@ -1325,7 +1325,7 @@ export default function EmployeePayrollWizard({
             {!isStepCompleteForAll && (
               <Button
                 variant="primary"
-                onClick={() => handleContinue(4, 3)}
+                onClick={() => handleContinue(4, 4)}
                 iconRight={<ChevronRight className="h-4 w-4" />}
               >
                 Continue
@@ -1441,8 +1441,8 @@ export default function EmployeePayrollWizard({
             <Button
               variant="primary"
               onClick={() => {
-                // In matrix mode: mark step 4 done only.
-                handleContinue(5, 4);
+                // In matrix mode: mark step 5 done only.
+                handleContinue(5, 5);
               }}
               iconRight={<ChevronRight className="h-4 w-4" />}
             >
@@ -1626,7 +1626,7 @@ export default function EmployeePayrollWizard({
                       // logic still applies — in standalone mode it
                       // would advance; in matrix mode it stays put
                       // and the matrix drives the next step.
-                      handleContinue(6, 5);
+                      handleContinue(6, 6);
                       processPayrollMutation.mutate();
                     }}
                     disabled={processPayrollMutation.isPending || !annualCtc || parseFloat(annualCtc) <= 0}

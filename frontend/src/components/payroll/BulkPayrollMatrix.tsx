@@ -119,7 +119,7 @@ export default function BulkPayrollMatrix({
   // past a step).
 const completeStepMutation = useMutation({
     mutationFn: ({ userId, step }: { userId: number; step: number }) => {
-      return payrollApi.completeStep(payGroupId, { step, user_ids: [userId] });
+      return payrollApi.completeStep(payGroupId, { step, user_ids: [userId], month_year: monthYear });
     },
     onError: (error) => {
       console.log('completeStep mutation error:', error);
@@ -175,7 +175,7 @@ const completeStepMutation = useMutation({
   // shot. Used by the "Done All for Step N" button in the footer.
   const completeAllStepsMutation = useMutation({
     mutationFn: (step: number) =>
-      payrollApi.completeAllSteps(payGroupId, { step }),
+      payrollApi.completeAllSteps(payGroupId, { step, month_year: monthYear }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],

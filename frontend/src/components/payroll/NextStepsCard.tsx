@@ -35,6 +35,10 @@ const ACTION_LABELS: Record<string, { title: string; description: string; cta: s
 };
 
 export default function NextStepsCard(_: NextStepsCardProps) {
+  // TEMPORARILY DISABLED: Setup wizard is disabled for testing
+  // To re-enable, remove the line below
+  return null;
+
   const navigate = useNavigate();
   const { status, dismiss, isMutating, isFirstTime } = usePayrollOnboarding();
   const [dismissed, setDismissed] = useState(false);
