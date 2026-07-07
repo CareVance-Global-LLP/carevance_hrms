@@ -63,6 +63,9 @@ class EmployeePayrollTemplate extends Model
         'step5_completed',
         'step6_completed',
         'current_step',
+        // Month-scoping for step completions (2026_07_06_000003).
+        // Prevents April completions from appearing complete in May.
+        'steps_month_year',
     ];
 
     protected $casts = [

@@ -379,7 +379,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
           </div>
           {generateForm16Mutation.isError && (
             <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-              <strong>Error:</strong> {generateForm16Mutation.error?.message || 'Something went wrong'}
+              <strong>Error:</strong> {(generateForm16Mutation.error as any)?.response?.data?.message || generateForm16Mutation.error?.message || 'Something went wrong'}
             </div>
           )}
         </SurfaceCard>

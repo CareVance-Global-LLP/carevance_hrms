@@ -2205,7 +2205,7 @@ export const payrollApi = {
   // employees in a pay group.
   completeStep: (
     payGroupId: number,
-    data: { step: number; user_ids: number[] },
+    data: { step: number; user_ids: number[]; month_year: string },
   ) =>
     api.post<{
       success: boolean;
@@ -2215,7 +2215,7 @@ export const payrollApi = {
   // Marks a single wizard step as complete for every active member
   // of the pay group in one call. Used by the "Done All for Step N"
   // button in the BulkPayrollMatrix.
-  completeAllSteps: (payGroupId: number, data: { step: number }) =>
+  completeAllSteps: (payGroupId: number, data: { step: number; month_year: string }) =>
     api.post<{
       success: boolean;
       step: number;

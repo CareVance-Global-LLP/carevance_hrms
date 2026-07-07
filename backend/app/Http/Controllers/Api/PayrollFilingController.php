@@ -54,13 +54,27 @@ class PayrollFilingController extends Controller
             'user_id' => 'required|exists:users,id',
             'financial_year' => 'required|string|regex:/^\d{4}-\d{4}$/',
         ]);
-        $filing = $filingService->generateForm16(
-            $data['user_id'],
-            $data['financial_year'],
-            auth()->user()->organization_id,
-            auth()->id()
-        );
-        return response()->json($filing);
+
+        try {
+            $filing = $filingService->generateForm16(
+                $data['user_id'],
+                $data['financial_year'],
+                auth()->user()->organization_id,
+                auth()->id()
+            );
+            return response()->json($filing);
+        } catch (\RuntimeException $e) {
+            // Return a user-friendly error when no payroll data exists
+            if (strpos($e->getMessage(), 'No payroll items found') !== false) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No payroll data found for this financial year. Please process payroll before generating Form 16.',
+                    'error_code' => 'NO_PAYROLL_DATA'
+                ], 422);
+            }
+            // Re-throw other runtime exceptions
+            throw $e;
+        }
     }
 
     public function generateForm12BA(Request $request, PayrollFilingService $filingService)
@@ -535,7 +549,7 @@ class PayrollFilingController extends Controller
                 ->get()
                 ->keyBy('user_id');
 
-            $employees = collect($userIds)->map(function ($uid) use ($users, $payrollItems, $templates) {
+            $employees = collect($userIds)->map(function ($uid) use ($users, $payrollItems, $templates, $monthYear) {
                 $u = $users->get($uid);
                 if (!$u) return null;
 
@@ -554,14 +568,14 @@ class PayrollFilingController extends Controller
                     'department' => $group?->name,
                     'annual_ctc' => (float) ($template?->annual_ctc ?? 0),
                     'steps_completed' => [
-                        'step1' => (bool) ($template?->step1_completed),
-                        'step2' => (bool) ($template?->step2_completed),
-                        'step3' => (bool) ($template?->step3_completed),
-                        'step4' => (bool) ($template?->step4_completed),
-                        'step5' => (bool) ($template?->step5_completed),
-                        'step6' => (bool) ($template?->step6_completed),
+                        'step1' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step1_completed : false,
+                        'step2' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step2_completed : false,
+                        'step3' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step3_completed : false,
+                        'step4' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step4_completed : false,
+                        'step5' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step5_completed : false,
+                        'step6' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step6_completed : false,
                     ],
-                    'current_step' => (int) ($template?->current_step ?? 1),
+                    'current_step' => $template && $template->steps_month_year === $monthYear ? (int) ($template->current_step ?? 1) : 1,
                     'payroll_status' => [
                         'is_processed' => $item && $item->payment_status !== 'pending',
                         'net_pay' => $item ? (float) $item->net_pay : 0,
@@ -596,6 +610,7 @@ class PayrollFilingController extends Controller
             'step' => 'required|integer|min:1|max:6',
             'user_ids' => 'required|array|min:1',
             'user_ids.*' => 'integer|exists:users,id',
+            'month_year' => 'required|string|max:7',
         ]);
 
         $organizationId = $request->user()->organization_id;
@@ -642,7 +657,7 @@ class PayrollFilingController extends Controller
 
         $updated = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $validUserIds)
-            ->update([$column => true]);
+            ->update([$column => true, 'steps_month_year' => $data['month_year']]);
 
         return response()->json([
             'success' => true,
@@ -662,6 +677,7 @@ class PayrollFilingController extends Controller
     {
         $data = $request->validate([
             'step' => 'required|integer|min:1|max:6',
+            'month_year' => 'required|string|max:7',
         ]);
 
         $organizationId = $request->user()->organization_id;
@@ -704,7 +720,7 @@ class PayrollFilingController extends Controller
         // BULK update all in 1 query
         $updated = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $userIds)
-            ->update([$column => true]);
+            ->update([$column => true, 'steps_month_year' => $data['month_year']]);
 
         return response()->json([
             'success' => true,
@@ -722,6 +738,7 @@ class PayrollFilingController extends Controller
      */
     public function getStepStatus(Request $request, int $id): \Illuminate\Http\JsonResponse
     {
+        $monthYear = $request->get('month_year', now()->format('Y-m'));
         $organizationId = $request->user()->organization_id;
 
         $payGroup = \App\Models\PayGroup::where('id', $id)
@@ -749,12 +766,15 @@ class PayrollFilingController extends Controller
 
         $rows = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $userIds)
-            ->get(['user_id', 'step1_completed', 'step2_completed', 'step3_completed', 'step4_completed', 'step5_completed', 'step6_completed']);
+            ->get(['user_id', 'step1_completed', 'step2_completed', 'step3_completed', 'step4_completed', 'step5_completed', 'step6_completed', 'steps_month_year']);
+
+        // Filter rows to only count completions for the requested month
+        $filteredRows = $rows->where('steps_month_year', $monthYear);
 
         $steps = [];
         for ($n = 1; $n <= 6; $n++) {
             $col = "step{$n}_completed";
-            $completed = $rows->where($col, true)->count();
+            $completed = $filteredRows->where($col, true)->count();
             $steps[$n] = [
                 'completed_count' => $completed,
                 'pending_count' => $totalMembers - $completed,
