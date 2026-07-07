@@ -302,8 +302,8 @@ class BillingController extends Controller
             return $this->errorResponse('Cannot cancel a trial subscription.', 400);
         }
 
-        if ($organization->plan_code === 'basic') {
-            return $this->errorResponse('Cannot cancel the Basic plan.', 400);
+        if ($organization->plan_code === 'basic' || $organization->plan_code === 'starter') {
+            return $this->errorResponse('Cannot cancel the ' . ucfirst($organization->plan_code ?? 'basic') . ' plan.', 400);
         }
 
         // Shift to 14-day Basic trial

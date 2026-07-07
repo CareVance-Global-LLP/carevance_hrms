@@ -3,6 +3,18 @@ import { useAuth } from '@/contexts/AuthContext';
 import { payrollEnabled } from '@/lib/runtimeConfig';
 
 const PLAN_FEATURES: Record<string, string[]> = {
+  starter: [
+    'desktop_timer',
+    'check_in_out',
+    'idle_detection',
+    'auto_stop',
+    'screenshot',
+    'screenshot_history',
+    'reports',
+    'csv_export',
+    'user_management',
+    'workspace_onboarding',
+  ],
   basic: [
     'desktop_timer',
     'check_in_out',

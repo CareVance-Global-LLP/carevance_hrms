@@ -225,6 +225,13 @@ class UserController extends Controller
             $this->syncPrimaryGroup($user, $groupIds, []);
         }
 
+        // Eagerly create payroll template with default salary structure
+        \App\Models\EmployeePayrollTemplate::getOrCreateForUser(
+            $user->id,
+            $currentUser->organization_id,
+            $currentUser->id
+        );
+
         $this->auditLogService->log(
             action: 'user.created',
             actor: $currentUser,
@@ -1030,5 +1037,22 @@ class UserController extends Controller
             'message' => 'Incomplete user removed. You can now try again.',
             'deleted' => true,
         ]);
+    }
+
+    private function resolveCurrentProjectLabel(?TimeEntry $entry): ?string
+    {
+        if (!$entry) {
+            return null;
+        }
+
+        if ($entry->task && $entry->task->project) {
+            return $entry->task->project->name;
+        }
+
+        if ($entry->project) {
+            return $entry->project->name;
+        }
+
+        return null;
     }
 }

@@ -218,6 +218,7 @@ export default function EmployeePayrollWizard({
   const [isCalculating, setIsCalculating] = useState(false);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [processedRunId, setProcessedRunId] = useState<number | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
 
   // Days Absent is purely derived — Working − Present − Paid Leave.
   // We don't keep it in state; it recalculates as the inputs change.
@@ -395,10 +396,19 @@ export default function EmployeePayrollWizard({
         setAnnualCtc(String(savedCtc));
         if (data.payroll_preview) {
           setCalculation(data.payroll_preview);
+          setIsInitializing(false);
         } else {
           // Auto-trigger calculation if backend didn't return a preview
-          setTimeout(calculatePreview, 200);
+          setIsCalculating(true);
+          setTimeout(() => {
+            calculatePreview().finally(() => {
+              setIsInitializing(false);
+            });
+          }, 200);
         }
+      } else {
+        // No CTC configured, initialization complete
+        setIsInitializing(false);
       }
     }
   }, [data, template, annualCtc]);
@@ -1447,7 +1457,12 @@ export default function EmployeePayrollWizard({
   // Step 3: Review & Process
   const renderStep3 = () => (
     <div className="space-y-6">
-      {!calculation ? (
+      {isLoading || !template || (!calculation && isCalculating) ? (
+        <SurfaceCard className="p-8 text-center">
+          <Loader2 className="h-8 w-8 mx-auto mb-3 text-blue-500 animate-spin" />
+          <p className="text-slate-500">Loading payroll details...</p>
+        </SurfaceCard>
+      ) : !calculation ? (
         <SurfaceCard className="p-8 text-center">
           <AlertCircle className="h-12 w-12 mx-auto mb-3 text-amber-500" />
           <h3 className="font-semibold text-slate-900 mb-2">Calculation Required</h3>

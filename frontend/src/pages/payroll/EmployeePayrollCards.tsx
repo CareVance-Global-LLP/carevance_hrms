@@ -23,13 +23,13 @@ const INDIAN_STATES = [
 ];
 
 interface EmpFormState {
-  annual_ctc: number;
+  annual_ctc: number | null;
   salary_template_id: number | null;
   pt_state: string;
 }
 
 const defaultEmpForm: EmpFormState = {
-  annual_ctc: 0,
+  annual_ctc: null,
   salary_template_id: null,
   pt_state: 'maharashtra',
 };
@@ -125,7 +125,7 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
     if (!selectedEmployeeId) return;
     if (payrollConfig) {
       setEmpForm({
-        annual_ctc: Number(payrollConfig.annual_ctc ?? 0),
+        annual_ctc: payrollConfig.annual_ctc ? Number(payrollConfig.annual_ctc) : null,
         salary_template_id: payrollConfig.salary_template_id ?? null,
         pt_state: payrollConfig.pt_state ?? 'maharashtra',
       });
@@ -249,9 +249,9 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                       <div className="text-xs text-gray-500 truncate">{emp.email}</div>
                     </div>
                     <div className="text-right flex-shrink-0 ml-2">
-                      {emp.annual_ctc ? (
+                      {Number(emp.annual_ctc) > 0 ? (
                         <div className="text-xs font-medium text-gray-900">
-                          ₹{(emp.annual_ctc / 100000).toFixed(2)}L
+                          ₹{(Number(emp.annual_ctc) / 100000).toFixed(2)}L
                         </div>
                       ) : null}
                     </div>
@@ -296,9 +296,16 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                 <div>
                   <FieldLabel>Annual CTC (₹)</FieldLabel>
                   <TextInput
-                    type="number"
-                    value={String(empForm.annual_ctc)}
-                    onChange={e => setEmpForm({ ...empForm, annual_ctc: parseFloat(e.target.value) || 0 })}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={empForm.annual_ctc != null ? String(empForm.annual_ctc) : ''}
+                    onChange={e => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '');
+                      setEmpForm({ ...empForm, annual_ctc: raw ? Number(raw) : null });
+                    }}
+                    placeholder="e.g., 600000"
+                    className="[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
                   />
                 </div>
                 <div>

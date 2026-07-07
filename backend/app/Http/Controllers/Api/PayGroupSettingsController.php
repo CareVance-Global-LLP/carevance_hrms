@@ -350,6 +350,22 @@ class PayGroupSettingsController extends Controller
 
         $payGroup->update(['statutory_rules' => $updatedRules]);
 
+        // Cascade statutory rules to all employees assigned to this pay group
+        $assignedUserIds = \App\Models\PayGroupAssignment::where('pay_group_id', $payGroup->id)
+            ->where('is_active', true)
+            ->pluck('user_id');
+
+        if ($assignedUserIds->isNotEmpty()) {
+            \App\Models\EmployeePayrollTemplate::whereIn('user_id', $assignedUserIds)
+                ->update([
+                    'pf_enabled' => $updatedRules['pf_enabled'] ?? true,
+                    'esi_enabled' => $updatedRules['esi_enabled'] ?? true,
+                    'pt_enabled' => $updatedRules['pt_enabled'] ?? true,
+                    'lwf_enabled' => $updatedRules['lwf_enabled'] ?? false,
+                    'tds_enabled' => $updatedRules['tds_enabled'] ?? true,
+                ]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Statutory rules updated successfully.',

@@ -265,7 +265,7 @@ export default function PayrollRunDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50">
-      <SurfaceCard className="w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+      <SurfaceCard className="w-full max-w-7xl max-h-[92vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between z-10 flex-shrink-0">
           <div>
@@ -308,7 +308,7 @@ export default function PayrollRunDetailModal({
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-0">
+            <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-0">
               {/* ── LEFT SIDEBAR (sticky) ──────────────────────────── */}
               <aside className="border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50/60 p-5 space-y-5 lg:sticky lg:top-0 lg:self-start">
                 {/* Lifecycle */}
@@ -1365,25 +1365,25 @@ function EmployeesTable({ items, formatCurrency }: EmployeesTableProps) {
 
       <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[800px]">
             <thead className="bg-slate-50 sticky top-0">
               <tr>
-                <th className="px-5 py-3.5 text-left font-semibold text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap w-[28%]">
                   <SortHeader k="name" label="Employee" />
                 </th>
-                <th className="px-5 py-3.5 text-left font-semibold text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap w-[18%]">
                   <SortHeader k="department" label="Department" />
                 </th>
-                <th className="px-5 py-3.5 text-right font-semibold text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3 text-right font-semibold text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap w-[13%]">
                   <SortHeader k="gross" label="Gross" align="right" />
                 </th>
-                <th className="px-5 py-3.5 text-right font-semibold text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3 text-right font-semibold text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap w-[13%]">
                   <SortHeader k="deductions" label="Deductions" align="right" />
                 </th>
-                <th className="px-5 py-3.5 text-right font-semibold text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3 text-right font-semibold text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap w-[13%]">
                   <SortHeader k="net_pay" label="Net Pay" align="right" />
                 </th>
-                <th className="px-5 py-3.5 text-left font-semibold text-xs uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3 text-left font-semibold text-xs uppercase tracking-wider text-slate-500 whitespace-nowrap w-[15%]">
                   <SortHeader k="status" label="Status" />
                 </th>
               </tr>
@@ -1416,36 +1416,36 @@ function EmployeesTable({ items, formatCurrency }: EmployeesTableProps) {
                         : 'bg-amber-100 text-amber-800';
                   return (
                     <tr key={it.id ?? idx} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-3.5">
                         <div className="flex items-center gap-3">
                           <div className="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-white text-sm font-semibold flex items-center justify-center flex-shrink-0">
                             {initials || '?'}
                           </div>
-                          <div>
-                            <div className="font-medium text-slate-900 text-sm">
+                          <div className="min-w-0">
+                            <div className="font-medium text-slate-900 text-sm whitespace-nowrap">
                               {name}
                             </div>
-                            <div className="text-xs text-slate-500">
+                            <div className="text-xs text-slate-500 whitespace-nowrap">
                               {it.designation || 'No designation'}
                             </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-600">
+                      <td className="px-4 py-3.5 text-sm text-slate-600 whitespace-nowrap">
                         {it.department || '—'}
                       </td>
-                      <td className="px-5 py-4 text-right text-sm font-medium text-slate-900">
+                      <td className="px-4 py-3.5 text-right text-sm font-medium text-slate-900 whitespace-nowrap">
                         {formatCurrency(Number(it.gross_salary ?? 0))}
                       </td>
-                      <td className="px-5 py-4 text-right text-sm font-medium text-amber-600">
+                      <td className="px-4 py-3.5 text-right text-sm font-medium text-amber-600 whitespace-nowrap">
                         {formatCurrency(Number(it.total_deductions ?? 0))}
                       </td>
-                      <td className="px-5 py-4 text-right text-sm font-bold text-emerald-600">
+                      <td className="px-4 py-3.5 text-right text-sm font-bold text-emerald-600 whitespace-nowrap">
                         {formatCurrency(Number(it.net_pay ?? 0))}
                       </td>
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-3.5">
                         <span className={cn(
-                          'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize',
+                          'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize whitespace-nowrap',
                           psTone
                         )}>
                           {it.payment_status === 'disbursed' ? 'Paid' : it.payment_status || 'Pending'}

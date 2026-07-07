@@ -17,6 +17,7 @@ import {
   PricingBillingCycle,
   buildSignupQuery,
   pricingPlans,
+  toBackendPlanCode,
 } from '@/constants/pricing';
 import { billingApi } from '@/services/api';
 
@@ -31,7 +32,12 @@ export default function CheckoutPage() {
   const isUpgradeMode = !!(isModeUpgrade || isAlreadySignedUp || organization);
   const isTrial = !isFreshSignup && organization?.subscription_status === 'trial';
 
-  const initialPlanCode = searchParams.get('plan') || 'basic';
+  const initialPlanCode = (() => {
+    const raw = searchParams.get('plan') || 'basic';
+    const directMatch = pricingPlans.find((p) => p.code === raw);
+    if (directMatch) return raw;
+    return getPricingPlan(raw).code;
+  })();
   const initialInterval = (searchParams.get('interval') as PricingBillingCycle | null) || 'monthly';
   const [selectedPlanCode, setSelectedPlanCode] = useState(initialPlanCode);
   const plan = getPricingPlan(selectedPlanCode);
@@ -86,7 +92,7 @@ export default function CheckoutPage() {
 
     try {
       const response = await billingApi.upgradePlan({
-        target_plan_code: selectedPlanCode,
+        target_plan_code: toBackendPlanCode(selectedPlanCode),
         billing_cycle: billingCycle,
         seats,
       });

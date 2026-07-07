@@ -637,7 +637,7 @@ function App() {
             <Route path="payroll/setup/bank" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupBank /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/departments" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupDepartments /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/test-run" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupTestRun /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="reimbursements" element={<PlanFeatureRoute feature="payroll"><AdminRoute><ReimbursementsPage /></AdminRoute></PlanFeatureRoute>} />
+            <Route path="reimbursements" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><ReimbursementsPage /></ProtectedRoute></PlanFeatureRoute>} />
             <Route path="pre-payroll-checklist" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PrePayrollChecklistPage /></AdminRoute></PlanFeatureRoute>} />
             <Route path="filings" element={<PlanFeatureRoute feature="payroll"><AdminRoute><Filings /></AdminRoute></PlanFeatureRoute>} />
             <Route path="performance" element={<ProtectedRoute><Performance /></ProtectedRoute>} />

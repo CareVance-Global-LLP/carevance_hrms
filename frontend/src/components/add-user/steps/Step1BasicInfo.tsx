@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Hash, AlertTriangle, XCircle, IndianRupee, Users, FileStack } from 'lucide-react';
 import { groupApi, payrollApi } from '../../../services/api';
@@ -75,6 +75,16 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  // Pre-select the default salary template when data loads
+  useEffect(() => {
+    if (salaryStructures && salaryStructures.length > 0 && !form.salaryStructureId) {
+      const defaultTemplate = salaryStructures.find((ss: any) => ss.is_default) || salaryStructures[0];
+      if (defaultTemplate) {
+        setForm((p) => ({ ...p, salaryStructureId: defaultTemplate.id }));
+      }
+    }
+  }, [salaryStructures]);
 
   const handleDepartmentToggle = (deptId: number) => {
     setForm((prev) => ({
@@ -437,16 +447,23 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               Loading salary structures...
             </div>
           ) : salaryStructures && salaryStructures.length > 0 ? (
-            <CustomSelect
-              options={[
-                { value: '', label: 'Select salary structure (optional)' },
-                ...salaryStructures.map((ss: any) => ({ value: String(ss.id), label: ss.name })),
-              ]}
-              value={form.salaryStructureId ? String(form.salaryStructureId) : ''}
-              onChange={(value) => setForm((p) => ({ ...p, salaryStructureId: value ? Number(value) : null }))}
-              placeholder="Select salary structure"
-              dropDirection="down"
-            />
+            <>
+              <CustomSelect
+                options={[
+                  ...salaryStructures.map((ss: any) => ({
+                    value: String(ss.id),
+                    label: ss.is_default ? `${ss.name} (Default)` : ss.name,
+                  })),
+                ]}
+                value={form.salaryStructureId ? String(form.salaryStructureId) : ''}
+                onChange={(value) => setForm((p) => ({ ...p, salaryStructureId: value ? Number(value) : null }))}
+                placeholder="Select salary structure"
+                dropDirection="down"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Default structure is auto-selected. Change if needed.
+              </p>
+            </>
           ) : (
             <div className="text-sm text-gray-500 py-2 bg-gray-50 rounded-lg px-3">
               No salary structures found. Create one in Payroll → Salary Structures.

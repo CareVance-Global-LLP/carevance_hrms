@@ -276,16 +276,23 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
         Route::get('/runs/{runId}/reconciliation', [PayrollAutoProcessController::class, 'getReconciliationReport']);
     });
 
-    // Reimbursements
+    // Reimbursements (two-level approval: manager → admin)
     Route::get('/reimbursements', [ReimbursementController::class, 'index']);
-    Route::post('/reimbursements', [ReimbursementController::class, 'store']);
+    Route::get('/reimbursements/mine', [ReimbursementController::class, 'myReimbursements']);
+    Route::get('/reimbursements/inbox/manager', [ReimbursementController::class, 'managerInbox']);
+    Route::get('/reimbursements/inbox/admin', [ReimbursementController::class, 'adminInbox']);
+    Route::get('/reimbursements/inbox-count', [ReimbursementController::class, 'inboxCount']);
+    Route::get('/reimbursements/summary', [ReimbursementController::class, 'getSummary']);
     Route::get('/reimbursements/{id}', [ReimbursementController::class, 'show']);
+    Route::post('/reimbursements/upload-receipt', [ReimbursementController::class, 'uploadReceipt']);
+    Route::post('/reimbursements', [ReimbursementController::class, 'store']);
     Route::put('/reimbursements/{id}', [ReimbursementController::class, 'update']);
     Route::delete('/reimbursements/{id}', [ReimbursementController::class, 'destroy']);
+    Route::post('/reimbursements/{id}/manager-approve', [ReimbursementController::class, 'managerApprove']);
+    Route::post('/reimbursements/{id}/manager-reject', [ReimbursementController::class, 'managerReject']);
     Route::post('/reimbursements/{id}/approve', [ReimbursementController::class, 'approve']);
     Route::post('/reimbursements/{id}/reject', [ReimbursementController::class, 'reject']);
     Route::post('/reimbursements/{id}/remove', [ReimbursementController::class, 'remove']);
-    Route::get('/reimbursements/summary', [ReimbursementController::class, 'getSummary']);
 
     // Tax-Proof Submissions (Form 12BB attachments)
     // Employee endpoints

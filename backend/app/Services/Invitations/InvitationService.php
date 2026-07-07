@@ -277,6 +277,13 @@ class InvitationService
                 );
             }
 
+            // Eagerly create payroll template with default salary structure
+            \App\Models\EmployeePayrollTemplate::getOrCreateForUser(
+                $user->id,
+                $invitation->organization_id,
+                $invitation->invited_by
+            );
+
             $invitation->forceFill([
                 'status' => 'accepted',
                 'accepted_at' => now(),

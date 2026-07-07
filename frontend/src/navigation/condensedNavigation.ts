@@ -166,9 +166,10 @@ export const condensedNavigation: NavGroup[] = [
     icon: Wallet,
     planFeature: 'payroll',
     items: [
-      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll', adminOnly: true },
+      { label: 'Payroll Dashboard', to: '/payroll', icon: Wallet, planFeature: 'payroll', strictAdminOnly: true },
       { label: 'My Payroll', to: '/my-payroll', icon: Wallet, planFeature: 'payroll' },
-      { label: 'All Payroll Features', to: '/payroll', icon: Sparkles, planFeature: 'payroll', adminOnly: true },
+      { label: 'Reimbursements', to: '/reimbursements', icon: Receipt, planFeature: 'payroll' },
+      { label: 'All Payroll Features', to: '/payroll', icon: Sparkles, planFeature: 'payroll', strictAdminOnly: true },
     ],
   },
   {

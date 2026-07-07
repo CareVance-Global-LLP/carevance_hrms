@@ -294,10 +294,49 @@ export const pricingPlans: PricingPlan[] = [
   },
 ];
 
+/* ── Backend plan code → frontend pricing plan mapping ── */
+
+const BACKEND_PLAN_MAP: Record<string, string> = {
+  starter: 'basic_tracking',
+  basic: 'basic_tracking',
+  advanced_tracker: 'advance_tracking',
+  enterprise: 'basic_tracking',
+};
+
+/* ── Frontend plan code → backend plan code mapping ── */
+
+const FRONTEND_TO_BACKEND: Record<string, string> = {
+  basic_tracking: 'basic',
+  advance_tracking: 'advanced_tracker',
+  basic_payroll: 'enterprise',
+  professional_payroll: 'enterprise',
+};
+
+export function toBackendPlanCode(code: string): string {
+  return FRONTEND_TO_BACKEND[code] ?? code;
+}
+
 /* ── Pricing helpers ── */
 
 export function getPricingPlan(code?: string | null) {
-  return pricingPlans.find((plan) => plan.code === code) ?? pricingPlans[0];
+  if (!code) return pricingPlans[0];
+  const directMatch = pricingPlans.find((plan) => plan.code === code);
+  if (directMatch) return directMatch;
+  const mappedCode = BACKEND_PLAN_MAP[code];
+  return pricingPlans.find((plan) => plan.code === mappedCode) ?? pricingPlans[0];
+}
+
+/* ── Upgrade hierarchy ── */
+
+const UPGRADE_PATH: Record<string, { target: string; label: string } | null> = {
+  starter: { target: 'basic', label: 'Upgrade to Basic' },
+  basic: { target: 'advanced_tracker', label: 'Upgrade to Advanced Tracker' },
+  advanced_tracker: { target: 'enterprise', label: 'Contact Sales for Enterprise' },
+  enterprise: null,
+};
+
+export function getUpgradeInfo(planCode: string): { target: string; label: string } | null {
+  return UPGRADE_PATH[planCode] ?? null;
 }
 
 export function getPerSeatPrice(plan: PricingPlan, billingCycle: PricingBillingCycle): number {

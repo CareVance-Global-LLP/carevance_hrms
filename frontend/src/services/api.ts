@@ -2252,21 +2252,40 @@ export const payrollApi = {
   getAutoChecklistStatus: (runId: number) =>
     api.get<any>(`/payroll/auto/checklist-status/${runId}`),
 
-  // ===== Reimbursements =====
-  listReimbursements: (params?: { status?: string }) =>
-    api.get<{ data: any[] }>('/payroll/reimbursements', { params }),
+  // ===== Reimbursements (two-level approval) =====
+  listReimbursements: (params?: { status?: string; approval_level?: string }) =>
+    api.get<any>('/payroll/reimbursements', { params }),
+  myReimbursements: () =>
+    api.get<any>('/payroll/reimbursements/mine'),
+  managerInbox: (params?: { search?: string }) =>
+    api.get<any>('/payroll/reimbursements/inbox/manager', { params }),
+  adminInbox: (params?: { search?: string }) =>
+    api.get<any>('/payroll/reimbursements/inbox/admin', { params }),
+  reimbursementInboxCount: () =>
+    api.get<{ manager_inbox: number; admin_inbox: number }>('/payroll/reimbursements/inbox-count'),
   createReimbursement: (data: Record<string, any>) =>
     api.post<any>('/payroll/reimbursements', data),
+  uploadReimbursementReceipt: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post<{ url: string; filename: string }>('/payroll/reimbursements/upload-receipt', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  managerApproveReimbursement: (id: number) =>
+    api.post<any>(`/payroll/reimbursements/${id}/manager-approve`),
+  managerRejectReimbursement: (id: number, reason: string) =>
+    api.post<any>(`/payroll/reimbursements/${id}/manager-reject`, { reason }),
   approveReimbursement: (id: number) =>
     api.post<any>(`/payroll/reimbursements/${id}/approve`),
   rejectReimbursement: (id: number, reason: string) =>
     api.post<any>(`/payroll/reimbursements/${id}/reject`, { reason }),
-  // Soft-remove a previously-approved reimbursement so it stops being
-  // included in the next payroll run. Sets status='removed' on the
-  // server. Idempotent on the backend but the UI treats each click as
-  // a deliberate confirmation.
   removeReimbursement: (id: number) =>
     api.post<any>(`/payroll/reimbursements/${id}/remove`),
+  getReimbursementDetail: (id: number) =>
+    api.get<any>(`/payroll/reimbursements/${id}`),
+  reimbursementSummary: () =>
+    api.get<any>('/payroll/reimbursements/summary'),
   // Used by the Salary Structure wizard to show approved reimbursements
   // for the current employee.
   getEmployeeReimbursements: (employeeId: number, status?: 'pending' | 'approved' | 'rejected' | 'removed') =>

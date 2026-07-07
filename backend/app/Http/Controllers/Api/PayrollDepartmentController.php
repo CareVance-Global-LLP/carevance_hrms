@@ -636,6 +636,25 @@ class PayrollDepartmentController extends Controller
                 }
             }
 
+            // Cascade pay group statutory rules to assigned employees
+            $pgRules = $payGroup->statutory_rules ?? [];
+            if (!empty($pgRules)) {
+                foreach ($userIds as $userId) {
+                    $template = EmployeePayrollTemplate::getOrCreateForUser(
+                        $userId,
+                        $organizationId,
+                        auth()->id()
+                    );
+                    $template->update([
+                        'pf_enabled' => $pgRules['pf_enabled'] ?? $template->pf_enabled,
+                        'esi_enabled' => $pgRules['esi_enabled'] ?? $template->esi_enabled,
+                        'pt_enabled' => $pgRules['pt_enabled'] ?? $template->pt_enabled,
+                        'lwf_enabled' => $pgRules['lwf_enabled'] ?? $template->lwf_enabled,
+                        'tds_enabled' => $pgRules['tds_enabled'] ?? $template->tds_enabled,
+                    ]);
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'pay_group_id' => $payGroup->id,
@@ -692,6 +711,26 @@ class PayrollDepartmentController extends Controller
             $organizationId,
             auth()->id()
         );
+
+        // Sync statutory rules from employee's pay group to their template
+        $payGroupAssignment = \App\Models\PayGroupAssignment::where('user_id', $userId)
+            ->where('is_active', true)
+            ->with('payGroup')
+            ->first();
+
+        if ($payGroupAssignment && $payGroupAssignment->payGroup) {
+            $pgRules = $payGroupAssignment->payGroup->statutory_rules ?? [];
+            if (!empty($pgRules)) {
+                $template->update([
+                    'pf_enabled' => $pgRules['pf_enabled'] ?? $template->pf_enabled,
+                    'esi_enabled' => $pgRules['esi_enabled'] ?? $template->esi_enabled,
+                    'pt_enabled' => $pgRules['pt_enabled'] ?? $template->pt_enabled,
+                    'lwf_enabled' => $pgRules['lwf_enabled'] ?? $template->lwf_enabled,
+                    'tds_enabled' => $pgRules['tds_enabled'] ?? $template->tds_enabled,
+                ]);
+                $template->refresh();
+            }
+        }
 
         // Get existing payroll item if any
         $payrollItem = PayrollItem::where('user_id', $userId)
@@ -1525,16 +1564,16 @@ class PayrollDepartmentController extends Controller
         // missing ones. This replaces an N+1 loop of per-user
         // getOrCreateForUser calls.
         $existingTemplates = EmployeePayrollTemplate::where('organization_id', $organizationId)
-            ->whereIn('user_id', $userIds)
+            ->whereIn('user_id', $validUserIds)
             ->get()
             ->keyBy('user_id');
-        $missingUserIds = array_diff($userIds, $existingTemplates->keys()->all());
+        $missingUserIds = array_diff($validUserIds, $existingTemplates->keys()->all());
         foreach ($missingUserIds as $mid) {
             EmployeePayrollTemplate::getOrCreateForUser($mid, $organizationId);
         }
         // Refresh so we have every member's row in one collection.
         $existingTemplates = EmployeePayrollTemplate::where('organization_id', $organizationId)
-            ->whereIn('user_id', $userIds)
+            ->whereIn('user_id', $validUserIds)
             ->get()
             ->keyBy('user_id');
 
@@ -1542,7 +1581,7 @@ class PayrollDepartmentController extends Controller
         // and we don't hold a single transaction open for 100+ users
         // (which times out the PHP-FPM worker). 20 per chunk matches
         // the bulk-process UI's default per-page size.
-        foreach (array_chunk($userIds, 20) as $chunk) {
+        foreach (array_chunk($validUserIds, 20) as $chunk) {
             foreach ($chunk as $uid) {
                 $template = $existingTemplates[$uid];
                 $annualCtc = $template->annual_ctc ?: ($data['default_annual_ctc'] ?? 0);

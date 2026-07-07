@@ -269,6 +269,22 @@ class EmployeePayrollTemplate extends Model
             $settings['created_by'] = $createdBy;
             $settings['annual_ctc'] = 0; // explicit — wizard will set it later
             $template = self::create($settings);
+
+            // Auto-assign the organization's default salary template
+            $defaultSalaryTemplate = SalaryTemplate::where('organization_id', $organizationId)
+                ->where('is_default', true)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$defaultSalaryTemplate) {
+                $defaultSalaryTemplate = SalaryTemplate::where('organization_id', $organizationId)
+                    ->where('is_active', true)
+                    ->first();
+            }
+
+            if ($defaultSalaryTemplate) {
+                $template->update(['salary_template_id' => $defaultSalaryTemplate->id]);
+            }
         }
 
         return $template;

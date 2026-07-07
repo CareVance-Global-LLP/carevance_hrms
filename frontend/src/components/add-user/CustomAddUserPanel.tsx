@@ -286,16 +286,18 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
             });
           }
 
-          // ✅ Only attempt pay-group/salary-structure assignment when
-          // payGroupId is actually set. Avoids sending `pay_group_id: null`
-          // to a required|integer field.
+          // Save salary structure independently (via employee card update)
+          if (formData.salaryStructureId) {
+            await api.put(`/payroll/employee-cards/${userId}`, {
+              salary_template_id: formData.salaryStructureId,
+            });
+          }
+
+          // Assign to pay group separately
           if (formData.payGroupId) {
             await payrollApi.assignEmployeeToExistingPayGroup({
               pay_group_id: formData.payGroupId,
               user_ids: [userId],
-              ...(formData.salaryStructureId
-                ? { salary_structure_id: formData.salaryStructureId }
-                : {}),
             });
           }
         } catch (postCreateError: any) {

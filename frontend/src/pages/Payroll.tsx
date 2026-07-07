@@ -323,6 +323,7 @@ export default function PayrollPage() {
 
         {viewMode === 'employee' && (
           <EmployeePayrollWizard
+            key={selectedEmployeeId}
             employeeId={selectedEmployeeId}
             monthYear={selectedMonth}
             initialStep={currentStep}

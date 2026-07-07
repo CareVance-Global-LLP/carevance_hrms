@@ -46,6 +46,14 @@ return [
     ],
 
     'plans' => [
+        'starter' => [
+            'label' => 'Starter',
+            'description' => 'Free trial workspace with basic tracking features.',
+            'monthly_price' => 0,
+            'yearly_price' => 0,
+            'trial_available' => true,
+            'contact_sales_only' => false,
+        ],
         'basic' => [
             'label' => 'Basic',
             'description' => 'Core monitoring, attendance, and reporting for growing teams.',
