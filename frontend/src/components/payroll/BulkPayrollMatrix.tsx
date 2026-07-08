@@ -265,11 +265,6 @@ const completeStepMutation = useMutation({
           const isStepCompleted = employees?.length > 0 && 
             employees?.every(e => e.steps_completed?.[stepKey] === true);
           
-          // Debug logging
-          if (employees?.length > 0 && currentStep === 1) {
-            console.log(`Step ${step.num}: stepKey=${stepKey}, isStepCompleted=${isStepCompleted}`);
-          }
-          
           const canClick = step.num <= currentStep || prevStepDone;
           return (
             <button
@@ -442,12 +437,16 @@ itemContent={(index) => {
                 onStepChange={(step) => setCurrentStep(step + 1)}
                 onBack={() => setSelectedEmployeeId(null)}
                 backLabel="← Back to List"
-                onComplete={() => {
-                  // Mark this employee + step as complete. The mutation
-                  // onSuccess handler advances the sidebar selection.
+                onComplete={(step) => {
+                  // Mark this employee + step as complete. The wizard
+                  // passes the authoritative 1-indexed step number it
+                  // just finished (Attendance=1 … Preview=6). Using the
+                  // wizard's value (instead of the matrix's currentStep)
+                  // guarantees we never mark the wrong step even if the
+                  // two ever drift apart.
                   completeStepMutation.mutate({
                     userId: selectedEmployeeId,
-                    step: currentStep,
+                    step,
                   });
                 }}
                 onViewRun={() => {

@@ -83,6 +83,7 @@ class ClearPayrollStepCompletions extends Command
                 'step5_completed' => false,
                 'step6_completed' => false,
                 'current_step' => 1,
+                'steps_month_year' => null,
             ]);
 
             $this->newLine();
