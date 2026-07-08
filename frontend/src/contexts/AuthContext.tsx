@@ -559,6 +559,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     }
+    // Reset the reimbursements month filter so the next login defaults
+    // to the current running month (it survives normal refreshes otherwise).
+    try {
+      localStorage.removeItem('reimbursement_month_filter');
+    } catch {
+      /* ignore */
+    }
+
     clearAuthState();
     void clearAuthOffline();
   };

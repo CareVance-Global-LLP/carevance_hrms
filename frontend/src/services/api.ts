@@ -2257,13 +2257,13 @@ export const payrollApi = {
     api.get<any>(`/payroll/auto/checklist-status/${runId}`),
 
   // ===== Reimbursements (two-level approval) =====
-  listReimbursements: (params?: { status?: string; approval_level?: string }) =>
+  listReimbursements: (params?: { status?: string; approval_level?: string; month_year?: string }) =>
     api.get<any>('/payroll/reimbursements', { params }),
-  myReimbursements: () =>
-    api.get<any>('/payroll/reimbursements/mine'),
-  managerInbox: (params?: { search?: string }) =>
+  myReimbursements: (params?: { month_year?: string }) =>
+    api.get<any>('/payroll/reimbursements/mine', { params }),
+  managerInbox: (params?: { search?: string; month_year?: string }) =>
     api.get<any>('/payroll/reimbursements/inbox/manager', { params }),
-  adminInbox: (params?: { search?: string }) =>
+  adminInbox: (params?: { search?: string; month_year?: string }) =>
     api.get<any>('/payroll/reimbursements/inbox/admin', { params }),
   reimbursementInboxCount: () =>
     api.get<{ manager_inbox: number; admin_inbox: number }>('/payroll/reimbursements/inbox-count'),
@@ -2278,6 +2278,20 @@ export const payrollApi = {
   },
   managerApproveReimbursement: (id: number) =>
     api.post<any>(`/payroll/reimbursements/${id}/manager-approve`),
+  markReimbursementRead: (id: number, role: 'admin' | 'manager') =>
+    api.post<any>(`/payroll/reimbursements/${id}/mark-read`, { role }),
+  bulkManagerApproveReimbursements: (ids: number[]) =>
+    api.post<any>('/payroll/reimbursements/bulk/manager-approve', { ids }),
+  bulkManagerRejectReimbursements: (ids: number[], reason: string) =>
+    api.post<any>('/payroll/reimbursements/bulk/manager-reject', { ids, reason }),
+  bulkAdminApproveReimbursements: (ids: number[]) =>
+    api.post<any>('/payroll/reimbursements/bulk/admin-approve', { ids }),
+  bulkAdminRejectReimbursements: (ids: number[], reason: string) =>
+    api.post<any>('/payroll/reimbursements/bulk/admin-reject', { ids, reason }),
+  pendingPayments: (params?: { month_year?: string }) =>
+    api.get<any>('/payroll/reimbursements/pending-payments', { params }),
+  markReimbursementPaid: (id: number, data: { payout_mode: 'payroll' | 'outside_payroll'; payment_reference?: string }) =>
+    api.post<any>(`/payroll/reimbursements/${id}/mark-paid`, data),
   managerRejectReimbursement: (id: number, reason: string) =>
     api.post<any>(`/payroll/reimbursements/${id}/manager-reject`, { reason }),
   approveReimbursement: (id: number) =>
@@ -2288,13 +2302,13 @@ export const payrollApi = {
     api.post<any>(`/payroll/reimbursements/${id}/remove`),
   getReimbursementDetail: (id: number) =>
     api.get<any>(`/payroll/reimbursements/${id}`),
-  reimbursementSummary: () =>
-    api.get<any>('/payroll/reimbursements/summary'),
+  reimbursementSummary: (params?: { month_year?: string }) =>
+    api.get<any>('/payroll/reimbursements/summary', { params }),
   // Used by the Salary Structure wizard to show approved reimbursements
   // for the current employee.
-  getEmployeeReimbursements: (employeeId: number, status?: 'pending' | 'approved' | 'rejected' | 'removed') =>
+  getEmployeeReimbursements: (employeeId: number, status?: 'pending' | 'approved' | 'rejected' | 'removed', monthYear?: string) =>
     api.get<any[]>('/payroll/reimbursements', {
-      params: { user_id: employeeId, status: status ?? 'approved' },
+      params: { user_id: employeeId, status: status ?? 'approved', month_year: monthYear },
     }),
 
   // ===== Revision Letters (Employee self-service) =====

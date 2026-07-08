@@ -75,6 +75,12 @@ class ReimbursementController extends Controller
             }
         }
 
+        // Optional month_year filter — match expense_date to the payroll run month
+        if ($request->filled('month_year') && preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $request->month_year, $m)) {
+            $query->whereMonth('expense_date', (int) $m[2])
+                ->whereYear('expense_date', (int) $m[1]);
+        }
+
         $reimbursements = $query->orderBy('created_at', 'desc')->get();
 
         return response()->json($reimbursements);
@@ -90,6 +96,7 @@ class ReimbursementController extends Controller
             'managerApprover:id,name',
         ])
             ->where('user_id', $request->user()->id)
+            ->forMonth($request->input('month_year'))
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -116,7 +123,8 @@ class ReimbursementController extends Controller
             'employee.groups:id,name',
         ])
             ->whereIn('user_id', $directReportIds)
-            ->where('approval_level', 'pending_manager');
+            ->where('approval_level', 'pending_manager')
+            ->forMonth($request->input('month_year'));
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -130,6 +138,12 @@ class ReimbursementController extends Controller
         }
 
         $reimbursements = $query->orderBy('created_at', 'desc')->get();
+
+        // Flag each claim as read once the manager has opened it while it
+        // was still awaiting their approval.
+        $reimbursements->each(function (Reimbursement $r) {
+            $r->is_read = !is_null($r->manager_read_at);
+        });
 
         return response()->json($reimbursements);
     }
@@ -150,7 +164,8 @@ class ReimbursementController extends Controller
             'employee.groups:id,name',
         ])
             ->where('organization_id', $user->organization_id)
-            ->where('approval_level', 'pending_admin');
+            ->where('approval_level', 'pending_admin')
+            ->forMonth($request->input('month_year'));
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -164,6 +179,12 @@ class ReimbursementController extends Controller
         }
 
         $reimbursements = $query->orderBy('created_at', 'desc')->get();
+
+        // Flag each claim as read once an admin has opened it while it was
+        // still awaiting admin approval.
+        $reimbursements->each(function (Reimbursement $r) {
+            $r->is_read = !is_null($r->admin_read_at);
+        });
 
         return response()->json($reimbursements);
     }
@@ -185,15 +206,25 @@ class ReimbursementController extends Controller
         ]);
 
         $user = $request->user();
+        $level = $user->getHierarchyLevel();
+        $isReviewer = $level < 100; // manager or admin — cannot approve own claim
 
-        // Resolve the employee's reporting manager
-        $workInfo = EmployeeWorkInfo::where('user_id', $user->id)->first();
-        $managerId = $workInfo?->reporting_manager_id;
+        if ($isReviewer) {
+            // Managers/admins skip the manager-approval step and go
+            // straight to the admin inbox.
+            $approvalLevel = 'pending_admin';
+        } else {
+            // Resolve the employee's reporting manager
+            $workInfo = EmployeeWorkInfo::where('user_id', $user->id)->first();
+            $managerId = $workInfo?->reporting_manager_id;
 
-        if (!$managerId) {
-            return response()->json([
-                'message' => 'No reporting manager assigned. Please contact HR before submitting a reimbursement claim.',
-            ], 422);
+            if (!$managerId) {
+                return response()->json([
+                    'message' => 'No reporting manager assigned. Please contact HR before submitting a reimbursement claim.',
+                ], 422);
+            }
+
+            $approvalLevel = 'pending_manager';
         }
 
         $reimbursement = Reimbursement::create([
@@ -209,12 +240,16 @@ class ReimbursementController extends Controller
             'merchant_name' => $request->merchant_name,
             'location' => $request->location,
             'status' => 'pending',
-            'approval_level' => 'pending_manager',
+            'approval_level' => $approvalLevel,
             'submitted_by' => $user->id,
         ]);
 
+        $message = $isReviewer
+            ? 'Reimbursement submitted successfully. Forwarded to admin for approval.'
+            : 'Reimbursement submitted successfully. Awaiting manager approval.';
+
         return response()->json([
-            'message' => 'Reimbursement submitted successfully. Awaiting manager approval.',
+            'message' => $message,
             'reimbursement' => $reimbursement->load(['employee:id,name']),
         ], 201);
     }
@@ -460,6 +495,196 @@ class ReimbursementController extends Controller
         ]);
     }
 
+    // ─── Bulk: Manager Approve (forwards to admin) ──────────
+
+    public function bulkManagerApprove(Request $request): JsonResponse
+    {
+        $request->validate(['ids' => 'required|array', 'ids.*' => 'integer']);
+
+        $user = $request->user();
+        $level = $user->getHierarchyLevel();
+        $isAdmin = $level < 100;
+        $directReportIds = EmployeeWorkInfo::where('reporting_manager_id', $user->id)
+            ->pluck('user_id')->toArray();
+
+        $processed = 0;
+        DB::transaction(function () use ($request, $user, $isAdmin, $directReportIds, &$processed) {
+            foreach ($request->input('ids', []) as $id) {
+                $r = Reimbursement::find($id);
+                if (!$r) continue;
+                if (!$isAdmin && !in_array($r->user_id, $directReportIds)) continue;
+                if ($r->approval_level !== 'pending_manager') continue;
+                $r->update([
+                    'manager_approved_by' => $user->id,
+                    'manager_approved_at' => now(),
+                    'approval_level' => 'pending_admin',
+                ]);
+                $processed++;
+            }
+        });
+
+        return response()->json(['message' => "Approved $processed claim(s).", 'processed' => $processed]);
+    }
+
+    // ─── Bulk: Manager Reject ──────────────────────────────
+
+    public function bulkManagerReject(Request $request): JsonResponse
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer',
+            'reason' => 'required|string|max:1000',
+        ]);
+
+        $user = $request->user();
+        $level = $user->getHierarchyLevel();
+        $isAdmin = $level < 100;
+        $directReportIds = EmployeeWorkInfo::where('reporting_manager_id', $user->id)
+            ->pluck('user_id')->toArray();
+
+        $processed = 0;
+        DB::transaction(function () use ($request, $user, $isAdmin, $directReportIds, &$processed) {
+            foreach ($request->input('ids', []) as $id) {
+                $r = Reimbursement::find($id);
+                if (!$r) continue;
+                if (!$isAdmin && !in_array($r->user_id, $directReportIds)) continue;
+                if ($r->approval_level !== 'pending_manager') continue;
+                $r->update([
+                    'approval_level' => 'rejected',
+                    'status' => 'rejected',
+                    'manager_approved_by' => $user->id,
+                    'manager_approved_at' => now(),
+                    'rejection_reason' => $request->input('reason'),
+                ]);
+                $processed++;
+            }
+        });
+
+        return response()->json(['message' => "Rejected $processed claim(s).", 'processed' => $processed]);
+    }
+
+    // ─── Bulk: Admin Final Approve ─────────────────────────
+
+    public function bulkAdminApprove(Request $request): JsonResponse
+    {
+        $request->validate(['ids' => 'required|array', 'ids.*' => 'integer']);
+
+        $user = $request->user();
+        if ($user->getHierarchyLevel() > 10) {
+            return response()->json(['message' => 'Only admin can give final approval.'], 403);
+        }
+
+        $processed = 0;
+        DB::transaction(function () use ($request, $user, &$processed) {
+            foreach ($request->input('ids', []) as $id) {
+                $r = Reimbursement::find($id);
+                if (!$r) continue;
+                if ($r->approval_level !== 'pending_admin') continue;
+                $r->update([
+                    'status' => 'approved',
+                    'approval_level' => 'approved',
+                    'approved_by' => $user->id,
+                    'approved_at' => now(),
+                ]);
+                $processed++;
+            }
+        });
+
+        return response()->json(['message' => "Approved $processed claim(s).", 'processed' => $processed]);
+    }
+
+    // ─── Bulk: Admin Reject ────────────────────────────────
+
+    public function bulkAdminReject(Request $request): JsonResponse
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer',
+            'reason' => 'required|string|max:1000',
+        ]);
+
+        $user = $request->user();
+        if ($user->getHierarchyLevel() > 10) {
+            return response()->json(['message' => 'Only admin can reject.'], 403);
+        }
+
+        $processed = 0;
+        DB::transaction(function () use ($request, $user, &$processed) {
+            foreach ($request->input('ids', []) as $id) {
+                $r = Reimbursement::find($id);
+                if (!$r) continue;
+                if ($r->approval_level !== 'pending_admin') continue;
+                $r->update([
+                    'status' => 'rejected',
+                    'approval_level' => 'rejected',
+                    'approved_by' => $user->id,
+                    'approved_at' => now(),
+                    'rejection_reason' => $request->input('reason'),
+                ]);
+                $processed++;
+            }
+        });
+
+        return response()->json(['message' => "Rejected $processed claim(s).", 'processed' => $processed]);
+    }
+
+    // ─── Mark a claim as paid (finance step) ───────────────
+
+    public function markPaid(int $id, Request $request): JsonResponse
+    {
+        $request->validate([
+            'payout_mode' => 'required|in:payroll,outside_payroll',
+            'payment_reference' => 'nullable|string|max:255',
+        ]);
+
+        $user = $request->user();
+        if ($user->getHierarchyLevel() > 10) {
+            return response()->json(['message' => 'Only admin can mark reimbursements as paid.'], 403);
+        }
+
+        $reimbursement = Reimbursement::findOrFail($id);
+
+        if ($reimbursement->approval_level !== 'approved') {
+            return response()->json(['message' => 'Only approved reimbursements can be marked as paid.'], 422);
+        }
+
+        if ($reimbursement->paid_at) {
+            return response()->json(['message' => 'This reimbursement has already been marked as paid.'], 422);
+        }
+
+        $reimbursement->update([
+            'paid_at' => now(),
+            'payout_mode' => $request->input('payout_mode'),
+            'payment_reference' => $request->input('payment_reference'),
+        ]);
+
+        return response()->json([
+            'message' => 'Reimbursement marked as paid.',
+            'reimbursement' => $reimbursement->fresh()
+                ->load(['employee:id,name', 'approver:id,name', 'managerApprover:id,name']),
+        ]);
+    }
+
+    // ─── Pending Payments (approved but not yet paid) ──────
+
+    public function pendingPayments(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user->getHierarchyLevel() > 10) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        $items = Reimbursement::with(['employee:id,name,email', 'approver:id,name', 'managerApprover:id,name'])
+            ->where('organization_id', $user->organization_id)
+            ->where('approval_level', 'approved')
+            ->whereNull('paid_at')
+            ->forMonth($request->input('month_year'))
+            ->orderBy('approved_at', 'desc')
+            ->get();
+
+        return response()->json($items);
+    }
+
     // ─── Remove (admin pulls approved from payroll) ────────────
 
     public function remove(int $id, Request $request): JsonResponse
@@ -514,6 +739,8 @@ class ReimbursementController extends Controller
             $query->where('user_id', $user->id);
         }
 
+        $query->forMonth($request->input('month_year'));
+
         $totalCount = (clone $query)->count();
         $totalAmount = (clone $query)->sum('amount');
         $pendingManagerCount = (clone $query)->pendingManager()->count();
@@ -523,6 +750,8 @@ class ReimbursementController extends Controller
         $approvedCount = (clone $query)->approved()->count();
         $approvedAmount = (clone $query)->approved()->sum('amount');
         $rejectedCount = (clone $query)->rejected()->count();
+        $pendingPaymentCount = (clone $query)->where('approval_level', 'approved')->whereNull('paid_at')->count();
+        $pendingPaymentAmount = (clone $query)->where('approval_level', 'approved')->whereNull('paid_at')->sum('amount');
 
         return response()->json([
             'total_count' => $totalCount,
@@ -534,6 +763,8 @@ class ReimbursementController extends Controller
             'approved_count' => $approvedCount,
             'approved_amount' => $approvedAmount,
             'rejected_count' => $rejectedCount,
+            'pending_payment_count' => $pendingPaymentCount,
+            'pending_payment_amount' => $pendingPaymentAmount,
         ]);
     }
 
@@ -551,6 +782,7 @@ class ReimbursementController extends Controller
 
         if ($isManager || $isStrictAdmin) {
             $managerInboxCount = Reimbursement::where('approval_level', 'pending_manager')
+                ->whereNull('manager_read_at')
                 ->whereIn('user_id', function ($q) use ($user) {
                     $q->select('user_id')
                       ->from('employee_work_infos')
@@ -562,12 +794,58 @@ class ReimbursementController extends Controller
         if ($isStrictAdmin) {
             $adminInboxCount = Reimbursement::where('organization_id', $user->organization_id)
                 ->where('approval_level', 'pending_admin')
+                ->whereNull('admin_read_at')
                 ->count();
         }
 
         return response()->json([
             'manager_inbox' => $managerInboxCount,
             'admin_inbox' => $adminInboxCount,
+        ]);
+    }
+
+    // ─── Mark a claim as read (clears its inbox badge) ────────
+
+    /**
+     * When a reviewer opens a claim in their inbox we stamp the
+     * matching read timestamp so the sidebar badge decrements — exactly
+     * like an unread chat message.
+     *
+     * Body: { "role": "admin" | "manager" }
+     */
+    public function markInboxRead(int $id, Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $level = $user->getHierarchyLevel();
+        $isStrictAdmin = $level <= 10;
+        $isManager = $level >= 10 && $level < 100;
+
+        $role = $request->input('role', $isStrictAdmin ? 'admin' : 'manager');
+
+        $reimbursement = Reimbursement::findOrFail($id);
+
+        // Only stamp the timestamp that matches the current reviewer's role
+        // and only while the claim is still awaiting that level.
+        if ($role === 'admin' && $isStrictAdmin && $reimbursement->approval_level === 'pending_admin') {
+            if (is_null($reimbursement->admin_read_at)) {
+                $reimbursement->update(['admin_read_at' => now()]);
+            }
+        } elseif ($role === 'manager' && $reimbursement->approval_level === 'pending_manager') {
+            // Verify the reviewer is the direct manager (or an admin).
+            $directReportIds = EmployeeWorkInfo::where('reporting_manager_id', $user->id)
+                ->pluck('user_id')
+                ->toArray();
+            if (!$isStrictAdmin && !in_array($reimbursement->user_id, $directReportIds)) {
+                return response()->json(['message' => 'You can only mark your direct reports\' claims as read.'], 403);
+            }
+            if (is_null($reimbursement->manager_read_at)) {
+                $reimbursement->update(['manager_read_at' => now()]);
+            }
+        }
+
+        return response()->json([
+            'message' => 'Marked as read.',
+            'reimbursement' => $reimbursement->fresh(),
         ]);
     }
 

@@ -205,13 +205,14 @@ const completeStepMutation = useMutation({
         working_days: 26,
       });
     },
-    onSuccess: (data) => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
-      const succeeded = (data as any)?.succeeded?.length ?? 0;
-      const failed = (data as any)?.failed?.length ?? 0;
+      const payload = (res as any)?.data ?? res;
+      const succeeded = payload?.succeeded?.length ?? 0;
+      const failed = payload?.failed?.length ?? 0;
       show({
         kind: failed > 0 ? 'warning' : 'success',
         message: `Payroll processed: ${succeeded} succeeded${failed > 0 ? `, ${failed} failed` : ''}`,

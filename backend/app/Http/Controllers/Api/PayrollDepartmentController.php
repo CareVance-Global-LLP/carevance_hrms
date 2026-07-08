@@ -12,6 +12,7 @@ use App\Models\PayGroupAssignment;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
 use App\Models\Reimbursement;
+use App\Models\ReimbursementPayrollLink;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Attendance\AttendanceService;
@@ -926,10 +927,17 @@ class PayrollDepartmentController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        // Reimbursements: only approved ones are folded into payroll.
-        $reimbursements = Reimbursement::where('user_id', $userId)
-            ->where('status', 'approved')
-            ->orderByDesc('approved_at')
+        // Reimbursements: only approved ones matching the payroll month.
+        $reimbursementQuery = Reimbursement::where('user_id', $userId)
+            ->where('status', 'approved');
+
+        if ($request->filled('month_year') && preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $request->month_year, $m)) {
+            $reimbursementQuery->whereMonth('expense_date', (int) $m[2])
+                ->whereYear('expense_date', (int) $m[1]);
+        }
+
+        $reimbursements = $reimbursementQuery
+            ->orderByDesc('expense_date')
             ->get([
                 'id', 'user_id', 'title', 'description', 'category',
                 'amount', 'currency', 'expense_date', 'status',
@@ -1146,9 +1154,29 @@ class PayrollDepartmentController extends Controller
         // the gross. Reimbursements are non-taxable, FBP is allocated
         // monthly. Both come from the same sources the wizard Steps 3/4
         // read. This makes the payroll run reflect what the admin saw.
-        $approvedReimbursementsTotal = (float) Reimbursement::where('user_id', $userId)
+        $monthParts = explode('-', $request->month_year);
+        $reimbMonth = (int) $monthParts[1];
+        $reimbYear = (int) $monthParts[0];
+
+        $approvedReimbursements = Reimbursement::where('user_id', $userId)
             ->where('status', 'approved')
-            ->sum('amount');
+            ->whereMonth('expense_date', $reimbMonth)
+            ->whereYear('expense_date', $reimbYear)
+            ->get();
+
+        // Deduplicate: only count reimbursements not already linked to a payroll
+        $approvedReimbursementsTotal = 0;
+        $processedReimbursementIds = [];
+        foreach ($approvedReimbursements as $reimbursement) {
+            $existingLink = ReimbursementPayrollLink::where('reimbursement_id', $reimbursement->id)
+                ->where('status', 'linked')
+                ->first();
+            if (!$existingLink) {
+                $approvedReimbursementsTotal += (float) $reimbursement->amount;
+                $processedReimbursementIds[] = $reimbursement->id;
+            }
+        }
+
         $fbpAllocationsTotal = (float) FbpAllocation::where('user_id', $userId)
             ->where('status', 'active')
             ->sum('allocated_amount');
@@ -1260,6 +1288,22 @@ class PayrollDepartmentController extends Controller
                 ),
             ]
         );
+
+        // Create ReimbursementPayrollLink records to prevent double-counting
+        if (!empty($processedReimbursementIds)) {
+            foreach ($processedReimbursementIds as $reimbursementId) {
+                ReimbursementPayrollLink::updateOrCreate(
+                    ['reimbursement_id' => $reimbursementId],
+                    [
+                        'organization_id' => $organizationId,
+                        'payroll_item_id' => $payrollItem->id,
+                        'amount' => $approvedReimbursements->firstWhere('id', $reimbursementId)->amount,
+                        'month_year' => $request->month_year,
+                        'status' => 'linked',
+                    ]
+                );
+            }
+        }
 
         // Update payroll run totals
         $this->updatePayrollRunTotals($payrollRun);

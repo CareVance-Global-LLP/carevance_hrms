@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Receipt, Search, Loader2, Plus, CheckCircle, XCircle, IndianRupee,
@@ -22,6 +22,26 @@ const CATEGORIES = [
   { value: 'other', label: 'Other' },
 ];
 
+// Persists the selected review month across refreshes. Cleared on logout
+// (see AuthContext.logout) so a fresh login defaults to the current month.
+const REIMBURSEMENT_MONTH_KEY = 'reimbursement_month_filter';
+
+function currentMonthValue(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${d.getFullYear()}-${m}`;
+}
+
+function initialMonthFilter(): string {
+  try {
+    const stored = localStorage.getItem(REIMBURSEMENT_MONTH_KEY);
+    if (stored !== null) return stored;
+  } catch {
+    /* ignore */
+  }
+  return currentMonthValue();
+}
+
 const APPROVAL_LEVEL_LABELS: Record<string, string> = {
   pending_manager: 'Awaiting Manager',
   pending_admin: 'Awaiting Admin',
@@ -42,7 +62,7 @@ function fmt(amount: number | null | undefined): string {
   return '₹' + n.toLocaleString('en-IN');
 }
 
-type Tab = 'inbox' | 'my_submissions' | 'all' | 'history';
+type Tab = 'inbox' | 'my_submissions' | 'all' | 'history' | 'pending_payments';
 
 export default function ReimbursementsPage() {
   const { user } = useAuth();
@@ -92,37 +112,55 @@ export default function ReimbursementsPage() {
   // Claim detail modal
   const [selectedClaimId, setSelectedClaimId] = useState<number | null>(null);
 
+  // Bulk selection (inbox tabs)
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+  // Mark-paid modal
+  const [payingId, setPayingId] = useState<number | null>(null);
+  const [payoutMode, setPayoutMode] = useState<'payroll' | 'outside_payroll'>('payroll');
+  const [paymentReference, setPaymentReference] = useState('');
+
   // Search
   const [search, setSearch] = useState('');
+
+  // Month filter (YYYY-MM) — defaults to the current running month, but
+  // persists the user's selection across refreshes via localStorage.
+  const [monthFilter, setMonthFilter] = useState<string>(initialMonthFilter);
 
   // ─── Queries ───────────────────────────────────────────────
 
   const { data: myData, isLoading: myLoading } = useQuery({
-    queryKey: ['reimbursements', 'mine'],
-    queryFn: () => payrollApi.myReimbursements().then(r => r.data),
+    queryKey: ['reimbursements', 'mine', monthFilter],
+    queryFn: () => payrollApi.myReimbursements({ month_year: monthFilter || undefined }).then(r => r.data),
   });
 
   const { data: managerInboxData, isLoading: managerLoading } = useQuery({
-    queryKey: ['reimbursements', 'manager-inbox', search],
-    queryFn: () => payrollApi.managerInbox({ search }).then(r => r.data),
+    queryKey: ['reimbursements', 'manager-inbox', search, monthFilter],
+    queryFn: () => payrollApi.managerInbox({ search, month_year: monthFilter || undefined }).then(r => r.data),
     enabled: isManager && activeTab === 'inbox',
   });
 
   const { data: adminInboxData, isLoading: adminLoading } = useQuery({
-    queryKey: ['reimbursements', 'admin-inbox', search],
-    queryFn: () => payrollApi.adminInbox({ search }).then(r => r.data),
+    queryKey: ['reimbursements', 'admin-inbox', search, monthFilter],
+    queryFn: () => payrollApi.adminInbox({ search, month_year: monthFilter || undefined }).then(r => r.data),
     enabled: isStrictAdmin && activeTab === 'inbox',
   });
 
   const { data: allData, isLoading: allLoading } = useQuery({
-    queryKey: ['reimbursements', 'all'],
-    queryFn: () => payrollApi.listReimbursements().then(r => r.data),
+    queryKey: ['reimbursements', 'all', monthFilter],
+    queryFn: () => payrollApi.listReimbursements({ month_year: monthFilter || undefined }).then(r => r.data),
     enabled: activeTab === 'all' || activeTab === 'history',
   });
 
+  const { data: pendingPaymentsData, isLoading: pendingPaymentsLoading } = useQuery({
+    queryKey: ['reimbursements', 'pending-payments', monthFilter],
+    queryFn: () => payrollApi.pendingPayments({ month_year: monthFilter || undefined }).then(r => r.data),
+    enabled: isStrictAdmin && activeTab === 'pending_payments',
+  });
+
   const { data: summaryData } = useQuery({
-    queryKey: ['reimbursements', 'summary'],
-    queryFn: () => payrollApi.reimbursementSummary().then(r => r.data),
+    queryKey: ['reimbursements', 'summary', monthFilter],
+    queryFn: () => payrollApi.reimbursementSummary({ month_year: monthFilter || undefined }).then(r => r.data),
   });
 
   const { data: claimDetailData, isLoading: claimDetailLoading } = useQuery({
@@ -185,6 +223,64 @@ export default function ReimbursementsPage() {
     },
   });
 
+  // Mark a claim as read when opened from an inbox so the sidebar badge
+  // decrements like an unread chat message.
+  const markReadMutation = useMutation({
+    mutationFn: (id: number) =>
+      payrollApi.markReimbursementRead(id, isStrictAdmin ? 'admin' : 'manager'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reimbursements', 'manager-inbox'] });
+      queryClient.invalidateQueries({ queryKey: ['reimbursements', 'admin-inbox'] });
+    },
+  });
+
+  // ─── Mark claim read when opened from an inbox ────────────
+
+  useEffect(() => {
+    if (selectedClaimId === null) return;
+    if (activeTab !== 'inbox') return;
+    markReadMutation.mutate(selectedClaimId);
+  }, [selectedClaimId, activeTab, markReadMutation]);
+
+  // ─── Bulk approve/reject mutations ──────────────────────
+
+  const bulkApproveMutation = useMutation({
+    mutationFn: () =>
+      isStrictAdmin
+        ? payrollApi.bulkAdminApproveReimbursements(selectedIds)
+        : payrollApi.bulkManagerApproveReimbursements(selectedIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
+      setSelectedIds([]);
+    },
+  });
+
+  const bulkRejectMutation = useMutation({
+    mutationFn: (reason: string) =>
+      isStrictAdmin
+        ? payrollApi.bulkAdminRejectReimbursements(selectedIds, reason)
+        : payrollApi.bulkManagerRejectReimbursements(selectedIds, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
+      setSelectedIds([]);
+      setRejectingId(null);
+      setRejectReason('');
+    },
+  });
+
+  // ─── Mark paid mutation ──────────────────────────────────
+
+  const markPaidMutation = useMutation({
+    mutationFn: () =>
+      payrollApi.markReimbursementPaid(payingId!, { payout_mode: payoutMode, payment_reference: paymentReference || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
+      setPayingId(null);
+      setPaymentReference('');
+      setPayoutMode('payroll');
+    },
+  });
+
   // ─── Receipt upload ──────────────────────────────────────────
 
   const handleReceiptSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -242,6 +338,7 @@ export default function ReimbursementsPage() {
     pending_admin_count: 0, pending_admin_amount: 0,
     approved_count: 0, approved_amount: 0,
     rejected_count: 0,
+    pending_payment_count: 0, pending_payment_amount: 0,
   };
 
   const getActiveData = (): any[] => {
@@ -252,12 +349,14 @@ export default function ReimbursementsPage() {
         return [];
       case 'my_submissions':
         return myData || [];
-      case 'all':
-        return allData || [];
       case 'history':
+        // Post-inbox ledger: approved / rejected / removed claims.
+        // (Removed claims keep approval_level='approved', so they are included.)
         return (allData || []).filter((r: any) =>
           r.approval_level === 'approved' || r.approval_level === 'rejected'
         );
+      case 'pending_payments':
+        return pendingPaymentsData || [];
       default:
         return [];
     }
@@ -274,7 +373,9 @@ export default function ReimbursementsPage() {
 
   const isLoading = activeTab === 'inbox'
     ? (isStrictAdmin ? adminLoading : managerLoading)
-    : activeTab === 'my_submissions' ? myLoading : allLoading;
+    : activeTab === 'my_submissions' ? myLoading
+    : activeTab === 'pending_payments' ? pendingPaymentsLoading
+    : allLoading;
 
   // ─── Tabs ──────────────────────────────────────────────────
 
@@ -287,9 +388,11 @@ export default function ReimbursementsPage() {
     tabs.push({ key: 'inbox', label: 'Manager Inbox', count: summary.pending_manager_count });
   }
   tabs.push({ key: 'my_submissions', label: 'My Submissions' });
-  if (isAdmin) {
-    tabs.push({ key: 'all', label: 'All Reimbursements', count: summary.total_count });
+  if (isStrictAdmin) {
+    tabs.push({ key: 'pending_payments', label: 'Pending Payments', count: summary.pending_payment_count });
   }
+  // "All Reimbursements" was merged into "History" — History already covers
+  // approved / rejected / removed claims (the post-inbox ledger).
   tabs.push({ key: 'history', label: 'History' });
 
   // If manager, merge inbox into manager inbox
@@ -328,7 +431,7 @@ export default function ReimbursementsPage() {
         />
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <SurfaceCard className="p-4">
             <p className="text-xs text-slate-500 mb-1">Total Claims</p>
             <p className="text-xl font-bold text-slate-900">{summary.total_count}</p>
@@ -346,6 +449,13 @@ export default function ReimbursementsPage() {
               <p className="text-xs text-blue-600 mb-1">Pending Admin</p>
               <p className="text-xl font-bold text-blue-600">{summary.pending_admin_count}</p>
               <p className="text-xs text-slate-500">{fmt(summary.pending_admin_amount)}</p>
+            </SurfaceCard>
+          )}
+          {isStrictAdmin && (
+            <SurfaceCard className="p-4">
+              <p className="text-xs text-violet-600 mb-1">Awaiting Payout</p>
+              <p className="text-xl font-bold text-violet-600">{summary.pending_payment_count}</p>
+              <p className="text-xs text-slate-500">{fmt(summary.pending_payment_amount)}</p>
             </SurfaceCard>
           )}
           <SurfaceCard className="p-4">
@@ -379,6 +489,42 @@ export default function ReimbursementsPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Month filter — review claims by the month the expense was incurred */}
+            <div className="relative flex items-center">
+              <Filter className="absolute left-3 h-4 w-4 text-slate-400 pointer-events-none" />
+              <input
+                type="month"
+                value={monthFilter}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setMonthFilter(v);
+                  try {
+                    localStorage.setItem(REIMBURSEMENT_MONTH_KEY, v);
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-label="Filter by month"
+              />
+              {monthFilter && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMonthFilter('');
+                    try {
+                      localStorage.setItem(REIMBURSEMENT_MONTH_KEY, '');
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  className="absolute right-2 text-slate-400 hover:text-slate-600"
+                  aria-label="Clear month filter"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
@@ -398,6 +544,42 @@ export default function ReimbursementsPage() {
             </Button>
           </div>
         </div>
+
+        {/* Bulk action bar — visible only in inbox tabs with a selection */}
+        {activeTab === 'inbox' && selectedIds.length > 0 && (
+          <div className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+            <span className="text-sm font-medium text-blue-800">
+              {selectedIds.length} claim{selectedIds.length > 1 ? 's' : ''} selected
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={<CheckCircle className="h-4 w-4" />}
+                onClick={() => bulkApproveMutation.mutate()}
+                disabled={bulkApproveMutation.isPending}
+              >
+                {bulkApproveMutation.isPending ? 'Approving…' : `Approve ${isStrictAdmin ? 'Final' : ''}`}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                iconLeft={<XCircle className="h-4 w-4" />}
+                onClick={() => setRejectingId(-1)}
+                disabled={bulkRejectMutation.isPending}
+              >
+                Reject
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedIds([])}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Create Form — Keka Style */}
         {showForm && !showSuccess && (
@@ -433,7 +615,7 @@ export default function ReimbursementsPage() {
                   />
                 </div>
                 <div>
-                  <FieldLabel>Date *</FieldLabel>
+                  <FieldLabel>Date of Expense *</FieldLabel>
                   <TextInput
                     type="date"
                     value={formData.expense_date}
@@ -614,7 +796,7 @@ export default function ReimbursementsPage() {
                   <span className="font-medium text-slate-900">{fmt(parseFloat(formData.amount) || 0)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Date</span>
+                  <span className="text-slate-500">Date of Expense</span>
                   <span className="font-medium text-slate-900">{formData.expense_date}</span>
                 </div>
                 {formData.title && (
@@ -686,13 +868,30 @@ export default function ReimbursementsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
+                    {activeTab === 'inbox' && (
+                      <th className="w-10 px-3 py-3">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          checked={filteredData.length > 0 && filteredData.every((r: any) => selectedIds.includes(r.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds(filteredData.map((r: any) => r.id));
+                            } else {
+                              setSelectedIds([]);
+                            }
+                          }}
+                        />
+                      </th>
+                    )}
                     {activeTab !== 'my_submissions' && (
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
                     )}
                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Title</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Category</th>
                     <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Expense Date</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Submitted</th>
                     {activeTab === 'inbox' && isStrictAdmin && (
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Manager</th>
                     )}
@@ -703,6 +902,22 @@ export default function ReimbursementsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {filteredData.map((reim: any) => (
                     <tr key={reim.id} className="hover:bg-slate-50">
+                      {activeTab === 'inbox' && (
+                        <td className="px-3 py-3">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            checked={selectedIds.includes(reim.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedIds([...selectedIds, reim.id]);
+                              } else {
+                                setSelectedIds(selectedIds.filter((id) => id !== reim.id));
+                              }
+                            }}
+                          />
+                        </td>
+                      )}
                       {activeTab !== 'my_submissions' && (
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900">{reim.employee?.name || 'Unknown'}</div>
@@ -719,6 +934,7 @@ export default function ReimbursementsPage() {
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-slate-900">{fmt(reim.amount)}</td>
                       <td className="px-4 py-3 text-slate-600">{reim.expense_date || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 text-xs">{reim.created_at ? String(reim.created_at).slice(0, 10) : '-'}</td>
                       {activeTab === 'inbox' && isStrictAdmin && (
                         <td className="px-4 py-3 text-slate-600 text-xs">
                           {reim.managerApprover?.name || '-'}
@@ -790,6 +1006,17 @@ export default function ReimbursementsPage() {
                               </Button>
                             </>
                           )}
+                          {/* Mark Paid action for approved-but-unpaid claims */}
+                          {activeTab === 'pending_payments' && isStrictAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              iconLeft={<CheckCircle className="h-3.5 w-3.5 text-violet-600" />}
+                              onClick={() => { setPayingId(reim.id); setPayoutMode('payroll'); setPaymentReference(''); }}
+                            >
+                              Mark Paid
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -805,7 +1032,9 @@ export default function ReimbursementsPage() {
       {rejectingId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <SurfaceCard className="w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Reject Reimbursement</h3>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              {rejectingId === -1 ? `Reject ${selectedIds.length} Claim(s)` : 'Reject Reimbursement'}
+            </h3>
             <p className="text-sm text-slate-500 mb-4">Provide a reason for rejecting this claim.</p>
             <TextareaInput
               value={rejectReason}
@@ -822,16 +1051,18 @@ export default function ReimbursementsPage() {
                 iconLeft={<XCircle className="h-4 w-4" />}
                 onClick={() => {
                   if (!rejectReason.trim()) return;
-                  const isManagerReject = activeTab === 'inbox' && isManager;
-                  if (isManagerReject) {
+                  if (rejectingId === -1) {
+                    // Bulk reject mode
+                    bulkRejectMutation.mutate(rejectReason);
+                  } else if (activeTab === 'inbox' && isManager) {
                     managerRejectMutation.mutate({ id: rejectingId, reason: rejectReason });
                   } else {
                     adminRejectMutation.mutate({ id: rejectingId, reason: rejectReason });
                   }
                 }}
-                disabled={!rejectReason.trim()}
+                disabled={!rejectReason.trim() || bulkRejectMutation.isPending}
               >
-                Reject
+                {bulkRejectMutation.isPending ? 'Rejecting…' : 'Reject'}
               </Button>
             </div>
           </SurfaceCard>
@@ -870,7 +1101,7 @@ export default function ReimbursementsPage() {
                     <span className="font-medium text-slate-900">{fmt(claimDetailData.amount)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Date</span>
+                    <span className="text-slate-500">Expense Date</span>
                     <span className="font-medium text-slate-900">{claimDetailData.expense_date || '-'}</span>
                   </div>
                   {claimDetailData.merchant_name && (
@@ -1032,8 +1263,79 @@ export default function ReimbursementsPage() {
                     <p className="text-sm text-rose-600">{claimDetailData.rejection_reason}</p>
                   </div>
                 )}
+
+                {/* Payment status / Mark Paid (admin only, once approved) */}
+                {isStrictAdmin && claimDetailData.approval_level === 'approved' && (
+                  <div className="mt-4 p-3 bg-violet-50 border border-violet-200 rounded-lg">
+                    {claimDetailData.paid_at ? (
+                      <div>
+                        <p className="text-xs font-semibold text-violet-700 mb-1">Paid</p>
+                        <p className="text-sm text-violet-600">
+                          {claimDetailData.payout_mode === 'outside_payroll' ? 'Outside Payroll' : 'Via Payroll'}
+                          {claimDetailData.payment_reference ? ` · Ref: ${claimDetailData.payment_reference}` : ''}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {new Date(claimDetailData.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm text-violet-700">Approved — awaiting payout</p>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => { setPayingId(claimDetailData.id); setPayoutMode('payroll'); setPaymentReference(''); }}
+                        >
+                          Mark Paid
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : null}
+          </SurfaceCard>
+        </div>
+      )}
+
+      {/* Mark Paid Modal */}
+      {payingId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <SurfaceCard className="w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Mark as Paid</h3>
+            <p className="text-sm text-slate-500 mb-4">Choose how this approved claim was paid.</p>
+            <div className="space-y-4">
+              <div>
+                <FieldLabel>Payout Mode</FieldLabel>
+                <SelectInput value={payoutMode} onChange={(e) => setPayoutMode(e.target.value as 'payroll' | 'outside_payroll')}>
+                  <option value="payroll">Via Payroll (added to salary)</option>
+                  <option value="outside_payroll">Outside Payroll (bank transfer)</option>
+                </SelectInput>
+              </div>
+              {payoutMode === 'outside_payroll' && (
+                <div>
+                  <FieldLabel>Payment Reference</FieldLabel>
+                  <TextInput
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                    placeholder="UTR / transaction id"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <Button variant="secondary" onClick={() => { setPayingId(null); setPaymentReference(''); }}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                iconLeft={<CheckCircle className="h-4 w-4" />}
+                onClick={() => markPaidMutation.mutate()}
+                disabled={markPaidMutation.isPending}
+              >
+                {markPaidMutation.isPending ? 'Saving…' : 'Confirm Paid'}
+              </Button>
+            </div>
           </SurfaceCard>
         </div>
       )}

@@ -30,7 +30,12 @@ class Reimbursement extends Model
         'approval_level',
         'manager_approved_by',
         'manager_approved_at',
+        'manager_read_at',
+        'admin_read_at',
         'rejection_reason',
+        'payout_mode',
+        'paid_at',
+        'payment_reference',
         'meta',
     ];
 
@@ -38,6 +43,9 @@ class Reimbursement extends Model
         'expense_date' => 'date',
         'approved_at' => 'datetime',
         'manager_approved_at' => 'datetime',
+        'manager_read_at' => 'datetime',
+        'admin_read_at' => 'datetime',
+        'paid_at' => 'datetime',
         'amount' => 'decimal:2',
     ];
 
@@ -95,6 +103,20 @@ class Reimbursement extends Model
     public function scopePendingAdmin($query)
     {
         return $query->where('approval_level', 'pending_admin');
+    }
+
+    /**
+     * Filter by the month the expense was incurred (expense_date),
+     * using a "YYYY-MM" month_year value. Used for the per-month review UI.
+     */
+    public function scopeForMonth($query, ?string $monthYear)
+    {
+        if ($monthYear && preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $monthYear, $m)) {
+            $query->whereMonth('expense_date', (int) $m[2])
+                ->whereYear('expense_date', (int) $m[1]);
+        }
+
+        return $query;
     }
 
     // ─── Helpers ──────────────────────────────────────────────

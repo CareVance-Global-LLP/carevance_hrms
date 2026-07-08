@@ -10,7 +10,7 @@ import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeO
 import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
 import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
-import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, userApi } from '@/services/api';
+import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, payrollApi, userApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
 import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound } from '@/lib/desktopNotifications';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
@@ -66,6 +66,7 @@ export default function Layout() {
   const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [unreadChatMessages, setUnreadChatMessages] = useState(0);
+  const [reimbursementInboxCount, setReimbursementInboxCount] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [globalSearch, setGlobalSearch] = useState('');
   const [searchDirectoryUsers, setSearchDirectoryUsers] = useState<any[]>([]);
@@ -253,7 +254,9 @@ export default function Layout() {
           filteredItems = filteredItems?.map((item) =>
             item.to === '/chat'
               ? { ...item, unreadCount: unreadChatMessages }
-              : item
+              : item.to === '/reimbursements'
+                ? { ...item, unreadCount: reimbursementInboxCount }
+                : item
           );
 
           if (group.label === 'Attendance' && filteredItems?.length === 1) {
@@ -299,7 +302,7 @@ export default function Layout() {
         })
         .filter((group) => group.to || (group.items?.length || 0) > 0);
     },
-    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, isEmployeeOrManagerView, pendingApprovals, unreadChatMessages, hasFeature, user, devModeNavigation]
+    [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, isEmployeeOrManagerView, pendingApprovals, unreadChatMessages, reimbursementInboxCount, hasFeature, user, devModeNavigation]
   );
 
   const globalSuggestions = useMemo<GlobalSuggestion[]>(
@@ -597,10 +600,11 @@ export default function Layout() {
           : Promise.resolve(null);
 
         // Load all notifications (not just unread) for the panel, but exclude chat notifications
-        const [notificationResponse, chatUnreadResponse, approvalResponses] = await Promise.all([
+        const [notificationResponse, chatUnreadResponse, approvalResponses, reimbursementResponse] = await Promise.all([
           notificationApi.list({ limit: 20 }),
           chatApi.getUnreadSummary(),
           approvalPromise,
+          payrollApi.reimbursementInboxCount(),
         ]);
 
         if (!active) return;
@@ -616,6 +620,11 @@ export default function Layout() {
         setNotifications(nextNonChat);
         setUnreadNotifications(unreadNonChatCount);
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
+
+        // Reimbursement inbox badge — only pending *unread* claims for the
+        // current user's role (admin sees admin_inbox, others see manager_inbox).
+        const reim = reimbursementResponse.data || { manager_inbox: 0, admin_inbox: 0 };
+        setReimbursementInboxCount(isStrictAdminView ? reim.admin_inbox : reim.manager_inbox);
 
         if (approvalResponses) {
           const [leaveResponse, timeEditResponse] = approvalResponses;
@@ -651,6 +660,7 @@ export default function Layout() {
           setNotifications([]);
           setUnreadNotifications(0);
           setUnreadChatMessages(0);
+          setReimbursementInboxCount(0);
           setPendingApprovals(0);
         }
       }

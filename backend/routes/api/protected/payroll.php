@@ -283,6 +283,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::get('/reimbursements/inbox/admin', [ReimbursementController::class, 'adminInbox']);
     Route::get('/reimbursements/inbox-count', [ReimbursementController::class, 'inboxCount']);
     Route::get('/reimbursements/summary', [ReimbursementController::class, 'getSummary']);
+    Route::get('/reimbursements/pending-payments', [ReimbursementController::class, 'pendingPayments']);
     Route::get('/reimbursements/{id}', [ReimbursementController::class, 'show']);
     Route::post('/reimbursements/upload-receipt', [ReimbursementController::class, 'uploadReceipt']);
     Route::post('/reimbursements', [ReimbursementController::class, 'store']);
@@ -290,8 +291,14 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::delete('/reimbursements/{id}', [ReimbursementController::class, 'destroy']);
     Route::post('/reimbursements/{id}/manager-approve', [ReimbursementController::class, 'managerApprove']);
     Route::post('/reimbursements/{id}/manager-reject', [ReimbursementController::class, 'managerReject']);
+    Route::post('/reimbursements/{id}/mark-read', [ReimbursementController::class, 'markInboxRead']);
+    Route::post('/reimbursements/bulk/manager-approve', [ReimbursementController::class, 'bulkManagerApprove']);
+    Route::post('/reimbursements/bulk/manager-reject', [ReimbursementController::class, 'bulkManagerReject']);
+    Route::post('/reimbursements/{id}/mark-paid', [ReimbursementController::class, 'markPaid']);
     Route::post('/reimbursements/{id}/approve', [ReimbursementController::class, 'approve']);
     Route::post('/reimbursements/{id}/reject', [ReimbursementController::class, 'reject']);
+    Route::post('/reimbursements/bulk/admin-approve', [ReimbursementController::class, 'bulkAdminApprove']);
+    Route::post('/reimbursements/bulk/admin-reject', [ReimbursementController::class, 'bulkAdminReject']);
     Route::post('/reimbursements/{id}/remove', [ReimbursementController::class, 'remove']);
 
     // Tax-Proof Submissions (Form 12BB attachments)

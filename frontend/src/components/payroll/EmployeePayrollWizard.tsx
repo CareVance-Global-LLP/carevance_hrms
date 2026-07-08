@@ -242,8 +242,8 @@ export default function EmployeePayrollWizard({
   // gate below), but the trash-icon removal still works from any
   // step because the mutation updates this query's cache directly.
   const approvedReimbursementsQuery = useQuery({
-    queryKey: ['reimbursements', 'employee', employeeId, 'approved'],
-    queryFn: () => payrollApi.getEmployeeReimbursements(employeeId, 'approved').then(res => res.data),
+    queryKey: ['reimbursements', 'employee', employeeId, 'approved', monthYear],
+    queryFn: () => payrollApi.getEmployeeReimbursements(employeeId, 'approved', monthYear).then(res => res.data),
     enabled: Boolean(employeeId),
   });
   const approvedReimbursements = Array.isArray(approvedReimbursementsQuery.data) ? approvedReimbursementsQuery.data : [];
@@ -359,7 +359,7 @@ export default function EmployeePayrollWizard({
       lOP_days: parseFloat(lOPDays) || 0,
       overtime_hours: parseFloat(overtimeHours) || 0,
     }),
-    onSuccess: (data) => {
+    onSuccess: (res) => {
       // Mark step 6 (Preview & Process) done — this is the final
       // step in the BulkPayrollMatrix. Step 5 was marked by the
       // Process button onClick handler before the mutation fired.
@@ -371,7 +371,8 @@ export default function EmployeePayrollWizard({
       queryClient.invalidateQueries({ queryKey: ['payroll', 'run-detail'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'employee', employeeId, monthYear] });
       // Capture the run id so the success view can offer to open the lifecycle stepper
-      setProcessedRunId((data as any)?.payroll_item?.payroll_run_id ?? null);
+      const payload = (res as any)?.data ?? res;
+      setProcessedRunId(payload?.payroll_item?.payroll_run_id ?? null);
       // Note: don't auto-navigate. Let the success view render so the user
       // can act (view lifecycle / go back manually).
     },
@@ -437,6 +438,22 @@ export default function EmployeePayrollWizard({
     }, 500);
     return () => clearTimeout(t);
   }, [annualCtc]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist annual_ctc to the template so the bulk "Process All Employees"
+  // handler can read it from EmployeePayrollTemplate.annual_ctc. Without
+  // this, the bulk handler sees 0 and skips every employee.
+  useEffect(() => {
+    if (!template) return;
+    const ctc = parseFloat(annualCtc);
+    if (!Number.isFinite(ctc) || ctc <= 0) return;
+    // Avoid an infinite loop: only save if the value differs from what
+    // the template currently has.
+    if (Number(template.annual_ctc) === ctc) return;
+    const t = setTimeout(() => {
+      updateTemplateMutation.mutate({ annual_ctc: ctc });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [annualCtc, template?.annual_ctc]);
 
   // Calculate preview
   const calculatePreview = async () => {
@@ -1457,7 +1474,7 @@ export default function EmployeePayrollWizard({
   // Step 3: Review & Process
   const renderStep3 = () => (
     <div className="space-y-6">
-      {isLoading || !template || (!calculation && isCalculating) ? (
+      {isLoading || isInitializing || !template || (!calculation && isCalculating) ? (
         <SurfaceCard className="p-8 text-center">
           <Loader2 className="h-8 w-8 mx-auto mb-3 text-blue-500 animate-spin" />
           <p className="text-slate-500">Loading payroll details...</p>

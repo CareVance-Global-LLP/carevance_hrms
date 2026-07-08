@@ -7,7 +7,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { billingApi } from '@/services/api';
 import { BillingSnapshot } from '@/types';
-import { getPricingPlan, getPricePerUserPerMonth, PricingBillingCycle, MIN_SEATS, getUpgradeInfo } from '@/constants/pricing';
+import { getPricingPlan, getPricePerUserPerMonth, PricingBillingCycle, MIN_SEATS } from '@/constants/pricing';
 import { pricingUi } from '@/constants/pricing';
 import { usePlan } from '@/hooks/usePlan';
 import { buildUpgradePath } from '@/constants/pricing';
@@ -258,6 +258,7 @@ export default function BillingSettingsPage() {
                       </>
                     )}
                     */}
+                    
                     <Link
                       to="/pricing"
                       className="flex items-center justify-between rounded-[22px] border border-slate-200/90 bg-white/90 px-4 py-4 text-sm font-semibold text-slate-800 transition hover:-translate-y-0.5 hover:border-slate-950"
@@ -279,6 +280,8 @@ export default function BillingSettingsPage() {
                       Cancel Plan
                       <AlertTriangle className="h-4 w-4" />
                     </button>
+                  </>
+                )}
               </div>
             </SurfaceCard>
           </div>

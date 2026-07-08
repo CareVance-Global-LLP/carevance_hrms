@@ -253,8 +253,8 @@ class PayrollAutoProcessService
         foreach ($items as $item) {
             $approvedReimbursements = Reimbursement::where('user_id', $item->user_id)
                 ->where('status', 'approved')
-                ->whereMonth('approved_at', explode('-', $run->month_year)[1])
-                ->whereYear('approved_at', explode('-', $run->month_year)[0])
+                ->whereMonth('expense_date', explode('-', $run->month_year)[1])
+                ->whereYear('expense_date', explode('-', $run->month_year)[0])
                 ->get();
 
             foreach ($approvedReimbursements as $reimbursement) {
