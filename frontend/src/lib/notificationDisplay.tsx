@@ -116,6 +116,11 @@ export const resolveNotificationRoute = (
 ): string => {
   const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
   if (userLevel < 100 && isApprovalNotification(notification)) {
+    const route = String(notification?.meta?.route || '').trim();
+    if (route) {
+      return route;
+    }
+
     const type = String(notification?.type || '').trim().toLowerCase();
     const title = String(notification?.title || '').trim().toLowerCase();
 
@@ -123,7 +128,7 @@ export const resolveNotificationRoute = (
       return '/approval-inbox?section=time-edit&view=pending';
     }
 
-    return '/approval-inbox?section=leave&view=pending&leave_window=today';
+    return '/approval-inbox?section=leave&view=pending';
   }
 
   return String(notification.meta?.route || '/notifications').trim() || '/notifications';
