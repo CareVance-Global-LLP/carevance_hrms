@@ -641,6 +641,7 @@ class PayrollFilingController extends Controller
         }
 
         $column = "step{$data['step']}_completed";
+        $monthYear = $data['month_year'];
 
         // BULK ensure templates exist (1 query to find existing, 1 query to create missing)
         $existing = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
@@ -655,9 +656,32 @@ class PayrollFilingController extends Controller
             }
         }
 
+        // Reset stale completions when crossing into a NEW payroll month.
+        // A single shared `steps_month_year` column gates all six cumulative
+        // `stepN_completed` booleans. If an employee still carries
+        // step2..6_completed = true from a previous month, completing a step
+        // for the new month would otherwise flip `steps_month_year` and reveal
+        // those stale flags as "done". Start the new month fresh so only the
+        // step actually being completed is marked.
+        \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $validUserIds)
+            ->where(function ($q) use ($monthYear) {
+                $q->where('steps_month_year', '!=', $monthYear)
+                  ->orWhereNull('steps_month_year');
+            })
+            ->update([
+                'step1_completed' => false,
+                'step2_completed' => false,
+                'step3_completed' => false,
+                'step4_completed' => false,
+                'step5_completed' => false,
+                'step6_completed' => false,
+                'current_step' => 1,
+            ]);
+
         $updated = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $validUserIds)
-            ->update([$column => true, 'steps_month_year' => $data['month_year']]);
+            ->update([$column => true, 'steps_month_year' => $monthYear]);
 
         return response()->json([
             'success' => true,
@@ -703,6 +727,7 @@ class PayrollFilingController extends Controller
         }
 
         $column = "step{$data['step']}_completed";
+        $monthYear = $data['month_year'];
 
         // BULK ensure templates exist (1 query to find existing, 1 query to create missing)
         $existing = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
@@ -717,10 +742,30 @@ class PayrollFilingController extends Controller
             }
         }
 
+        // Reset stale completions when crossing into a NEW payroll month.
+        // See completeStep() for the full rationale. A single shared
+        // `steps_month_year` gates all six cumulative booleans, so we must
+        // start the new month fresh before marking the requested step.
+        \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereIn('user_id', $userIds)
+            ->where(function ($q) use ($monthYear) {
+                $q->where('steps_month_year', '!=', $monthYear)
+                  ->orWhereNull('steps_month_year');
+            })
+            ->update([
+                'step1_completed' => false,
+                'step2_completed' => false,
+                'step3_completed' => false,
+                'step4_completed' => false,
+                'step5_completed' => false,
+                'step6_completed' => false,
+                'current_step' => 1,
+            ]);
+
         // BULK update all in 1 query
         $updated = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $userIds)
-            ->update([$column => true, 'steps_month_year' => $data['month_year']]);
+            ->update([$column => true, 'steps_month_year' => $monthYear]);
 
         return response()->json([
             'success' => true,
