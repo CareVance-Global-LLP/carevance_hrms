@@ -11,6 +11,7 @@ class AppNotification extends Model
         'organization_id',
         'user_id',
         'sender_id',
+        'poll_id',
         'type',
         'title',
         'message',
@@ -22,6 +23,7 @@ class AppNotification extends Model
     protected function casts(): array
     {
         return [
+            'poll_id' => 'integer',
             'meta' => 'array',
             'is_read' => 'boolean',
             'read_at' => 'datetime',
@@ -41,5 +43,10 @@ class AppNotification extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    public function poll(): BelongsTo
+    {
+        return $this->belongsTo(Poll::class);
     }
 }

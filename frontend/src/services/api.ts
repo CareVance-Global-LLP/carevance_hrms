@@ -90,6 +90,8 @@ import type {
   SalaryComponent,
   SalaryFormula,
   IndianState,
+  PollItem,
+  PollResultsResponse,
 } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
@@ -1339,7 +1341,17 @@ export const notificationApi = {
       unread_count: number;
     }>('/notifications', { params }),
 
-  publish: (data: { type: 'announcement' | 'news'; title: string; message: string; priority?: 'low' | 'medium' | 'high' | 'urgent'; recipient_user_ids?: number[] }) =>
+  publish: (data: {
+    type: 'announcement' | 'news' | 'poll';
+    title: string;
+    message: string;
+    priority?: 'low' | 'medium' | 'high' | 'urgent';
+    recipient_user_ids?: number[];
+    question?: string;
+    options?: string[];
+    is_multiple_choice?: boolean;
+    expires_at?: string;
+  }) =>
     api.post('/notifications/publish', data),
 
   markRead: (id: number) =>
@@ -1347,6 +1359,12 @@ export const notificationApi = {
 
   markAllRead: (data?: { exclude_types?: string[] }) =>
     api.post('/notifications/read-all', data),
+
+  votePoll: (pollId: number, optionIds: number[]) =>
+    api.post<{ message: string }>(`/polls/${pollId}/vote`, { option_ids: optionIds }),
+
+  getPollResults: (pollId: number) =>
+    api.get<PollResultsResponse>(`/polls/${pollId}/results`),
 };
 
 export const reportGroupApi = {
@@ -1534,6 +1552,7 @@ export const roleApi = {
       slug: string;
       description: string | null;
       hierarchy_level: number;
+      color: string;
       is_system: boolean;
       is_active: boolean;
       users_count: number;
@@ -1549,6 +1568,7 @@ export const roleApi = {
       slug: string;
       description: string | null;
       hierarchy_level: number;
+      color: string;
       is_system: boolean;
       is_active: boolean;
       users_count: number;
@@ -1557,10 +1577,10 @@ export const roleApi = {
       updated_at: string;
     } }>(`/roles/${id}`),
 
-  create: (data: { name: string; description?: string; hierarchy_level: number; permissions?: string[] }) =>
+  create: (data: { name: string; description?: string; hierarchy_level: number; color?: string; permissions?: string[] }) =>
     api.post<{ data: any }>('/roles', data),
 
-  update: (id: number, data: { name?: string; description?: string; hierarchy_level?: number; is_active?: boolean; permissions?: string[] }) =>
+  update: (id: number, data: { name?: string; description?: string; hierarchy_level?: number; color?: string; is_active?: boolean; permissions?: string[] }) =>
     api.put<{ data: any }>(`/roles/${id}`, data),
 
   delete: (id: number) =>

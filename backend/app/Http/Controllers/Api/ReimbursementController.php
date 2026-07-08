@@ -75,11 +75,8 @@ class ReimbursementController extends Controller
             }
         }
 
-        // Optional month_year filter — match expense_date to the payroll run month
-        if ($request->filled('month_year') && preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $request->month_year, $m)) {
-            $query->whereMonth('expense_date', (int) $m[2])
-                ->whereYear('expense_date', (int) $m[1]);
-        }
+        // Optional month_year filter — by the submitted date (created_at)
+        $query->forMonth($request->input('month_year'));
 
         $reimbursements = $query->orderBy('created_at', 'desc')->get();
 

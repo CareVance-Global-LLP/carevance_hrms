@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Receipt, Search, Loader2, Plus, CheckCircle, XCircle, IndianRupee,
-  Clock, ArrowRight, FileText, Filter, Upload, X, Paperclip, AlertCircle, Check,
+  Clock, ArrowRight, FileText, Upload, X, Paperclip, AlertCircle, Check,
 } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
@@ -10,6 +10,7 @@ import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import MonthPicker from '@/components/ui/MonthPicker';
 import { useAuth } from '@/contexts/AuthContext';
 
 const CATEGORIES = [
@@ -63,6 +64,79 @@ function fmt(amount: number | null | undefined): string {
 }
 
 type Tab = 'inbox' | 'my_submissions' | 'all' | 'history' | 'pending_payments';
+
+/**
+ * Renders a reimbursement receipt with an inline preview and a graceful
+ * fallback. The stored URL is a relative /storage/... path, so we make it
+ * absolute against the current origin. If the file is missing or the storage
+ * symlink isn't configured, an image shows an error message instead of a
+ * broken/blank tab; PDFs fall back to the open-in-new-tab link.
+ */
+function ReceiptViewer({ url }: { url: string }) {
+  const abs = url && !/^https?:\/\//i.test(url) ? window.location.origin + url : url;
+  const ext = (url.split('.').pop() || '').toLowerCase();
+  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+  const [imgError, setImgError] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (!url) return null;
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed(false)}
+        className="inline-flex items-center gap-1 font-medium text-emerald-600 hover:underline"
+      >
+        <Paperclip className="h-3 w-3" /> Show receipt
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        {isImage ? (
+          imgError ? (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+              <p className="text-xs text-rose-600">
+                Receipt preview unavailable — the file may be missing or storage not configured.
+              </p>
+            </div>
+          ) : (
+            <img
+              src={abs}
+              alt="Receipt"
+              onError={() => setImgError(true)}
+              className="max-h-64 w-full rounded-lg border border-slate-200 object-contain"
+            />
+          )
+        ) : (
+          <iframe
+            src={abs}
+            title="Receipt"
+            className="h-64 w-full rounded-lg border border-slate-200"
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => setCollapsed(true)}
+          aria-label="Hide receipt"
+          className="absolute right-2 top-2 rounded-full bg-white/80 p-1 text-slate-500 shadow hover:bg-white hover:text-slate-700"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => window.open(`/receipt-viewer.html?url=${encodeURIComponent(url)}`, '_blank')}
+        className="inline-flex items-center gap-1 font-medium text-emerald-600 hover:underline"
+      >
+        <Paperclip className="h-3 w-3" /> Open receipt
+      </button>
+    </div>
+  );
+}
 
 export default function ReimbursementsPage() {
   const { user } = useAuth();
@@ -490,41 +564,34 @@ export default function ReimbursementsPage() {
 
           <div className="flex items-center gap-2">
             {/* Month filter — review claims by the month the expense was incurred */}
-            <div className="relative flex items-center">
-              <Filter className="absolute left-3 h-4 w-4 text-slate-400 pointer-events-none" />
-              <input
-                type="month"
-                value={monthFilter}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setMonthFilter(v);
+            <MonthPicker
+              value={monthFilter}
+              onChange={(v) => {
+                setMonthFilter(v);
+                try {
+                  localStorage.setItem(REIMBURSEMENT_MONTH_KEY, v);
+                } catch {
+                  /* ignore */
+                }
+              }}
+            />
+            {monthFilter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMonthFilter('');
                   try {
-                    localStorage.setItem(REIMBURSEMENT_MONTH_KEY, v);
+                    localStorage.setItem(REIMBURSEMENT_MONTH_KEY, '');
                   } catch {
                     /* ignore */
                   }
                 }}
-                className="pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Filter by month"
-              />
-              {monthFilter && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMonthFilter('');
-                    try {
-                      localStorage.setItem(REIMBURSEMENT_MONTH_KEY, '');
-                    } catch {
-                      /* ignore */
-                    }
-                  }}
-                  className="absolute right-2 text-slate-400 hover:text-slate-600"
-                  aria-label="Clear month filter"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
+                className="text-slate-400 hover:text-slate-600"
+                aria-label="Clear month filter"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
@@ -1121,16 +1188,11 @@ export default function ReimbursementsPage() {
                     <span className="font-medium text-slate-900 text-right max-w-[280px]">{claimDetailData.description}</span>
                   </div>
                   {claimDetailData.receipt_url && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Receipt</span>
-                      <a
-                        href={claimDetailData.receipt_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-emerald-600 hover:underline flex items-center gap-1"
-                      >
-                        <Paperclip className="h-3 w-3" /> View Receipt
-                      </a>
+                    <div className="flex justify-between items-start gap-4">
+                      <span className="text-slate-500 pt-0.5">Receipt</span>
+                      <div className="max-w-[320px] w-full">
+                        <ReceiptViewer url={claimDetailData.receipt_url} />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1163,6 +1225,9 @@ export default function ReimbursementsPage() {
                     </div>
 
                     {/* Step 2: Manager Review */}
+                    {(claimDetailData.approval_level === 'pending_manager' ||
+                      claimDetailData.manager_approved_by ||
+                      (claimDetailData.approval_level === 'rejected' && !claimDetailData.approved_by)) && (
                     <div className="flex gap-3">
                       <div className="flex flex-col items-center">
                         {claimDetailData.manager_approved_by ? (
@@ -1210,6 +1275,7 @@ export default function ReimbursementsPage() {
                         )}
                       </div>
                     </div>
+                    )}
 
                     {/* Step 3: Admin Review */}
                     <div className="flex gap-3">

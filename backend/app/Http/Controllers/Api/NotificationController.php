@@ -8,9 +8,13 @@ use App\Http\Requests\Api\Notifications\ListNotificationsRequest;
 use App\Http\Requests\Api\Notifications\PublishNotificationRequest;
 use App\Models\AppNotification;
 use App\Models\DeviceToken;
+use App\Models\Poll;
+use App\Models\PollOption;
+use App\Models\PollVote;
 use App\Models\User;
 use App\Services\AppNotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class NotificationController extends Controller
 {
@@ -48,7 +52,13 @@ class NotificationController extends Controller
             ->unique()
             ->values();
 
-        $query = AppNotification::with('sender:id,name,email')
+$query = AppNotification::with(['sender:id,name,email', 'poll' => function ($query) use ($currentUser) {
+                $query->with(['options' => function ($q) use ($currentUser) {
+                    $q->withExists(['votes as has_voted' => function ($subq) use ($currentUser) {
+                        $subq->where('user_id', $currentUser->id);
+                    }]);
+                }]);
+            }])
             ->where('organization_id', $currentUser->organization_id)
             ->where('user_id', $currentUser->id)
             ->when($request->filled('type'), fn ($builder) => $builder->where('type', (string) $request->type))
@@ -89,6 +99,24 @@ class NotificationController extends Controller
                 ->pluck('id');
         }
 
+        // For polls, create a single shared poll that all recipients vote on.
+        $poll = null;
+        if ($request->type === 'poll') {
+            $poll = Poll::create([
+                'question' => $request->question ?? $request->title,
+                'expires_at' => $request->expires_at,
+                'is_multiple_choice' => $request->boolean('is_multiple_choice'),
+            ]);
+
+            collect($request->options ?? [])
+                ->filter(fn ($option) => is_string($option) && trim($option) !== '')
+                ->each(fn ($option) => PollOption::create([
+                    'poll_id' => $poll->id,
+                    'option_text' => trim($option),
+                    'vote_count' => 0,
+                ]));
+        }
+
         $this->notificationService->sendToUsers(
             organizationId: (int) $currentUser->organization_id,
             userIds: $recipientIds,
@@ -96,7 +124,8 @@ class NotificationController extends Controller
             type: (string) $request->type,
             title: (string) $request->title,
             message: (string) $request->message,
-            meta: $request->priority ? ['priority' => $request->priority] : null
+            meta: $request->priority ? ['priority' => $request->priority] : null,
+            pollId: $poll?->id,
         );
 
         return $this->createdResponse([], 'Notification published.');
@@ -167,6 +196,122 @@ class NotificationController extends Controller
         );
 
         return response()->json(['message' => 'Device registered for notifications.']);
+    }
+
+    public function vote(Request $request, int $pollId)
+    {
+        $user = $request->user();
+        if (!$user || !$user->organization_id) {
+            return response()->json(['message' => 'Organization is required.'], 422);
+        }
+
+        $validated = $request->validate([
+            'option_ids' => 'required|array|min:1',
+            'option_ids.*' => 'required|exists:poll_options,id',
+        ]);
+
+        $poll = Poll::with('options')
+            ->whereHas('notifications', fn ($q) => $q->where('organization_id', $user->organization_id))
+            ->find($pollId);
+
+        if (!$poll) {
+            return response()->json(['message' => 'Poll not found.'], 404);
+        }
+
+        if ($poll->hasExpired()) {
+            return response()->json(['message' => 'This poll has expired.'], 422);
+        }
+
+        $optionIds = collect($validated['option_ids']);
+        if (!$poll->is_multiple_choice && $optionIds->count() > 1) {
+            return response()->json(['message' => 'This poll only allows one vote.'], 422);
+        }
+
+        // Verify all options belong to this poll
+        $validOptions = $poll->options->whereIn('id', $optionIds);
+        if ($validOptions->count() !== $optionIds->count()) {
+            return response()->json(['message' => 'Invalid poll options selected.'], 422);
+        }
+
+        DB::transaction(function () use ($poll, $user, $optionIds) {
+            // Remove existing vote for this user (for single-choice polls)
+            if (!$poll->is_multiple_choice) {
+                PollVote::where('poll_id', $poll->id)
+                    ->where('user_id', $user->id)
+                    ->delete();
+
+                $optionIds->each(function ($optionId) use ($poll, $user) {
+                    PollOption::where('id', $optionId)->increment('vote_count');
+                    PollVote::create([
+                        'poll_id' => $poll->id,
+                        'user_id' => $user->id,
+                        'poll_option_id' => $optionId,
+                    ]);
+                });
+            } else {
+                // For multiple choice, handle each option
+                $existingVotes = PollVote::where('poll_id', $poll->id)
+                    ->where('user_id', $user->id)
+                    ->pluck('poll_option_id')
+                    ->toArray();
+
+                $toRemove = array_diff($existingVotes, $optionIds->toArray());
+                $toAdd = array_diff($optionIds->toArray(), $existingVotes);
+
+                foreach ($toRemove as $optionId) {
+                    PollVote::where('poll_id', $poll->id)
+                        ->where('user_id', $user->id)
+                        ->where('poll_option_id', $optionId)
+                        ->delete();
+                    PollOption::where('id', $optionId)->decrement('vote_count');
+                }
+
+                foreach ($toAdd as $optionId) {
+                    PollOption::where('id', $optionId)->increment('vote_count');
+                    PollVote::create([
+                        'poll_id' => $poll->id,
+                        'user_id' => $user->id,
+                        'poll_option_id' => $optionId,
+                    ]);
+                }
+            }
+        });
+
+        return $this->updatedResponse([], 'Vote recorded.');
+    }
+
+    public function results(Request $request, int $pollId)
+    {
+        $user = $request->user();
+        if (!$user || !$user->organization_id) {
+            return response()->json(['data' => [], 'total_votes' => 0]);
+        }
+
+        $poll = Poll::with(['options' => function ($query) use ($user) {
+            $query->withExists(['votes as has_voted' => function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+            }]);
+        }])
+            ->whereHas('notifications', fn ($q) => $q->where('organization_id', $user->organization_id))
+            ->find($pollId);
+
+        if (!$poll) {
+            return response()->json(['message' => 'Poll not found.'], 404);
+        }
+
+        $totalVotes = $poll->options->sum('vote_count');
+
+        return response()->json([
+            'data' => $poll->options->map(fn ($option) => [
+                'id' => $option->id,
+                'option_text' => $option->option_text,
+                'vote_count' => $option->vote_count,
+                'has_voted' => (bool) $option->has_voted,
+            ]),
+            'total_votes' => $totalVotes,
+            'is_multiple_choice' => $poll->is_multiple_choice,
+            'has_expired' => $poll->hasExpired(),
+        ]);
     }
 
     private function canManage(User $user): bool

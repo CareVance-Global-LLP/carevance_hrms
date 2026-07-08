@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { AppNotificationItem, User } from '@/types';
 import {
   AlertTriangle,
+  BarChart3,
   Bell,
   Briefcase,
   CalendarClock,
@@ -24,7 +25,7 @@ const APPROVAL_NOTIFICATION_TYPES = new Set(['leave_request', 'time_edit']);
 const APPROVAL_NOTIFICATION_TITLES = ['leave request submitted', 'time edit request submitted'];
 
 export const getNotificationDisplay = (type: string): NotificationDisplay => {
-  switch (String(type || '').trim()) {
+  switch (String(type || '').trim().toLowerCase()) {
     case 'chat_direct_message':
     case 'chat_group_message':
       return {
@@ -80,6 +81,12 @@ export const getNotificationDisplay = (type: string): NotificationDisplay => {
         tone: 'info',
         icon: createIcon(<Megaphone className="h-4 w-4" />),
       };
+    case 'poll':
+      return {
+        label: 'Poll',
+        tone: 'info',
+        icon: createIcon(<BarChart3 className="h-4 w-4" />),
+      };
     default:
       return {
         label: 'Notification',
@@ -127,5 +134,13 @@ export const canOpenNotificationFromCenter = (
   user: Pick<User, 'role' | 'hierarchy_level'> | null | undefined
 ): boolean => {
   const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
-  return userLevel < 100 && isApprovalNotification(notification);
+  // Approval notifications for managers/admins
+  if (userLevel < 100 && isApprovalNotification(notification)) {
+    return true;
+  }
+  // Polls for everyone
+  if (String(notification?.type || '').trim().toLowerCase() === 'poll') {
+    return true;
+  }
+  return false;
 };

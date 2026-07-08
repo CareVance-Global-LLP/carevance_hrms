@@ -96,6 +96,7 @@ class TeamHierarchyController extends Controller
                     'role' => $u->role,
                     'role_id' => $u->role_id,
                     'role_name' => $u->customRole?->name ?? ucfirst((string) ($u->role ?? 'employee')),
+                    'role_color' => $u->customRole?->color ?? 'slate',
                     'hierarchy_level' => $u->customRole?->hierarchy_level ?? $this->fallbackLevel($u->role),
                     'reporting_manager_id' => $u->employeeWorkInfo?->reporting_manager_id
                         ? (int) $u->employeeWorkInfo->reporting_manager_id
@@ -124,6 +125,7 @@ class TeamHierarchyController extends Controller
                 'role' => $currentUser->role,
                 'role_id' => $currentUser->role_id,
                 'role_name' => $currentUser->customRole?->name ?? ucfirst((string) ($currentUser->role ?? 'employee')),
+                'role_color' => $currentUser->customRole?->color ?? 'slate',
                 'hierarchy_level' => $currentUser->customRole?->hierarchy_level ?? $this->fallbackLevel($currentUser->role),
                 'designation' => $currentUser->employeeWorkInfo?->designation,
                 'department' => $currentDepartmentPayload,
@@ -268,6 +270,7 @@ class TeamHierarchyController extends Controller
             'role' => $user->role,
             'role_id' => $user->role_id,
             'role_name' => $user->customRole?->name ?? ucfirst((string) ($user->role ?? 'employee')),
+            'role_color' => $user->customRole?->color ?? 'slate',
             'hierarchy_level' => $user->customRole?->hierarchy_level ?? $this->fallbackLevel($user->role),
             'designation' => $user->employeeWorkInfo?->designation,
             'department' => trim($departmentName) ?: null,

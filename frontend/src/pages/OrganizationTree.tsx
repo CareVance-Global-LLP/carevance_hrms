@@ -16,6 +16,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { PageErrorState, PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
 import { userApi, roleApi } from '@/services/api';
+import { getRoleColor } from '@/lib/roleColors';
 
 /* ── Types ── */
 
@@ -28,13 +29,12 @@ type OrgUser = {
   role: string;
   role_id: number | null;
   role_name: string;
+  role_color: string;
   hierarchy_level: number;
   reporting_manager_id: number | null;
   department: string;
   groups?: SimpleGroup[];
 };
-
-type NodeTone = 'admin' | 'manager' | 'employee';
 
 type ConnectorSeg = { path: string };
 
@@ -55,31 +55,19 @@ const matchUser = (u: OrgUser, q: string) =>
 
 const deptLabel = (d: string) => d || 'Unassigned';
 
-const getNodeTone = (u: OrgUser): NodeTone => {
-  const level = u.hierarchy_level ?? (u.role === 'admin' ? 10 : u.role === 'manager' ? 50 : 100);
-  if (level <= 10) return 'admin';
-  if (level < 100) return 'manager';
-  return 'employee';
-};
-
-/* ── Tone palette ── */
-
-const TONES: Record<NodeTone, { border: string; bg: string; avatar: string; badge: string }> = {
-  admin:    { border: 'border-rose-200', bg: 'bg-rose-50', avatar: 'bg-rose-100 text-rose-700', badge: 'bg-rose-100 text-rose-700' },
-  manager:  { border: 'border-sky-200', bg: 'bg-sky-50', avatar: 'bg-sky-100 text-sky-700', badge: 'bg-sky-100 text-sky-700' },
-  employee: { border: 'border-amber-200', bg: 'bg-amber-50', avatar: 'bg-amber-100 text-amber-700', badge: 'bg-amber-100 text-amber-700' },
-};
+// Normalized department key for matching (trims whitespace, lowercases)
+const deptKey = (d: string | null | undefined) => (d ?? '').trim().toLowerCase();
 
 /* ── Tree Node Card ── */
 
 function TreeNodeCard({
-  user, tone, count, isCollapsed, onToggle, groupNames, matched,
+  user, count, isCollapsed, onToggle, groupNames, matched,
 }: {
-  user: OrgUser; tone: NodeTone;
+  user: OrgUser;
   count?: number; isCollapsed?: boolean; onToggle?: () => void;
   groupNames?: string[]; matched?: boolean;
 }) {
-  const t = TONES[tone];
+  const t = getRoleColor(user.role_color, user.hierarchy_level);
   const dept = deptLabel(user.department);
   return (
     <div
@@ -94,7 +82,7 @@ function TreeNodeCard({
         </div>
         <div className="min-w-0 flex-1">
           <p className="break-words text-sm font-bold leading-tight text-slate-900">{user.name}</p>
-          <p className={`mt-0.5 text-[11px] font-semibold ${t.badge.split(' ')[1]}`}>
+          <p className={`mt-0.5 text-[11px] font-semibold ${t.badge}`}>
             {user.role_name}
           </p>
           {dept !== 'Unassigned' && (
@@ -163,7 +151,6 @@ function SubordinateTree({
         <div key={child.id} className="flex flex-col items-center gap-4">
           <TreeNodeCard
             user={child}
-            tone={getNodeTone(child)}
             count={childrenMap.get(child.id)?.length ?? 0}
             isCollapsed={collapsed.has(child.id)}
             onToggle={childrenMap.get(child.id)?.length ? () => onToggle(child.id) : undefined}
@@ -210,6 +197,7 @@ export default function OrganizationTree() {
         role: u.role ?? 'employee',
         role_id: u.role_id ?? null,
         role_name: u.role_name ?? '',
+        role_color: u.role_color ?? 'slate',
         hierarchy_level: u.hierarchy_level ?? 100,
         reporting_manager_id: u.reporting_manager_id ?? null,
         department: (u.department ?? '').trim(),
@@ -312,39 +300,97 @@ export default function OrganizationTree() {
         const manager = userById.get(u.reporting_manager_id)!;
         // Can report to anyone higher in hierarchy
         if (manager.hierarchy_level < u.hierarchy_level) {
+          // Before placing under reporting_manager_id, check if there is a
+          // CLOSER superior (higher level) in the same department. If so, skip
+          // placement here and let Step 4 place the user under the closest one.
+          const userDept = deptKey(u.department);
+          const closerSuperiors = dedupedUsers.filter((other) =>
+            other.id !== manager.id &&
+            deptKey(other.department) === userDept &&
+            other.hierarchy_level < u.hierarchy_level &&
+            other.hierarchy_level > manager.hierarchy_level
+          );
+
+          if (closerSuperiors.length > 0) {
+            continue; // Skip — let Step 4 place under closest superior
+          }
+
           if (!childrenMap.has(manager.id)) childrenMap.set(manager.id, []);
           childrenMap.get(manager.id)!.push(u);
           placedUserIds.add(u.id);
         }
       }
     }
-    
-    // Step 4: Place employees under managers with same department
+
+    // Step 3.5: Auto-place managers/custom roles under the highest-ranked
+    // person (lowest level number) in their same department.
     for (const u of dedupedUsers) {
       if (u.id === admin.id) continue;
       if (placedUserIds.has(u.id)) continue;
-      
-      // Only employees can be auto-assigned by department
+      if (u.hierarchy_level >= 100) continue; // employees handled in Step 4
+
+      const userDept = deptKey(u.department);
+
+      const sameDeptSuperiors = dedupedUsers.filter(
+        (other) =>
+          other.id !== u.id &&
+          deptKey(other.department) === userDept &&
+          other.hierarchy_level < u.hierarchy_level,
+      );
+
+      if (sameDeptSuperiors.length > 0) {
+        const superior = sameDeptSuperiors.sort(
+          (a, b) => a.hierarchy_level - b.hierarchy_level,
+        )[0];
+        if (!childrenMap.has(superior.id)) childrenMap.set(superior.id, []);
+        childrenMap.get(superior.id)!.push(u);
+        placedUserIds.add(u.id);
+      } else {
+        if (!childrenMap.has(admin.id)) childrenMap.set(admin.id, []);
+        childrenMap.get(admin.id)!.push(u);
+        placedUserIds.add(u.id);
+      }
+    }
+
+    // Step 4: Place employees under their CLOSEST superior in the same department
+    for (const u of dedupedUsers) {
+      if (u.id === admin.id) continue;
+      if (placedUserIds.has(u.id)) continue;
+
       if (u.hierarchy_level >= 100) {
-        const userDept = deptLabel(u.department).toLowerCase();
-        
-        // Find manager with same department (higher rank = lower level number)
-        const matchingManager = managers.find((m) => 
-          deptLabel(m.department).toLowerCase() === userDept
+        const userDept = deptKey(u.department);
+
+        // All same-department people ranked higher (lower level number)
+        const deptSuperiors = dedupedUsers.filter(
+          (other) =>
+            other.id !== u.id &&
+            deptKey(other.department) === userDept &&
+            other.hierarchy_level < u.hierarchy_level,
         );
-        
-        if (matchingManager) {
-          if (!childrenMap.has(matchingManager.id)) childrenMap.set(matchingManager.id, []);
-          childrenMap.get(matchingManager.id)!.push(u);
+
+        if (import.meta.env.DEV) {
+          console.log(
+            `[Tree] ${u.name} (L${u.hierarchy_level}) dept="${userDept}" superiors=`,
+            deptSuperiors.map((s) => `${s.name}(L${s.hierarchy_level})`),
+          );
+        }
+
+        if (deptSuperiors.length > 0) {
+          // Closest superior = highest level number that is still lower than the employee's
+          const closestSuperior = deptSuperiors.sort(
+            (a, b) => b.hierarchy_level - a.hierarchy_level,
+          )[0];
+          if (!childrenMap.has(closestSuperior.id)) childrenMap.set(closestSuperior.id, []);
+          childrenMap.get(closestSuperior.id)!.push(u);
           placedUserIds.add(u.id);
         } else {
-          // No matching manager, attach directly to admin
+          // No superior in same dept, attach directly to admin
           if (!childrenMap.has(admin.id)) childrenMap.set(admin.id, []);
           childrenMap.get(admin.id)!.push(u);
           placedUserIds.add(u.id);
         }
       } else {
-        // Custom roles/managers without explicit reporting go under admin
+        // Any remaining non-employees (safety net) go under admin
         if (!childrenMap.has(admin.id)) childrenMap.set(admin.id, []);
         childrenMap.get(admin.id)!.push(u);
         placedUserIds.add(u.id);
@@ -437,17 +483,15 @@ export default function OrganizationTree() {
         role.slug === 'employee' ? Users :
         role.slug === 'manager' ? Network :
         Shield;
-      const accent =
-        role.slug === 'admin' ? 'text-rose-500' :
-        role.slug === 'employee' ? 'text-amber-600' :
-        'text-sky-600';
+      const colorTone = getRoleColor(role.color, role.hierarchy_level);
       return {
         key: `role-card-${role.id}`,
         label: role.name,
         value: count,
         hint: role.is_system ? `System role • Level ${role.hierarchy_level}` : `Custom role • Level ${role.hierarchy_level}`,
         icon: Icon,
-        accent,
+        accent: colorTone.badge,
+        dot: colorTone.avatar.split(' ')[0],
       };
     });
   }, [rolesData, raw]);
@@ -487,7 +531,10 @@ export default function OrganizationTree() {
                   <p className="mt-1 text-2xl font-semibold text-slate-950">{s.value}</p>
                   <p className="mt-0.5 text-[10px] text-slate-400">{s.hint}</p>
                 </div>
-                <s.icon className={`h-5 w-5 ${s.accent}`} />
+                <div className="flex flex-col items-end gap-2">
+                  <s.icon className={`h-5 w-5 ${s.accent}`} />
+                  <div className={`h-3 w-3 rounded-full ${s.dot}`} />
+                </div>
               </div>
             </SurfaceCard>
           ))}
@@ -575,11 +622,10 @@ export default function OrganizationTree() {
               {/* Admin */}
               <div className="flex justify-center">
                 <div>
-                  <TreeNodeCard
-                    user={tree.admin}
-                    tone="admin"
-                    matched={q ? matchUser(tree.admin, q) : undefined}
-                  />
+               <TreeNodeCard
+                 user={tree.admin}
+                 matched={q ? matchUser(tree.admin, q) : undefined}
+               />
                 </div>
               </div>
 

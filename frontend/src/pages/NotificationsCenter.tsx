@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { groupApi, notificationApi, userApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,7 +7,7 @@ import { canOpenNotificationFromCenter, getNotificationDisplay, resolveNotificat
 import { hasAdminAccess } from '@/lib/permissions';
 import { formatDateTime } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
-import type { AppNotificationItem } from '@/types';
+import type { AppNotificationItem, PollResultsResponse } from '@/types';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
@@ -16,7 +16,7 @@ import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import { buildSearchSuggestions, getSuggestionDisplayValue, matchesSearchFilter, normalizeSearchValue } from '@/lib/searchSuggestions';
-import { BellRing, Send } from 'lucide-react';
+import { BellRing, Check, Send } from 'lucide-react';
 
 export default function NotificationsCenter() {
   const navigate = useNavigate();
@@ -33,12 +33,19 @@ export default function NotificationsCenter() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('all');
   const [query, setQuery] = useState('');
   const [selectedNotificationId, setSelectedNotificationId] = useState<number | null>(null);
-  const [publishType, setPublishType] = useState<'announcement' | 'news'>('announcement');
+  const [publishType, setPublishType] = useState<'announcement' | 'news' | 'poll'>('announcement');
   const [publishPriority, setPublishPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [publishTitle, setPublishTitle] = useState('');
   const [publishMessage, setPublishMessage] = useState('');
+  const [publishPollQuestion, setPublishPollQuestion] = useState('');
+  const [publishPollOptions, setPublishPollOptions] = useState<string[]>(['', '']);
+  const [publishPollMultipleChoice, setPublishPollMultipleChoice] = useState(false);
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<number[]>([]);
   const [recipientSearchQuery, setRecipientSearchQuery] = useState('');
+  const [selectedPollNotificationId, setSelectedPollNotificationId] = useState<number | null>(null);
+  const [pollResults, setPollResults] = useState<PollResultsResponse | null>(null);
+  const [selectedOptionIds, setSelectedOptionIds] = useState<number[]>([]);
+  const [isVotingLoading, setIsVotingLoading] = useState(false);
 
   const load = async () => {
     setIsLoading(true);
@@ -125,6 +132,11 @@ export default function NotificationsCenter() {
   }, [recipientSearchQuery, users, selectedGroupId]);
   const selectedRecipientCount = selectedRecipientIds.length;
 
+  const selectedPollNotification = useMemo(
+    () => notifications.find((item) => Number(item.id) === Number(selectedPollNotificationId)) ?? null,
+    [notifications, selectedPollNotificationId]
+  );
+
   const markRead = async (id: number) => {
     try {
       await notificationApi.markRead(id);
@@ -135,11 +147,78 @@ export default function NotificationsCenter() {
   };
 
   const openNotification = async (item: AppNotificationItem) => {
-    // Navigate first, then mark as read (notification will remain visible)
+    if (item.type === 'poll' && item.poll?.id) {
+      setSelectedPollNotificationId(Number(item.id));
+      setSelectedOptionIds([]);
+      setPollResults(null);
+      try {
+        const res = await notificationApi.getPollResults(item.poll.id);
+        setPollResults(res.data);
+      } catch (error: any) {
+        setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to load poll results.' });
+      }
+      if (!item.is_read) {
+        await markRead(item.id);
+      }
+      return;
+    }
     navigate(resolveNotificationRoute(item, user));
-    // Optionally mark as read after navigation (if not already read)
     if (!item.is_read) {
       await markRead(item.id);
+    }
+  };
+
+  const closePoll = () => {
+    setSelectedPollNotificationId(null);
+    setPollResults(null);
+    setSelectedOptionIds([]);
+  };
+
+  const togglePollOption = (optionId: number) => {
+    setSelectedOptionIds((prev) => {
+      const multiple = selectedPollNotification?.poll?.is_multiple_choice ?? false;
+      if (multiple) {
+        return prev.includes(optionId)
+          ? prev.filter((id) => id !== optionId)
+          : [...prev, optionId];
+      }
+      return [optionId];
+    });
+  };
+
+  const submitVote = async () => {
+    const poll = selectedPollNotification?.poll;
+    if (!poll) return;
+    if (selectedOptionIds.length === 0) {
+      setFeedback({ tone: 'error', message: 'Please select an option before voting.' });
+      return;
+    }
+    setIsVotingLoading(true);
+    try {
+      await notificationApi.votePoll(poll.id, selectedOptionIds);
+      const res = await notificationApi.getPollResults(poll.id);
+      setPollResults(res.data);
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === selectedPollNotification?.id && n.poll
+            ? {
+                ...n,
+                poll: {
+                  ...n.poll,
+                  options: (n.poll.options ?? []).map((o) => ({
+                    ...o,
+                    has_voted: selectedOptionIds.includes(o.id) ? true : o.has_voted,
+                  })),
+                },
+              }
+            : n,
+        ),
+      );
+      setFeedback({ tone: 'success', message: 'Vote recorded.' });
+    } catch (error: any) {
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to submit vote.' });
+    } finally {
+      setIsVotingLoading(false);
     }
   };
 
@@ -154,21 +233,48 @@ export default function NotificationsCenter() {
   };
 
   const publish = async () => {
-    if (!publishTitle.trim() || !publishMessage.trim()) {
-      setFeedback({ tone: 'error', message: 'Title and message are required to publish a notification.' });
-      return;
+    if (publishType === 'poll') {
+      if (!publishPollQuestion.trim()) {
+        setFeedback({ tone: 'error', message: 'Question is required for polls.' });
+        return;
+      }
+      const validOptions = publishPollOptions.filter(opt => opt.trim() !== '');
+      if (validOptions.length < 2) {
+        setFeedback({ tone: 'error', message: 'Polls must have at least 2 options.' });
+        return;
+      }
+    } else {
+      if (!publishTitle.trim() || !publishMessage.trim()) {
+        setFeedback({ tone: 'error', message: 'Title and message are required to publish a notification.' });
+        return;
+      }
     }
 
     try {
-      await notificationApi.publish({
-        type: publishType,
-        title: publishTitle.trim(),
-        message: publishMessage.trim(),
-        priority: publishType === 'announcement' ? publishPriority : undefined,
-        recipient_user_ids: selectedRecipientIds.length > 0 ? selectedRecipientIds : undefined,
-      });
-      setPublishTitle('');
-      setPublishMessage('');
+      if (publishType === 'poll') {
+        await notificationApi.publish({
+          type: 'poll',
+          title: '',
+          message: '',
+          question: publishPollQuestion.trim(),
+          options: publishPollOptions.filter(opt => opt.trim()),
+          is_multiple_choice: publishPollMultipleChoice,
+          recipient_user_ids: selectedRecipientIds.length > 0 ? selectedRecipientIds : undefined,
+        });
+        setPublishPollQuestion('');
+        setPublishPollOptions(['', '']);
+        setPublishPollMultipleChoice(false);
+      } else {
+        await notificationApi.publish({
+          type: publishType,
+          title: publishTitle.trim(),
+          message: publishMessage.trim(),
+          priority: publishType === 'announcement' ? publishPriority : undefined,
+          recipient_user_ids: selectedRecipientIds.length > 0 ? selectedRecipientIds : undefined,
+        });
+        setPublishTitle('');
+        setPublishMessage('');
+      }
       setSelectedRecipientIds([]);
       setFeedback({ tone: 'success', message: 'Notification published successfully.' });
       await load();
@@ -248,6 +354,7 @@ export default function NotificationsCenter() {
               <option value="">All types</option>
               <option value="announcement">Announcement</option>
               <option value="news">News</option>
+              <option value="poll">Poll</option>
             </SelectInput>
           </div>
           <div>
@@ -277,9 +384,10 @@ export default function NotificationsCenter() {
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div>
               <FieldLabel>Type</FieldLabel>
-              <SelectInput value={publishType} onChange={(event) => setPublishType(event.target.value as 'announcement' | 'news')}>
+              <SelectInput value={publishType} onChange={(event) => setPublishType(event.target.value as 'announcement' | 'news' | 'poll')}>
                 <option value="announcement">Announcement</option>
                 <option value="news">News</option>
+                <option value="poll">Poll</option>
               </SelectInput>
             </div>
             {publishType === 'announcement' && (
@@ -299,15 +407,75 @@ export default function NotificationsCenter() {
             </div>
           </div>
 
-          <div className="mt-4">
-            <FieldLabel>Message</FieldLabel>
-            <TextareaInput value={publishMessage} onChange={(event) => setPublishMessage(event.target.value)} rows={4} placeholder="Write the update you want employees to receive." />
-          </div>
+          {publishType === 'poll' ? (
+            <div className="mt-4">
+              <FieldLabel>Question</FieldLabel>
+              <TextInput
+                value={publishPollQuestion}
+                onChange={(event) => setPublishPollQuestion(event.target.value)}
+                placeholder="What would you like to ask?"
+                maxLength={255}
+              />
+            </div>
+          ) : (
+            <div className="mt-4">
+              <FieldLabel>Message</FieldLabel>
+              <TextareaInput value={publishMessage} onChange={(event) => setPublishMessage(event.target.value)} rows={4} placeholder="Write the update you want employees to receive." />
+            </div>
+          )}
+
+          {publishType === 'poll' && (
+            <>
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <FieldLabel>Options</FieldLabel>
+                  {publishPollOptions.length < 12 && (
+                    <button
+                      type="button"
+                      onClick={() => setPublishPollOptions([...publishPollOptions, ''])}
+                      className="text-sm text-blue-600 font-medium"
+                    >
+                      + Add Option
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {publishPollOptions.map((opt, index) => (
+                    <div key={index} className="flex gap-2">
+                      <TextInput
+                        value={opt}
+                        onChange={(event) => setPublishPollOptions(publishPollOptions.map((o, i) => i === index ? event.target.value : o))}
+                        placeholder={`Option ${index + 1}`}
+                        maxLength={255}
+                      />
+                      {publishPollOptions.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => setPublishPollOptions(publishPollOptions.filter((_, i) => i !== index))}
+                          className="px-2 text-red-600"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={publishPollMultipleChoice}
+                    onChange={(event) => setPublishPollMultipleChoice(event.target.checked)}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-slate-600">Allow multiple selections</span>
+                </label>
+              </div>
+            </>
+          )}
 
           <div className="mt-4">
             <FieldLabel>Recipients</FieldLabel>
             <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-              {/* Department/Group Selector */}
               {groups.length > 0 && (
                 <div>
                   <SelectInput 
@@ -325,14 +493,12 @@ export default function NotificationsCenter() {
                 </div>
               )}
               
-              {/* Search Input */}
               <TextInput
                 value={recipientSearchQuery}
                 onChange={(event) => setRecipientSearchQuery(event.target.value)}
                 placeholder="Search recipient by name or email"
               />
               
-              {/* Stats and Actions */}
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <span className="rounded-full bg-slate-100 px-3 py-1">
                   Showing <span className="font-semibold text-slate-700">{filteredRecipients.length}</span> of {users.length}
@@ -362,7 +528,6 @@ export default function NotificationsCenter() {
                 ) : null}
               </div>
               
-              {/* Recipients List - Only show when filtering */}
               <div className="max-h-44 overflow-auto">
               {users.length === 0 ? (
                 <p className="text-sm text-slate-500">All users in your organization will receive this update.</p>
@@ -412,11 +577,9 @@ export default function NotificationsCenter() {
       ) : (
         <div className="space-y-3">
           {filteredNotifications.map((item) => (
+            <Fragment key={item.id}>
             <SurfaceCard
-              key={item.id}
-              className={`p-5 ${item.is_read ? '' : 'border-sky-200 bg-sky-50/40'} ${
-                canOpenNotificationFromCenter(item, user) ? 'cursor-pointer transition hover:border-sky-200 hover:bg-sky-50/50' : ''
-              }`}
+              className={`p-5 ${item.is_read ? '' : 'border-sky-200 bg-sky-50/40'} ${canOpenNotificationFromCenter(item, user) ? 'cursor-pointer transition hover:border-sky-200 hover:bg-sky-50/50' : ''}`}
               onClick={canOpenNotificationFromCenter(item, user) ? () => void openNotification(item) : undefined}
             >
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -438,7 +601,7 @@ export default function NotificationsCenter() {
                     );
                   })()}
                   <h2 className="text-lg font-semibold text-slate-950">{item.title}</h2>
-                  <p className="text-sm text-slate-600">{item.message}</p>
+                  {item.type !== 'poll' && <p className="text-sm text-slate-600">{item.message}</p>}
                   {item.sender ? (
                     <p className="text-xs text-slate-500">Sent by {item.sender.name}</p>
                   ) : null}
@@ -472,9 +635,100 @@ export default function NotificationsCenter() {
                 </div>
               </div>
             </SurfaceCard>
+            {selectedPollNotificationId === Number(item.id) && selectedPollNotification?.poll && (() => {
+              const poll = selectedPollNotification.poll!;
+              const options = pollResults?.data ?? poll.options ?? [];
+              const totalVotes =
+                pollResults?.total_votes ??
+                options.reduce((sum, o) => sum + (o.vote_count || 0), 0);
+              const isMultiple = pollResults?.is_multiple_choice ?? poll.is_multiple_choice ?? false;
+              const isExpired = pollResults?.has_expired ?? false;
+              const hasVoted = options.some((o) => o.has_voted);
+              const closed = isExpired || hasVoted;
+
+              return (
+                <SurfaceCard className="mt-4 border-teal-200 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Poll</p>
+                      <h2 className="mt-0.5 text-base font-semibold text-slate-950">{poll.question}</h2>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          isExpired ? 'bg-slate-100 text-slate-500' : hasVoted ? 'bg-teal-100 text-teal-700' : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {isExpired ? 'Closed' : hasVoted ? 'Voted' : 'Open'}
+                      </span>
+                      <Button size="sm" variant="ghost" onClick={closePoll}>Close</Button>
+                    </div>
+                  </div>
+
+                  {selectedPollNotification.message && (
+                    <p className="mt-2 text-sm text-slate-600">{selectedPollNotification.message}</p>
+                  )}
+
+                  <div className="mt-4 space-y-2">
+                    {options.map((option) => {
+                      const isSelected = selectedOptionIds.includes(option.id);
+                      const pct = totalVotes > 0 ? Math.round(((option.vote_count || 0) / totalVotes) * 100) : 0;
+                      if (closed) {
+                        return (
+                          <div key={option.id} className="rounded-lg border border-slate-200 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                                {option.has_voted && <Check className="h-4 w-4 text-teal-600" />}
+                                {option.option_text}
+                              </span>
+                              <span className="text-xs text-slate-400">{option.vote_count || 0} · {pct}%</span>
+                            </div>
+                            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                              <div className="h-full rounded-full bg-teal-500" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <label
+                          key={option.id}
+                          className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm text-slate-800 transition ${
+                            isSelected ? 'border-teal-400 bg-teal-50' : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <input
+                            type={isMultiple ? 'checkbox' : 'radio'}
+                            name={`poll-${poll.id}`}
+                            checked={isSelected}
+                            onChange={() => togglePollOption(option.id)}
+                            className="h-4 w-4"
+                          />
+                          <span className="flex-1">{option.option_text}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between">
+                    <p className="text-xs text-slate-400">
+                      {totalVotes} vote{totalVotes === 1 ? '' : 's'}
+                      {isMultiple ? ' · multiple choice' : ''}
+                      {poll.expires_at ? ` · closes ${new Date(poll.expires_at).toLocaleString()}` : ''}
+                    </p>
+                    {!closed && (
+                      <Button onClick={submitVote} disabled={isVotingLoading || selectedOptionIds.length === 0}>
+                        {isVotingLoading ? 'Submitting…' : 'Vote'}
+                      </Button>
+                    )}
+                  </div>
+                </SurfaceCard>
+              );
+            })()}
+            </Fragment>
           ))}
         </div>
       )}
+
     </div>
   );
 }

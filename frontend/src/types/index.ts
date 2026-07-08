@@ -711,9 +711,26 @@ export interface ChatUnreadSummary {
   unread_senders: number;
 }
 
+export interface PollOptionItem {
+  id: number;
+  poll_id: number;
+  option_text: string;
+  vote_count: number;
+  has_voted?: boolean;
+}
+
+export interface PollItem {
+  id: number;
+  app_notification_id: number;
+  question: string;
+  expires_at: string | null;
+  is_multiple_choice: boolean;
+  options?: PollOptionItem[];
+}
+
 export interface AppNotificationItem {
   id: number;
-  type: 'announcement' | 'news' | 'salary_credited' | 'task_assigned' | string;
+  type: 'announcement' | 'news' | 'poll' | 'salary_credited' | 'task_assigned' | string;
   title: string;
   message: string;
   is_read: boolean;
@@ -728,6 +745,14 @@ export interface AppNotificationItem {
     route?: string;
     [key: string]: any;
   } | null;
+  poll?: PollItem;
+}
+
+export interface PollResultsResponse {
+  data: PollOptionItem[];
+  total_votes: number;
+  is_multiple_choice: boolean;
+  has_expired: boolean;
 }
 
 export interface UserProfile360 {

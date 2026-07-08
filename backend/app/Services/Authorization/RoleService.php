@@ -38,6 +38,7 @@ class RoleService
             'slug' => $slug,
             'description' => $data['description'] ?? null,
             'hierarchy_level' => $data['hierarchy_level'] ?? 100,
+            'color' => $data['color'] ?? Role::defaultColorForLevel((int) ($data['hierarchy_level'] ?? 100)),
             'is_system' => false,
             'is_active' => true,
         ]);
@@ -56,6 +57,7 @@ class RoleService
             'name' => $data['name'] ?? $role->name,
             'description' => array_key_exists('description', $data) ? $data['description'] : $role->description,
             'hierarchy_level' => $data['hierarchy_level'] ?? $role->hierarchy_level,
+            'color' => Role::defaultColorForLevel((int) ($data['hierarchy_level'] ?? $role->hierarchy_level)),
             'is_active' => $data['is_active'] ?? $role->is_active,
         ]);
 

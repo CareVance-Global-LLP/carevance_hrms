@@ -172,13 +172,22 @@ export const notificationApi = {
   markAllRead: () =>
     api.post('/notifications/read-all'),
   publish: (data: {
-    type: 'announcement' | 'news';
-    title: string;
-    message: string;
+    type: 'announcement' | 'news' | 'poll';
+    title?: string;
+    message?: string;
     priority?: 'low' | 'medium' | 'high' | 'urgent';
+    question?: string;
+    options?: string[];
+    is_multiple_choice?: boolean;
+    expires_at?: string;
+    recipient_user_ids?: number[];
   }) => api.post('/notifications/publish', data),
   registerDevice: (token: string, platform: string) =>
     api.post('/notifications/register-device', { token, platform }),
+  votePoll: (pollId: number, optionIds: number[]) =>
+    api.post(`/polls/${pollId}/vote`, { option_ids: optionIds }),
+  getPollResults: (pollId: number) =>
+    api.get<{ data: any[]; total_votes: number; is_multiple_choice: boolean; has_expired: boolean }>(`/polls/${pollId}/results`),
 };
 
 export const compOffApi = {
