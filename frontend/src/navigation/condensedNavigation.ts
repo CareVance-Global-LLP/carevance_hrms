@@ -121,13 +121,6 @@ export const condensedNavigation: NavGroup[] = [
     ],
   },
   {
-    label: 'Expenses',
-    icon: Receipt,
-    items: [
-      { label: 'My Expenses', to: '/expenses', icon: Receipt },
-    ],
-  },
-  {
     label: 'Work',
     icon: FolderKanban,
     items: [

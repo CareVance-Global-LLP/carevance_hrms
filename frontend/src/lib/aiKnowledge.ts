@@ -30,7 +30,6 @@ export const APP_KNOWLEDGE = {
     { name: 'Selfies Map', route: '/attendance/selfies-map', description: 'Attendance selfie locations.', adminOnly: true },
     { name: 'Performance Reviews', route: '/performance', description: 'Performance cycles and reviews.' },
     { name: 'Goals', route: '/performance-goals', description: 'Individual and team goals.' },
-    { name: 'My Expenses', route: '/expenses', description: 'Submit and track expense claims.' },
     { name: 'Timesheets', route: '/reports/hours-tracked', description: 'Tracked hours report.', adminOnly: true },
     { name: 'Projects', route: '/projects', description: 'Project tracking.', planFeature: 'project_tracking' },
     { name: 'Tasks', route: '/tasks', description: 'Task board and assignments.', planFeature: 'task_tracking' },
@@ -42,7 +41,6 @@ export const APP_KNOWLEDGE = {
     { name: 'Submit Leave', steps: ['Go to /leave', 'Pick start and end dates', 'Choose a category (Paid/Sick/Birthday/Unpaid)', 'Choose full day or half day', 'Add a reason', 'Submit'] },
     { name: 'Approve Leave', steps: ['Go to /approval-inbox', 'Open the pending leave request', 'Click Approve or Reject', 'Add a note if needed'] },
     { name: 'Track Time', steps: ['Open the desktop app timer', 'Start the timer when you begin', 'Use /breaks to log breaks', 'Stop the timer when done'] },
-    { name: 'Submit Expense', steps: ['Go to /expenses', 'Add the claim details', 'Attach a receipt', 'Submit for review'] },
     { name: 'Approve Time Edit', steps: ['Go to /approval-inbox', 'Open the pending time-edit request', 'Click Approve or Reject'] },
   ],
   policies: [

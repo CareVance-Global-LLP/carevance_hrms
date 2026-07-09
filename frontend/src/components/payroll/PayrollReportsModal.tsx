@@ -73,16 +73,17 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
 
   const generateCSV = (reportId: string): string => {
     const month = monthYear || new Date().toISOString().slice(0, 7);
+    const bom = '\uFEFF';
     
     switch (reportId) {
       case 'summary':
-        return generateSummaryReport(stats, month);
+        return bom + generateSummaryReport(stats, month);
       case 'deductions':
-        return generateDeductionsReport(stats, month);
+        return bom + generateDeductionsReport(stats, month);
       case 'bank':
-        return generateBankReport(stats, month);
+        return bom + generateBankReport(stats, month);
       case 'register':
-        return generateRegisterReport(stats, month);
+        return bom + generateRegisterReport(stats, month);
       default:
         return '';
     }

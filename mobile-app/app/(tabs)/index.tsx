@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useTheme } from '../../src/hooks/useTheme';
 import type { ThemeColors } from '../../src/constants/theme';
-import { dashboardApi, geofenceApi, notificationApi, orgApi, approvalApi, reimbursementApi } from '../../src/api/endpoints';
+import { dashboardApi, geofenceApi, notificationApi, orgApi, approvalApi } from '../../src/api/endpoints';
 import type { EmployeeDashboard, GeoPosition, GeofenceZone, AppNotification, OrgMember } from '../../src/types';
 import NotificationBanner from '../../src/components/NotificationBanner';
 
@@ -31,7 +31,6 @@ const quickActions = [
   { route: '/(tabs)/attendance', icon: 'time-outline', label: 'Timer', color: '#2563eb' },
   { route: '/leave/apply', icon: 'calendar-outline', label: 'Apply Leave', color: '#f59e0b' },
   { route: '/(tabs)/more', icon: 'wallet-outline', label: 'Payslips', color: '#10b981' },
-  { route: '/expenses', icon: 'receipt-outline', label: 'Expenses', color: '#8b5cf6' },
 ] as const;
 
 export default function DashboardScreen() {
@@ -96,12 +95,10 @@ export default function DashboardScreen() {
         Promise.all([
           approvalApi.pendingLeaves().catch(() => null),
           approvalApi.pendingTimeEdits().catch(() => null),
-          reimbursementApi.list().catch(() => null),
-        ]).then(([l, t, e]) => {
+        ]).then(([l, t]) => {
           const leaves = l?.data?.data?.length || 0;
           const edits = t?.data?.data?.length || 0;
-          const exps = (e?.data?.data || []).filter((r: any) => r.status === 'pending').length || 0;
-          setPendingCount(leaves + edits + exps);
+          setPendingCount(leaves + edits);
         });
       }
       if (teamRes?.data) {

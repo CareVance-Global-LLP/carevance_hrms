@@ -386,29 +386,97 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
     setIsExporting(true);
     try {
-      // Build CSV from already-loaded rows data
-      const csvRows = [['Employee Name', 'Present Days', 'Absent Days', 'Total Days']];
+      const formatDuration = (seconds: number): string => {
+        if (!seconds || seconds <= 0) return '0m';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        if (h > 0 && m > 0) return `${h}h ${m}m`;
+        if (h > 0) return `${h}h`;
+        return `${m}m`;
+      };
+
+      const csvRows = [[
+        'Employee Name',
+        'Email',
+        'Department',
+        'Date Range',
+        'Present Days',
+        'Leave Days',
+        'Absent Days',
+        'Total Working Days',
+        'Attendance Rate (%)',
+        'Worked Hours',
+        'First Check-In',
+        'Last Check-Out',
+        'Status',
+      ]];
       let totalPresent = 0;
       let totalAbsent = 0;
       let totalAll = 0;
+      let totalWorkedSeconds = 0;
 
       for (const row of rows) {
         const present = Number(row.days_present) || 0;
-        const absent = Number(row.absent_days ?? (row.working_days_in_range - present - (Number(row.leave_days) || 0)));
+        const leaveDays = Number(row.leave_days) || 0;
+        const absent = Number(row.absent_days ?? (row.working_days_in_range - present - leaveDays));
         const total = present + Math.max(0, absent);
         const name = row.user?.name || 'Unknown';
+        const email = row.user?.email || '';
+        const department = row.department || row.user?.employee_work_info?.department?.name || '';
+        const workingDays = Number(row.working_days_in_range) || 0;
+        const attendanceRate = workingDays > 0 ? ((present / workingDays) * 100).toFixed(1) : '0';
+        const workedSeconds = Number(row.worked_seconds) || 0;
+        const firstCheckIn = row.check_in_at || '';
+        const lastCheckOut = row.check_out_at || '';
 
-        csvRows.push([`"${name}"`, String(present), String(Math.max(0, absent)), String(total)]);
+        let status = 'Absent';
+        if (present > 0) {
+          status = Number(row.late_minutes || 0) > 0 ? 'Late' : 'Present';
+        } else if (leaveDays > 0) {
+          status = 'On Leave';
+        }
+
+        csvRows.push([
+          `"${name}"`,
+          `"${email}"`,
+          `"${department}"`,
+          `"${startDate} to ${endDate}"`,
+          String(present),
+          String(leaveDays),
+          String(Math.max(0, absent)),
+          String(workingDays),
+          attendanceRate,
+          formatDuration(workedSeconds),
+          `"${firstCheckIn}"`,
+          `"${lastCheckOut}"`,
+          `"${status}"`,
+        ]);
         totalPresent += present;
         totalAbsent += Math.max(0, absent);
         totalAll += total;
+        totalWorkedSeconds += workedSeconds;
       }
 
-      // Add total row
-      csvRows.push(['"TOTAL"', String(totalPresent), String(totalAbsent), String(totalAll)]);
+      const overallRate = totalAll > 0 ? ((totalPresent / totalAll) * 100).toFixed(1) : '0';
+      csvRows.push([
+        '"TOTAL"',
+        '',
+        '',
+        '',
+        String(totalPresent),
+        '',
+        String(totalAbsent),
+        String(totalAll),
+        overallRate,
+        formatDuration(totalWorkedSeconds),
+        '',
+        '',
+        '',
+      ]);
 
-      const csv = csvRows.map(r => r.join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
+      const bom = '\uFEFF';
+      const csv = bom + csvRows.map(r => r.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=UTF-8' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       const filename = `attendance-report-${startDate}-to-${endDate}.csv`;

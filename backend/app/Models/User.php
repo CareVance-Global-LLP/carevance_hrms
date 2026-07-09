@@ -371,6 +371,7 @@ class User extends Authenticatable
         'projects.view', 'settings.view', 'settings.manage',
         'productivity.manage', 'roles.manage', 'notifications.publish',
         'audit.view', 'geofence.manage', 'chat.use',
+        'assets.view', 'assets.manage',
     ];
 
     private const PERMISSIONS_MANAGER = [
@@ -381,6 +382,7 @@ class User extends Authenticatable
         'overtime.view', 'overtime.approve', 'tasks.view', 'tasks.manage',
         'projects.view', 'settings.view', 'notifications.publish',
         'audit.view', 'chat.use',
+        'assets.view', 'assets.manage',
     ];
 
     private const PERMISSIONS_EMPLOYEE = [

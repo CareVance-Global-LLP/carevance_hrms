@@ -1052,6 +1052,7 @@ export const reportApi = {
     group_ids?: number[];
     export_scope?: 'employee' | 'department';
     fields?: string[];
+    report_type?: string;
   }) => 
     api.get('/reports/export', { 
       params, 

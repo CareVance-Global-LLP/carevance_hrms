@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Briefcase, FileText, CreditCard, Building2 } from 'lucide-react';
+import { ArrowLeft, Briefcase, FileText, CreditCard, Building2, Package } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccess } from '@/lib/permissions';
-import { employeeWorkspaceApi, userApi } from '@/services/api';
+import { employeeWorkspaceApi } from '@/services/api';
+import { assetsApi } from '@/services/assetsApi';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
 import { usePlan } from '@/hooks/usePlan';
 
@@ -177,6 +178,13 @@ export default function EmployeePersonalDetailsPage() {
     },
   });
 
+  const employeeUserId = workspaceQuery.data?.employee?.id;
+  const employeeAssetsQuery = useQuery({
+    queryKey: ['employee-assets', employeeUserId],
+    queryFn: async () => (await assetsApi.employeeAssets(employeeUserId as number)).data.data,
+    enabled: Boolean(employeeUserId),
+  });
+
   if (workspaceQuery.isLoading) return <PageLoadingState label="Loading employee details..." />;
   if (workspaceQuery.isError || !workspaceQuery.data) {
     return (
@@ -335,6 +343,51 @@ export default function EmployeePersonalDetailsPage() {
                 ? 'Only admins or the direct reporting manager can edit work information.'
                 : 'Only admins or managers with edit permissions can modify work information.'}
             </p>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <Package className="h-5 w-5 text-blue-600" />
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Assigned Assets</p>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Company assets currently assigned to this employee.</p>
+
+        {employeeAssetsQuery.isLoading ? (
+          <p className="mt-5 text-sm text-slate-500">Loading assets…</p>
+        ) : employeeAssetsQuery.isError ? (
+          <p className="mt-5 text-sm text-rose-600">Could not load assigned assets.</p>
+        ) : (employeeAssetsQuery.data?.length ?? 0) === 0 ? (
+          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-sm text-slate-500">No assets are currently assigned to this employee.</p>
+          </div>
+        ) : (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <th className="py-2 pr-4">Tag</th>
+                  <th className="py-2 pr-4">Name</th>
+                  <th className="py-2 pr-4">Category</th>
+                  <th className="py-2 pr-4">Assigned Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {employeeAssetsQuery.data?.map((item) => (
+                  <tr key={item.assignment_id}>
+                    <td className="py-2.5 pr-4 font-medium text-slate-900">{item.asset_tag}</td>
+                    <td className="py-2.5 pr-4 text-slate-700">{item.name}</td>
+                    <td className="py-2.5 pr-4 capitalize text-slate-600">{item.category}</td>
+                    <td className="py-2.5 pr-4 text-slate-600">
+                      {item.assigned_date
+                        ? new Date(item.assigned_date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

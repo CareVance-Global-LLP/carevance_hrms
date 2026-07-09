@@ -1255,6 +1255,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
         export_scope: mode === 'custom-export' ? (options?.scope || customExportScope) : undefined,
         fields: mode === 'custom-export' ? fields : undefined,
+        report_type: mode === 'custom-export' ? undefined : mode,
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -2184,8 +2185,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                     <Award className="h-5 w-5 text-amber-500" />
                   </div>
                   <div className="mt-4 space-y-3">
-                    {attendanceRiskRows
-                      .filter((row: any) => row.risk < 30)
+                    {attendanceExceptionRows
+                      .filter((row: any) => (row.risk_score || 0) < 30)
                       .slice(0, 5)
                       .map((row: any) => (
                         <div key={row.user?.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
@@ -2199,11 +2200,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                             </div>
                           </div>
                           <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                            {formatPercent(100 - row.risk)}
+                            {formatPercent(100 - (row.risk_score || 0))}
                           </span>
                         </div>
                       ))}
-                    {attendanceRiskRows.filter((row: any) => row.risk < 30).length === 0 && (
+                    {attendanceExceptionRows.filter((row: any) => (row.risk_score || 0) < 30).length === 0 && (
                       <p className="text-sm text-slate-500 text-center py-4">No top performers in selected period</p>
                     )}
                   </div>
@@ -2219,8 +2220,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                     <AlertCircle className="h-5 w-5 text-rose-500" />
                   </div>
                   <div className="mt-4 space-y-3">
-                    {attendanceRiskRows
-                      .filter((row: any) => row.risk >= 50)
+                    {attendanceExceptionRows
+                      .filter((row: any) => (row.risk_score || 0) >= 50)
                       .slice(0, 5)
                       .map((row: any) => (
                         <div key={row.user?.id} className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/30 p-2.5">
@@ -2230,15 +2231,15 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                             </div>
                             <div>
                               <p className="text-xs font-medium text-slate-900">{row.user?.name || 'Unknown'}</p>
-                              <p className="text-[10px] text-slate-500">{row.absentDays} absent days</p>
+                              <p className="text-[10px] text-slate-500">{row.absent_days} absent days</p>
                             </div>
                           </div>
                           <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">
-                            {formatPercent(row.risk)} risk
+                            {formatPercent(row.risk_score)} risk
                           </span>
                         </div>
                       ))}
-                    {attendanceRiskRows.filter((row: any) => row.risk >= 50).length === 0 && (
+                    {attendanceExceptionRows.filter((row: any) => (row.risk_score || 0) >= 50).length === 0 && (
                       <p className="text-sm text-slate-500 text-center py-4">No at-risk employees in selected period</p>
                     )}
                   </div>

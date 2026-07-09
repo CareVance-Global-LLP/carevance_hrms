@@ -14,6 +14,7 @@ import DesktopBrowserTrackingPanel from '@/components/desktop/DesktopBrowserTrac
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, TextareaInput, ToggleInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
+import MyAssetsCard from '@/components/assets/MyAssetsCard';
 
 const helpIssueCategories = [
   { value: 'bug', label: 'Bug' },
@@ -971,6 +972,8 @@ export default function SettingsPage() {
                   </div>
                 )}
               </div>
+
+              <MyAssetsCard userId={user?.id} />
 
               <div className="border-t border-slate-200 pt-5">
                 <h3 className="text-base font-semibold text-slate-900">Preferences</h3>

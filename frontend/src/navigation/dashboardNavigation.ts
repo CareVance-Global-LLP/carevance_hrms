@@ -20,9 +20,9 @@ import {
   MapPin,
   MessageSquare,
   Network,
+  Package,
   Receipt,
   Settings,
-  Sparkles,
   Target,
   Share2,
   Shield,
@@ -92,6 +92,7 @@ export const topNavigation: NavGroup[] = [
       { label: 'Resignations', to: '/resignations', icon: UserMinus, adminOnly: true },
       { label: 'Departments', to: '/employees/teams', icon: Building2, adminOnly: true },
       { label: 'Roles & Permissions', to: '/employees/roles', icon: ShieldCheck, adminOnly: true },
+      { label: 'Assets', to: '/assets', icon: Package, permission: 'assets.view' },
       { label: 'Announcements', to: '/notifications', icon: Bell, adminOnly: true },
       { label: 'My Team', to: '/my-team', icon: Share2, employeeOnly: true },
       { label: 'Chat', to: '/chat', icon: MessageSquare, planFeature: 'chat' },
@@ -118,13 +119,6 @@ export const topNavigation: NavGroup[] = [
     items: [
       { label: 'Performance Reviews', to: '/performance', icon: Award },
       { label: 'Goals', to: '/performance-goals', icon: Target },
-    ],
-  },
-  {
-    label: 'Expenses',
-    icon: Receipt,
-    items: [
-      { label: 'My Expenses', to: '/expenses', icon: Receipt },
     ],
   },
   {

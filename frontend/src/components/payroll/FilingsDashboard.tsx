@@ -391,12 +391,51 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
             </div>
           ) : !Array.isArray(filingsList) || filingsList.length === 0 ? (
             <div className="text-center py-12">
-              <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+              <FileText className="h-12 h-12 text-slate-300 mx-auto mb-3" />
               <p className="text-sm text-slate-500">No filings generated yet</p>
               <p className="text-xs text-slate-400 mt-1">Use the Generate tab to create PF, ESI, TDS, PT or LWF returns.</p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">
+                <span className="text-sm font-medium text-slate-700">{filingsList.length} filing(s)</span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconLeft={<Download className="h-4 w-4" />}
+                  onClick={() => {
+                    const headers = ['Type', 'Period', 'Status', 'Generated At'];
+                    const rows = filingsList.map((f: any) => [
+                      f.type?.replace(/_/g, ' ')?.toUpperCase() ?? f.type,
+                      f.period_type === 'annual'
+                        ? `FY ${f.period_year}-${(f.period_year || 0) + 1}`
+                        : f.period_month
+                          ? `${f.period_month}/${f.period_year}`
+                          : `Q${f.period_quarter}/${f.period_year}`,
+                      f.status,
+                      f.generated_at ? new Date(f.generated_at).toLocaleDateString() : '',
+                    ]);
+                    const escapeCsv = (val: any) => {
+                      const str = String(val ?? '');
+                      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return '"' + str.replace(/"/g, '""') + '"';
+                      }
+                      return str;
+                    };
+                    const bom = '\uFEFF';
+                    const csv = bom + [headers.join(','), ...rows.map(r => r.map(escapeCsv).join(','))].join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `filings-history.csv`;
+                    a.click();
+                  }}
+                >
+                  Export CSV
+                </Button>
+              </div>
+              <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
@@ -449,6 +488,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                 ))}
               </tbody>
             </table>
+            </>
           )}
         </SurfaceCard>
       )}
