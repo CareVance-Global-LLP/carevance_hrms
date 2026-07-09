@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { AppNotificationItem, User } from '@/types';
 import {
   AlertTriangle,
+  BarChart3,
   Bell,
   Briefcase,
   CalendarClock,
@@ -24,7 +25,7 @@ const APPROVAL_NOTIFICATION_TYPES = new Set(['leave_request', 'time_edit']);
 const APPROVAL_NOTIFICATION_TITLES = ['leave request submitted', 'time edit request submitted'];
 
 export const getNotificationDisplay = (type: string): NotificationDisplay => {
-  switch (String(type || '').trim()) {
+  switch (String(type || '').trim().toLowerCase()) {
     case 'chat_direct_message':
     case 'chat_group_message':
       return {
@@ -80,6 +81,12 @@ export const getNotificationDisplay = (type: string): NotificationDisplay => {
         tone: 'info',
         icon: createIcon(<Megaphone className="h-4 w-4" />),
       };
+    case 'poll':
+      return {
+        label: 'Poll',
+        tone: 'info',
+        icon: createIcon(<BarChart3 className="h-4 w-4" />),
+      };
     default:
       return {
         label: 'Notification',
@@ -109,6 +116,11 @@ export const resolveNotificationRoute = (
 ): string => {
   const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
   if (userLevel < 100 && isApprovalNotification(notification)) {
+    const route = String(notification?.meta?.route || '').trim();
+    if (route) {
+      return route;
+    }
+
     const type = String(notification?.type || '').trim().toLowerCase();
     const title = String(notification?.title || '').trim().toLowerCase();
 
@@ -116,7 +128,7 @@ export const resolveNotificationRoute = (
       return '/approval-inbox?section=time-edit&view=pending';
     }
 
-    return '/approval-inbox?section=leave&view=pending&leave_window=today';
+    return '/approval-inbox?section=leave&view=pending';
   }
 
   return String(notification.meta?.route || '/notifications').trim() || '/notifications';
@@ -127,5 +139,13 @@ export const canOpenNotificationFromCenter = (
   user: Pick<User, 'role' | 'hierarchy_level'> | null | undefined
 ): boolean => {
   const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
-  return userLevel < 100 && isApprovalNotification(notification);
+  // Approval notifications for managers/admins
+  if (userLevel < 100 && isApprovalNotification(notification)) {
+    return true;
+  }
+  // Polls for everyone
+  if (String(notification?.type || '').trim().toLowerCase() === 'poll') {
+    return true;
+  }
+  return false;
 };

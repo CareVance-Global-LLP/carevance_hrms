@@ -174,6 +174,7 @@ class RoleController extends Controller
             'slug' => $role->slug,
             'description' => $role->description,
             'hierarchy_level' => $role->hierarchy_level,
+            'color' => $role->color ?? 'slate',
             'is_system' => $role->is_system,
             'is_active' => $role->is_active,
             'users_count' => $role->users_count ?? User::where('role_id', $role->id)->count(),

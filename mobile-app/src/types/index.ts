@@ -201,6 +201,31 @@ export interface AppNotification {
   read_at?: string;
   sender?: { id: number; name: string };
   created_at: string;
+  poll?: Poll;
+}
+
+export interface Poll {
+  id: number;
+  app_notification_id: number;
+  question: string;
+  expires_at: string | null;
+  is_multiple_choice: boolean;
+  options?: PollOption[];
+}
+
+export interface PollOption {
+  id: number;
+  poll_id: number;
+  option_text: string;
+  vote_count: number;
+  has_voted?: boolean;
+}
+
+export interface PollResults {
+  data: PollOption[];
+  total_votes: number;
+  is_multiple_choice: boolean;
+  has_expired: boolean;
 }
 
 export interface NotificationsResponse {

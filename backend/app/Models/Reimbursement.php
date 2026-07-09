@@ -106,14 +106,14 @@ class Reimbursement extends Model
     }
 
     /**
-     * Filter by the month the expense was incurred (expense_date),
+     * Filter by the month the claim was submitted (created_at),
      * using a "YYYY-MM" month_year value. Used for the per-month review UI.
      */
     public function scopeForMonth($query, ?string $monthYear)
     {
         if ($monthYear && preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $monthYear, $m)) {
-            $query->whereMonth('expense_date', (int) $m[2])
-                ->whereYear('expense_date', (int) $m[1]);
+            $query->whereMonth('created_at', (int) $m[2])
+                ->whereYear('created_at', (int) $m[1]);
         }
 
         return $query;

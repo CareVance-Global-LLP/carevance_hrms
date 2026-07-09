@@ -39,6 +39,28 @@ export default function NotificationsScreen() {
     } catch (e) { console.warn('Failed to mark read:', e); }
   };
 
+  const handleVote = async (pollId: number, optionIds: number[]) => {
+    try {
+      await notificationApi.votePoll(pollId, optionIds);
+      setItems((prev) => prev.map((n) => {
+        if (n.poll?.id === pollId && n.poll.options) {
+          return {
+            ...n,
+            poll: {
+              ...n.poll,
+              options: n.poll.options.map((opt) => ({
+                ...opt,
+                has_voted: optionIds.includes(opt.id),
+                vote_count: optionIds.includes(opt.id) ? opt.vote_count + 1 : opt.vote_count,
+              })),
+            },
+          };
+        }
+        return n;
+      }));
+    } catch (e) { console.warn('Failed to vote:', e); }
+  };
+
   const handleMarkAllRead = async () => {
     try {
       await notificationApi.markAllRead();
@@ -67,18 +89,30 @@ export default function NotificationsScreen() {
       ) : (
         items.map((n) => (
           <TouchableOpacity key={n.id} style={[s.card, !n.is_read && s.unreadCard]} onPress={() => !n.is_read && handleMarkRead(n.id)} activeOpacity={n.is_read ? 1 : 0.7}>
-            <View style={s.cardRow}>
-              <View style={[s.dot, { backgroundColor: n.is_read ? 'transparent' : colors.primary }]} />
-              <View style={s.cardContent}>
-                <View style={s.cardHeader}>
-                  <Text style={[s.cardTitle, !n.is_read && s.unreadTitle]}>{n.title}</Text>
-                  {n.type === 'announcement' && <View style={s.announcementBadge}><Text style={s.announcementBadgeText}>ANNOUNCEMENT</Text></View>}
-                </View>
-                <Text style={s.cardMsg} numberOfLines={2}>{n.message}</Text>
-                <Text style={s.cardTime}>{n.created_at}</Text>
+            <View style={s.cardContent}>
+              <View style={s.cardHeader}>
+                <Text style={[s.cardTitle, !n.is_read && s.unreadTitle]}>{n.title}</Text>
+                {n.type === 'announcement' && <View style={s.announcementBadge}><Text style={s.announcementBadgeText}>ANNOUNCEMENT</Text></View>}
+                {n.type === 'poll' && <View style={s.pollBadge}><Text style={s.pollBadgeText}>POLL</Text></View>}
               </View>
-              {!n.is_read && <Ionicons name="ellipse" size={10} color={colors.primary} />}
+              {n.type !== 'poll' && <Text style={s.cardMsg} numberOfLines={2}>{n.message}</Text>}
+              {n.type === 'poll' && n.poll && (
+                <View style={s.pollOptionsContainer}>
+                  {n.poll.options?.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.id}
+                      style={[s.pollOption, opt.has_voted && s.pollOptionVoted]}
+                      onPress={() => handleVote(n.poll!.id, n.poll!.is_multiple_choice ? [opt.id] : [opt.id])}
+                    >
+                      <Text style={[s.pollOptionText, opt.has_voted && s.pollOptionTextVoted]}>{opt.option_text}</Text>
+                      {opt.vote_count > 0 && <Text style={s.pollVoteCount}>{opt.vote_count}</Text>}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              <Text style={s.cardTime}>{n.created_at}</Text>
             </View>
+            {!n.is_read && <View style={[s.dot, { backgroundColor: colors.primary }]} />}
           </TouchableOpacity>
         ))
       )}
@@ -104,6 +138,14 @@ const styles = (c: ThemeColors) => ({
   unreadTitle: { fontWeight: '700' },
   announcementBadge: { backgroundColor: c.primaryLight, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
   announcementBadgeText: { fontSize: 9, fontWeight: '700', color: c.primary },
+  pollBadge: { backgroundColor: c.primaryLight, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
+  pollBadgeText: { fontSize: 9, fontWeight: '700', color: c.primary },
   cardMsg: { fontSize: 13, color: c.textSecondary, lineHeight: 18 },
   cardTime: { fontSize: 11, color: c.textTertiary, marginTop: 6 },
+  pollOptionsContainer: { marginTop: 8, gap: 6 },
+  pollOption: { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 6, padding: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pollOptionVoted: { backgroundColor: c.primaryLight, borderColor: c.primary },
+  pollOptionText: { fontSize: 13, color: c.text, flex: 1 },
+  pollOptionTextVoted: { color: c.primary, fontWeight: '600' },
+  pollVoteCount: { fontSize: 12, color: c.textSecondary, marginLeft: 8 },
 });

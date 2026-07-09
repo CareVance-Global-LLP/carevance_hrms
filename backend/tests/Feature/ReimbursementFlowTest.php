@@ -210,10 +210,11 @@ class ReimbursementFlowTest extends TestCase
     }
 
     /**
-     * The month_year filter (expense_date month) must scope every list and
-     * summary endpoint so the page can be reviewed month-by-month.
+     * The month_year filter must scope every list and summary endpoint by the
+     * SUBMITTED date (created_at), not the expense date. A claim submitted in
+     * July with a June expense date must appear under "July".
      */
-    public function test_month_year_filters_lists_and_summary(): void
+    public function test_month_year_filters_by_submitted_date(): void
     {
         $org = $this->makeOrg();
         $admin = $this->makeUser($org, 'admin');
@@ -226,42 +227,54 @@ class ReimbursementFlowTest extends TestCase
             'reporting_manager_id' => $manager->id,
         ]);
 
-        $make = fn (string $date) => $this->postJson('/api/payroll/reimbursements', [
-            'amount' => 500.00, 'expense_date' => $date, 'description' => 'Expense '.$date,
-        ], $this->apiHeadersFor($employee))->json('reimbursement.id');
+        $eHeaders = $this->apiHeadersFor($employee);
 
-        $jul = $make('2026-07-15');
-        $jun = $make('2026-06-15');
+        // Create a claim and force its submitted date (created_at) so the
+        // month filter is deterministic regardless of the test run time.
+        $create = function (string $expenseDate, string $createdAt) use ($eHeaders) {
+            $id = $this->postJson('/api/payroll/reimbursements', [
+                'amount' => 500.00, 'expense_date' => $expenseDate, 'description' => 'Expense',
+            ], $eHeaders)->json('reimbursement.id');
+            Reimbursement::where('id', $id)->update(['created_at' => $createdAt]);
+            return $id;
+        };
+
+        // $jul   : expense July,   submitted July
+        // $jun   : expense June,   submitted June
+        // $cross : expense June,   submitted July  (proves submitted-date filtering)
+        $jul = $create('2026-07-15', '2026-07-10 10:00:00');
+        $jun = $create('2026-06-15', '2026-06-10 10:00:00');
+        $cross = $create('2026-06-15', '2026-07-20 10:00:00');
 
         $aHeaders = $this->apiHeadersFor($admin);
         $mHeaders = $this->apiHeadersFor($manager);
 
+        $idsIn = fn (array $list) => array_column($list, 'id');
+
         // list (index) — admin sees all org
-        $this->assertCount(2, $this->getJson('/api/payroll/reimbursements', $aHeaders)->json());
+        $this->assertCount(3, $this->getJson('/api/payroll/reimbursements', $aHeaders)->json());
         $julList = $this->getJson('/api/payroll/reimbursements?month_year=2026-07', $aHeaders)->json();
-        $this->assertCount(1, $julList);
-        $this->assertSame($jul, $julList[0]['id']);
+        $this->assertEqualsCanonicalizing([$jul, $cross], $idsIn($julList)); // submitted in July
         $junList = $this->getJson('/api/payroll/reimbursements?month_year=2026-06', $aHeaders)->json();
-        $this->assertCount(1, $junList);
-        $this->assertSame($jun, $junList[0]['id']);
+        $this->assertSame([$jun], $idsIn($junList)); // submitted in June
 
         // my submissions (employee)
-        $eHeaders = $this->apiHeadersFor($employee);
-        $this->assertCount(1, $this->getJson('/api/payroll/reimbursements/mine?month_year=2026-07', $eHeaders)->json());
-        $this->assertCount(2, $this->getJson('/api/payroll/reimbursements/mine', $eHeaders)->json());
+        $this->assertCount(2, $this->getJson('/api/payroll/reimbursements/mine?month_year=2026-07', $eHeaders)->json());
+        $this->assertCount(3, $this->getJson('/api/payroll/reimbursements/mine', $eHeaders)->json());
 
-        // summary counts respect the month
-        $this->assertSame(2, $this->getJson('/api/payroll/reimbursements/summary', $aHeaders)->json()['total_count']);
-        $this->assertSame(1, $this->getJson('/api/payroll/reimbursements/summary?month_year=2026-07', $aHeaders)->json()['total_count']);
+        // summary counts respect the submitted month
+        $this->assertSame(3, $this->getJson('/api/payroll/reimbursements/summary', $aHeaders)->json()['total_count']);
+        $this->assertSame(2, $this->getJson('/api/payroll/reimbursements/summary?month_year=2026-07', $aHeaders)->json()['total_count']);
         $this->assertSame(1, $this->getJson('/api/payroll/reimbursements/summary?month_year=2026-06', $aHeaders)->json()['total_count']);
 
-        // pending payments — after both are approved, month filter applies
-        $this->postJson("/api/payroll/reimbursements/{$jul}/manager-approve", [], $mHeaders)->assertOk();
-        $this->postJson("/api/payroll/reimbursements/{$jun}/manager-approve", [], $mHeaders)->assertOk();
-        $this->postJson("/api/payroll/reimbursements/{$jul}/approve", [], $aHeaders)->assertOk();
-        $this->postJson("/api/payroll/reimbursements/{$jun}/approve", [], $aHeaders)->assertOk();
+        // pending payments — after all approved, month filter (submitted) applies
+        foreach ([$jul, $jun, $cross] as $id) {
+            $this->postJson("/api/payroll/reimbursements/{$id}/manager-approve", [], $mHeaders)->assertOk();
+            $this->postJson("/api/payroll/reimbursements/{$id}/approve", [], $aHeaders)->assertOk();
+        }
 
-        $this->assertCount(2, $this->getJson('/api/payroll/reimbursements/pending-payments', $aHeaders)->json());
-        $this->assertCount(1, $this->getJson('/api/payroll/reimbursements/pending-payments?month_year=2026-07', $aHeaders)->json());
+        $this->assertCount(3, $this->getJson('/api/payroll/reimbursements/pending-payments', $aHeaders)->json());
+        $this->assertCount(2, $this->getJson('/api/payroll/reimbursements/pending-payments?month_year=2026-07', $aHeaders)->json());
+        $this->assertCount(1, $this->getJson('/api/payroll/reimbursements/pending-payments?month_year=2026-06', $aHeaders)->json());
     }
 }

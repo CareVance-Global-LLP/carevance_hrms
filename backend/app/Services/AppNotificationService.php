@@ -19,7 +19,8 @@ class AppNotificationService
         string $type,
         string $title,
         string $message,
-        ?array $meta = null
+        ?array $meta = null,
+        ?int $pollId = null
     ): void {
         $normalizedUserIds = $userIds
             ->unique()
@@ -39,7 +40,7 @@ class AppNotificationService
 
         $rows = $users
             ->filter(fn (User $user) => $this->shouldStoreNotification($user, $type))
-            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $meta, &$recipientUserIds) {
+            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $meta, $pollId, &$recipientUserIds) {
                 $resolvedMeta = $this->resolveMeta($type, $meta);
                 $recipientUserIds[] = (int) $user->id;
 
@@ -47,6 +48,7 @@ class AppNotificationService
                     'organization_id' => $organizationId,
                     'user_id' => (int) $user->id,
                     'sender_id' => $senderId,
+                    'poll_id' => $pollId,
                     'type' => $type,
                     'title' => $title,
                     'message' => $message,
@@ -88,6 +90,7 @@ class AppNotificationService
         return match ($type) {
             'chat_direct_message', 'chat_group_message' => (bool) ($notificationSettings['chat_messages'] ?? true),
             'news' => (bool) ($notificationSettings['weekly_summary'] ?? true),
+            'poll' => (bool) ($notificationSettings['project_updates'] ?? true),
             'announcement' => (bool) ($notificationSettings['project_updates'] ?? true),
             'task_assigned' => true,
             default => true,
@@ -108,6 +111,7 @@ class AppNotificationService
                     : '/chat',
                 'browser_tracking_disconnected' => '/monitoring/website-usage',
                 'salary_credited' => '/payroll',
+                'poll' => '/notifications',
                 'task_assigned' => ! empty($resolvedMeta['route'])
                     ? (string) $resolvedMeta['route']
                     : '/tasks',

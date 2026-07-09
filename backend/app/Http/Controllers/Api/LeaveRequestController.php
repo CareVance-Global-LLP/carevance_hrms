@@ -55,10 +55,8 @@ class LeaveRequestController extends Controller
         } else {
             $visibleUserIds = $this->approvalRoutingService->reviewableRequesterIds($currentUser);
 
-            // Only admins see their own requests in the approval inbox
-            if ($currentUser->getHierarchyLevel() <= 10) {
-                $visibleUserIds->push((int) $currentUser->id);
-            }
+            // Every user always sees their own leave requests.
+            $visibleUserIds->push((int) $currentUser->id);
 
             $query->whereIn('user_id', $visibleUserIds->unique()->values());
 
@@ -289,6 +287,7 @@ class LeaveRequestController extends Controller
         );
 
         $this->sendSubmissionNotification($leave, $currentUser);
+        $this->sendApplicantConfirmation($leave, $currentUser);
 
         return response()->json([
             'message' => 'Leave request submitted.',
@@ -711,6 +710,32 @@ class LeaveRequestController extends Controller
         );
     }
 
+    private function sendApplicantConfirmation(LeaveRequest $leave, User $requester): void
+    {
+        $this->notificationService->sendToUsers(
+            organizationId: (int) $leave->organization_id,
+            userIds: collect([(int) $requester->id]),
+            senderId: (int) $requester->id,
+            type: 'leave_request',
+            title: $leave->isHalfDay() ? 'Half Day Leave Request Submitted' : 'Leave Request Submitted',
+            message: sprintf(
+                'Your %s leave request from %s to %s has been submitted and is pending approval.',
+                $leave->isHalfDay() ? 'half day' : 'full day',
+                Carbon::parse($leave->start_date)->toDateString(),
+                Carbon::parse($leave->end_date)->toDateString()
+            ),
+            meta: [
+                'route' => '/leave',
+                'request_id' => (int) $leave->id,
+                'leave_type' => $leave->leave_type,
+                'leave_category' => $leave->leave_category,
+                'status' => 'pending',
+                'start_date' => Carbon::parse($leave->start_date)->toDateString(),
+                'end_date' => Carbon::parse($leave->end_date)->toDateString(),
+            ]
+        );
+    }
+
     private function withApprovalDestination(LeaveRequest $leave): LeaveRequest
     {
         $leave->loadMissing('user.employeeWorkInfo');
@@ -771,6 +796,7 @@ class LeaveRequestController extends Controller
                 $note
             ),
             meta: [
+                'route' => '/leave',
                 'request_id' => (int) $leave->id,
                 'leave_type' => $leave->leave_type,
                 'leave_category' => $leave->leave_category,

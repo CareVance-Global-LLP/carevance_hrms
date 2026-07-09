@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
+import { getRoleColor, defaultColorForLevel } from '@/lib/roleColors';
 
 interface Role {
   id: number;
@@ -14,6 +15,7 @@ interface Role {
   slug: string;
   description: string | null;
   hierarchy_level: number;
+  color: string;
   is_system: boolean;
   is_active: boolean;
   users_count: number;
@@ -220,6 +222,10 @@ export default function RoleManagement() {
               <SurfaceCard key={role.id} className="flex items-center justify-between p-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
+                    <div
+                      className="h-3 w-3 rounded-full shrink-0"
+                      style={{ backgroundColor: getRoleColor(role.color, role.hierarchy_level).hex }}
+                    />
                     <span className="font-semibold text-slate-950">{role.name}</span>
                     {role.is_system && (
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">System</span>
@@ -310,16 +316,23 @@ export default function RoleManagement() {
                     {roles
                       .filter(r => r.id !== editingRole.id)
                       .sort((a, b) => a.hierarchy_level - b.hierarchy_level)
-                      .map((role) => (
-                        <span 
-                          key={role.id}
-                          className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"
-                          title={role.name}
-                        >
-                          {role.hierarchy_level}
-                          <span className="text-slate-400">({role.name})</span>
-                        </span>
-                      ))}
+                      .map((role) => {
+                        const usedColor = getRoleColor(defaultColorForLevel(role.hierarchy_level));
+                        return (
+                          <span
+                            key={role.id}
+                            className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"
+                            title={role.name}
+                          >
+                            <span
+                              className="h-2 w-2 rounded-full"
+                              style={{ backgroundColor: usedColor.hex }}
+                            />
+                            {role.hierarchy_level}
+                            <span className="text-slate-400">({role.name})</span>
+                          </span>
+                        );
+                      })}
                   </div>
                 )}
                 
@@ -359,6 +372,23 @@ export default function RoleManagement() {
                     Warning: This level is already assigned to another role
                   </p>
                 )}
+
+                {/* Color preview — auto-assigned by level */}
+                {(() => {
+                  const autoColor = defaultColorForLevel(editingRole.hierarchy_level ?? 100);
+                  const colorInfo = getRoleColor(autoColor);
+                  return (
+                    <div className="mt-2 flex items-center gap-2">
+                      <div
+                        className="h-4 w-4 rounded-full"
+                        style={{ backgroundColor: colorInfo.hex }}
+                      />
+                      <span className="text-xs text-slate-500">
+                        Level {editingRole.hierarchy_level ?? '—'} → {colorInfo.label} color (auto-assigned)
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

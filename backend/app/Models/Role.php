@@ -11,14 +11,28 @@ class Role extends Model
 {
     protected $fillable = [
         'organization_id', 'name', 'slug', 'description',
-        'hierarchy_level', 'is_system', 'is_active',
+        'hierarchy_level', 'color', 'is_system', 'is_active',
     ];
 
     protected $casts = [
         'hierarchy_level' => 'integer',
+        'color' => 'string',
         'is_system' => 'boolean',
         'is_active' => 'boolean',
     ];
+
+    public static function defaultColorForLevel(int $level): string
+    {
+        $palette = [
+            1 => 'rose', 2 => 'pink', 3 => 'fuchsia', 4 => 'purple', 5 => 'violet',
+            6 => 'indigo', 7 => 'blue', 8 => 'sky', 9 => 'teal', 10 => 'emerald',
+            11 => 'lime', 12 => 'amber', 13 => 'orange',
+        ];
+
+        $idx = (($level - 1) % 13 + 13) % 13 + 1;
+
+        return $palette[$idx] ?? 'slate';
+    }
 
     public function organization(): BelongsTo
     {

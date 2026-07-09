@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { attendanceApi, attendanceTimeEditApi, leaveApi, userApi, resignationApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,6 +32,10 @@ type ApprovalCardItem = {
   status: string;
   reviewerName?: string;
   reviewedAt?: string | null;
+  leaveType?: string | null;
+  leaveCategory?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
   onApprove?: () => Promise<void>;
   onReject?: () => Promise<void>;
 };
@@ -49,6 +53,28 @@ const parseDateOnly = (value?: string | null) => {
 
 const formatDateLabel = (value: Date) =>
   value.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+const formatDateOnly = (value?: string | null) => {
+  const parsed = parseDateOnly(value);
+  return parsed ? parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+};
+
+const formatLeaveCategory = (value?: string | null) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
+const formatLeaveType = (value?: string | null) => {
+  switch (String(value || '').trim()) {
+    case 'full_day':
+      return 'Full day';
+    case 'half_day':
+      return 'Half day';
+    default:
+      return formatLeaveCategory(value);
+  }
+};
 
 const inclusiveDayDiff = (startDate: Date, endDate: Date) =>
   Math.floor((startOfDay(endDate).getTime() - startOfDay(startDate).getTime()) / DAY_MS) + 1;
@@ -654,27 +680,6 @@ export default function ApprovalInbox() {
 
   const topDepartment = windowLeaveStats.topDepartments[0];
   const topEmployee = windowLeaveStats.topEmployees[0];
-  const windowCoverageRate = windowLeaveStats.uniqueEmployees > 0
-    ? Math.min(100, (windowLeaveStats.totalUnits / windowLeaveStats.uniqueEmployees) * 100)
-    : 0;
-
-  const leavePressureNotes = [
-    {
-      label: 'Coverage pressure',
-      value: `${windowCoverageRate.toFixed(1)}%`,
-      description: 'Leave units relative to unique employees in the current window.',
-    },
-    {
-      label: 'Busiest department',
-      value: topDepartment ? topDepartment.department : 'No hotspot',
-      description: topDepartment ? `${topDepartment.units.toFixed(1)} leave units tracked.` : 'No department pressure in the selected scope.',
-    },
-    {
-      label: 'Highest leave load',
-      value: topEmployee ? topEmployee.name : 'No employee hotspot',
-      description: topEmployee ? `${topEmployee.units.toFixed(1)} leave units in this window.` : 'No employee leave concentration right now.',
-    },
-  ];
 
   const pendingLeaveCards = useMemo<ApprovalCardItem[]>(() => reviewablePendingLeaves.map((item) => ({
     id: item.id,
@@ -685,6 +690,10 @@ export default function ApprovalInbox() {
     employeeName: item.user?.name || 'Unknown',
     employeeEmail: item.user?.email || '',
     status: item.status,
+    leaveType: item.leave_type,
+    leaveCategory: item.leave_category,
+    startDate: item.start_date,
+    endDate: item.end_date,
     onApprove: async () => {
       const response = await leaveApi.approve(item.id);
       ensureSuccessfulAction(response, 'Leave approval failed.');
@@ -704,6 +713,10 @@ export default function ApprovalInbox() {
     employeeName: item.user?.name || 'Unknown',
     employeeEmail: item.user?.email || '',
     status: item.status,
+    leaveType: item.leave_type,
+    leaveCategory: item.leave_category,
+    startDate: item.start_date,
+    endDate: item.end_date,
     reviewerName: item.reviewer?.name || undefined,
     reviewedAt: item.reviewed_at,
   })), [reviewableLeaveHistory]);
@@ -1007,29 +1020,13 @@ export default function ApprovalInbox() {
           <MetricCard label="Highest Leave Load" value={topEmployee ? topEmployee.name : 'N/A'} icon={UserRound} accent="emerald" />
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="mt-4 grid gap-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900">Daily Leave Trend</h3>
               <span className="text-xs text-slate-500">{selectedWindowRange.days}-day employee count</span>
             </div>
             <LeaveTrendChart points={leaveTrendPoints} />
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900">Quick Summary</h3>
-              <span className="text-xs text-slate-500">Current filter scope</span>
-            </div>
-            <div className="space-y-3">
-              {leavePressureNotes.map((note) => (
-                <div key={note.label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{note.label}</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-950">{note.value}</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">{note.description}</p>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
 
@@ -1138,7 +1135,7 @@ export default function ApprovalInbox() {
           {currentCards.map((item) => (
             <SurfaceCard key={`${item.kind}-${item.id}`} className="p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="space-y-2">
+                <div className="min-w-0 flex-1 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                       item.kind === 'leave' ? 'bg-amber-100 text-amber-700' :
@@ -1161,12 +1158,56 @@ export default function ApprovalInbox() {
                       </span>
                     ) : null}
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-950">{item.title}</h3>
-                  <p className="text-sm text-slate-600">Submitted by: {item.employeeName} {item.employeeEmail ? `| ${item.employeeEmail}` : ''}</p>
-                  <p className="text-sm text-slate-600">{item.description}</p>
-                  {item.reviewerName ? (
-                    <p className="text-xs text-slate-500">Reviewed by {item.reviewerName}</p>
-                  ) : null}
+
+                  {item.kind === 'leave' ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-slate-700">
+                        <span className="text-slate-500">Employee: </span>
+                        <span className="font-semibold text-slate-950">{item.employeeName}</span>
+                        {item.employeeEmail ? <span className="text-slate-500"> | {item.employeeEmail}</span> : null}
+                      </p>
+                      {(item.leaveCategory || item.leaveType) && (
+                        <p className="text-sm text-slate-700">
+                          <span className="text-slate-500">Type of leave: </span>
+                          <span className="font-semibold text-slate-950">
+                            {[formatLeaveCategory(item.leaveCategory), formatLeaveType(item.leaveType)].filter(Boolean).join(' · ')}
+                          </span>
+                        </p>
+                      )}
+                      {item.submittedAt && (
+                        <p className="text-sm text-slate-700">
+                          <span className="text-slate-500">Date requested: </span>
+                          <span className="font-semibold text-slate-950">{formatDateTime(item.submittedAt, viewerTimezone)}</span>
+                        </p>
+                      )}
+                      {(item.startDate || item.endDate) && (
+                        <p className="text-sm text-slate-700">
+                          <span className="text-slate-500">Leave period: </span>
+                          <span className="font-semibold text-slate-950">
+                            {[formatDateOnly(item.startDate), formatDateOnly(item.endDate)].filter(Boolean).join(' – ')}
+                          </span>
+                        </p>
+                      )}
+                      {item.description && (
+                        <p className="text-sm text-slate-700">
+                          <span className="text-slate-500">Reason: </span>
+                          <span className="text-slate-800">{item.description}</span>
+                        </p>
+                      )}
+                      {item.reviewerName ? (
+                        <p className="text-xs text-slate-500">Reviewed by {item.reviewerName}</p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-semibold text-slate-950">{item.title}</h3>
+                      <p className="text-sm text-slate-600">Submitted by: {item.employeeName} {item.employeeEmail ? `| ${item.employeeEmail}` : ''}</p>
+                      <p className="text-sm text-slate-600">{item.description}</p>
+                      {item.reviewerName ? (
+                        <p className="text-xs text-slate-500">Reviewed by {item.reviewerName}</p>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
                 {activeView === 'pending' ? (
