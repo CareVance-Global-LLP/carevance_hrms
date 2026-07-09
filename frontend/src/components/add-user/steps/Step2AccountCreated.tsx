@@ -23,7 +23,7 @@ export function Step2AccountCreated({ form }: Step2Props) {
         <CheckCircle2 className="h-10 w-10 text-emerald-500" />
       </div>
 
-      <h3 className="text-xl font-semibold text-gray-900">Account Created Successfully!</h3>
+      <h3 className="text-xl font-semibold text-gray-900">Review Details</h3>
 
       {form.employeeCode && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-6 py-4">
@@ -59,9 +59,9 @@ export function Step2AccountCreated({ form }: Step2Props) {
       <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3 flex items-start gap-3 text-left max-w-sm">
         <ShieldCheck className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
         <div>
-          <p className="text-sm font-medium text-emerald-800">Invitation email will be sent</p>
+          <p className="text-sm font-medium text-emerald-800">Account will be created after setup</p>
           <p className="text-xs text-emerald-700 mt-1">
-            Once you complete setup, <strong>{form.email}</strong> will receive an email with login instructions and a link to access their account.
+            Once you complete the profile in the next step, the account for <strong>{form.email}</strong> will be created and an invitation email will be sent with login instructions.
           </p>
         </div>
       </div>

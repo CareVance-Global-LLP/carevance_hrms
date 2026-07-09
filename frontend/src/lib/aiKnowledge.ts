@@ -1,9 +1,31 @@
-export const QUICK_ACTIONS = [
-  'How do I submit a leave request?',
-  'Where can I see my attendance and time?',
-  'How do I track my time / start the timer?',
-  'Where are reports and analytics?',
+export interface QuickAction {
+  label: string;
+  adminOnly?: boolean;
+  managerOnly?: boolean;
+  employeeOnly?: boolean;
+}
+
+export const QUICK_ACTIONS: QuickAction[] = [
+  { label: 'How do I submit a leave request?' },
+  { label: 'Where can I see my attendance and time?' },
+  { label: 'How do I track my time / start the timer?' },
+  { label: 'How do I view my payslip?' },
+  { label: 'How many approvals are pending?', adminOnly: true },
+  { label: "Who hasn't clocked in today?", adminOnly: true },
+  { label: "What's the payroll status this cycle?", adminOnly: true },
+  { label: "How's my team doing today?", managerOnly: true },
 ];
+
+export function getQuickActionsForRole(role: string | undefined): string[] {
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  const isManager = role === 'manager' || isAdmin;
+
+  return QUICK_ACTIONS.filter((action) => {
+    if (action.adminOnly && !isAdmin) return false;
+    if (action.managerOnly && !isManager) return false;
+    return true;
+  }).map((a) => a.label);
+}
 
 // Reference knowledge base used for the AI assistant quick-action chips.
 // The authoritative system prompt lives in the backend AiChatService; this is a

@@ -6,6 +6,7 @@ import BrandLogo from '@/components/branding/BrandLogo';
 import AuthPageFooter from '@/components/auth/AuthPageFooter';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { inviteApi } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import type { InviteValidationResponse } from '@/types';
 import { analytics } from '@/lib/analytics';
 
@@ -23,6 +24,7 @@ const parseError = (error: any) => {
 export default function InviteSignupPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { login } = useAuth();
   const token = searchParams.get('token') || '';
   const [isLoading, setIsLoading] = useState(true);
   const [invite, setInvite] = useState<InviteValidationResponse | null>(null);
@@ -88,7 +90,7 @@ export default function InviteSignupPage() {
         source: 'invite-signup-page',
       });
 
-      const response = await inviteApi.accept({
+      await inviteApi.accept({
         token,
         name: name.trim(),
         password,
@@ -99,8 +101,9 @@ export default function InviteSignupPage() {
         source: 'invite-signup-page',
       });
 
-      const email = response.data.email || invite?.email || '';
-      navigate(`/verify-email?email=${encodeURIComponent(email)}&status=pending-invite`);
+      const email = invite?.email || '';
+      await login(email, password);
+      navigate('/dashboard');
     } catch (requestError: any) {
       setError(parseError(requestError));
     } finally {

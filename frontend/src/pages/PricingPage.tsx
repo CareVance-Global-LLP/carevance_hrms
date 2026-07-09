@@ -4,6 +4,7 @@ import CTA from '@/components/landing/CTA';
 import PricingSection from '@/components/landing/PricingSection';
 import FeatureComparison from '@/components/landing/FeatureComparison';
 import FAQSection from '@/components/landing/FAQSection';
+import LandingPageChatBubble from '@/components/LandingPageChatBubble';
 
 const trustMetrics = [
   { label: 'Active users', value: '10,000+' },
@@ -85,6 +86,7 @@ export default function PricingPage() {
 
       <CTA />
       <Footer />
+      <LandingPageChatBubble />
     </div>
   );
 }

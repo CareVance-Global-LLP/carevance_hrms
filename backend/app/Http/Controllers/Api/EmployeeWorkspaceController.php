@@ -280,16 +280,22 @@ class EmployeeWorkspaceController extends Controller
             return null;
         }
 
+        $byCode = User::query()
+            ->where('organization_id', $organizationId)
+            ->whereHas('employeeWorkInfo', fn ($q) => $q->where('employee_code', $id))
+            ->first();
+
+        if ($byCode) {
+            return $byCode;
+        }
+
         if (is_numeric($id)) {
             return User::query()
                 ->where('organization_id', $organizationId)
                 ->find((int) $id);
         }
 
-        return User::query()
-            ->where('organization_id', $organizationId)
-            ->whereHas('employeeWorkInfo', fn ($q) => $q->where('employee_code', $id))
-            ->first();
+        return null;
     }
 
     private function canManage(User $user): bool

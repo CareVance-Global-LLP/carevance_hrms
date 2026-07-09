@@ -209,7 +209,6 @@ const professionalExtraModules: PlanModule[] = [
     features: [
       'Custom Roles & Permissions',
       'Performance Management',
-      'Pre-Boarding Management',
       'Recruitment Management (ATS)',
       'Asset Tracking',
     ],
@@ -518,7 +517,6 @@ export const featureCategories = [
       { name: 'Resignation Management', basic_tracking: false, advance_tracking: false, basic_payroll: true, professional_payroll: true },
       { name: 'Shift Management', basic_tracking: false, advance_tracking: false, basic_payroll: true, professional_payroll: true },
       { name: 'Performance Management', basic_tracking: false, advance_tracking: false, basic_payroll: false, professional_payroll: true },
-      { name: 'Pre-Boarding Management', basic_tracking: false, advance_tracking: false, basic_payroll: false, professional_payroll: true },
       { name: 'Recruitment (ATS)', basic_tracking: false, advance_tracking: false, basic_payroll: false, professional_payroll: true },
       { name: 'Asset Tracking', basic_tracking: false, advance_tracking: false, basic_payroll: false, professional_payroll: true },
     ],

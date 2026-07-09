@@ -21,9 +21,12 @@ class AiChatController extends Controller
             'history.*.content' => 'required|string|max:2000',
         ]);
 
+        $user = $request->user();
+
         $reply = $this->chatService->chat(
             $data['message'],
-            $data['history'] ?? []
+            $data['history'] ?? [],
+            $user
         );
 
         return response()->json(['reply' => $reply]);

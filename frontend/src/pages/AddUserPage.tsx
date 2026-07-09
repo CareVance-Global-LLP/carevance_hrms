@@ -5,11 +5,11 @@ export default function AddUserPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="mx-auto w-full max-w-[88rem] space-y-8 pb-6">
+    <div className="space-y-6">
       <AddUserDrawer
         open
         presentation="inline"
-        onClose={() => navigate('/dashboard')}
+        onClose={() => navigate('/employees')}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, CalendarRange, Mail, Phone } from 'lucide-react';
 import Navbar from '@/components/landing/Navbar';
 import Footer from '@/components/landing/Footer';
+import LandingPageChatBubble from '@/components/LandingPageChatBubble';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import PublicPageTransition from '@/components/public/PublicPageTransition';
 import { pricingUi } from '@/constants/pricing';
@@ -113,6 +114,7 @@ export default function ContactSalesPage() {
       </PublicPageTransition>
 
       <Footer />
+      <LandingPageChatBubble />
     </div>
   );
 }

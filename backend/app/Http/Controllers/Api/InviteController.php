@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\InviteUserMail;
 use App\Models\Invite;
 use App\Models\User;
+use App\Services\Auth\ApiTokenService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -14,6 +15,12 @@ use Illuminate\Support\Str;
 
 class InviteController extends Controller
 {
+    public function __construct(
+        private readonly ApiTokenService $apiTokenService,
+    )
+    {
+    }
+
     public function sendInvite(Request $request)
     {
         $validated = $request->validate([
@@ -22,13 +29,6 @@ class InviteController extends Controller
         ]);
 
         $email = mb_strtolower(trim((string) $validated['email']));
-
-        if (User::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'This email already exists.',
-            ], 422);
-        }
 
         $token = Str::random(64);
         $expiresAt = now()->addDays(7);
@@ -153,45 +153,39 @@ class InviteController extends Controller
 
         $email = mb_strtolower(trim((string) $invite->email));
 
-        if (User::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'This email already exists.',
-            ], 422);
-        }
+        $existingUser = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
 
-        $user = User::create([
-            'name' => trim((string) $validated['name']),
-            'email' => $email,
-            'password' => Hash::make((string) $validated['password']),
-            'role' => $invite->role ?: 'employee',
-            'organization_id' => $creator->organization_id,
-            'invited_by' => $creator->id,
-        ]);
+        if ($existingUser) {
+            $existingUser->forceFill([
+                'password' => Hash::make((string) $validated['password']),
+            ])->save();
+            $user = $existingUser;
+        } else {
+            $user = User::create([
+                'name' => trim((string) $validated['name']),
+                'email' => $email,
+                'password' => Hash::make((string) $validated['password']),
+                'role' => $invite->role ?: 'employee',
+                'organization_id' => $creator->organization_id,
+                'invited_by' => $creator->id,
+            ]);
+        }
 
         $invite->forceFill([
             'accepted_at' => now(),
         ])->save();
 
-        try {
-            $user->sendEmailVerificationNotification();
-        } catch (\Throwable $exception) {
-            Log::warning('Verification email dispatch failed for legacy invite acceptance.', [
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'exception' => $exception::class,
-                'message' => $exception->getMessage(),
-            ]);
-        }
-
         $user->load('organization');
+
+        $token = $this->apiTokenService->issue($user, 'auth-token');
 
         return response()->json([
             'success' => true,
-            'message' => 'Invitation accepted successfully. Please verify your email before signing in.',
+            'message' => 'Invitation accepted successfully.',
             'user' => $user,
             'organization' => $user->organization,
-            'requires_verification' => true,
+            'token' => $token,
+            'requires_verification' => false,
             'email' => $user->email,
         ], 201);
     }

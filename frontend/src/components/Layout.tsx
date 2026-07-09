@@ -1128,7 +1128,7 @@ export default function Layout() {
             <Outlet />
           </div>
         </main>
-        <AIHelpBubble />
+        <AIHelpBubble userRole={user?.role} />
       </div>
     );
   }

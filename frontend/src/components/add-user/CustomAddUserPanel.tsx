@@ -82,6 +82,7 @@ interface CustomAddUserPanelProps {
   allowedRoles: string[];
   onSuccess: () => void;
   onError: (message: string) => void;
+  onCancel?: () => void;
 }
 
 // ── Validation helpers ──────────────────────────────────────
@@ -202,7 +203,7 @@ function clearWizardState(): void {
 
 // ── Main Component ──────────────────────────────────────────
 
-export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuccess, onError }: CustomAddUserPanelProps) {
+export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuccess, onError, onCancel }: CustomAddUserPanelProps) {
   const queryClient = useQueryClient();
 
   // ✅ Load persisted state on mount
@@ -220,6 +221,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [incompleteUser, setIncompleteUser] = useState<IncompleteUserCheck | null>(null);
+  const [inviteSent, setInviteSent] = useState<boolean | null>(null);
+  const [inviteFailedMessage, setInviteFailedMessage] = useState<string>('');
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [creationError, setCreationError] = useState<string | null>(null);
 
   // ✅ Welcome back message if resuming from persisted state
   useEffect(() => {
@@ -230,6 +235,40 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
       });
     }
   }, []);
+
+  // ✅ Auto-create user when Step 3 loads (user not yet created)
+  useEffect(() => {
+    if (currentStep !== 3 || form.userId || isCreatingUser || createUserMutation.isPending) return;
+
+    let cancelled = false;
+
+    const createUser = async () => {
+      setIsCreatingUser(true);
+      setCreationError(null);
+      try {
+        const result = await createUserMutation.mutateAsync(form);
+        if (cancelled) return;
+        const userId = result.userId || result.id;
+        setForm((prev) => ({ ...prev, userId }));
+
+        queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
+        queryClient.invalidateQueries({ queryKey: ['payroll', 'unassigned-employees'] });
+        queryClient.invalidateQueries({ queryKey: ['payroll', 'dashboard'] });
+        queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+        queryClient.invalidateQueries({ queryKey: ['employee-payroll-cards'] });
+      } catch (error: any) {
+        if (cancelled) return;
+        const errorMessage = extractErrorMessage(error);
+        setCreationError(errorMessage);
+      } finally {
+        if (!cancelled) setIsCreatingUser(false);
+      }
+    };
+
+    void createUser();
+
+    return () => { cancelled = true; };
+  }, [currentStep, form.userId]);
 
   // ❌ REMOVED: Old disabled saveWizardState usage — now we save properly below
 
@@ -332,8 +371,8 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
   // ── API: Save profile data (Step 3) ──────────────────────
 
-  const saveStep3Data = async (formData: AddUserWizardForm): Promise<void> => {
-    if (!formData.userId) return;
+  const saveStep3Data = async (formData: AddUserWizardForm): Promise<{ failures: number }> => {
+    if (!formData.userId) return { failures: 0 };
 
     const promises: Promise<any>[] = [];
 
@@ -344,10 +383,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
           gender: formData.gender || undefined,
           date_of_birth: formData.dateOfBirth || undefined,
           personal_email: formData.personalEmail || undefined,
-          address: [formData.addressLine1, formData.addressLine2].filter(Boolean).join(', ') || undefined,
+          address_line: [formData.addressLine1, formData.addressLine2].filter(Boolean).join(', ') || undefined,
           city: formData.city || undefined,
           state: formData.state || undefined,
-          pincode: formData.pincode || undefined,
+          postal_code: formData.pincode || undefined,
           emergency_contact_name: formData.emergencyContactName || undefined,
           emergency_contact_number: formData.emergencyContactPhone || undefined,
           emergency_contact_relationship: formData.emergencyRelationship || undefined,
@@ -404,7 +443,37 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
       }
     }
 
-    await Promise.allSettled(promises);
+    const results = await Promise.allSettled(promises);
+    const failures = results.filter((r) => r.status === 'rejected').length;
+    return { failures };
+  };
+
+  // ── Send / resend invitation email ────────────────────────
+
+  const sendInvite = async (userId?: number) => {
+    const id = userId || form.userId;
+    if (!id || !form.email) return;
+    try {
+      await api.post('/invites/send', {
+        email: form.email,
+        role: form.role,
+        first_name: form.firstName,
+        last_name: form.lastName,
+        employee_code: form.employeeCode,
+        is_new_user: true,
+      });
+      setInviteSent(true);
+      setInviteFailedMessage('');
+    } catch (inviteError: any) {
+      setInviteSent(false);
+      setInviteFailedMessage(
+        inviteError?.response?.data?.message || 'Failed to send invitation email.'
+      );
+    }
+  };
+
+  const handleResendInvite = async () => {
+    await sendInvite(form.userId ?? undefined);
   };
 
   // ── Navigation handlers ───────────────────────────────────
@@ -416,102 +485,46 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         return;
       }
 
-      // ✅ If user was already created (resuming from Step 2), just proceed
-      if (form.userId) {
-        setCompletedSteps((prev) => new Set(prev).add(1));
-        setCurrentStep(2);
-        return;
-      }
-
-      setIsSubmitting(true);
       setErrors({});
       setIncompleteUser(null);
-      try {
-        const result = await createUserMutation.mutateAsync(form);
-        setForm((prev) => ({
-          ...prev,
-          userId: result.userId || result.id,
-        }));
-        setCompletedSteps((prev) => new Set(prev).add(1));
-        setCurrentStep(2);
-        // ✅ Persist state after Step 1 succeeds
-        const userId = result.userId || result.id;
-        // ✅ Refresh downstream caches so the Payroll dashboard, pay-groups
-        // grid, and unassigned-employees list all reflect the new user /
-        // pay-group assignment immediately.
-        queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
-        queryClient.invalidateQueries({ queryKey: ['payroll', 'unassigned-employees'] });
-        queryClient.invalidateQueries({ queryKey: ['payroll', 'dashboard'] });
-        queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
-        queryClient.invalidateQueries({ queryKey: ['employee-payroll-cards'] });
-        saveWizardState({
-          step: 2,
-          form: { ...form, userId },
-          userId,
-          createdAt: new Date().toISOString(),
-        });
-      } catch (error: any) {
-        const errorMessage = extractErrorMessage(error);
-        const fieldErrors = extractFieldErrors(error);
-        if (Object.keys(fieldErrors).length > 0) {
-          setErrors(fieldErrors);
-        } else {
-          setErrors({ email: errorMessage });
-        }
-      } finally {
-        setIsSubmitting(false);
-      }
+      setCompletedSteps((prev) => new Set(prev).add(1));
+      setCurrentStep(2);
+
+      saveWizardState({
+        step: 2,
+        form,
+        userId: null,
+        createdAt: new Date().toISOString(),
+      });
     } else if (currentStep === 2) {
       setCompletedSteps((prev) => new Set(prev).add(2));
       setCurrentStep(3);
     } else if (currentStep === 3) {
+      if (!form.userId) {
+        setFeedback({ type: 'error', message: 'Account is still being created. Please wait a moment.' });
+        return;
+      }
+
       setIsSubmitting(true);
       try {
         if (hasAnyStep3Data(form)) {
-          await saveStep3Data(form);
-        }
-
-        // ✅ Send invitation ONLY after ALL steps complete
-        if (form.userId && form.email) {
-          try {
-            await api.post('/invites/send', {
-              email: form.email,
-              role: form.role,
-              first_name: form.firstName,
-              last_name: form.lastName,
-              employee_code: form.employeeCode,
-              is_new_user: true,
+          const { failures } = await saveStep3Data({ ...form, userId: form.userId });
+          if (failures > 0) {
+            setFeedback({
+              type: 'error',
+              message: `${failures} profile item(s) could not be saved, but the invitation was sent.`,
             });
-          } catch (inviteError) {
-            console.warn('Failed to send invitation email:', inviteError);
           }
         }
+
+        await sendInvite(form.userId);
 
         setCompletedSteps((prev) => new Set(prev).add(3));
         setCurrentStep('completed');
         clearWizardState();
-      } catch (error) {
-        console.warn('Step 3 save warning:', error);
-
-        // ✅ Even if Step 3 data fails, still try to send invite
-        if (form.userId && form.email) {
-          try {
-            await api.post('/invites/send', {
-              email: form.email,
-              role: form.role,
-              first_name: form.firstName,
-              last_name: form.lastName,
-              employee_code: form.employeeCode,
-              is_new_user: true,
-            });
-          } catch (inviteError) {
-            console.warn('Failed to send invitation email:', inviteError);
-          }
-        }
-
-        setCompletedSteps((prev) => new Set(prev).add(3));
-        setCurrentStep('completed');
-        clearWizardState();
+      } catch (error: any) {
+        const errorMessage = extractErrorMessage(error);
+        setFeedback({ type: 'error', message: errorMessage });
       } finally {
         setIsSubmitting(false);
       }
@@ -525,10 +538,38 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
     else if (currentStep === 3) setCurrentStep(2);
   };
 
-  const handleSkip = () => {
+  const handleCancel = () => {
+    clearWizardState();
+    setForm({ ...defaultForm });
+    setCurrentStep(1);
+    setCompletedSteps(new Set());
+    setErrors({});
+    setFeedback(null);
+    setInviteSent(null);
+    setInviteFailedMessage('');
+    onCancel?.();
+  };
+
+  const handleSkip = async () => {
     if (currentStep === 3) {
-      setCompletedSteps((prev) => new Set(prev).add(3));
-      setCurrentStep('completed');
+      if (!form.userId) {
+        setFeedback({ type: 'error', message: 'Account is still being created. Please wait a moment.' });
+        return;
+      }
+
+      setIsSubmitting(true);
+      try {
+        await sendInvite(form.userId);
+
+        setCompletedSteps((prev) => new Set(prev).add(3));
+        setCurrentStep('completed');
+        clearWizardState();
+      } catch (error: any) {
+        const errorMessage = extractErrorMessage(error);
+        setFeedback({ type: 'error', message: errorMessage });
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -626,7 +667,15 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         <Step1BasicInfo form={form} setForm={setForm} errors={errors} setErrors={setErrors} onResumeFromStep2={handleResumeFromStep2} incompleteUser={incompleteUser} setIncompleteUser={setIncompleteUser} />
       )}
       {currentStep === 2 && <Step2AccountCreated form={form} />}
-      {currentStep === 3 && <Step3Profile form={form} setForm={setForm} />}
+      {currentStep === 3 && (
+        <Step3Profile
+          form={form}
+          setForm={setForm}
+          isCreatingUser={isCreatingUser}
+          creationError={creationError}
+          onGoBack={handleBack}
+        />
+      )}
       {currentStep === 'completed' && (
         <div className="space-y-4">
           <div className="px-6 py-4 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
@@ -637,7 +686,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
               <div>
                 <h3 className="text-lg font-semibold text-emerald-900">User Created Successfully!</h3>
                 <p className="text-sm text-emerald-700">
-                  {form.firstName} {form.lastName} ({form.employeeCode || 'No code'}) has been added. Invitation email sent to {form.email}.
+                  {form.firstName} {form.lastName} ({form.employeeCode || 'No code'}) has been added.{' '}
+                  {inviteSent === false
+                    ? 'However, the invitation email could not be sent.'
+                    : `Invitation email sent to ${form.email}.`}
                 </p>
               </div>
             </div>
@@ -648,6 +700,20 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
               + Add Another
             </button>
           </div>
+          {inviteSent === false && (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-start gap-2 text-sm bg-amber-50 text-amber-800 border border-amber-200">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p>{inviteFailedMessage || 'Failed to send invitation email.'}</p>
+                <button
+                  onClick={handleResendInvite}
+                  className="mt-2 px-3 py-1.5 text-sm font-medium text-amber-800 bg-white border border-amber-300 rounded-lg hover:bg-amber-50 transition-colors"
+                >
+                  Resend Invitation
+                </button>
+              </div>
+            </div>
+          )}
           {form.userId && (
             <div className="p-4">
               <EmployeeDetailsSection
@@ -664,9 +730,11 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         <WizardActions
           currentStep={currentStep}
           showBack={currentStep === 2 || currentStep === 3}
+          showCancel={currentStep === 1}
           showSkip={currentStep === 3}
           isSubmitting={isSubmitting}
           onBack={handleBack}
+          onCancel={handleCancel}
           onNext={handleNext}
           onSkip={handleSkip}
           nextLabel={currentStep === 1 ? (form.userId ? 'Continue' : 'Create Account') : currentStep === 3 ? 'Complete' : 'Continue'}

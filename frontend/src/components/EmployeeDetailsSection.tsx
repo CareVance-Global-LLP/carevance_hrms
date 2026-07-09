@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Briefcase, FileText, CreditCard, Building2 } from 'lucide-react';
+import { Briefcase, FileText, CreditCard, Building2, Download, Eye } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
@@ -186,6 +186,46 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
 
   const data = workspaceQuery.data;
 
+  const buildDocFilename = (proofType: string, ext?: string) => {
+    const empCode = data.work_info?.employee_code || id;
+    const name = (data.employee?.name || 'employee').replace(/\s+/g, '_');
+    const department = data.work_info?.department?.name || 'Dept';
+    const suffix = ext || '';
+    return `${empCode}_${name}_${department}_${proofType}${suffix}`;
+  };
+
+  const isPreviewable = (mimeType?: string, fileName?: string) => {
+    if (mimeType) return mimeType.startsWith('image/') || mimeType === 'application/pdf';
+    if (fileName) {
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      return ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '');
+    }
+    return false;
+  };
+
+  const handleFilePreview = (docId: number, mimeType?: string, fileName?: string) => {
+    employeeWorkspaceApi.downloadDocument(id, docId).then((res) => {
+      const blob = new Blob([res.data], { type: mimeType || String(res.headers?.['content-type'] || '') });
+      const blobUrl = window.URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
+    });
+  };
+
+  const handleFileDownload = (docId: number, filename: string, mimeType?: string, fileName?: string) => {
+    employeeWorkspaceApi.downloadDocument(id, docId).then((res) => {
+      const blob = new Blob([res.data], { type: mimeType || String(res.headers?.['content-type'] || '') });
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
+    });
+  };
+
   const canEditWorkInfo = editable ? true : (
     canAccess(user, 'employee.edit') ||
     user?.role === 'admin' ||
@@ -347,15 +387,30 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
                     <p className="font-medium text-slate-950">{item.id_type}</p>
                     <p className="text-sm text-slate-500">{item.id_number}</p>
                   </div>
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    item.status === 'verified'
-                      ? 'bg-green-100 text-green-800'
-                      : item.status === 'rejected'
-                      ? 'bg-red-100 text-red-800'
-                      : 'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {item.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {item.document?.id && (
+                      <>
+                        {isPreviewable(item.document.mime_type, item.document.file_name) && (
+                          <button
+                            type="button"
+                            title={`View ${item.id_type} proof`}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                            onClick={() => handleFilePreview(item.document.id, item.document.mime_type, item.document.file_name)}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title={`Download ${item.id_type} proof`}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                          onClick={() => handleFileDownload(item.document.id, buildDocFilename(item.id_type), item.document.mime_type, item.document.file_name)}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -426,11 +481,35 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
                       <p className="text-sm text-slate-500">Account: {item.account_number}</p>
                       <p className="text-sm text-slate-500">IFSC: {item.ifsc_swift}</p>
                     </div>
-                    {item.is_default && (
-                      <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                        Default
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {item.is_default && (
+                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                          Default
+                        </span>
+                      )}
+                      {item.document?.id && (
+                        <>
+                          {isPreviewable(item.document.mime_type, item.document.file_name) && (
+                            <button
+                              type="button"
+                              title={`View ${item.bank_name || 'bank'} proof`}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                              onClick={() => handleFilePreview(item.document.id, item.document.mime_type, item.document.file_name)}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            title={`Download ${item.bank_name || 'bank'} proof`}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                            onClick={() => handleFileDownload(item.document.id, buildDocFilename(`${item.bank_name || 'Bank'}_Proof`), item.document.mime_type, item.document.file_name)}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -524,24 +603,35 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           </div>
           <p className="mt-1 text-sm text-slate-500">Upload and manage employee documents.</p>
 
-          {data.documents?.length > 0 && (
+          {data.documents?.filter((item: any) => !['bank_proof', 'government_id_proof'].includes(item.category)).length > 0 && (
             <div className="mt-5 space-y-3">
-              {data.documents.map((item: any) => (
+              {data.documents.filter((item: any) => !['bank_proof', 'government_id_proof'].includes(item.category)).map((item: any) => (
                 <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-slate-950">{item.title}</p>
                       <p className="text-sm text-slate-500">{item.category} • {item.file_name}</p>
                     </div>
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      item.review_status === 'verified'
-                        ? 'bg-green-100 text-green-800'
-                        : item.review_status === 'rejected'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {item.review_status}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {isPreviewable(item.mime_type, item.file_name) && (
+                        <button
+                          type="button"
+                          title={`View ${item.title}`}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                          onClick={() => handleFilePreview(item.id, item.mime_type, item.file_name)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        title={`Download ${item.title}`}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                        onClick={() => handleFileDownload(item.id, buildDocFilename(item.title || item.category || 'document'), item.mime_type, item.file_name)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

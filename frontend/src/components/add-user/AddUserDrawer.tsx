@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, UserPlus, X } from 'lucide-react';
+import { ArrowLeft, Loader2, UserPlus } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { organizationApi } from '@/services/api';
 import { getAssignableRoles } from '@/lib/permissions';
@@ -26,10 +26,10 @@ import {
 type AddUserTab = 'email' | 'link' | 'csv' | 'custom';
 
 const tabOptions: Array<{ id: AddUserTab; label: string; description: string }> = [
+  { id: 'custom', label: 'Create User', description: 'Admin adds user with all details (email, password, personal info, bank details).' },
   { id: 'email', label: 'Invite by Email', description: 'Invite multiple people with their roles and access.' },
   { id: 'link', label: 'Invite by Link', description: 'Generate a single-use secure onboarding link for one recipient.' },
   { id: 'csv', label: 'Add by CSV', description: 'Bulk import employees, managers, or admins.' },
-  { id: 'custom', label: 'Add by Custom', description: 'Admin adds user with all details (email, password, personal info, bank details).' },
 ];
 
 const extractInviteError = (error: any, fallback: string) => {
@@ -84,7 +84,7 @@ export default function AddUserDrawer({
     if (tabFromUrl && ['email', 'link', 'csv', 'custom'].includes(tabFromUrl)) {
       return tabFromUrl;
     }
-    return 'email';
+    return 'custom';
   };
 
   const [activeTab, setActiveTabState] = useState<AddUserTab>(getInitialTab);
@@ -363,23 +363,23 @@ export default function AddUserDrawer({
         <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm" onClick={onClose} />
       ) : null}
       <aside className={presentation === 'modal' ? 'absolute inset-0 flex items-start justify-center overflow-y-auto p-4 sm:p-6 lg:p-8' : 'relative'}>
-        <div className={`flex w-full flex-col gap-6 rounded-lg border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.97),rgba(255,255,255,0.99))] p-4 shadow-sm sm:p-6 ${
-          presentation === 'modal' ? 'mt-16 max-w-[72rem] sm:mt-20' : ''
+        <div className={`flex w-full flex-col gap-6 ${
+          presentation === 'modal' ? 'rounded-lg border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.97),rgba(255,255,255,0.99))] p-4 shadow-sm sm:p-6 mt-16 max-w-[72rem] sm:mt-20' : ''
         }`}>
-          <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-                <UserPlus className="h-3.5 w-3.5" />
-                Add User
-              </div>
-              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">Add User</h2>
+              <Link
+                to="/employees"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 hover:shadow mb-3"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Employees
+              </Link>
+              <h2 className="text-2xl font-bold tracking-[-0.05em] text-slate-950">Add User</h2>
               <p className="mt-1 max-w-2xl text-sm text-slate-500">
                 An invitation email will be sent. The user creates their own account and automatically receives the assigned access level.
               </p>
             </div>
-            <Button variant="ghost" className="h-11 w-11 rounded-full p-0" onClick={onClose} aria-label="Close add user drawer">
-              <X className="h-5 w-5" />
-            </Button>
           </div>
 
           {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
@@ -451,6 +451,10 @@ export default function AddUserDrawer({
                   }}
                   onError={(message) => {
                     setFeedback({ tone: 'error', message });
+                  }}
+                  onCancel={() => {
+                    setFeedback(null);
+                    setActiveTab('custom');
                   }}
                 />
               </>
@@ -623,7 +627,10 @@ export default function AddUserDrawer({
             ) : null}
 
             <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-5">
-              <Button variant="secondary" onClick={onClose}>Cancel</Button>
+              <Button variant="secondary" onClick={() => {
+                setFeedback(null);
+                setActiveTab('custom');
+              }}>Cancel</Button>
               {activeTab === 'email' ? (
                 <Button
                   onClick={() => {

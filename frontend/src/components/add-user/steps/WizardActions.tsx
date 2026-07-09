@@ -1,9 +1,11 @@
 interface WizardActionsProps {
   currentStep: number | 'completed';
   showBack: boolean;
+  showCancel: boolean;
   showSkip: boolean;
   isSubmitting: boolean;
   onBack: () => void;
+  onCancel?: () => void;
   onNext: () => void;
   onSkip?: () => void;
   nextLabel?: string;
@@ -12,9 +14,11 @@ interface WizardActionsProps {
 export function WizardActions({
   currentStep,
   showBack,
+  showCancel,
   showSkip,
   isSubmitting,
   onBack,
+  onCancel,
   onNext,
   onSkip,
   nextLabel,
@@ -22,7 +26,15 @@ export function WizardActions({
   return (
     <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
       <div>
-        {showBack && currentStep !== 'completed' && (
+        {showCancel && currentStep === 1 && onCancel && (
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors"
+          >
+            ← Back
+          </button>
+        )}
+        {showBack && currentStep !== 'completed' && currentStep !== 1 && (
           <button
             onClick={onBack}
             className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors"

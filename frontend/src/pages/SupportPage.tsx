@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { AlertCircle, ArrowRight, LifeBuoy, Mail, MessageSquareWarning } from 'lucide-react';
 import Navbar from '@/components/landing/Navbar';
 import Footer from '@/components/landing/Footer';
+import LandingPageChatBubble from '@/components/LandingPageChatBubble';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import { SelectInput } from '@/components/ui/FormField';
 import PublicPageTransition from '@/components/public/PublicPageTransition';
@@ -285,6 +286,7 @@ export default function SupportPage() {
       </PublicPageTransition>
 
       <Footer />
+      <LandingPageChatBubble />
     </div>
   );
 }

@@ -1338,7 +1338,7 @@ export const chatApi = {
 };
 
 export const aiChatApi = {
-  chat: (data: { message: string; history?: Array<{ role: string; content: string }> }) =>
+  chat: (data: { message: string; history?: Array<{ role: string; content: string }>; context?: 'admin' | 'landing' }) =>
     api.post<{ reply: string }>('/ai/chat', data),
 };
 
