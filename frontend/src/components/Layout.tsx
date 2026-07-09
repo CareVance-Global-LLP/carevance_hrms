@@ -15,7 +15,6 @@ import type { AppNotificationItem } from '@/types';
 import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound } from '@/lib/desktopNotifications';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
-import AIHelpBubble from '@/components/AIHelpBubble';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import StatusBadge from '@/components/ui/StatusBadge';
 import BrandLogo from '@/components/branding/BrandLogo';
@@ -58,7 +57,7 @@ type GlobalSuggestion = SearchSuggestionOption<any> & {
 };
 
 export default function Layout() {
-  const { user, organization, logout, token, desktopHandoffToken } = useAuth();
+  const { user, organization, logout, token } = useAuth();
   useDesktopTracker();
   const { hasFeature } = usePlan();
   const navigate = useNavigate();
@@ -114,11 +113,8 @@ export default function Layout() {
   const openWebDashboard = (path: string) => {
     const target = path.startsWith('/') ? path : `/${path}`;
     const nextUrl = new URL(`${webAppBaseUrl}${target}`);
-    // In the desktop shell the in-memory token is a cookie-auth placeholder; use the
-    // cached real bearer so the system browser can complete the handoff.
-    const handoffToken = desktopHandoffToken ?? token;
-    if (handoffToken) {
-      nextUrl.searchParams.set('desktop_token', handoffToken);
+    if (token) {
+      nextUrl.searchParams.set('desktop_token', token);
     }
     window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
   };
@@ -1128,7 +1124,6 @@ export default function Layout() {
             <Outlet />
           </div>
         </main>
-        <AIHelpBubble />
       </div>
     );
   }
@@ -1296,7 +1291,6 @@ export default function Layout() {
         <main className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-12 animate-fade-in">
           <Outlet />
         </main>
-        <AIHelpBubble />
 
         {isDesktopShell && updatePanelOpen ? (
           <div className="fixed inset-0 z-40 flex items-start justify-center bg-slate-950/28 px-4 py-20 backdrop-blur-sm sm:px-6">

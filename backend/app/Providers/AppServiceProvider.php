@@ -120,10 +120,6 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute((int) env('RATE_LIMIT_NOTIFICATION_PUBLISH_PER_MINUTE', 10))->by((string) optional($request->user())->getAuthIdentifier()),
         ]);
 
-        RateLimiter::for('ai.chat', fn (Request $request) => [
-            Limit::perMinute((int) env('RATE_LIMIT_AI_CHAT_PER_MINUTE', 10))->by((string) optional($request->user())->getAuthIdentifier()),
-        ]);
-
         RateLimiter::for('desktop.download', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_DESKTOP_DOWNLOAD_PER_MINUTE', 10))->by($request->ip()),
         ]);

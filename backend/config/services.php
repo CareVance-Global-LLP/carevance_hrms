@@ -56,10 +56,4 @@ return [
         'windows_download_url' => env('DESKTOP_WINDOWS_DOWNLOAD_URL'),
     ],
 
-    'ai' => [
-        'base_url' => env('AI_BASE_URL', 'https://opencode.ai/zen/v1'),
-        'api_key' => env('AI_API_KEY'),
-        'model' => env('AI_MODEL', 'deepseek-v4-flash-free'),
-        'fallback_models' => env('AI_FALLBACK_MODELS', 'big-pickle,north-mini-code-free,mimo-v2.5-free,nemotron-3-ultra-free'),
-    ],
 ];
