@@ -31,8 +31,6 @@ import {
   UserMinus,
   UserPlus,
   Users,
-  UserMinus,
-  UserPlus,
   Wallet,
   IndianRupee,
   Waypoints,

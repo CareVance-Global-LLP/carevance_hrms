@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Resignation;
 use App\Models\User;
+use App\Services\Approvals\ApprovalRoutingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -13,6 +14,11 @@ use Illuminate\Support\Facades\Notification;
 
 class ResignationController extends Controller
 {
+    public function __construct(
+        private readonly ApprovalRoutingService $approvalRoutingService,
+    ) {
+    }
+
     /**
      * Submit a new resignation request.
      */
@@ -104,7 +110,7 @@ class ResignationController extends Controller
         }
 
         $query = Resignation::where('organization_id', $user->organization_id)
-            ->with(['user', 'approver']);
+            ->with(['user', 'approver', 'escalatedTo']);
 
         // Filter by status
         if ($request->has('status')) {
@@ -119,6 +125,16 @@ class ResignationController extends Controller
         }
 
         $resignations = $query->orderBy('created_at', 'desc')->get();
+
+        foreach ($resignations as $resignation) {
+            $resignation->setAttribute(
+                'current_reviewer_ids',
+                $this->approvalRoutingService
+                    ->currentReviewerIds($resignation->user, $resignation->escalated_to_user_id)
+                    ->values()
+                    ->all()
+            );
+        }
 
         return response()->json([
             'data' => $resignations,
@@ -198,6 +214,116 @@ class ResignationController extends Controller
     }
 
     /**
+     * Forward (escalate) a pending resignation to another approver.
+     */
+    public function transfer(Request $request, int $id): JsonResponse
+    {
+        $request->validate([
+            'note' => 'nullable|string|max:2000',
+            'to_user_id' => 'nullable|integer|exists:users,id',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['message' => 'Organization is required.'], 422);
+        }
+
+        $resignation = Resignation::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$resignation) {
+            return response()->json(['message' => 'Resignation request not found'], 404);
+        }
+
+        // Only the user currently holding the request may forward it upward.
+        $currentHolderIds = $this->approvalRoutingService->currentReviewerIds($resignation->user, $resignation->escalated_to_user_id);
+        if (! $currentHolderIds->contains((int) $currentUser->id) && ! $this->canManage($currentUser)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if ($resignation->status !== 'pending') {
+            return response()->json(['message' => 'Only pending requests can be transferred.'], 422);
+        }
+
+        $requester = $resignation->user()->with('employeeWorkInfo', 'customRole')->firstOrFail();
+        $excludeUserId = $resignation->escalated_to_user_id ?? $this->immediateReviewerId($requester);
+
+        $targetUser = null;
+        if ($request->filled('to_user_id')) {
+            $candidate = User::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->where('id', (int) $request->to_user_id)
+                ->first();
+
+            if (!$candidate || ! $this->approvalRoutingService->isValidForwardTarget($requester, (int) $candidate->id, $excludeUserId)) {
+                return response()->json([
+                    'message' => 'Selected user is not a valid forward target for this request.',
+                ], 422);
+            }
+
+            $targetUser = $candidate;
+        } else {
+            $targetIds = $this->approvalRoutingService->escalationTargetIds($requester, $excludeUserId);
+
+            if ($targetIds->isEmpty()) {
+                return response()->json([
+                    'message' => 'No higher hierarchy is available to escalate this request to.',
+                ], 422);
+            }
+
+            $targetUser = User::query()->whereIn('id', $targetIds)->first();
+        }
+
+        $history = $resignation->escalation_history ?? [];
+        $history[] = [
+            'from_user_id' => $excludeUserId ? (int) $excludeUserId : null,
+            'to_user_id' => $targetUser->id,
+            'to_level' => $targetUser->name,
+            'note' => $request->note,
+            'by_user_id' => (int) $currentUser->id,
+            'at' => now()->toIso8601String(),
+        ];
+
+        $resignation->update([
+            'escalated_to_user_id' => $targetUser->id,
+            'escalation_history' => $history,
+        ]);
+
+        \Log::info('Resignation forwarded', [
+            'resignation_id' => $resignation->id,
+            'from_user_id' => $excludeUserId,
+            'to_user_id' => $targetUser->id,
+            'by_user_id' => $currentUser->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Resignation request transferred to the next hierarchy level.',
+            'resignation' => $resignation->fresh(['user', 'approver', 'escalatedTo']),
+        ]);
+    }
+
+    /**
+     * List valid forward targets for a pending resignation.
+     */
+    public function forwardTargets(Request $request, int $id): JsonResponse
+    {
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['data' => []]);
+        }
+
+        $resignation = Resignation::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$resignation) {
+            return response()->json(['message' => 'Resignation request not found'], 404);
+        }
+
+        $requester = $resignation->user()->with('employeeWorkInfo', 'customRole')->firstOrFail();
+        $excludeUserId = $resignation->escalated_to_user_id ?? $this->immediateReviewerId($requester);
+
+        $targets = $this->approvalRoutingService->forwardTargets($requester, $excludeUserId);
+
+        return response()->json(['data' => $targets->all()]);
+    }
+
+    /**
      * Cancel own resignation.
      */
     public function cancel(): JsonResponse
@@ -227,6 +353,11 @@ class ResignationController extends Controller
     /**
      * Notify managers and HR about resignation.
      */
+    private function immediateReviewerId(User $requester): ?int
+    {
+        return $this->approvalRoutingService->reviewerUserIds($requester)->first();
+    }
+
     private function notifyManagersAndHR(Resignation $resignation, string $action = 'submitted'): void
     {
         $organization = $resignation->organization;

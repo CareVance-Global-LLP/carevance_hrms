@@ -68,10 +68,16 @@ class RequestEscalationFlowTest extends TestCase
 
         $requestId = (int) $createResponse->json('data.id');
 
-        // Employee escalates past the unavailable manager to the admin level.
+        // The requester (employee) is NOT the current holder, so they cannot forward.
         $this->postJson("/api/attendance-time-edit-requests/{$requestId}/transfer", [
             'note' => 'Manager is OOO, please review.',
         ], $this->apiHeadersFor($employee))
+            ->assertForbidden();
+
+        // The current holder (manager) forwards the request up to the admin level.
+        $this->postJson("/api/attendance-time-edit-requests/{$requestId}/transfer", [
+            'note' => 'Manager is OOO, please review.',
+        ], $this->apiHeadersFor($manager))
             ->assertOk()
             ->assertJsonPath('data.escalated_to.id', $admin->id)
             ->assertJsonPath('data.escalation_history.0.to_user_id', $admin->id);
@@ -100,11 +106,12 @@ class RequestEscalationFlowTest extends TestCase
             ->assertJsonPath('data.status', 'approved');
     }
 
-    public function test_escalation_is_blocked_when_no_higher_hierarchy_exists(): void
+    public function test_reviewer_forwards_request_received_from_lower_hierarchy(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
         $people = $this->makeHierarchy($organization);
         $admin = $people['admin'];
+        $manager = $people['manager'];
         $employee = $people['employee'];
 
         $createResponse = $this->postJson('/api/attendance-time-edit-requests', [
@@ -115,12 +122,46 @@ class RequestEscalationFlowTest extends TestCase
 
         $requestId = (int) $createResponse->json('data.id');
 
-        // First transfer goes employee -> manager (next higher than employee).
-        $this->postJson("/api/attendance-time-edit-requests/{$requestId}/transfer", [], $this->apiHeadersFor($employee))
+        // The manager (who received the request from their lower hierarchy) forwards it up.
+        $this->postJson("/api/attendance-time-edit-requests/{$requestId}/transfer", [
+            'note' => 'Please review, I am out.',
+        ], $this->apiHeadersFor($manager))
+            ->assertOk()
+            ->assertJsonPath('data.escalated_to.id', $admin->id);
+
+        $this->assertDatabaseHas('attendance_time_edit_requests', [
+            'id' => $requestId,
+            'escalated_to_user_id' => $admin->id,
+        ]);
+
+        // The escalated admin can now approve the forwarded request.
+        $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/approve", [], $this->apiHeadersFor($admin))
+            ->assertOk()
+            ->assertJsonPath('data.status', 'approved');
+    }
+
+    public function test_escalation_is_blocked_when_no_higher_hierarchy_exists(): void
+    {
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $people = $this->makeHierarchy($organization);
+        $admin = $people['admin'];
+        $manager = $people['manager'];
+        $employee = $people['employee'];
+
+        $createResponse = $this->postJson('/api/attendance-time-edit-requests', [
+            'attendance_date' => now()->toDateString(),
+            'extra_minutes' => 30,
+            'message' => 'Stayed late',
+        ], $this->apiHeadersFor($employee))->assertCreated();
+
+        $requestId = (int) $createResponse->json('data.id');
+
+        // First transfer goes manager (current holder) -> admin (next higher than employee).
+        $this->postJson("/api/attendance-time-edit-requests/{$requestId}/transfer", [], $this->apiHeadersFor($manager))
             ->assertOk();
 
         // Second transfer would need someone higher than the admin (level 10) — none exists.
-        $this->postJson("/api/attendance-time-edit-requests/{$requestId}/transfer", [], $this->apiHeadersFor($employee))
+        $this->postJson("/api/attendance-time-edit-requests/{$requestId}/transfer", [], $this->apiHeadersFor($admin))
             ->assertStatus(422)
             ->assertJsonPath('message', 'No higher hierarchy is available to escalate this request to.');
     }
@@ -171,9 +212,10 @@ class RequestEscalationFlowTest extends TestCase
 
         $requestId = (int) $createResponse->json('data.id');
 
+        // The current holder (manager) forwards the leave request up to admin.
         $this->postJson("/api/leave-requests/{$requestId}/transfer", [
             'note' => 'Manager unreachable',
-        ], $this->apiHeadersFor($employee))
+        ], $this->apiHeadersFor($manager))
             ->assertOk()
             ->assertJsonPath('data.escalated_to.id', $admin->id);
 

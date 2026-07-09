@@ -346,6 +346,7 @@ class AttendanceTimeEditRequestController extends Controller
     {
         $request->validate([
             'note' => 'nullable|string|max:2000',
+            'to_user_id' => 'nullable|integer|exists:users,id',
         ]);
 
         $currentUser = $request->user();
@@ -358,8 +359,11 @@ class AttendanceTimeEditRequestController extends Controller
             return response()->json(['message' => 'Time edit request not found'], 404);
         }
 
-        $isAdmin = ! empty($this->approvalRoutingService->reviewerHierarchyLevels($currentUser));
-        if ((int) $item->user_id !== (int) $currentUser->id && ! $isAdmin) {
+        // Only the user *currently holding* the request may forward it upward,
+        // enforcing a strict chain: employee -> team lead -> manager -> admin.
+        // The current holder is the nearest reviewer (or the escalated target).
+        $currentHolderIds = $this->approvalRoutingService->currentReviewerIds($item->user, $item->escalated_to_user_id);
+        if (! $currentHolderIds->contains((int) $currentUser->id) && ! $this->canManage($currentUser)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($item->status !== 'pending') {
@@ -370,30 +374,45 @@ class AttendanceTimeEditRequestController extends Controller
         $requester = $item->user;
 
         $excludeUserId = $item->escalated_to_user_id ?? $this->immediateReviewerId($requester);
-        $targetIds = $this->approvalRoutingService->escalationTargetIds($requester, $excludeUserId);
 
-        if ($targetIds->isEmpty()) {
-            return response()->json([
-                'message' => 'No higher hierarchy is available to escalate this request to.',
-            ], 422);
+        $targetUser = null;
+        if ($request->filled('to_user_id')) {
+            $candidate = User::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->where('id', (int) $request->to_user_id)
+                ->first();
+
+            if (!$candidate || ! $this->approvalRoutingService->isValidForwardTarget($requester, (int) $candidate->id, $excludeUserId)) {
+                return response()->json([
+                    'message' => 'Selected user is not a valid forward target for this request.',
+                ], 422);
+            }
+
+            $targetUser = $candidate;
+        } else {
+            $targetIds = $this->approvalRoutingService->escalationTargetIds($requester, $excludeUserId);
+
+            if ($targetIds->isEmpty()) {
+                return response()->json([
+                    'message' => 'No higher hierarchy is available to escalate this request to.',
+                ], 422);
+            }
+
+            $targetUser = User::query()->whereIn('id', $targetIds)->first();
         }
-
-        $targets = User::query()
-            ->whereIn('id', $targetIds)
-            ->get(['id', 'name']);
 
         $history = $item->escalation_history ?? [];
         $history[] = [
             'from_user_id' => $excludeUserId ? (int) $excludeUserId : null,
-            'to_user_id' => $targets->first()->id,
-            'to_level' => $this->approvalRoutingService->reviewerLabel($requester, $targets->count()),
+            'to_user_id' => $targetUser->id,
+            'to_level' => $targetUser->name,
             'note' => $request->note,
             'by_user_id' => (int) $currentUser->id,
             'at' => now()->toIso8601String(),
         ];
 
         $item->update([
-            'escalated_to_user_id' => $targets->first()->id,
+            'escalated_to_user_id' => $targetUser->id,
             'escalation_history' => $history,
         ]);
 
@@ -401,7 +420,7 @@ class AttendanceTimeEditRequestController extends Controller
 
         $this->notificationService->sendToUsers(
             organizationId: (int) $item->organization_id,
-            userIds: $targetIds,
+            userIds: collect([$targetUser->id]),
             senderId: (int) $requester->id,
             type: 'time_edit',
             title: 'Time Edit Request Escalated to You',
@@ -435,8 +454,8 @@ class AttendanceTimeEditRequestController extends Controller
             target: $item,
             metadata: [
                 'employee_id' => $item->user_id,
-                'escalated_to_user_id' => $targets->first()->id,
-                'escalated_to_names' => $targets->pluck('name')->all(),
+                'escalated_to_user_id' => $targetUser->id,
+                'escalated_to_names' => [$targetUser->name],
             ],
             request: $request
         );
@@ -451,6 +470,26 @@ class AttendanceTimeEditRequestController extends Controller
                 'escalatedTo:id,name,email',
             ])),
         ]);
+    }
+
+    public function forwardTargets(Request $request, int $id)
+    {
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['data' => []]);
+        }
+
+        $item = AttendanceTimeEditRequest::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$item) {
+            return response()->json(['message' => 'Time edit request not found'], 404);
+        }
+
+        $requester = $item->user()->with('employeeWorkInfo', 'customRole')->firstOrFail();
+        $excludeUserId = $item->escalated_to_user_id ?? $this->immediateReviewerId($requester);
+
+        $targets = $this->approvalRoutingService->forwardTargets($requester, $excludeUserId);
+
+        return response()->json(['data' => $targets->all()]);
     }
 
     private function canManage(User $user): bool
@@ -578,6 +617,10 @@ class AttendanceTimeEditRequestController extends Controller
 
         $item->setAttribute('escalated_to', $item->escalatedTo?->only(['id', 'name']));
         $item->setAttribute('escalation_history', $item->escalation_history ?? []);
+        $item->setAttribute(
+            'current_reviewer_ids',
+            $this->approvalRoutingService->currentReviewerIds($item->user, $item->escalated_to_user_id)->values()->all()
+        );
 
         return $item;
     }

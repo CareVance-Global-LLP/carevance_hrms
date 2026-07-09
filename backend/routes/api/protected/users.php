@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\DepartmentTeamController;
 use App\Http\Controllers\Api\EmployeeWorkspaceController;
 use App\Http\Controllers\Api\ReportGroupController;
 use App\Http\Controllers\Api\UserController;
@@ -44,6 +45,17 @@ Route::middleware('role:admin,manager')->group(function () {
     Route::post('/report-groups', [ReportGroupController::class, 'store']);
     Route::match(['put', 'patch'], '/report-groups/{id}', [ReportGroupController::class, 'update']);
     Route::delete('/report-groups/{id}', [ReportGroupController::class, 'destroy']);
+
+    // Department teams (sub-groupings within a department). Members/managers are
+    // unlimited; managers must be higher-ups (manager/admin).
+    Route::get('/departments/{departmentId}/teams', [DepartmentTeamController::class, 'index']);
+    Route::post('/departments/{departmentId}/teams', [DepartmentTeamController::class, 'store']);
+    Route::match(['put', 'patch'], '/departments/{departmentId}/teams/{teamId}', [DepartmentTeamController::class, 'update']);
+    Route::delete('/departments/{departmentId}/teams/{teamId}', [DepartmentTeamController::class, 'destroy']);
+    Route::post('/departments/{departmentId}/teams/{teamId}/members', [DepartmentTeamController::class, 'addMembers']);
+    Route::delete('/departments/{departmentId}/teams/{teamId}/members/{userId}', [DepartmentTeamController::class, 'removeMember']);
+    Route::post('/departments/{departmentId}/teams/{teamId}/managers', [DepartmentTeamController::class, 'addManagers']);
+    Route::delete('/departments/{departmentId}/teams/{teamId}/managers/{userId}', [DepartmentTeamController::class, 'removeManager']);
 });
 
 // Employees can update their own profile (controller's canEditProfile enforces owner-only)

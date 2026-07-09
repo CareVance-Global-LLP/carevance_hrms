@@ -17,6 +17,7 @@ vi.mock('@/services/api', async () => {
       login: vi.fn(),
       logout: vi.fn(),
       register: vi.fn(),
+      desktopToken: vi.fn(),
     },
     timeEntryApi: {
       ...actual.timeEntryApi,

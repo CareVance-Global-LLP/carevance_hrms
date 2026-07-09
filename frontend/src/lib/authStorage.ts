@@ -200,50 +200,31 @@ export const clearAuthStorage = () => {
 
 
 export const migrateStoredAuth = () => {
-  // Migrate from legacy storage to sessionStorage
-  const preferredStorage = getPreferredAuthStorage();
-  const secondaryStorage = getSecondaryAuthStorage();
+  // The primary store (sessionStorage on web, localStorage on desktop) is the
+  // per-tab source of truth. It MUST be preserved across reloads so a tab keeps
+  // its own session and is not forced to fall back to the shared httpOnly cookie
+  // (which other tabs can overwrite when a different user logs in). Only clean up
+  // the legacy secondary store.
+  const primaryStorage = getPreferredAuthStorage();
+  const legacyStorage = getSecondaryAuthStorage();
 
-  // Migrate token from any legacy storage to sessionStorage
-  const legacyToken = window.sessionStorage.getItem('token') 
-    ?? preferredStorage?.getItem('token') 
-    ?? secondaryStorage?.getItem('token') 
-    ?? null;
-    
-  if (legacyToken !== null) {
-    inMemoryAuthToken = legacyToken;
-    window.sessionStorage.setItem('token', legacyToken);
-  }
-  
-  // Clean up legacy token storage
-  preferredStorage?.removeItem('token');
-  secondaryStorage?.removeItem('token');
+  const migrateKey = (key: AuthStorageKey, setInMemory: (value: string) => void) => {
+    const fromPrimary = primaryStorage?.getItem(key) ?? null;
+    const fromLegacy = legacyStorage?.getItem(key) ?? null;
+    const value = fromPrimary ?? fromLegacy;
 
-  // Migrate user data
-  const legacyUser = window.sessionStorage.getItem('user')
-    ?? preferredStorage?.getItem('user')
-    ?? secondaryStorage?.getItem('user')
-    ?? null;
-    
-  if (legacyUser !== null) {
-    inMemoryUser = legacyUser;
-    window.sessionStorage.setItem('user', legacyUser);
-  }
-  
-  preferredStorage?.removeItem('user');
-  secondaryStorage?.removeItem('user');
+    if (value !== null) {
+      setInMemory(value);
+      // Ensure the primary store holds the value (idempotent for per-tab persistence).
+      primaryStorage?.setItem(key, value);
+      // Clean up only the legacy location, never the primary.
+      if (fromLegacy !== null) {
+        legacyStorage?.removeItem(key);
+      }
+    }
+  };
 
-  // Migrate organization data
-  const legacyOrg = window.sessionStorage.getItem('organization')
-    ?? preferredStorage?.getItem('organization')
-    ?? secondaryStorage?.getItem('organization')
-    ?? null;
-    
-  if (legacyOrg !== null) {
-    inMemoryOrganization = legacyOrg;
-    window.sessionStorage.setItem('organization', legacyOrg);
-  }
-  
-  preferredStorage?.removeItem('organization');
-  secondaryStorage?.removeItem('organization');
+  migrateKey('token', (value) => { inMemoryAuthToken = value; });
+  migrateKey('user', (value) => { inMemoryUser = value; });
+  migrateKey('organization', (value) => { inMemoryOrganization = value; });
 };

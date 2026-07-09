@@ -769,12 +769,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
-  const transferLeave = async (id: number, note?: string) => {
+  const transferLeave = async (id: number, note?: string, toUserId?: number) => {
     setLeaveFeedback();
     try {
-      await leaveApi.transfer(id, note);
+      await leaveApi.transfer(id, note, toUserId);
       await Promise.all([fetchLeaveRequests(), fetchLeaveBalances()]);
-      setLeaveFeedback('Leave request transferred to the next hierarchy level.');
+      setLeaveFeedback(toUserId ? 'Leave request forwarded to the selected manager.' : 'Leave request transferred to the next hierarchy level.');
     } catch (e) {
       console.error('Transfer leave failed:', e);
       setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to transfer leave request');
@@ -878,12 +878,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
-  const transferTimeEdit = async (id: number, note?: string) => {
+  const transferTimeEdit = async (id: number, note?: string, toUserId?: number) => {
     setTimeEditFeedback();
     try {
-      await attendanceTimeEditApi.transfer(id, note);
+      await attendanceTimeEditApi.transfer(id, note, toUserId);
       await fetchTimeEditRequests();
-      setTimeEditFeedback('Time edit request transferred to the next hierarchy level.');
+      setTimeEditFeedback(toUserId ? 'Time edit request forwarded to the selected manager.' : 'Time edit request transferred to the next hierarchy level.');
     } catch (e) {
       console.error('Transfer time edit failed:', e);
       setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to transfer time edit request');
@@ -1570,8 +1570,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         <Button onClick={() => requestLeaveRevoke(item.id)} variant="danger" size="sm">Request Revoke</Button>
                       </div>
                     ) : null}
-                    {!canReviewLeaveRequest(item) ? (
-                      <RequestEscalateControl item={item} onTransfer={(note) => transferLeave(item.id, note)} />
+                    {(item.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) || isAdmin) && item.status === 'pending' ? (
+                      <RequestEscalateControl
+                        item={item}
+                        onTransfer={(note, toUserId) => transferLeave(item.id, note, toUserId)}
+                        forwardTargetLoader={() => leaveApi.forwardTargets(item.id).then((r) => r.data.data)}
+                      />
                     ) : null}
                     {canReviewLeaveRequest(item) && item.status === 'approved' && item.revoke_status === 'pending' ? (
                       <div className="mt-2 flex gap-2">
@@ -1676,8 +1680,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
                       </div>
                     ) : null}
-                    {!canReviewTimeEditRequest(item) && item.status === 'pending' ? (
-                      <RequestEscalateControl item={item} onTransfer={(note) => transferTimeEdit(item.id, note)} />
+                    {(item.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) || isAdmin) && item.status === 'pending' ? (
+                      <RequestEscalateControl
+                        item={item}
+                        onTransfer={(note, toUserId) => transferTimeEdit(item.id, note, toUserId)}
+                        forwardTargetLoader={() => attendanceTimeEditApi.forwardTargets(item.id).then((r) => r.data.data)}
+                      />
                     ) : null}
                   </div>
                 ))}

@@ -302,7 +302,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       let fetchUserSucceeded = false;
 
-      if (!DEMO_MODE && (storedToken || storedUser || storedOrg)) {
+      // Validate/restore the session on every bootstrap. Each tab keeps its own
+      // session in per-tab sessionStorage (so different tabs can use different
+      // accounts and switching one tab does not affect the others). A brand-new
+      // tab starts with empty sessionStorage, but the httpOnly `carevance_api_token`
+      // cookie is shared across tabs and is accepted by the API, so fetchUser can
+      // restore the session from the cookie instead of bouncing the tab to login.
+      if (!DEMO_MODE) {
         try {
           await fetchUser();
           fetchUserSucceeded = true;
@@ -354,6 +360,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Only clear stored org when we confirmed from the server (not when offline)
       if (fetchUserSucceeded && storedOrg && !organization) {
         removeStoredAuthValue('organization');
+      }
+
+      // If this tab had no stored token, it was restored from the shared auth
+      // cookie. Persist a concrete bearer token into the tab's own sessionStorage
+      // so the tab is self-contained and survives a refresh without relying on the
+      // shared cookie (which another tab can overwrite when a different user logs
+      // in). `desktopToken` issues a fresh personal_access_token for the
+      // cookie-authenticated session.
+      if (fetchUserSucceeded && !storedToken && !isDesktopApp() && isActiveRef.current) {
+        try {
+          const issued = await authApi.desktopToken();
+          const nextToken = (issued?.data as { token?: string } | undefined)?.token;
+          if (nextToken) {
+            setStoredAuthValue('token', nextToken);
+            setToken((currentToken) => currentToken || nextToken);
+          }
+        } catch {
+          // Cookie may be momentarily unavailable; the cookie still authenticates
+          // this load, so the tab remains usable until the next refresh.
+        }
       }
 
       if (isActiveRef.current) {

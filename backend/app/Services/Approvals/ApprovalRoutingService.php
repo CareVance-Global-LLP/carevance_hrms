@@ -2,6 +2,7 @@
 
 namespace App\Services\Approvals;
 
+use App\Models\DepartmentTeam;
 use App\Models\Group;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -255,6 +256,152 @@ class ApprovalRoutingService
             ->values();
     }
 
+    /**
+     * The user(s) *currently holding* a request and therefore the only ones
+     * allowed to forward it upward. This enforces a strict chain: only the
+     * nearest reviewer (or the explicitly escalated target) can forward — not
+     * every eligible reviewer at once.
+     *
+     * - If the request was already escalated, the single target holds it.
+     * - Otherwise the nearest (lowest hierarchy_level) reviewer(s) hold it.
+     *
+     * @return Collection<int, int>
+     */
+    public function currentReviewerIds(User $requester, ?int $escalatedToUserId): Collection
+    {
+        if ($escalatedToUserId) {
+            return collect([(int) $escalatedToUserId]);
+        }
+
+        $ids = $this->reviewerUserIds($requester);
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        $holders = User::query()
+            ->whereIn('id', $ids)
+            ->with('customRole')
+            ->get(['id', 'organization_id', 'role', 'role_id'])
+            ->map(fn (User $candidate) => [
+                'id' => (int) $candidate->id,
+                'level' => $this->userHierarchyLevel($candidate),
+            ])
+            ->sortBy('level')
+            ->values();
+
+        if ($holders->isEmpty()) {
+            return collect();
+        }
+
+        $nearestLevel = $holders->first()['level'];
+
+        return $holders
+            ->filter(fn ($c) => $c['level'] === $nearestLevel)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+    }
+
+    public function hierarchyLevel(User $user): int
+    {
+        return $this->userHierarchyLevel($user);
+    }
+
+    /**
+     * Candidates a request may be forwarded to, scoped to the requester's
+     * department. A forward target is any "higher up" (strictly higher rank than
+     * the current holder) among:
+     *  - managers of any team inside the department (annotated with team_names),
+     *  - the requester's reporting manager (if in the department),
+     *  - organization admins (top of the chain).
+     *
+     * @return Collection<int, array{id:int,name:string,hierarchy_level:int,team_names:array<int,string>}>
+     */
+    public function forwardTargets(User $requester, ?int $excludeUserId = null): Collection
+    {
+        if (! $requester->organization_id) {
+            return collect();
+        }
+
+        $requesterLevel = $this->userHierarchyLevel($requester);
+
+        $workInfo = $requester->relationLoaded('employeeWorkInfo')
+            ? $requester->employeeWorkInfo
+            : $requester->employeeWorkInfo()->first();
+        $departmentId = (int) ($workInfo?->report_group_id ?? 0);
+        $reportingManagerId = (int) ($workInfo?->reporting_manager_id ?? 0);
+
+        $holderIds = $this->currentReviewerIds($requester, $excludeUserId);
+        $holderLevel = $holderIds->isNotEmpty()
+            ? User::query()->whereIn('id', $holderIds)->with('customRole')->get()
+                ->map(fn (User $u) => $this->userHierarchyLevel($u))->min()
+            : $requesterLevel;
+
+        // Gather every organization member who sits at or above the current
+        // holder's rank (peer managers and any admins count). A holder may
+        // forward to *another manager* anywhere in the organization, not just
+        // within the requester's own department — this keeps the Forward option
+        // available whenever at least one other eligible approver exists.
+        $candidates = User::query()
+            ->where('organization_id', $requester->organization_id)
+            ->where('id', '!=', (int) $requester->id)
+            ->with('customRole')
+            ->get(['id', 'organization_id', 'role', 'role_id', 'name'])
+            ->map(function (User $candidate) use ($reportingManagerId) {
+                $id = (int) $candidate->id;
+
+                return [
+                    'id' => $id,
+                    'name' => $candidate->name,
+                    'hierarchy_level' => $this->userHierarchyLevel($candidate),
+                    'team_names' => [],
+                    'source' => $id === $reportingManagerId ? 'reporting_manager' : 'upper_hierarchy',
+                ];
+            })
+            ->filter(fn (array $c) => $c['hierarchy_level'] <= $holderLevel)
+            ->filter(fn (array $c) => $excludeUserId === null || $c['id'] !== (int) $excludeUserId)
+            ->keyBy('id');
+
+        // Annotate managers of department teams inside the requester's
+        // department, so the forwarder can see which team each manager belongs
+        // to. These are still part of the candidate set above.
+        if ($departmentId > 0) {
+            $teams = DepartmentTeam::query()
+                ->where('organization_id', $requester->organization_id)
+                ->where('department_id', $departmentId)
+                ->with('managers:id,name,role,role_id', 'managers.customRole')
+                ->get();
+
+            foreach ($teams as $team) {
+                foreach ($team->managers as $manager) {
+                    $id = (int) $manager->id;
+                    if (! $candidates->has($id)) {
+                        continue;
+                    }
+                    $entry = $candidates->get($id);
+                    $entry['team_names'][] = $team->name;
+                    $entry['source'] = 'team';
+                    $candidates->put($id, $entry);
+                }
+            }
+        }
+
+        return $candidates->values()
+            ->filter(fn (array $c) => $c['id'] !== (int) $requester->id)
+            ->sortByDesc('hierarchy_level')
+            ->values();
+    }
+
+    public function isValidForwardTarget(User $requester, int $targetId, ?int $excludeUserId = null): bool
+    {
+        return $this->forwardTargets($requester, $excludeUserId)
+            ->contains(fn (array $c) => (int) $c['id'] === $targetId);
+    }
+
+    /**
+     * Whether the requester has any eligible reviewer for their submission.
+     */
     public function hasEligibleReviewer(User $requester): bool
     {
         $requesterLevel = $this->userHierarchyLevel($requester);
