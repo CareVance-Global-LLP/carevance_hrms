@@ -4,6 +4,28 @@ namespace App\Services\Security;
 
 class HtmlSanitizerService
 {
+    public function __construct()
+    {
+        if (ini_get('memory_limit') !== false && $this->getMemoryLimitInBytes() < 256 * 1024 * 1024) {
+            ini_set('memory_limit', '256M');
+        }
+    }
+
+    private function getMemoryLimitInBytes(): int
+    {
+        $limit = ini_get('memory_limit');
+        if ($limit === false || $limit === '-1') {
+            return PHP_INT_MAX;
+        }
+        $unit = strtolower(substr($limit, -1));
+        $value = (int) substr($limit, 0, -1);
+        return match ($unit) {
+            'g' => $value * 1024 * 1024 * 1024,
+            'm' => $value * 1024 * 1024,
+            'k' => $value * 1024,
+            default => (int) $limit,
+        };
+    }
     /**
      * Allowed HTML tags for user-generated content
      */
@@ -59,6 +81,15 @@ class HtmlSanitizerService
     {
         if (empty($content)) {
             return '';
+        }
+
+        if (strlen($content) > 100000) {
+            $chunks = str_split($content, 50000);
+            $sanitized = '';
+            foreach ($chunks as $chunk) {
+                $sanitized .= htmlspecialchars($chunk, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            }
+            return $sanitized;
         }
 
         return htmlspecialchars($content, ENT_QUOTES | ENT_HTML5, 'UTF-8');
