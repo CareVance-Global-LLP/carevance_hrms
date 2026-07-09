@@ -68,6 +68,8 @@ const ApprovalInbox = lazyWithChunkRetry(() => import('@/pages/ApprovalInbox'));
 const NotificationsCenter = lazyWithChunkRetry(() => import('@/pages/NotificationsCenter'));
 const ReportsWorkspace = lazyWithChunkRetry(() => import('@/pages/ReportsWorkspace'));
 const MonitoringWorkspace = lazyWithChunkRetry(() => import('@/pages/MonitoringWorkspace'));
+const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
+const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
 const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeManagementWorkspace'));
 const EmployeePersonalDetailsPage = lazyWithChunkRetry(() => import('@/pages/EmployeePersonalDetailsPage'));
 const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));

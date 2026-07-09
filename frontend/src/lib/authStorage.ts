@@ -82,10 +82,9 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
       return inMemoryAuthToken;
     }
 
-    // Try to restore from sessionStorage (where we saved it)
+    // Try to restore from sessionStorage on page reload
     if (typeof window !== 'undefined') {
-      const storedToken = getStorageItem(getPreferredAuthStorage(), 'token')
-        ?? getStorageItem(getSecondaryAuthStorage(), 'token');
+      const storedToken = window.sessionStorage.getItem('token');
       if (storedToken) {
         inMemoryAuthToken = storedToken;
         return inMemoryAuthToken;
@@ -99,12 +98,12 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
     if (inMemoryUser !== null) {
       return inMemoryUser;
     }
-    // Try to restore from sessionStorage on page reload
-    const preferredStorage = getPreferredAuthStorage();
-    const storedUser = getStorageItem(preferredStorage, 'user');
-    if (storedUser) {
-      inMemoryUser = storedUser;
-      return inMemoryUser;
+    // Restore from sessionStorage
+    if (typeof window !== 'undefined') {
+      const storedUser = window.sessionStorage.getItem('user');
+      if (storedUser) {
+        inMemoryUser = storedUser;
+        return inMemoryUser;
     }
     return null;
   }
@@ -113,12 +112,12 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
     if (inMemoryOrganization !== null) {
       return inMemoryOrganization;
     }
-    // Try to restore from sessionStorage on page reload
-    const preferredStorage = getPreferredAuthStorage();
-    const storedOrg = getStorageItem(preferredStorage, 'organization');
-    if (storedOrg) {
-      inMemoryOrganization = storedOrg;
-      return inMemoryOrganization;
+    // Restore from sessionStorage
+    if (typeof window !== 'undefined') {
+      const storedOrg = window.sessionStorage.getItem('organization');
+      if (storedOrg) {
+        inMemoryOrganization = storedOrg;
+        return inMemoryOrganization;
     }
     return null;
   }
@@ -132,51 +131,25 @@ export const setStoredAuthValue = (key: AuthStorageKey, value: string) => {
     // Persist token to sessionStorage for web app persistence across reloads
     // Use sessionStorage (not localStorage) for security - cleared when browser closes
     if (typeof window !== 'undefined') {
-      const preferred = getPreferredAuthStorage();
-      const secondary = getSecondaryAuthStorage();
-      // Store only in preferred storage for security
-      setStorageItem(preferred, 'token', value);
-      // Remove from secondary storage to prevent token leakage
-      if (secondary !== preferred) {
-        removeStorageItem(secondary, 'token');
-      }
+      window.sessionStorage.setItem('token', value);
     }
     return;
   }
   
   if (key === 'user') {
     inMemoryUser = value;
-    // Store only minimal non-sensitive user data
-    try {
-      const userData = JSON.parse(value);
-      const minimalUser: MinimalUserData = {
-        id: userData.id,
-        name: userData.name,
-        email: userData.email,
-        role: userData.role,
-        organization_id: userData.organization_id,
-      };
-      // Only store in sessionStorage, never localStorage (unless desktop)
-      setStorageItem(getPreferredAuthStorage(), key, JSON.stringify(minimalUser));
-    } catch {
-      // If parsing fails, don't store
+    // Persist to sessionStorage for page reload persistence
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('user', value);
     }
     return;
   }
   
   if (key === 'organization') {
     inMemoryOrganization = value;
-    // Store only minimal non-sensitive organization data
-    try {
-      const orgData = JSON.parse(value);
-      const minimalOrg: MinimalOrganizationData = {
-        id: orgData.id,
-        name: orgData.name,
-        slug: orgData.slug,
-      };
-      setStorageItem(getPreferredAuthStorage(), key, JSON.stringify(minimalOrg));
-    } catch {
-      // If parsing fails, don't store
+    // Persist to sessionStorage for page reload persistence
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('organization', value);
     }
     return;
   }
@@ -192,6 +165,11 @@ export const removeStoredAuthValue = (key: AuthStorageKey) => {
     inMemoryOrganization = null;
   }
   
+  // Clear from sessionStorage
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.removeItem(key);
+  }
+  
   // Clear from all storage
   removeStorageItem(getPreferredAuthStorage(), key);
   removeStorageItem(getSecondaryAuthStorage(), key);
@@ -203,6 +181,13 @@ export const clearAuthStorage = () => {
   inMemoryUser = null;
   inMemoryOrganization = null;
   
+  // Clear sessionStorage
+  if (typeof window !== 'undefined') {
+    AUTH_STORAGE_KEYS.forEach((key) => {
+      window.sessionStorage.removeItem(key);
+    });
+  }
+  
   // Clear all storage
   AUTH_STORAGE_KEYS.forEach((key) => {
     removeStorageItem(getPreferredAuthStorage(), key);
@@ -213,58 +198,50 @@ export const clearAuthStorage = () => {
 
 
 export const migrateStoredAuth = () => {
+  // Migrate from legacy storage to sessionStorage
   const preferredStorage = getPreferredAuthStorage();
   const secondaryStorage = getSecondaryAuthStorage();
 
-  if (!preferredStorage || !secondaryStorage || preferredStorage === secondaryStorage) {
-    return;
-  }
-
-  // Migrate token to memory (don't persist in secondary storage)
-  const legacyToken = getStorageItem(preferredStorage, 'token') ?? getStorageItem(secondaryStorage, 'token');
+  // Migrate token from any legacy storage to sessionStorage
+  const legacyToken = window.sessionStorage.getItem('token') 
+    ?? preferredStorage?.getItem('token') 
+    ?? secondaryStorage?.getItem('token') 
+    ?? null;
+    
   if (legacyToken !== null) {
     inMemoryAuthToken = legacyToken;
-    // Only keep in preferred storage if it's sessionStorage (more secure)
-    if (preferredStorage === window.sessionStorage) {
-      setStorageItem(preferredStorage, 'token', legacyToken);
-    }
+    window.sessionStorage.setItem('token', legacyToken);
   }
-  removeStorageItem(secondaryStorage, 'token');
+  
+  // Clean up legacy token storage
+  preferredStorage?.removeItem('token');
+  secondaryStorage?.removeItem('token');
 
-  // Migrate user/org data but only store minimal data
-  PERSISTED_AUTH_STORAGE_KEYS.forEach((key: PersistedAuthStorageKey) => {
-    const preferredValue = getStorageItem(preferredStorage, key);
-    const secondaryValue = getStorageItem(secondaryStorage, key);
+  // Migrate user data
+  const legacyUser = window.sessionStorage.getItem('user')
+    ?? preferredStorage?.getItem('user')
+    ?? secondaryStorage?.getItem('user')
+    ?? null;
     
-    let valueToMigrate = preferredValue ?? secondaryValue;
-    
-    if (valueToMigrate) {
-      try {
-        const data = JSON.parse(valueToMigrate);
-        // Store minimal version
-        if (key === 'user') {
-          const minimalUser: MinimalUserData = {
-            id: data.id,
-            name: data.name,
-            email: data.email,
-            role: data.role,
-            organization_id: data.organization_id,
-          };
-          setStorageItem(preferredStorage, key, JSON.stringify(minimalUser));
-        } else if (key === 'organization') {
-          const minimalOrg: MinimalOrganizationData = {
-            id: data.id,
-            name: data.name,
-            slug: data.slug,
-          };
-          setStorageItem(preferredStorage, key, JSON.stringify(minimalOrg));
-        }
-      } catch {
-        // Invalid JSON, remove it
-        removeStorageItem(preferredStorage, key);
-      }
-    }
+  if (legacyUser !== null) {
+    inMemoryUser = legacyUser;
+    window.sessionStorage.setItem('user', legacyUser);
+  }
+  
+  preferredStorage?.removeItem('user');
+  secondaryStorage?.removeItem('user');
 
-    removeStorageItem(secondaryStorage, key);
-  });
+  // Migrate organization data
+  const legacyOrg = window.sessionStorage.getItem('organization')
+    ?? preferredStorage?.getItem('organization')
+    ?? secondaryStorage?.getItem('organization')
+    ?? null;
+    
+  if (legacyOrg !== null) {
+    inMemoryOrganization = legacyOrg;
+    window.sessionStorage.setItem('organization', legacyOrg);
+  }
+  
+  preferredStorage?.removeItem('organization');
+  secondaryStorage?.removeItem('organization');
 };

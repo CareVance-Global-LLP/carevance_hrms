@@ -28,6 +28,8 @@ import {
   Shield,
   ShieldCheck,
   SquareKanban,
+  UserMinus,
+  UserPlus,
   Users,
   UserMinus,
   UserPlus,

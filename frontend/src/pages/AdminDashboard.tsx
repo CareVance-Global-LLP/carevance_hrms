@@ -1983,8 +1983,22 @@ export default function AdminDashboard() {
             scrollToDashboardSection('current-work-status');
           }}
         />
-        <KpiCard to="/new-hires" label="New Hires" value={String(newHires).padStart(2, '0')} hint="Joined in range" icon={UserPlus} tint="bg-violet-50 text-violet-600" />
-        <KpiCard to="/resignations" label="Resignations" value={String(resignations).padStart(2, '0')} hint="Exited in range" icon={UserMinus} tint="bg-slate-100 text-slate-600" />
+         <KpiCard 
+           to="/new-hires"
+           label="New Hires" 
+           value={String(newHires).padStart(2, '0')} 
+           hint="Joined in range" 
+           icon={UserPlus} 
+           tint="bg-violet-50 text-violet-600" 
+         />
+         <KpiCard 
+           to="/resignations"
+           label="Resignations" 
+           value={String(resignations).padStart(2, '0')} 
+           hint="Exited in range" 
+           icon={UserMinus} 
+           tint="bg-slate-100 text-slate-600" 
+         />
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)]">
@@ -2968,15 +2982,15 @@ export default function AdminDashboard() {
               <p className="mt-1 text-xl font-semibold text-orange-700">{finalPresentLateInRange}</p>
             </div>
           </div>
-          <div className="mt-3 rounded-lg border border-slate-100 bg-white p-3 text-xs text-slate-600">
-            Focus first on departments marked <span className="font-semibold text-rose-700">Needs attention</span>, then review employees with zero tracked time.
-          </div>
-        </Card>
-      </section>
-
-      {dashboardQuery.isFetching ? (
-        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">Refreshing dashboard data from the database...</div>
-      ) : null}
-    </div>
-  );
-}
+           <div className="mt-3 rounded-lg border border-slate-100 bg-white p-3 text-xs text-slate-600">
+             Focus first on departments marked <span className="font-semibold text-rose-700">Needs attention</span>, then review employees with zero tracked time.
+           </div>
+         </Card>
+       </section>
+ 
+       {dashboardQuery.isFetching ? (
+         <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">Refreshing dashboard data from the database...</div>
+       ) : null}
+     </div>
+   );
+ }

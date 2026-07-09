@@ -288,8 +288,7 @@ class EmployeeWorkspaceController extends Controller
 
         return User::query()
             ->where('organization_id', $organizationId)
-            ->whereHas('employeeWorkInfo', fn ($q) => $q->where('employee_code', $id))
-            ->first();
+            ->find($id);
     }
 
     private function canManage(User $user): bool
