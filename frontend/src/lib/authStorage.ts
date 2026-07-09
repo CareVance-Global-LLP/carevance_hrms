@@ -104,6 +104,7 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
       if (storedUser) {
         inMemoryUser = storedUser;
         return inMemoryUser;
+      }
     }
     return null;
   }
@@ -118,6 +119,7 @@ export const getStoredAuthValue = (key: AuthStorageKey) => {
       if (storedOrg) {
         inMemoryOrganization = storedOrg;
         return inMemoryOrganization;
+      }
     }
     return null;
   }
