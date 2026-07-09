@@ -85,7 +85,7 @@ const resolveDefaultApiUrl = () => {
   const { hostname, origin } = window.location;
   const isLocalHost = ['localhost', '127.0.0.1'].includes(hostname);
 
-  return isLocalHost ? 'http://localhost:8000/api' : `${origin}/api`;
+  return isLocalHost ? '/api' : `${origin}/api`;
 };
 
 export const apiUrl = resolveConfigValue(runtimeConfig.VITE_API_URL, import.meta.env.VITE_API_URL) || resolveDefaultApiUrl();

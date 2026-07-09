@@ -330,6 +330,9 @@ export const authApi = {
   me: () => 
     api.get<ApiResponse<User> | User>('/auth/me'),
 
+  desktopToken: () =>
+    api.post<{ success: boolean; token: string }>('/auth/desktop-token'),
+
   checkEmail: (email: string) =>
     api.post<{
       success: boolean;
@@ -1332,6 +1335,11 @@ export const chatApi = {
     api.get<Blob>(`/chat/groups/messages/${messageId}/attachment`, {
       responseType: 'blob' as AxiosRequestConfig['responseType'],
     }),
+};
+
+export const aiChatApi = {
+  chat: (data: { message: string; history?: Array<{ role: string; content: string }> }) =>
+    api.post<{ reply: string }>('/ai/chat', data),
 };
 
 export const notificationApi = {

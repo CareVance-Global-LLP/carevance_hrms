@@ -396,6 +396,33 @@ class AuthController extends Controller
             ->withCookie($this->makeApiAuthCookie($token));
     }
 
+    /**
+     * Issue a fresh personal_access_tokens bearer for the currently authenticated
+     * session. This is used by the desktop shell, which authenticates via the
+     * api auth cookie (so the SPA's in-memory token is only a placeholder). The
+     * returned token is passed as `desktop_token` when opening the web dashboard
+     * in the system browser, which has no access to the desktop cookie.
+     */
+    public function issueDesktopToken(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.',
+                'error_code' => 'UNAUTHORIZED',
+            ], 401);
+        }
+
+        $token = $this->apiTokenService->issue($user, 'desktop-web-token');
+
+        return $this->successResponse([
+            'token' => $token,
+        ], 'Desktop web token issued.')
+            ->withCookie($this->makeApiAuthCookie($token));
+    }
+
     public function resendVerificationEmail(Request $request)
     {
         $user = $request->user();
