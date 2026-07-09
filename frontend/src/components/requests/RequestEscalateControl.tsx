@@ -53,7 +53,7 @@ export function RequestEscalateControl({
         <p className="text-xs font-medium text-indigo-700">Escalated to: {item.escalated_to.name}</p>
       ) : null}
       <div>
-        <Button onClick={handleTransfer} disabled={busy || disabled} size="sm" variant="outline">
+        <Button onClick={handleTransfer} disabled={busy || disabled} size="sm" variant="secondary">
           {busy ? 'Transferring…' : 'Transfer / Escalate'}
         </Button>
       </div>
