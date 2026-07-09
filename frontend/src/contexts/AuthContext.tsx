@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } 
+from 'react';
 import { User, Organization, OwnerSignupRequest } from '@/types';
 import { authApi, invitationApi, timeEntryApi } from '@/services/api';
 import {
@@ -9,7 +10,7 @@ import {
   setStoredAuthValue,
 } from '@/lib/authStorage';
 import { ACTIVE_TIMER_KEY, armAutoStart, canUseDesktopAutoStart, clearDesktopTimerSession } from '@/lib/desktopTimerSession';
-import { apiBaseUrl } from '@/lib/runtimeConfig';
+import { apiBaseUrl, apiUrl } from '@/lib/runtimeConfig';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
   saveAuthOffline,
@@ -31,6 +32,7 @@ interface AuthContextType {
   user: User | null;
   organization: Organization | null;
   token: string | null;
+  desktopHandoffToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   wasOfflineRestored: boolean;
@@ -70,7 +72,7 @@ const COOKIE_AUTH_STATE_TOKEN = '__cookie_authenticated__';
 
 // Demo mode - only enabled in development when explicitly set
 const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_MODE === 'true';
-const API_URL = apiBaseUrl;
+const API_URL = apiUrl;
 
 const getResponseStatus = (error: unknown): number | null => {
   if (!error || typeof error !== 'object' || !('response' in error)) {
@@ -87,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [wasOfflineRestored, setWasOfflineRestored] = useState(false);
+  const [desktopHandoffToken, setDesktopHandoffToken] = useState<string | null>(null);
   const isActiveRef = useRef(true);
 
   const clearStoredAuthState = () => {
@@ -179,6 +182,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const desktopToken = params.get('desktop_token');
 
       if (desktopToken && !DEMO_MODE) {
+        let handoffSucceeded = false;
+
         try {
           const response = await fetch(`${API_URL}/auth/handoff`, {
             method: 'POST',
@@ -208,13 +213,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
               }
               void persistAuthOffline(nextToken, nextUser, nextOrg);
+              handoffSucceeded = true;
             }
+          } else {
+            console.warn(
+              `Desktop handoff failed (${response.status} ${response.statusText}); will try the desktop token directly.`,
+            );
           }
         } catch (error) {
-          console.error('Desktop handoff failed:', error);
-        } finally {
-          cleanDesktopTokenFromUrl();
+          console.warn('Desktop handoff network error; will try the desktop token directly:', error);
         }
+
+        if (!handoffSucceeded) {
+          try {
+            const meResponse = await fetch(`${API_URL}/auth/me`, {
+              method: 'GET',
+              credentials: 'include',
+              headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${desktopToken}`,
+              },
+            });
+
+            if (meResponse.ok) {
+              const mePayload = await meResponse.json();
+              const meUser = extractUserFromMeResponse(mePayload);
+
+              if (meUser) {
+                const meOrg = (meUser as unknown as { organization?: Organization | null }).organization ?? null;
+
+                if (isActiveRef.current) {
+                  storeAuthState(desktopToken, meUser, meOrg);
+                } else {
+                  setStoredAuthValue('token', desktopToken);
+                  setStoredAuthValue('user', JSON.stringify(meUser));
+                  if (meOrg) {
+                    setStoredAuthValue('organization', JSON.stringify(meOrg));
+                  } else {
+                    removeStoredAuthValue('organization');
+                  }
+                }
+                void persistAuthOffline(desktopToken, meUser, meOrg);
+              }
+            } else {
+              console.warn(
+                `Desktop token direct auth failed (${meResponse.status} ${meResponse.statusText}); falling back to login.`,
+              );
+            }
+          } catch (error) {
+            console.warn('Desktop token direct auth network error; falling back to login:', error);
+          }
+        }
+
+        cleanDesktopTokenFromUrl();
       } else if (desktopToken) {
         cleanDesktopTokenFromUrl();
       }
@@ -642,12 +693,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // In the desktop shell the SPA authenticates via the api auth cookie, so the
+  // in-memory `token` is only the `__cookie_authenticated__` placeholder. Fetch a
+  // real personal_access_tokens bearer and cache it, so openWebDashboard can pass
+  // it as `desktop_token` to the system browser (which has no access to the cookie).
+  const refreshDesktopHandoffToken = useCallback(async () => {
+    if (!isDesktopApp()) return;
+    try {
+      const res = await authApi.desktopToken();
+      const issued = (res.data as { token?: string } | undefined)?.token;
+      if (issued && isActiveRef.current) {
+        setDesktopHandoffToken(issued);
+      }
+    } catch {
+      // Keep any previously cached token; fall back to the placeholder otherwise.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDesktopApp() && token && user) {
+      void refreshDesktopHandoffToken();
+    }
+  }, [token, user, refreshDesktopHandoffToken]);
+
   return (
     <AuthContext.Provider
       value={{
         user,
         organization,
         token,
+        desktopHandoffToken,
         isLoading,
         isAuthenticated: !!user && !!token,
         wasOfflineRestored,
