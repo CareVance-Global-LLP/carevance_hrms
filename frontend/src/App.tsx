@@ -72,8 +72,6 @@ const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
 const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
 const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeManagementWorkspace'));
 const EmployeePersonalDetailsPage = lazyWithChunkRetry(() => import('@/pages/EmployeePersonalDetailsPage'));
-const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
-const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
 const ResignationPage = lazyWithChunkRetry(() => import('@/pages/ResignationPage'));
 const MyResignationStatusPage = lazyWithChunkRetry(() => import('@/pages/MyResignationStatusPage'));
 const AddUserPage = lazyWithChunkRetry(() => import('@/pages/AddUserPage'));
