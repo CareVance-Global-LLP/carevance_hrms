@@ -4,8 +4,8 @@ const crypto = require('node:crypto');
 
 const { encrypt, decrypt } = require('./crypto-utils.cjs');
 
-const SCHEMA_VERSION = 2;
-const DB_FILENAME = 'carevance-offline.db';
+const SCHEMA_VERSION = 6;
+ const DB_FILENAME = 'carevance-offline.db';
 
 const ensureDirectory = (dirPath) => {
   fs.mkdirSync(dirPath, { recursive: true });
@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS offline_screenshots (
   captured_at TEXT NOT NULL,
   device_id TEXT NOT NULL,
   time_entry_id INTEGER,
+  time_entry_local_id TEXT,
   sync_status TEXT NOT NULL DEFAULT 'pending' CHECK(sync_status IN ('pending','syncing','synced','failed')),
   retry_count INTEGER NOT NULL DEFAULT 0,
   error_message TEXT,
@@ -48,18 +49,19 @@ CREATE INDEX IF NOT EXISTS idx_offline_screenshots_status ON offline_screenshots
 CREATE INDEX IF NOT EXISTS idx_offline_screenshots_user ON offline_screenshots(user_id);
 
 CREATE TABLE IF NOT EXISTS offline_timeline (
-  local_id TEXT PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  start_time TEXT NOT NULL,
-  end_time TEXT,
-  activity_data TEXT,
-  device_id TEXT NOT NULL,
-  sync_status TEXT NOT NULL DEFAULT 'pending' CHECK(sync_status IN ('pending','syncing','synced','failed')),
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  error_message TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  synced_at TEXT
-);
+   local_id TEXT PRIMARY KEY,
+   user_id INTEGER NOT NULL,
+   start_time TEXT NOT NULL,
+   end_time TEXT,
+   activity_data TEXT,
+   device_id TEXT NOT NULL,
+   time_entry_local_id TEXT,
+   sync_status TEXT NOT NULL DEFAULT 'pending' CHECK(sync_status IN ('pending','syncing','synced','failed')),
+   retry_count INTEGER NOT NULL DEFAULT 0,
+   error_message TEXT,
+   created_at TEXT NOT NULL DEFAULT (datetime('now')),
+   synced_at TEXT
+ );
 
 CREATE INDEX IF NOT EXISTS idx_offline_timeline_status ON offline_timeline(sync_status);
 CREATE INDEX IF NOT EXISTS idx_offline_timeline_user ON offline_timeline(user_id);
@@ -120,21 +122,24 @@ CREATE INDEX IF NOT EXISTS idx_offline_attendance_status ON offline_attendance(s
 CREATE INDEX IF NOT EXISTS idx_offline_attendance_user ON offline_attendance(user_id);
 
 CREATE TABLE IF NOT EXISTS offline_time_entries (
-  local_id TEXT PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  action TEXT NOT NULL CHECK(action IN ('start','stop')),
-  project_id INTEGER,
-  task_id INTEGER,
-  timer_slot TEXT DEFAULT 'primary',
-  latitude REAL,
-  longitude REAL,
-  device_id TEXT NOT NULL,
-  sync_status TEXT NOT NULL DEFAULT 'pending' CHECK(sync_status IN ('pending','syncing','synced','failed')),
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  error_message TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  synced_at TEXT
-);
+   local_id TEXT PRIMARY KEY,
+   user_id INTEGER NOT NULL,
+   action TEXT NOT NULL CHECK(action IN ('start','stop')),
+   project_id INTEGER,
+   task_id INTEGER,
+   timer_slot TEXT DEFAULT 'primary',
+   latitude REAL,
+   longitude REAL,
+   device_id TEXT NOT NULL,
+   started_at TEXT,
+   ended_at TEXT,
+   time_entry_local_id TEXT,
+   sync_status TEXT NOT NULL DEFAULT 'pending' CHECK(sync_status IN ('pending','syncing','synced','failed')),
+   retry_count INTEGER NOT NULL DEFAULT 0,
+   error_message TEXT,
+   created_at TEXT NOT NULL DEFAULT (datetime('now')),
+   synced_at TEXT
+ );
 
 CREATE INDEX IF NOT EXISTS idx_offline_time_entries_status ON offline_time_entries(sync_status);
 CREATE INDEX IF NOT EXISTS idx_offline_time_entries_user ON offline_time_entries(user_id);
@@ -151,22 +156,33 @@ CREATE TABLE IF NOT EXISTS sync_queue (
 CREATE INDEX IF NOT EXISTS idx_sync_queue_priority ON sync_queue(priority, created_at);
 
 CREATE TABLE IF NOT EXISTS offline_activity_records (
+   local_id TEXT PRIMARY KEY,
+   user_id INTEGER NOT NULL,
+   type TEXT NOT NULL,
+   name TEXT,
+   title TEXT,
+   url TEXT,
+   duration INTEGER NOT NULL DEFAULT 0,
+   recorded_at TEXT NOT NULL,
+   metadata TEXT,
+   device_id TEXT NOT NULL,
+   time_entry_id INTEGER,
+   time_entry_local_id TEXT,
+   sync_status TEXT NOT NULL DEFAULT 'pending' CHECK(sync_status IN ('pending','syncing','synced','failed')),
+   retry_count INTEGER NOT NULL DEFAULT 0,
+   error_message TEXT,
+   created_at TEXT NOT NULL DEFAULT (datetime('now')),
+   synced_at TEXT
+ );
+
+CREATE TABLE IF NOT EXISTS offline_sync_map (
   local_id TEXT PRIMARY KEY,
-  user_id INTEGER NOT NULL,
-  type TEXT NOT NULL,
-  name TEXT,
-  title TEXT,
-  url TEXT,
-  duration INTEGER NOT NULL DEFAULT 0,
-  recorded_at TEXT NOT NULL,
-  metadata TEXT,
-  device_id TEXT NOT NULL,
-  sync_status TEXT NOT NULL DEFAULT 'pending' CHECK(sync_status IN ('pending','syncing','synced','failed')),
-  retry_count INTEGER NOT NULL DEFAULT 0,
-  error_message TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  synced_at TEXT
+  server_id INTEGER NOT NULL,
+  record_type TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_offline_sync_map_type ON offline_sync_map(record_type);
 
 CREATE INDEX IF NOT EXISTS idx_offline_activity_status ON offline_activity_records(sync_status);
 CREATE INDEX IF NOT EXISTS idx_offline_activity_user ON offline_activity_records(user_id);
@@ -287,18 +303,76 @@ OfflineDatabase.prototype._markDirty = function () {
 };
 
 OfflineDatabase.prototype._migrate = function (fromVersion) {
-  if (fromVersion < 1) {
-    this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [SCHEMA_VERSION]);
-  }
-  if (fromVersion < 2) {
-    try {
-      this.db.run("ALTER TABLE offline_screenshots ADD COLUMN time_entry_id INTEGER");
-    } catch (err) {
-      console.warn('[offline-db] Migration v2 alter table failed (may already exist):', err.message);
+   if (fromVersion < 1) {
+     this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [SCHEMA_VERSION]);
+   }
+   if (fromVersion < 2) {
+     try {
+       this.db.run("ALTER TABLE offline_screenshots ADD COLUMN time_entry_id INTEGER");
+     } catch (err) {
+       console.warn('[offline-db] Migration v2 alter table failed (may already exist):', err.message);
+     }
+     this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [2]);
+   }
+   if (fromVersion < 3) {
+     try {
+       this.db.run("ALTER TABLE offline_screenshots ADD COLUMN time_entry_local_id TEXT");
+     } catch (err) {
+       console.warn('[offline-db] Migration v3 offline_screenshots alter failed (may already exist):', err.message);
+     }
+     try {
+       this.db.run("ALTER TABLE offline_activity_records ADD COLUMN time_entry_local_id TEXT");
+     } catch (err) {
+       console.warn('[offline-db] Migration v3 offline_activity_records alter failed (may already exist):', err.message);
+     }
+     try {
+       this.db.run("ALTER TABLE offline_time_entries ADD COLUMN started_at TEXT");
+     } catch (err) {
+       console.warn('[offline-db] Migration v3 offline_time_entries started_at alter failed (may already exist):', err.message);
+     }
+     try {
+       this.db.run("ALTER TABLE offline_time_entries ADD COLUMN ended_at TEXT");
+     } catch (err) {
+       console.warn('[offline-db] Migration v3 offline_time_entries ended_at alter failed (may already exist):', err.message);
+     }
+     try {
+       this.db.run(`CREATE TABLE IF NOT EXISTS offline_sync_map (
+         local_id TEXT PRIMARY KEY,
+         server_id INTEGER NOT NULL,
+         record_type TEXT NOT NULL,
+         created_at TEXT NOT NULL DEFAULT (datetime('now'))
+       )`);
+       this.db.run('CREATE INDEX IF NOT EXISTS idx_offline_sync_map_type ON offline_sync_map(record_type)');
+     } catch (err) {
+       console.warn('[offline-db] Migration v3 offline_sync_map create failed:', err.message);
+     }
+     this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [3]);
+   }
+if (fromVersion < 4) {
+      try {
+        this.db.run("ALTER TABLE offline_timeline ADD COLUMN time_entry_local_id TEXT");
+      } catch (err) {
+        console.warn('[offline-db] Migration v4 offline_timeline time_entry_local_id alter failed (may already exist):', err.message);
+      }
+      this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [4]);
     }
-    this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [2]);
-  }
-};
+    if (fromVersion < 5) {
+      try {
+        this.db.run("ALTER TABLE offline_time_entries ADD COLUMN time_entry_local_id TEXT");
+      } catch (err) {
+        console.warn('[offline-db] Migration v5 offline_time_entries time_entry_local_id alter failed (may already exist):', err.message);
+      }
+      this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [5]);
+    }
+    if (fromVersion < 6) {
+      try {
+        this.db.run("ALTER TABLE offline_activity_records ADD COLUMN time_entry_id INTEGER");
+      } catch (err) {
+        console.warn('[offline-db] Migration v6 offline_activity_records time_entry_id alter failed (may already exist):', err.message);
+      }
+      this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [6]);
+    }
+  };
 
 OfflineDatabase.prototype.close = function () {
   if (this.saveTimer) {
@@ -417,12 +491,12 @@ OfflineDatabase.prototype.clearAllAuth = function () {
 //
 // Screenshot operations
 //
-OfflineDatabase.prototype.saveScreenshot = function (localId, userId, imageData, capturedAt, deviceId, timeEntryId) {
+OfflineDatabase.prototype.saveScreenshot = function (localId, userId, imageData, capturedAt, deviceId, timeEntryId, timeEntryLocalId) {
   if (!this.isReady()) return null;
   const id = localId || generateLocalId();
   const ok = this._run(
-    'INSERT OR IGNORE INTO offline_screenshots (local_id, user_id, image_data, captured_at, device_id, time_entry_id) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, userId, imageData, capturedAt, deviceId, timeEntryId || null]
+    'INSERT OR IGNORE INTO offline_screenshots (local_id, user_id, image_data, captured_at, device_id, time_entry_id, time_entry_local_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, userId, imageData, capturedAt, deviceId, timeEntryId || null, timeEntryLocalId || null]
   );
   if (ok) { this._enqueueSync('screenshot', id, 5); return id; }
   return null;
@@ -463,12 +537,12 @@ OfflineDatabase.prototype.markScreenshotSyncing = function (localId) {
 //
 // Timeline operations
 //
-OfflineDatabase.prototype.saveTimeline = function (localId, userId, startTime, endTime, activityData, deviceId) {
+OfflineDatabase.prototype.saveTimeline = function (localId, userId, startTime, endTime, activityData, deviceId, timeEntryLocalId) {
   if (!this.isReady()) return null;
   const id = localId || generateLocalId();
   const ok = this._run(
-    'INSERT OR IGNORE INTO offline_timeline (local_id, user_id, start_time, end_time, activity_data, device_id) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, userId, startTime, endTime, activityData ? JSON.stringify(activityData) : null, deviceId]
+    'INSERT OR IGNORE INTO offline_timeline (local_id, user_id, start_time, end_time, activity_data, device_id, time_entry_local_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [id, userId, startTime, endTime, activityData ? JSON.stringify(activityData) : null, deviceId, timeEntryLocalId || null]
   );
   if (ok) { this._enqueueSync('timeline', id, 2); return id; }
   return null;
@@ -626,12 +700,12 @@ OfflineDatabase.prototype.markAttendanceSyncing = function (localId) {
 //
 // Time entry operations
 //
-OfflineDatabase.prototype.saveTimeEntry = function (localId, userId, action, projectId, taskId, timerSlot, latitude, longitude, deviceId) {
+OfflineDatabase.prototype.saveTimeEntry = function (localId, userId, action, projectId, taskId, timerSlot, latitude, longitude, deviceId, startedAt, endedAt, timeEntryLocalId) {
   if (!this.isReady()) return null;
   const id = localId || generateLocalId();
   const ok = this._run(
-    'INSERT OR IGNORE INTO offline_time_entries (local_id, user_id, action, project_id, task_id, timer_slot, latitude, longitude, device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, userId, action, projectId || null, taskId || null, timerSlot || 'primary', latitude || null, longitude || null, deviceId]
+    'INSERT OR IGNORE INTO offline_time_entries (local_id, user_id, action, project_id, task_id, timer_slot, latitude, longitude, device_id, started_at, ended_at, time_entry_local_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, userId, action, projectId || null, taskId || null, timerSlot || 'primary', latitude || null, longitude || null, deviceId, startedAt || null, endedAt || null, timeEntryLocalId || null]
   );
   if (ok) { this._enqueueSync('time_entry', id, 1); return id; }
   return null;
@@ -664,12 +738,12 @@ OfflineDatabase.prototype.markTimeEntrySyncing = function (localId) {
 //
 // Activity record operations
 //
-OfflineDatabase.prototype.saveActivityRecord = function (localId, userId, type, name, title, url, duration, recordedAt, metadata, deviceId) {
+OfflineDatabase.prototype.saveActivityRecord = function (localId, userId, type, name, title, url, duration, recordedAt, metadata, deviceId, timeEntryLocalId) {
   if (!this.isReady()) return null;
   const id = localId || generateLocalId();
   const ok = this._run(
-    'INSERT OR IGNORE INTO offline_activity_records (local_id, user_id, type, name, title, url, duration, recorded_at, metadata, device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, userId, type, name || null, title || null, url || null, duration, recordedAt, metadata ? JSON.stringify(metadata) : null, deviceId]
+    'INSERT OR IGNORE INTO offline_activity_records (local_id, user_id, type, name, title, url, duration, recorded_at, metadata, device_id, time_entry_local_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, userId, type, name || null, title || null, url || null, duration, recordedAt, metadata ? JSON.stringify(metadata) : null, deviceId, timeEntryLocalId || null]
   );
   if (ok) { this._enqueueSync('activity', id, 2); return id; }
   return null;
@@ -697,6 +771,39 @@ OfflineDatabase.prototype.markActivityFailed = function (localId, errorMessage) 
 
 OfflineDatabase.prototype.markActivitySyncing = function (localId) {
   return this._run("UPDATE offline_activity_records SET sync_status = 'syncing' WHERE local_id = ?", [localId]);
+};
+
+//
+// Offline -> server id mapping (used to rewrite dependent records' time_entry
+// references once their parent offline time entry has synced to the server).
+//
+OfflineDatabase.prototype.saveSyncMapping = function (localId, serverId, recordType) {
+  if (!this.isReady() || !localId) return;
+  this._run(
+    'INSERT OR REPLACE INTO offline_sync_map (local_id, server_id, record_type) VALUES (?, ?, ?)',
+    [localId, serverId, recordType || '']
+  );
+};
+
+OfflineDatabase.prototype.getSyncMapping = function (localId) {
+  if (!this.isReady() || !localId) return null;
+  const row = this._get('SELECT server_id FROM offline_sync_map WHERE local_id = ?', [localId]);
+  return row ? row.server_id : null;
+};
+
+// Once an offline time entry has synced and we know its server id, point any
+// dependent screenshots/activities that referenced it by offline local_id at
+// the real server time_entry_id so they can sync successfully.
+OfflineDatabase.prototype.resolveTimeEntryReferences = function (localId, serverId) {
+  if (!this.isReady() || !localId || !serverId) return;
+  this._run(
+    "UPDATE offline_screenshots SET time_entry_id = ? WHERE time_entry_local_id = ? AND (time_entry_id IS NULL OR time_entry_id = 0)",
+    [serverId, localId]
+  );
+  this._run(
+    "UPDATE offline_activity_records SET time_entry_id = ? WHERE time_entry_local_id = ? AND (time_entry_id IS NULL OR time_entry_id = 0)",
+    [serverId, localId]
+  );
 };
 
 //
