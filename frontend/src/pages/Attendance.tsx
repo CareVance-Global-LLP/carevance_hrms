@@ -21,6 +21,7 @@ import { formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeFo
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDuration } from '@/lib/formatters';
 import StatusBadge from '@/components/ui/StatusBadge';
+import { RequestEscalateControl } from '@/components/requests/RequestEscalateControl';
 import { Briefcase, CalendarDays, Clock, Download, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
 
@@ -768,6 +769,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
+  const transferLeave = async (id: number, note?: string) => {
+    setLeaveFeedback();
+    try {
+      await leaveApi.transfer(id, note);
+      await Promise.all([fetchLeaveRequests(), fetchLeaveBalances()]);
+      setLeaveFeedback('Leave request transferred to the next hierarchy level.');
+    } catch (e) {
+      console.error('Transfer leave failed:', e);
+      setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to transfer leave request');
+    }
+  };
+
+
   const approveLeaveRevoke = async (id: number) => {
     setLeaveFeedback();
     try {
@@ -863,6 +877,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to reject time edit request');
     }
   };
+
+  const transferTimeEdit = async (id: number, note?: string) => {
+    setTimeEditFeedback();
+    try {
+      await attendanceTimeEditApi.transfer(id, note);
+      await fetchTimeEditRequests();
+      setTimeEditFeedback('Time edit request transferred to the next hierarchy level.');
+    } catch (e) {
+      console.error('Transfer time edit failed:', e);
+      setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to transfer time edit request');
+    }
+  };
+
 
   useEffect(() => {
     if (mode !== 'full') return;
@@ -1543,6 +1570,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         <Button onClick={() => requestLeaveRevoke(item.id)} variant="danger" size="sm">Request Revoke</Button>
                       </div>
                     ) : null}
+                    {!canReviewLeaveRequest(item) ? (
+                      <RequestEscalateControl item={item} onTransfer={(note) => transferLeave(item.id, note)} />
+                    ) : null}
                     {canReviewLeaveRequest(item) && item.status === 'approved' && item.revoke_status === 'pending' ? (
                       <div className="mt-2 flex gap-2">
                         <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve Revoke</Button>
@@ -1645,6 +1675,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
                         <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
                       </div>
+                    ) : null}
+                    {!canReviewTimeEditRequest(item) && item.status === 'pending' ? (
+                      <RequestEscalateControl item={item} onTransfer={(note) => transferTimeEdit(item.id, note)} />
                     ) : null}
                   </div>
                 ))}

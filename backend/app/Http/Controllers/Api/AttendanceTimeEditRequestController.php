@@ -38,6 +38,7 @@ class AttendanceTimeEditRequestController extends Controller
                 'user:id,name,email,role,role_id,organization_id',
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ])
             ->where('organization_id', $currentUser->organization_id)
             ->orderByDesc('created_at');
@@ -52,7 +53,11 @@ class AttendanceTimeEditRequestController extends Controller
                 $visibleUserIds->push((int) $currentUser->id);
             }
 
-            $query->whereIn('user_id', $visibleUserIds->unique()->values());
+            // Also surface requests escalated (transferred) to this user.
+            $query->where(function ($q) use ($visibleUserIds, $currentUser) {
+                $q->whereIn('user_id', $visibleUserIds->unique()->values())
+                    ->orWhere('escalated_to_user_id', (int) $currentUser->id);
+            });
 
             if ($request->filled('user_id')) {
                 $query->where('user_id', (int) $request->user_id);
@@ -181,12 +186,22 @@ class AttendanceTimeEditRequestController extends Controller
             request: $request
         );
 
+        $this->notifyAdminsOfRequest(
+            requester: $currentUser,
+            kind: 'time_edit',
+            action: 'submitted',
+            request: $created,
+            note: $request->message,
+        );
+
         return response()->json([
             'message' => $this->submissionMessage($currentUser, $reviewers->pluck('name')->all()),
             'data' => $this->withApprovalDestination($created->load([
                 'user:id,name,email,role,role_id,organization_id',
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
+                'escalatedTo:id,name,email',
+                'escalatedTo:id,name,email',
             ])),
         ], 201);
     }
@@ -207,7 +222,7 @@ class AttendanceTimeEditRequestController extends Controller
             return response()->json(['message' => 'Time edit request not found'], 404);
         }
         $item->loadMissing('user.employeeWorkInfo');
-        if (!$item->user || !$this->approvalRoutingService->canReview($currentUser, $item->user)) {
+        if (!$item->user || !($this->approvalRoutingService->canReview($currentUser, $item->user) || (int) $item->escalated_to_user_id === (int) $currentUser->id)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($item->status !== 'pending') {
@@ -234,6 +249,7 @@ class AttendanceTimeEditRequestController extends Controller
                 'user:id,name,email,role,role_id,organization_id',
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
             reviewer: $currentUser,
             status: 'approved'
@@ -257,6 +273,7 @@ class AttendanceTimeEditRequestController extends Controller
                 'user:id,name,email,role,role_id,organization_id',
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
         ]);
     }
@@ -277,7 +294,7 @@ class AttendanceTimeEditRequestController extends Controller
             return response()->json(['message' => 'Time edit request not found'], 404);
         }
         $item->loadMissing('user.employeeWorkInfo');
-        if (!$item->user || !$this->approvalRoutingService->canReview($currentUser, $item->user)) {
+        if (!$item->user || !($this->approvalRoutingService->canReview($currentUser, $item->user) || (int) $item->escalated_to_user_id === (int) $currentUser->id)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($item->status !== 'pending') {
@@ -296,6 +313,7 @@ class AttendanceTimeEditRequestController extends Controller
                 'user:id,name,email,role,role_id,organization_id',
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
             reviewer: $currentUser,
             status: 'rejected'
@@ -319,13 +337,183 @@ class AttendanceTimeEditRequestController extends Controller
                 'user:id,name,email,role,role_id,organization_id',
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
+        ]);
+    }
+
+    public function transfer(Request $request, int $id)
+    {
+        $request->validate([
+            'note' => 'nullable|string|max:2000',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['message' => 'Organization is required.'], 422);
+        }
+
+        $item = AttendanceTimeEditRequest::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$item) {
+            return response()->json(['message' => 'Time edit request not found'], 404);
+        }
+
+        $isAdmin = ! empty($this->approvalRoutingService->reviewerHierarchyLevels($currentUser));
+        if ((int) $item->user_id !== (int) $currentUser->id && ! $isAdmin) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($item->status !== 'pending') {
+            return response()->json(['message' => 'Only pending requests can be transferred.'], 422);
+        }
+
+        $item->loadMissing('user.employeeWorkInfo');
+        $requester = $item->user;
+
+        $excludeUserId = $item->escalated_to_user_id ?? $this->immediateReviewerId($requester);
+        $targetIds = $this->approvalRoutingService->escalationTargetIds($requester, $excludeUserId);
+
+        if ($targetIds->isEmpty()) {
+            return response()->json([
+                'message' => 'No higher hierarchy is available to escalate this request to.',
+            ], 422);
+        }
+
+        $targets = User::query()
+            ->whereIn('id', $targetIds)
+            ->get(['id', 'name']);
+
+        $history = $item->escalation_history ?? [];
+        $history[] = [
+            'from_user_id' => $excludeUserId ? (int) $excludeUserId : null,
+            'to_user_id' => $targets->first()->id,
+            'to_level' => $this->approvalRoutingService->reviewerLabel($requester, $targets->count()),
+            'note' => $request->note,
+            'by_user_id' => (int) $currentUser->id,
+            'at' => now()->toIso8601String(),
+        ];
+
+        $item->update([
+            'escalated_to_user_id' => $targets->first()->id,
+            'escalation_history' => $history,
+        ]);
+
+        $date = Carbon::parse($item->attendance_date)->toDateString();
+
+        $this->notificationService->sendToUsers(
+            organizationId: (int) $item->organization_id,
+            userIds: $targetIds,
+            senderId: (int) $requester->id,
+            type: 'time_edit',
+            title: 'Time Edit Request Escalated to You',
+            message: sprintf(
+                '%s escalated a time edit request (%s) to you for approval.',
+                (string) $requester->name,
+                $date
+            ),
+            meta: [
+                'route' => '/approval-inbox',
+                'approval_kind' => 'time_edit',
+                'request_id' => (int) $item->id,
+                'employee_id' => (int) $requester->id,
+                'employee_name' => (string) $requester->name,
+                'attendance_date' => $date,
+                'escalated' => true,
+            ]
+        );
+
+        $this->notifyAdminsOfRequest(
+            requester: $requester,
+            kind: 'time_edit',
+            action: 'transferred',
+            request: $item,
+            note: $request->note,
+        );
+
+        $this->auditLogService->log(
+            action: 'attendance.time_edit_escalated',
+            actor: $currentUser,
+            target: $item,
+            metadata: [
+                'employee_id' => $item->user_id,
+                'escalated_to_user_id' => $targets->first()->id,
+                'escalated_to_names' => $targets->pluck('name')->all(),
+            ],
+            request: $request
+        );
+
+        return response()->json([
+            'message' => 'Time edit request transferred to the next hierarchy level.',
+            'data' => $this->withApprovalDestination($item->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'escalatedTo:id,name,email',
+                'escalatedTo:id,name,email',
+            ])),
         ]);
     }
 
     private function canManage(User $user): bool
     {
         return ! empty($this->approvalRoutingService->reviewerHierarchyLevels($user));
+    }
+
+    private function immediateReviewerId(User $requester): ?int
+    {
+        return $this->approvalRoutingService->reviewerUserIds($requester)->first();
+    }
+
+    private function notifyAdminsOfRequest(User $requester, string $kind, string $action, AttendanceTimeEditRequest $request, ?string $note): void
+    {
+        $adminIds = $this->approvalRoutingService->organizationAdminIds($requester);
+        if ($adminIds->isEmpty()) {
+            return;
+        }
+
+        if ($request->escalated_to_user_id) {
+            $destinationNames = User::query()
+                ->where('id', (int) $request->escalated_to_user_id)
+                ->pluck('name')
+                ->map(fn ($n) => trim((string) $n))
+                ->filter()
+                ->values();
+        } else {
+            $destinationNames = User::query()
+                ->whereIn('id', $this->approvalRoutingService->reviewerUserIds($requester))
+                ->pluck('name')
+                ->map(fn ($n) => trim((string) $n))
+                ->filter()
+                ->values();
+        }
+        $label = $this->approvalRoutingService->reviewerLabel($requester, $destinationNames->count());
+        $destination = $destinationNames->isEmpty()
+            ? $label
+            : sprintf('%s: %s', $label, $destinationNames->implode(', '));
+
+        $date = Carbon::parse($request->attendance_date)->toDateString();
+
+        $this->notificationService->sendToUsers(
+            organizationId: (int) $requester->organization_id,
+            userIds: $adminIds,
+            senderId: (int) $requester->id,
+            type: $kind,
+            title: $action === 'transferred' ? 'Time Edit Request Transferred' : 'Time Edit Request Submitted',
+            message: sprintf(
+                '%s %s a time edit request (%s) to %s.',
+                (string) $requester->name,
+                $action,
+                $date,
+                $destination
+            ).(filled($note) ? ' Note: '.$note : ''),
+            meta: [
+                'route' => '/approval-inbox',
+                'approval_kind' => 'time_edit',
+                'request_id' => (int) $request->id,
+                'employee_id' => (int) $requester->id,
+                'employee_name' => (string) $requester->name,
+                'attendance_date' => $date,
+            ]
+        );
     }
 
     private function shiftTargetSeconds(): int
@@ -387,6 +575,9 @@ class AttendanceTimeEditRequestController extends Controller
                 ? "Sent to {$reviewerLabel}"
                 : sprintf('Sent to %s: %s', $reviewerLabel, $reviewerNames->implode(', '))
         );
+
+        $item->setAttribute('escalated_to', $item->escalatedTo?->only(['id', 'name']));
+        $item->setAttribute('escalation_history', $item->escalation_history ?? []);
 
         return $item;
     }

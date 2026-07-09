@@ -1174,6 +1174,15 @@ export const leaveApi = {
         reviewer?: { id: number; name: string; email: string } | null;
         revoke_reviewer?: { id: number; name: string; email: string } | null;
         approval_destination?: string | null;
+        escalated_to?: { id: number; name: string } | null;
+        escalation_history?: Array<{
+          from_user_id?: number | null;
+          to_user_id?: number;
+          to_level?: string;
+          note?: string | null;
+          by_user_id?: number;
+          at?: string;
+        }> | null;
         created_at: string;
       }>;
     }>('/leave-requests', { params }),
@@ -1228,6 +1237,9 @@ export const leaveApi = {
 
   rejectRevoke: (id: number, review_note?: string) =>
     api.patch(`/leave-requests/${id}/revoke-reject`, { review_note }),
+
+  transfer: (id: number, note?: string) =>
+    api.post(`/leave-requests/${id}/transfer`, { note }),
 };
 
 export const attendanceTimeEditApi = {
@@ -1247,6 +1259,15 @@ export const attendanceTimeEditApi = {
         user?: { id: number; name: string; email: string; role: string };
         reviewer?: { id: number; name: string; email: string } | null;
         approval_destination?: string | null;
+        escalated_to?: { id: number; name: string } | null;
+        escalation_history?: Array<{
+          from_user_id?: number | null;
+          to_user_id?: number;
+          to_level?: string;
+          note?: string | null;
+          by_user_id?: number;
+          at?: string;
+        }> | null;
         created_at: string;
       }>;
     }>('/attendance-time-edit-requests', { params }),
@@ -1259,6 +1280,9 @@ export const attendanceTimeEditApi = {
 
   reject: (id: number, review_note?: string) =>
     api.patch(`/attendance-time-edit-requests/${id}/reject`, { review_note }),
+
+  transfer: (id: number, note?: string) =>
+    api.post(`/attendance-time-edit-requests/${id}/transfer`, { note }),
 };
 
 export const chatApi = {

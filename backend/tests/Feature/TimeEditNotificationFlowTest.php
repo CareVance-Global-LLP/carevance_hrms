@@ -69,7 +69,8 @@ class TimeEditNotificationFlowTest extends TestCase
             'user_id' => $manager->id,
             'title' => 'Time Edit Request Submitted',
         ]);
-        $this->assertDatabaseMissing('app_notifications', [
+        // Admins are explicitly notified on submission (employee messaged the hierarchy).
+        $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,
             'user_id' => $admin->id,
             'title' => 'Time Edit Request Submitted',

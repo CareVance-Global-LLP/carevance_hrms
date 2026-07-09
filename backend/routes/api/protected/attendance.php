@@ -22,8 +22,10 @@ Route::get('/leave-requests', [LeaveRequestController::class, 'index']);
 Route::get('/leave-requests/balances', [LeaveRequestController::class, 'balances']);
 Route::post('/leave-requests', [LeaveRequestController::class, 'store']);
 Route::post('/leave-requests/{id}/revoke-request', [LeaveRequestController::class, 'requestRevoke']);
+Route::post('/leave-requests/{id}/transfer', [LeaveRequestController::class, 'transfer']);
 Route::get('/attendance-time-edit-requests', [AttendanceTimeEditRequestController::class, 'index']);
 Route::post('/attendance-time-edit-requests', [AttendanceTimeEditRequestController::class, 'store']);
+Route::post('/attendance-time-edit-requests/{id}/transfer', [AttendanceTimeEditRequestController::class, 'transfer']);
 
 Route::middleware('role:admin,manager')->group(function () {
     Route::patch('/leave-requests/{id}/approve', [LeaveRequestController::class, 'approve']);

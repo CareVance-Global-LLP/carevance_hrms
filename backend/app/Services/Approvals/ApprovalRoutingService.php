@@ -193,6 +193,68 @@ class ApprovalRoutingService
             );
     }
 
+    /**
+     * Return the next higher-ranked reviewer(s) a request can be escalated to,
+     * intentionally skipping an unavailable reviewer. Reuses the same hierarchy
+     * rules as reviewerUserIds (custom-role hierarchy_level aware).
+     *
+     * @return Collection<int, int>
+     */
+    public function escalationTargetIds(User $requester, ?int $excludeUserId = null): Collection
+    {
+        if (! $requester->organization_id) {
+            return collect();
+        }
+
+        $requesterLevel = $this->userHierarchyLevel($requester);
+
+        // Admins (level <= 10) are already top of the chain — nothing higher exists.
+        if ($requesterLevel <= 10) {
+            return collect();
+        }
+
+        $excludeUser = null;
+        if ($excludeUserId !== null) {
+            $excludeUser = User::query()
+                ->where('organization_id', $requester->organization_id)
+                ->where('id', (int) $excludeUserId)
+                ->with('customRole')
+                ->first();
+        }
+        $excludeLevel = $excludeUser ? $this->userHierarchyLevel($excludeUser) : $requesterLevel;
+
+        $candidates = User::query()
+            ->where('organization_id', $requester->organization_id)
+            ->where('id', '!=', (int) $requester->id)
+            ->with('customRole')
+            ->get(['id', 'organization_id', 'role', 'role_id'])
+            // Escalation jumps to the next higher-ranked user in the hierarchy,
+            // bypassing the stricter department/department canReview rule used
+            // for normal routing. A skipped reviewer (excludeLevel) is lower
+            // rank (higher number) than the requester, so requiring a strictly
+            // lower level than it guarantees we only move upward.
+            ->filter(fn (User $candidate) => $this->userHierarchyLevel($candidate) < $excludeLevel)
+            ->map(fn (User $candidate) => [
+                'id' => (int) $candidate->id,
+                'level' => $this->userHierarchyLevel($candidate),
+            ])
+            ->sortByDesc('level')
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            return collect();
+        }
+
+        $nearestLevel = $candidates->first()['level'];
+
+        return $candidates
+            ->filter(fn ($c) => $c['level'] === $nearestLevel)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+    }
+
     public function hasEligibleReviewer(User $requester): bool
     {
         $requesterLevel = $this->userHierarchyLevel($requester);
@@ -307,7 +369,7 @@ class ApprovalRoutingService
      * These are eligible to review manager-tier requests regardless of department.
      * @return Collection<int, int>
      */
-    private function organizationAdminIds(User $requester): Collection
+    public function organizationAdminIds(User $requester): Collection
     {
         return User::query()
             ->where('organization_id', $requester->organization_id)
