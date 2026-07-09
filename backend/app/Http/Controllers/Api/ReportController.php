@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\ActivitySession;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
@@ -12,6 +13,7 @@ use App\Models\LeaveRequest;
 use App\Models\Project;
 use App\Models\ReportGroup;
 use App\Models\Screenshot;
+use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Monitoring\ActivityFeedService;
@@ -1423,6 +1425,7 @@ class ReportController extends Controller
             'export_scope' => 'nullable|string|in:employee,department',
             'fields' => 'nullable|array',
             'fields.*' => 'string',
+            'report_type' => 'nullable|string|in:attendance,hours-tracked,timeline,projects-tasks,web-app-usage,productivity,productive-time,unproductive-time,app-usage,website-usage,screenshots',
         ]);
 
         $user = $request->user();
@@ -1489,6 +1492,65 @@ class ReportController extends Controller
             ]);
         }
 
+        $reportType = strtolower(trim((string) $request->input('report_type', '')));
+        $entryTz = $this->resolveExportTimezone($user);
+
+        // ── Attendance Report ──────────────────────────────────────────────
+        if ($reportType === 'attendance') {
+            return $this->buildAttendanceExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Hours Tracked Report ───────────────────────────────────────────
+        if ($reportType === 'hours-tracked') {
+            return $this->buildHoursTrackedExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Timeline Report ────────────────────────────────────────────────
+        if ($reportType === 'timeline') {
+            return $this->buildTimelineExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Projects & Tasks Report ────────────────────────────────────────
+        if ($reportType === 'projects-tasks') {
+            return $this->buildProjectsTasksExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Web & App Usage Report ─────────────────────────────────────────
+        if ($reportType === 'web-app-usage') {
+            return $this->buildWebAppUsageExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Productivity Report ────────────────────────────────────────────
+        if ($reportType === 'productivity') {
+            return $this->buildProductivityExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Productive Time Report ────────────────────────────────────────
+        if ($reportType === 'productive-time') {
+            return $this->buildProductiveTimeExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Unproductive Time Report ──────────────────────────────────────
+        if ($reportType === 'unproductive-time') {
+            return $this->buildUnproductiveTimeExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── App Usage Report ──────────────────────────────────────────────
+        if ($reportType === 'app-usage') {
+            return $this->buildAppUsageExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Website Usage Report ──────────────────────────────────────────
+        if ($reportType === 'website-usage') {
+            return $this->buildWebsiteUsageExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Screenshots Report ────────────────────────────────────────────
+        if ($reportType === 'screenshots') {
+            return $this->buildScreenshotsExportCsv($user, $scopedUserIds, $startDate, $endDate, $entryTz);
+        }
+
+        // ── Default: Generic time-entry export (reports-hub / analytics-hub) ──
         $entriesQuery = TimeEntry::with(['project', 'task', 'user'])
             ->whereBetween('start_time', [$startDate, $endDate]);
 
@@ -1498,31 +1560,806 @@ class ReportController extends Controller
             $entriesQuery->where('user_id', $user->id);
         }
 
-        $entries = $entriesQuery
-            ->orderBy('start_time')
-            ->get();
+        $entries = $entriesQuery->orderBy('start_time')->get();
 
-        $lines = [
-            'Date,Employee,Project,Task,Description,Duration (seconds),Billable',
-        ];
+        $bom = "\xEF\xBB\xBF";
+        $lines = ['Date,Employee,Email,Department,Project,Task,Description,Duration,Duration (Hours),Start Time,End Time'];
 
         foreach ($entries as $entry) {
+            $durationSeconds = (int) ($entry->duration ?? 0);
+            $durationFormatted = $this->formatDurationForExport($durationSeconds);
+            $durationHours = round($durationSeconds / 3600, 2);
+
+            $startDateVal = $entry->start_time
+                ? Carbon::parse($entry->start_time)->setTimezone($entryTz)->format('d-M-Y')
+                : '';
+            $startTime = $entry->start_time
+                ? Carbon::parse($entry->start_time)->setTimezone($entryTz)->format('h:i A')
+                : '';
+            $endTime = $entry->end_time
+                ? Carbon::parse($entry->end_time)->setTimezone($entryTz)->format('h:i A')
+                : '';
+
             $lines[] = implode(',', [
-                Carbon::parse($entry->start_time)->toDateString(),
+                $startDateVal,
                 $this->csvValue($entry->user?->name ?? 'Unknown User'),
+                $this->csvValue($entry->user?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($entry->user)),
                 $this->csvValue($entry->project?->name ?? 'No Project'),
                 $this->csvValue($entry->task?->title ?? ''),
                 $this->csvValue($entry->description ?? ''),
-                $entry->duration,
-                $entry->billable ? 'Yes' : 'No',
+                $this->csvValue($durationFormatted),
+                $durationHours,
+                $startTime,
+                $endTime,
             ]);
         }
 
-        $csv = implode("\n", $lines);
+        $csv = $bom . implode("\n", $lines);
         $fileName = 'report-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
 
         return response($csv, 200, [
-            'Content-Type' => 'text/csv',
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Attendance Report CSV Builder ──────────────────────────────────────
+    private function buildAttendanceExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $records = AttendanceRecord::with(['user'])
+            ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()]);
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $records->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $records->where('user_id', $user->id);
+        }
+
+        $records = $records->orderBy('attendance_date')->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = ['Employee Name,Email,Department,Date,Status,Check-In,Check-Out,Worked Hours,Late Minutes'];
+
+        foreach ($records as $record) {
+            $date = Carbon::parse($record->attendance_date)->format('d-M-Y');
+            $checkIn = $record->check_in_at
+                ? Carbon::parse($record->check_in_at)->setTimezone($entryTz)->format('h:i A')
+                : '';
+            $checkOut = $record->check_out_at
+                ? Carbon::parse($record->check_out_at)->setTimezone($entryTz)->format('h:i A')
+                : '';
+            $workedHours = $this->formatDurationForExport((int) ($record->worked_seconds ?? 0));
+            $status = ucfirst($record->status ?? 'absent');
+            $lateMinutes = (int) ($record->late_minutes ?? 0);
+
+            $lines[] = implode(',', [
+                $this->csvValue($record->user?->name ?? 'Unknown User'),
+                $this->csvValue($record->user?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($record->user)),
+                $date,
+                $status,
+                $checkIn,
+                $checkOut,
+                $this->csvValue($workedHours),
+                $lateMinutes,
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'attendance-report-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Hours Tracked Report CSV Builder ───────────────────────────────────
+    private function buildHoursTrackedExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $entries = TimeEntry::with(['project', 'task', 'user'])
+            ->whereBetween('start_time', [$startDate, $endDate]);
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $entries->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $entries->where('user_id', $user->id);
+        }
+
+        $entries = $entries->orderBy('start_time')->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = ['Employee Name,Email,Department,Date,Project,Task,Duration,Duration (Hours),Start Time,End Time'];
+
+        foreach ($entries as $entry) {
+            $durationSeconds = (int) ($entry->duration ?? 0);
+            $durationFormatted = $this->formatDurationForExport($durationSeconds);
+            $durationHours = round($durationSeconds / 3600, 2);
+
+            $date = $entry->start_time
+                ? Carbon::parse($entry->start_time)->setTimezone($entryTz)->format('d-M-Y')
+                : '';
+            $startTime = $entry->start_time
+                ? Carbon::parse($entry->start_time)->setTimezone($entryTz)->format('h:i A')
+                : '';
+            $endTime = $entry->end_time
+                ? Carbon::parse($entry->end_time)->setTimezone($entryTz)->format('h:i A')
+                : '';
+
+            $lines[] = implode(',', [
+                $this->csvValue($entry->user?->name ?? 'Unknown User'),
+                $this->csvValue($entry->user?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($entry->user)),
+                $date,
+                $this->csvValue($entry->project?->name ?? 'No Project'),
+                $this->csvValue($entry->task?->title ?? ''),
+                $this->csvValue($durationFormatted),
+                $durationHours,
+                $startTime,
+                $endTime,
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'hours-tracked-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Timeline Report CSV Builder ────────────────────────────────────────
+    private function buildTimelineExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $sessions = ActivitySession::with(['user'])
+            ->where('started_at', '>=', $startDate)
+            ->where('started_at', '<=', $endDate);
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $sessions->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $sessions->where('user_id', $user->id);
+        }
+
+        $sessions = $sessions->orderBy('started_at')->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = ['Employee Name,Email,Department,Date,Activity,Application,URL,Duration,Duration (Hours),Start Time,End Time'];
+
+        foreach ($sessions as $session) {
+            $durationSeconds = (int) ($session->duration_seconds ?? 0);
+            $durationFormatted = $this->formatDurationForExport($durationSeconds);
+            $durationHours = round($durationSeconds / 3600, 2);
+
+            $date = $session->started_at
+                ? Carbon::parse($session->started_at)->setTimezone($entryTz)->format('d-M-Y')
+                : '';
+            $startTime = $session->started_at
+                ? Carbon::parse($session->started_at)->setTimezone($entryTz)->format('h:i A')
+                : '';
+            $endTime = $session->ended_at
+                ? Carbon::parse($session->ended_at)->setTimezone($entryTz)->format('h:i A')
+                : '';
+
+            $lines[] = implode(',', [
+                $this->csvValue($session->user?->name ?? 'Unknown User'),
+                $this->csvValue($session->user?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($session->user)),
+                $date,
+                $this->csvValue($session->display_name ?? $session->activity_kind ?? ''),
+                $this->csvValue($session->app_name ?? $session->software_name ?? ''),
+                $this->csvValue($session->url ?? ''),
+                $this->csvValue($durationFormatted),
+                $durationHours,
+                $startTime,
+                $endTime,
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'timeline-report-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Projects & Tasks Report CSV Builder ────────────────────────────────
+    private function buildProjectsTasksExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $tasks = Task::with(['project', 'assignee', 'timeEntries'])
+            ->where(function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('created_at', [$startDate, $endDate])
+                  ->orWhere(function ($q2) use ($startDate, $endDate) {
+                      $q2->whereNull('due_date')
+                         ->orWhereBetween('due_date', [$startDate->toDateString(), $endDate->toDateString()]);
+                  });
+            });
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $orgId = $user->organization_id;
+            $tasks->whereHas('project', function ($q) use ($orgId) {
+                $q->where('organization_id', $orgId);
+            });
+        } else {
+            $tasks->where('assignee_id', $user->id);
+        }
+
+        $tasks = $tasks->orderBy('created_at')->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = ['Project,Task,Assignee,Status,Priority,Created Date,Due Date,Estimated Time,Tracked Time,Tracked (Hours)'];
+
+        foreach ($tasks as $task) {
+            $trackedSeconds = $task->timeEntries->sum('duration');
+            $trackedFormatted = $this->formatDurationForExport((int) $trackedSeconds);
+            $trackedHours = round($trackedSeconds / 3600, 2);
+            $estimatedTime = $task->estimated_time ? $this->formatDurationForExport((int) $task->estimated_time) : '';
+
+            $createdDate = Carbon::parse($task->created_at)->format('d-M-Y');
+            $dueDate = $task->due_date ? Carbon::parse($task->due_date)->format('d-M-Y') : '';
+            $status = ucfirst(str_replace('_', ' ', $task->status ?? 'todo'));
+            $priority = ucfirst($task->priority ?? 'medium');
+
+            $lines[] = implode(',', [
+                $this->csvValue($task->project?->name ?? 'No Project'),
+                $this->csvValue($task->title ?? ''),
+                $this->csvValue($task->assignee?->name ?? 'Unassigned'),
+                $status,
+                $priority,
+                $createdDate,
+                $dueDate,
+                $this->csvValue($estimatedTime),
+                $this->csvValue($trackedFormatted),
+                $trackedHours,
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'projects-tasks-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Web & App Usage Report CSV Builder ─────────────────────────────────
+    private function buildWebAppUsageExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $sessions = ActivitySession::with(['user'])
+            ->where('started_at', '>=', $startDate)
+            ->where('started_at', '<=', $endDate)
+            ->whereNotNull('display_name');
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $sessions->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $sessions->where('user_id', $user->id);
+        }
+
+        $sessions = $sessions->orderBy('started_at')->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = ['Employee Name,Email,Department,Date,Application,URL,Category,Duration,Duration (Hours),Start Time,End Time'];
+
+        foreach ($sessions as $session) {
+            $durationSeconds = (int) ($session->duration_seconds ?? 0);
+            $durationFormatted = $this->formatDurationForExport($durationSeconds);
+            $durationHours = round($durationSeconds / 3600, 2);
+
+            $date = $session->started_at
+                ? Carbon::parse($session->started_at)->setTimezone($entryTz)->format('d-M-Y')
+                : '';
+            $startTime = $session->started_at
+                ? Carbon::parse($session->started_at)->setTimezone($entryTz)->format('h:i A')
+                : '';
+            $endTime = $session->ended_at
+                ? Carbon::parse($session->ended_at)->setTimezone($entryTz)->format('h:i A')
+                : '';
+            $classification = ucfirst($session->classification ?? 'neutral');
+
+            $lines[] = implode(',', [
+                $this->csvValue($session->user?->name ?? 'Unknown User'),
+                $this->csvValue($session->user?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($session->user)),
+                $date,
+                $this->csvValue($session->display_name ?? $session->app_name ?? ''),
+                $this->csvValue($session->url ?? $session->normalized_domain ?? ''),
+                $classification,
+                $this->csvValue($durationFormatted),
+                $durationHours,
+                $startTime,
+                $endTime,
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'web-app-usage-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Productivity Report CSV Builder ────────────────────────────────────
+    private function buildProductivityExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $entries = TimeEntry::with(['user'])
+            ->whereBetween('start_time', [$startDate, $endDate]);
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $entries->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $entries->where('user_id', $user->id);
+        }
+
+        $entries = $entries->get();
+        $entriesByUser = $entries->groupBy('user_id');
+
+        $attendanceRecords = AttendanceRecord::query()
+            ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()]);
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $attendanceRecords->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $attendanceRecords->where('user_id', $user->id);
+        }
+
+        $attendanceRecords = $attendanceRecords->get()->groupBy('user_id');
+
+        $idleSessions = ActivitySession::where('started_at', '>=', $startDate)
+            ->where('started_at', '<=', $endDate)
+            ->where('classification', 'idle');
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $idleSessions->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $idleSessions->where('user_id', $user->id);
+        }
+
+        $idleByUser = $idleSessions->get()->groupBy('user_id')
+            ->map(fn ($s) => $s->sum('duration_seconds'));
+
+        $allUserIds = $entries->pluck('user_id')->unique()->values();
+        $users = User::whereIn('id', $allUserIds)->get()->keyBy('id');
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = ['Employee Name,Email,Department,Check In,Last Check Out,Attendance,Tracked,Working,Idle,Idle %,Overtime'];
+
+        $calendarDaysCount = max(1, CarbonPeriod::create($startDate->toDateString(), $endDate->toDateString())->count());
+
+        foreach ($allUserIds as $userId) {
+            $userObj = $users->get($userId);
+            $userEntries = $entriesByUser->get($userId, collect());
+            $userAttendance = $attendanceRecords->get($userId, collect());
+
+            $totalSeconds = (int) $userEntries->sum('duration');
+            $idleSeconds = (int) ($idleByUser->get($userId, 0));
+            $workingSeconds = max(0, $totalSeconds - $idleSeconds);
+            $idlePct = $totalSeconds > 0 ? round(($idleSeconds / $totalSeconds) * 100, 1) : 0;
+            $overtimeSeconds = max(0, $workingSeconds - ($calendarDaysCount * 8 * 3600));
+
+            $firstCheckIn = $userAttendance->whereNotNull('check_in_at')->min('check_in_at');
+            $lastCheckOut = $userAttendance->whereNotNull('check_out_at')->max('check_out_at');
+            $presentDays = $userAttendance->whereIn('status', ['present', 'late'])->count();
+            $totalDays = $calendarDaysCount;
+            $attendanceRate = $totalDays > 0 ? round(($presentDays / $totalDays) * 100, 0) : 0;
+
+            $checkInStr = $firstCheckIn ? Carbon::parse($firstCheckIn)->setTimezone($entryTz)->format('h:i A') : '';
+            $checkOutStr = $lastCheckOut ? Carbon::parse($lastCheckOut)->setTimezone($entryTz)->format('h:i A') : '';
+            $attendanceStr = $attendanceRate . '% (' . $presentDays . '/' . $totalDays . ')';
+
+            $lines[] = implode(',', [
+                $this->csvValue($userObj?->name ?? 'Unknown User'),
+                $this->csvValue($userObj?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($userObj)),
+                $checkInStr,
+                $checkOutStr,
+                $attendanceStr,
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                $this->csvValue($this->formatDurationForExport($workingSeconds)),
+                $this->csvValue($this->formatDurationForExport($idleSeconds)),
+                $idlePct . '%',
+                $this->csvValue($this->formatDurationForExport($overtimeSeconds)),
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'productivity-report-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Productive Time Report CSV Builder ─────────────────────────────────
+    private function buildProductiveTimeExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $sessions = ActivitySession::with(['user'])
+            ->where('started_at', '>=', $startDate)
+            ->where('started_at', '<=', $endDate);
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $sessions->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $sessions->where('user_id', $user->id);
+        }
+
+        $sessions = $sessions->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = [];
+
+        // Table 1: Top Productive Tools
+        $lines[] = '--- Top Productive Tools ---';
+        $lines[] = 'Tool,Type,Duration,Duration (Hours),Events,Avg Duration Per Employee';
+
+        $productiveSessions = $sessions->where('classification', 'productive');
+        $toolGroups = $productiveSessions->groupBy(fn ($s) => ($s->display_name ?? $s->app_name ?? 'Unknown') . '|' . ($s->tool_type ?? $s->activity_kind ?? ''));
+
+        $employeeCount = max(1, $productiveSessions->pluck('user_id')->unique()->count());
+
+        foreach ($toolGroups as $key => $toolSessions) {
+            [$toolName, $toolType] = explode('|', $key, 2);
+            $totalSeconds = (int) $toolSessions->sum('duration_seconds');
+            $avgPerEmployee = $employeeCount > 0 ? round($totalSeconds / $employeeCount) : 0;
+
+            $lines[] = implode(',', [
+                $this->csvValue($toolName),
+                $this->csvValue($toolType),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+                $toolSessions->count(),
+                $this->csvValue($this->formatDurationForExport($avgPerEmployee)),
+            ]);
+        }
+
+        // Table 2: Employee Ranking
+        $lines[] = '';
+        $lines[] = '--- Employee Ranking ---';
+        $lines[] = 'Employee Name,Email,Department,Productive Time,Productive (Hours),Worked,Worked (Hours)';
+
+        $userGroups = $sessions->groupBy('user_id');
+        foreach ($userGroups as $userId => $userSessions) {
+            $firstSession = $userSessions->first();
+            $productiveSeconds = (int) $userSessions->where('classification', 'productive')->sum('duration_seconds');
+            $totalSeconds = (int) $userSessions->sum('duration_seconds');
+
+            $lines[] = implode(',', [
+                $this->csvValue($firstSession->user?->name ?? 'Unknown User'),
+                $this->csvValue($firstSession->user?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($firstSession->user)),
+                $this->csvValue($this->formatDurationForExport($productiveSeconds)),
+                round($productiveSeconds / 3600, 2),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+            ]);
+        }
+
+        // Table 3: Top Unproductive Tools
+        $lines[] = '';
+        $lines[] = '--- Top Unproductive Tools ---';
+        $lines[] = 'Tool,Type,Duration,Duration (Hours),Events';
+
+        $unproductiveSessions = $sessions->where('classification', 'unproductive');
+        $unprodToolGroups = $unproductiveSessions->groupBy(fn ($s) => ($s->display_name ?? $s->app_name ?? 'Unknown') . '|' . ($s->tool_type ?? $s->activity_kind ?? ''));
+
+        foreach ($unprodToolGroups as $key => $toolSessions) {
+            [$toolName, $toolType] = explode('|', $key, 2);
+            $totalSeconds = (int) $toolSessions->sum('duration_seconds');
+
+            $lines[] = implode(',', [
+                $this->csvValue($toolName),
+                $this->csvValue($toolType),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+                $toolSessions->count(),
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'productive-time-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Unproductive Time Report CSV Builder ───────────────────────────────
+    private function buildUnproductiveTimeExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $sessions = ActivitySession::with(['user'])
+            ->where('started_at', '>=', $startDate)
+            ->where('started_at', '<=', $endDate);
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $sessions->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $sessions->where('user_id', $user->id);
+        }
+
+        $sessions = $sessions->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = [];
+
+        // Table 1: Top Unproductive Tools
+        $lines[] = '--- Top Unproductive Tools ---';
+        $lines[] = 'Tool,Type,Duration,Duration (Hours),Events,Avg Duration Per Employee';
+
+        $unproductiveSessions = $sessions->where('classification', 'unproductive');
+        $toolGroups = $unproductiveSessions->groupBy(fn ($s) => ($s->display_name ?? $s->app_name ?? 'Unknown') . '|' . ($s->tool_type ?? $s->activity_kind ?? ''));
+
+        $employeeCount = max(1, $unproductiveSessions->pluck('user_id')->unique()->count());
+
+        foreach ($toolGroups as $key => $toolSessions) {
+            [$toolName, $toolType] = explode('|', $key, 2);
+            $totalSeconds = (int) $toolSessions->sum('duration_seconds');
+            $avgPerEmployee = $employeeCount > 0 ? round($totalSeconds / $employeeCount) : 0;
+
+            $lines[] = implode(',', [
+                $this->csvValue($toolName),
+                $this->csvValue($toolType),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+                $toolSessions->count(),
+                $this->csvValue($this->formatDurationForExport($avgPerEmployee)),
+            ]);
+        }
+
+        // Table 2: Risk Tools (all unproductive tools per employee)
+        $lines[] = '';
+        $lines[] = '--- Risk Tools By Employee ---';
+        $lines[] = 'Employee Name,Email,Department,Tool,Type,Duration,Duration (Hours)';
+
+        $userGroups = $unproductiveSessions->groupBy('user_id');
+        foreach ($userGroups as $userId => $userSessions) {
+            $firstSession = $userSessions->first();
+            $userToolGroups = $userSessions->groupBy(fn ($s) => ($s->display_name ?? $s->app_name ?? 'Unknown') . '|' . ($s->tool_type ?? $s->activity_kind ?? ''));
+
+            foreach ($userToolGroups as $key => $toolSessions) {
+                [$toolName, $toolType] = explode('|', $key, 2);
+                $totalSeconds = (int) $toolSessions->sum('duration_seconds');
+
+                $lines[] = implode(',', [
+                    $this->csvValue($firstSession->user?->name ?? 'Unknown User'),
+                    $this->csvValue($firstSession->user?->email ?? ''),
+                    $this->csvValue($this->resolveExportDepartment($firstSession->user)),
+                    $this->csvValue($toolName),
+                    $this->csvValue($toolType),
+                    $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                    round($totalSeconds / 3600, 2),
+                ]);
+            }
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'unproductive-time-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── App Usage Report CSV Builder ───────────────────────────────────────
+    private function buildAppUsageExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $sessions = ActivitySession::with(['user'])
+            ->where('started_at', '>=', $startDate)
+            ->where('started_at', '<=', $endDate)
+            ->where('activity_kind', 'app');
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $sessions->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $sessions->where('user_id', $user->id);
+        }
+
+        $sessions = $sessions->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = [];
+
+        // Table 1: Application Usage Aggregated
+        $lines[] = '--- Application Usage ---';
+        $lines[] = 'Name,Productivity,Duration,Duration (Hours),Events,Employees';
+
+        $appGroups = $sessions->groupBy(fn ($s) => $s->display_name ?? $s->app_name ?? 'Unknown');
+        foreach ($appGroups as $appName => $appSessions) {
+            $classification = $appSessions->first()->classification ?? 'neutral';
+            $totalSeconds = (int) $appSessions->sum('duration_seconds');
+            $employeeCount = $appSessions->pluck('user_id')->unique()->count();
+
+            $lines[] = implode(',', [
+                $this->csvValue($appName),
+                ucfirst($classification),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+                $appSessions->count(),
+                $employeeCount,
+            ]);
+        }
+
+        // Table 2: Raw Activity
+        $lines[] = '';
+        $lines[] = '--- Raw Activity ---';
+        $lines[] = 'When,Employee,Name,Productivity,Duration,Duration (Hours)';
+
+        foreach ($sessions->sortBy('started_at') as $session) {
+            $when = $session->started_at
+                ? Carbon::parse($session->started_at)->setTimezone($entryTz)->format('d-M-Y h:i A')
+                : '';
+            $totalSeconds = (int) $session->duration_seconds;
+
+            $lines[] = implode(',', [
+                $when,
+                $this->csvValue($session->user?->name ?? 'Unknown User'),
+                $this->csvValue($session->display_name ?? $session->app_name ?? ''),
+                ucfirst($session->classification ?? 'neutral'),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'app-usage-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Website Usage Report CSV Builder ───────────────────────────────────
+    private function buildWebsiteUsageExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $sessions = ActivitySession::with(['user'])
+            ->where('started_at', '>=', $startDate)
+            ->where('started_at', '<=', $endDate)
+            ->where('activity_kind', 'url');
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $sessions->whereIn('user_id', $scopedUserIds->all());
+        } else {
+            $sessions->where('user_id', $user->id);
+        }
+
+        $sessions = $sessions->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = [];
+
+        // Table 1: Website Usage Aggregated
+        $lines[] = '--- Website Usage ---';
+        $lines[] = 'Name,Productivity,Duration,Duration (Hours),Events,Employees';
+
+        $siteGroups = $sessions->groupBy(fn ($s) => $s->normalized_domain ?? $s->display_name ?? 'Unknown');
+        foreach ($siteGroups as $siteName => $siteSessions) {
+            $classification = $siteSessions->first()->classification ?? 'neutral';
+            $totalSeconds = (int) $siteSessions->sum('duration_seconds');
+            $employeeCount = $siteSessions->pluck('user_id')->unique()->count();
+
+            $lines[] = implode(',', [
+                $this->csvValue($siteName),
+                ucfirst($classification),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+                $siteSessions->count(),
+                $employeeCount,
+            ]);
+        }
+
+        // Table 2: Employee Website Breakdown
+        $lines[] = '';
+        $lines[] = '--- Website Usage By Employee ---';
+        $lines[] = 'Employee Name,Email,Department,Website,Productivity,Duration,Duration (Hours),Events,Last Used';
+
+        $userSiteGroups = $sessions->groupBy(fn ($s) => $s->user_id . '|' . ($s->normalized_domain ?? $s->display_name ?? 'Unknown'));
+        foreach ($userSiteGroups as $key => $groupSessions) {
+            [$userId, $siteName] = explode('|', $key, 2);
+            $firstSession = $groupSessions->first();
+            $classification = $firstSession->classification ?? 'neutral';
+            $totalSeconds = (int) $groupSessions->sum('duration_seconds');
+            $lastUsed = $groupSessions->max('started_at');
+            $lastUsedStr = $lastUsed ? Carbon::parse($lastUsed)->setTimezone($entryTz)->format('d-M-Y h:i A') : '';
+
+            $lines[] = implode(',', [
+                $this->csvValue($firstSession->user?->name ?? 'Unknown User'),
+                $this->csvValue($firstSession->user?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($firstSession->user)),
+                $this->csvValue($siteName),
+                ucfirst($classification),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+                $groupSessions->count(),
+                $lastUsedStr,
+            ]);
+        }
+
+        // Table 3: Raw Activity
+        $lines[] = '';
+        $lines[] = '--- Raw Activity ---';
+        $lines[] = 'When,Employee,Name,Productivity,Duration,Duration (Hours)';
+
+        foreach ($sessions->sortBy('started_at') as $session) {
+            $when = $session->started_at
+                ? Carbon::parse($session->started_at)->setTimezone($entryTz)->format('d-M-Y h:i A')
+                : '';
+            $totalSeconds = (int) $session->duration_seconds;
+
+            $lines[] = implode(',', [
+                $when,
+                $this->csvValue($session->user?->name ?? 'Unknown User'),
+                $this->csvValue($session->display_name ?? $session->normalized_domain ?? ''),
+                ucfirst($session->classification ?? 'neutral'),
+                $this->csvValue($this->formatDurationForExport($totalSeconds)),
+                round($totalSeconds / 3600, 2),
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'website-usage-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    // ── Screenshots Report CSV Builder ─────────────────────────────────────
+    private function buildScreenshotsExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
+    {
+        $screenshots = Screenshot::with(['timeEntry.user'])
+            ->whereHas('timeEntry', function ($q) use ($startDate, $endDate) {
+                $q->whereBetween('start_time', [$startDate, $endDate]);
+            });
+
+        if ($this->canViewAll($user) && $user->organization_id) {
+            $screenshots->whereHas('timeEntry', function ($q) use ($scopedUserIds) {
+                $q->whereIn('user_id', $scopedUserIds->all());
+            });
+        } else {
+            $screenshots->whereHas('timeEntry', function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+            });
+        }
+
+        $screenshots = $screenshots->orderBy('created_at')->get();
+
+        $bom = "\xEF\xBB\xBF";
+        $lines = ['Employee Name,Email,Department,Timestamp,Filename,Image URL'];
+
+        foreach ($screenshots as $shot) {
+            $employee = $shot->timeEntry?->user;
+            $timestamp = $shot->captured_at
+                ? Carbon::parse($shot->captured_at)->setTimezone($entryTz)->format('d-M-Y h:i A')
+                : ($shot->created_at
+                    ? Carbon::parse($shot->created_at)->setTimezone($entryTz)->format('d-M-Y h:i A')
+                    : '');
+
+            $lines[] = implode(',', [
+                $this->csvValue($employee?->name ?? 'Unknown User'),
+                $this->csvValue($employee?->email ?? ''),
+                $this->csvValue($this->resolveExportDepartment($employee)),
+                $timestamp,
+                $this->csvValue($shot->filename ?? 'Captured screenshot'),
+                $this->csvValue($shot->path ?? ''),
+            ]);
+        }
+
+        $csv = $bom . implode("\n", $lines);
+        $fileName = 'screenshots-'.$startDate->toDateString().'-to-'.$endDate->toDateString().'.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
         ]);
     }
@@ -1594,7 +2431,9 @@ class ReportController extends Controller
                 ->get(['user_id', 'start_date', 'end_date'])
                 ->groupBy(fn ($leave) => (int) $leave->user_id);
 
-        // Build CSV
+        // UTF-8 BOM so Excel opens Indian names correctly
+        $bom = "\xEF\xBB\xBF";
+
         $lines = ['Employee Name,Date Range,Present Days,Absent Days,Total Days'];
 
         foreach ($scopedUsers as $scopedUser) {
@@ -1642,11 +2481,11 @@ class ReportController extends Controller
             ]);
         }
 
-        $csv = implode("\n", $lines);
+        $csv = $bom . implode("\n", $lines);
         $fileName = 'attendance-simple-' . $startDate->toDateString() . '-to-' . $endDate->toDateString() . '.csv';
 
         return response($csv, 200, [
-            'Content-Type' => 'text/csv',
+            'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
         ]);
     }
@@ -1844,8 +2683,8 @@ class ReportController extends Controller
                 ->max();
 
             return [
-                'start_date' => "'".$startDate->toDateString(),
-                'end_date' => "'".$endDate->toDateString(),
+                'start_date' => $startDate->toDateString(),
+                'end_date' => $endDate->toDateString(),
                 'employee_name' => (string) $scopedUser->name,
                 'employee_email' => (string) $scopedUser->email,
                 'employee_region' => AttendanceHoliday::countryForSettings((array) $scopedUser->settings),
@@ -1878,8 +2717,8 @@ class ReportController extends Controller
                     $expectedDays = max(1, $workingDaysCount * $employeeCount);
 
                     return [
-                        'start_date' => "'".$startDate->toDateString(),
-                        'end_date' => "'".$endDate->toDateString(),
+                        'start_date' => $startDate->toDateString(),
+                        'end_date' => $endDate->toDateString(),
                         'employee_name' => $department,
                         'employee_email' => '',
                         'employee_region' => '',
@@ -1924,7 +2763,10 @@ class ReportController extends Controller
             $headers[] = $label;
         }
 
-        $lines = [implode(',', array_map(fn ($header) => $this->csvValue((string) $header), $headers))];
+        // UTF-8 BOM so Excel opens Indian names correctly
+        $bom = "\xEF\xBB\xBF";
+
+        $lines = [$bom . implode(',', array_map(fn ($header) => $this->csvValue((string) $header), $headers))];
 
         foreach ($rows as $row) {
             $cells = [];
@@ -2974,6 +3816,29 @@ class ReportController extends Controller
             ],
             'recent_screenshots' => [],
         ];
+    }
+
+    private function formatDurationForExport(int $seconds): string
+    {
+        if ($seconds <= 0) {
+            return '0m';
+        }
+
+        $hours = intdiv($seconds, 3600);
+        $minutes = intdiv(($seconds % 3600), 60);
+        $remainingSeconds = $seconds % 60;
+
+        if ($remainingSeconds >= 30) {
+            $minutes++;
+        }
+
+        if ($hours > 0 && $minutes > 0) {
+            return "{$hours}h {$minutes}m";
+        }
+        if ($hours > 0) {
+            return "{$hours}h";
+        }
+        return "{$minutes}m";
     }
 
     private function csvValue(string $value): string

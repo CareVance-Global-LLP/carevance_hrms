@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, AlertCircle, XCircle, Loader2, ClipboardList, Play, Search } from 'lucide-react';
+import { CheckCircle, AlertCircle, XCircle, Loader2, ClipboardList, Play, Search, Download } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { SelectInput, TextInput, FieldLabel } from '@/components/ui/FormField';
@@ -137,10 +137,45 @@ export default function PrePayrollChecklistPage() {
         {/* Checklist Items */}
         {selectedRun && (
           <SurfaceCard className="overflow-hidden">
-            <h3 className="text-lg font-semibold text-slate-900 p-5 border-b flex items-center gap-2">
-              <ClipboardList className="h-5 w-5" />
-              Validation Checks
-            </h3>
+            <div className="flex items-center justify-between p-5 border-b">
+              <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                <ClipboardList className="h-5 w-5" />
+                Validation Checks
+              </h3>
+              {checks.length > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconLeft={<Download className="h-4 w-4" />}
+                  onClick={() => {
+                    const headers = ['Check', 'Category', 'Message', 'Status'];
+                    const rows = checks.map((c: any) => [
+                      c.name || c.check_name || c.title || '',
+                      c.category || '',
+                      c.message || c.description || '',
+                      c.status?.charAt(0).toUpperCase() + c.status?.slice(1) || '',
+                    ]);
+                    const escapeCsv = (val: any) => {
+                      const str = String(val ?? '');
+                      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        return '"' + str.replace(/"/g, '""') + '"';
+                      }
+                      return str;
+                    };
+                    const bom = '\uFEFF';
+                    const csv = bom + [headers.join(','), ...rows.map(r => r.map(escapeCsv).join(','))].join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `pre-payroll-checklist.csv`;
+                    a.click();
+                  }}
+                >
+                  Export CSV
+                </Button>
+              )}
+            </div>
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 animate-spin text-slate-400" />

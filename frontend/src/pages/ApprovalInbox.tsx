@@ -7,6 +7,7 @@ import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
+import { RequestEscalateControl } from '@/components/requests/RequestEscalateControl';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { formatDuration } from '@/lib/formatters';
 import { formatDateTime } from '@/lib/dateTime';
@@ -32,12 +33,14 @@ type ApprovalCardItem = {
   status: string;
   reviewerName?: string;
   reviewedAt?: string | null;
+  current_reviewer_ids?: number[] | null;
   leaveType?: string | null;
   leaveCategory?: string | null;
   startDate?: string | null;
   endDate?: string | null;
   onApprove?: () => Promise<void>;
   onReject?: () => Promise<void>;
+  onForward?: () => Promise<void>;
 };
 
 const startOfDay = (value = new Date()) => new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -199,6 +202,7 @@ const statusTone = (status: string) => {
 
 export default function ApprovalInbox() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const { hasFeature } = usePlan();
   const canAccessLeave = hasFeature('leave_management');
   const location = useLocation();
@@ -702,6 +706,12 @@ export default function ApprovalInbox() {
       const response = await leaveApi.reject(item.id);
       ensureSuccessfulAction(response, 'Leave rejection failed.');
     },
+    onForward: item.current_reviewer_ids?.includes(user?.id)
+      ? async () => {
+          const response = await leaveApi.transfer(item.id);
+          ensureSuccessfulAction(response, 'Failed to forward leave request.');
+        }
+      : undefined,
   })), [reviewablePendingLeaves]);
 
   const leaveHistoryCards = useMemo<ApprovalCardItem[]>(() => reviewableLeaveHistory.map((item) => ({
@@ -738,6 +748,12 @@ export default function ApprovalInbox() {
       const response = await attendanceTimeEditApi.reject(item.id);
       ensureSuccessfulAction(response, 'Time edit rejection failed.');
     },
+    onForward: item.current_reviewer_ids?.includes(user?.id)
+      ? async () => {
+          const response = await attendanceTimeEditApi.transfer(item.id);
+          ensureSuccessfulAction(response, 'Failed to forward time edit request.');
+        }
+      : undefined,
   })), [reviewablePendingTimeEdits]);
 
   const timeEditHistoryCards = useMemo<ApprovalCardItem[]>(() => reviewableTimeEditHistory.map((item) => ({
@@ -763,6 +779,9 @@ export default function ApprovalInbox() {
     employeeName: item.user?.name || 'Unknown',
     employeeEmail: item.user?.email || '',
     status: item.status,
+    current_reviewer_ids: item.current_reviewer_ids ?? null,
+    escalated_to: item.escalated_to ?? null,
+    escalation_history: item.escalation_history ?? null,
     onApprove: async () => {
       const response = await resignationApi.approve(item.id);
       ensureSuccessfulAction(response, 'Resignation approval failed.');
@@ -1211,24 +1230,61 @@ export default function ApprovalInbox() {
                 </div>
 
                 {activeView === 'pending' ? (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      className="bg-emerald-600 shadow-sm hover:bg-emerald-700"
-                      onClick={() => item.onApprove && handleAction(item.onApprove, `${item.employeeName}'s request approved.`)}
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() => item.onReject && handleAction(item.onReject, `${item.employeeName}'s request rejected.`)}
-                    >
-                      <XCircle className="h-4 w-4" />
-                      Reject
-                    </Button>
-                  </div>
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 shadow-sm hover:bg-emerald-700"
+                        onClick={() => item.onApprove && handleAction(item.onApprove, `${item.employeeName}'s request approved.`)}
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => item.onReject && handleAction(item.onReject, `${item.employeeName}'s request rejected.`)}
+                      >
+                        <XCircle className="h-4 w-4" />
+                        Reject
+                      </Button>
+                      {item.kind === 'resignation' ? (
+                        <RequestEscalateControl
+                          item={item}
+                          onTransfer={async (note, toUserId) => {
+                            const response = await resignationApi.transfer(item.id, note, toUserId);
+                            ensureSuccessfulAction(response, 'Failed to forward resignation request.');
+                          }}
+                          forwardTargetLoader={async () => {
+                            const res = await resignationApi.forwardTargets(item.id);
+                            return res.data.data;
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                    {item.kind !== 'resignation' &&
+                    (item.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) ||
+                      isAdmin ||
+                      user?.role === 'manager') ? (
+                      <RequestEscalateControl
+                        item={item}
+                        onTransfer={async (note, toUserId) => {
+                          if (item.kind === 'leave') {
+                            const response = await leaveApi.transfer(item.id, note, toUserId);
+                            ensureSuccessfulAction(response, 'Failed to forward leave request.');
+                          } else {
+                            const response = await attendanceTimeEditApi.transfer(item.id, note, toUserId);
+                            ensureSuccessfulAction(response, 'Failed to forward time edit request.');
+                          }
+                        }}
+                        forwardTargetLoader={async () => {
+                          const api = item.kind === 'leave' ? leaveApi : attendanceTimeEditApi;
+                          const res = await api.forwardTargets(item.id);
+                          return res.data.data;
+                        }}
+                      />
+                    ) : null}
+                  </>
                 ) : null}
               </div>
             </SurfaceCard>

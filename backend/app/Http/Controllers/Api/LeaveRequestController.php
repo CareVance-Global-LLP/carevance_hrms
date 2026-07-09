@@ -46,6 +46,7 @@ class LeaveRequestController extends Controller
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
                 'revokeReviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ])
             ->where('organization_id', $currentUser->organization_id)
             ->orderByDesc('created_at');
@@ -58,7 +59,11 @@ class LeaveRequestController extends Controller
             // Every user always sees their own leave requests.
             $visibleUserIds->push((int) $currentUser->id);
 
-            $query->whereIn('user_id', $visibleUserIds->unique()->values());
+            // Also surface requests escalated (transferred) to this user.
+            $query->where(function ($q) use ($visibleUserIds, $currentUser) {
+                $q->whereIn('user_id', $visibleUserIds->unique()->values())
+                    ->orWhere('escalated_to_user_id', (int) $currentUser->id);
+            });
 
             if ($request->filled('user_id')) {
                 $query->where('user_id', (int) $request->user_id);
@@ -288,6 +293,13 @@ class LeaveRequestController extends Controller
 
         $this->sendSubmissionNotification($leave, $currentUser);
         $this->sendApplicantConfirmation($leave, $currentUser);
+        $this->notifyAdminsOfRequest(
+            requester: $currentUser,
+            kind: 'leave_request',
+            action: 'submitted',
+            request: $leave,
+            note: null,
+        );
 
         return response()->json([
             'message' => 'Leave request submitted.',
@@ -296,6 +308,8 @@ class LeaveRequestController extends Controller
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
                 'revokeReviewer:id,name,email',
+                'escalatedTo:id,name,email',
+                'escalatedTo:id,name,email',
             ])),
         ], 201);
     }
@@ -318,7 +332,7 @@ class LeaveRequestController extends Controller
             return response()->json(['message' => 'Leave request not found'], 404);
         }
         $leave->loadMissing('user.employeeWorkInfo');
-        if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
+        if (!$leave->user || !($this->approvalRoutingService->canReview($currentUser, $leave->user) || (int) $leave->escalated_to_user_id === (int) $currentUser->id)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($leave->hasExpiredPendingWindow()) {
@@ -386,6 +400,7 @@ class LeaveRequestController extends Controller
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
                 'revokeReviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
         ]);
     }
@@ -408,7 +423,7 @@ class LeaveRequestController extends Controller
             return response()->json(['message' => 'Leave request not found'], 404);
         }
         $leave->loadMissing('user.employeeWorkInfo');
-        if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
+        if (!$leave->user || !($this->approvalRoutingService->canReview($currentUser, $leave->user) || (int) $leave->escalated_to_user_id === (int) $currentUser->id)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($leave->hasExpiredPendingWindow()) {
@@ -452,8 +467,164 @@ class LeaveRequestController extends Controller
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
                 'revokeReviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
         ]);
+    }
+
+    public function transfer(Request $request, int $id)
+    {
+        $request->validate([
+            'note' => 'nullable|string|max:2000',
+            'to_user_id' => 'nullable|integer|exists:users,id',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['message' => 'Organization is required.'], 422);
+        }
+
+        $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$leave) {
+            return response()->json(['message' => 'Leave request not found'], 404);
+        }
+
+        // Only the user *currently holding* the request may forward it upward,
+        // enforcing a strict chain: employee -> team lead -> manager -> admin.
+        // The current holder is the nearest reviewer (or the escalated target).
+        $currentHolderIds = $this->approvalRoutingService->currentReviewerIds($leave->user, $leave->escalated_to_user_id);
+        if (! $currentHolderIds->contains((int) $currentUser->id) && ! $this->canManage($currentUser)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($leave->status !== 'pending') {
+            return response()->json(['message' => 'Only pending requests can be transferred.'], 422);
+        }
+
+        $requester = $leave->user()->with('employeeWorkInfo', 'customRole')->firstOrFail();
+
+        $excludeUserId = $leave->escalated_to_user_id ?? $this->immediateReviewerId($requester);
+
+        $targetUser = null;
+        if ($request->filled('to_user_id')) {
+            $candidate = User::query()
+                ->where('organization_id', $currentUser->organization_id)
+                ->where('id', (int) $request->to_user_id)
+                ->first();
+
+            if (!$candidate || ! $this->approvalRoutingService->isValidForwardTarget($requester, (int) $candidate->id, $excludeUserId)) {
+                return response()->json([
+                    'message' => 'Selected user is not a valid forward target for this request.',
+                ], 422);
+            }
+
+            $targetUser = $candidate;
+        } else {
+            $targetIds = $this->approvalRoutingService->escalationTargetIds($requester, $excludeUserId);
+
+            if ($targetIds->isEmpty()) {
+                return response()->json([
+                    'message' => 'No higher hierarchy is available to escalate this request to.',
+                ], 422);
+            }
+
+            $targetUser = User::query()->whereIn('id', $targetIds)->first();
+        }
+
+        $history = $leave->escalation_history ?? [];
+        $history[] = [
+            'from_user_id' => $excludeUserId ? (int) $excludeUserId : null,
+            'to_user_id' => $targetUser->id,
+            'to_level' => $targetUser->name,
+            'note' => $request->note,
+            'by_user_id' => (int) $currentUser->id,
+            'at' => now()->toIso8601String(),
+        ];
+
+        $leave->update([
+            'escalated_to_user_id' => $targetUser->id,
+            'escalation_history' => $history,
+        ]);
+
+        $dateRange = sprintf(
+            '%s to %s',
+            Carbon::parse($leave->start_date)->toDateString(),
+            Carbon::parse($leave->end_date)->toDateString()
+        );
+
+        $this->notificationService->sendToUsers(
+            organizationId: (int) $leave->organization_id,
+            userIds: collect([$targetUser->id]),
+            senderId: (int) $requester->id,
+            type: 'leave_request',
+            title: 'Leave Request Forwarded to You',
+            message: sprintf(
+                '%s forwarded a leave request (%s) to you for approval.',
+                (string) $requester->name,
+                $dateRange
+            ),
+            meta: [
+                'route' => '/approval-inbox',
+                'approval_kind' => 'leave_request',
+                'request_id' => (int) $leave->id,
+                'employee_id' => (int) $requester->id,
+                'employee_name' => (string) $requester->name,
+                'start_date' => Carbon::parse($leave->start_date)->toDateString(),
+                'end_date' => Carbon::parse($leave->end_date)->toDateString(),
+                'escalated' => true,
+            ]
+        );
+
+        $this->notifyAdminsOfRequest(
+            requester: $requester,
+            kind: 'leave_request',
+            action: 'transferred',
+            request: $leave,
+            note: $request->note,
+        );
+
+        $this->auditLogService->log(
+            action: 'leave.escalated',
+            actor: $currentUser,
+            target: $leave,
+            metadata: [
+                'employee_id' => $leave->user_id,
+                'escalated_to_user_id' => $targetUser->id,
+                'escalated_to_names' => [$targetUser->name],
+            ],
+            request: $request
+        );
+
+        return response()->json([
+            'message' => 'Leave request transferred to the next hierarchy level.',
+            'data' => $this->withApprovalDestination($leave->fresh()->load([
+                'user:id,name,email,role,role_id,organization_id',
+                'user.customRole:id,hierarchy_level',
+                'reviewer:id,name,email',
+                'revokeReviewer:id,name,email',
+                'escalatedTo:id,name,email',
+                'escalatedTo:id,name,email',
+            ])),
+        ]);
+    }
+
+    public function forwardTargets(Request $request, int $id)
+    {
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['data' => []]);
+        }
+
+        $leave = LeaveRequest::where('organization_id', $currentUser->organization_id)->find($id);
+        if (!$leave) {
+            return response()->json(['message' => 'Leave request not found'], 404);
+        }
+
+        $requester = $leave->user()->with('employeeWorkInfo', 'customRole')->firstOrFail();
+        $excludeUserId = $leave->escalated_to_user_id ?? $this->immediateReviewerId($requester);
+
+        $targets = $this->approvalRoutingService->forwardTargets($requester, $excludeUserId);
+
+        return response()->json(['data' => $targets->all()]);
     }
 
     public function requestRevoke(Request $request, int $id)
@@ -508,6 +679,7 @@ class LeaveRequestController extends Controller
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
                 'revokeReviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
         ]);
     }
@@ -528,7 +700,7 @@ class LeaveRequestController extends Controller
             return response()->json(['message' => 'Leave request not found'], 404);
         }
         $leave->loadMissing('user.employeeWorkInfo');
-        if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
+        if (!$leave->user || !($this->approvalRoutingService->canReview($currentUser, $leave->user) || (int) $leave->escalated_to_user_id === (int) $currentUser->id)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($leave->status !== 'approved' || $leave->revoke_status !== 'pending') {
@@ -565,6 +737,7 @@ class LeaveRequestController extends Controller
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
                 'revokeReviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
         ]);
     }
@@ -585,7 +758,7 @@ class LeaveRequestController extends Controller
             return response()->json(['message' => 'Leave request not found'], 404);
         }
         $leave->loadMissing('user.employeeWorkInfo');
-        if (!$leave->user || !$this->approvalRoutingService->canReview($currentUser, $leave->user)) {
+        if (!$leave->user || !($this->approvalRoutingService->canReview($currentUser, $leave->user) || (int) $leave->escalated_to_user_id === (int) $currentUser->id)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($leave->status !== 'approved' || $leave->revoke_status !== 'pending') {
@@ -619,6 +792,7 @@ class LeaveRequestController extends Controller
                 'user.customRole:id,hierarchy_level',
                 'reviewer:id,name,email',
                 'revokeReviewer:id,name,email',
+                'escalatedTo:id,name,email',
             ]),
         ]);
     }
@@ -674,6 +848,71 @@ class LeaveRequestController extends Controller
     private function canManage(User $user): bool
     {
         return ! empty($this->approvalRoutingService->reviewerHierarchyLevels($user));
+    }
+
+    private function immediateReviewerId(User $requester): ?int
+    {
+        return $this->approvalRoutingService->reviewerUserIds($requester)->first();
+    }
+
+    /**
+     * Notify all org admins that an employee submitted/transferred a request to
+     * a given hierarchy level. Mirrors the employee-side "approval_destination".
+     */
+    private function notifyAdminsOfRequest(User $requester, string $kind, string $action, LeaveRequest $request, ?string $note): void
+    {
+        $adminIds = $this->approvalRoutingService->organizationAdminIds($requester);
+        if ($adminIds->isEmpty()) {
+            return;
+        }
+
+        if ($request->escalated_to_user_id) {
+            $destinationNames = User::query()
+                ->where('id', (int) $request->escalated_to_user_id)
+                ->pluck('name')
+                ->map(fn ($n) => trim((string) $n))
+                ->filter()
+                ->values();
+        } else {
+            $destinationNames = User::query()
+                ->whereIn('id', $this->approvalRoutingService->reviewerUserIds($requester))
+                ->pluck('name')
+                ->map(fn ($n) => trim((string) $n))
+                ->filter()
+                ->values();
+        }
+        // Use the actual person names (no generic "team lead"/"manager" label).
+        $destination = $destinationNames->isEmpty() ? 'the approver' : $destinationNames->implode(', ');
+
+        $dateRange = sprintf(
+            '%s to %s',
+            Carbon::parse($request->start_date)->toDateString(),
+            Carbon::parse($request->end_date)->toDateString()
+        );
+
+        $this->notificationService->sendToUsers(
+            organizationId: (int) $requester->organization_id,
+            userIds: $adminIds,
+            senderId: (int) $requester->id,
+            type: $kind,
+            title: $action === 'transferred' ? 'Leave Request Transferred' : 'Leave Request Submitted',
+            message: sprintf(
+                '%s %s a leave request (%s) to %s.',
+                (string) $requester->name,
+                $action,
+                $dateRange,
+                $destination
+            ).(filled($note) ? ' Note: '.$note : ''),
+            meta: [
+                'route' => '/approval-inbox',
+                'approval_kind' => 'leave_request',
+                'request_id' => (int) $request->id,
+                'employee_id' => (int) $requester->id,
+                'employee_name' => (string) $requester->name,
+                'start_date' => Carbon::parse($request->start_date)->toDateString(),
+                'end_date' => Carbon::parse($request->end_date)->toDateString(),
+            ]
+        );
     }
 
     private function sendSubmissionNotification(LeaveRequest $leave, User $requester): void
@@ -751,13 +990,23 @@ class LeaveRequestController extends Controller
             ->filter()
             ->values();
 
-        $reviewerLabel = $this->approvalRoutingService->reviewerLabel($leave->user, $reviewerNames->count());
+        // Once forwarded, show the actual recipient; otherwise the real
+        // reviewer names (no generic "team lead"/"manager" label that ignores
+        // the actual role of the person holding the request).
+        if ($leave->escalated_to_user_id && $leave->escalatedTo) {
+            $leave->setAttribute('approval_destination', 'Forwarded to '.$leave->escalatedTo->name);
+        } else {
+            $leave->setAttribute(
+                'approval_destination',
+                $reviewerNames->isEmpty() ? 'Sent to reviewer' : 'Sent to '.$reviewerNames->implode(', ')
+            );
+        }
 
+        $leave->setAttribute('escalated_to', $leave->escalatedTo?->only(['id', 'name']));
+        $leave->setAttribute('escalation_history', $leave->escalation_history ?? []);
         $leave->setAttribute(
-            'approval_destination',
-            $reviewerNames->isEmpty()
-                ? "Sent to {$reviewerLabel}"
-                : sprintf('Sent to %s: %s', $reviewerLabel, $reviewerNames->implode(', '))
+            'current_reviewer_ids',
+            $this->approvalRoutingService->currentReviewerIds($leave->user, $leave->escalated_to_user_id)->values()->all()
         );
 
         return $leave;
@@ -807,5 +1056,39 @@ class LeaveRequestController extends Controller
                 'review_note' => $leave->review_note,
             ]
         );
+
+        // Keep admins in the loop on the final decision (accepted/rejected).
+        $adminIds = $this->approvalRoutingService->organizationAdminIds($leave->user);
+        if ($adminIds->isNotEmpty()) {
+            $dateRange = sprintf(
+                '%s to %s',
+                Carbon::parse($leave->start_date)->toDateString(),
+                Carbon::parse($leave->end_date)->toDateString()
+            );
+            $this->notificationService->sendToUsers(
+                organizationId: (int) $leave->organization_id,
+                userIds: $adminIds,
+                senderId: (int) $reviewer->id,
+                type: 'leave_request',
+                title: $status === 'approved' ? 'Leave Request Approved' : 'Leave Request Rejected',
+                message: sprintf(
+                    '%s %s %s\'s leave request (%s).',
+                    (string) $reviewer->name,
+                    $status,
+                    (string) $leave->user->name,
+                    $dateRange
+                ),
+                meta: [
+                    'route' => '/approval-inbox',
+                    'approval_kind' => 'leave_request',
+                    'request_id' => (int) $leave->id,
+                    'employee_id' => (int) $leave->user_id,
+                    'employee_name' => (string) $leave->user->name,
+                    'start_date' => Carbon::parse($leave->start_date)->toDateString(),
+                    'end_date' => Carbon::parse($leave->end_date)->toDateString(),
+                    'status' => $status,
+                ]
+            );
+        }
     }
 }

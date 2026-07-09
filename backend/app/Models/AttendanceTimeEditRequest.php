@@ -17,6 +17,8 @@ class AttendanceTimeEditRequest extends Model
         'reviewed_by',
         'reviewed_at',
         'review_note',
+        'escalated_to_user_id',
+        'escalation_history',
     ];
 
     protected function casts(): array
@@ -25,6 +27,7 @@ class AttendanceTimeEditRequest extends Model
             'attendance_date' => 'date',
             'extra_seconds' => 'integer',
             'reviewed_at' => 'datetime',
+            'escalation_history' => 'array',
         ];
     }
 
@@ -36,6 +39,11 @@ class AttendanceTimeEditRequest extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function escalatedTo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'escalated_to_user_id');
     }
 
     public function organization(): BelongsTo

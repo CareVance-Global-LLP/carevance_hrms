@@ -21,6 +21,7 @@ import { formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeFo
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDuration } from '@/lib/formatters';
 import StatusBadge from '@/components/ui/StatusBadge';
+import { RequestEscalateControl } from '@/components/requests/RequestEscalateControl';
 import { Briefcase, CalendarDays, Clock, Download, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
 
@@ -385,29 +386,97 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
     setIsExporting(true);
     try {
-      // Build CSV from already-loaded rows data
-      const csvRows = [['Employee Name', 'Present Days', 'Absent Days', 'Total Days']];
+      const formatDuration = (seconds: number): string => {
+        if (!seconds || seconds <= 0) return '0m';
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        if (h > 0 && m > 0) return `${h}h ${m}m`;
+        if (h > 0) return `${h}h`;
+        return `${m}m`;
+      };
+
+      const csvRows = [[
+        'Employee Name',
+        'Email',
+        'Department',
+        'Date Range',
+        'Present Days',
+        'Leave Days',
+        'Absent Days',
+        'Total Working Days',
+        'Attendance Rate (%)',
+        'Worked Hours',
+        'First Check-In',
+        'Last Check-Out',
+        'Status',
+      ]];
       let totalPresent = 0;
       let totalAbsent = 0;
       let totalAll = 0;
+      let totalWorkedSeconds = 0;
 
       for (const row of rows) {
         const present = Number(row.days_present) || 0;
-        const absent = Number(row.absent_days ?? (row.working_days_in_range - present - (Number(row.leave_days) || 0)));
+        const leaveDays = Number(row.leave_days) || 0;
+        const absent = Number(row.absent_days ?? (row.working_days_in_range - present - leaveDays));
         const total = present + Math.max(0, absent);
         const name = row.user?.name || 'Unknown';
+        const email = row.user?.email || '';
+        const department = row.department || row.user?.employee_work_info?.department?.name || '';
+        const workingDays = Number(row.working_days_in_range) || 0;
+        const attendanceRate = workingDays > 0 ? ((present / workingDays) * 100).toFixed(1) : '0';
+        const workedSeconds = Number(row.worked_seconds) || 0;
+        const firstCheckIn = row.check_in_at || '';
+        const lastCheckOut = row.check_out_at || '';
 
-        csvRows.push([`"${name}"`, String(present), String(Math.max(0, absent)), String(total)]);
+        let status = 'Absent';
+        if (present > 0) {
+          status = Number(row.late_minutes || 0) > 0 ? 'Late' : 'Present';
+        } else if (leaveDays > 0) {
+          status = 'On Leave';
+        }
+
+        csvRows.push([
+          `"${name}"`,
+          `"${email}"`,
+          `"${department}"`,
+          `"${startDate} to ${endDate}"`,
+          String(present),
+          String(leaveDays),
+          String(Math.max(0, absent)),
+          String(workingDays),
+          attendanceRate,
+          formatDuration(workedSeconds),
+          `"${firstCheckIn}"`,
+          `"${lastCheckOut}"`,
+          `"${status}"`,
+        ]);
         totalPresent += present;
         totalAbsent += Math.max(0, absent);
         totalAll += total;
+        totalWorkedSeconds += workedSeconds;
       }
 
-      // Add total row
-      csvRows.push(['"TOTAL"', String(totalPresent), String(totalAbsent), String(totalAll)]);
+      const overallRate = totalAll > 0 ? ((totalPresent / totalAll) * 100).toFixed(1) : '0';
+      csvRows.push([
+        '"TOTAL"',
+        '',
+        '',
+        '',
+        String(totalPresent),
+        '',
+        String(totalAbsent),
+        String(totalAll),
+        overallRate,
+        formatDuration(totalWorkedSeconds),
+        '',
+        '',
+        '',
+      ]);
 
-      const csv = csvRows.map(r => r.join(',')).join('\n');
-      const blob = new Blob([csv], { type: 'text/csv' });
+      const bom = '\uFEFF';
+      const csv = bom + csvRows.map(r => r.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=UTF-8' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       const filename = `attendance-report-${startDate}-to-${endDate}.csv`;
@@ -768,6 +837,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
+  const transferLeave = async (id: number, note?: string, toUserId?: number) => {
+    setLeaveFeedback();
+    try {
+      await leaveApi.transfer(id, note, toUserId);
+      await Promise.all([fetchLeaveRequests(), fetchLeaveBalances()]);
+      setLeaveFeedback(toUserId ? 'Leave request forwarded to the selected manager.' : 'Leave request transferred to the next hierarchy level.');
+    } catch (e) {
+      console.error('Transfer leave failed:', e);
+      setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to transfer leave request');
+    }
+  };
+
+
   const approveLeaveRevoke = async (id: number) => {
     setLeaveFeedback();
     try {
@@ -863,6 +945,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to reject time edit request');
     }
   };
+
+  const transferTimeEdit = async (id: number, note?: string, toUserId?: number) => {
+    setTimeEditFeedback();
+    try {
+      await attendanceTimeEditApi.transfer(id, note, toUserId);
+      await fetchTimeEditRequests();
+      setTimeEditFeedback(toUserId ? 'Time edit request forwarded to the selected manager.' : 'Time edit request transferred to the next hierarchy level.');
+    } catch (e) {
+      console.error('Transfer time edit failed:', e);
+      setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to transfer time edit request');
+    }
+  };
+
 
   useEffect(() => {
     if (mode !== 'full') return;
@@ -1543,6 +1638,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         <Button onClick={() => requestLeaveRevoke(item.id)} variant="danger" size="sm">Request Revoke</Button>
                       </div>
                     ) : null}
+                    {(item.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) || isAdmin) && item.status === 'pending' ? (
+                      <RequestEscalateControl
+                        item={item}
+                        onTransfer={(note, toUserId) => transferLeave(item.id, note, toUserId)}
+                        forwardTargetLoader={() => leaveApi.forwardTargets(item.id).then((r) => r.data.data)}
+                      />
+                    ) : null}
                     {canReviewLeaveRequest(item) && item.status === 'approved' && item.revoke_status === 'pending' ? (
                       <div className="mt-2 flex gap-2">
                         <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve Revoke</Button>
@@ -1645,6 +1747,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
                         <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
                       </div>
+                    ) : null}
+                    {(item.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) || isAdmin) && item.status === 'pending' ? (
+                      <RequestEscalateControl
+                        item={item}
+                        onTransfer={(note, toUserId) => transferTimeEdit(item.id, note, toUserId)}
+                        forwardTargetLoader={() => attendanceTimeEditApi.forwardTargets(item.id).then((r) => r.data.data)}
+                      />
                     ) : null}
                   </div>
                 ))}

@@ -52,11 +52,40 @@ class GroupAccessService
         }
 
         $managedGroupIds = $this->managedGroupIds($user);
-        if (!empty($managedGroupIds)) {
-            return $query->whereIn('id', $managedGroupIds);
+        $teamDepartmentIds = $this->teamDepartmentIds($user);
+
+        if (!empty($managedGroupIds) || !empty($teamDepartmentIds)) {
+            $allowed = collect([...$managedGroupIds, ...$teamDepartmentIds])
+                ->unique()
+                ->values()
+                ->all();
+
+            return $query->whereIn('id', $allowed);
         }
 
         return $query->whereHas('users', fn (Builder $builder) => $builder->whereKey($user->id));
+    }
+
+    /**
+     * Department IDs a user belongs to via a team membership. Team members can
+     * view department-scoped tasks even if they are not direct department members.
+     *
+     * @return array<int>
+     */
+    private function teamDepartmentIds(User $user): array
+    {
+        if (!$user->organization_id) {
+            return [];
+        }
+
+        return \App\Models\DepartmentTeam::query()
+            ->where('organization_id', $user->organization_id)
+            ->whereHas('members', fn (Builder $builder) => $builder->where('users.id', $user->id))
+            ->pluck('department_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public function manageableGroupsQuery(?User $user): Builder

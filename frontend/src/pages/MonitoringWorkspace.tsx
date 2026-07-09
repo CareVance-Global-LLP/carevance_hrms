@@ -20,7 +20,7 @@ import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateR
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDuration } from '@/lib/formatters';
-import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
+import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Download, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 import type { BrowserTrackingHealthSummary } from '@/types';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
@@ -257,6 +257,9 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
   const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
   const [refreshedScreenshotPaths, setRefreshedScreenshotPaths] = useState<Record<number, string>>({});
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState('');
+  const [exportError, setExportError] = useState('');
 
   useEffect(() => {
     const persisted = readPersistedMonitoringWorkspaceFilters(mode);
@@ -777,9 +780,60 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     }
   };
 
+  const handleExport = async () => {
+    setExportMessage('');
+    setExportError('');
+    setIsExporting(true);
+    try {
+      const reportTypeMap: Record<MonitoringWorkspaceMode, string> = {
+        'productive-time': 'productive-time',
+        'unproductive-time': 'unproductive-time',
+        'app-usage': 'app-usage',
+        'website-usage': 'website-usage',
+        'screenshots': 'screenshots',
+      };
+      const response = await reportApi.export({
+        start_date: startDate,
+        end_date: endDate,
+        user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
+        report_type: reportTypeMap[mode],
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `report-${mode}-${startDate}-to-${endDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setExportMessage('Export completed.');
+    } catch (error: any) {
+      setExportError(error?.response?.data?.message || 'Failed to export report.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow={pageTitle.eyebrow} title={pageTitle.title} description={pageTitle.description} />
+      <PageHeader
+        eyebrow={pageTitle.eyebrow}
+        title={pageTitle.title}
+        description={pageTitle.description}
+        actions={
+          <Button onClick={() => void handleExport()} variant="secondary" disabled={isExporting}>
+            <Download className="h-4 w-4" />
+            {isExporting ? 'Exporting...' : 'Export CSV'}
+          </Button>
+        }
+      />
+
+      {exportMessage && (
+        <FeedbackBanner tone="success" message={exportMessage} onDismiss={() => setExportMessage('')} />
+      )}
+      {exportError && (
+        <FeedbackBanner tone="error" message={exportError} onDismiss={() => setExportError('')} />
+      )}
 
       <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <DateRangeFields

@@ -26,7 +26,9 @@ function SyncEngine(options = {}) {
   this.lastError = null;
   this.syncProgress = { current: 0, total: 0, itemType: '' };
   this.rateLimitedUntil = 0;
-
+  // Maps an offline time-entry local_id -> server time_entry id so dependent
+  // screenshots/activities can be rewritten before they sync.
+  this.timeEntryMap = {};
   this._boundHandleOnline = this._handleOnline.bind(this);
   this._boundDoSync = this._doSync.bind(this);
 }
@@ -46,6 +48,8 @@ SyncEngine.prototype.start = function () {
   this.running = true;
 
   this.networkMonitor.on('online', this._boundHandleOnline);
+
+  this._primeTimeEntryMap();
 
   // Periodic sync check (every 5 seconds when online)
   this.timer = setInterval(() => {
@@ -82,6 +86,35 @@ SyncEngine.prototype.triggerSync = function () {
   this._doSync().catch(() => {});
 };
 
+SyncEngine.prototype._primeTimeEntryMap = function () {
+  try {
+    const rows = this.db._all
+      ? this.db._all('SELECT local_id, server_id FROM offline_sync_map')
+      : [];
+    (rows || []).forEach((row) => {
+      if (row && row.local_id) this.timeEntryMap[row.local_id] = row.server_id;
+    });
+    if (rows && rows.length) {
+      console.log('[sync-engine] Primed time-entry map with', rows.length, 'entries');
+    }
+  } catch (err) {
+    console.warn('[sync-engine] Failed to prime time-entry map:', err.message);
+  }
+};
+
+SyncEngine.prototype._resolveTimeEntryId = function (record) {
+  // Prefer an already-resolved server id derived from the offline time-entry
+  // local_id. Fall back to a directly stored numeric time_entry_id (offline
+  // placeholder strings are intentionally ignored so we defer instead).
+  if (record && record.time_entry_local_id && this.timeEntryMap[record.time_entry_local_id]) {
+    return this.timeEntryMap[record.time_entry_local_id];
+  }
+  if (record && record.time_entry_id && /^\d+$/.test(String(record.time_entry_id))) {
+    return record.time_entry_id;
+  }
+  return null;
+};
+
 SyncEngine.prototype._doSync = async function () {
   if (this.syncing || !this.db.isReady()) return;
   if (!this.authToken) return;
@@ -112,6 +145,7 @@ SyncEngine.prototype._doSync = async function () {
 
     this.syncProgress = { current: 0, total: batch.length, itemType: batch[0].record_type };
 
+    let madeProgress = false;
     for (const item of batch) {
       if (!this.running) break;
       if (!this.networkMonitor.isOnline) {
@@ -121,6 +155,7 @@ SyncEngine.prototype._doSync = async function () {
 
       try {
         await this._syncItem(item);
+        madeProgress = true;
       } catch (err) {
         console.error(`[sync-engine] Failed to sync ${item.record_type}:${item.local_id}:`, err.message);
       }
@@ -133,7 +168,13 @@ SyncEngine.prototype._doSync = async function () {
       });
     }
 
-    this.lastSyncAt = new Date().toISOString();
+    // Only record a successful sync time when we actually made progress. A
+    // batch that was interrupted (e.g. network dropped mid-sync, nothing
+    // synced) must not report a fresh "Last sync" timestamp while records are
+    // still pending.
+    if (madeProgress) {
+      this.lastSyncAt = new Date().toISOString();
+    }
     this.lastError = null;
     this.emit('sync-complete', {
       syncedCount: this.syncProgress.current,
@@ -141,9 +182,11 @@ SyncEngine.prototype._doSync = async function () {
       lastSyncAt: this.lastSyncAt,
     });
 
-    // If there are more items, schedule next batch
+    // If there are more items, schedule next batch. Only recurse when we made
+    // progress this pass, otherwise wait for the next interval to avoid a
+    // busy-loop on records that are blocked (e.g. waiting on a time-entry map).
     const remaining = this.queueManager.getQueueSize();
-    if (remaining > 0 && this.networkMonitor.isOnline && this.running) {
+    if (remaining > 0 && this.running && madeProgress && this.networkMonitor.isOnline) {
       setImmediate(() => {
         this._doSync().catch(() => {});
       });
@@ -259,136 +302,234 @@ SyncEngine.prototype._apiRequest = function (method, path, body = null, isFormDa
   });
 };
 
+SyncEngine.prototype._handleSoftFailure = function (recordType, record, err) {
+  const msg = err.message || '';
+  if (msg.includes('Rate limited') || msg.includes('HTTP 429')) {
+    console.warn('[sync-engine] Rate limited on', recordType, 'will retry later');
+    this.rateLimitedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+    return true;
+  }
+  if (msg.includes('Auth error')) {
+    this.emit('auth-error', { error: msg });
+  }
+  this.queueManager.markFailed(recordType, record.local_id, msg);
+  return false;
+};
+
 SyncEngine.prototype._syncAttendance = async function (record) {
   try {
-    this.queueManager.markSynced('attendance', record.local_id);
-    return;
-
-    // When backend endpoints support idempotency, uncomment:
-    // const endpoint = record.punch_type === 'in' 
-    //   ? '/api/attendance/check-in' 
-    //   : '/api/attendance/check-out';
-    // await this._apiRequest('POST', endpoint, {
-    //   local_id: record.local_id,
-    //   device_id: record.device_id,
-    //   timestamp: record.punch_at,
-    // });
-    // this.queueManager.markSynced('attendance', record.local_id);
-  } catch (err) {
-    const isAuthError = err.message.includes('Auth error');
-    if (isAuthError) {
-      this.emit('auth-error', { error: err.message });
+    const endpoint = record.punch_type === 'out'
+      ? '/api/attendance/check-out'
+      : '/api/attendance/check-in';
+    const body = {
+      local_id: record.local_id,
+      device_id: record.device_id,
+      latitude: record.latitude ?? undefined,
+      longitude: record.longitude ?? undefined,
+    };
+    if (record.punch_type === 'out') {
+      body.punch_out_at = record.punch_at || undefined;
+    } else {
+      body.punch_at = record.punch_at || undefined;
     }
-    this.queueManager.markFailed('attendance', record.local_id, err.message);
+    await this._apiRequest('POST', endpoint, body);
+    this.queueManager.markSynced('attendance', record.local_id);
+  } catch (err) {
+    const msg = err.message || '';
+    // Conflicts / already-handled punches are treated as successful syncs so
+    // the offline queue can make progress instead of retrying forever.
+    if (
+      msg.includes('already checked in')
+      || msg.includes('No active punch-in')
+      || msg.includes('Please check in first')
+      || msg.includes('HTTP 409')
+      || msg.includes('HTTP 422')
+    ) {
+      this.queueManager.markSynced('attendance', record.local_id);
+      return;
+    }
+    if (this._handleSoftFailure('attendance', record, err)) return;
     throw err;
   }
 };
 
 SyncEngine.prototype._syncTimeEntry = async function (record) {
   try {
-    this.queueManager.markSynced('time_entry', record.local_id);
-    return;
+    if (record.action === 'stop') {
+      // If this stop references a time entry whose start hasn't synced yet, wait
+      if (record.time_entry_local_id && !this._resolveTimeEntryId(record)) {
+        throw new Error('Waiting for parent time entry to sync');
+      }
+      await this._apiRequest('POST', '/api/time-entries/stop', {
+        local_id: record.local_id,
+        device_id: record.device_id,
+        ended_at: record.ended_at || undefined,
+        timer_slot: record.timer_slot || 'primary',
+        latitude: record.latitude ?? undefined,
+        longitude: record.longitude ?? undefined,
+        time_entry_local_id: record.time_entry_local_id || undefined,
+      });
+      this.queueManager.markSynced('time_entry', record.local_id);
+      return;
+    }
 
-    // When backend supports idempotency:
-    // const endpoint = record.action === 'start'
-    //   ? '/api/time-entries/start'
-    //   : '/api/time-entries/stop';
-    // await this._apiRequest('POST', endpoint, {
-    //   local_id: record.local_id,
-    //   device_id: record.device_id,
-    //   project_id: record.project_id,
-    //   task_id: record.task_id,
-    //   timer_slot: record.timer_slot,
-    // });
-    // this.queueManager.markSynced('time_entry', record.local_id);
+    const res = await this._apiRequest('POST', '/api/time-entries/start', {
+      local_id: record.local_id,
+      device_id: record.device_id,
+      started_at: record.started_at || undefined,
+      project_id: record.project_id ?? undefined,
+      task_id: record.task_id ?? undefined,
+      timer_slot: record.timer_slot || 'primary',
+      latitude: record.latitude ?? undefined,
+      longitude: record.longitude ?? undefined,
+    });
+
+    const serverId = res && res.data
+      ? (res.data.id || (res.data.data && res.data.data.id))
+      : null;
+    if (serverId) {
+      this.timeEntryMap[record.local_id] = serverId;
+      this.db.saveSyncMapping(record.local_id, serverId, 'time_entry');
+      this.db.resolveTimeEntryReferences(record.local_id, serverId);
+    }
+    this.queueManager.markSynced('time_entry', record.local_id);
   } catch (err) {
-    this.queueManager.markFailed('time_entry', record.local_id, err.message);
+    const msg = err.message || '';
+    // Waiting for parent - re-throw to keep pending in queue
+    if (msg.includes('Waiting for parent time entry')) {
+      throw err;
+    }
+    // A stop against a timer that is already stopped is treated as success
+    if (msg.includes('No running timer')) {
+      this.queueManager.markSynced('time_entry', record.local_id);
+      return;
+    }
+    if (this._handleSoftFailure('time_entry', record, err)) return;
     throw err;
   }
 };
 
 SyncEngine.prototype._syncTimeline = async function (record) {
   try {
+    // If this timeline references an offline time entry that hasn't synced yet,
+    // leave it pending so it retries after the mapping is available.
+    if (record.time_entry_local_id && !this._resolveTimeEntryId(record)) {
+      throw new Error('Waiting for parent time entry to sync');
+    }
+    let data = {};
+    try {
+      data = record.activity_data ? JSON.parse(record.activity_data) : {};
+    } catch {}
+    const payload = {
+      local_id: record.local_id,
+      device_id: record.device_id,
+      time_entry_id: this._resolveTimeEntryId(record) || undefined,
+      time_entry_local_id: record.time_entry_local_id || undefined,
+      source: data.source || 'desktop',
+      activity_kind: data.activity_kind || 'app',
+      tool_type: data.tool_type || 'app',
+      display_name: data.display_name || data.app_name || 'Timeline',
+      app_name: data.app_name || null,
+      window_title: data.window_title || null,
+      url: data.url || null,
+      started_at: record.start_time,
+      ended_at: record.end_time || undefined,
+      confidence: data.confidence ?? 100,
+      metadata: data.metadata || null,
+    };
+    await this._apiRequest('POST', '/api/activity-sessions', payload);
     this.queueManager.markSynced('timeline', record.local_id);
-    return;
-
-    // When backend supports idempotency:
-    // await this._apiRequest('POST', '/api/activity-sessions', {
-    //   local_id: record.local_id,
-    //   device_id: record.device_id,
-    //   start_time: record.start_time,
-    //   end_time: record.end_time,
-    //   activity_data: JSON.parse(record.activity_data || '{}'),
-    // });
-    // this.queueManager.markSynced('timeline', record.local_id);
   } catch (err) {
-    this.queueManager.markFailed('timeline', record.local_id, err.message);
+    const msg = err.message || '';
+    if (msg.includes('Waiting for parent time entry')) {
+      throw err; // Re-throw to keep pending
+    }
+    // Timeline capture offline is best-effort; don't block the queue on it.
+    if (msg.includes('HTTP 422') || msg.includes('HTTP 409')) {
+      this.queueManager.markSynced('timeline', record.local_id);
+      return;
+    }
+    if (this._handleSoftFailure('timeline', record, err)) return;
     throw err;
   }
 };
 
 SyncEngine.prototype._syncActivity = async function (record) {
   try {
+    const timeEntryId = this._resolveTimeEntryId(record);
+    // If this activity references an offline time entry that hasn't synced
+    // yet, leave it pending so it retries after the mapping is available.
+    if (record.time_entry_local_id && !timeEntryId) {
+      throw new Error('Waiting for parent time entry to sync');
+    }
+    const payload = {
+      local_id: record.local_id,
+      device_id: record.device_id,
+      type: record.type || 'app',
+      name: record.name || record.title || 'Unknown',
+      app_name: record.name || record.title || null,
+      title: record.title || null,
+      url: record.url || null,
+      duration: record.duration || 0,
+      recorded_at: record.recorded_at,
+      time_entry_id: timeEntryId || undefined,
+      time_entry_local_id: record.time_entry_local_id || undefined,
+    };
+    await this._apiRequest('POST', '/api/activities', payload);
     this.queueManager.markSynced('activity', record.local_id);
-    return;
-
-    // When backend supports idempotency:
-    // await this._apiRequest('POST', '/api/activities', {
-    //   local_id: record.local_id,
-    //   device_id: record.device_id,
-    //   type: record.type,
-    //   name: record.name,
-    //   title: record.title,
-    //   url: record.url,
-    //   duration: record.duration,
-    //   recorded_at: record.recorded_at,
-    // });
-    // this.queueManager.markSynced('activity', record.local_id);
-  } catch (err) {
-    this.queueManager.markFailed('activity', record.local_id, err.message);
-    throw err;
-  }
-};
+    } catch (err) {
+      const msg = err.message || '';
+      if (msg.includes('Waiting for parent time entry')) {
+        throw err; // Re-throw to keep pending in queue
+      }
+      // A 422 caused by a missing/unresolved time entry means the parent has
+      // not synced yet — keep the record pending so it retries once the
+      // parent is available, instead of dropping the capture.
+      if (msg.includes('HTTP 422') && /time entry|time_entry/i.test(msg)) {
+        throw err; // Re-throw to keep pending in queue
+      }
+      // Activities are best-effort; don't block the queue on other validation errors
+      if (msg.includes('HTTP 422')) {
+        this.queueManager.markSynced('activity', record.local_id);
+        return;
+      }
+      if (this._handleSoftFailure('activity', record, err)) return;
+      throw err;
+    }
+  };
 
 SyncEngine.prototype._syncAppUsage = async function (record) {
   try {
+    await this._apiRequest('POST', '/api/activities', {
+      local_id: record.local_id,
+      device_id: record.device_id,
+      type: 'app',
+      name: record.app_name || 'Unknown',
+      app_name: record.app_name || null,
+      duration: record.duration || 0,
+      recorded_at: record.timestamp,
+    });
     this.queueManager.markSynced('app_usage', record.local_id);
-    return;
-
-    // When backend supports idempotency:
-    // await this._apiRequest('POST', '/api/activities', {
-    //   local_id: record.local_id,
-    //   device_id: record.device_id,
-    //   type: 'app',
-    //   name: record.app_name,
-    //   duration: record.duration,
-    //   recorded_at: record.timestamp,
-    // });
-    // this.queueManager.markSynced('app_usage', record.local_id);
   } catch (err) {
-    this.queueManager.markFailed('app_usage', record.local_id, err.message);
+    if (this._handleSoftFailure('app_usage', record, err)) return;
     throw err;
   }
 };
 
 SyncEngine.prototype._syncWebsiteUsage = async function (record) {
   try {
+    await this._apiRequest('POST', '/api/activities', {
+      local_id: record.local_id,
+      device_id: record.device_id,
+      type: 'url',
+      name: record.title || record.url || 'Unknown',
+      url: record.url || null,
+      duration: record.duration || 0,
+      recorded_at: record.timestamp,
+    });
     this.queueManager.markSynced('website_usage', record.local_id);
-    return;
-
-    // When backend supports idempotency:
-    // await this._apiRequest('POST', '/api/activities', {
-    //   local_id: record.local_id,
-    //   device_id: record.device_id,
-    //   type: 'browser',
-    //   name: record.title || record.url,
-    //   url: record.url,
-    //   duration: record.duration,
-    //   recorded_at: record.timestamp,
-    // });
-    // this.queueManager.markSynced('website_usage', record.local_id);
   } catch (err) {
-    this.queueManager.markFailed('website_usage', record.local_id, err.message);
+    if (this._handleSoftFailure('website_usage', record, err)) return;
     throw err;
   }
 };
@@ -396,29 +537,51 @@ SyncEngine.prototype._syncWebsiteUsage = async function (record) {
 console.log('[SYNC-ENGINE] Registering _syncScreenshot method, file version v3');
 SyncEngine.prototype._syncScreenshot = async function (record) {
   try {
-    await this._apiRequest('POST', '/api/screenshots', {
+    const timeEntryId = this._resolveTimeEntryId(record);
+    // If this screenshot references an offline time entry that hasn't synced yet,
+    // leave it pending so it retries after the mapping is available.
+    if (record.time_entry_local_id && !timeEntryId) {
+      throw new Error('Waiting for parent time entry to sync');
+    }
+    const payload = {
       local_id: record.local_id,
       device_id: record.device_id,
-      time_entry_id: record.time_entry_id,
+      time_entry_id: timeEntryId || undefined,
+      time_entry_local_id: record.time_entry_local_id || undefined,
       image_data_url: record.image_data,
       captured_at: record.captured_at,
-    });
+    };
+    await this._apiRequest('POST', '/api/screenshots', payload);
     this.queueManager.markSynced('screenshot', record.local_id);
-  } catch (err) {
-    const msg = err.message || '';
-    if (msg.includes('Rate limited') || msg.includes('HTTP 429')) {
-      console.warn('[sync-engine] Rate limited on screenshot, will retry later');
-      this.rateLimitedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
-      return;
+    } catch (err) {
+      const msg = err.message || '';
+      if (msg.includes('Waiting for parent time entry')) {
+        throw err; // Re-throw to keep pending in queue
+      }
+      if (msg.includes('Rate limited') || msg.includes('HTTP 429')) {
+        console.warn('[sync-engine] Rate limited on screenshot, will retry later');
+        this.rateLimitedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+        return;
+      }
+      // A 422 caused by a missing/unresolved time entry means the parent has
+      // not synced yet — keep the record pending so it retries once the
+      // parent is available, instead of dropping the capture.
+      if (msg.includes('HTTP 422') && /time entry|time_entry/i.test(msg)) {
+        throw err; // Re-throw to keep pending in queue
+      }
+      // Screenshots are best-effort; don't block the queue on other validation errors
+      if (msg.includes('HTTP 422')) {
+        this.queueManager.markSynced('screenshot', record.local_id);
+        return;
+      }
+      const isAuthError = msg.includes('Auth error');
+      if (isAuthError) {
+        this.emit('auth-error', { error: msg });
+      }
+      this.queueManager.markFailed('screenshot', record.local_id, msg);
+      throw err;
     }
-    const isAuthError = msg.includes('Auth error');
-    if (isAuthError) {
-      this.emit('auth-error', { error: msg });
-    }
-    this.queueManager.markFailed('screenshot', record.local_id, msg);
-    throw err;
-  }
-};
+  };
 
 SyncEngine.prototype.getStatus = function () {
   return {

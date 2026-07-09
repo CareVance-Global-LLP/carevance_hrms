@@ -21,6 +21,8 @@ class Resignation extends Model
         'rejection_reason',
         'rejected_at',
         'cancelled_at',
+        'escalated_to_user_id',
+        'escalation_history',
     ];
 
     protected $casts = [
@@ -28,6 +30,7 @@ class Resignation extends Model
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'escalation_history' => 'array',
     ];
 
     /**
@@ -52,6 +55,14 @@ class Resignation extends Model
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+     * Get the user the resignation was escalated/forwarded to.
+     */
+    public function escalatedTo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'escalated_to_user_id');
     }
 
     /**

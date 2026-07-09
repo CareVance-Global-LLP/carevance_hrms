@@ -13,3 +13,5 @@ Route::delete('/resignations/my', [ResignationController::class, 'cancel']);
 Route::get('/resignations', [ResignationController::class, 'list']);
 Route::post('/resignations/{id}/approve', [ResignationController::class, 'approve']);
 Route::post('/resignations/{id}/reject', [ResignationController::class, 'reject']);
+Route::post('/resignations/{id}/transfer', [ResignationController::class, 'transfer']);
+Route::get('/resignations/{id}/forward-targets', [ResignationController::class, 'forwardTargets']);

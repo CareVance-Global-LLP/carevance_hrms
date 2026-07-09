@@ -78,14 +78,6 @@ export default function MoreScreen() {
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity style={s.menuCard} onPress={() => router.push('/expenses')}>
-        <View style={s.menuRow}>
-          <Ionicons name="receipt-outline" size={20} color={colors.primary} />
-          <Text style={s.menuLabel}>Expenses</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-      </TouchableOpacity>
-
       <TouchableOpacity style={s.menuCard} onPress={() => router.push('/regularization')}>
         <View style={s.menuRow}>
           <Ionicons name="time-outline" size={20} color={colors.primary} />

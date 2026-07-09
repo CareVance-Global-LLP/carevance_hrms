@@ -30,4 +30,5 @@ Route::middleware('api.token')->group(function () {
     require base_path('routes/api/protected/payroll.php');
     require base_path('routes/api/protected/payroll_filings.php');
     require base_path('routes/api/protected/compoff.php');
+    require base_path('routes/api/protected/assets.php');
 });

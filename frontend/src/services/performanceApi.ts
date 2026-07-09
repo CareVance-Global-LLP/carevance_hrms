@@ -42,28 +42,6 @@ export interface PerformanceReview {
   reviewer?: { id: number; name: string };
 }
 
-export interface Reimbursement {
-  id: number;
-  organization_id: number;
-  employee_id: number;
-  approver_id: number | null;
-  category: 'travel' | 'meals' | 'office_supplies' | 'training' | 'medical' | 'other';
-  amount: number;
-  currency: string;
-  expense_date: string;
-  description: string;
-  receipt_url: string | null;
-  merchant_name: string | null;
-  location: string | null;
-  status: 'pending' | 'approved' | 'rejected';
-  approved_at: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  employee?: { id: number; name: string };
-  approver?: { id: number; name: string };
-}
-
 export const performanceApi = {
   // Performance Goals
   getGoals: () => api.get<PerformanceGoal[]>('/payroll/performance-goals').then(r => r.data),
@@ -90,23 +68,4 @@ export const performanceApi = {
     api.get<PerformanceReview[]>(`/payroll/performance-reviews/employee/${employeeId}`).then(r => r.data),
   getSummary: () =>
     api.get('/payroll/performance-reviews/summary').then(r => r.data),
-};
-
-export const expenseApi = {
-  getReimbursements: () =>
-    api.get<Reimbursement[]>('/payroll/reimbursements').then(r => r.data),
-  createReimbursement: (data: Partial<Reimbursement>) =>
-    api.post<Reimbursement>('/payroll/reimbursements', data).then(r => r.data),
-  getReimbursement: (id: number) =>
-    api.get<Reimbursement>(`/payroll/reimbursements/${id}`).then(r => r.data),
-  updateReimbursement: (id: number, data: Partial<Reimbursement>) =>
-    api.put<Reimbursement>(`/payroll/reimbursements/${id}`, data).then(r => r.data),
-  deleteReimbursement: (id: number) =>
-    api.delete(`/payroll/reimbursements/${id}`).then(r => r.data),
-  approveReimbursement: (id: number, notes?: string) =>
-    api.post(`/payroll/reimbursements/${id}/approve`, { notes }).then(r => r.data),
-  rejectReimbursement: (id: number, notes: string) =>
-    api.post(`/payroll/reimbursements/${id}/reject`, { notes }).then(r => r.data),
-  getSummary: () =>
-    api.get('/payroll/reimbursements/summary').then(r => r.data),
 };

@@ -67,29 +67,6 @@ function RootLayoutNav() {
           }}
         />
         <Stack.Screen
-          name="expenses/create"
-          options={{
-            presentation: 'modal',
-            headerShown: true,
-            headerTitle: 'New Expense',
-            headerStyle: { backgroundColor: colors.headerBg },
-            headerTintColor: colors.text,
-          }}
-        />
-        <Stack.Screen
-          name="expenses/[id]"
-          options={{
-            headerShown: true,
-            headerTitle: 'Expense Details',
-            headerStyle: { backgroundColor: colors.headerBg },
-            headerTintColor: colors.text,
-          }}
-        />
-        <Stack.Screen
-          name="expenses/index"
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
           name="regularization/create"
           options={{
             presentation: 'modal',

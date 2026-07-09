@@ -33,8 +33,10 @@ import { formatDurationSmart as formatDuration, formatPercent } from '@/lib/form
 import { API_LIMITS, limitConcurrency, batchArray, validateDateRange, getSafeDateRange } from '@/lib/apiLimits';
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
   ArrowRight,
+  Award,
   BarChart3,
   Building2,
   CalendarDays,
@@ -51,6 +53,7 @@ import {
   TimerReset,
   Users,
   Waypoints,
+  XCircle,
 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
 
@@ -866,6 +869,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const attendanceRows = (dataQuery.data as any)?.data || [];
   const attendanceTotals = useMemo(() => {
     if (mode !== 'attendance') return null;
+    // Count present: employees who have checked in (have check_in_at or is_working flag)
+    const presentCount = attendanceRows.filter((row: any) => 
+      row.is_working || row.check_in_at || row.days_present > 0
+    ).length;
     const presentDays = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.days_present || 0), 0);
     const leaveDays = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.leave_days || 0), 0);
     const workedSeconds = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.worked_seconds || 0), 0);
@@ -880,6 +887,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       : 0;
     return {
       presentDays,
+      presentCount,
       leaveDays,
       absentDays,
       workedSeconds,
@@ -1247,6 +1255,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         group_ids: selectedGroupId ? [Number(selectedGroupId)] : undefined,
         export_scope: mode === 'custom-export' ? (options?.scope || customExportScope) : undefined,
         fields: mode === 'custom-export' ? fields : undefined,
+        report_type: mode === 'custom-export' ? undefined : mode,
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -2036,111 +2045,203 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             </div>
 
             <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <div className="rounded-lg border border-blue-200 bg-[linear-gradient(140deg,#eff6ff_0%,#ffffff_55%,#f8fafc_100%)] p-4">
-                <div className="flex items-start justify-between gap-3">
+              {/* Attendance Overview Chart */}
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-950">Department Attendance Distribution</h3>
-                    <p className="mt-1 text-xs text-slate-500">Bar graph of attendance rate by department for the selected date window.</p>
+                    <h3 className="text-sm font-semibold text-slate-950">Attendance Overview</h3>
+                    <p className="text-xs text-slate-500">Distribution of employee attendance status</p>
                   </div>
-                  <BarChart3 className="h-5 w-5 text-blue-600" />
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">
+                    {formatPercent(attendanceTotals.averageAttendanceRate)}
+                  </span>
                 </div>
-                <div className="mt-5">
-                  {attendanceDepartmentBarRows.length === 0 ? (
-                    <p className="text-sm text-slate-500">No department attendance rows found.</p>
-                  ) : (
-                    <ResponsiveContainer width="100%" height={Math.max(120, attendanceDepartmentBarRows.length * 40)}>
-                      <BarChart data={attendanceDepartmentBarRows} layout="vertical" margin={{ top: 4, right: 60, left: 80, bottom: 4 }} barCategoryGap="20%">
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                        <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} />
-                        <YAxis type="category" dataKey="department" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={75} />
-                        <Tooltip
-                          content={({ active, payload }: any) => {
-                            if (!active || !payload?.length) return null;
-                            const row = payload[0].payload;
-                            return (
-                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
-                                <p className="text-xs font-bold text-slate-900">{row.department}</p>
-                                <p className="mt-1 text-xs text-slate-500">Attendance Rate: <span className="font-semibold text-slate-700">{formatPercent(row.attendanceRate)}</span></p>
-                                <p className="text-xs text-slate-500">Present: <span className="font-semibold text-slate-700">{row.presentDays}</span> / {Math.max(1, row.expectedDays)} days</p>
-                              </div>
-                            );
-                          }}
-                          cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
-                          offset={28}
-                        />
-                        <Bar dataKey="attendanceRate" name="Attendance Rate" radius={[0, 4, 4, 0]} barSize={20}>
-                          {attendanceDepartmentBarRows.map((row: any) => (
-                            <Cell key={row.department} fill={row.attendanceRate >= 75 ? '#2563eb' : row.attendanceRate >= 50 ? '#f59e0b' : '#ef4444'} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
+                
+                {/* Horizontal Bar Chart */}
+                <div className="space-y-4">
+                  {/* Present */}
+                  <div>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                        <span className="text-slate-700">Present (Checked In)</span>
+                      </div>
+                      <span className="font-semibold text-slate-950">{attendanceTotals.presentCount || 0}</span>
+                    </div>
+                    <div className="h-6 rounded-md bg-slate-100 overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-500 transition-all duration-500 flex items-center justify-end pr-2" 
+                        style={{ width: `${attendanceTotals.employees ? Math.min(100, ((attendanceTotals.presentCount || 0) / attendanceTotals.employees) * 100) : 0}%` }}
+                      >
+                        {(attendanceTotals.presentCount || 0) > 0 && (
+                          <span className="text-xs text-white font-medium">
+                            {formatPercent(attendanceTotals.employees ? ((attendanceTotals.presentCount || 0) / attendanceTotals.employees) * 100 : 0)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Late Arrivals */}
+                  <div>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                        <span className="text-slate-700">Late Arrivals</span>
+                      </div>
+                      <span className="font-semibold text-slate-950">{attendanceExceptionRows.filter((r: any) => r.lateMinutes > 0).length}</span>
+                    </div>
+                    <div className="h-6 rounded-md bg-slate-100 overflow-hidden">
+                      <div 
+                        className="h-full bg-amber-500 transition-all duration-500 flex items-center justify-end pr-2" 
+                        style={{ width: `${attendanceTotals.presentCount ? Math.min(100, (attendanceExceptionRows.filter((r: any) => r.lateMinutes > 0).length / Math.max(1, attendanceTotals.presentCount)) * 100) : 0}%` }}
+                      >
+                        {attendanceExceptionRows.filter((r: any) => r.lateMinutes > 0).length > 0 && (
+                          <span className="text-xs text-white font-medium">
+                            {formatPercent(attendanceTotals.presentCount ? (attendanceExceptionRows.filter((r: any) => r.lateMinutes > 0).length / Math.max(1, attendanceTotals.presentCount)) * 100 : 0)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* On Leave */}
+                  <div>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                        <span className="text-slate-700">On Leave</span>
+                      </div>
+                      <span className="font-semibold text-slate-950">{attendanceRows.filter((r: any) => r.leave_days > 0).length}</span>
+                    </div>
+                    <div className="h-6 rounded-md bg-slate-100 overflow-hidden">
+                      <div 
+                        className="h-full bg-blue-500 transition-all duration-500 flex items-center justify-end pr-2" 
+                        style={{ width: `${attendanceTotals.employees ? Math.min(100, (attendanceRows.filter((r: any) => r.leave_days > 0).length / attendanceTotals.employees) * 100) : 0}%` }}
+                      >
+                        {attendanceRows.filter((r: any) => r.leave_days > 0).length > 0 && (
+                          <span className="text-xs text-white font-medium">
+                            {formatPercent(attendanceTotals.employees ? (attendanceRows.filter((r: any) => r.leave_days > 0).length / attendanceTotals.employees) * 100 : 0)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Absent */}
+                  <div>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-rose-500"></div>
+                        <span className="text-slate-700">Absent</span>
+                      </div>
+                      <span className="font-semibold text-slate-950">{attendanceRows.filter((r: any) => !r.is_working && !r.check_in_at && r.days_present === 0 && r.leave_days === 0).length}</span>
+                    </div>
+                    <div className="h-6 rounded-md bg-slate-100 overflow-hidden">
+                      <div 
+                        className="h-full bg-rose-500 transition-all duration-500 flex items-center justify-end pr-2" 
+                        style={{ width: `${attendanceTotals.employees ? Math.min(100, (attendanceRows.filter((r: any) => !r.is_working && !r.check_in_at && r.days_present === 0 && r.leave_days === 0).length / attendanceTotals.employees) * 100) : 0}%` }}
+                      >
+                        {attendanceRows.filter((r: any) => !r.is_working && !r.check_in_at && r.days_present === 0 && r.leave_days === 0).length > 0 && (
+                          <span className="text-xs text-white font-medium">
+                            {formatPercent(attendanceTotals.employees ? (attendanceRows.filter((r: any) => !r.is_working && !r.check_in_at && r.days_present === 0 && r.leave_days === 0).length / attendanceTotals.employees) * 100 : 0)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <span className="text-slate-600">Present: Employees who checked in</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                    <span className="text-slate-600">Late: Arrived after scheduled time</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                    <span className="text-slate-600">Leave: Approved absence</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                    <span className="text-slate-600">Absent: No show without approval</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-lg border border-violet-200 bg-[linear-gradient(145deg,#f5f3ff_0%,#ffffff_55%,#f8fafc_100%)] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-950">Attendance Status Split</h3>
-                    <p className="mt-1 text-xs text-slate-500">Pie chart of present, leave, and absent totals for quick decision-making.</p>
-                  </div>
-                  <PieChartIcon className="h-5 w-5 text-violet-600" />
-                </div>
-                <div className="mt-4 grid grid-cols-1 items-center gap-4 sm:grid-cols-[0.95fr_1.05fr]">
-                  <div className="relative mx-auto h-44 w-44">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={attendanceComposition}
-                          cx="50%" cy="50%"
-                          innerRadius={50}
-                          outerRadius={78}
-                          paddingAngle={2}
-                          dataKey="value"
-                          nameKey="label"
-                          stroke="none"
-                          isAnimationActive={true}
-                        >
-                          {attendanceComposition.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          content={({ active, payload }: any) => {
-                            if (!active || !payload?.length) return null;
-                            const data = payload[0].payload;
-                            return (
-                              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
-                                <p className="text-xs font-bold text-slate-900">{data.label}</p>
-                                <p className="text-xs text-slate-500">{data.value} days ({data.share}%)</p>
-                              </div>
-                            );
-                          }}
-                          position={{ x: 180, y: 72 }}
-                          offset={10}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <p className="text-lg font-semibold text-slate-950">{formatPercent(attendanceTotals.averageAttendanceRate)}</p>
-                      <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Avg attendance</p>
+              {/* Top Performers & At-Risk */}
+              <div className="space-y-4">
+                {/* Top Performers */}
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-950">Top Performers</h3>
+                      <p className="text-xs text-slate-500">Highest attendance rate this period</p>
                     </div>
+                    <Award className="h-5 w-5 text-amber-500" />
                   </div>
-                  <div className="space-y-2">
-                    {attendanceComposition.map((segment) => (
-                      <div key={segment.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                        <div className="flex items-center justify-between gap-2 text-xs">
+                  <div className="mt-4 space-y-3">
+                    {attendanceExceptionRows
+                      .filter((row: any) => (row.risk_score || 0) < 30)
+                      .slice(0, 5)
+                      .map((row: any) => (
+                        <div key={row.user?.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/50 p-2.5">
                           <div className="flex items-center gap-2">
-                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: segment.color }} />
-                            <span className="font-semibold text-slate-800">{segment.label}</span>
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-xs font-semibold text-emerald-700">
+                              {(row.user?.name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-slate-900">{row.user?.name || 'Unknown'}</p>
+                              <p className="text-[10px] text-slate-500">{resolveAttendanceDepartment(row)}</p>
+                            </div>
                           </div>
-                          <span className="text-slate-500">{formatPercent(segment.share)}</span>
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                            {formatPercent(100 - (row.risk_score || 0))}
+                          </span>
                         </div>
-                        <p className="mt-1 text-sm font-semibold text-slate-950">{segment.value} days</p>
-                      </div>
-                    ))}
-                    <p className="text-xs text-slate-500">Working now: {attendanceTotals.currentWorking} employee(s) in this scope.</p>
+                      ))}
+                    {attendanceExceptionRows.filter((row: any) => (row.risk_score || 0) < 30).length === 0 && (
+                      <p className="text-sm text-slate-500 text-center py-4">No top performers in selected period</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Needs Attention */}
+                <div className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-950">Needs Attention</h3>
+                      <p className="text-xs text-slate-500">High absence rate or attendance issues</p>
+                    </div>
+                    <AlertCircle className="h-5 w-5 text-rose-500" />
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {attendanceExceptionRows
+                      .filter((row: any) => (row.risk_score || 0) >= 50)
+                      .slice(0, 5)
+                      .map((row: any) => (
+                        <div key={row.user?.id} className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50/30 p-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-xs font-semibold text-rose-700">
+                              {(row.user?.name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-slate-900">{row.user?.name || 'Unknown'}</p>
+                              <p className="text-[10px] text-slate-500">{row.absent_days} absent days</p>
+                            </div>
+                          </div>
+                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">
+                            {formatPercent(row.risk_score)} risk
+                          </span>
+                        </div>
+                      ))}
+                    {attendanceExceptionRows.filter((row: any) => (row.risk_score || 0) >= 50).length === 0 && (
+                      <p className="text-sm text-slate-500 text-center py-4">No at-risk employees in selected period</p>
+                    )}
                   </div>
                 </div>
               </div>

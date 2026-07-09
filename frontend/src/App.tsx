@@ -1,7 +1,7 @@
 ﻿import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess, isEmployeeUser } from '@/lib/permissions';
+import { canAccess, hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { usePlan } from '@/hooks/usePlan';
 import { isLikelyMobile } from '@/lib/mobile';
 
@@ -68,10 +68,11 @@ const ApprovalInbox = lazyWithChunkRetry(() => import('@/pages/ApprovalInbox'));
 const NotificationsCenter = lazyWithChunkRetry(() => import('@/pages/NotificationsCenter'));
 const ReportsWorkspace = lazyWithChunkRetry(() => import('@/pages/ReportsWorkspace'));
 const MonitoringWorkspace = lazyWithChunkRetry(() => import('@/pages/MonitoringWorkspace'));
-const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeManagementWorkspace'));
-const EmployeePersonalDetailsPage = lazyWithChunkRetry(() => import('@/pages/EmployeePersonalDetailsPage'));
 const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
 const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
+const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeManagementWorkspace'));
+const EmployeePersonalDetailsPage = lazyWithChunkRetry(() => import('@/pages/EmployeePersonalDetailsPage'));
+const Assets = lazyWithChunkRetry(() => import('@/pages/Assets'));
 const ResignationPage = lazyWithChunkRetry(() => import('@/pages/ResignationPage'));
 const MyResignationStatusPage = lazyWithChunkRetry(() => import('@/pages/MyResignationStatusPage'));
 const AddUserPage = lazyWithChunkRetry(() => import('@/pages/AddUserPage'));
@@ -116,7 +117,6 @@ const Filings = lazyWithChunkRetry(() => import('@/pages/Filings'));
 const BreakTracking = lazyWithChunkRetry(() => import('@/pages/BreakTrackingPage'));
 const Performance = lazyWithChunkRetry(() => import('@/pages/PerformancePage'));
 const PerformanceGoals = lazyWithChunkRetry(() => import('@/pages/PerformanceGoalsPage'));
-const Expenses = lazyWithChunkRetry(() => import('@/pages/ExpensesPage'));
 
 const CHUNK_RELOAD_KEY = 'carevance:chunk-reload';
 const isChunkLoadFailure = (error: unknown) => {
@@ -416,6 +416,24 @@ function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!canAccess(user, permission)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function EmployeeOrManagerRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
@@ -598,6 +616,7 @@ function App() {
             <Route path="employees/teams" element={<AdminRoute><EmployeeManagementWorkspace mode="teams" /></AdminRoute>} />
             <Route path="employees/invitations" element={<AdminRoute><EmployeeManagementWorkspace mode="invitations" /></AdminRoute>} />
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />
+            <Route path="assets" element={<PermissionRoute permission="assets.view"><Assets /></PermissionRoute>} />
             <Route path="new-hires" element={<AdminRoute><NewHiresPage /></AdminRoute>} />
             <Route path="resignations" element={<AdminRoute><ResignationsPage /></AdminRoute>} />
             <Route path="resignation" element={<ResignationPage />} />
@@ -642,7 +661,6 @@ function App() {
             <Route path="filings" element={<PlanFeatureRoute feature="payroll"><AdminRoute><Filings /></AdminRoute></PlanFeatureRoute>} />
             <Route path="performance" element={<ProtectedRoute><Performance /></ProtectedRoute>} />
             <Route path="performance-goals" element={<ProtectedRoute><PerformanceGoals /></ProtectedRoute>} />
-            <Route path="expenses" element={<ProtectedRoute><Expenses /></ProtectedRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
             <Route path="super-admin/organizations" element={<SuperAdminRoute><SuperAdminOrganizations /></SuperAdminRoute>} />

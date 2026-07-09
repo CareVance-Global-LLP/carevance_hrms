@@ -20,7 +20,7 @@ if (fs.existsSync(frontendEnvPath)) {
   console.log('[Desktop] No .env file found, using existing environment variables');
 }
 
-const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage, Tray, Menu } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage, Tray, Menu, net } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const { execSync } = require('child_process');
@@ -188,6 +188,7 @@ let queueManager = null;
 let syncEngine = null;
 let offlineModeEnabled = false;
 let offlineStatusChangeCallback = null;
+let osConnectivityWatchTimer = null;
 
 app.disableHardwareAcceleration();
 
@@ -556,6 +557,20 @@ const broadcastOfflineStatus = () => {
 
   try {
     mainWindow.webContents.send('desktop:offline-status-change', payload);
+  } catch {}
+};
+
+// Show a native desktop toast. Used to notify the user when connectivity
+// changes (offline / back online) so the status isn't only visible inside the
+// app window.
+const notifyDesktopStatus = (title, body) => {
+  try {
+    if (!Notification || !Notification.isSupported()) return;
+    const notification = new Notification({ title, body, silent: false });
+    notification.on('click', () => {
+      try { revealMainWindow(); } catch {}
+    });
+    notification.show();
   } catch {}
 };
 
@@ -1583,7 +1598,8 @@ ipcMain.handle('desktop:offline-save-screenshot', async (_event, payload) => {
     payload.image_data,
     payload.captured_at,
     getDesktopDeviceIdentity().device_id,
-    payload.time_entry_id
+    payload.time_entry_id,
+    payload.time_entry_local_id
   );
   broadcastOfflineStatus();
   return { saved: !!savedId, local_id: savedId };
@@ -1602,7 +1618,8 @@ ipcMain.handle('desktop:offline-save-activity', async (_event, payload) => {
     payload.duration || 0,
     payload.recorded_at,
     payload.metadata || null,
-    getDesktopDeviceIdentity().device_id
+    getDesktopDeviceIdentity().device_id,
+    payload.time_entry_local_id
   );
   broadcastOfflineStatus();
   return { saved: !!savedId, local_id: savedId };
@@ -1649,7 +1666,8 @@ ipcMain.handle('desktop:offline-save-timeline', async (_event, payload) => {
     payload.start_time,
     payload.end_time || null,
     payload.activity_data || null,
-    getDesktopDeviceIdentity().device_id
+    getDesktopDeviceIdentity().device_id,
+    payload.time_entry_local_id || null
   );
   broadcastOfflineStatus();
   return { saved: !!savedId, local_id: savedId };
@@ -1657,7 +1675,12 @@ ipcMain.handle('desktop:offline-save-timeline', async (_event, payload) => {
 
 ipcMain.handle('desktop:offline-save-time-entry', async (_event, payload) => {
   if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
-  const localId = generateLocalId();
+  // For stop actions, use time_entry_local_id as the local_id for idempotency
+  // so the middleware can find the existing time entry
+  const isStopAction = payload.action === 'stop';
+  const localId = isStopAction && payload.time_entry_local_id
+    ? payload.time_entry_local_id
+    : (payload.local_id || generateLocalId());
   const savedId = offlineDb.saveTimeEntry(
     localId,
     payload.user_id,
@@ -1667,7 +1690,10 @@ ipcMain.handle('desktop:offline-save-time-entry', async (_event, payload) => {
     payload.timer_slot || 'primary',
     payload.latitude || null,
     payload.longitude || null,
-    getDesktopDeviceIdentity().device_id
+    getDesktopDeviceIdentity().device_id,
+    payload.started_at || null,
+    payload.ended_at || null,
+    payload.time_entry_local_id || null
   );
   broadcastOfflineStatus();
   return { saved: !!savedId, local_id: savedId };
@@ -1766,7 +1792,21 @@ app.whenReady().then(async () => {
   // Initialize offline mode infrastructure
   offlineDb = new OfflineDatabase(app.getPath('userData'));
   if (await offlineDb.open()) {
-    networkMonitor = new NetworkMonitor();
+    // Probe the real CareVance API/app endpoints first so the app is not
+    // falsely marked offline just because a hardcoded third-party ping host
+    // (e.g. Google) is blocked on the user's network. Google is kept only as a
+    // last-resort fallback.
+    const apiBaseUrl = String(APP_URL || '').replace(/\/+$/, '') + '/api';
+    const publicFallbackPing = 'https://clients3.google.com/generate_204';
+    networkMonitor = new NetworkMonitor({
+      pingCandidates: [apiBaseUrl, APP_URL, publicFallbackPing].filter(Boolean),
+      pingTimeoutMs: 5000,
+      // OS-level connectivity (Electron net) is the authoritative, instant
+      // signal for a physical disconnect. It bypasses the probe hysteresis.
+      osOnlineCheck: typeof net !== 'undefined' && typeof net.isOnline === 'function'
+        ? () => net.isOnline()
+        : null,
+    });
     queueManager = new QueueManager(offlineDb);
     syncEngine = new SyncEngine({
       offlineDb,
@@ -1788,6 +1828,25 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('desktop:offline-status-change', payload);
       }
+
+      // Native toast on a genuine connectivity transition (the monitor only
+      // emits 'change' once per state flip thanks to hysteresis).
+      try {
+        const pending = offlineDb.getAllPendingCount();
+        if (status.online) {
+          notifyDesktopStatus(
+            'Back online',
+            pending > 0
+              ? `Connection restored. Syncing ${pending} pending record${pending === 1 ? '' : 's'}…`
+              : 'Connection restored.',
+          );
+        } else {
+          notifyDesktopStatus(
+            'You are offline',
+            'Changes are saved locally and will sync automatically when you reconnect.',
+          );
+        }
+      } catch {}
     });
 
     syncEngine.on('sync-start', (data) => {
@@ -1812,6 +1871,20 @@ app.whenReady().then(async () => {
     syncEngine.start();
     offlineModeEnabled = true;
     console.log('[desktop] Offline mode initialized');
+
+    // Electron's net module has no online/offline events (only net.isOnline()).
+    // Sample it on a short interval and feed changes into the monitor so a
+    // physical disconnect is reflected within ~2s instead of waiting for the
+    // slower HTTP probe loop. setOsOnline() only reacts to actual changes and
+    // triggers an immediate re-probe on reconnect.
+    if (typeof net !== 'undefined' && typeof net.isOnline === 'function') {
+      osConnectivityWatchTimer = setInterval(() => {
+        if (!networkMonitor || !networkMonitor.running) return;
+        try {
+          networkMonitor.setOsOnline(net.isOnline());
+        } catch {}
+      }, 2000);
+    }
   } else {
     console.warn('[desktop] SQLite unavailable - offline mode disabled');
   }
@@ -1837,6 +1910,11 @@ app.on('before-quit', () => {
   if (updateCheckInterval) {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;
+  }
+
+  if (osConnectivityWatchTimer) {
+    clearInterval(osConnectivityWatchTimer);
+    osConnectivityWatchTimer = null;
   }
 
   if (mainWindow && !mainWindow.isDestroyed() && !allowWindowClose) {

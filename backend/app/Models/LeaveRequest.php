@@ -29,6 +29,8 @@ class LeaveRequest extends Model
         'reviewed_by',
         'reviewed_at',
         'review_note',
+        'escalated_to_user_id',
+        'escalation_history',
     ];
 
     protected function casts(): array
@@ -42,6 +44,7 @@ class LeaveRequest extends Model
             'reviewed_at' => 'datetime',
             'revoke_requested_at' => 'datetime',
             'revoke_reviewed_at' => 'datetime',
+            'escalation_history' => 'array',
         ];
     }
 
@@ -53,6 +56,11 @@ class LeaveRequest extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function escalatedTo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'escalated_to_user_id');
     }
 
     public function revokeReviewer(): BelongsTo

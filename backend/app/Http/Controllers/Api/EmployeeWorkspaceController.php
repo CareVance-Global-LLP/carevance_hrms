@@ -295,7 +295,9 @@ class EmployeeWorkspaceController extends Controller
                 ->find((int) $id);
         }
 
-        return null;
+        return User::query()
+            ->where('organization_id', $organizationId)
+            ->find($id);
     }
 
     private function canManage(User $user): bool

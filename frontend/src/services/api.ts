@@ -572,6 +572,12 @@ export const resignationApi = {
   
   reject: (id: number, data?: { reason?: string }) =>
     api.post(`/resignations/${id}/reject`, data),
+
+  transfer: (id: number, note?: string, toUserId?: number) =>
+    api.post(`/resignations/${id}/transfer`, { note, to_user_id: toUserId }),
+
+  forwardTargets: (id: number) =>
+    api.get<{ data: DepartmentTeamForwardTarget[] }>(`/resignations/${id}/forward-targets`),
 };
 
 // Project API
@@ -616,6 +622,58 @@ export const groupApi = {
 
   delete: (id: number) =>
     api.delete(`/groups/${id}`),
+};
+
+export interface DepartmentTeamForwardTarget {
+  id: number;
+  name: string;
+  hierarchy_level: number;
+  team_names: string[];
+  source?: 'team' | 'reporting_manager' | 'upper_hierarchy';
+}
+
+export interface DepartmentTeam {
+  id: number;
+  organization_id: number;
+  department_id: number;
+  name: string;
+  slug: string | null;
+  description: string | null;
+  members?: Array<{ id: number; name: string; email: string }>;
+  managers?: Array<{ id: number; name: string; email: string }>;
+  member_ids?: number[];
+  manager_ids?: number[];
+}
+
+export const departmentTeamApi = {
+  list: (departmentId: number) =>
+    api.get<{ data: DepartmentTeam[] }>(`/departments/${departmentId}/teams`),
+
+  create: (departmentId: number, data: {
+    name: string;
+    description?: string;
+    member_ids?: number[];
+    manager_ids?: number[];
+  }) =>
+    api.post<{ data: DepartmentTeam }>(`/departments/${departmentId}/teams`, data),
+
+  update: (departmentId: number, teamId: number, data: { name?: string; description?: string }) =>
+    api.patch<{ data: DepartmentTeam }>(`/departments/${departmentId}/teams/${teamId}`, data),
+
+  remove: (departmentId: number, teamId: number) =>
+    api.delete(`/departments/${departmentId}/teams/${teamId}`),
+
+  addMembers: (departmentId: number, teamId: number, userIds: number[]) =>
+    api.post<{ data: DepartmentTeam }>(`/departments/${departmentId}/teams/${teamId}/members`, { user_ids: userIds }),
+
+  removeMember: (departmentId: number, teamId: number, userId: number) =>
+    api.delete(`/departments/${departmentId}/teams/${teamId}/members/${userId}`),
+
+  addManagers: (departmentId: number, teamId: number, userIds: number[]) =>
+    api.post<{ data: DepartmentTeam }>(`/departments/${departmentId}/teams/${teamId}/managers`, { user_ids: userIds }),
+
+  removeManager: (departmentId: number, teamId: number, userId: number) =>
+    api.delete(`/departments/${departmentId}/teams/${teamId}/managers/${userId}`),
 };
 
 // Task API
@@ -994,6 +1052,7 @@ export const reportApi = {
     group_ids?: number[];
     export_scope?: 'employee' | 'department';
     fields?: string[];
+    report_type?: string;
   }) => 
     api.get('/reports/export', { 
       params, 
@@ -1177,6 +1236,16 @@ export const leaveApi = {
         reviewer?: { id: number; name: string; email: string } | null;
         revoke_reviewer?: { id: number; name: string; email: string } | null;
         approval_destination?: string | null;
+        escalated_to?: { id: number; name: string } | null;
+        escalation_history?: Array<{
+          from_user_id?: number | null;
+          to_user_id?: number;
+          to_level?: string;
+          note?: string | null;
+          by_user_id?: number;
+          at?: string;
+        }> | null;
+        current_reviewer_ids?: number[] | null;
         created_at: string;
       }>;
     }>('/leave-requests', { params }),
@@ -1231,6 +1300,12 @@ export const leaveApi = {
 
   rejectRevoke: (id: number, review_note?: string) =>
     api.patch(`/leave-requests/${id}/revoke-reject`, { review_note }),
+
+  transfer: (id: number, note?: string, toUserId?: number) =>
+    api.post(`/leave-requests/${id}/transfer`, { note, to_user_id: toUserId }),
+
+  forwardTargets: (id: number) =>
+    api.get<{ data: DepartmentTeamForwardTarget[] }>(`/leave-requests/${id}/forward-targets`),
 };
 
 export const attendanceTimeEditApi = {
@@ -1250,6 +1325,16 @@ export const attendanceTimeEditApi = {
         user?: { id: number; name: string; email: string; role: string };
         reviewer?: { id: number; name: string; email: string } | null;
         approval_destination?: string | null;
+        escalated_to?: { id: number; name: string } | null;
+        escalation_history?: Array<{
+          from_user_id?: number | null;
+          to_user_id?: number;
+          to_level?: string;
+          note?: string | null;
+          by_user_id?: number;
+          at?: string;
+        }> | null;
+        current_reviewer_ids?: number[] | null;
         created_at: string;
       }>;
     }>('/attendance-time-edit-requests', { params }),
@@ -1262,6 +1347,12 @@ export const attendanceTimeEditApi = {
 
   reject: (id: number, review_note?: string) =>
     api.patch(`/attendance-time-edit-requests/${id}/reject`, { review_note }),
+
+  transfer: (id: number, note?: string, toUserId?: number) =>
+    api.post(`/attendance-time-edit-requests/${id}/transfer`, { note, to_user_id: toUserId }),
+
+  forwardTargets: (id: number) =>
+    api.get<{ data: DepartmentTeamForwardTarget[] }>(`/attendance-time-edit-requests/${id}/forward-targets`),
 };
 
 export const chatApi = {
