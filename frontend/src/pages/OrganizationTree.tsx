@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Building2,
@@ -40,7 +40,7 @@ type OrgUser = {
   groups?: SimpleGroup[];
 };
 
-type ConnectorSeg = { path: string; team: boolean };
+type ConnectorSeg = { path: string; team: boolean; id: NodeId };
 
 /* ── Helpers ── */
 
@@ -497,11 +497,55 @@ export default function OrganizationTree() {
     panning.current = false;
   };
 
+  // Focus/zoom to a node when its connector line is clicked.
+  // Runs EXACTLY ONCE per click (invoked from the connector's onClick) — never
+  // from a ResizeObserver or a zoom/pan-dependent effect — so it cannot feed its
+  // own DOM read back into the zoom state and oscillate (the original bug).
+  const focusNode = useCallback(
+    (id: NodeId) => {
+      const scroll = scrollRef.current;
+      const wrap = wrapperRef.current;
+      const node = wrap?.querySelector<HTMLElement>(`[data-node-id="${id}"]`);
+      if (!scroll || !wrap || !node) return;
+
+      // Guard (fix direction #3): only change zoom if it actually differs.
+      const targetZoom = clampZoom(Math.max(zoom, 1.1));
+      if (Math.abs(targetZoom - zoom) > 0.01) {
+        setZoom(targetZoom);
+      }
+
+      // Center the node in the viewport once, on the next frame if we zoomed.
+      const center = () => {
+        const nodeRect = node.getBoundingClientRect();
+        const scrollRect = scroll.getBoundingClientRect();
+        const targetLeft =
+          scroll.scrollLeft + (nodeRect.left + nodeRect.width / 2 - scrollRect.left) - scrollRect.width / 2;
+        const targetTop =
+          scroll.scrollTop + (nodeRect.top + nodeRect.height / 2 - scrollRect.top) - scrollRect.height / 2;
+        scroll.scrollTo({ left: targetLeft, top: targetTop, behavior: 'smooth' });
+      };
+      if (Math.abs(targetZoom - zoom) > 0.01) requestAnimationFrame(center);
+      else center();
+    },
+    [zoom],
+  );
+
   // Keep the scrollable stage size in sync with content so large/zoomed trees stay scrollable.
+  // NOTE: the stage sizes to its OWN content only — it must not depend on the wrapper,
+  // otherwise stageSize → wrapper → stage → stageSize becomes a feedback loop that makes
+  // the canvas vibrate whenever zoom ≠ 1.
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
-    const measure = () => setStageSize({ w: el.offsetWidth, h: el.offsetHeight });
+    let last = { w: -1, h: -1 };
+    const measure = () => {
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      if (Math.abs(w - last.w) > 0.5 || Math.abs(h - last.h) > 0.5) {
+        last = { w, h };
+        setStageSize({ w, h });
+      }
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -929,6 +973,7 @@ export default function OrganizationTree() {
           segs.push({
             path: `M ${parentPos.cx} ${parentPos.bottom} L ${parentPos.cx} ${mY} L ${childPos.cx} ${mY} L ${childPos.cx} ${childPos.top}`,
             team: isTeamEdge || isGrouping,
+            id: child.id,
           });
         }
       }
@@ -1186,37 +1231,49 @@ export default function OrganizationTree() {
           onMouseUp={endPan}
           onMouseLeave={endPan}
         >
-          <div
-            ref={wrapperRef}
-            className="relative"
-            style={{
+            <div
+              ref={wrapperRef}
+              className="relative mx-auto"
+              style={{
               width: stageSize.w * zoom || 'max-content',
               height: stageSize.h * zoom || 'max-content',
               transformOrigin: '0 0',
             }}
           >
             {/* SVG connectors (in wrapper space, matches connector coords) */}
-            <svg className="pointer-events-none absolute inset-0 z-0" width="100%" height="100%">
-              {connectors.map((c, i) =>
-                c.path ? (
-                  <path
-                    key={`p${i}`}
-                    d={c.path}
-                    stroke={c.team ? '#cbd5e1' : '#94a3b8'}
-                    strokeWidth={c.team ? 1.5 : 2}
-                    strokeDasharray={c.team ? '5 4' : undefined}
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                ) : null,
-              )}
-            </svg>
+              <svg className="pointer-events-none absolute inset-0 z-0" width="100%" height="100%">
+                {connectors.map((c, i) =>
+                  c.path ? (
+                    <g key={`c${i}`}>
+                      {/* Wide invisible hit area so the thin connector line is easy to click.
+                          Overrides the parent's pointer-events:none with stroke-only hit testing. */}
+                      <path
+                        d={c.path}
+                        stroke="transparent"
+                        strokeWidth={14}
+                        fill="none"
+                        style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={() => focusNode(c.id)}
+                      />
+                      <path
+                        d={c.path}
+                        stroke={c.team ? '#cbd5e1' : '#94a3b8'}
+                        strokeWidth={c.team ? 1.5 : 2}
+                        strokeDasharray={c.team ? '5 4' : undefined}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </g>
+                  ) : null,
+                )}
+              </svg>
 
             {/* Scaled stage */}
             <div
               ref={stageRef}
-              className="relative inline-block min-w-full p-10"
+              className="relative inline-block p-10"
               style={{ transform: `scale(${zoom})`, transformOrigin: '0 0' }}
             >
               {view === 'departments' ? (
