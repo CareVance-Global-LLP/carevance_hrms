@@ -173,7 +173,7 @@ export default function SuperAdminOrganizations() {
               ) : (
                 <FileSpreadsheet className="h-4 w-4" />
               )}
-              Export to Excel
+              Export CSV
             </Button>
             <Button variant="secondary" onClick={() => navigate('/super-admin')}>
               <ArrowLeft className="mr-2 h-4 w-4" />

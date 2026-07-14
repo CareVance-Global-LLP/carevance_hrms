@@ -257,6 +257,115 @@ class UserController extends Controller
         return response()->json($user->load('groups:id,name,slug'), 201);
     }
 
+    public function export(Request $request)
+    {
+        $request->validate([
+            'user_ids' => 'nullable|array',
+            'user_ids.*' => 'integer',
+            'department' => 'nullable|string|max:255',
+        ]);
+
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        // Reuse same query logic as index() — scope to org, eager load relations
+        $query = User::where('organization_id', $currentUser->organization_id)
+            ->with([
+                'groups:id,name,slug',
+                'employeeProfile',
+                'employeeWorkInfo.department:id,name,slug',
+                'customRole',
+            ]);
+
+        // Filter by specific user IDs if provided
+        if ($request->filled('user_ids')) {
+            $query->whereIn('id', $request->input('user_ids'));
+        }
+
+        // Filter by department name if provided
+        $departmentFilter = $request->input('department');
+        if ($departmentFilter && $departmentFilter !== 'All departments') {
+            $query->whereHas('employeeWorkInfo.department', function ($q) use ($departmentFilter) {
+                $q->where('name', $departmentFilter);
+            })->orWhereHas('groups', function ($q) use ($departmentFilter) {
+                $q->where('name', $departmentFilter);
+            });
+        }
+
+        $users = $query->orderBy('name', 'asc')->get();
+
+        // Build CSV
+        $headers = [
+            'Employee Code',
+            'Name',
+            'Email',
+            'Role',
+            'Department',
+            'Timezone',
+            'Phone',
+            'Designation',
+            'Employment Type',
+            'Joining Date',
+            'Employment Status',
+            'Work Location',
+        ];
+
+        $callback = function () use ($users, $headers) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, $headers);
+
+            foreach ($users as $user) {
+                $employeeCode = $user->employeeWorkInfo?->employee_code ?? '';
+                $roleName = $user->customRole?->name ?? ucfirst($user->role ?? 'employee');
+                $department = trim((string) (
+                    $user->employeeWorkInfo?->department?->name
+                    ?? $user->groups->first()?->name
+                    ?? ''
+                ));
+                $timezone = ($user->settings['timezone'] ?? null)
+                    ? $user->settings['timezone']
+                    : config('app.timezone');
+                $phone = $user->employeeProfile?->phone ?? '';
+                $designation = $user->employeeWorkInfo?->designation ?? '';
+                $employmentType = $user->employeeWorkInfo?->employment_type ?? '';
+                $joiningDate = $user->employeeWorkInfo?->joining_date
+                    ? $user->employeeWorkInfo->joining_date->format('Y-m-d')
+                    : '';
+                $employmentStatus = $user->employeeWorkInfo?->employment_status ?? '';
+                $workLocation = $user->employeeWorkInfo?->work_location ?? '';
+
+                fputcsv($file, [
+                    $employeeCode,
+                    $user->name,
+                    $user->email,
+                    $roleName,
+                    $department,
+                    $timezone,
+                    $phone,
+                    $designation,
+                    $employmentType,
+                    $joiningDate,
+                    $employmentStatus,
+                    $workLocation,
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        $fileName = 'employees-' . now()->format('Y-m-d') . '.csv';
+
+        return response()->stream($callback, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ]);
+    }
+
     public function show(Request $request, User $user)
     {
         if (!$this->canAccessUser($request, $user)) {

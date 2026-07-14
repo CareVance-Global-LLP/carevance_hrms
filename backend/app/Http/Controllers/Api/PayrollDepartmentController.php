@@ -1754,7 +1754,13 @@ class PayrollDepartmentController extends Controller
         // Use effective duration so RUNNING timers (end_time = null) are
         // counted correctly up to `now()`, instead of being treated as
         // zero-second completed rows. (See TimeEntryDurationService.)
-        $totalWorkedSeconds = $this->timeEntryDuration->sumEffectiveDuration($timeEntries);
+        // Break TimeEntries (is_break = true) are tracked separately and must
+        // not be counted as worked time for payroll.
+        $workedTimeEntries = $timeEntries->where('is_break', false)->values();
+        $totalBreakSeconds = $this->timeEntryDuration->sumEffectiveDuration(
+            $timeEntries->where('is_break', true)->values()
+        );
+        $totalWorkedSeconds = $this->timeEntryDuration->sumEffectiveDuration($workedTimeEntries);
 
         // Track whether any timer is still running, so the UI can warn the
         // operator that the headline hours may be ticking up as long as
@@ -1814,6 +1820,8 @@ class PayrollDepartmentController extends Controller
             // (end_time = null). The UI can warn the operator that the
             // hours above are still ticking up.
             'has_running_timer' => $hasRunningTimer,
+            'total_break_seconds' => $totalBreakSeconds,
+            'break_hours' => round($totalBreakSeconds / 3600, 2),
             // PayrollTimeEntry integration
             'payroll_tracked_seconds' => $payrollTrackedSeconds,
             'payroll_tracked_hours' => round($payrollTrackedSeconds / 3600, 2),

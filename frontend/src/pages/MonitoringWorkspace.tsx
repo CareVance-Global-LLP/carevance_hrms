@@ -20,7 +20,7 @@ import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateR
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDuration } from '@/lib/formatters';
-import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Download, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
+import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Coffee, Download, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
 import type { BrowserTrackingHealthSummary } from '@/types';
 
 type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
@@ -642,7 +642,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
   const selectedUserTools = insights?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
   const organizationTools = insights?.organization_tools || { productive: [], unproductive: [] };
   const employeeRankings = insights?.employee_rankings?.by_productive_duration || [];
-  const liveMonitoring = insights?.live_monitoring || { employees_active: [], employees_inactive: [], employees_on_leave: [], selected_user: null, all_users: [] };
+  const liveMonitoring = insights?.live_monitoring || { employees_active: [], employees_inactive: [], employees_on_leave: [], employees_on_break: [], selected_user: null, all_users: [] };
   const selectedUserLive = liveMonitoring.selected_user || null;
   const recentEmployeeScreenshots = insights?.recent_screenshots || [];
   const screenshotCountLabel = screenshotTotalQuery.data ? screenshotTotal : recentEmployeeScreenshots.length;
@@ -657,6 +657,11 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     ?? organizationSummary.idle_time
     ?? organizationSummary.total_idle_duration
     ?? 0
+  );
+  const breakDurationValue = Number(
+    hasExplicitEmployeeSelection
+      ? selectedUserStats.break_seconds
+      : organizationSummary.break_seconds ?? 0
   );
   const productiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.productive || [] : organizationTools.productive || [];
   const unproductiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.unproductive || [] : organizationTools.unproductive || [];
@@ -893,6 +898,15 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 accent="violet"
               />
             ) : null}
+            {!hasExplicitEmployeeSelection ? (
+              <MetricCard
+                label="Break Time"
+                value={formatDuration(breakDurationValue)}
+                hint="All visible users break duration"
+                icon={Coffee}
+                accent="amber"
+              />
+            ) : null}
             <MetricCard
               label="Active Employees"
               value={liveMonitoring.employees_active?.length || 0}
@@ -913,6 +927,13 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
               hint="Leave approved today"
               icon={Users}
               accent="slate"
+            />
+            <MetricCard
+              label="On Break"
+              value={liveMonitoring.employees_on_break?.length || 0}
+              hint="Currently on a break"
+              icon={Coffee}
+              accent="amber"
             />
           </div>
 
@@ -938,8 +959,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
-                    <p className="mt-2 text-base font-semibold capitalize text-slate-950">{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
-                    <p className="mt-1 text-sm text-slate-500">{selectedUserLive.is_working ? 'Timer is active right now' : 'No active timer right now'}</p>
+                    <p className={`mt-2 text-base font-semibold capitalize ${selectedUserLive.is_on_break ? 'text-amber-600' : 'text-slate-950'}`}>{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
+                    <p className="mt-1 text-sm text-slate-500">{selectedUserLive.is_on_break ? 'On a break right now' : selectedUserLive.is_working ? 'Timer is active right now' : 'No active timer right now'}</p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
@@ -964,6 +985,11 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Idle time</p>
                     <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.idle_total_duration || selectedUserStats.idle_duration || 0))}</p>
                     <p className="mt-1 text-sm text-slate-500">Idle duration in selected range</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Break time</p>
+                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.break_seconds || 0))}</p>
+                    <p className="mt-1 text-sm text-slate-500">Break duration in selected range</p>
                   </div>
                 </div>
 
@@ -1150,8 +1176,8 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
-                  <p className="mt-2 text-base font-semibold capitalize text-slate-950">{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
-                  <p className="mt-1 text-sm text-slate-500">{selectedUserLive.is_working ? 'Timer is active right now' : 'No active timer right now'}</p>
+                  <p className={`mt-2 text-base font-semibold capitalize ${selectedUserLive.is_on_break ? 'text-amber-600' : 'text-slate-950'}`}>{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
+                  <p className="mt-1 text-sm text-slate-500">{selectedUserLive.is_on_break ? 'On a break right now' : selectedUserLive.is_working ? 'Timer is active right now' : 'No active timer right now'}</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
@@ -1318,7 +1344,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard label="Tracked Tools" value={aggregatedActivity.length} hint="Unique names in current range" icon={mode === 'app-usage' ? AppWindow : Globe} accent="sky" />
             <MetricCard label="Events" value={activityRows.length} hint="Raw activity events" icon={Activity} accent="emerald" />
-            <MetricCard label="Tracked Time" value={formatDuration(activityRows.reduce((sum: number, row: any) => sum + Number(row.duration || 0), 0))} hint="Duration across all events" icon={TimerReset} accent="amber" />
+            <MetricCard label="Track Time" value={formatDuration(activityRows.reduce((sum: number, row: any) => sum + Number(row.duration || 0), 0))} hint="Duration across all events" icon={TimerReset} accent="amber" />
             <MetricCard label="Employees" value={new Set(activityRows.map((row: any) => row.user?.id).filter(Boolean)).size} hint="Employees in result set" icon={Users} accent="violet" />
           </div>
 
@@ -1345,7 +1371,7 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
                   <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveToolLabel(selectedUserLive)}</p>
-                  <p className="mt-1 text-sm capitalize text-slate-500">{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
+                  <p className={`mt-1 text-sm capitalize ${selectedUserLive.is_on_break ? 'text-amber-600' : 'text-slate-500'}`}>{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last seen</p>

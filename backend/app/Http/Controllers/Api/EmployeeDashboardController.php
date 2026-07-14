@@ -7,11 +7,17 @@ use App\Models\AttendanceRecord;
 use App\Models\GeofenceZone;
 use App\Models\TimeEntry;
 use App\Services\Billing\PlanService;
+use App\Services\Reports\WorkTimeSummaryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class EmployeeDashboardController extends Controller
 {
+    public function __construct(
+        private readonly WorkTimeSummaryService $workTimeSummaryService,
+    ) {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -39,17 +45,50 @@ class EmployeeDashboardController extends Controller
         $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $monthEnd = $monthStart->copy()->endOfMonth();
 
+<<<<<<< HEAD
         // Single aggregate query replaces two sequential TimeEntry queries
         // (monthly seconds + distinct active days) for this small payload.
         $monthlySummary = TimeEntry::where('user_id', $user->id)
+=======
+        $monthlySeconds = (int) TimeEntry::where('user_id', $user->id)
+            ->where('is_break', false)
+>>>>>>> 5b1716b1f2cc1ac1440db636f4e4acaf7b05a765
             ->whereNotNull('end_time')
             ->where('start_time', '>=', $monthStart)
             ->where('start_time', '<=', $monthEnd)
             ->selectRaw('COALESCE(SUM(duration), 0) as total_seconds, COUNT(DISTINCT DATE(start_time)) as active_days')
             ->first();
 
+<<<<<<< HEAD
         $monthlySeconds = (int) ($monthlySummary->total_seconds ?? 0);
         $monthlyDays = (int) ($monthlySummary->active_days ?? 0);
+=======
+        $monthlyDays = (int) TimeEntry::where('user_id', $user->id)
+            ->where('is_break', false)
+            ->whereNotNull('end_time')
+            ->where('start_time', '>=', $monthStart)
+            ->where('start_time', '<=', $monthEnd)
+            ->distinct('start_time')
+            ->count(\DB::raw('DATE(start_time)'));
+>>>>>>> 5b1716b1f2cc1ac1440db636f4e4acaf7b05a765
+
+        $monthlyBreakSeconds = (int) TimeEntry::where('user_id', $user->id)
+            ->where('is_break', true)
+            ->whereNotNull('end_time')
+            ->where('start_time', '>=', $monthStart)
+            ->where('start_time', '<=', $monthEnd)
+            ->sum('duration');
+
+        $todaySummary = $this->workTimeSummaryService->forUserRange(
+            $user->id,
+            now()->startOfDay(),
+            now()->endOfDay()
+        );
+        $monthlySummary = $this->workTimeSummaryService->forUserRange(
+            $user->id,
+            $monthStart,
+            $monthEnd
+        );
 
         return response()->json([
             'active_timer' => $activeTimer ? [
@@ -72,11 +111,19 @@ class EmployeeDashboardController extends Controller
                 'longitude' => $zone->longitude,
                 'radius_meters' => $zone->radius_meters,
             ] : null,
-            'monthly_total_seconds' => $monthlySeconds,
+            'today_track_time' => $todaySummary['track_time'],
+            'today_work_time' => $todaySummary['work_time'],
+            'today_idle_time' => $todaySummary['idle_time'],
+            'today_break_time' => $todaySummary['break_time'],
+            'monthly_total_seconds' => $monthlySummary['track_time'],
             'monthly_total_hours' => $monthlyDays > 0
-                ? sprintf('%d:%02d:00', floor($monthlySeconds / 3600), floor(($monthlySeconds % 3600) / 60))
+                ? sprintf('%d:%02d:00', floor($monthlySummary['track_time'] / 3600), floor(($monthlySummary['track_time'] % 3600) / 60))
                 : '0:00:00',
+            'monthly_work_seconds' => $monthlySummary['work_time'],
+            'monthly_idle_seconds' => $monthlySummary['idle_time'],
             'monthly_days' => $monthlyDays,
+            'monthly_break_seconds' => $monthlySummary['break_time'],
+            'monthly_break_hours' => sprintf('%d:%02d:00', floor($monthlySummary['break_time'] / 3600), floor(($monthlySummary['break_time'] % 3600) / 60)),
         ]);
     }
 }

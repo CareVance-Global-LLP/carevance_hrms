@@ -34,6 +34,7 @@ class TimeEntryController extends Controller
         private readonly GroupAccessService $groupAccessService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly IdleAutoStopMailService $idleAutoStopMailService,
+        private readonly \App\Services\Reports\WorkTimeSummaryService $workTimeSummaryService,
     ) {
     }
 
@@ -342,6 +343,12 @@ class TimeEntryController extends Controller
         $this->closeRunningEntries($runningEntries, $stoppedAt);
         $timeEntry = $runningEntries->first();
 
+        if ($request->boolean('auto_stopped_for_idle')) {
+            $timeEntry->timestamps = false;
+            $timeEntry->auto_stopped_for_idle = true;
+            $timeEntry->save();
+        }
+
         if ($slot === 'primary') {
             $this->ensureAttendanceCheckedOutForBreak($user->id, $stoppedAt);
         }
@@ -414,9 +421,28 @@ class TimeEntryController extends Controller
             return $entry;
         });
 
+        $workedEntries = $timeEntries->where('is_break', false)->values();
+        $breakSeconds = $this->timeEntryDurationService->sumEffectiveDuration(
+            $timeEntries->where('is_break', true)->values(),
+            $resolvedNow
+        );
+
+        $workTimeSummary = $this->workTimeSummaryService->forUserRange(
+            $user->id,
+            now()->startOfDay(),
+            now()->endOfDay(),
+            $resolvedNow
+        );
+
         return response()->json([
             'time_entries' => $timeEntries,
-            'total_duration' => $this->timeEntryDurationService->sumEffectiveDuration($timeEntries, $resolvedNow),
+            'total_duration' => $this->timeEntryDurationService->sumEffectiveDuration($workedEntries, $resolvedNow),
+            'total_break_seconds' => $breakSeconds,
+            'break_hours' => round($breakSeconds / 3600, 2),
+            'track_time' => $workTimeSummary['track_time'],
+            'work_time' => $workTimeSummary['work_time'],
+            'idle_time' => $workTimeSummary['idle_time'],
+            'break_time' => $workTimeSummary['break_time'],
         ]);
     }
 
@@ -880,8 +906,25 @@ class TimeEntryController extends Controller
             'has_recent_activity_noise' => $hasRecentActivityNoise,
         ];
 
+        $eligible = $resolvedIdleFromBoth || $hasRecentActivityNoise;
+
+        // Trust the client's OS-level idle signal as authoritative for an idle
+        // auto-stop. The database activity timeline can be polluted by non-idle
+        // heartbeats emitted while the user is away (e.g. tab/extension pings,
+        // a stray app event), which previously defeated a legitimate stop and
+        // left the timer running forever. We still reject when the client
+        // itself reports a recent last-activity timestamp -- a direct
+        // contradiction of its own idle claim.
+        if ($reportedIdleFromSystem) {
+            $contradictedByClient = $reportedLastActivityAt !== null
+                && $reportedLastActivityAt->greaterThan($stoppedAt->copy()->subSeconds($idleAutoStopThresholdSeconds));
+            if (! $contradictedByClient) {
+                $eligible = true;
+            }
+        }
+
         return [
-            'eligible' => $resolvedIdleFromBoth || $hasRecentActivityNoise,
+            'eligible' => $eligible,
             'resolved_idle_seconds' => $resolvedIdleSeconds,
             'retry_after_seconds' => $retryAfterSeconds,
             'dedupe_key' => sprintf(

@@ -14,6 +14,9 @@ Route::post('/users', [UserController::class, 'store'])->middleware('role:admin'
 Route::get('/users/check-incomplete', [UserController::class, 'checkIncomplete']);
 Route::delete('/users/{id}/incomplete', [UserController::class, 'deleteIncomplete']);
 
+// ⚠️ MUST be BEFORE /users/{user} — otherwise Laravel matches "export" as a {user} ID
+Route::get('/users/export', [UserController::class, 'export']);
+
 Route::get('/users/{user}', [UserController::class, 'show']);
 Route::get('/users/{user}/groups', [UserController::class, 'groups']);
 Route::match(['put', 'patch'], '/users/{user}', [UserController::class, 'update'])->middleware('role:admin,manager');

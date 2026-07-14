@@ -338,7 +338,7 @@ const DepartmentWorkIdleChart = ({ data }: { data: Array<{ department: string; w
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-blue-600" />
-                <span className="text-xs font-medium text-slate-600">Worked</span>
+                <span className="text-xs font-medium text-slate-600">Work Time</span>
               </div>
               <span className="text-xs font-bold text-blue-600">{formatSeconds(worked.value)}</span>
             </div>
@@ -398,7 +398,7 @@ const DepartmentWorkIdleChart = ({ data }: { data: Array<{ department: string; w
             width={48}
           />
           <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }} offset={16} />
-          <Bar dataKey="workedSeconds" name="Worked" stackId="a" radius={[0, 0, 0, 0]} barSize={40}>
+          <Bar dataKey="workedSeconds" name="Work Time" stackId="a" radius={[0, 0, 0, 0]} barSize={40}>
             {chartData.map((_entry, index) => (
               <Cell key={`cell-work-${index}`} fill="#2563eb" />
             ))}
@@ -1244,6 +1244,7 @@ export default function AdminDashboard() {
         trackedSeconds,
         workingSeconds,
         idleSeconds,
+        breakSeconds: Number(row.break_seconds || 0),
         productivityPercent,
       };
     })
@@ -1343,10 +1344,17 @@ export default function AdminDashboard() {
       : todaySeconds;
     return {
       employee,
-      status: employee.status === 'On Leave' ? 'On Leave' : isWorking ? 'Working' : 'Not working',
+      status: employee.status === 'On Leave'
+        ? 'On Leave'
+        : isWorking && Boolean(overallRow?.is_on_break)
+          ? 'On Break'
+          : isWorking
+            ? 'Working'
+            : 'Not working',
       todaySeconds,
       workedSeconds,
       idleSeconds,
+      breakSeconds: Number(overallRow?.break_seconds || 0),
       presentDays,
       lateDays: Number(attendance?.late_days || 0),
       lateMinutes: Number(attendance?.late_minutes || 0),
@@ -1658,6 +1666,12 @@ export default function AdminDashboard() {
   const scopeIdleSeconds = dashboardScope === 'employee'
     ? selectedEmployeeIdleSeconds
     : Number(data.overall.summary?.idle_duration || data.overall.summary?.idle_time || 0);
+  const selectedEmployeeBreakSeconds = Number(
+    selectedEmployeeOverallRow?.break_seconds ?? employeeStats.break_seconds ?? 0
+  );
+  const scopeBreakSeconds = dashboardScope === 'employee'
+    ? selectedEmployeeBreakSeconds
+    : Number(data.overall.summary?.total_break_seconds || 0);
   const employeePresentDays = Math.max(
     Number(employeeStats.present_days || 0),
     Number(selectedWorkStatus?.presentDays || 0)
@@ -2048,8 +2062,8 @@ export default function AdminDashboard() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate text-base font-semibold text-slate-950">{selectedEmployee.name}</h3>
-                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${selectedWorkStatus?.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : selectedEmployeeIsWorking ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                        {selectedWorkStatus?.status === 'On Leave' ? 'On Leave' : selectedEmployeeIsWorking ? 'Working' : 'Not working'}
+                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${selectedWorkStatus?.status === 'On Break' ? 'bg-amber-50 text-amber-700' : selectedWorkStatus?.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : selectedEmployeeIsWorking ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {selectedWorkStatus?.status === 'On Break' ? 'On Break' : selectedWorkStatus?.status === 'On Leave' ? 'On Leave' : selectedEmployeeIsWorking ? 'Working' : 'Not working'}
                       </span>
                     </div>
                     <p className="mt-1 truncate text-xs text-slate-500">{selectedEmployee.email}</p>
@@ -2064,9 +2078,11 @@ export default function AdminDashboard() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Tracked</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedEmployeeTrackedSeconds)}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Track Time</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedEmployeeTrackedSeconds)}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Work Time</p><p className="mt-2 text-lg font-semibold text-emerald-700">{formatDuration(Math.max(0, selectedEmployeeTrackedSeconds - selectedEmployeeIdleSeconds))}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{employeePresentDays} present</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p><p className="mt-1 text-[10px] text-slate-400">{IDLE_SOURCE_LABELS[selectedEmployeeIdleSource]}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Break Time</p><p className="mt-2 text-lg font-semibold text-slate-700">{formatDuration(selectedEmployeeBreakSeconds)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Screenshots</p><p className="mt-2 text-lg font-semibold text-blue-700">{employeeScreenshotCount}</p></div>
               </div>
 
@@ -2326,9 +2342,10 @@ export default function AdminDashboard() {
                 <tr>
                   <th className="px-4 py-3 font-medium">Employee</th>
                   <th className="px-4 py-3 font-medium">Department</th>
-                  <th className="px-4 py-3 font-medium">Tracked</th>
-                  <th className="px-4 py-3 font-medium">Worked</th>
-                  <th className="px-4 py-3 font-medium">Idle</th>
+                  <th className="px-4 py-3 font-medium">Track Time</th>
+                  <th className="px-4 py-3 font-medium">Work Time</th>
+                  <th className="px-4 py-3 font-medium">Idle Time</th>
+                  <th className="px-4 py-3 font-medium">Break Time</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Last signal</th>
                 </tr>
@@ -2349,8 +2366,9 @@ export default function AdminDashboard() {
                     <td className="px-4 py-3 font-medium text-slate-900">{formatDuration(row.todaySeconds)}</td>
                     <td className="px-4 py-3 font-medium text-emerald-700">{formatDuration(row.workedSeconds)}</td>
                     <td className="px-4 py-3 font-medium text-amber-600">{formatDuration(row.idleSeconds)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-700">{formatDuration(row.breakSeconds)}</td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${row.status === 'Working' ? 'bg-emerald-50 text-emerald-700' : row.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{row.status}</span>
+                      <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${row.status === 'Working' ? 'bg-emerald-50 text-emerald-700' : row.status === 'On Break' ? 'bg-amber-50 text-amber-700' : row.status === 'On Leave' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>{row.status}</span>
                     </td>
                     <td className="px-4 py-3 text-slate-500">
                       {row.status === 'Working'
@@ -2581,7 +2599,7 @@ export default function AdminDashboard() {
               <span className="truncate font-semibold text-slate-900">{selectedEmployeeTimer?.taskTitle || 'Not assigned'}</span>
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-3 gap-3">
             <div className="rounded-lg border border-slate-100 p-3">
               <p className="text-xs text-slate-500">Selected Range</p>
               <p className="mt-2 text-lg font-semibold">{formatDuration(totalDuration)}</p>
@@ -2589,6 +2607,10 @@ export default function AdminDashboard() {
             <div className="rounded-lg border border-slate-100 p-3">
               <p className="text-xs text-slate-500">Idle Time</p>
               <p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(scopeIdleSeconds)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-100 p-3">
+              <p className="text-xs text-slate-500">Break Time</p>
+              <p className="mt-2 text-lg font-semibold text-slate-700">{formatDuration(scopeBreakSeconds)}</p>
             </div>
           </div>
         </Card>
@@ -2628,7 +2650,7 @@ export default function AdminDashboard() {
                       {row.status === 'Working' ? 'Still checked in' : formatDateTimeForEmployee(row.checkOutAt, row.employee)}
                       {!viewInMyTimezone && row.checkOutAt ? <span className="ml-1 text-[10px] text-slate-400">({resolveEmployeeTimezone(row.employee)})</span> : null}
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{row.status === 'Working' ? 'Working now' : formatDuration(row.todaySeconds)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.status === 'Working' ? 'Working now' : row.status === 'On Break' ? 'On a break' : formatDuration(row.todaySeconds)}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${!row.checkInAt ? 'bg-slate-100 text-slate-600' : (row.lateDays > 0 || (isRangeIncludingToday && row.lateMinutes > 0)) ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
                         {!row.checkInAt
@@ -2904,9 +2926,10 @@ export default function AdminDashboard() {
                     <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">{row.productivityPercent}% productive</span>
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-slate-600">
-                    <span>Tracked: <strong>{formatDuration(row.trackedSeconds)}</strong></span>
-                    <span>Working: <strong>{formatDuration(row.workingSeconds)}</strong></span>
-                    <span>Idle: <strong>{formatDuration(row.idleSeconds)}</strong></span>
+                    <span>Track Time: <strong>{formatDuration(row.trackedSeconds)}</strong></span>
+                    <span>Work Time: <strong>{formatDuration(row.workingSeconds)}</strong></span>
+                    <span>Idle Time: <strong>{formatDuration(row.idleSeconds)}</strong></span>
+                    <span>Break Time: <strong>{formatDuration(row.breakSeconds)}</strong></span>
                   </div>
                 </div>
               ))}
@@ -2929,7 +2952,7 @@ export default function AdminDashboard() {
                 }))}
               />
               <div className="mt-3 flex items-center justify-center gap-6 text-xs text-slate-600">
-                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-blue-600" />Worked Time</span>
+                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-blue-600" />Work Time</span>
                 <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm bg-amber-500" />Idle Time</span>
               </div>
             </>
@@ -2950,7 +2973,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
                     <span>Members: <strong>{row.members}</strong></span>
-                    <span>Tracked: <strong>{formatDuration(row.trackedSeconds)}</strong></span>
+                    <span>Track Time: <strong>{formatDuration(row.trackedSeconds)}</strong></span>
                     <span>Avg / member: <strong>{formatDuration(row.averageTrackedPerMember)}</strong></span>
                     <span>Attendance: <strong>{row.attendanceCoverage}%</strong></span>
                     <span>Idle share: <strong>{row.idlePercent}%</strong></span>
@@ -2970,7 +2993,7 @@ export default function AdminDashboard() {
               <p className="mt-1 text-xl font-semibold text-rose-700">{departmentsNeedingAttention}</p>
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[11px] text-slate-500">No Tracked Time</p>
+              <p className="text-[11px] text-slate-500">No Track Time</p>
               <p className="mt-1 text-xl font-semibold text-slate-900">{employeesWithoutTrackedTime}</p>
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">

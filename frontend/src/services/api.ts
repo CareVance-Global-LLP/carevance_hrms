@@ -486,6 +486,12 @@ export const userApi = {
 
   getProfile360: (id: number, params?: { start_date?: string; end_date?: string }) =>
     api.get<UserProfile360>(`/users/${id}/profile-360`, { params }),
+
+  exportCsv: (params?: { user_ids?: number[]; department?: string }) =>
+    api.get('/users/export', {
+      params,
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
 };
 
 export const employeeWorkspaceApi = {
@@ -833,8 +839,17 @@ export const timeEntryApi = {
   active: (params?: { timer_slot?: 'primary' | 'secondary' }) => 
     api.get<TimeEntry>('/time-entries/active', { params }),
   
-  today: () => 
-    api.get<{ time_entries: TimeEntry[]; total_duration: number }>('/time-entries/today'),
+  today: () =>
+    api.get<{
+      time_entries: TimeEntry[];
+      total_duration: number;
+      total_break_seconds: number;
+      break_hours: number;
+      track_time: number;
+      work_time: number;
+      idle_time: number;
+      break_time: number;
+    }>('/time-entries/today'),
 };
 
 // Geofence API

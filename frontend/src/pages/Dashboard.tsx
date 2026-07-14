@@ -95,6 +95,10 @@ export default function Dashboard() {
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
   const [shiftTargetSeconds, setShiftTargetSeconds] = useState(8 * 3600);
   const [workedSeconds, setWorkedSeconds] = useState(0);
+  const [totalBreakSeconds, setTotalBreakSeconds] = useState(0);
+  const [todayTrackSeconds, setTodayTrackSeconds] = useState(0);
+  const [todayWorkSeconds, setTodayWorkSeconds] = useState(0);
+  const [todayIdleSeconds, setTodayIdleSeconds] = useState(0);
   const [isSubmittingOvertime, setIsSubmittingOvertime] = useState(false);
   const [notice, setNotice] = useState('');
   const [leaveToday, setLeaveToday] = useState<any | null>(null);
@@ -128,6 +132,10 @@ export default function Dashboard() {
         setLeaveToday(attendancePayload?.leave_today || null);
         setShiftTargetSeconds(Number(attendancePayload?.shift_target_seconds || attendanceRecord?.shift_target_seconds || 8 * 3600));
         setWorkedSeconds(Number(attendanceRecord?.worked_seconds || data?.today_total_elapsed_duration || data?.today_total_duration || 0) || 0);
+        setTotalBreakSeconds(Number(attendanceRecord?.total_break_seconds ?? data?.total_break_seconds ?? 0) || 0);
+        setTodayTrackSeconds(Number(data?.today_track_time ?? 0) || 0);
+        setTodayWorkSeconds(Number(data?.today_work_time ?? 0) || 0);
+        setTodayIdleSeconds(Number(data?.today_idle_time ?? 0) || 0);
 
         const pct = data?.today_change_percent;
         if (typeof pct === 'number') {
@@ -235,6 +243,10 @@ export default function Dashboard() {
   const liveActiveDeltaSeconds = activeTimer ? Math.max(0, activeTimerSeconds - activeTimerBaseSeconds) : 0;
   const effectiveWorkedSeconds = workedSeconds + liveActiveDeltaSeconds;
   const effectiveTodayTotal = todayTotal + liveActiveDeltaSeconds;
+  const activeTimerIsProductive = Boolean(activeTimer?.project || activeTimer?.task);
+  const effectiveTrackSeconds = todayTrackSeconds + liveActiveDeltaSeconds;
+  const effectiveWorkSeconds = todayWorkSeconds + (activeTimerIsProductive ? liveActiveDeltaSeconds : 0);
+  const effectiveIdleSeconds = todayIdleSeconds + (activeTimerIsProductive ? 0 : liveActiveDeltaSeconds);
   const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
   const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
   const isCheckedIn = Boolean(attendanceToday?.is_checked_in || activeTimer);
@@ -323,7 +335,13 @@ export default function Dashboard() {
       </header>
 
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <KpiCard label="Worked Today" value={formatDuration(effectiveWorkedSeconds)} hint={todayDeltaLabel} icon={Clock} tint="bg-blue-50 text-blue-600" />
+        <KpiCard label="Track Time" value={formatDuration(effectiveTrackSeconds)} hint="Tracked time today" icon={Clock} tint="bg-blue-50 text-blue-600" />
+        <KpiCard label="Work Time" value={formatDuration(effectiveWorkSeconds)} hint="Worked (tracked minus idle)" icon={Clock} tint="bg-emerald-50 text-emerald-600" />
+        <KpiCard label="Idle Time" value={formatDuration(effectiveIdleSeconds)} hint="Idle within tracked time" icon={Hourglass} tint="bg-amber-50 text-amber-600" />
+        <KpiCard label="Break Time" value={formatDuration(totalBreakSeconds)} hint="Total break today" icon={Hourglass} tint="bg-orange-50 text-orange-600" />
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <KpiCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} tint="bg-violet-50 text-violet-600" />
         <KpiCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} tint="bg-amber-50 text-amber-600" />
         <KpiCard
@@ -335,37 +353,7 @@ export default function Dashboard() {
         />
       </section>
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.9fr)_minmax(0,0.9fr)]">
-        <Card id="todays-shift" className="scroll-mt-24 p-4">
-          <SectionTitle title="Today's shift" action={<span className="text-xs text-slate-500">{completionPercent}% done</span>} />
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-slate-500">Worked today</p>
-              <p className="mt-2 text-3xl font-semibold text-slate-950">{formatDuration(effectiveWorkedSeconds)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Remaining</p>
-              <p className="mt-2 text-3xl font-semibold text-slate-950">{formatDuration(remainingShiftSeconds)}</p>
-            </div>
-          </div>
-          <div className="mt-5 h-2 rounded-full bg-slate-100">
-            <span className="block h-2 rounded-full bg-blue-600" style={{ width: `${Math.max(completionPercent, effectiveWorkedSeconds ? 8 : 0)}%` }} />
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
-            <span className="rounded-md bg-blue-50 px-2 py-1 font-medium text-blue-700">Status: {attendanceLabel}</span>
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-600">{completedSessions} completed session{completedSessions === 1 ? '' : 's'}</span>
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-600">Avg session {formatDuration(averageEntrySeconds)}</span>
-          </div>
-          {overtimeSeconds > 0 ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <Button onClick={submitOvertimeProof} disabled={isSubmittingOvertime} size="sm">
-                {isSubmittingOvertime ? 'Sending...' : 'Send overtime proof'}
-              </Button>
-              {notice ? <span className="text-xs text-slate-500">{notice}</span> : null}
-            </div>
-          ) : notice ? <p className="mt-3 text-xs text-slate-500">{notice}</p> : null}
-        </Card>
-
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.9fr)]">
         <Card id="attendance-shift" className="scroll-mt-24 p-4">
           <SectionTitle title="Attendance & Shift" action={<ClipboardCheck className="h-4 w-4 text-blue-600" />} />
           <div className="space-y-3 text-xs">
@@ -413,10 +401,10 @@ export default function Dashboard() {
               <p className="text-xs text-slate-500">Tasks</p>
               <p className="mt-2 text-lg font-semibold text-slate-950">{activeTasksCount}</p>
             </div>
-            <div className="rounded-lg border border-slate-100 p-3">
-              <p className="text-xs text-slate-500">Tracked</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(trackedTodaySeconds)}</p>
-            </div>
+              <div className="rounded-lg border border-slate-100 p-3">
+                <p className="text-xs text-slate-500">Track Time</p>
+                <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(trackedTodaySeconds)}</p>
+              </div>
           </div>
         </Card>
       </section>
@@ -468,7 +456,7 @@ export default function Dashboard() {
         </Card>
 
         <Card id="time-tracker-card" className="scroll-mt-24 p-4">
-          <SectionTitle title="Time Tracker" action={<Link to="/time-tracker" className="text-xs font-medium text-blue-600">Open</Link>} />
+          <SectionTitle title="Time Tracker" />
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
             <p className="text-xs text-slate-500">{activeTimer ? 'Active timer' : 'No active timer'}</p>
             <p className="mt-2 text-3xl font-semibold tracking-tight text-blue-600">{formatTimerClock(activeTimerSeconds)}</p>

@@ -214,13 +214,14 @@ export interface TimeEntry {
   organization_id: number;
   project_id?: number | null;
   task_id?: number | null;
-  timer_slot?: 'primary' | 'secondary';
+  timer_slot?: 'primary' | 'secondary' | 'break';
   start_time: string;
   end_time?: string;
   duration: number;
   description?: string;
   billable: boolean;
   is_manual: boolean;
+  is_break?: boolean;
   activity_level?: number;
   created_at: string;
   updated_at: string;
@@ -788,6 +789,7 @@ export interface UserProfile360 {
       status: string;
       worked_seconds: number;
       late_minutes: number;
+      total_break_seconds?: number;
       check_in_at?: string | null;
       check_out_at?: string | null;
     } | null;

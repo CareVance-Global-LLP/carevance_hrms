@@ -231,6 +231,12 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     completed_shift: boolean;
     leave_type?: 'full_day' | 'half_day' | null;
     leave_units?: number;
+    work_time_breakdown?: {
+      track_time?: number;
+      work_time?: number;
+      idle_time?: number;
+      break_time?: number;
+    } | null;
     punches: Array<{
       id: number;
       punch_in_at: string;
@@ -405,7 +411,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         'Absent Days',
         'Total Working Days',
         'Attendance Rate (%)',
-        'Worked Hours',
+        'Track Time',
+        'Work Time',
+        'Idle Time',
+        'Break Time',
         'First Check-In',
         'Last Check-Out',
         'Status',
@@ -414,6 +423,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       let totalAbsent = 0;
       let totalAll = 0;
       let totalWorkedSeconds = 0;
+      let totalBreakSeconds = 0;
 
       for (const row of rows) {
         const present = Number(row.days_present) || 0;
@@ -426,6 +436,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         const workingDays = Number(row.working_days_in_range) || 0;
         const attendanceRate = workingDays > 0 ? ((present / workingDays) * 100).toFixed(1) : '0';
         const workedSeconds = Number(row.worked_seconds) || 0;
+        const breakSeconds = Number(row.total_break_seconds) || 0;
+        const trackSeconds = Number(row.work_time_breakdown?.track_time ?? 0) || 0;
+        const idleSeconds = Number(row.work_time_breakdown?.idle_time ?? 0) || 0;
         const firstCheckIn = row.check_in_at || '';
         const lastCheckOut = row.check_out_at || '';
 
@@ -446,7 +459,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           String(Math.max(0, absent)),
           String(workingDays),
           attendanceRate,
+          formatDuration(trackSeconds),
           formatDuration(workedSeconds),
+          formatDuration(idleSeconds),
+          formatDuration(breakSeconds),
           `"${firstCheckIn}"`,
           `"${lastCheckOut}"`,
           `"${status}"`,
@@ -455,6 +471,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         totalAbsent += Math.max(0, absent);
         totalAll += total;
         totalWorkedSeconds += workedSeconds;
+        totalBreakSeconds += breakSeconds;
       }
 
       const overallRate = totalAll > 0 ? ((totalPresent / totalAll) * 100).toFixed(1) : '0';
@@ -469,6 +486,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         String(totalAll),
         overallRate,
         formatDuration(totalWorkedSeconds),
+        formatDuration(totalBreakSeconds),
         '',
         '',
         '',
@@ -1832,7 +1850,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             ) : (
               <>
                 <Download className="h-4 w-4" />
-                Export Report
+                Export CSV
               </>
             )}
           </button>
@@ -1997,7 +2015,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   <p className="text-sm font-semibold text-gray-900">{todayRecord?.check_out_at ? formatTimeForTimezone(todayRecord.check_out_at, displayTimezone) : '--'}</p>
                 </div>
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
-                  <p className="text-[11px] text-gray-500">Working Hours</p>
+                  <p className="text-[11px] text-gray-500">Track Time</p>
+                  <p className="text-sm font-semibold text-gray-900">{formatDuration(todayRecord?.work_time_breakdown?.track_time || 0)}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 px-3 py-2">
+                  <p className="text-[11px] text-gray-500">Work Time</p>
+                  <p className="text-sm font-semibold text-gray-900">{formatDuration(todayRecord?.work_time_breakdown?.work_time || todayRecord?.worked_seconds || 0)}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 px-3 py-2">
+                  <p className="text-[11px] text-gray-500">Idle Time</p>
+                  <p className="text-sm font-semibold text-gray-900">{formatDuration(todayRecord?.work_time_breakdown?.idle_time || 0)}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 px-3 py-2">
+                  <p className="text-[11px] text-gray-500">Presence (punches)</p>
                   <p className="text-sm font-semibold text-gray-900">{formatDuration(todayRecord?.worked_seconds || 0)}</p>
                 </div>
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
@@ -2052,15 +2082,18 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Present Days</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Leave Days</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Attendance %</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Worked</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Track Time</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Work Time</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Idle Time</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Break Time</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Status</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td className="px-4 py-6" colSpan={6}><PageLoadingState label="Loading attendance records..." /></td></tr>
+              <tr><td className="px-4 py-6" colSpan={9}><PageLoadingState label="Loading attendance records..." /></td></tr>
             ) : rows.length === 0 ? (
-              <tr><td className="px-4 py-6" colSpan={6}><PageEmptyState title="No attendance records" description="Attendance data will appear here for the selected date range." /></td></tr>
+              <tr><td className="px-4 py-6" colSpan={9}><PageEmptyState title="No attendance records" description="Attendance data will appear here for the selected date range." /></td></tr>
             ) : rows.map((row) => (
               <tr
                 key={row.user.id}
@@ -2079,7 +2112,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 <td className="px-4 py-3 text-gray-700">{row.days_present} / {row.calendar_days_in_range || row.working_days_in_range}</td>
                 <td className="px-4 py-3 text-gray-700">{row.leave_days}</td>
                 <td className="px-4 py-3 text-gray-700">{row.attendance_rate}%</td>
-                <td className="px-4 py-3 text-gray-700">{formatDuration(row.worked_seconds)}</td>
+                <td className="px-4 py-3 text-gray-700">{formatDuration(row.work_time_breakdown?.track_time ?? 0)}</td>
+                <td className="px-4 py-3 text-gray-700">{formatDuration(row.work_time_breakdown?.work_time ?? row.worked_seconds ?? 0)}</td>
+                <td className="px-4 py-3 text-gray-700">{formatDuration(row.work_time_breakdown?.idle_time ?? 0)}</td>
+                <td className="px-4 py-3 text-gray-700">{formatDuration(row.total_break_seconds || 0)}</td>
                 <td className="px-4 py-3">
                   <StatusBadge tone={row.is_working ? 'success' : 'neutral'}>{row.is_working ? 'Working' : 'Not Working'}</StatusBadge>
                 </td>
@@ -2269,7 +2305,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 <span className="font-semibold text-gray-900">{calendarSummary.late_days}</span>
               </div>
               <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
-                <span className="text-gray-600">Total Worked</span>
+                <span className="text-gray-600">Presence (punches)</span>
                 <span className="font-semibold text-gray-900">{formatDuration(calendarSummary.total_worked_seconds)}</span>
               </div>
             </div>

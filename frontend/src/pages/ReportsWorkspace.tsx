@@ -133,10 +133,10 @@ const customExportFieldOptions: Array<{ key: CustomExportFieldKey; label: string
   { key: 'late_days', label: 'Late Days', description: 'Days marked with late minutes.' },
   { key: 'absent_days', label: 'Absent Days', description: 'Working days without present or leave.' },
   { key: 'attendance_rate', label: 'Attendance Rate (%)', description: 'Present/working-day attendance rate.' },
-  { key: 'tracked_time', label: 'Tracked Time', description: 'Total tracked duration.' },
-  { key: 'worked_time', label: 'Worked Time', description: 'Attendance worked duration.' },
+  { key: 'tracked_time', label: 'Track Time', description: 'Total tracked duration.' },
+  { key: 'worked_time', label: 'Work Time', description: 'Attendance worked duration.' },
   { key: 'idle_time', label: 'Idle Time', description: 'Measured idle duration.' },
-  { key: 'working_time', label: 'Working Time', description: 'Tracked time minus idle time.' },
+  { key: 'working_time', label: 'Work Time', description: 'Tracked time minus idle time.' },
   { key: 'overtime_time', label: 'Overtime Time', description: 'Worked duration above 8h/day baseline.' },
   { key: 'first_check_in_at', label: 'First Check-In', description: 'Earliest check-in in range.' },
   { key: 'last_check_out_at', label: 'Last Check-Out', description: 'Latest check-out in range.' },
@@ -876,6 +876,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     const presentDays = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.days_present || 0), 0);
     const leaveDays = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.leave_days || 0), 0);
     const workedSeconds = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.worked_seconds || 0), 0);
+    const breakSeconds = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.total_break_seconds || 0), 0);
     const expectedDays = attendanceRows.reduce(
       (sum: number, row: any) => sum + Number(row.calendar_days_in_range || row.working_days_in_range || 0),
       0
@@ -891,6 +892,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       leaveDays,
       absentDays,
       workedSeconds,
+      breakSeconds,
       employees: attendanceRows.length,
       expectedDays,
       currentWorking,
@@ -908,6 +910,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       workedSeconds: number;
       expectedDays: number;
       workingNow: number;
+      breakSeconds: number;
     }>();
 
     attendanceRows.forEach((row: any) => {
@@ -924,6 +927,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         workedSeconds: 0,
         expectedDays: 0,
         workingNow: 0,
+        breakSeconds: 0,
       };
 
       existing.employees += 1;
@@ -931,6 +935,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       existing.leaveDays += leaveDays;
       existing.absentDays += Math.max(0, expectedDays - presentDays - leaveDays);
       existing.workedSeconds += Number(row.worked_seconds || 0);
+      existing.breakSeconds += Number(row.total_break_seconds || 0);
       existing.expectedDays += expectedDays;
       existing.workingNow += row.is_working ? 1 : 0;
       groupedRows.set(department, existing);
@@ -2007,6 +2012,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <MetricCard label="Leave Days" value={attendanceTotals.leaveDays} hint="Approved leave in range" icon={ListFilter} accent="amber" />
             <MetricCard label="Absent Days" value={attendanceTotals.absentDays} hint="Expected days not covered by presence or leave" icon={AlertTriangle} accent="rose" />
             <MetricCard label="Worked Time" value={formatDuration(attendanceTotals.workedSeconds)} hint="Tracked attendance time" icon={TimerReset} accent="violet" />
+            <MetricCard label="Break Time" value={formatDuration(attendanceTotals.breakSeconds)} hint="Total break time in range" icon={TimerReset} accent="amber" />
             <MetricCard label="Avg Attendance" value={formatPercent(attendanceTotals.averageAttendanceRate)} hint="Average attendance rate in this scope" icon={Gauge} accent="slate" />
           </div>
 
@@ -2261,7 +2267,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                 { key: 'leave', header: 'Leave', render: (row: any) => row.leaveDays },
                 { key: 'absent', header: 'Absent', render: (row: any) => row.absentDays },
                 { key: 'rate', header: 'Rate', render: (row: any) => formatPercent((row.presentDays / Math.max(1, row.expectedDays)) * 100) },
-                { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.workedSeconds) },
+                { key: 'worked', header: 'Work Time', render: (row: any) => formatDuration(row.workedSeconds) },
+                { key: 'break', header: 'Break Time', render: (row: any) => formatDuration(row.breakSeconds) },
               ]}
             />
 
@@ -2275,7 +2282,8 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                 { key: 'department', header: 'Department', render: (row: any) => resolveAttendanceDepartment(row) },
                 { key: 'absent', header: 'Absent', render: (row: any) => row.absent_days },
                 { key: 'rate', header: 'Rate', render: (row: any) => `${row.attendance_rate}%` },
-                { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.worked_seconds || 0) },
+                { key: 'worked', header: 'Work Time', render: (row: any) => formatDuration(row.worked_seconds || 0) },
+                { key: 'break', header: 'Break Time', render: (row: any) => formatDuration(row.total_break_seconds || 0) },
               ]}
             />
           </div>
@@ -2291,8 +2299,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               { key: 'present', header: 'Present', render: (row: any) => `${row.days_present} / ${row.calendar_days_in_range || row.working_days_in_range}` },
               { key: 'leave', header: 'Leave', render: (row: any) => row.leave_days },
               { key: 'attendance_rate', header: 'Attendance %', render: (row: any) => `${row.attendance_rate}%` },
-              { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(row.worked_seconds) },
-              { key: 'status', header: 'Status', render: (row: any) => (row.is_working ? 'Working' : 'Offline') },
+               { key: 'worked', header: 'Work Time', render: (row: any) => formatDuration(row.worked_seconds) },
+               { key: 'break', header: 'Break Time', render: (row: any) => formatDuration(row.total_break_seconds || 0) },
+               { key: 'status', header: 'Status', render: (row: any) => (row.is_working ? 'Working' : 'Offline') },
             ]}
           />
         </>
@@ -2301,9 +2310,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {(mode === 'hours-tracked' || mode === 'productivity') && (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Tracked Time" value={formatDuration(overallSummary.total_duration || 0)} hint="Total duration in range" icon={TimerReset} accent="sky" />
-            <MetricCard label="Working Time" value={formatDuration(getWorkingDuration(overallSummary))} hint="Tracked time minus measured idle time" icon={LineChart} accent="emerald" />
+            <MetricCard label="Track Time" value={formatDuration(overallSummary.total_duration || 0)} hint="Total duration in range" icon={TimerReset} accent="sky" />
+            <MetricCard label="Work Time" value={formatDuration(getWorkingDuration(overallSummary))} hint="Tracked time minus measured idle time" icon={LineChart} accent="emerald" />
             <MetricCard label="Idle Time" value={formatDuration(overallSummary.idle_duration || 0)} hint="Measured idle time inside tracked time" icon={Activity} accent="amber" />
+            <MetricCard label="Break Time" value={formatDuration(overallSummary.total_break_seconds || 0)} hint="Total break time in range" icon={TimerReset} accent="slate" />
             <MetricCard
               label="Active Users"
               value={overallSummary.active_users || 0}
@@ -2342,10 +2352,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                     return `${Number(row.attendance_rate || 0).toFixed(1)}% (${presentDays}/${totalDays})`;
                   },
                 },
-                { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
-                { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
-                { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
+                { key: 'total', header: 'Track Time', render: (row: any) => formatDuration(row.total_duration || 0) },
+                { key: 'working', header: 'Work Time', render: (row: any) => formatDuration(getWorkingDuration(row)) },
+                { key: 'idle', header: 'Idle Time', render: (row: any) => formatDuration(row.idle_duration || 0) },
                 { key: 'idle_pct', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
+                { key: 'break', header: 'Break Time', render: (row: any) => formatDuration(row.break_seconds || 0) },
                 {
                   key: 'overtime',
                   header: 'Overtime',
@@ -2416,13 +2427,16 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                               <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-xl">
                                 <p className="text-xs font-bold text-slate-900">{row.date}</p>
                                 <p className="mt-1 text-xs text-slate-500">Tracked: <span className="font-semibold text-slate-700">{formatDuration(row.total_duration || 0)}</span></p>
+                                {Number.isFinite(Number(row.total_break_seconds)) && (
+                                  <p className="mt-1 text-xs text-slate-500">Break: <span className="font-semibold text-slate-700">{formatDuration(row.total_break_seconds || 0)}</span></p>
+                                )}
                               </div>
                             );
                           }}
                           cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
                           offset={28}
                         />
-                      <Bar dataKey="total_duration" name="Tracked Time" radius={[0, 4, 4, 0]} barSize={18}>
+                      <Bar dataKey="total_duration" name="Track Time" radius={[0, 4, 4, 0]} barSize={18}>
                         {byDay.map((item: any) => {
                           const maxDuration = Math.max(1, ...byDay.map((e: any) => Number(e.total_duration || 0)));
                           const ratio = Number(item.total_duration || 0) / maxDuration;
@@ -2444,7 +2458,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <MetricCard label="Groups" value={filteredTaskGroupIds.length} hint="Groups with matching tasks" icon={Users} accent="sky" />
             <MetricCard label="Tasks" value={filteredTasks.length} hint="Tasks in scope" icon={ListFilter} accent="violet" />
             <MetricCard label="Open Tasks" value={filteredTasks.filter((task: any) => task.status !== 'done').length} hint="Todo and in-progress tasks" icon={Waypoints} accent="amber" />
-            <MetricCard label="Tracked Time" value={formatDuration(filteredProjectTimeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0))} hint="Task-linked time in scope" icon={TimerReset} accent="emerald" />
+            <MetricCard label="Track Time" value={formatDuration(filteredProjectTimeEntries.reduce((sum: number, entry: any) => sum + Number(entry.duration || 0), 0))} hint="Task-linked time in scope" icon={TimerReset} accent="emerald" />
           </div>
 
           {projectsEmployeeNameSearch ? (
@@ -2492,7 +2506,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                 },
                 {
                   key: 'tracked',
-                  header: 'Tracked',
+                  header: 'Track Time',
                   render: (row: any) => formatDuration(row.tracked_seconds || 0),
                 },
               ]}
@@ -2530,7 +2544,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                     </div>
                   ),
                 },
-                { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
+                { key: 'tracked', header: 'Track Time', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
                 { key: 'due', header: 'Due Date', render: (row: any) => row.due_date ? row.due_date.split('T')[0] : 'No due date' },
               ]}
             />
@@ -2557,7 +2571,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                   </div>
                 ),
               },
-              { key: 'tracked', header: 'Tracked', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
+              { key: 'tracked', header: 'Track Time', render: (row: any) => formatDuration(row.tracked_seconds || 0) },
               { key: 'due', header: 'Due Date', render: (row: any) => row.due_date ? row.due_date.split('T')[0] : 'No due date' },
             ]}
           />
@@ -2647,7 +2661,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               icon={Users}
               accent="sky"
             />
-            <MetricCard label="Worked" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked time minus measured idle time' : 'Working time across current scope'} icon={TimerReset} accent="emerald" />
+            <MetricCard label="Work Time" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked time minus measured idle time' : 'Working time across current scope'} icon={TimerReset} accent="emerald" />
             <MetricCard label="Productive Share" value={`${Number(orgSummary.productive_share || 0).toFixed(1)}%`} hint="Organization average" icon={LineChart} accent="violet" />
             <MetricCard
               label={hasSelectedEmployee ? 'Idle' : 'Employees'}
@@ -2710,7 +2724,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             columns={[
               { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
               { key: 'productive_duration', header: 'Productive Time', render: (row: any) => formatDuration(row.productive_duration || 0) },
-              { key: 'worked', header: 'Worked', render: (row: any) => formatDuration(getWorkingDuration(row) || row.total_duration || 0) },
+              { key: 'worked', header: 'Work Time', render: (row: any) => formatDuration(getWorkingDuration(row) || row.total_duration || 0) },
               { key: 'matched_users', header: 'Search Pool', render: () => usageMatchedUsers.length },
             ]}
           />

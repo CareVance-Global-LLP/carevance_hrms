@@ -102,6 +102,7 @@ export default function TimeReports() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600">Time Reports</p>
             <h1 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">Tracked time by task, user, and status</h1>
+            <p className="mt-2 text-xs text-slate-500">Break Time is included within Tracked totals here; a separate break figure isn&apos;t available from this report&apos;s task data.</p>
           </div>
           <SelectInput value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)} className="w-52">
             <option value="all">All Users</option>

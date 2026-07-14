@@ -8,6 +8,7 @@ use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Services\Reports\WorkTimeSummaryService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
@@ -703,6 +704,7 @@ class AttendanceService
         $activeTimeEntriesToday = TimeEntry::query()
             ->whereIn('user_id', $users->pluck('id'))
             ->whereNull('end_time')
+            ->where('is_break', false)
             ->whereDate('start_time', '<=', now())
             ->get()
             ->keyBy(fn (TimeEntry $entry) => (int) $entry->user_id);
@@ -817,6 +819,12 @@ class AttendanceService
                 'status' => $leaveForDate->isHalfDay() ? 'half_leave' : 'absent',
                 'is_checked_in' => false,
                 'total_break_seconds' => 0,
+                'work_time_breakdown' => [
+                    'track_time' => 0,
+                    'work_time' => 0,
+                    'idle_time' => 0,
+                    'break_time' => 0,
+                ],
                 'shift_target_seconds' => $target,
                 'remaining_shift_seconds' => $target,
                 'completed_shift' => false,
@@ -833,6 +841,12 @@ class AttendanceService
         $worked = $this->calculateEffectiveWorkedSeconds($record);
         $breakSeconds = $this->calculateBreakSeconds($record);
         $target = $this->shiftTargetSecondsForLeave($leaveForDate);
+        $recordDate = Carbon::parse($record->attendance_date)->startOfDay();
+        $workTimeBreakdown = app(WorkTimeSummaryService::class)->forUserRange(
+            $record->user_id,
+            $recordDate,
+            $recordDate->copy()->endOfDay()
+        );
 
         return [
             'id' => $record->id,
@@ -845,6 +859,7 @@ class AttendanceService
             'status' => $record->status,
             'is_checked_in' => $this->hasOpenPunch($record),
             'total_break_seconds' => $breakSeconds,
+            'work_time_breakdown' => $workTimeBreakdown,
             'shift_target_seconds' => $target,
             'remaining_shift_seconds' => max(0, $target - $worked),
             'completed_shift' => $worked >= $target,
@@ -1016,26 +1031,20 @@ class AttendanceService
 
     private function calculateBreakSeconds(AttendanceRecord $record): int
     {
-        if (!$record->relationLoaded('punches')) {
-            $record->load('punches');
+        if (!$record->user_id) {
+            return 0;
         }
 
-        $ordered = $record->punches->sortBy('punch_in_at')->values();
-        $breakSeconds = 0;
-
-        for ($i = 1; $i < $ordered->count(); $i++) {
-            $previous = $ordered[$i - 1];
-            $current = $ordered[$i];
-
-            if (!$previous->punch_out_at || !$current->punch_in_at) {
-                continue;
-            }
-
-            $gap = Carbon::parse($previous->punch_out_at)->diffInSeconds(Carbon::parse($current->punch_in_at), false);
-            if ($gap > 0) {
-                $breakSeconds += $gap;
-            }
-        }
+        // Breaks are stored as is_break TimeEntry rows. Sum their durations
+        // for the record's date so the break total is the single source of
+        // truth (the work timer is paused during a break, so worked time
+        // already excludes it).
+        $breakSeconds = (int) TimeEntry::query()
+            ->where('user_id', $record->user_id)
+            ->where('is_break', true)
+            ->whereNotNull('end_time')
+            ->whereDate('start_time', $record->attendance_date)
+            ->sum('duration');
 
         return (int) $breakSeconds;
     }
