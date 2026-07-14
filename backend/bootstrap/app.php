@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'api.token' => \App\Http\Middleware\AuthenticateApiToken::class,
+            'api.token.optional' => \App\Http\Middleware\OptionalApiToken::class,
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'sanitize' => \App\Http\Middleware\SanitizeInput::class,
             'payroll.enabled' => \App\Http\Middleware\PayrollEnabled::class,

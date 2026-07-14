@@ -1,17 +1,25 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Receipt, Search, Loader2, Plus, CheckCircle, XCircle, IndianRupee,
-  Clock, ArrowRight, FileText, Upload, X, Paperclip, AlertCircle, Check,
+  Receipt, Search, Loader2, Plus, CheckCircle, XCircle,
+  Clock, FileText, X, Paperclip, AlertCircle, Check,
 } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import MetricCard from '@/components/dashboard/MetricCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 import MonthPicker from '@/components/ui/MonthPicker';
 import { useAuth } from '@/contexts/AuthContext';
+import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const CATEGORIES = [
   { value: 'travel', label: 'Travel' },
@@ -43,27 +51,13 @@ function initialMonthFilter(): string {
   return currentMonthValue();
 }
 
-const APPROVAL_LEVEL_LABELS: Record<string, string> = {
-  pending_manager: 'Awaiting Manager',
-  pending_admin: 'Awaiting Admin',
-  approved: 'Approved',
-  rejected: 'Rejected',
-};
-
-const APPROVAL_LEVEL_CLASSES: Record<string, string> = {
-  pending_manager: 'bg-amber-50 text-amber-700 border border-amber-200',
-  pending_admin: 'bg-blue-50 text-blue-700 border border-blue-200',
-  approved: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  rejected: 'bg-rose-50 text-rose-700 border border-rose-200',
-};
-
-function fmt(amount: number | null | undefined): string {
-  const n = Number(amount);
-  if (!Number.isFinite(n)) return '₹0';
-  return '₹' + n.toLocaleString('en-IN');
-}
-
 type Tab = 'inbox' | 'my_submissions' | 'all' | 'history' | 'pending_payments';
+
+type ConfirmTarget =
+  | { kind: 'managerApprove'; id: number; name: string }
+  | { kind: 'adminApprove'; id: number; name: string }
+  | { kind: 'bulkApprove' }
+  | null;
 
 /**
  * Renders a reimbursement receipt with an inline preview and a graceful
@@ -141,12 +135,12 @@ function ReceiptViewer({ url }: { url: string }) {
 export default function ReimbursementsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { show } = useToast();
 
   const hierarchyLevel = user?.hierarchy_level ?? (user?.role === 'employee' ? 100 : user?.role === 'manager' ? 50 : 10);
   const isStrictAdmin = hierarchyLevel <= 10;
   const isAdmin = hierarchyLevel < 100;
   const isManager = hierarchyLevel > 10 && hierarchyLevel < 100;
-  const isEmployee = hierarchyLevel >= 100;
 
   // Tab state
   const [activeTab, setActiveTab] = useState<Tab>(
@@ -181,7 +175,7 @@ export default function ReimbursementsPage() {
 
   // Reject modal
   const [rejectingId, setRejectingId] = useState<number | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
+  const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget>(null);
 
   // Claim detail modal
   const [selectedClaimId, setSelectedClaimId] = useState<number | null>(null);
@@ -262,16 +256,23 @@ export default function ReimbursementsPage() {
       setShowConfirm(false);
       setSubmitError('');
       setShowSuccess(true);
+      show({ kind: 'success', message: 'Reimbursement submitted.' });
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.message || err?.message || 'Submission failed. Please try again.';
       setSubmitError(msg);
+      show({ kind: 'error', message: getApiErrorMessage(err, 'Submission failed. Please try again.') });
     },
   });
 
   const managerApproveMutation = useMutation({
     mutationFn: (id: number) => payrollApi.managerApproveReimbursement(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reimbursements'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
+      setConfirmTarget(null);
+      show({ kind: 'success', message: 'Claim approved.' });
+    },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to approve claim.') }),
   });
 
   const managerRejectMutation = useMutation({
@@ -279,13 +280,19 @@ export default function ReimbursementsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
       setRejectingId(null);
-      setRejectReason('');
+      show({ kind: 'success', message: 'Claim rejected.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reject claim.') }),
   });
 
   const adminApproveMutation = useMutation({
     mutationFn: (id: number) => payrollApi.approveReimbursement(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reimbursements'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
+      setConfirmTarget(null);
+      show({ kind: 'success', message: 'Claim approved.' });
+    },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to approve claim.') }),
   });
 
   const adminRejectMutation = useMutation({
@@ -293,8 +300,9 @@ export default function ReimbursementsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
       setRejectingId(null);
-      setRejectReason('');
+      show({ kind: 'success', message: 'Claim rejected.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reject claim.') }),
   });
 
   // Mark a claim as read when opened from an inbox so the sidebar badge
@@ -326,7 +334,10 @@ export default function ReimbursementsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
       setSelectedIds([]);
+      setConfirmTarget(null);
+      show({ kind: 'success', message: 'Claims approved.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to approve claims.') }),
   });
 
   const bulkRejectMutation = useMutation({
@@ -338,8 +349,9 @@ export default function ReimbursementsPage() {
       queryClient.invalidateQueries({ queryKey: ['reimbursements'] });
       setSelectedIds([]);
       setRejectingId(null);
-      setRejectReason('');
+      show({ kind: 'success', message: 'Claims rejected.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reject claims.') }),
   });
 
   // ─── Mark paid mutation ──────────────────────────────────
@@ -352,7 +364,9 @@ export default function ReimbursementsPage() {
       setPayingId(null);
       setPaymentReference('');
       setPayoutMode('payroll');
+      show({ kind: 'success', message: 'Marked as paid.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to mark as paid.') }),
   });
 
   // ─── Receipt upload ──────────────────────────────────────────
@@ -506,37 +520,47 @@ export default function ReimbursementsPage() {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <SurfaceCard className="p-4">
-            <p className="text-xs text-slate-500 mb-1">Total Claims</p>
-            <p className="text-xl font-bold text-slate-900">{summary.total_count}</p>
-            <p className="text-xs text-slate-500">{fmt(summary.total_amount)}</p>
-          </SurfaceCard>
+          <MetricCard
+            label="Total Claims"
+            value={summary.total_count}
+            hint={formatPayrollAmount(summary.total_amount, { compact: true })}
+            icon={Receipt}
+            accent="sky"
+          />
           {isManager && (
-            <SurfaceCard className="p-4">
-              <p className="text-xs text-amber-600 mb-1">Pending Manager</p>
-              <p className="text-xl font-bold text-amber-600">{summary.pending_manager_count}</p>
-              <p className="text-xs text-slate-500">{fmt(summary.pending_manager_amount)}</p>
-            </SurfaceCard>
+            <MetricCard
+              label="Pending Manager"
+              value={summary.pending_manager_count}
+              hint={formatPayrollAmount(summary.pending_manager_amount, { compact: true })}
+              icon={Clock}
+              accent="amber"
+            />
           )}
           {isStrictAdmin && (
-            <SurfaceCard className="p-4">
-              <p className="text-xs text-blue-600 mb-1">Pending Admin</p>
-              <p className="text-xl font-bold text-blue-600">{summary.pending_admin_count}</p>
-              <p className="text-xs text-slate-500">{fmt(summary.pending_admin_amount)}</p>
-            </SurfaceCard>
+            <MetricCard
+              label="Pending Admin"
+              value={summary.pending_admin_count}
+              hint={formatPayrollAmount(summary.pending_admin_amount, { compact: true })}
+              icon={AlertCircle}
+              accent="sky"
+            />
           )}
           {isStrictAdmin && (
-            <SurfaceCard className="p-4">
-              <p className="text-xs text-violet-600 mb-1">Awaiting Payout</p>
-              <p className="text-xl font-bold text-violet-600">{summary.pending_payment_count}</p>
-              <p className="text-xs text-slate-500">{fmt(summary.pending_payment_amount)}</p>
-            </SurfaceCard>
+            <MetricCard
+              label="Awaiting Payout"
+              value={summary.pending_payment_count}
+              hint={formatPayrollAmount(summary.pending_payment_amount, { compact: true })}
+              icon={Paperclip}
+              accent="violet"
+            />
           )}
-          <SurfaceCard className="p-4">
-            <p className="text-xs text-emerald-600 mb-1">Approved</p>
-            <p className="text-xl font-bold text-emerald-600">{summary.approved_count}</p>
-            <p className="text-xs text-slate-500">{fmt(summary.approved_amount)}</p>
-          </SurfaceCard>
+          <MetricCard
+            label="Approved"
+            value={summary.approved_count}
+            hint={formatPayrollAmount(summary.approved_amount, { compact: true })}
+            icon={CheckCircle}
+            accent="emerald"
+          />
         </div>
 
         {/* Tabs + Action Bar */}
@@ -623,7 +647,7 @@ export default function ReimbursementsPage() {
                 variant="primary"
                 size="sm"
                 iconLeft={<CheckCircle className="h-4 w-4" />}
-                onClick={() => bulkApproveMutation.mutate()}
+                onClick={() => setConfirmTarget({ kind: 'bulkApprove' })}
                 disabled={bulkApproveMutation.isPending}
               >
                 {bulkApproveMutation.isPending ? 'Approving…' : `Approve ${isStrictAdmin ? 'Final' : ''}`}
@@ -860,7 +884,7 @@ export default function ReimbursementsPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Amount</span>
-                  <span className="font-medium text-slate-900">{fmt(parseFloat(formData.amount) || 0)}</span>
+                  <span className="font-medium text-slate-900">{formatPayrollAmount(parseFloat(formData.amount) || 0, { compact: true })}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Date of Expense</span>
@@ -916,20 +940,22 @@ export default function ReimbursementsPage() {
         {/* Table */}
         <SurfaceCard className="overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
+            <PageLoadingState label="Loading reimbursements…" />
           ) : filteredData.length === 0 ? (
-            <div className="text-center py-12">
-              <Receipt className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-500">
-                {activeTab === 'inbox'
-                  ? 'No pending reimbursements in inbox'
+            <PageEmptyState
+              title={
+                activeTab === 'inbox'
+                  ? 'No pending reimbursements'
                   : activeTab === 'my_submissions'
-                    ? 'No reimbursement claims yet. Click "Submit Claim" to get started.'
-                    : 'No reimbursements found'}
-              </p>
-            </div>
+                    ? 'No claims yet'
+                    : 'No reimbursements found'
+              }
+              description={
+                activeTab === 'my_submissions'
+                  ? 'Click "Submit Claim" to get started.'
+                  : undefined
+              }
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -995,11 +1021,11 @@ export default function ReimbursementsPage() {
                         {reim.title || reim.description || '-'}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700">
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
                           {CATEGORIES.find(c => c.value === reim.category)?.label || reim.category || 'Other'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-900">{fmt(reim.amount)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-900">{formatPayrollAmount(reim.amount, { compact: true })}</td>
                       <td className="px-4 py-3 text-slate-600">{reim.expense_date || '-'}</td>
                       <td className="px-4 py-3 text-slate-600 text-xs">{reim.created_at ? String(reim.created_at).slice(0, 10) : '-'}</td>
                       {activeTab === 'inbox' && isStrictAdmin && (
@@ -1008,9 +1034,9 @@ export default function ReimbursementsPage() {
                         </td>
                       )}
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${APPROVAL_LEVEL_CLASSES[reim.approval_level] || 'bg-slate-50 text-slate-700'}`}>
-                          {APPROVAL_LEVEL_LABELS[reim.approval_level] || reim.approval_level}
-                        </span>
+                        <StatusBadge tone={payrollStatusTone(reim.approval_level)}>
+                          {titleCase(reim.approval_level)}
+                        </StatusBadge>
                         {reim.rejection_reason && (
                           <p className="text-xs text-rose-500 mt-1 max-w-[150px] truncate" title={reim.rejection_reason}>
                             {reim.rejection_reason}
@@ -1034,7 +1060,7 @@ export default function ReimbursementsPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<CheckCircle className="h-3.5 w-3.5 text-emerald-600" />}
-                                onClick={() => managerApproveMutation.mutate(reim.id)}
+                                onClick={() => setConfirmTarget({ kind: 'managerApprove', id: reim.id, name: reim.employee?.name || 'this claim' })}
                                 disabled={managerApproveMutation.isPending}
                               >
                                 Approve
@@ -1057,7 +1083,7 @@ export default function ReimbursementsPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<CheckCircle className="h-3.5 w-3.5 text-emerald-600" />}
-                                onClick={() => adminApproveMutation.mutate(reim.id)}
+                                onClick={() => setConfirmTarget({ kind: 'adminApprove', id: reim.id, name: reim.employee?.name || 'this claim' })}
                                 disabled={adminApproveMutation.isPending}
                               >
                                 Final Approve
@@ -1095,46 +1121,31 @@ export default function ReimbursementsPage() {
         </SurfaceCard>
       </div>
 
-      {/* Reject Reason Modal */}
-      {rejectingId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <SurfaceCard className="w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">
-              {rejectingId === -1 ? `Reject ${selectedIds.length} Claim(s)` : 'Reject Reimbursement'}
-            </h3>
-            <p className="text-sm text-slate-500 mb-4">Provide a reason for rejecting this claim.</p>
-            <TextareaInput
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Reason for rejection..."
-              rows={3}
-            />
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="secondary" onClick={() => { setRejectingId(null); setRejectReason(''); }}>
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                iconLeft={<XCircle className="h-4 w-4" />}
-                onClick={() => {
-                  if (!rejectReason.trim()) return;
-                  if (rejectingId === -1) {
-                    // Bulk reject mode
-                    bulkRejectMutation.mutate(rejectReason);
-                  } else if (activeTab === 'inbox' && isManager) {
-                    managerRejectMutation.mutate({ id: rejectingId, reason: rejectReason });
-                  } else {
-                    adminRejectMutation.mutate({ id: rejectingId, reason: rejectReason });
-                  }
-                }}
-                disabled={!rejectReason.trim() || bulkRejectMutation.isPending}
-              >
-                {bulkRejectMutation.isPending ? 'Rejecting…' : 'Reject'}
-              </Button>
-            </div>
-          </SurfaceCard>
-        </div>
-      )}
+      <RejectReasonModal
+        isOpen={rejectingId !== null}
+        title={rejectingId === -1 ? `Reject ${selectedIds.length} Claim(s)` : 'Reject Reimbursement'}
+        description="Provide a reason for rejecting this claim."
+        onSubmit={(reason) => {
+          if (rejectingId === null) return;
+          if (rejectingId === -1) {
+            bulkRejectMutation.mutate(reason);
+          } else if (activeTab === 'inbox' && isManager) {
+            managerRejectMutation.mutate({ id: rejectingId, reason });
+          } else {
+            adminRejectMutation.mutate({ id: rejectingId, reason });
+          }
+        }}
+        onClose={() => setRejectingId(null)}
+        isLoading={
+          rejectingId === null
+            ? false
+            : rejectingId === -1
+              ? bulkRejectMutation.isPending
+              : isManager
+                ? managerRejectMutation.isPending
+                : adminRejectMutation.isPending
+        }
+      />
 
       {/* Claim Detail Modal */}
       {selectedClaimId !== null && (
@@ -1165,7 +1176,7 @@ export default function ReimbursementsPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Amount</span>
-                    <span className="font-medium text-slate-900">{fmt(claimDetailData.amount)}</span>
+                    <span className="font-medium text-slate-900">{formatPayrollAmount(claimDetailData.amount, { compact: true })}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500">Expense Date</span>
@@ -1405,6 +1416,47 @@ export default function ReimbursementsPage() {
           </SurfaceCard>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmTarget !== null}
+        title={
+          confirmTarget?.kind === 'bulkApprove'
+            ? 'Approve selected claims'
+            : 'Approve claim'
+        }
+        message={
+          confirmTarget?.kind === 'bulkApprove'
+            ? `Approve ${selectedIds.length} selected claim(s)? They will move to the next approval stage.`
+            : confirmTarget
+              ? `Approve the claim for ${confirmTarget.name}?`
+              : ''
+        }
+        confirmLabel="Approve"
+        onConfirm={() => {
+          if (!confirmTarget) return;
+          if (confirmTarget.kind === 'managerApprove') {
+            managerApproveMutation.mutate(confirmTarget.id);
+          } else if (confirmTarget.kind === 'adminApprove') {
+            adminApproveMutation.mutate(confirmTarget.id);
+          } else {
+            bulkApproveMutation.mutate();
+          }
+        }}
+        onClose={() => {
+          if (
+            !managerApproveMutation.isPending &&
+            !adminApproveMutation.isPending &&
+            !bulkApproveMutation.isPending
+          ) {
+            setConfirmTarget(null);
+          }
+        }}
+        isLoading={
+          (confirmTarget?.kind === 'managerApprove' && managerApproveMutation.isPending) ||
+          (confirmTarget?.kind === 'adminApprove' && adminApproveMutation.isPending) ||
+          (confirmTarget?.kind === 'bulkApprove' && bulkApproveMutation.isPending)
+        }
+      />
     </div>
   );
 }

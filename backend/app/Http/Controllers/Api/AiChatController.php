@@ -19,6 +19,7 @@ class AiChatController extends Controller
             'history' => 'nullable|array',
             'history.*.role' => 'required|in:user,assistant',
             'history.*.content' => 'required|string|max:2000',
+            'context' => 'nullable|in:admin,landing',
         ]);
 
         $user = $request->user();
@@ -26,7 +27,8 @@ class AiChatController extends Controller
         $reply = $this->chatService->chat(
             $data['message'],
             $data['history'] ?? [],
-            $user
+            $user,
+            $data['context'] ?? null
         );
 
         return response()->json(['reply' => $reply]);

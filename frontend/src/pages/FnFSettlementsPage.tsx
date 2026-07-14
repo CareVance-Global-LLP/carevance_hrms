@@ -1,21 +1,33 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Search, Loader2, Filter, Plus, CheckCircle, XCircle, Eye, DollarSign, Briefcase } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { Search, Loader2, CheckCircle, XCircle, DollarSign, Briefcase } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { TextInput, SelectInput } from '@/components/ui/FormField';
+import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import MetricCard from '@/components/dashboard/MetricCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
+import RejectReasonModal from '@/components/ui/RejectReasonModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected', 'paid'];
-const EXIT_TYPES = ['resignation', 'termination', 'retirement', 'death', 'layoff'];
 
 export default function FnFSettlementsPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('');
+
+  const [rejecting, setRejecting] = useState<{ id: number; name: string } | null>(null);
+  const [approving, setApproving] = useState<{ id: number; name: string } | null>(null);
+  const [processing, setProcessing] = useState<{ id: number; name: string } | null>(null);
 
   const { data: settlementsData, isLoading } = useQuery({
     queryKey: ['fnf-settlements', statusFilter, userFilter],
@@ -31,13 +43,21 @@ export default function FnFSettlementsPage() {
     mutationFn: (data: any) => payrollApi.createFnFSettlement(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fnf-settlements'] });
+      show({ kind: 'success', message: 'F&F settlement created.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to create F&F settlement.') }),
   });
 
   const approveMutation = useMutation({
     mutationFn: (id: number) => payrollApi.approveFnFSettlement(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fnf-settlements'] });
+      setApproving(null);
+      show({ kind: 'success', message: 'Settlement approved.' });
+    },
+    onError: (e: any) => {
+      setApproving(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to approve settlement.') });
     },
   });
 
@@ -45,6 +65,12 @@ export default function FnFSettlementsPage() {
     mutationFn: ({ id, reason }: { id: number; reason: string }) => payrollApi.rejectFnFSettlement(id, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fnf-settlements'] });
+      setRejecting(null);
+      show({ kind: 'success', message: 'Settlement rejected.' });
+    },
+    onError: (e: any) => {
+      setRejecting(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reject settlement.') });
     },
   });
 
@@ -53,6 +79,12 @@ export default function FnFSettlementsPage() {
       payrollApi.processFnFPayment(id, method, reference),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fnf-settlements'] });
+      setProcessing(null);
+      show({ kind: 'success', message: 'Payment processed.' });
+    },
+    onError: (e: any) => {
+      setProcessing(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to process payment.') });
     },
   });
 
@@ -98,17 +130,17 @@ export default function FnFSettlementsPage() {
         <SurfaceCard className="p-5">
           <div className="flex flex-wrap gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+              <FieldLabel>Status</FieldLabel>
               <SelectInput
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="">All Status</option>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
               </SelectInput>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
+              <FieldLabel>Employee</FieldLabel>
               <SelectInput
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
@@ -118,7 +150,7 @@ export default function FnFSettlementsPage() {
               </SelectInput>
             </div>
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Search</label>
+              <FieldLabel>Search</FieldLabel>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <TextInput
@@ -134,31 +166,22 @@ export default function FnFSettlementsPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {[
-            { label: 'Total', value: stats.total, color: 'blue' },
-            { label: 'Draft', value: stats.draft, color: 'slate' },
-            { label: 'Pending', value: stats.pending, color: 'amber' },
-            { label: 'Approved', value: stats.approved, color: 'emerald' },
-            { label: 'Paid', value: stats.paid, color: 'violet' },
-          ].map(s => (
-            <SurfaceCard key={s.label} className="p-4 text-center">
-              <p className="text-2xl font-bold text-slate-900">{s.value}</p>
-              <p className={`text-sm text-${s.color}-600`}>{s.label}</p>
-            </SurfaceCard>
-          ))}
+          <MetricCard label="Total" value={stats.total} accent="sky" icon={Briefcase} />
+          <MetricCard label="Draft" value={stats.draft} accent="slate" />
+          <MetricCard label="Pending" value={stats.pending} accent="amber" />
+          <MetricCard label="Approved" value={stats.approved} accent="emerald" />
+          <MetricCard label="Paid" value={stats.paid} accent="violet" />
         </div>
 
         {/* Settlements Table */}
         <SurfaceCard className="overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
+            <PageLoadingState label="Loading settlements…" />
           ) : settlements.length === 0 ? (
-            <div className="text-center py-12">
-              <Briefcase className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-500">No F&F settlement records found</p>
-            </div>
+            <PageEmptyState
+              title="No F&F settlement records found"
+              description="When an employee exit is processed, the settlement will appear here."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -186,25 +209,19 @@ export default function FnFSettlementsPage() {
                         <div className="text-xs text-slate-500">{settlement.user?.email || ''}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">
-                          {settlement.exit_type?.charAt(0).toUpperCase() + settlement.exit_type?.slice(1)}
+                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                          {titleCase(settlement.exit_type)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-900">{settlement.resignation_date || '-'}</td>
                       <td className="px-4 py-3 text-slate-900">{settlement.last_working_date || '-'}</td>
                       <td className="px-4 py-3 text-slate-900">{Number(settlement.years_of_service || 0).toFixed(1)}</td>
-                      <td className="px-4 py-3 text-slate-900">₹{Number(settlement.gratuity_amount || 0).toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-3 text-emerald-600 font-medium">₹{Number(settlement.net_settlement || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(settlement.gratuity_amount, { compact: true })}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          settlement.status === 'paid' ? 'bg-violet-50 text-violet-700' :
-                          settlement.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
-                          settlement.status === 'rejected' ? 'bg-rose-50 text-rose-700' :
-                          settlement.status === 'pending' ? 'bg-amber-50 text-amber-700' :
-                          'bg-slate-100 text-slate-700'
-                        }`}>
-                          {settlement.status?.charAt(0).toUpperCase() + settlement.status?.slice(1)}
-                        </span>
+                        <span className="text-emerald-600 font-medium">{formatPayrollAmount(settlement.net_settlement, { compact: true })}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge tone={payrollStatusTone(settlement.status)}>{titleCase(settlement.status)}</StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex gap-2 justify-end">
@@ -214,7 +231,7 @@ export default function FnFSettlementsPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<CheckCircle className="h-3 w-3 text-emerald-600" />}
-                                onClick={() => approveMutation.mutate(settlement.id)}
+                                onClick={() => setApproving({ id: settlement.id, name: settlement.user?.name || 'this settlement' })}
                                 disabled={approveMutation.isPending}
                               >
                                 Approve
@@ -223,10 +240,7 @@ export default function FnFSettlementsPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<XCircle className="h-3 w-3 text-rose-600" />}
-                                onClick={() => {
-                                  const reason = prompt('Rejection reason:');
-                                  if (reason) rejectMutation.mutate({ id: settlement.id, reason });
-                                }}
+                                onClick={() => setRejecting({ id: settlement.id, name: settlement.user?.name || 'this settlement' })}
                                 disabled={rejectMutation.isPending}
                               >
                                 Reject
@@ -238,10 +252,7 @@ export default function FnFSettlementsPage() {
                               variant="ghost"
                               size="sm"
                               iconLeft={<DollarSign className="h-3 w-3 text-emerald-600" />}
-                              onClick={() => {
-                                const method = prompt('Payment method (bank_transfer/cash/cheque):', 'bank_transfer');
-                                if (method) processPaymentMutation.mutate({ id: settlement.id, method });
-                              }}
+                              onClick={() => setProcessing({ id: settlement.id, name: settlement.user?.name || 'this settlement' })}
                               disabled={processPaymentMutation.isPending}
                             >
                               Pay
@@ -257,6 +268,48 @@ export default function FnFSettlementsPage() {
           )}
         </SurfaceCard>
       </div>
+
+      <RejectReasonModal
+        isOpen={rejecting !== null}
+        title="Reject settlement"
+        description={rejecting ? `Provide a reason for rejecting the settlement for ${rejecting.name}.` : undefined}
+        onSubmit={(reason) => {
+          if (rejecting) rejectMutation.mutate({ id: rejecting.id, reason });
+        }}
+        onClose={() => !rejectMutation.isPending && setRejecting(null)}
+        isLoading={rejectMutation.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={approving !== null}
+        title="Approve settlement"
+        message={approving ? `Approve the settlement for ${approving.name}?` : ''}
+        confirmLabel="Approve"
+        onConfirm={() => {
+          if (approving) approveMutation.mutate(approving.id);
+        }}
+        onClose={() => !approveMutation.isPending && setApproving(null)}
+        isLoading={approveMutation.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={processing !== null}
+        title="Process payment"
+        message={processing ? `Process payment for ${processing.name}? This will mark the settlement as paid.` : ''}
+        confirmLabel="Process payment"
+        onConfirm={() => {
+          if (processing) processPaymentMutation.mutate({ id: processing.id, method: 'bank_transfer' });
+        }}
+        onClose={() => !processPaymentMutation.isPending && setProcessing(null)}
+        isLoading={processPaymentMutation.isPending}
+      />
+
+      {createMutation.isPending && (
+        <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
+          <Loader2 className="h-4 w-4 animate-spin text-[#5D969D]" />
+          Saving…
+        </div>
+      )}
     </div>
   );
 }

@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Upload, Download, RotateCcw } from 'lucide-react';
-import api, { payrollApi } from '@/services/api';
+import api, { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import { useToast } from '@/components/ui/Toast';
 
 export default function BankPayoutDashboard() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [reversalData, setReversalData] = useState({ payroll_item_id: 0, reason: '' });
 
@@ -22,23 +24,37 @@ export default function BankPayoutDashboard() {
 
   const createBatchMutation = useMutation({
     mutationFn: (runId: number) => payrollApi.createTransferBatch(runId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bank-batches'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bank-batches'] });
+      show({ kind: 'success', message: 'Transfer batch created.' });
+    },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to create transfer batch.') }),
   });
 
   const processBatchMutation = useMutation({
     mutationFn: (batchId: number) => payrollApi.processBatch(batchId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bank-batches'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bank-batches'] });
+      show({ kind: 'success', message: 'Batch processed.' });
+    },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to process batch.') }),
   });
 
   const generateFileMutation = useMutation({
     mutationFn: ({ batchId, format }: { batchId: number; format: string }) =>
       payrollApi.generateBatchBankFile(batchId, format),
+    onSuccess: () => show({ kind: 'success', message: 'Bank file generated.' }),
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to generate bank file.') }),
   });
 
   const reversalMutation = useMutation({
     mutationFn: (data: { payroll_item_id: number; reason: string }) =>
       payrollApi.initiatePaymentReversal(data),
-    onSuccess: () => setReversalData({ payroll_item_id: 0, reason: '' }),
+    onSuccess: () => {
+      setReversalData({ payroll_item_id: 0, reason: '' });
+      show({ kind: 'success', message: 'Payment reversal initiated.' });
+    },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to initiate reversal.') }),
   });
 
   const runsList = Array.isArray(runs) ? runs : (runs as any)?.runs ?? [];

@@ -1,18 +1,23 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, AlertCircle, XCircle, Loader2, ClipboardList, Play, Search, Download } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { CheckCircle, AlertCircle, XCircle, Loader2, ClipboardList, Play, Download } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { SelectInput, TextInput, FieldLabel } from '@/components/ui/FormField';
+import { SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
-
-const CHECK_STATUS = ['passed', 'failed', 'warning', 'pending'];
+import MetricCard from '@/components/dashboard/MetricCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
+import RejectReasonModal from '@/components/ui/RejectReasonModal';
+import { checklistCheckTone, titleCase } from '@/utils/payrollStatus';
 
 export default function PrePayrollChecklistPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [resolving, setResolving] = useState<{ checkId: number; name: string } | null>(null);
 
   const { data: runs } = useQuery({
     queryKey: ['payroll-runs'],
@@ -29,7 +34,9 @@ export default function PrePayrollChecklistPage() {
     mutationFn: (runId: number) => payrollApi.runPayrollValidation(runId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['checklist'] });
+      show({ kind: 'success', message: 'Validation complete.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to run validation.') }),
   });
 
   const resolveMutation = useMutation({
@@ -37,6 +44,12 @@ export default function PrePayrollChecklistPage() {
       payrollApi.resolveCheck(checkId, resolution),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['checklist'] });
+      setResolving(null);
+      show({ kind: 'success', message: 'Check resolved.' });
+    },
+    onError: (e: any) => {
+      setResolving(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to resolve check.') });
     },
   });
 
@@ -88,26 +101,11 @@ export default function PrePayrollChecklistPage() {
         {/* Stats */}
         {selectedRun && checks.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <SurfaceCard className="p-4 text-center">
-              <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-              <p className="text-sm text-slate-500">Total Checks</p>
-            </SurfaceCard>
-            <SurfaceCard className="p-4 text-center">
-              <p className="text-2xl font-bold text-emerald-600">{stats.passed}</p>
-              <p className="text-sm text-slate-500">Passed</p>
-            </SurfaceCard>
-            <SurfaceCard className="p-4 text-center">
-              <p className="text-2xl font-bold text-rose-600">{stats.failed}</p>
-              <p className="text-sm text-slate-500">Failed</p>
-            </SurfaceCard>
-            <SurfaceCard className="p-4 text-center">
-              <p className="text-2xl font-bold text-amber-600">{stats.warning}</p>
-              <p className="text-sm text-slate-500">Warnings</p>
-            </SurfaceCard>
-            <SurfaceCard className="p-4 text-center">
-              <p className="text-2xl font-bold text-slate-600">{stats.pending}</p>
-              <p className="text-sm text-slate-500">Pending</p>
-            </SurfaceCard>
+            <MetricCard label="Total Checks" value={stats.total} accent="sky" icon={ClipboardList} />
+            <MetricCard label="Passed" value={stats.passed} accent="emerald" />
+            <MetricCard label="Failed" value={stats.failed} accent="rose" />
+            <MetricCard label="Warnings" value={stats.warning} accent="amber" />
+            <MetricCard label="Pending" value={stats.pending} accent="slate" />
           </div>
         )}
 
@@ -153,7 +151,7 @@ export default function PrePayrollChecklistPage() {
                       c.name || c.check_name || c.title || '',
                       c.category || '',
                       c.message || c.description || '',
-                      c.status?.charAt(0).toUpperCase() + c.status?.slice(1) || '',
+                      titleCase(c.status),
                     ]);
                     const escapeCsv = (val: any) => {
                       const str = String(val ?? '');
@@ -177,14 +175,12 @@ export default function PrePayrollChecklistPage() {
               )}
             </div>
             {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-              </div>
+              <PageLoadingState label="Loading checks…" />
             ) : checks.length === 0 ? (
-              <div className="text-center py-12">
-                <ClipboardList className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-slate-500">No checks yet. Click "Run Validation" to start.</p>
-              </div>
+              <PageEmptyState
+                title="No checks yet"
+                description='Click "Run Validation" to start.'
+              />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -204,24 +200,14 @@ export default function PrePayrollChecklistPage() {
                         <td className="px-4 py-3 text-slate-600">{check.category || '-'}</td>
                         <td className="px-4 py-3 text-slate-600 max-w-md">{check.message || check.description || '-'}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                            check.status === 'passed' ? 'bg-emerald-50 text-emerald-700' :
-                            check.status === 'failed' ? 'bg-rose-50 text-rose-700' :
-                            check.status === 'warning' ? 'bg-amber-50 text-amber-700' :
-                            'bg-slate-100 text-slate-700'
-                          }`}>
-                            {check.status?.charAt(0).toUpperCase() + check.status?.slice(1)}
-                          </span>
+                          <StatusBadge tone={checklistCheckTone(check.status)}>{titleCase(check.status)}</StatusBadge>
                         </td>
                         <td className="px-4 py-3 text-right">
                           {check.status === 'failed' && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                const resolution = prompt('Resolution notes:');
-                                if (resolution) resolveMutation.mutate({ checkId: check.id, resolution });
-                              }}
+                              onClick={() => setResolving({ checkId: check.id, name: check.name || check.check_name || check.title || 'this check' })}
                               disabled={resolveMutation.isPending}
                             >
                               Resolve
@@ -247,6 +233,19 @@ export default function PrePayrollChecklistPage() {
           </SurfaceCard>
         )}
       </div>
+
+      <RejectReasonModal
+        isOpen={resolving !== null}
+        title="Resolve check"
+        description={resolving ? `Add resolution notes for "${resolving.name}".` : undefined}
+        submitLabel="Resolve"
+        placeholder="Resolution notes…"
+        onSubmit={(resolution) => {
+          if (resolving) resolveMutation.mutate({ checkId: resolving.checkId, resolution });
+        }}
+        onClose={() => !resolveMutation.isPending && setResolving(null)}
+        isLoading={resolveMutation.isPending}
+      />
     </div>
   );
 }

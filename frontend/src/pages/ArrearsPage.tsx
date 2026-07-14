@@ -1,43 +1,62 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Search, Loader2, Filter, Plus, CheckCircle, XCircle, Eye, Calculator } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { Calculator, Search, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { TextInput, SelectInput } from '@/components/ui/FormField';
+import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import MetricCard from '@/components/dashboard/MetricCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
+import RejectReasonModal from '@/components/ui/RejectReasonModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['draft', 'approved', 'rejected', 'paid'];
-const ARREAR_TYPES = ['salary', 'increment', 'promotion', 'retrospective', 'settlement'];
 
 export default function ArrearsPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('');
 
-  const { data: arrearsData, isLoading } = useQuery({
+  const [rejecting, setRejecting] = useState<{ id: number; name: string } | null>(null);
+  const [approving, setApproving] = useState<{ id: number; name: string } | null>(null);
+
+  const { data: arrearsData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['arrears', statusFilter, userFilter],
-    queryFn: () => payrollApi.listArrears({ status: statusFilter || undefined }).then(res => res.data?.data ?? res.data ?? []),
+    queryFn: () => payrollApi.listArrears({ status: statusFilter || undefined }).then((res) => res.data?.data ?? res.data ?? []),
   });
 
   const { data: usersData } = useQuery({
     queryKey: ['payroll-employees'],
-    queryFn: () => payrollApi.getEmployees().then(res => res.data),
+    queryFn: () => payrollApi.getEmployees().then((res) => res.data),
   });
 
   const createMutation = useMutation({
     mutationFn: (data: any) => payrollApi.createArrear(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['arrears'] });
+      show({ kind: 'success', message: 'Arrear saved.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to save arrear.') }),
   });
 
   const approveMutation = useMutation({
     mutationFn: (id: number) => payrollApi.approveArrear(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['arrears'] });
+      setApproving(null);
+      show({ kind: 'success', message: 'Arrear approved.' });
+    },
+    onError: (e: any) => {
+      setApproving(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to approve arrear.') });
     },
   });
 
@@ -45,13 +64,12 @@ export default function ArrearsPage() {
     mutationFn: ({ id, reason }: { id: number; reason: string }) => payrollApi.rejectArrear(id, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['arrears'] });
+      setRejecting(null);
+      show({ kind: 'success', message: 'Arrear rejected.' });
     },
-  });
-
-  const detectMutation = useMutation({
-    mutationFn: ({ userId, month }: { userId: number; month: string }) => payrollApi.detectCtcArrears(userId, month),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['arrears'] });
+    onError: (e: any) => {
+      setRejecting(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reject arrear.') });
     },
   });
 
@@ -60,11 +78,18 @@ export default function ArrearsPage() {
 
   const stats = {
     total: arrears.length,
-    draft: arrears.filter(a => a.status === 'draft').length,
-    approved: arrears.filter(a => a.status === 'approved').length,
-    rejected: arrears.filter(a => a.status === 'rejected').length,
-    paid: arrears.filter(a => a.status === 'paid').length,
+    draft: arrears.filter((a: any) => a.status === 'draft').length,
+    approved: arrears.filter((a: any) => a.status === 'approved').length,
+    rejected: arrears.filter((a: any) => a.status === 'rejected').length,
+    paid: arrears.filter((a: any) => a.status === 'paid').length,
   };
+
+  const filteredArrears = arrears.filter(
+    (a: any) =>
+      !searchQuery ||
+      a.reason?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.arrear_type?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -85,7 +110,7 @@ export default function ArrearsPage() {
             { step: 1, label: 'Detect or create', desc: 'Use "Detect" on an employee/month, or create manually' },
             { step: 2, label: 'Pick arrear type', desc: 'Salary, increment, promotion, retrospective, or settlement' },
             { step: 3, label: 'Enter months + delta', desc: 'Which months, and the new-vs-old differential per month' },
-            { step: 4, label: 'Approve & pay', desc: 'Add to current month\'s payroll run for disbursement' },
+            { step: 4, label: 'Approve & pay', desc: "Add to current month's payroll run for disbursement" },
           ]}
           commonMistakes={[
             'Paying arrears for a month that already had a disbursed run — needs re-processing',
@@ -93,31 +118,34 @@ export default function ArrearsPage() {
             'Calculating arrears on Basic alone instead of full CTC differential',
           ]}
         />
+
         {/* Filters */}
         <SurfaceCard className="p-5">
           <div className="flex flex-wrap gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-              <SelectInput
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
+              <FieldLabel>Status</FieldLabel>
+              <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                 <option value="">All Status</option>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {titleCase(s)}
+                  </option>
+                ))}
               </SelectInput>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
-              <SelectInput
-                value={userFilter}
-                onChange={(e) => setUserFilter(e.target.value)}
-              >
+              <FieldLabel>Employee</FieldLabel>
+              <SelectInput value={userFilter} onChange={(e) => setUserFilter(e.target.value)}>
                 <option value="">All Employees</option>
-                {users.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                {users.map((u: any) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.email})
+                  </option>
+                ))}
               </SelectInput>
             </div>
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Search</label>
+              <FieldLabel>Search</FieldLabel>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <TextInput
@@ -132,32 +160,33 @@ export default function ArrearsPage() {
         </SurfaceCard>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {[
-            { label: 'Total', value: stats.total, color: 'blue' },
-            { label: 'Draft', value: stats.draft, color: 'slate' },
-            { label: 'Approved', value: stats.approved, color: 'emerald' },
-            { label: 'Rejected', value: stats.rejected, color: 'rose' },
-            { label: 'Paid', value: stats.paid, color: 'violet' },
-          ].map(s => (
-            <SurfaceCard key={s.label} className="p-4 text-center">
-              <p className="text-2xl font-bold text-slate-900">{s.value}</p>
-              <p className={`text-sm text-${s.color}-600`}>{s.label}</p>
-            </SurfaceCard>
-          ))}
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          <MetricCard label="Total" value={stats.total} accent="sky" icon={Calculator} />
+          <MetricCard label="Draft" value={stats.draft} accent="slate" />
+          <MetricCard label="Approved" value={stats.approved} accent="emerald" />
+          <MetricCard label="Rejected" value={stats.rejected} accent="rose" />
+          <MetricCard label="Paid" value={stats.paid} accent="violet" />
         </div>
 
         {/* Arrears Table */}
         <SurfaceCard className="overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
-          ) : arrears.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-500">No arrears records found</p>
-            </div>
+            <PageLoadingState label="Loading arrears…" />
+          ) : isError ? (
+            <PageEmptyState
+              title="Couldn't load arrears"
+              description={getApiErrorMessage(error, 'Please try again.')}
+              action={
+                <Button variant="secondary" size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : filteredArrears.length === 0 ? (
+            <PageEmptyState
+              title="No arrears records found"
+              description="When retroactive pay corrections are created, they'll appear here."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -174,12 +203,8 @@ export default function ArrearsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {arrears
-                    .filter(a => !searchQuery ||
-                      a.reason?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      a.arrear_type?.toLowerCase().includes(searchQuery.toLowerCase()))
-                    .map((arrear: any) => (
-                    <tr key={arrear.id} className="hover:bg-slate-50 transition-colors">
+                  {filteredArrears.map((arrear: any) => (
+                    <tr key={arrear.id} className="transition-colors hover:bg-slate-50">
                       <td className="px-4 py-3">
                         <div className="font-medium text-slate-900">{arrear.user?.name || 'Unknown'}</div>
                         <div className="text-xs text-slate-500">{arrear.user?.email || ''}</div>
@@ -187,21 +212,14 @@ export default function ArrearsPage() {
                       <td className="px-4 py-3 text-slate-900">{arrear.arrear_month || '-'}</td>
                       <td className="px-4 py-3 text-slate-900">{arrear.calculation_month || '-'}</td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">
-                          {arrear.arrear_type?.charAt(0).toUpperCase() + arrear.arrear_type?.slice(1)}
+                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                          {titleCase(arrear.arrear_type)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-900">₹{Number(arrear.gross_difference || 0).toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-3 text-emerald-600 font-medium">₹{Number(arrear.net_arrear_amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(arrear.gross_difference, { compact: true })}</td>
+                      <td className="px-4 py-3 font-medium text-emerald-600">{formatPayrollAmount(arrear.net_arrear_amount, { compact: true })}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          arrear.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
-                          arrear.status === 'rejected' ? 'bg-rose-50 text-rose-700' :
-                          arrear.status === 'paid' ? 'bg-violet-50 text-violet-700' :
-                          'bg-amber-50 text-amber-700'
-                        }`}>
-                          {arrear.status?.charAt(0).toUpperCase() + arrear.status?.slice(1)}
-                        </span>
+                        <StatusBadge tone={payrollStatusTone(arrear.status)}>{titleCase(arrear.status)}</StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex gap-2 justify-end">
@@ -211,7 +229,7 @@ export default function ArrearsPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<CheckCircle className="h-3 w-3 text-emerald-600" />}
-                                onClick={() => approveMutation.mutate(arrear.id)}
+                                onClick={() => setApproving({ id: arrear.id, name: arrear.user?.name || 'this arrear' })}
                                 disabled={approveMutation.isPending}
                               >
                                 Approve
@@ -220,10 +238,7 @@ export default function ArrearsPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<XCircle className="h-3 w-3 text-rose-600" />}
-                                onClick={() => {
-                                  const reason = prompt('Rejection reason:');
-                                  if (reason) rejectMutation.mutate({ id: arrear.id, reason });
-                                }}
+                                onClick={() => setRejecting({ id: arrear.id, name: arrear.user?.name || 'this arrear' })}
                                 disabled={rejectMutation.isPending}
                               >
                                 Reject
@@ -240,6 +255,36 @@ export default function ArrearsPage() {
           )}
         </SurfaceCard>
       </div>
+
+      <RejectReasonModal
+        isOpen={rejecting !== null}
+        title="Reject arrear"
+        description={rejecting ? `Provide a reason for rejecting the arrear for ${rejecting.name}.` : undefined}
+        onSubmit={(reason) => {
+          if (rejecting) rejectMutation.mutate({ id: rejecting.id, reason });
+        }}
+        onClose={() => !rejectMutation.isPending && setRejecting(null)}
+        isLoading={rejectMutation.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={approving !== null}
+        title="Approve arrear"
+        message={approving ? `Approve the arrear for ${approving.name}? It will be added to the current payroll run.` : ''}
+        confirmLabel="Approve"
+        onConfirm={() => {
+          if (approving) approveMutation.mutate(approving.id);
+        }}
+        onClose={() => !approveMutation.isPending && setApproving(null)}
+        isLoading={approveMutation.isPending}
+      />
+
+      {createMutation.isPending && (
+        <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
+          <Loader2 className="h-4 w-4 animate-spin text-[#5D969D]" />
+          Saving…
+        </div>
+      )}
     </div>
   );
 }

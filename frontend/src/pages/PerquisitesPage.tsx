@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Briefcase, Search, Loader2, Plus, IndianRupee, Home, Car, GraduationCap, Wifi, Coffee } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { Briefcase, Plus, IndianRupee, Home, Car, GraduationCap, Wifi, Coffee } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const PERQUISITE_TYPES = [
@@ -23,6 +26,7 @@ const PERQUISITE_TYPES = [
 
 export default function PerquisitesPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [userFilter, setUserFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -37,7 +41,7 @@ export default function PerquisitesPage() {
     queryFn: () => payrollApi.getEmployees().then(res => res.data ?? []),
   });
 
-  const { data: perquisitesData, isLoading } = useQuery({
+  const { data: perquisitesData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['perquisites', userFilter],
     queryFn: () => userFilter
       ? payrollApi.getUserPerquisites(parseInt(userFilter)).then(res => res.data)
@@ -56,7 +60,9 @@ export default function PerquisitesPage() {
       setShowForm(false);
       setFormData({ user_id: '', type: 'car', monthly_value: '', details: '' });
       queryClient.invalidateQueries({ queryKey: ['perquisites'] });
+      show({ kind: 'success', message: 'Perquisite added.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to add perquisite.') }),
   });
 
   const users = Array.isArray(usersData) ? usersData : [];
@@ -117,7 +123,7 @@ export default function PerquisitesPage() {
               const Icon = type.icon;
               return (
                 <div key={type.value} className="p-3 bg-slate-50 rounded-lg text-center">
-                  <Icon className="h-5 w-5 text-blue-600 mx-auto mb-1" />
+                  <Icon className="h-5 w-5 text-[#5D969D] mx-auto mb-1" />
                   <p className="text-xs text-slate-700">{type.label}</p>
                 </div>
               );
@@ -181,14 +187,22 @@ export default function PerquisitesPage() {
           <SurfaceCard className="overflow-hidden">
             <h3 className="text-lg font-semibold text-slate-900 p-5 border-b">Perquisites Records</h3>
             {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-              </div>
+              <PageLoadingState label="Loading perquisites…" />
+            ) : isError ? (
+              <PageEmptyState
+                title="Couldn't load perquisites"
+                description={getApiErrorMessage(error, 'Please try again.')}
+                action={
+                  <Button variant="secondary" size="sm" onClick={() => refetch()}>
+                    Retry
+                  </Button>
+                }
+              />
             ) : perquisites.length === 0 ? (
-              <div className="text-center py-12">
-                <Briefcase className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-slate-500">No perquisites recorded for this employee</p>
-              </div>
+              <PageEmptyState
+                title="No perquisites recorded"
+                description="No perquisites have been recorded for this employee yet."
+              />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -204,13 +218,13 @@ export default function PerquisitesPage() {
                     {perquisites.map((p: any, idx: number) => (
                       <tr key={p.id || idx} className="hover:bg-slate-50">
                         <td className="px-4 py-3">
-                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">
+                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
                             {PERQUISITE_TYPES.find(t => t.value === p.type)?.label || p.type}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-900">₹{Number(p.monthly_value || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-slate-900">₹{Number(p.annual_value || (p.monthly_value * 12) || 0).toLocaleString('en-IN')}</td>
-                        <td className="px-4 py-3 text-rose-600 font-medium">₹{Number(p.taxable_amount || p.annual_value || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(p.monthly_value, { compact: true })}</td>
+                        <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(p.annual_value || (p.monthly_value * 12) || 0, { compact: true })}</td>
+                        <td className="px-4 py-3 font-medium text-rose-600">{formatPayrollAmount(p.taxable_amount || p.annual_value || 0, { compact: true })}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -221,7 +235,7 @@ export default function PerquisitesPage() {
         )}
 
         {/* Info Banner */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700">
           <p className="font-medium">About Perquisites:</p>
           <p className="mt-1">Perquisites are benefits provided by the employer in addition to salary. They are taxable under the head "Income from Salaries" and are reported in Form 12BA. The taxable value is calculated based on Income Tax Rules.</p>
         </div>

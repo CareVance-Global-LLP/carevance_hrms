@@ -1,20 +1,19 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Plus, CheckCircle, XCircle, Clock,
-  IndianRupee, BadgeCheck, Ban, ThumbsUp
-} from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { Plus, IndianRupee, Ban, ThumbsUp } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel, TextareaInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { useToast } from '@/components/ui/Toast';
+import RejectReasonModal from '@/components/ui/RejectReasonModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useAuth } from '@/contexts/AuthContext';
-
-function formatCurrency(amount: number): string {
-  return '\u20B9' + amount.toLocaleString('en-IN', { minimumFractionDigits: 2 });
-}
+import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const LOAN_TYPES = [
   { value: 'advance', label: 'Salary Advance' },
@@ -39,10 +38,10 @@ interface Loan {
 
 export default function LoansPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
 
   const { data: adminData } = useQuery({
@@ -88,12 +87,6 @@ export default function LoansPage() {
             'Approving loan without checking existing outstanding loans',
           ]}
         />
-        {successMessage && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
-            <CheckCircle className="h-5 w-5 text-emerald-600" />
-            <p className="text-sm text-emerald-800">{successMessage}</p>
-          </div>
-        )}
 
         {activeLoan && (
           <SurfaceCard className="p-5 border-l-4 border-l-blue-500">
@@ -107,8 +100,8 @@ export default function LoansPage() {
                     Active {activeLoan.loan_type === 'advance' ? 'Advance' : 'Loan'}
                   </p>
                   <p className="text-sm text-slate-500">
-                    EMI: {formatCurrency(activeLoan.emi_amount)} / month {'\u00B7'}
-                    Remaining: {formatCurrency(activeLoan.remaining_amount)} {'\u00B7'}
+                    EMI: {formatPayrollAmount(activeLoan.emi_amount)} / month {'\u00B7'}
+                    Remaining: {formatPayrollAmount(activeLoan.remaining_amount)} {'\u00B7'}
                     {activeLoan.paid_installments}/{activeLoan.total_installments} installments paid
                   </p>
                 </div>
@@ -189,8 +182,7 @@ export default function LoansPage() {
         <LoanRequestModal
           onClose={() => setShowRequestModal(false)}
           onSuccess={(msg) => {
-            setSuccessMessage(msg);
-            setTimeout(() => setSuccessMessage(null), 3000);
+            show({ kind: 'success', message: msg });
             setShowRequestModal(false);
             queryClient.invalidateQueries({ queryKey: ['my-loans'] });
           }}
@@ -201,44 +193,49 @@ export default function LoansPage() {
 }
 
 function LoanRow({ loan, isAdmin, colCount, onAction }: { loan: Loan; isAdmin: boolean; colCount: number; onAction: () => void }) {
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [showRejectModal, setShowRejectModal] = useState(false);
+  const { show } = useToast();
+  const [confirmApprove, setConfirmApprove] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [showReject, setShowReject] = useState(false);
+  const [pending, setPending] = useState<null | 'approve' | 'reject' | 'close'>(null);
 
-  const handleApprove = async () => {
-    setActionLoading('approve');
+  const doApprove = async () => {
+    setPending('approve');
     try {
       await payrollApi.approveLoan(loan.id);
+      show({ kind: 'success', message: 'Loan approved.' });
       onAction();
-    } catch (e) { console.error(e); }
-    setActionLoading(null);
+    } catch (e) {
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to approve loan.') });
+    }
+    setPending(null);
+    setConfirmApprove(false);
   };
 
-  const handleReject = async (reason: string) => {
-    setActionLoading('reject');
+  const doReject = async (reason: string) => {
+    setPending('reject');
     try {
       await payrollApi.rejectLoan(loan.id, reason);
-      setShowRejectModal(false);
+      show({ kind: 'success', message: 'Loan rejected.' });
       onAction();
-    } catch (e) { console.error(e); }
-    setActionLoading(null);
+    } catch (e) {
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reject loan.') });
+    }
+    setPending(null);
+    setShowReject(false);
   };
 
-  const statusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      approved: 'bg-emerald-100 text-emerald-700',
-      pending: 'bg-amber-100 text-amber-700',
-      rejected: 'bg-rose-100 text-rose-700',
-      closed: 'bg-slate-100 text-slate-600',
-    };
-    return (
-      <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${styles[status] || 'bg-slate-100'}`}>
-        {status === 'approved' && <CheckCircle className="h-3 w-3" />}
-        {status === 'pending' && <Clock className="h-3 w-3" />}
-        {status === 'rejected' && <XCircle className="h-3 w-3" />}
-        {status === 'closed' && <BadgeCheck className="h-3 w-3" />}
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </span>
-    );
+  const doClose = async () => {
+    setPending('close');
+    try {
+      await payrollApi.closeLoan(loan.id);
+      show({ kind: 'success', message: 'Loan closed.' });
+      onAction();
+    } catch (e) {
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to close loan.') });
+    }
+    setPending(null);
+    setConfirmClose(false);
   };
 
   return (
@@ -253,27 +250,29 @@ function LoanRow({ loan, isAdmin, colCount, onAction }: { loan: Loan; isAdmin: b
         <td className="p-3">
           <span className="capitalize">{loan.loan_type === 'advance' ? 'Salary Advance' : 'Loan'}</span>
         </td>
-        <td className="p-3 text-right font-medium">{formatCurrency(loan.amount)}</td>
-        <td className="p-3 text-right">{formatCurrency(loan.emi_amount)}</td>
+        <td className="p-3 text-right font-medium">{formatPayrollAmount(loan.amount)}</td>
+        <td className="p-3 text-right">{formatPayrollAmount(loan.emi_amount)}</td>
         <td className="p-3 text-center">{loan.paid_installments}/{loan.total_installments}</td>
-        <td className="p-3 text-right">{formatCurrency(loan.remaining_amount)}</td>
-        <td className="p-3 text-center">{statusBadge(loan.status)}</td>
+        <td className="p-3 text-right">{formatPayrollAmount(loan.remaining_amount)}</td>
+        <td className="p-3 text-center">
+          <StatusBadge tone={payrollStatusTone(loan.status)}>{titleCase(loan.status)}</StatusBadge>
+        </td>
         <td className="p-3 text-xs text-slate-500">{new Date(loan.created_at).toLocaleDateString()}</td>
         {isAdmin && (
           <td className="p-3">
             {loan.status === 'pending' && (
               <div className="flex items-center gap-2">
                 <button
-                  onClick={handleApprove}
-                  disabled={actionLoading === 'approve'}
+                  onClick={() => setConfirmApprove(true)}
+                  disabled={pending === 'approve'}
                   className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
                   title="Approve"
                 >
-                  {actionLoading === 'approve' ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 rounded-full border-t-transparent" /> : <ThumbsUp className="h-4 w-4" />}
+                  {pending === 'approve' ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 rounded-full border-t-transparent" /> : <ThumbsUp className="h-4 w-4" />}
                 </button>
                 <button
-                  onClick={() => setShowRejectModal(true)}
-                  disabled={actionLoading === 'reject'}
+                  onClick={() => setShowReject(true)}
+                  disabled={pending === 'reject'}
                   className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
                   title="Reject"
                 >
@@ -283,8 +282,9 @@ function LoanRow({ loan, isAdmin, colCount, onAction }: { loan: Loan; isAdmin: b
             )}
             {loan.status === 'approved' && loan.remaining_amount > 0 && (
               <button
-                onClick={async () => { try { await payrollApi.closeLoan(loan.id); onAction(); } catch(e) { console.error(e); } }}
-                className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200"
+                onClick={() => setConfirmClose(true)}
+                disabled={pending === 'close'}
+                className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50"
               >
                 Close
               </button>
@@ -299,17 +299,41 @@ function LoanRow({ loan, isAdmin, colCount, onAction }: { loan: Loan; isAdmin: b
           </td>
         </tr>
       )}
-      {showRejectModal && (
-        <RejectForm
-          onClose={() => setShowRejectModal(false)}
-          onSubmit={handleReject}
-        />
-      )}
+
+      <RejectReasonModal
+        isOpen={showReject}
+        title="Reject loan request"
+        description={loan.user?.name ? `Provide a reason for rejecting the loan request for ${loan.user.name}.` : 'Provide a reason for rejecting this loan request.'}
+        onSubmit={doReject}
+        onClose={() => !pending && setShowReject(false)}
+        isLoading={pending === 'reject'}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmApprove}
+        title="Approve loan request"
+        message={loan.user?.name ? `Approve the loan request for ${loan.user.name}?` : 'Approve this loan request?'}
+        confirmLabel="Approve"
+        onConfirm={doApprove}
+        onClose={() => !pending && setConfirmApprove(false)}
+        isLoading={pending === 'approve'}
+      />
+
+      <ConfirmDialog
+        isOpen={confirmClose}
+        title="Close loan"
+        message={loan.remaining_amount > 0 ? `Close this loan? The remaining ${formatPayrollAmount(loan.remaining_amount)} will be marked as recovered.` : 'Close this loan?'}
+        confirmLabel="Close"
+        onConfirm={doClose}
+        onClose={() => !pending && setConfirmClose(false)}
+        isLoading={pending === 'close'}
+      />
     </>
   );
 }
 
 function LoanRequestModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (msg: string) => void }) {
+  const { show } = useToast();
   const [loanType, setLoanType] = useState('advance');
   const [amount, setAmount] = useState('');
   const [emiAmount, setEmiAmount] = useState('');
@@ -335,7 +359,7 @@ function LoanRequestModal({ onClose, onSuccess }: { onClose: () => void; onSucce
       });
       onSuccess('Loan request submitted for approval!');
     } catch (e: any) {
-      console.error(e);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to submit loan request.') });
     }
     setSubmitting(false);
   };
@@ -375,7 +399,7 @@ function LoanRequestModal({ onClose, onSuccess }: { onClose: () => void; onSucce
               />
               {estimatedInstallments > 0 && (
                 <p className="text-xs text-slate-500 mt-1">
-                  Estimated: {estimatedInstallments} {estimatedInstallments === 1 ? 'installment' : 'installments'} of {formatCurrency(parseFloat(emiAmount))}
+                  Estimated: {estimatedInstallments} {estimatedInstallments === 1 ? 'installment' : 'installments'} of {formatPayrollAmount(parseFloat(emiAmount))}
                 </p>
               )}
             </div>
@@ -395,44 +419,5 @@ function LoanRequestModal({ onClose, onSuccess }: { onClose: () => void; onSucce
         </div>
       </div>
     </div>
-  );
-}
-
-function RejectForm({ onClose, onSubmit }: { onClose: () => void; onSubmit: (reason: string) => Promise<void> }) {
-  const [reason, setReason] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reason.trim()) return;
-    setLoading(true);
-    await onSubmit(reason.trim());
-    setLoading(false);
-  };
-
-  return (
-    <tr>
-      <td colSpan={99} className="p-4">
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-6">
-              <h3 className="font-semibold text-slate-900 mb-4">Reject Loan Request</h3>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <FieldLabel>Reason for Rejection</FieldLabel>
-                  <TextareaInput value={reason} onChange={(e) => setReason(e.target.value)} rows={3} required placeholder="Enter reason..." />
-                </div>
-                <div className="flex justify-end gap-3">
-                  <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
-                  <Button variant="danger" type="submit" disabled={loading || !reason.trim()}>
-                    {loading ? 'Rejecting...' : 'Reject'}
-                  </Button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      </td>
-    </tr>
   );
 }

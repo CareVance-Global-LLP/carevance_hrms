@@ -121,7 +121,8 @@ class AppServiceProvider extends ServiceProvider
         ]);
 
         RateLimiter::for('ai.chat', fn (Request $request) => [
-            Limit::perMinute((int) env('RATE_LIMIT_AI_CHAT_PER_MINUTE', 10))->by((string) optional($request->user())->getAuthIdentifier()),
+            Limit::perMinute((int) env('RATE_LIMIT_AI_CHAT_PER_MINUTE', 10))
+                ->by((string) (optional($request->user())->getAuthIdentifier() ?? $request->ip())),
         ]);
 
         RateLimiter::for('desktop.download', fn (Request $request) => [

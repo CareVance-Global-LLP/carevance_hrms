@@ -4,6 +4,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --port 8081 --max-workers=2",
+    "start:go": "expo start --go --port 8081 --max-workers=2",
     "start:prewarm": "expo start --port 8081 --max-workers=2",
     "prewarm": "node scripts/prewarm.js",
     "android": "expo start --android --port 8081 --max-workers=2",

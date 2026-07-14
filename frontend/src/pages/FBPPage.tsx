@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Wallet, Search, Loader2, Plus, CheckCircle, XCircle, IndianRupee, FileText } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { Wallet, Search, Plus, IndianRupee, FileText } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { PageLoadingState, PageEmptyState, PageErrorState, FeedbackBanner } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected'];
 
 export default function FBPPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('');
@@ -28,7 +32,7 @@ export default function FBPPage() {
     description: '',
   });
 
-  const { data: componentsData, isLoading: componentsLoading } = useQuery({
+  const { data: componentsData, isLoading: componentsLoading, isError: componentsError, error: componentsErrorObj, refetch: refetchComponents } = useQuery({
     queryKey: ['fbp-components'],
     queryFn: () => payrollApi.getFbpComponents().then(res => res.data),
   });
@@ -48,7 +52,9 @@ export default function FBPPage() {
       queryClient.invalidateQueries({ queryKey: ['fbp-allocations'] });
       setShowAllocateForm(false);
       setAllocateData({ user_id: '', fbp_component_id: '', amount: '' });
+      show({ kind: 'success', message: 'FBP allocation created.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to allocate FBP.') }),
   });
 
   const claimMutation = useMutation({
@@ -62,7 +68,9 @@ export default function FBPPage() {
     onSuccess: () => {
       setShowClaimForm(false);
       setClaimData({ user_id: '', fbp_component_id: '', fbp_allocation_id: '', claimed_amount: '', bill_number: '', bill_date: '', description: '' });
+      show({ kind: 'success', message: 'FBP claim submitted.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to submit FBP claim.') }),
   });
 
   const components = Array.isArray(componentsData) ? componentsData : (componentsData as any)?.data ?? [];
@@ -147,13 +155,17 @@ export default function FBPPage() {
             Available FBP Components
           </h3>
           {componentsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
+            <PageLoadingState label="Loading FBP components…" />
+          ) : componentsError ? (
+            <PageErrorState
+              message={getApiErrorMessage(componentsErrorObj, 'Couldn\'t load FBP components.')}
+              onRetry={() => refetchComponents()}
+            />
           ) : components.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-slate-500">No FBP components configured. Contact admin to set up.</p>
-            </div>
+            <PageEmptyState
+              title="No FBP components configured"
+              description="Contact admin to set up FBP components."
+            />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {components.map((comp: any) => (
@@ -161,7 +173,7 @@ export default function FBPPage() {
                   <h4 className="font-semibold text-slate-900">{comp.name || comp.component_name}</h4>
                   <p className="text-sm text-slate-500 mt-1">{comp.description}</p>
                   {comp.max_amount && (
-                    <p className="text-xs text-slate-400 mt-2">Max: ₹{Number(comp.max_amount).toLocaleString('en-IN')}</p>
+                    <p className="text-xs text-slate-400 mt-2">Max: {formatPayrollAmount(comp.max_amount, { compact: true })}</p>
                   )}
                 </div>
               ))}
@@ -281,10 +293,10 @@ export default function FBPPage() {
         )}
 
         {/* Info Banner */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-          <p className="font-medium">About FBP:</p>
-          <p className="mt-1">Flexible Benefits Plan allows employees to allocate a portion of their CTC across various components (Fuel, Phone, LTA, Books, etc.) for tax optimization. FBP components are fully exempt from income tax when used for the intended purpose.</p>
-        </div>
+        <FeedbackBanner
+          tone="success"
+          message="Flexible Benefits Plan allows employees to allocate a portion of their CTC across various components (Fuel, Phone, LTA, Books, etc.) for tax optimization. FBP components are fully exempt from income tax when used for the intended purpose."
+        />
       </div>
     </div>
   );

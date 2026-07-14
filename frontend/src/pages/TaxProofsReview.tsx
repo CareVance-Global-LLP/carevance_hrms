@@ -1,20 +1,33 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Download, Search, Loader2, Filter, CheckCircle, XCircle, Eye } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { FileText, Search, CheckCircle, XCircle, Eye } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { TextInput, SelectInput } from '@/components/ui/FormField';
+import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import MetricCard from '@/components/dashboard/MetricCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
+import RejectReasonModal from '@/components/ui/RejectReasonModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'auto_approved'];
 
 export default function TaxProofsReviewPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [financialYear, setFinancialYear] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('');
+
+  const [approving, setApproving] = useState<{ id: number; name: string } | null>(null);
+  const [rejecting, setRejecting] = useState<{ id: number; name: string } | null>(null);
+  const [bulkConfirming, setBulkConfirming] = useState(false);
 
   const { data: proofsData, isLoading } = useQuery({
     queryKey: ['tax-proofs', financialYear, statusFilter, userFilter],
@@ -36,6 +49,14 @@ export default function TaxProofsReviewPage() {
       payrollApi.reviewTaxProof(id, { decision, approved_amount, notes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tax-proofs'] });
+      setApproving(null);
+      setRejecting(null);
+      show({ kind: 'success', message: 'Tax proof reviewed.' });
+    },
+    onError: (e: any) => {
+      setApproving(null);
+      setRejecting(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to review tax proof.') });
     },
   });
 
@@ -44,6 +65,12 @@ export default function TaxProofsReviewPage() {
       payrollApi.bulkApproveTaxProofs(userId, financialYear),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tax-proofs'] });
+      setBulkConfirming(false);
+      show({ kind: 'success', message: 'Tax proofs approved.' });
+    },
+    onError: (e: any) => {
+      setBulkConfirming(false);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to bulk approve tax proofs.') });
     },
   });
 
@@ -67,7 +94,7 @@ export default function TaxProofsReviewPage() {
         <SurfaceCard className="p-5">
           <div className="flex flex-wrap gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year</label>
+              <FieldLabel>Financial Year</FieldLabel>
               <SelectInput
                 value={financialYear}
                 onChange={(e) => setFinancialYear(e.target.value)}
@@ -79,17 +106,17 @@ export default function TaxProofsReviewPage() {
               </SelectInput>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+              <FieldLabel>Status</FieldLabel>
               <SelectInput
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="">All Status</option>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
               </SelectInput>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
+              <FieldLabel>Employee</FieldLabel>
               <SelectInput
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
@@ -99,7 +126,7 @@ export default function TaxProofsReviewPage() {
               </SelectInput>
             </div>
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Search</label>
+              <FieldLabel>Search</FieldLabel>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <TextInput
@@ -110,36 +137,38 @@ export default function TaxProofsReviewPage() {
                 />
               </div>
             </div>
+            <div>
+              <Button
+                variant="primary"
+                size="sm"
+                iconLeft={<CheckCircle className="h-3 w-3" />}
+                disabled={!userFilter || !financialYear || bulkApproveMutation.isPending}
+                onClick={() => setBulkConfirming(true)}
+              >
+                Bulk Approve
+              </Button>
+            </div>
           </div>
         </SurfaceCard>
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {[
-            { label: 'Total', value: stats.total, color: 'blue' },
-            { label: 'Pending', value: stats.pending, color: 'amber' },
-            { label: 'Approved', value: stats.approved, color: 'emerald' },
-            { label: 'Rejected', value: stats.rejected, color: 'rose' },
-            { label: 'Auto-Approved', value: stats.auto_approved, color: 'violet' },
-          ].map(s => (
-            <SurfaceCard key={s.label} className="p-4 text-center">
-              <p className="text-2xl font-bold text-slate-900">{s.value}</p>
-              <p className={`text-sm text-${s.color}-600`}>{s.label}</p>
-            </SurfaceCard>
-          ))}
+          <MetricCard label="Total" value={stats.total} accent="sky" icon={FileText} />
+          <MetricCard label="Pending" value={stats.pending} accent="amber" />
+          <MetricCard label="Approved" value={stats.approved} accent="emerald" />
+          <MetricCard label="Rejected" value={stats.rejected} accent="rose" />
+          <MetricCard label="Auto-Approved" value={stats.auto_approved} accent="violet" />
         </div>
 
         {/* Proofs Table */}
         <SurfaceCard className="overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
+            <PageLoadingState label="Loading tax proofs…" />
           ) : proofs.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-500">No tax proofs found</p>
-            </div>
+            <PageEmptyState
+              title="No tax proofs found"
+              description="Select a financial year to review employee tax proof submissions."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -167,17 +196,10 @@ export default function TaxProofsReviewPage() {
                       </td>
                       <td className="px-4 py-3 font-medium text-slate-900">{proof.section || '-'}</td>
                       <td className="px-4 py-3 text-slate-600 max-w-xs truncate">{proof.description || '-'}</td>
-                      <td className="px-4 py-3 text-slate-900">₹{Number(proof.amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(proof.amount, { compact: true })}</td>
                       <td className="px-4 py-3 text-slate-600">{proof.financial_year || '-'}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          proof.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
-                          proof.status === 'rejected' ? 'bg-rose-50 text-rose-700' :
-                          proof.status === 'auto_approved' ? 'bg-violet-50 text-violet-700' :
-                          'bg-amber-50 text-amber-700'
-                        }`}>
-                          {proof.status.charAt(0).toUpperCase() + proof.status.slice(1).replace('_', ' ')}
-                        </span>
+                        <StatusBadge tone={payrollStatusTone(proof.status)}>{titleCase(proof.status)}</StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex gap-2 justify-end">
@@ -197,7 +219,7 @@ export default function TaxProofsReviewPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<CheckCircle className="h-3 w-3 text-emerald-600" />}
-                                onClick={() => reviewMutation.mutate({ id: proof.id, decision: 'approved' })}
+                                onClick={() => setApproving({ id: proof.id, name: proof.user?.name || 'this proof' })}
                                 disabled={reviewMutation.isPending}
                               >
                                 Approve
@@ -206,7 +228,7 @@ export default function TaxProofsReviewPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<XCircle className="h-3 w-3 text-rose-600" />}
-                                onClick={() => reviewMutation.mutate({ id: proof.id, decision: 'rejected' })}
+                                onClick={() => setRejecting({ id: proof.id, name: proof.user?.name || 'this proof' })}
                                 disabled={reviewMutation.isPending}
                               >
                                 Reject
@@ -223,6 +245,41 @@ export default function TaxProofsReviewPage() {
           )}
         </SurfaceCard>
       </div>
+
+      <RejectReasonModal
+        isOpen={rejecting !== null}
+        title="Reject tax proof"
+        description={rejecting ? `Provide a reason for rejecting the tax proof for ${rejecting.name}.` : undefined}
+        onSubmit={(reason) => {
+          if (rejecting) reviewMutation.mutate({ id: rejecting.id, decision: 'rejected', notes: reason });
+        }}
+        onClose={() => !reviewMutation.isPending && setRejecting(null)}
+        isLoading={reviewMutation.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={approving !== null}
+        title="Approve tax proof"
+        message={approving ? `Approve the tax proof for ${approving.name}?` : ''}
+        confirmLabel="Approve"
+        onConfirm={() => {
+          if (approving) reviewMutation.mutate({ id: approving.id, decision: 'approved' });
+        }}
+        onClose={() => !reviewMutation.isPending && setApproving(null)}
+        isLoading={reviewMutation.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={bulkConfirming}
+        title="Bulk approve tax proofs"
+        message="Approve all pending tax proofs for the selected employee and financial year?"
+        confirmLabel="Bulk Approve"
+        onConfirm={() => {
+          if (userFilter) bulkApproveMutation.mutate({ userId: Number(userFilter), financialYear });
+        }}
+        onClose={() => !bulkApproveMutation.isPending && setBulkConfirming(false)}
+        isLoading={bulkApproveMutation.isPending}
+      />
     </div>
   );
 }

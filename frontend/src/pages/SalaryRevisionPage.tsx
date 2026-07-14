@@ -1,12 +1,19 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Search, Loader2, Plus, CheckCircle, XCircle, Download, Send } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { Search, Plus, CheckCircle, XCircle, Download, Send } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import MetricCard from '@/components/dashboard/MetricCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const REVISION_TYPES = [
   { value: 'annual_increment', label: 'Annual Increment' },
@@ -19,6 +26,7 @@ const STATUS_OPTIONS = ['draft', 'generated', 'accepted', 'rejected'];
 
 export default function SalaryRevisionPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showGenerateForm, setShowGenerateForm] = useState(false);
@@ -29,7 +37,10 @@ export default function SalaryRevisionPage() {
     reason: '',
   });
 
-  const { data: lettersData, isLoading } = useQuery({
+  const [accepting, setAccepting] = useState<{ id: number; name: string } | null>(null);
+  const [rejecting, setRejecting] = useState<{ id: number; name: string } | null>(null);
+
+  const { data: lettersData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['revision-letters', statusFilter],
     queryFn: () => payrollApi.getRevisionLetters().then(res => res.data?.data ?? res.data ?? []),
   });
@@ -50,17 +61,35 @@ export default function SalaryRevisionPage() {
       queryClient.invalidateQueries({ queryKey: ['revision-letters'] });
       setShowGenerateForm(false);
       setFormData({ user_id: '', new_ctc: '', revision_type: 'annual_increment', reason: '' });
+      show({ kind: 'success', message: 'Salary revision letter generated.' });
     },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to generate revision letter.') }),
   });
 
   const acceptMutation = useMutation({
     mutationFn: (id: number) => payrollApi.acceptRevisionLetter(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['revision-letters'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['revision-letters'] });
+      setAccepting(null);
+      show({ kind: 'success', message: 'Salary revision letter accepted.' });
+    },
+    onError: (e: any) => {
+      setAccepting(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to accept revision letter.') });
+    },
   });
 
   const rejectMutation = useMutation({
     mutationFn: (id: number) => payrollApi.rejectRevisionLetter(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['revision-letters'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['revision-letters'] });
+      setRejecting(null);
+      show({ kind: 'success', message: 'Salary revision letter rejected.' });
+    },
+    onError: (e: any) => {
+      setRejecting(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reject revision letter.') });
+    },
   });
 
   const letters = Array.isArray(lettersData) ? lettersData : [];
@@ -111,7 +140,7 @@ export default function SalaryRevisionPage() {
                 <FieldLabel>Status</FieldLabel>
                 <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                   <option value="">All Status</option>
-                  {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                  {STATUS_OPTIONS.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
                 </SelectInput>
               </div>
               <div className="flex-1 min-w-[200px]">
@@ -139,18 +168,11 @@ export default function SalaryRevisionPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {[
-            { label: 'Total', value: stats.total, color: 'blue' },
-            { label: 'Draft', value: stats.draft, color: 'slate' },
-            { label: 'Generated', value: stats.generated, color: 'amber' },
-            { label: 'Accepted', value: stats.accepted, color: 'emerald' },
-            { label: 'Rejected', value: stats.rejected, color: 'rose' },
-          ].map(s => (
-            <SurfaceCard key={s.label} className="p-4 text-center">
-              <p className="text-2xl font-bold text-slate-900">{s.value}</p>
-              <p className={`text-sm text-${s.color}-600`}>{s.label}</p>
-            </SurfaceCard>
-          ))}
+          <MetricCard label="Total" value={stats.total} accent="sky" />
+          <MetricCard label="Draft" value={stats.draft} accent="slate" />
+          <MetricCard label="Generated" value={stats.generated} accent="amber" />
+          <MetricCard label="Accepted" value={stats.accepted} accent="emerald" />
+          <MetricCard label="Rejected" value={stats.rejected} accent="rose" />
         </div>
 
         {/* Generate Form Modal */}
@@ -215,14 +237,22 @@ export default function SalaryRevisionPage() {
         {/* Letters Table */}
         <SurfaceCard className="overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
+            <PageLoadingState label="Loading salary revision letters…" />
+          ) : isError ? (
+            <PageEmptyState
+              title="Couldn't load salary revision letters"
+              description={getApiErrorMessage(error, 'Please try again.')}
+              action={
+                <Button variant="secondary" size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              }
+            />
           ) : letters.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-500">No salary revision letters found</p>
-            </div>
+            <PageEmptyState
+              title="No salary revision letters found"
+              description="When salary revision letters are generated, they'll appear here."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -250,28 +280,21 @@ export default function SalaryRevisionPage() {
                             <div className="font-medium text-slate-900">{letter.user?.name || 'Unknown'}</div>
                             <div className="text-xs text-slate-500">{letter.user?.email || ''}</div>
                           </td>
-                          <td className="px-4 py-3 text-slate-900">₹{Number(letter.old_ctc || 0).toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-900">₹{Number(letter.new_ctc || 0).toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(letter.old_ctc, { compact: true })}</td>
+                          <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(letter.new_ctc, { compact: true })}</td>
                           <td className="px-4 py-3">
                             <span className={change > 0 ? 'text-emerald-600' : change < 0 ? 'text-rose-600' : 'text-slate-500'}>
-                              {change > 0 ? '+' : ''}₹{change.toLocaleString('en-IN')} ({changePct.toFixed(1)}%)
+                              {change > 0 ? '+' : ''}{formatPayrollAmount(change, { compact: true })} ({changePct.toFixed(1)}%)
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">
+                            <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
                               {REVISION_TYPES.find(t => t.value === letter.revision_type)?.label || letter.revision_type}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-slate-900">{letter.effective_from || '-'}</td>
                           <td className="px-4 py-3">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                              letter.status === 'accepted' ? 'bg-emerald-50 text-emerald-700' :
-                              letter.status === 'rejected' ? 'bg-rose-50 text-rose-700' :
-                              letter.status === 'generated' ? 'bg-blue-50 text-blue-700' :
-                              'bg-amber-50 text-amber-700'
-                            }`}>
-                              {letter.status?.charAt(0).toUpperCase() + letter.status?.slice(1)}
-                            </span>
+                            <StatusBadge tone={payrollStatusTone(letter.status)}>{titleCase(letter.status)}</StatusBadge>
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex gap-2 justify-end">
@@ -291,7 +314,7 @@ export default function SalaryRevisionPage() {
                                     variant="ghost"
                                     size="sm"
                                     iconLeft={<CheckCircle className="h-3 w-3 text-emerald-600" />}
-                                    onClick={() => acceptMutation.mutate(letter.id)}
+                                    onClick={() => setAccepting({ id: letter.id, name: letter.user?.name || 'this letter' })}
                                     disabled={acceptMutation.isPending}
                                   >
                                     Accept
@@ -300,7 +323,7 @@ export default function SalaryRevisionPage() {
                                     variant="ghost"
                                     size="sm"
                                     iconLeft={<XCircle className="h-3 w-3 text-rose-600" />}
-                                    onClick={() => rejectMutation.mutate(letter.id)}
+                                    onClick={() => setRejecting({ id: letter.id, name: letter.user?.name || 'this letter' })}
                                     disabled={rejectMutation.isPending}
                                   >
                                     Reject
@@ -318,6 +341,30 @@ export default function SalaryRevisionPage() {
           )}
         </SurfaceCard>
       </div>
+
+      <ConfirmDialog
+        isOpen={accepting !== null}
+        title="Accept salary revision"
+        message={accepting ? `Accept the salary revision letter for ${accepting.name}?` : ''}
+        confirmLabel="Accept"
+        onConfirm={() => {
+          if (accepting) acceptMutation.mutate(accepting.id);
+        }}
+        onClose={() => !acceptMutation.isPending && setAccepting(null)}
+        isLoading={acceptMutation.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={rejecting !== null}
+        title="Reject salary revision"
+        message={rejecting ? `Reject the salary revision letter for ${rejecting.name}?` : ''}
+        confirmLabel="Reject"
+        onConfirm={() => {
+          if (rejecting) rejectMutation.mutate(rejecting.id);
+        }}
+        onClose={() => !rejectMutation.isPending && setRejecting(null)}
+        isLoading={rejectMutation.isPending}
+      />
     </div>
   );
 }

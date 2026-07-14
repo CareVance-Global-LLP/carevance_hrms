@@ -9,6 +9,7 @@ import Security from '@/components/landing/Security';
 import FAQSection from '@/components/landing/FAQSection';
 import CTA from '@/components/landing/CTA';
 import Footer from '@/components/landing/Footer';
+import LandingPageChatBubble from '@/components/LandingPageChatBubble';
 
 const Screenshots = lazy(() => import('@/components/landing/Screenshots'));
 
@@ -48,6 +49,7 @@ export default function LandingPage() {
       <FAQSection />
       <CTA />
       <Footer />
+      <LandingPageChatBubble />
     </div>
   );
 }

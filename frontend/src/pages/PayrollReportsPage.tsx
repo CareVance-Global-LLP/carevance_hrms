@@ -1,22 +1,25 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { FileSpreadsheet, Download, Loader2, Building2, Users, IndianRupee, CheckCircle, AlertCircle } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { SelectInput, FieldLabel } from '@/components/ui/FormField';
+import { FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { useToast } from '@/components/ui/Toast';
 
 const REPORT_TYPES = [
-  { key: 'payroll-register', label: 'Payroll Register', desc: 'Complete payroll register for the month', icon: FileSpreadsheet, color: 'blue' },
-  { key: 'pf', label: 'PF Register', desc: 'PF contributions for the month', icon: Building2, color: 'emerald' },
-  { key: 'esi', label: 'ESI Register', desc: 'ESI contributions for the month', icon: Users, color: 'amber' },
-  { key: 'pt', label: 'PT Register', desc: 'Professional Tax deductions', icon: IndianRupee, color: 'violet' },
-  { key: 'tds', label: 'TDS Register', desc: 'Tax deducted at source', icon: IndianRupee, color: 'rose' },
-  { key: 'bank-reconciliation', label: 'Bank Reconciliation', desc: 'Bank transfer reconciliation', icon: CheckCircle, color: 'emerald' },
+  { key: 'payroll-register', label: 'Payroll Register', desc: 'Complete payroll register for the month', icon: FileSpreadsheet },
+  { key: 'pf', label: 'PF Register', desc: 'PF contributions for the month', icon: Building2 },
+  { key: 'esi', label: 'ESI Register', desc: 'ESI contributions for the month', icon: Users },
+  { key: 'pt', label: 'PT Register', desc: 'Professional Tax deductions', icon: IndianRupee },
+  { key: 'tds', label: 'TDS Register', desc: 'Tax deducted at source', icon: IndianRupee },
+  { key: 'bank-reconciliation', label: 'Bank Reconciliation', desc: 'Bank transfer reconciliation', icon: CheckCircle },
 ];
 
 export default function PayrollReportsPage() {
+  const { show } = useToast();
   const [monthYear, setMonthYear] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -41,7 +44,11 @@ export default function PayrollReportsPage() {
       }
       return Promise.reject(new Error('Unknown report type'));
     },
-    onSuccess: (data) => setReportData(data),
+    onSuccess: (data) => {
+      setReportData(data);
+      show({ kind: 'success', message: 'Report generated.' });
+    },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to generate report.') }),
   });
 
   const handleGenerate = (type: typeof REPORT_TYPES[number]) => {
@@ -64,7 +71,7 @@ export default function PayrollReportsPage() {
                 type="month"
                 value={monthYear}
                 onChange={(e) => setMonthYear(e.target.value)}
-                className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#5D969D]"
               />
             </div>
             <div>
@@ -74,7 +81,7 @@ export default function PayrollReportsPage() {
                 value={filters.department}
                 onChange={(e) => setFilters({ ...filters, department: e.target.value })}
                 placeholder="Filter by department"
-                className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#5D969D]"
               />
             </div>
           </div>
@@ -89,12 +96,12 @@ export default function PayrollReportsPage() {
               <SurfaceCard
                 key={report.key}
                 className={`p-5 cursor-pointer transition-all ${
-                  isActive ? 'ring-2 ring-blue-500 border-blue-300' : 'hover:shadow-md hover:border-blue-200'
+                  isActive ? 'ring-2 ring-[#5D969D] border-[#5D969D]' : 'hover:shadow-md hover:border-[rgba(93,150,157,0.4)]'
                 }`}
                 onClick={() => handleGenerate(report)}
               >
                 <div className="flex items-start gap-3">
-                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center bg-${report.color}-50 text-${report.color}-600 shrink-0`}>
+                  <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-[rgba(93,150,157,0.1)] text-[#5D969D] shrink-0">
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="flex-1">
@@ -180,7 +187,7 @@ export default function PayrollReportsPage() {
               </div>
             ) : reportData ? (
               <div className="p-5">
-                <ReportDisplay data={reportData} type={selectedReport.key} />
+                <ReportDisplay data={reportData} />
               </div>
             ) : (
               <div className="text-center py-12">
@@ -195,7 +202,7 @@ export default function PayrollReportsPage() {
   );
 }
 
-function ReportDisplay({ data, type }: { data: any; type: string }) {
+function ReportDisplay({ data }: { data: any }) {
   const records = Array.isArray(data) ? data : (data.records || data.data || []);
   if (records.length === 0) {
     return <p className="text-center text-slate-500 py-8">No records found for this report</p>;
@@ -218,7 +225,7 @@ function ReportDisplay({ data, type }: { data: any; type: string }) {
             <tr key={idx} className="hover:bg-slate-50">
               {headers.map(h => (
                 <td key={h} className="px-4 py-3 text-slate-700">
-                  {typeof row[h] === 'number' ? row[h].toLocaleString('en-IN', { maximumFractionDigits: 2 }) : String(row[h] ?? '-')}
+                  {typeof row[h] === 'number' ? formatPayrollAmount(row[h], { showSymbol: false }) : String(row[h] ?? '-')}
                 </td>
               ))}
             </tr>

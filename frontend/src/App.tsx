@@ -87,11 +87,13 @@ const SuperAdminUsers = lazyWithChunkRetry(() => import('@/pages/super-admin/Use
 const SuperAdminBilling = lazyWithChunkRetry(() => import('@/pages/super-admin/Billing'));
 const SuperAdminPlans = lazyWithChunkRetry(() => import('@/pages/super-admin/Plans'));
 const GoogleSignupCompletion = lazyWithChunkRetry(() => import('@/pages/GoogleSignupCompletion'));
-const Payroll = lazyWithChunkRetry(() => import('@/pages/Payroll'));
+const PayrollShell = lazyWithChunkRetry(() => import('@/pages/payroll/PayrollShell'));
+const OverviewTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/OverviewTab'));
+const RunPayrollTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/RunPayrollTab'));
+const EmployeePayTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/EmployeePayTab'));
+const TaxComplianceTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/TaxComplianceTab'));
+const ReportsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/ReportsTab'));
 const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
-const TaxDeclaration = lazyWithChunkRetry(() => import('@/pages/TaxDeclaration'));
-const TaxProofsReview = lazyWithChunkRetry(() => import('@/pages/TaxProofsReview'));
-const PayrollFeaturesPage = lazyWithChunkRetry(() => import('@/pages/PayrollFeaturesPage'));
 // Payroll Setup (page-based onboarding)
 const SetupWelcome = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupWelcome'));
 const SetupDefaults = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupDefaults'));
@@ -102,18 +104,7 @@ const SetupPaySchedule = lazyWithChunkRetry(() => import('@/pages/payroll/setup/
 const SetupBank = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupBank'));
 const SetupTestRun = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupTestRun'));
 const SetupDepartments = lazyWithChunkRetry(() => import('@/pages/payroll/setup/SetupDepartments'));
-const TaxSimulatorPage = lazyWithChunkRetry(() => import('@/pages/TaxSimulatorPage'));
-const Loans = lazyWithChunkRetry(() => import('@/pages/Loans'));
-const ArrearsPage = lazyWithChunkRetry(() => import('@/pages/ArrearsPage'));
-const LeaveEncashmentPage = lazyWithChunkRetry(() => import('@/pages/LeaveEncashmentPage'));
-const FnFSettlementsPage = lazyWithChunkRetry(() => import('@/pages/FnFSettlementsPage'));
-const SalaryRevisionPage = lazyWithChunkRetry(() => import('@/pages/SalaryRevisionPage'));
-const FBPPage = lazyWithChunkRetry(() => import('@/pages/FBPPage'));
-const PerquisitesPage = lazyWithChunkRetry(() => import('@/pages/PerquisitesPage'));
-const PayrollReportsPage = lazyWithChunkRetry(() => import('@/pages/PayrollReportsPage'));
-const ReimbursementsPage = lazyWithChunkRetry(() => import('@/pages/ReimbursementsPage'));
-const PrePayrollChecklistPage = lazyWithChunkRetry(() => import('@/pages/PrePayrollChecklistPage'));
-const Filings = lazyWithChunkRetry(() => import('@/pages/Filings'));
+
 const BreakTracking = lazyWithChunkRetry(() => import('@/pages/BreakTrackingPage'));
 const Performance = lazyWithChunkRetry(() => import('@/pages/PerformancePage'));
 const PerformanceGoals = lazyWithChunkRetry(() => import('@/pages/PerformanceGoalsPage'));
@@ -631,20 +622,28 @@ function App() {
             <Route path="settings/billing" element={<StrictAdminRoute><BillingSettingsPage /></StrictAdminRoute>} />
             <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
             <Route path="settings/roles" element={<AdminRoute><RoleManagement /></AdminRoute>} />
-            <Route path="payroll" element={<PlanFeatureRoute feature="payroll"><AdminRoute><Payroll /></AdminRoute></PlanFeatureRoute>} />
+            {/* Payroll module — single shell with 5 deep-linkable tabs */}
+            <Route path="payroll" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PayrollShell /></AdminRoute></PlanFeatureRoute>}>
+              <Route index element={<OverviewTab />} />
+              <Route path="run" element={<RunPayrollTab />} />
+              <Route path="employee-pay" element={<EmployeePayTab />} />
+              <Route path="tax-compliance" element={<TaxComplianceTab />} />
+              <Route path="reports" element={<ReportsTab />} />
+            </Route>
             <Route path="my-payroll" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><MyPayroll /></ProtectedRoute></PlanFeatureRoute>} />
-            <Route path="tax-declarations" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><TaxDeclaration /></ProtectedRoute></PlanFeatureRoute>} />
-            <Route path="tax-proofs" element={<PlanFeatureRoute feature="payroll"><AdminRoute><TaxProofsReview /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="tax-simulator" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><TaxSimulatorPage /></ProtectedRoute></PlanFeatureRoute>} />
-            <Route path="loans" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><Loans /></ProtectedRoute></PlanFeatureRoute>} />
-            <Route path="arrears" element={<PlanFeatureRoute feature="payroll"><AdminRoute><ArrearsPage /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="leave-encashment" element={<PlanFeatureRoute feature="payroll"><AdminRoute><LeaveEncashmentPage /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="fnf-settlements" element={<PlanFeatureRoute feature="payroll"><AdminRoute><FnFSettlementsPage /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="salary-revisions" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SalaryRevisionPage /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="fbp" element={<PlanFeatureRoute feature="payroll"><AdminRoute><FBPPage /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="perquisites" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PerquisitesPage /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll-reports" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PayrollReportsPage /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/all-features" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PayrollFeaturesPage /></AdminRoute></PlanFeatureRoute>} />
+
+            {/* Legacy payroll routes → redirect into the new tabbed shell */}
+            <Route path="tax-declarations" element={<Navigate to="/payroll/tax-compliance?panel=declarations" replace />} />
+            <Route path="tax-proofs" element={<Navigate to="/payroll/tax-compliance?panel=proofs" replace />} />
+            <Route path="tax-simulator" element={<Navigate to="/payroll/tax-compliance?panel=simulator" replace />} />
+            <Route path="loans" element={<Navigate to="/payroll/employee-pay?type=loans" replace />} />
+            <Route path="arrears" element={<Navigate to="/payroll/employee-pay?type=arrears" replace />} />
+            <Route path="leave-encashment" element={<Navigate to="/payroll/tax-compliance?panel=leave-encashment" replace />} />
+            <Route path="fnf-settlements" element={<Navigate to="/payroll/tax-compliance?panel=fnf" replace />} />
+            <Route path="salary-revisions" element={<Navigate to="/payroll/employee-pay?type=revisions" replace />} />
+            <Route path="fbp" element={<Navigate to="/payroll/employee-pay?type=fbp" replace />} />
+            <Route path="perquisites" element={<Navigate to="/payroll/employee-pay?type=perquisites" replace />} />
+            <Route path="payroll-reports" element={<Navigate to="/payroll/reports?panel=register" replace />} />
 
             {/* Payroll Setup (page-based onboarding) */}
             <Route path="payroll/setup" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupWelcome /></AdminRoute></PlanFeatureRoute>} />
@@ -656,9 +655,9 @@ function App() {
             <Route path="payroll/setup/bank" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupBank /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/departments" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupDepartments /></AdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/setup/test-run" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupTestRun /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="reimbursements" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><ReimbursementsPage /></ProtectedRoute></PlanFeatureRoute>} />
-            <Route path="pre-payroll-checklist" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PrePayrollChecklistPage /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="filings" element={<PlanFeatureRoute feature="payroll"><AdminRoute><Filings /></AdminRoute></PlanFeatureRoute>} />
+            <Route path="reimbursements" element={<Navigate to="/payroll/employee-pay?type=reimbursements" replace />} />
+            <Route path="pre-payroll-checklist" element={<Navigate to="/payroll/run?step=checklist" replace />} />
+            <Route path="filings" element={<Navigate to="/payroll/reports?panel=filings" replace />} />
             <Route path="performance" element={<ProtectedRoute><Performance /></ProtectedRoute>} />
             <Route path="performance-goals" element={<ProtectedRoute><PerformanceGoals /></ProtectedRoute>} />
             <Route path="super-admin" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />

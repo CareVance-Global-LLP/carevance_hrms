@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AiChatController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DesktopDownloadController;
 use App\Http\Controllers\Api\HealthCheckController;
@@ -38,6 +39,11 @@ Route::get('/screenshots/{screenshot}/file', [ScreenshotController::class, 'file
     ->middleware('signed:relative')
     ->name('screenshots.file');
 Route::post('/support/bug-reports', [SupportController::class, 'storeBugReport'])->middleware('throttle:support.bug-report');
+
+// AI assistant — available to both logged-in users and public landing-page visitors.
+// Optional auth: personalises the reply (and enables data tools) when a valid token is present.
+Route::post('/ai/chat', [AiChatController::class, 'chat'])
+    ->middleware(['api.token.optional', 'throttle:ai.chat']);
 
 // Google OAuth routes
 Route::post('/auth/google/login', [OAuthController::class, 'verifyGoogleToken'])->middleware('throttle:auth.login');

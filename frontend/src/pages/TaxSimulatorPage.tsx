@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Calculator, TrendingUp, TrendingDown, IndianRupee, Loader2, BarChart3, Info } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { Calculator, TrendingUp, IndianRupee, Loader2, BarChart3, Info } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { useToast } from '@/components/ui/Toast';
 
 const EXEMPTION_FIELDS = [
   { key: 'section_80c', label: '80C (EPF, PPF, ELSS, etc.)', limit: 150000 },
@@ -20,6 +23,7 @@ const EXEMPTION_FIELDS = [
 ];
 
 export default function TaxSimulatorPage() {
+  const { show } = useToast();
   const [annualCtc, setAnnualCtc] = useState('');
   const [isMetro, setIsMetro] = useState('false');
   const [exemptions, setExemptions] = useState<Record<string, string>>({});
@@ -31,6 +35,8 @@ export default function TaxSimulatorPage() {
       exemptions: Object.fromEntries(Object.entries(exemptions).map(([k, v]) => [k, parseFloat(v) || 0])),
       is_metro: isMetro === 'true',
     }),
+    onSuccess: () => show({ kind: 'success', message: 'Tax comparison ready.' }),
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to compare tax regimes.') }),
   });
 
   const takeHomeMutation = useMutation({
@@ -39,6 +45,8 @@ export default function TaxSimulatorPage() {
       regime: 'new',
       exemptions: Object.fromEntries(Object.entries(exemptions).map(([k, v]) => [k, parseFloat(v) || 0])),
     }),
+    onSuccess: () => show({ kind: 'success', message: 'Take-home calculated.' }),
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to calculate take-home.') }),
   });
 
   const [scenarios, setScenarios] = useState<Array<{ name: string; ctc: string }>>([
@@ -51,6 +59,8 @@ export default function TaxSimulatorPage() {
       current_ctc: parseFloat(scenarios[0]?.ctc || annualCtc) || 0,
       scenarios: scenarios.slice(1).filter(s => s.ctc).map(s => ({ name: s.name, annual_ctc: parseFloat(s.ctc) })),
     }),
+    onSuccess: () => show({ kind: 'success', message: 'Scenarios calculated.' }),
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to run scenarios.') }),
   });
 
   const handleExemptionChange = (key: string, value: string) => {
@@ -98,7 +108,7 @@ export default function TaxSimulatorPage() {
           {/* Inputs Panel */}
           <SurfaceCard className="p-5 lg:col-span-1">
             <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <Calculator className="h-5 w-5 text-blue-600" />
+              <Calculator className="h-5 w-5 text-[#5D969D]" />
               Your Inputs
             </h3>
             <div className="space-y-4">
@@ -125,7 +135,7 @@ export default function TaxSimulatorPage() {
                     <div key={field.key}>
                       <label className="text-xs text-slate-500 flex items-center justify-between">
                         <span>{field.label}</span>
-                        {field.limit && <span className="text-slate-400">Max: ₹{field.limit.toLocaleString('en-IN')}</span>}
+                        {field.limit && <span className="text-slate-400">Max: {formatPayrollAmount(field.limit, { compact: true })}</span>}
                       </label>
                       <TextInput
                         type="number"
@@ -180,7 +190,7 @@ export default function TaxSimulatorPage() {
               <>
                 {compareMutation.isPending && (
                   <SurfaceCard className="p-8 text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
+                    <Loader2 className="h-8 w-8 animate-spin text-[#5D969D] mx-auto mb-2" />
                     <p className="text-slate-500">Calculating tax under both regimes...</p>
                   </SurfaceCard>
                 )}
@@ -188,60 +198,60 @@ export default function TaxSimulatorPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <SurfaceCard className="p-5">
                       <h3 className="text-lg font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700">New Regime</span>
+                        <StatusBadge tone="info">New Regime</StatusBadge>
                         <span>Tax Liability</span>
                       </h3>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Gross Income</span>
-                          <span className="font-medium">₹{Number(compareResult?.new_regime?.gross_income || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-medium">{formatPayrollAmount(compareResult?.new_regime?.gross_income || 0, { compact: true })}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Total Deductions</span>
-                          <span className="font-medium">₹{Number(compareResult?.new_regime?.deductions || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-medium">{formatPayrollAmount(compareResult?.new_regime?.deductions || 0, { compact: true })}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Taxable Income</span>
-                          <span className="font-medium">₹{Number(compareResult?.new_regime?.taxable_income || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-medium">{formatPayrollAmount(compareResult?.new_regime?.taxable_income || 0, { compact: true })}</span>
                         </div>
                         <div className="border-t pt-2 mt-2">
                           <div className="flex justify-between text-base font-bold">
                             <span>Annual Tax</span>
-                            <span className="text-blue-600">₹{Number(compareResult?.new_regime?.tax || 0).toLocaleString('en-IN')}</span>
+                            <span className="text-[#5D969D]">{formatPayrollAmount(compareResult?.new_regime?.tax || 0, { compact: true })}</span>
                           </div>
                           <div className="flex justify-between text-xs text-slate-500 mt-1">
                             <span>Monthly TDS</span>
-                            <span>₹{Number(compareResult?.new_regime?.monthly_tds || 0).toLocaleString('en-IN')}</span>
+                            <span>{formatPayrollAmount(compareResult?.new_regime?.monthly_tds || 0, { compact: true })}</span>
                           </div>
                         </div>
                       </div>
                     </SurfaceCard>
                     <SurfaceCard className="p-5">
                       <h3 className="text-lg font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700">Old Regime</span>
+                        <StatusBadge tone="warning">Old Regime</StatusBadge>
                         <span>Tax Liability</span>
                       </h3>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Gross Income</span>
-                          <span className="font-medium">₹{Number(compareResult?.old_regime?.gross_income || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-medium">{formatPayrollAmount(compareResult?.old_regime?.gross_income || 0, { compact: true })}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Total Deductions</span>
-                          <span className="font-medium">₹{Number(compareResult?.old_regime?.deductions || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-medium">{formatPayrollAmount(compareResult?.old_regime?.deductions || 0, { compact: true })}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-slate-500">Taxable Income</span>
-                          <span className="font-medium">₹{Number(compareResult?.old_regime?.taxable_income || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-medium">{formatPayrollAmount(compareResult?.old_regime?.taxable_income || 0, { compact: true })}</span>
                         </div>
                         <div className="border-t pt-2 mt-2">
                           <div className="flex justify-between text-base font-bold">
                             <span>Annual Tax</span>
-                            <span className="text-amber-600">₹{Number(compareResult?.old_regime?.tax || 0).toLocaleString('en-IN')}</span>
+                            <span className="text-amber-600">{formatPayrollAmount(compareResult?.old_regime?.tax || 0, { compact: true })}</span>
                           </div>
                           <div className="flex justify-between text-xs text-slate-500 mt-1">
                             <span>Monthly TDS</span>
-                            <span>₹{Number(compareResult?.old_regime?.monthly_tds || 0).toLocaleString('en-IN')}</span>
+                            <span>{formatPayrollAmount(compareResult?.old_regime?.monthly_tds || 0, { compact: true })}</span>
                           </div>
                         </div>
                       </div>
@@ -249,14 +259,14 @@ export default function TaxSimulatorPage() {
                     {compareResult?.recommendation && (
                       <SurfaceCard className="p-5 md:col-span-2">
                         <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2">
-                          <Info className="h-4 w-4 text-blue-600" />
+                          <Info className="h-4 w-4 text-[#5D969D]" />
                           Recommendation
                         </h3>
                         <p className="text-sm text-slate-600">
                           {compareResult.recommendation}
                           {compareResult.savings > 0 && (
                             <span className="font-semibold text-emerald-600 ml-1">
-                              You save ₹{Number(compareResult.savings).toLocaleString('en-IN')} per year!
+                              You save {formatPayrollAmount(compareResult.savings, { compact: true })} per year!
                             </span>
                           )}
                         </p>
@@ -271,7 +281,7 @@ export default function TaxSimulatorPage() {
               <>
                 {takeHomeMutation.isPending && (
                   <SurfaceCard className="p-8 text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
+                    <Loader2 className="h-8 w-8 animate-spin text-[#5D969D] mx-auto mb-2" />
                     <p className="text-slate-500">Calculating monthly take-home...</p>
                   </SurfaceCard>
                 )}
@@ -281,28 +291,28 @@ export default function TaxSimulatorPage() {
                     <div className="space-y-3">
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Monthly Gross</span>
-                        <span className="font-medium">₹{Number(takeHomeResult?.monthly_gross || 0).toLocaleString('en-IN')}</span>
+                        <span className="font-medium">{formatPayrollAmount(takeHomeResult?.monthly_gross || 0, { compact: true })}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">PF (Employee)</span>
-                        <span className="text-rose-600">- ₹{Number(takeHomeResult?.pf_employee || 0).toLocaleString('en-IN')}</span>
+                        <span className="text-rose-600">- {formatPayrollAmount(takeHomeResult?.pf_employee || 0, { compact: true })}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">ESI (Employee)</span>
-                        <span className="text-rose-600">- ₹{Number(takeHomeResult?.esi_employee || 0).toLocaleString('en-IN')}</span>
+                        <span className="text-rose-600">- {formatPayrollAmount(takeHomeResult?.esi_employee || 0, { compact: true })}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Professional Tax</span>
-                        <span className="text-rose-600">- ₹{Number(takeHomeResult?.pt || 0).toLocaleString('en-IN')}</span>
+                        <span className="text-rose-600">- {formatPayrollAmount(takeHomeResult?.pt || 0, { compact: true })}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">TDS (Income Tax)</span>
-                        <span className="text-rose-600">- ₹{Number(takeHomeResult?.tds || 0).toLocaleString('en-IN')}</span>
+                        <span className="text-rose-600">- {formatPayrollAmount(takeHomeResult?.tds || 0, { compact: true })}</span>
                       </div>
                       <div className="border-t pt-3">
                         <div className="flex justify-between text-xl font-bold">
                           <span>Take-Home</span>
-                          <span className="text-emerald-600">₹{Number(takeHomeResult?.take_home || 0).toLocaleString('en-IN')}</span>
+                          <span className="text-emerald-600">{formatPayrollAmount(takeHomeResult?.take_home || 0, { compact: true })}</span>
                         </div>
                       </div>
                     </div>
@@ -325,7 +335,7 @@ export default function TaxSimulatorPage() {
                           newScenarios[idx].name = e.target.value;
                           setScenarios(newScenarios);
                         }}
-                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-40"
+                        className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-[#5D969D]"
                         placeholder="Name"
                       />
                       <TextInput
@@ -358,15 +368,15 @@ export default function TaxSimulatorPage() {
                       <div key={idx} className="p-3 bg-slate-50 rounded-lg">
                         <div className="flex justify-between items-center">
                           <span className="font-medium text-slate-900">{result.name || scenarios[idx]?.name}</span>
-                          <span className="text-sm text-slate-500">CTC: ₹{Number(result.annual_ctc || 0).toLocaleString('en-IN')}</span>
+                          <span className="text-sm text-slate-500">CTC: {formatPayrollAmount(result.annual_ctc || 0, { compact: true })}</span>
                         </div>
                         <div className="flex justify-between items-center mt-1 text-sm">
                           <span className="text-slate-500">Annual Tax</span>
-                          <span className="font-semibold">₹{Number(result.tax || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-semibold">{formatPayrollAmount(result.tax || 0, { compact: true })}</span>
                         </div>
                         <div className="flex justify-between items-center text-sm">
                           <span className="text-slate-500">Take-Home</span>
-                          <span className="font-semibold text-emerald-600">₹{Number(result.take_home || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-semibold text-emerald-600">{formatPayrollAmount(result.take_home || 0, { compact: true })}</span>
                         </div>
                       </div>
                     )) : null}

@@ -10,6 +10,17 @@ import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { useToast } from '@/components/ui/Toast';
 
+type ProcessMode = 'modal' | 'inline';
+
+interface ProcessAndPayPanelProps {
+  monthYear: string;
+  pendingCount: number;
+  expectedNetPay: number;
+  onClose?: () => void;
+  onComplete?: () => void;
+  mode?: ProcessMode;
+}
+
 interface ProcessAndPayModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -43,14 +54,14 @@ function formatMonthLabel(monthYear: string): string {
  *      (with reasons), "I uploaded to bank" button.
  *   4. Click "I uploaded to bank" → backend marks as disbursed. Done.
  */
-export default function ProcessAndPayModal({
-  isOpen,
-  onClose,
+export function ProcessAndPayPanel({
   monthYear,
   pendingCount,
   expectedNetPay,
+  onClose,
   onComplete,
-}: ProcessAndPayModalProps) {
+  mode = 'modal',
+}: ProcessAndPayPanelProps) {
   const { show } = useToast();
   const queryClient = useQueryClient();
   const [stage, setStage] = useState<Stage>('review');
@@ -100,8 +111,6 @@ export default function ProcessAndPayModal({
     onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to disburse') }),
   });
 
-  if (!isOpen) return null;
-
   const handleProcessAndPay = () => {
     setError(null);
     setStage('processing');
@@ -140,8 +149,7 @@ export default function ProcessAndPayModal({
   const skipped = bankFile?.skipped_employees ?? [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <SurfaceCard className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <SurfaceCard className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 p-5 flex items-center justify-between z-10">
           <div>
@@ -153,6 +161,7 @@ export default function ProcessAndPayModal({
               Process everyone, lock the numbers, generate the bank file — one click.
             </p>
           </div>
+          {mode === 'modal' && (
           <button
             onClick={handleClose}
             disabled={stage === 'processing' || stage === 'disbursing'}
@@ -161,6 +170,7 @@ export default function ProcessAndPayModal({
           >
             <X className="h-5 w-5 text-slate-500" />
           </button>
+          )}
         </div>
 
         <div className="p-5 space-y-5">
@@ -519,7 +529,7 @@ export default function ProcessAndPayModal({
                   </div>
                 </div>
                 <div className="flex items-center justify-end gap-3 pt-2">
-                  <Button variant="ghost" onClick={handleClose}>Close for now</Button>
+                  {mode === 'modal' && <Button variant="ghost" onClick={handleClose}>Close for now</Button>}
                   <Button
                     variant="primary"
                     size="lg"
@@ -578,13 +588,36 @@ export default function ProcessAndPayModal({
                 </div>
               </div>
               
-              <Button variant="primary" size="lg" className="mt-2" onClick={handleClose}>
+              <Button variant="primary" size="lg" className="mt-2" onClick={() => (mode === 'modal' ? handleClose() : onComplete?.())}>
                 Close & View Payroll Runs
               </Button>
             </div>
           )}
         </div>
       </SurfaceCard>
+  );
+}
+
+export default function ProcessAndPayModal({
+  isOpen,
+  onClose,
+  monthYear,
+  pendingCount,
+  expectedNetPay,
+  onComplete,
+}: ProcessAndPayModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <ProcessAndPayPanel
+        mode="modal"
+        monthYear={monthYear}
+        pendingCount={pendingCount}
+        expectedNetPay={expectedNetPay}
+        onClose={onClose}
+        onComplete={onComplete}
+      />
     </div>
   );
 }

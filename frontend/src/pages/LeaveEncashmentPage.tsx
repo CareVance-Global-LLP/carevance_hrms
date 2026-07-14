@@ -1,23 +1,34 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Search, Loader2, Filter, Plus, CheckCircle, XCircle, Eye, Clock } from 'lucide-react';
-import { payrollApi } from '@/services/api';
+import { FileText, Search, CheckCircle, XCircle } from 'lucide-react';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
+import MetricCard from '@/components/dashboard/MetricCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { useToast } from '@/components/ui/Toast';
+import RejectReasonModal from '@/components/ui/RejectReasonModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['draft', 'approved', 'rejected'];
-const LEAVE_TYPES = ['earned', 'casual', 'sick', 'compensatory'];
 
 export default function LeaveEncashmentPage() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('');
 
-  const { data: encashmentsData, isLoading } = useQuery({
+  const [rejecting, setRejecting] = useState<{ id: number; name: string } | null>(null);
+  const [approving, setApproving] = useState<{ id: number; name: string } | null>(null);
+
+  const { data: encashmentsData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['leave-encashments', statusFilter, userFilter],
     queryFn: () => payrollApi.listLeaveEncashments({ status: statusFilter || undefined }).then(res => res.data?.data ?? res.data ?? []),
   });
@@ -27,17 +38,16 @@ export default function LeaveEncashmentPage() {
     queryFn: () => payrollApi.getEmployees().then(res => res.data),
   });
 
-  const createMutation = useMutation({
-    mutationFn: (data: any) => payrollApi.requestLeaveEncashment(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['leave-encashments'] });
-    },
-  });
-
   const approveMutation = useMutation({
     mutationFn: (id: number) => payrollApi.approveLeaveEncashment(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leave-encashments'] });
+      setApproving(null);
+      show({ kind: 'success', message: 'Leave encashment approved.' });
+    },
+    onError: (e: any) => {
+      setApproving(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to approve leave encashment.') });
     },
   });
 
@@ -45,6 +55,12 @@ export default function LeaveEncashmentPage() {
     mutationFn: ({ id, reason }: { id: number; reason: string }) => payrollApi.rejectLeaveEncashment(id, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leave-encashments'] });
+      setRejecting(null);
+      show({ kind: 'success', message: 'Leave encashment rejected.' });
+    },
+    onError: (e: any) => {
+      setRejecting(null);
+      show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reject leave encashment.') });
     },
   });
 
@@ -85,6 +101,7 @@ export default function LeaveEncashmentPage() {
             'Forgetting that encashed leaves are taxable as salary',
           ]}
         />
+
         {/* Filters */}
         <SurfaceCard className="p-5">
           <div className="flex flex-wrap gap-4 items-end">
@@ -95,7 +112,7 @@ export default function LeaveEncashmentPage() {
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="">All Status</option>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
               </SelectInput>
             </div>
             <div>
@@ -125,30 +142,31 @@ export default function LeaveEncashmentPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: 'Total', value: stats.total, color: 'blue' },
-            { label: 'Draft', value: stats.draft, color: 'slate' },
-            { label: 'Approved', value: stats.approved, color: 'emerald' },
-            { label: 'Rejected', value: stats.rejected, color: 'rose' },
-          ].map(s => (
-            <SurfaceCard key={s.label} className="p-4 text-center">
-              <p className="text-2xl font-bold text-slate-900">{s.value}</p>
-              <p className={`text-sm text-${s.color}-600`}>{s.label}</p>
-            </SurfaceCard>
-          ))}
+          <MetricCard label="Total" value={stats.total} accent="sky" icon={FileText} />
+          <MetricCard label="Draft" value={stats.draft} accent="slate" />
+          <MetricCard label="Approved" value={stats.approved} accent="emerald" />
+          <MetricCard label="Rejected" value={stats.rejected} accent="rose" />
         </div>
 
         {/* Encashments Table */}
         <SurfaceCard className="overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
+            <PageLoadingState label="Loading leave encashments…" />
+          ) : isError ? (
+            <PageEmptyState
+              title="Couldn't load leave encashments"
+              description={getApiErrorMessage(error, 'Please try again.')}
+              action={
+                <Button variant="secondary" size="sm" onClick={() => refetch()}>
+                  Retry
+                </Button>
+              }
+            />
           ) : encashments.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-500">No leave encashment requests found</p>
-            </div>
+            <PageEmptyState
+              title="No leave encashment requests found"
+              description="When leave encashment requests are created, they'll appear here."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -178,22 +196,16 @@ export default function LeaveEncashmentPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-900">{enc.month_year || '-'}</td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700">
-                          {enc.leave_type?.charAt(0).toUpperCase() + enc.leave_type?.slice(1)}
+                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                          {titleCase(enc.leave_type)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-900">{enc.eligible_days || 0}</td>
                       <td className="px-4 py-3 text-slate-900">{enc.encashed_days || 0}</td>
-                      <td className="px-4 py-3 text-slate-900">₹{Number(enc.total_amount || 0).toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-3 text-emerald-600 font-medium">₹{Number(enc.net_amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(enc.total_amount, { compact: true })}</td>
+                      <td className="px-4 py-3 font-medium text-emerald-600">{formatPayrollAmount(enc.net_amount, { compact: true })}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          enc.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
-                          enc.status === 'rejected' ? 'bg-rose-50 text-rose-700' :
-                          'bg-amber-50 text-amber-700'
-                        }`}>
-                          {enc.status?.charAt(0).toUpperCase() + enc.status?.slice(1)}
-                        </span>
+                        <StatusBadge tone={payrollStatusTone(enc.status)}>{titleCase(enc.status)}</StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex gap-2 justify-end">
@@ -203,7 +215,7 @@ export default function LeaveEncashmentPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<CheckCircle className="h-3 w-3 text-emerald-600" />}
-                                onClick={() => approveMutation.mutate(enc.id)}
+                                onClick={() => setApproving({ id: enc.id, name: enc.user?.name || 'this request' })}
                                 disabled={approveMutation.isPending}
                               >
                                 Approve
@@ -212,10 +224,7 @@ export default function LeaveEncashmentPage() {
                                 variant="ghost"
                                 size="sm"
                                 iconLeft={<XCircle className="h-3 w-3 text-rose-600" />}
-                                onClick={() => {
-                                  const reason = prompt('Rejection reason:');
-                                  if (reason) rejectMutation.mutate({ id: enc.id, reason });
-                                }}
+                                onClick={() => setRejecting({ id: enc.id, name: enc.user?.name || 'this request' })}
                                 disabled={rejectMutation.isPending}
                               >
                                 Reject
@@ -232,6 +241,29 @@ export default function LeaveEncashmentPage() {
           )}
         </SurfaceCard>
       </div>
+
+      <RejectReasonModal
+        isOpen={rejecting !== null}
+        title="Reject leave encashment"
+        description={rejecting ? `Provide a reason for rejecting the leave encashment request for ${rejecting.name}.` : undefined}
+        onSubmit={(reason) => {
+          if (rejecting) rejectMutation.mutate({ id: rejecting.id, reason });
+        }}
+        onClose={() => !rejectMutation.isPending && setRejecting(null)}
+        isLoading={rejectMutation.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={approving !== null}
+        title="Approve leave encashment"
+        message={approving ? `Approve the leave encashment request for ${approving.name}?` : ''}
+        confirmLabel="Approve"
+        onConfirm={() => {
+          if (approving) approveMutation.mutate(approving.id);
+        }}
+        onClose={() => !approveMutation.isPending && setApproving(null)}
+        isLoading={approveMutation.isPending}
+      />
     </div>
   );
 }

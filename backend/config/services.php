@@ -57,9 +57,18 @@ return [
     ],
 
     'ai' => [
-        'base_url' => env('AI_BASE_URL', 'https://opencode.ai/zen/v1'),
+        'base_url' => env('AI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai'),
         'api_key' => env('AI_API_KEY'),
-        'model' => env('AI_MODEL', 'deepseek-v4-flash-free'),
-        'fallback_models' => env('AI_FALLBACK_MODELS', 'big-pickle,north-mini-code-free,mimo-v2.5-free,nemotron-3-ultra-free'),
+        'model' => env('AI_MODEL', 'gemini-flash-latest'),
+        'fallback_models' => env('AI_FALLBACK_MODELS', 'gemini-flash-lite-latest'),
+        'site_url' => env('AI_SITE_URL', 'https://carevance.com'),
+        'app_name' => env('AI_APP_NAME', 'CareVance HRMS'),
+        // Overall time budget (seconds) across all provider/model attempts for one chat request.
+        'total_timeout' => env('AI_TOTAL_TIMEOUT', 24),
+
+        // Optional secondary/backup provider (tried if the primary provider fails)
+        'secondary_base_url' => env('AI_SECONDARY_BASE_URL', 'https://openrouter.ai/api/v1'),
+        'secondary_api_key' => env('AI_SECONDARY_API_KEY'),
+        'secondary_models' => env('AI_SECONDARY_MODELS', 'nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free'),
     ],
 ];

@@ -5,15 +5,9 @@ import {
   Play,
   AlertCircle,
   CheckCircle2,
-  DollarSign,
   Wallet,
-  ArrowRight,
   Clock,
-  FileText,
-  CreditCard,
-  BookOpen,
-  UserX,
-  Settings2,
+  CalendarClock,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -21,9 +15,12 @@ import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
-import NextStepsCard from './NextStepsCard';
+import PayrollRunCard from '@/components/ui/PayrollRunCard';
 import MonthTimeline from './MonthTimeline';
 import CompensationAnalytics from './CompensationAnalytics';
+import PayrollToDoRail from './PayrollToDoRail';
+import ComplianceStatusBoard from './ComplianceStatusBoard';
+import PayrollModuleLauncher from './PayrollModuleLauncher';
 import { cn } from '@/utils/cn';
 
 import type { PayGroup, PayrollMonthlyRun, PayrollDepartment } from '@/types';
@@ -133,81 +130,17 @@ function PayGroupCard({
   );
 }
 
-// Quick Action Card (kept local)
-function QuickActionCard({
-  icon: Icon,
-  title,
-  description,
-  count,
-  action,
-  variant = 'default',
-}: {
-  icon: React.ElementType;
-  title: string;
-  description: string;
-  count?: number;
-  action: () => void;
-  variant?: 'default' | 'warning' | 'danger';
-}) {
-  const variantClasses = {
-    default: 'border-l-4 border-blue-500 hover:border-blue-600',
-    warning: 'border-l-4 border-amber-500 hover:border-amber-600',
-    danger: 'border-l-4 border-rose-500 hover:border-rose-600',
-  };
-
-  const iconColors = {
-    default: 'text-blue-600 bg-blue-50',
-    warning: 'text-amber-600 bg-amber-50',
-    danger: 'text-rose-600 bg-rose-50',
-  };
-
-  return (
-    <SurfaceCard className={cn('p-4 cursor-pointer transition-all', variantClasses[variant])} onClick={action}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', iconColors[variant])}>
-            <Icon className="h-5 w-5" />
-          </div>
-          <div>
-            <h4 className="font-medium text-slate-900">{title}</h4>
-            <p className="text-sm text-slate-500">{description}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {count !== undefined && count > 0 && (
-            <span
-              className={cn(
-                'px-2.5 py-1 rounded-full text-sm font-semibold',
-                variant === 'danger'
-                  ? 'bg-rose-100 text-rose-700'
-                  : variant === 'warning'
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'bg-blue-100 text-blue-700',
-              )}
-            >
-              {count}
-            </span>
-          )}
-          <ArrowRight className="h-4 w-4 text-slate-400" />
-        </div>
-      </div>
-    </SurfaceCard>
-  );
-}
-
 export default function PayrollDashboard({
   selectedMonth: selectedMonthProp,
   onMonthChange,
   onOpenProcessAndPay,
   onOpenEmployeeCards,
   onOpenFilings,
-  onOpenWizard,
   onOpenRunDetail,
   onOpenCreatePayGroup,
   onSelectPayGroup,
   onOpenDepartmentTemplates,
   onOpenUnassignedEmployees,
-  onOpenReports,
   onOpenSalaryComponents,
 }: PayrollDashboardProps) {
   const fallbackMonth = useMemo(() => {
@@ -238,8 +171,18 @@ export default function PayrollDashboard({
     id: number;
     employee_count?: number;
     total_employees?: number;
+    total_gross?: number;
+    total_deductions?: number;
     total_net_pay?: number;
+    created_at?: string;
+    disbursed_at?: string;
   }>;
+
+  // The run backing the currently selected month (for the snapshot card).
+  const monthRun = useMemo(
+    () => runs.find((r) => r.month_year === selectedMonth) ?? null,
+    [runs, selectedMonth],
+  );
 
   // Fetch departments for CompensationAnalytics
   const { data: deptsData } = useQuery({
@@ -268,9 +211,6 @@ export default function PayrollDashboard({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Onboarding: Next Steps card for first-time / not-yet-completed users */}
-      <NextStepsCard onOpenWizard={onOpenWizard} />
-
       {/* Month timeline (Apr-Mar FY) */}
       <MonthTimeline
         selectedMonth={selectedMonth}
@@ -278,17 +218,67 @@ export default function PayrollDashboard({
         runs={runs}
       />
 
-      {/* Process & Pay primary CTA */}
-      <div className="flex justify-start">
-        <Button
-          variant="primary"
-          iconLeft={<Play className="h-4 w-4" />}
-          onClick={() => onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay)}
-          disabled={summaryStats.pendingCount === 0}
-          className="shadow-sm whitespace-nowrap"
-        >
-          Process &amp; Pay ({summaryStats.pendingCount})
-        </Button>
+      {/* To-Do rail — pending processing, filings, missing data (Zoho-style) */}
+      <PayrollToDoRail
+        monthYear={selectedMonth}
+        onOpenProcessAndPay={() => onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay)}
+        onOpenFilings={onOpenFilings}
+      />
+
+      {/* Current Pay Run snapshot + primary action */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {monthRun ? (
+          <PayrollRunCard
+            run={{
+              id: monthRun.id,
+              month_year: monthRun.month_year,
+              status: monthRun.status,
+              employee_count: monthRun.employee_count ?? monthRun.total_employees ?? 0,
+              total_gross: monthRun.total_gross,
+              total_deductions: monthRun.total_deductions,
+              total_net_pay: monthRun.total_net_pay,
+              created_at: monthRun.created_at,
+              disbursed_at: monthRun.disbursed_at,
+            }}
+            onClick={() => onOpenRunDetail?.(monthRun.id)}
+            onViewDetails={onOpenRunDetail}
+          />
+        ) : (
+          <SurfaceCard className="flex flex-col justify-center p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                <CalendarClock className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">No run for {selectedMonth}</h3>
+                <p className="text-sm text-slate-500">Process &amp; Pay to create this month's run.</p>
+              </div>
+            </div>
+          </SurfaceCard>
+        )}
+
+        {/* Process & Pay CTA */}
+        <SurfaceCard className="flex flex-col justify-between gap-3 p-5">
+          <div>
+            <h3 className="font-semibold text-slate-900">Process &amp; Pay</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {summaryStats.pendingCount > 0
+                ? `${summaryStats.pendingCount} employee${summaryStats.pendingCount === 1 ? '' : 's'} pending · ${formatCurrency(summaryStats.totalNetPay)} expected net pay`
+                : 'All employees processed for this month.'}
+            </p>
+          </div>
+          <div>
+            <Button
+              variant="primary"
+              iconLeft={<Play className="h-4 w-4" />}
+              onClick={() => onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay)}
+              disabled={summaryStats.pendingCount === 0}
+              className="shadow-sm whitespace-nowrap"
+            >
+              Process &amp; Pay ({summaryStats.pendingCount})
+            </Button>
+          </div>
+        </SurfaceCard>
       </div>
 
       {/* Quick Stats */}
@@ -323,85 +313,25 @@ export default function PayrollDashboard({
         />
       </div>
 
+      {/* Live statutory compliance readiness board */}
+      <ComplianceStatusBoard monthYear={selectedMonth} onOpenFilings={onOpenFilings} />
+
+      {/* Module launcher (search + category filter) — single source of truth */}
+      <PayrollModuleLauncher
+        onOpenCreatePayGroup={onOpenCreatePayGroup}
+        onOpenSalaryComponents={onOpenSalaryComponents}
+        onOpenEmployeeCards={onOpenEmployeeCards}
+        onOpenFilings={onOpenFilings}
+        onOpenDepartmentTemplates={onOpenDepartmentTemplates}
+        onOpenUnassignedEmployees={onOpenUnassignedEmployees}
+      />
+
       {/* Compensation Analytics Charts */}
       <CompensationAnalytics
         departments={departments}
         runs={runs as Partial<PayrollMonthlyRun>[]}
         summaryStats={summaryStats}
       />
-
-      {/* Quick Actions */}
-      <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          <QuickActionCard
-            icon={Users}
-            title="Create Pay Group"
-            description="Group employees for a shared pay schedule"
-            action={() => onOpenCreatePayGroup?.()}
-            variant="default"
-          />
-          <QuickActionCard
-            icon={Settings2}
-            title="Salary Components"
-            description="Enable/disable earnings, deductions, and formula-based components"
-            action={() => onOpenSalaryComponents?.()}
-            variant="default"
-          />
-          <QuickActionCard
-            icon={CreditCard}
-            title="Employee Payroll Cards"
-            description="View and manage individual employee CTC, salary components, and payroll config"
-            action={() => onOpenEmployeeCards?.()}
-            variant="default"
-          />
-          <QuickActionCard
-            icon={FileText}
-            title="Statutory Filings"
-            description="Generate PF, ESI, Form 16, 24Q, PT, LWF returns"
-            action={() => onOpenFilings?.()}
-            variant="default"
-          />
-          <QuickActionCard
-            icon={BookOpen}
-            title="Salary Templates"
-            description="Create and manage salary component templates for departments"
-            action={() => onOpenDepartmentTemplates?.()}
-            variant="default"
-          />
-          <QuickActionCard
-            icon={UserX}
-            title="View Unassigned Employees"
-            description="Employees without a department assignment"
-            action={() => onOpenUnassignedEmployees?.()}
-            variant="default"
-          />
-        </div>
-      </div>
-
-      {/* Needs Attention */}
-      {summaryStats.pendingCount > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">Needs Attention</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            <QuickActionCard
-              icon={Play}
-              title="Process & Pay"
-              description={`${summaryStats.pendingCount} employees ready for ${selectedMonth}`}
-              count={summaryStats.pendingCount}
-              action={() => onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay)}
-              variant="warning"
-            />
-            <QuickActionCard
-              icon={DollarSign}
-              title="Review Payroll Reports"
-              description="View detailed payroll analytics"
-              action={() => onOpenReports?.(summaryStats)}
-              variant="default"
-            />
-          </div>
-        </div>
-      )}
 
       {/* Pay Groups Section */}
       {(isPayGroupsLoading || payGroups.length > 0) && (
@@ -411,7 +341,7 @@ export default function PayrollDashboard({
               <h2 className="text-lg font-semibold text-slate-900">Pay Groups</h2>
               <p className="text-sm text-slate-500">
                 {payGroups.length === 0
-                  ? 'No pay groups yet — create one from Quick Actions'
+                  ? 'No pay groups yet — create one from All Payroll Modules'
                   : `${payGroups.length} pay group${payGroups.length === 1 ? '' : 's'} for ${selectedMonth}`}
               </p>
             </div>
