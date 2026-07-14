@@ -87,11 +87,23 @@ class BreakTrackingController extends Controller
             'reason' => $request->reason,
         ]);
 
+        // Create a parallel is_break TimeEntry so the break shows up natively
+        // in the time-entries table and attendance worked-time calculations.
+        $breakEntry = TimeEntry::create([
+            'organization_id' => $user->organization_id,
+            'user_id' => $user->id,
+            'timer_slot' => 'break',
+            'start_time' => $now,
+            'is_break' => true,
+            'description' => $request->reason ? "Break — {$request->reason}" : 'Break',
+        ]);
+
         $this->stopPrimaryTimer($user->id, $now);
 
         return response()->json([
             'message' => 'Break started.',
             'break' => $break->load('user:id,name'),
+            'break_entry_id' => $breakEntry->id,
         ], 201);
     }
 
@@ -114,6 +126,19 @@ class BreakTrackingController extends Controller
             'end_at' => $now,
             'duration_seconds' => $durationSeconds,
         ]);
+
+        // Close the parallel is_break TimeEntry so it reflects the real duration.
+        $breakEntry = TimeEntry::where('user_id', $user->id)
+            ->where('is_break', true)
+            ->whereNull('end_time')
+            ->orderByDesc('start_time')
+            ->first();
+        if ($breakEntry) {
+            $breakEntry->update([
+                'end_time' => $now,
+                'duration' => $durationSeconds,
+            ]);
+        }
 
         $dayTotal = BreakTime::where('user_id', $user->id)
             ->where('break_date', $activeBreak->break_date)

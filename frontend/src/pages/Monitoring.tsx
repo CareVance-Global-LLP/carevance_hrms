@@ -15,7 +15,7 @@ import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson }
 import StatusBadge from '@/components/ui/StatusBadge';
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatDuration } from '@/lib/formatters';
-import { Activity, Camera, Users } from 'lucide-react';
+import { Activity, Camera, Coffee, Users } from 'lucide-react';
 
 const PIE_COLORS = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'];
 
@@ -151,6 +151,7 @@ export default function Monitoring() {
   const employeesActive = liveMonitoring?.employees_active || [];
   const employeesInactive = liveMonitoring?.employees_inactive || [];
   const employeesOnLeave = liveMonitoring?.employees_on_leave || [];
+  const employeesOnBreak = liveMonitoring?.employees_on_break || [];
   const productiveEmployeeRanking = employeeRankings?.by_productive_duration || [];
   const maxProductiveDuration = Math.max(1, ...productiveEmployeeRanking.map((item: any) => Number(item?.productive_duration || 0)));
   const teamEfficiencyRanking = teamRankings?.by_efficiency || [];
@@ -224,9 +225,10 @@ export default function Monitoring() {
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard label="Employee" value={selectedUser.name} hint={selectedUser.email} icon={Users} accent="slate" />
-            <MetricCard label="Total Worked" value={formatDuration(stats?.total_duration || 0)} icon={Activity} accent="emerald" />
-            <MetricCard label="Total Idle" value={formatDuration(stats?.idle_total_duration || 0)} icon={Activity} accent="amber" />
-            <MetricCard label="Average Idle" value={`${Math.round(stats?.idle_avg_duration || 0)}s`} icon={Activity} accent="rose" />
+            <MetricCard label="Track Time" value={formatDuration(stats?.total_duration || 0)} icon={Activity} accent="emerald" />
+            <MetricCard label="Work Time" value={formatDuration(stats?.working_duration || 0)} icon={Activity} accent="sky" />
+            <MetricCard label="Idle Time" value={formatDuration(stats?.idle_total_duration || 0)} icon={Activity} accent="amber" />
+            <MetricCard label="Break Time" value={formatDuration(Number(stats?.break_seconds || 0))} icon={Activity} accent="amber" />
             <MetricCard label="Screenshots" value={screenshots.length} icon={Camera} accent="sky" />
           </div>
 
@@ -235,6 +237,8 @@ export default function Monitoring() {
             <MetricCard label="Org Unproductive Share" value={`${Number(organizationSummary?.unproductive_share || 0).toFixed(1)}%`} icon={Activity} accent="rose" />
             <MetricCard label="Tracked Productive Time" value={formatDuration(Number(organizationSummary?.productive_duration || 0))} icon={Users} accent="sky" />
             <MetricCard label="Tracked Unproductive Time" value={formatDuration(Number(organizationSummary?.unproductive_duration || 0))} icon={Users} accent="amber" />
+            <MetricCard label="Break Time" value={formatDuration(Number(organizationSummary?.break_seconds || 0))} icon={Users} accent="amber" />
+            <MetricCard label="On Break" value={employeesOnBreak.length} icon={Coffee} accent="amber" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -262,6 +266,12 @@ export default function Monitoring() {
                     <p className="text-sm text-gray-600">Working Now</p>
                     <StatusBadge tone={selectedUserLive.is_working ? 'success' : 'neutral'}>
                       {selectedUserLive.is_working ? 'Yes' : 'No'}
+                    </StatusBadge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">On Break</p>
+                    <StatusBadge tone={selectedUserLive.is_on_break ? 'warning' : 'neutral'}>
+                      {selectedUserLive.is_on_break ? 'Yes' : 'No'}
                     </StatusBadge>
                   </div>
                 </div>

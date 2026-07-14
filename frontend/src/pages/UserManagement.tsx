@@ -25,6 +25,7 @@ type OrgUser = {
   current_project?: string | null;
   total_duration?: number;
   total_elapsed_duration?: number;
+  total_break_seconds?: number;
 };
 type ReportGroup = { id: number; name: string; users: OrgUser[] };
 
@@ -157,6 +158,7 @@ export default function UserManagement() {
         current_project: u.current_project || null,
         total_duration: Number(u.total_duration || 0),
         total_elapsed_duration: Number(u.total_elapsed_duration || 0),
+        total_break_seconds: typeof u.total_break_seconds === 'number' ? u.total_break_seconds : undefined,
       })) as OrgUser[];
     },
     enabled: isAdmin,
@@ -459,6 +461,11 @@ export default function UserManagement() {
             <div className="mt-1 text-xs text-gray-600">
               Total worked ({datePreset === 'custom' ? 'Custom Range' : getDateRangePresetLabel(datePreset)} - {timezone}): {formatDuration(u.total_elapsed_duration ?? u.total_duration)}
             </div>
+            {typeof u.total_break_seconds === 'number' ? (
+              <div className="mt-1 text-xs text-gray-600">
+                Break: {formatDuration(u.total_break_seconds)}
+              </div>
+            ) : null}
           </button>
         ))}
       </div>
@@ -535,6 +542,9 @@ export default function UserManagement() {
                     <p>Date: <span className="font-medium text-slate-950">{profile360Query.data.status.latest_attendance.attendance_date}</span></p>
                     <p>Status: <span className="font-medium capitalize text-slate-950">{profile360Query.data.status.latest_attendance.status}</span></p>
                     <p>Worked: <span className="font-medium text-slate-950">{formatDuration(profile360Query.data.status.latest_attendance.worked_seconds)}</span></p>
+                    {profile360Query.data.status.latest_attendance.total_break_seconds != null ? (
+                      <p>Break: <span className="font-medium text-slate-950">{formatDuration(profile360Query.data.status.latest_attendance.total_break_seconds)}</span></p>
+                    ) : null}
                     <p>Late: <span className="font-medium text-slate-950">{profile360Query.data.status.latest_attendance.late_minutes} min</span></p>
                   </div>
                 ) : <p className="mt-3 text-sm text-slate-500">No attendance record found.</p>}

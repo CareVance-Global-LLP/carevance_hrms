@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi } from '@/services/api';
+import { breakTrackingApi } from '@/services/breakTrackingApi';
 import { startTimerOfflineAware, stopTimerOfflineAware } from '@/services/offlineApiWrapper';
 import {
   ACTIVE_TIMER_KEY,
@@ -33,6 +34,7 @@ import {
   CalendarDays,
   Clock,
   ClipboardList,
+  Coffee,
   Hourglass,
   Pause,
   Play,
@@ -217,6 +219,7 @@ export default function DesktopTimerDashboard() {
   const [activeTasksCount, setActiveTasksCount] = useState(0);
   const [totalTasksCount, setTotalTasksCount] = useState(0);
   const [todayDeltaLabel, setTodayDeltaLabel] = useState('No change from yesterday');
+  const [todayWorkSeconds, setTodayWorkSeconds] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
@@ -227,6 +230,14 @@ export default function DesktopTimerDashboard() {
   const [isUpdatingTimerContext, setIsUpdatingTimerContext] = useState(false);
   const [notice, setNotice] = useState('');
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [activeBreak, setActiveBreak] = useState<import('@/services/breakTrackingApi').BreakTime | null>(null);
+  const [todayBreaks, setTodayBreaks] = useState<import('@/services/breakTrackingApi').BreakTime[]>([]);
+  const [totalBreakSeconds, setTotalBreakSeconds] = useState(0);
+  const [todayTrackSeconds, setTodayTrackSeconds] = useState(0);
+  const [todayIdleSeconds, setTodayIdleSeconds] = useState(0);
+  const [breakElapsed, setBreakElapsed] = useState(0);
+  const [isBreakStarting, setIsBreakStarting] = useState(false);
+  const [isBreakEnding, setIsBreakEnding] = useState(false);
   const hasRestoredSnapshotRef = useRef(false);
   const hasAttemptedAutoStartRef = useRef(false);
   const latestWorkedSecondsRef = useRef(0);
@@ -324,17 +335,19 @@ export default function DesktopTimerDashboard() {
     let requestFailed = false;
 
     try {
-      const [dashboardResult, projectsResult, tasksResult, attendanceResult] = await Promise.allSettled([
+      const [dashboardResult, projectsResult, tasksResult, attendanceResult, breakResult] = await Promise.allSettled([
         dashboardApi.summary(),
         projectApi.getAll(),
         taskApi.getAll({ timer_only: true, project_id: selectedProjectId ?? undefined }),
         attendanceApi.today(),
+        breakTrackingApi.getToday(),
       ]);
 
       const projectsSucceeded = projectsResult.status === 'fulfilled';
       const dashboardSucceeded = dashboardResult.status === 'fulfilled';
       const tasksSucceeded = tasksResult.status === 'fulfilled';
       const attendanceSucceeded = attendanceResult.status === 'fulfilled';
+      const breakSucceeded = breakResult.status === 'fulfilled';
 
       if (!dashboardSucceeded) {
         requestFailed = true;
@@ -471,6 +484,9 @@ export default function DesktopTimerDashboard() {
         setProductivityScore(Number(data?.productivity_score) || 0);
         setActiveTasksCount(Number(data?.active_tasks_count) || 0);
         setTotalTasksCount(Number(data?.total_tasks_count) || 0);
+        setTodayTrackSeconds(Number(data?.today_track_time ?? 0) || 0);
+        setTodayWorkSeconds(Number(data?.today_work_time ?? 0) || 0);
+        setTodayIdleSeconds(Number(data?.today_idle_time ?? 0) || 0);
 
         const pct = data?.today_change_percent;
         if (typeof pct === 'number') {
@@ -484,6 +500,7 @@ export default function DesktopTimerDashboard() {
           const fallbackEntries = todayResponse.data?.time_entries ?? [];
           todayElapsedSeconds = Number(todayResponse.data?.total_duration ?? 0) || 0;
           setTodayEntries(fallbackEntries);
+          setTodayWorkSeconds(Number(todayResponse.data?.work_time ?? 0) || 0);
           setTodayTotal((current) => Math.max(current, todayElapsedSeconds));
         } catch (fallbackError) {
           console.error('Failed to fetch today entries fallback:', fallbackError);
@@ -509,6 +526,13 @@ export default function DesktopTimerDashboard() {
       if (attendanceSucceeded) {
         setAttendanceToday(attendanceRecord);
         setShiftTargetSeconds(Number(attendancePayload?.shift_target_seconds || attendanceRecord?.shift_target_seconds || 8 * 3600));
+      }
+
+      if (breakSucceeded) {
+        const breakPayload = breakResult.value as { breaks: any[]; active_break: any; total_break_seconds: number };
+        setActiveBreak(breakPayload.active_break ?? null);
+        setTodayBreaks(breakPayload.breaks ?? []);
+        setTotalBreakSeconds(Number(breakPayload.total_break_seconds ?? 0));
       }
 
       const attendanceWorkedSeconds = Number(attendanceRecord?.worked_seconds || 0);
@@ -996,6 +1020,59 @@ export default function DesktopTimerDashboard() {
     }
   };
 
+  const handleStartBreak = async (reason?: string) => {
+    if (isBreakStarting) {
+      return;
+    }
+    setIsBreakStarting(true);
+    setFeedback(null);
+    try {
+      // Pause the work timer locally (the server also stops the primary
+      // TimeEntry inside BreakTrackingController.start). Calling handleStopTimer
+      // keeps local worked-seconds and snapshot state correct; the extra stop
+      // API call is a safe no-op when the entry is already closed. handleStopTimer
+      // manages isTimerOperationInProgressRef internally, so we don't set it here.
+      if (activeTimer) {
+        await handleStopTimer();
+      }
+      const result = await breakTrackingApi.startBreak(reason || undefined);
+      setActiveBreak(result.break ?? null);
+      setBreakElapsed(0);
+      setNotice('Break started. Your work timer is paused.');
+      // Re-sync so the is_break TimeEntry row appears in "Today's Time Entries".
+      void fetchData();
+    } catch (error: any) {
+      const message = error?.response?.data?.message || 'Failed to start break.';
+      setFeedback({ tone: 'error', message });
+    } finally {
+      setIsBreakStarting(false);
+    }
+  };
+
+  const handleEndBreak = async () => {
+    if (isBreakEnding) {
+      return;
+    }
+    setIsBreakEnding(true);
+    setFeedback(null);
+    try {
+      await breakTrackingApi.endBreak();
+      setActiveBreak(null);
+      setBreakElapsed(0);
+      setNotice('Break ended. Resuming your work timer.');
+      // Auto-resume the work timer with the previously selected context.
+      // handleStartTimer manages isTimerOperationInProgressRef internally.
+      await handleStartTimer();
+      // Re-sync so the completed is_break row + totals refresh.
+      void fetchData();
+    } catch (error: any) {
+      const message = error?.response?.data?.message || 'Failed to end break.';
+      setFeedback({ tone: 'error', message });
+    } finally {
+      setIsBreakEnding(false);
+    }
+  };
+
   const handleProjectSelection = async (projectId: number | null) => {
     setSelectedProjectId(projectId);
 
@@ -1244,6 +1321,18 @@ export default function DesktopTimerDashboard() {
   const timerDisplaySeconds = activeTimer ? liveDuration : 0;
   const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
   const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
+
+  useEffect(() => {
+    if (!activeBreak?.start_at) {
+      setBreakElapsed(0);
+      return;
+    }
+    const startMs = new Date(activeBreak.start_at).getTime();
+    const tick = () => setBreakElapsed(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [activeBreak?.start_at]);
   const halfDayLeaveApplied = Boolean(
     attendanceToday?.has_half_day_leave_today
     || attendanceToday?.leave_type === 'half_day'
@@ -1292,6 +1381,7 @@ export default function DesktopTimerDashboard() {
   const displayedEntries = activeTimer && !todayEntries.some((entry) => entry.id === activeTimer.id)
     ? [activeTimer, ...todayEntries]
     : todayEntries;
+  const workEntries = displayedEntries.filter((entry) => !entry.is_break);
 
   if (isLoading) {
     return <PageLoadingState label="Loading dashboard..." />;
@@ -1321,11 +1411,15 @@ export default function DesktopTimerDashboard() {
 
         <section className="grid grid-cols-1 gap-7 xl:grid-cols-[1.25fr_1fr]">
           <div className="rounded-lg border border-blue-100 bg-white p-5 shadow-sm">
-            <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3.5 py-1.5 text-xs font-semibold uppercase text-blue-700">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white">
+            <div className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold uppercase ${
+              activeBreak ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
+            }`}>
+              <span className={`flex h-5 w-5 items-center justify-center rounded-full text-white ${
+                activeBreak ? 'bg-amber-500' : 'bg-blue-600'
+              }`}>
                 <Play className="h-3 w-3 fill-current" />
               </span>
-              {activeTimer ? 'Timer Running' : currentWorkedSeconds > 0 ? 'Timer Paused' : 'Desktop Timer'}
+              {activeBreak ? 'On Break' : activeTimer ? 'Timer Running' : currentWorkedSeconds > 0 ? 'Timer Paused' : 'Desktop Timer'}
             </div>
 
             <div className="mt-4 text-center">
@@ -1354,11 +1448,34 @@ export default function DesktopTimerDashboard() {
                   <Pause className="h-5 w-5 fill-current" />
                   Pause
                 </button>
+                {activeBreak ? (
+                  <button
+                    type="button"
+                    aria-label="End break"
+                    onClick={() => void handleEndBreak()}
+                    disabled={isBreakEnding}
+                    className="inline-flex h-11 min-w-36 items-center justify-center gap-3 rounded-lg bg-amber-500 px-5 text-base font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Coffee className="h-5 w-5" />
+                    {isBreakEnding ? 'Ending…' : 'End Break'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label="Start break"
+                    onClick={() => void handleStartBreak()}
+                    disabled={isBreakStarting || isUpdatingTimerContext}
+                    className="inline-flex h-11 min-w-36 items-center justify-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-5 text-base font-semibold text-amber-700 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Coffee className="h-5 w-5" />
+                    {isBreakStarting ? 'Starting…' : 'Start Break'}
+                  </button>
+                )}
               </div>
             </div>
 
             <div className="mx-auto mt-6 h-px max-w-4xl bg-slate-200" />
-            <div className="mx-auto mt-4 grid max-w-3xl grid-cols-1 divide-y divide-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+            <div className="mx-auto mt-4 grid max-w-3xl grid-cols-1 divide-y divide-slate-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
               <div className="flex items-center justify-center gap-3 py-2.5 sm:pr-8">
                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600">
                   <Clock className="h-5 w-5" />
@@ -1368,7 +1485,7 @@ export default function DesktopTimerDashboard() {
                   <p className="mt-0.5 text-lg font-semibold text-slate-950">{formatTime(remainingShiftSeconds)}</p>
                 </div>
               </div>
-              <div className="flex items-center justify-center gap-3 py-2.5 sm:pl-8">
+              <div className="flex items-center justify-center gap-3 py-2.5 sm:px-4">
                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-50 text-violet-600">
                   <Hourglass className="h-5 w-5" />
                 </span>
@@ -1377,18 +1494,42 @@ export default function DesktopTimerDashboard() {
                   <p className="mt-0.5 text-lg font-semibold text-slate-950">{formatTime(overtimeSeconds)}</p>
                 </div>
               </div>
+              <div className="flex items-center justify-center gap-3 py-2.5 sm:pl-8">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                  <Coffee className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-sm text-slate-500">Break Timer</p>
+                  <p className="mt-0.5 text-lg font-semibold text-slate-950">{formatTime(breakElapsed)}</p>
+                </div>
+              </div>
             </div>
 
             <div className="mx-auto mt-4 h-px max-w-4xl bg-slate-200" />
             <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-sm text-slate-600">
               <span className="inline-flex items-center gap-2">
                 <Clock className="h-5 w-5 text-slate-500" />
-                Total elapsed (all sessions): {formatDuration(allTimeTotal)}
+                All-time Tracked: {formatDuration(allTimeTotal)}
               </span>
               <span className="hidden h-5 w-px bg-slate-300 sm:inline-block" />
               <span className="inline-flex items-center gap-2">
                 <Users className="h-5 w-5 text-slate-500" />
-                Today's attendance worked: {formatDuration(currentWorkedSeconds)}
+                Work Time: {formatDuration(todayWorkSeconds)}
+              </span>
+              <span className="hidden h-5 w-px bg-slate-300 sm:inline-block" />
+              <span className="inline-flex items-center gap-2">
+                <Clock className="h-5 w-5 text-slate-500" />
+                Track Time: {formatDuration(todayTrackSeconds)}
+              </span>
+              <span className="hidden h-5 w-px bg-slate-300 sm:inline-block" />
+              <span className="inline-flex items-center gap-2">
+                <Hourglass className="h-5 w-5 text-slate-500" />
+                Idle Time: {formatDuration(todayIdleSeconds)}
+              </span>
+              <span className="hidden h-5 w-px bg-slate-300 sm:inline-block" />
+              <span className="inline-flex items-center gap-2">
+                <Coffee className="h-5 w-5 text-slate-500" />
+                Total break time: {formatDuration(totalBreakSeconds)}
               </span>
               {halfDayLeaveApplied ? <span className="text-blue-700">{leaveTodayLabel}, target {formatDuration(shiftTargetSeconds)}</span> : null}
             </div>
@@ -1483,15 +1624,36 @@ export default function DesktopTimerDashboard() {
         <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
           {[
             {
-              label: "Today's Time",
-              value: formatDuration(todayDisplaySeconds),
+              label: 'Track Time',
+              value: formatDuration(todayTrackSeconds),
+              hint: 'Tracked time today',
+              icon: Clock,
+              tone: 'bg-blue-50 text-blue-600',
+            },
+            {
+              label: 'Work Time',
+              value: formatDuration(todayWorkSeconds),
               hint: halfDayLeaveApplied
                 ? `Half day applied, target ${formatDuration(shiftTargetSeconds)}`
                 : todayDisplaySeconds > todayTotal
                   ? 'Includes approved attendance edits'
                   : todayDeltaLabel,
               icon: Clock,
-              tone: 'bg-blue-50 text-blue-600',
+              tone: 'bg-emerald-50 text-emerald-600',
+            },
+            {
+              label: 'Idle Time',
+              value: formatDuration(todayIdleSeconds),
+              hint: 'Idle within tracked time',
+              icon: Hourglass,
+              tone: 'bg-amber-50 text-amber-600',
+            },
+            {
+              label: 'Break Time',
+              value: formatDuration(totalBreakSeconds),
+              hint: 'Total break today',
+              icon: Hourglass,
+              tone: 'bg-orange-50 text-orange-600',
             },
             { label: 'Active Tasks', value: activeTasksCount, hint: activeTasksHint, icon: CalendarDays, tone: 'bg-violet-50 text-violet-600' },
             { label: 'Team Members', value: teamMembersCount, hint: `${newMembersThisWeek} new this week`, icon: Users, tone: 'bg-emerald-50 text-emerald-600' },
@@ -1528,7 +1690,7 @@ export default function DesktopTimerDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {displayedEntries.length === 0 ? (
+                {workEntries.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="h-44 px-4 py-8 text-center text-slate-500">
                       <div className="flex flex-col items-center justify-center">
@@ -1541,8 +1703,11 @@ export default function DesktopTimerDashboard() {
                     </td>
                   </tr>
                 ) : (
-                  displayedEntries.map((entry) => (
-                    <tr key={entry.id} className="border-t border-slate-200">
+                  workEntries.map((entry) => (
+                    <tr
+                      key={entry.id}
+                      className="border-t border-slate-200"
+                    >
                       <td className="px-4 py-4 text-slate-700">
                         <p className="font-semibold text-slate-950">{getTimeEntryTitle(entry)}</p>
                         <p className="mt-1 text-sm text-slate-500">{getTimeEntrySubtitle(entry, 'No description provided')}</p>
@@ -1567,13 +1732,73 @@ export default function DesktopTimerDashboard() {
                     </tr>
                   ))
                 )}
-                {displayedEntries.length > 0 ? (
+                {workEntries.length > 0 ? (
                   <tr className="border-t border-slate-200">
                     <td colSpan={4} className="px-4 py-3 text-center text-sm text-slate-500">
                       No more time entries for today
                     </td>
                   </tr>
                 ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-normal text-slate-950">
+            <Coffee className="h-5 w-5 text-amber-500" />
+            Today's Break Entries
+          </h2>
+          <div className="mt-5 overflow-hidden rounded-none border border-slate-200">
+            <table className="w-full table-fixed text-left text-sm">
+              <thead className="bg-slate-50 text-slate-700">
+                <tr>
+                  <th className="px-4 py-4 font-semibold">Break</th>
+                  <th className="px-4 py-4 font-semibold">Started</th>
+                  <th className="px-4 py-4 font-semibold">Duration</th>
+                  <th className="px-4 py-4 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {todayBreaks.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="h-32 px-4 py-8 text-center text-slate-500">
+                      No breaks recorded today
+                    </td>
+                  </tr>
+                ) : (
+                  todayBreaks.map((b) => (
+                    <tr
+                      key={b.id}
+                      className="border-t border-slate-200 border-l-4 border-l-amber-400"
+                    >
+                      <td className="px-4 py-4 text-slate-700">
+                        <p className="flex items-center gap-1.5 font-semibold text-amber-700">
+                          <Coffee className="h-4 w-4" />
+                          Break
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">Auto-logged break</p>
+                        {b.reason ? <p className="mt-1 text-xs text-slate-400">{b.reason}</p> : null}
+                      </td>
+                      <td className="px-4 py-4 text-slate-700">
+                        {b.start_at
+                          ? new Date(b.start_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-4 text-slate-700">
+                        {b.end_at ? formatDuration(b.duration_seconds) : 'running'}
+                      </td>
+                      <td className="px-4 py-4 text-slate-700">
+                        <span className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium ${
+                          b.end_at ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-700'
+                        }`}>
+                          <span className={`h-2 w-2 rounded-full ${b.end_at ? 'bg-slate-400' : 'bg-amber-500'}`} />
+                          {b.end_at ? 'Completed' : 'Running'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

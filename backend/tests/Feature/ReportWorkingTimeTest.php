@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Activity;
 use App\Models\AttendancePunch;
+use App\Models\BreakTime;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
 use App\Models\BrowserTrackingConnection;
@@ -1404,5 +1405,180 @@ class ReportWorkingTimeTest extends TestCase
             'duration' => 0,
             'billable' => true,
         ]);
+    }
+
+    public function test_daily_report_excludes_break_entries_from_worked_time_and_surfaces_break_seconds(): void
+    {
+        [$user, $headers] = $this->createAuthenticatedEmployee();
+
+        TimeEntry::create([
+            'user_id' => $user->id,
+            'start_time' => '2026-05-10 09:00:00',
+            'end_time' => '2026-05-10 11:00:00',
+            'duration' => 7200,
+            'billable' => true,
+        ]);
+
+        TimeEntry::create([
+            'user_id' => $user->id,
+            'timer_slot' => 'break',
+            'is_break' => true,
+            'start_time' => '2026-05-10 12:00:00',
+            'end_time' => '2026-05-10 12:30:00',
+            'duration' => 1800,
+        ]);
+
+        $this->getJson('/api/reports/daily?date=2026-05-10', $headers)
+            ->assertOk()
+            ->assertJsonPath('total_time', 7200)
+            ->assertJsonPath('total_break_seconds', 1800)
+            ->assertJsonPath('break_hours', 0.5);
+    }
+
+    public function test_time_entries_today_excludes_break_from_total_duration_and_surfaces_break_seconds(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-10 13:00:00'));
+
+        try {
+            [$user, $headers] = $this->createAuthenticatedEmployee();
+
+            TimeEntry::create([
+                'user_id' => $user->id,
+                'start_time' => '2026-05-10 09:00:00',
+                'end_time' => '2026-05-10 11:00:00',
+                'duration' => 7200,
+            ]);
+
+            TimeEntry::create([
+                'user_id' => $user->id,
+                'timer_slot' => 'break',
+                'is_break' => true,
+                'start_time' => '2026-05-10 12:00:00',
+                'end_time' => '2026-05-10 12:30:00',
+                'duration' => 1800,
+            ]);
+
+            $this->getJson('/api/time-entries/today', $headers)
+                ->assertOk()
+                ->assertJsonPath('total_duration', 7200)
+                ->assertJsonPath('total_break_seconds', 1800)
+                ->assertJsonPath('break_hours', 0.5);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_payroll_time_tracking_excludes_break_from_worked_seconds_and_surfaces_break(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+        $monthYear = now()->format('Y-m');
+        $monthStart = now()->startOfMonth();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => $monthStart->copy()->addHours(9),
+            'end_time' => $monthStart->copy()->addHours(11),
+            'duration' => 7200,
+        ]);
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'timer_slot' => 'break',
+            'is_break' => true,
+            'start_time' => $monthStart->copy()->addHours(12),
+            'end_time' => $monthStart->copy()->addHours(12)->addMinutes(30),
+            'duration' => 1800,
+        ]);
+
+        $this->getJson("/api/payroll/employees/{$employee->id}?month_year={$monthYear}", $headers)
+            ->assertOk()
+            ->assertJsonPath('time_tracking.total_worked_seconds', 7200)
+            ->assertJsonPath('time_tracking.total_break_seconds', 1800)
+            ->assertJsonPath('time_tracking.break_hours', 0.5);
+    }
+
+    public function test_overall_report_surfaces_per_user_and_org_break_seconds_for_subordinate(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'timer_slot' => 'break',
+            'is_break' => true,
+            'start_time' => '2026-06-15 12:00:00',
+            'end_time' => '2026-06-15 12:01:00',
+            'duration' => 60,
+        ]);
+
+        $this->getJson('/api/reports/overall?start_date=2026-06-15&end_date=2026-06-15&user_ids[]='.$employee->id, $headers)
+            ->assertOk()
+            ->assertJsonPath('summary.total_break_seconds', 60)
+            ->assertJsonPath('by_user.0.break_seconds', 60)
+            ->assertJsonPath('by_user.0.break_hours', 0.02);
+    }
+
+    public function test_employee_insights_surfaces_organization_and_selected_user_break_seconds(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'timer_slot' => 'break',
+            'is_break' => true,
+            'start_time' => '2026-06-15 12:00:00',
+            'end_time' => '2026-06-15 12:01:00',
+            'duration' => 60,
+        ]);
+
+        $this->getJson('/api/reports/employee-insights?start_date=2026-06-15&end_date=2026-06-15&user_id='.$employee->id, $headers)
+            ->assertOk()
+            ->assertJsonPath('organization_summary.break_seconds', 60)
+            ->assertJsonPath('stats.break_seconds', 60);
+    }
+
+    public function test_active_break_surfaces_on_break_status_in_insights_and_overall(): void
+    {
+        [$admin, $employee, $headers] = $this->createAdminAndEmployee();
+        $today = now()->toDateString();
+
+        // Open is_break TimeEntry (break started): keeps the timer "active".
+        TimeEntry::create([
+            'user_id' => $employee->id,
+            'timer_slot' => 'break',
+            'is_break' => true,
+            'start_time' => now()->subMinutes(10),
+            'end_time' => null,
+            'duration' => 0,
+        ]);
+
+        // Active break (no end_at) in the break_times table.
+        BreakTime::create([
+            'organization_id' => $employee->organization_id,
+            'user_id' => $employee->id,
+            'break_date' => $today,
+            'start_at' => now()->subMinutes(10),
+            'end_at' => null,
+            'duration_seconds' => 0,
+        ]);
+
+        $insights = $this->getJson(
+            "/api/reports/employee-insights?start_date={$today}&end_date={$today}&user_id={$employee->id}",
+            $headers
+        )->assertOk();
+
+        $insights->assertJsonPath('live_monitoring.selected_user.is_on_break', true);
+        $insights->assertJsonPath('live_monitoring.selected_user.work_status', 'on_break');
+        $insights->assertJsonPath('live_monitoring.employees_on_break.0.is_on_break', true);
+        $this->assertGreaterThanOrEqual(
+            1,
+            count($insights->json('live_monitoring.employees_on_break') ?? [])
+        );
+
+        $overall = $this->getJson(
+            "/api/reports/overall?start_date={$today}&end_date={$today}&user_ids[]={$employee->id}",
+            $headers
+        )->assertOk();
+
+        $overall->assertJsonPath('by_user.0.is_on_break', true);
     }
 }

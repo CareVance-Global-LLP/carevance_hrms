@@ -27,6 +27,7 @@ interface AttendanceToday {
   status: string;
   is_checked_in: boolean;
   worked_seconds: number;
+  total_break_seconds?: number;
 }
 
 interface DashboardData {
@@ -36,6 +37,11 @@ interface DashboardData {
   monthly_total_seconds: number;
   monthly_total_hours: string;
   monthly_days: number;
+  monthly_break_seconds?: number;
+  today_track_time?: number;
+  today_work_time?: number;
+  today_idle_time?: number;
+  today_break_time?: number;
 }
 
 const MONTHS = [
@@ -327,9 +333,27 @@ export default function EmployeeMobileDashboard() {
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-500">Worked today</span>
+              <span className="text-slate-500">Track Time</span>
               <span className="font-medium text-slate-800">
-                {attendance ? formatDuration(attendance.worked_seconds) : '0h 0m'}
+                {dashboard ? formatDuration(dashboard.today_track_time ?? 0) : '0h 0m'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Work Time</span>
+              <span className="font-medium text-slate-800">
+                {dashboard ? formatDuration(dashboard.today_work_time ?? 0) : '0h 0m'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Idle Time</span>
+              <span className="font-medium text-slate-800">
+                {dashboard ? formatDuration(dashboard.today_idle_time ?? 0) : '0h 0m'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Break Time</span>
+              <span className="font-medium text-slate-800">
+                {dashboard ? formatDuration(dashboard.today_break_time ?? 0) : '0h 0m'}
               </span>
             </div>
           </div>
@@ -372,6 +396,12 @@ export default function EmployeeMobileDashboard() {
               <span className="text-slate-500">Total hours</span>
               <span className="font-medium text-slate-800">
                 {formatDuration(dashboard?.monthly_total_seconds ?? 0)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Break Time</span>
+              <span className="font-medium text-slate-800">
+                {formatDuration(dashboard?.monthly_break_seconds ?? 0)}
               </span>
             </div>
             <div className="flex justify-between">

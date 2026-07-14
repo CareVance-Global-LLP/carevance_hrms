@@ -11,8 +11,7 @@ import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
-import { formatDuration } from '@/lib/formatters';
-import { AlertCircle, KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
+import { AlertCircle, Download, KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
 import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
 
@@ -169,7 +168,7 @@ const modeCopy: Record<EmployeeWorkspaceMode, { title: string; description: stri
   employees: {
     eyebrow: 'Employee Management',
     title: 'Employees',
-    description: 'Employee directory with work status, tracked time, and role management controls.',
+    description: 'Manage employee profiles, roles, departments, and permissions.',
   },
   teams: {
     eyebrow: 'Employee Management',
@@ -214,6 +213,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [activeTeamId, setActiveTeamId] = useState<number | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const settingsPanelRef = useRef<HTMLDivElement | null>(null);
   const pendingSettingsScrollUserIdRef = useRef<number | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
@@ -560,6 +560,32 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         return incompleteFilteredRows;
     }
   }, [directoryDepartmentFilter, directoryFilterUserId, directoryTimezoneFilter, directorySort, users, showIncompleteOnly, incompleteFilterType]);
+
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      const response = await userApi.exportCsv({
+        department: directoryDepartmentFilter !== 'All departments'
+          ? directoryDepartmentFilter
+          : undefined,
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `employees-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || 'Failed to export employees.',
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
   const roleCards = useMemo(() => {
     const allRoles = [...(customRolesQuery.data || [])].sort((a: any, b: any) => a.hierarchy_level - b.hierarchy_level);
     return allRoles.map((role: any, idx: number) => {
@@ -896,12 +922,26 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <p className="mt-3 text-sm font-medium text-slate-900">{pageTitle.eyebrow}</p>
           <p className="mt-1 max-w-4xl text-xs text-slate-500">{pageTitle.description}</p>
         </div>
-        {mode === 'employees' && isStrictAdmin ? (
-          <Link to="/add-user" className="inline-flex h-10 shrink-0 items-center gap-2 self-start rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 md:mr-6 md:mt-3">
-            <UserPlus className="h-4 w-4" />
-            Add Employee
-          </Link>
-        ) : null}
+        <div className="flex shrink-0 flex-wrap items-start gap-2 self-start md:mt-3">
+          {mode === 'employees' && isStrictAdmin ? (
+            <Link to="/add-user" className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80">
+              <UserPlus className="h-4 w-4" />
+              Add Employee
+            </Link>
+          ) : null}
+          {mode === 'employees' ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void handleExportCsv()}
+              disabled={isExporting}
+              className="h-10"
+            >
+              <Download className="h-4 w-4" />
+              {isExporting ? 'Exporting...' : 'Export CSV'}
+            </Button>
+          ) : null}
+        </div>
       </header>
       )}
 
@@ -909,11 +949,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
       {mode === 'employees' && (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-2">
             <MetricCard label="Employees" value={users.length} hint="Current organization users" icon={Users} accent="sky" />
-            <MetricCard label="Working Now" value={users.filter((user: any) => user.is_working).length} hint="Active timers right now" icon={ShieldCheck} accent="emerald" />
             <MetricCard label="Managers / Admins" value={users.filter((u: any) => getHierarchyLevel(u) < 100).length} hint="Elevated roles" icon={KeyRound} accent="violet" />
-            <MetricCard label="Tracked Time" value={formatDuration(users.reduce((sum: number, user: any) => sum + Number(user.total_elapsed_duration || user.total_duration || 0), 0))} hint="Visible across users" icon={Users} accent="amber" />
           </div>
 
           <DataTable
@@ -937,7 +975,8 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             emptyMessage="No employees found."
             bodyClassName="max-h-[34rem] overflow-auto"
             headerAction={(
-              <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
                 {showIncompleteOnly && (
                   <div className="min-w-[13rem] lg:col-span-4">
                     <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
@@ -1017,6 +1056,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                     <option value="name_asc">Name A-Z</option>
                   </SelectInput>
                 </div>
+              </div>
               </div>
             )}
             columns={[

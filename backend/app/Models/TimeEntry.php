@@ -8,12 +8,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TimeEntry extends Model
 {
-    protected $fillable = ['description', 'project_id', 'task_id', 'start_time', 'end_time', 'duration', 'billable', 'user_id', 'timer_slot'];
+    protected $fillable = ['description', 'project_id', 'task_id', 'start_time', 'end_time', 'duration', 'billable', 'user_id', 'timer_slot', 'is_break'];
 
     protected $casts = [
         'start_time' => 'datetime',
         'end_time' => 'datetime',
         'billable' => 'boolean',
+        'is_break' => 'boolean',
     ];
 
     public function user(): BelongsTo

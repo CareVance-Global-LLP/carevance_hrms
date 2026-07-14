@@ -51,17 +51,29 @@ const hasActivePath = (pathname: string, group: NavGroup) =>
     ? isPathMatch(pathname, group.to)
     : (group.items || []).some((item) => isPathMatch(pathname, item.to));
 
-const getItemDescription = (groupLabel: string, itemLabel: string) => {
+const getItemDescription = (groupLabel: string, _itemLabel: string) => {
   if (groupLabel === 'Reports') {
     return 'Detailed analytics and exports';
   }
 
   if (groupLabel === 'Attendance') {
-    return itemLabel === 'Monitoring'
-      ? 'Live time and activity tracking'
-      : itemLabel === 'Screenshots'
-        ? 'Captured screenshot gallery'
-      : 'Attendance and time workflows';
+    return 'Attendance and time workflows';
+  }
+
+  if (groupLabel === 'Monitoring') {
+    return 'Activity tracking and productivity insights';
+  }
+
+  if (groupLabel === 'Roles & Permissions') {
+    return 'Manage roles and department access';
+  }
+
+  if (groupLabel === 'Communication') {
+    return 'Team messaging and announcements';
+  }
+
+  if (groupLabel === 'Assets') {
+    return 'Company asset tracking and assignments';
   }
 
   return 'Workspace and admin controls';

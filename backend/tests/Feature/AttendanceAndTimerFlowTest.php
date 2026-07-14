@@ -533,6 +533,7 @@ class AttendanceAndTimerFlowTest extends TestCase
             'timer_slot' => 'primary',
             'auto_stopped_for_idle' => true,
             'idle_seconds' => 300,
+            'last_activity_at' => now()->subSeconds(10)->toIso8601String(),
         ], $headers)
             ->assertStatus(409)
             ->assertJsonPath('message', 'Idle auto-stop validation failed because recent activity was detected.')
@@ -639,5 +640,62 @@ class AttendanceAndTimerFlowTest extends TestCase
                 && $mail->idleSeconds === 301
                 && $mail->idleDurationLabel === '5 minutes 1 second';
         });
+    }
+
+    public function test_idle_auto_stop_accepts_client_confirmed_idle_despite_recent_heartbeat_activity(): void
+    {
+        Mail::fake();
+
+        $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $user = User::create([
+            'name' => 'Employee',
+            'email' => 'heartbeat@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $startResponse = $this->postJson('/api/time-entries/start', [
+            'description' => 'Primary timer',
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated();
+
+        $timeEntryId = (int) $startResponse->json('id');
+        TimeEntry::query()->whereKey($timeEntryId)->update([
+            'start_time' => now()->subMinutes(10),
+        ]);
+
+        // A recent non-idle activity (e.g. a tab/extension heartbeat) inside the
+        // idle window used to defeat the stop. The client's OS-level idle signal
+        // must be trusted instead.
+        Activity::create([
+            'user_id' => $user->id,
+            'time_entry_id' => $timeEntryId,
+            'type' => 'app',
+            'name' => 'Visual Studio Code',
+            'duration' => 5,
+            'recorded_at' => now()->subSeconds(10),
+        ]);
+
+        Activity::create([
+            'user_id' => $user->id,
+            'time_entry_id' => $timeEntryId,
+            'type' => 'idle',
+            'name' => 'System Idle - Visual Studio Code',
+            'duration' => 300,
+            'recorded_at' => now(),
+        ]);
+
+        $this->postJson('/api/time-entries/stop', [
+            'timer_slot' => 'primary',
+            'auto_stopped_for_idle' => true,
+            'idle_seconds' => 300,
+        ], $headers)->assertOk();
+
+        $timeEntry = TimeEntry::findOrFail($timeEntryId);
+        $this->assertNotNull($timeEntry->end_time);
+        $this->assertTrue((bool) $timeEntry->auto_stopped_for_idle);
     }
 }

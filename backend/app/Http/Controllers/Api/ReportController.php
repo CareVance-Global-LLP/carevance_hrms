@@ -9,6 +9,7 @@ use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\BrowserTrackingConnection;
+use App\Models\BreakTime;
 use App\Models\LeaveRequest;
 use App\Models\Project;
 use App\Models\ReportGroup;
@@ -592,7 +593,11 @@ class ReportController extends Controller
 
         return response()->json(array_merge(
             ['date' => $date],
-            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
+            $this->reportPayloadBuilder->buildCommonReportPayload(
+                $timeEntries,
+                Carbon::parse($date)->startOfDay(),
+                Carbon::parse($date)->endOfDay()
+            )
         ));
     }
 
@@ -627,7 +632,7 @@ class ReportController extends Controller
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
             ],
-            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
+            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries, $startDate, $endDate)
         ));
     }
 
@@ -666,7 +671,7 @@ class ReportController extends Controller
         $timeEntries = $query->get();
 
         $resolvedNow = now();
-        $byDay = $timeEntries->groupBy(function ($entry) {
+        $byDay = $timeEntries->where('is_break', false)->groupBy(function ($entry) {
             return Carbon::parse($entry->start_time)->toDateString();
         })->map(function ($entries) use ($resolvedNow) {
             return [
@@ -681,7 +686,7 @@ class ReportController extends Controller
                 'end_date' => $endDate->toDateString(),
                 'by_day' => $byDay,
             ],
-            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
+            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries, $startDate, $endDate)
         ));
     }
 
@@ -708,7 +713,11 @@ class ReportController extends Controller
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get();
 
-        $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries)
+        $resolvedNow = now();
+        $workedEntries = $this->workedEntries($entries);
+        $breakSeconds = $this->totalBreakSeconds($entries, $resolvedNow);
+
+        $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($workedEntries, $resolvedNow)
             + (int) AttendanceRecord::query()
                 ->where('user_id', $user->id)
                 ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
@@ -734,6 +743,8 @@ class ReportController extends Controller
             'working_time' => $timeBreakdown['working_duration'],
             'active_time' => $timeBreakdown['working_duration'],
             'idle_time' => $timeBreakdown['idle_duration'],
+            'break_seconds' => $breakSeconds,
+            'break_hours' => round($breakSeconds / 3600, 2),
             'stats' => [
                 'activity_events' => $activities->count(),
             ],
@@ -756,10 +767,14 @@ class ReportController extends Controller
             $entries = TimeEntry::where('user_id', $user->id)
                 ->whereBetween('start_time', [$startDate, $endDate])
                 ->get();
+            $worked = $this->workedEntries($entries);
+            $breakSeconds = $this->totalBreakSeconds($entries, $resolvedNow);
 
             return [
                 'user' => $user,
-                'total_time' => $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
+                'total_time' => $this->timeEntryDurationService->sumEffectiveDuration($worked, $resolvedNow),
+                'break_seconds' => $breakSeconds,
+                'break_hours' => round($breakSeconds / 3600, 2),
                 'entries' => $entries,
             ];
         });
@@ -879,7 +894,7 @@ class ReportController extends Controller
 
         $entries = TimeEntry::whereIn('user_id', $userIds)
             ->whereBetween('start_time', [$startDate, $endDate])
-            ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
+            ->get(['id', 'user_id', 'start_time', 'end_time', 'duration', 'is_break']);
         $attendanceAdjustments = AttendanceRecord::query()
             ->whereIn('user_id', $userIds)
             ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
@@ -890,6 +905,14 @@ class ReportController extends Controller
             ->distinct()
             ->pluck('user_id')
             ->map(fn ($id) => (int) $id);
+
+        $onBreakUserIds = $userIds->isEmpty()
+            ? collect()
+            : BreakTime::whereIn('user_id', $userIds)
+                ->whereNull('end_at')
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
 
         if ($request->boolean('dashboard_lite')) {
             return response()->json($this->buildLiteOverallReport(
@@ -918,13 +941,17 @@ class ReportController extends Controller
             ? []
             : $this->resolveLastActivityByUser($userIds, $startDate, $endDate);
 
-        $entriesByUser = $entries->groupBy('user_id');
+        $workedEntries = $this->workedEntries($entries);
+        $totalBreakSeconds = $this->totalBreakSeconds($entries, $resolvedNow ?? now());
+        $entriesByUser = $workedEntries->groupBy('user_id');
+        $breakEntriesByUser = $entries->where('is_break', true)->values()->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
 
         $resolvedNow = now();
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $resolvedNow, $calendarDaysCount) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $breakEntriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $onBreakUserIds, $resolvedNow, $calendarDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
+            $userBreakSeconds = $this->totalBreakSeconds($breakEntriesByUser->get($user->id, collect()), $resolvedNow);
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $userAdjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
@@ -940,11 +967,14 @@ class ReportController extends Controller
                 'entries_count' => $userEntries->count(),
                 'last_activity_at' => $lastActivityByUser[(int) $user->id] ?? null,
                 'is_working' => $activeUserIds->contains((int) $user->id),
+                'is_on_break' => $onBreakUserIds->contains((int) $user->id),
+                'break_seconds' => $userBreakSeconds,
+                'break_hours' => round($userBreakSeconds / 3600, 2),
             ] + $timeBreakdown + $attendanceSummary;
         })->values();
 
         $dayUserBuckets = [];
-        foreach ($entries as $entry) {
+        foreach ($workedEntries as $entry) {
             $date = Carbon::parse($entry->start_time)->toDateString();
             $key = (string) $entry->user_id.'|'.$date;
 
@@ -1025,6 +1055,8 @@ class ReportController extends Controller
                 'users_count' => $shouldPaginateUsers ? $totalUsers : $users->count(),
                 'page_users_count' => $users->count(),
                 'active_users' => $activeUserIds->unique()->count(),
+                'total_break_seconds' => $totalBreakSeconds,
+                'break_hours' => round($totalBreakSeconds / 3600, 2),
             ] + $summaryBreakdown,
             'users' => $users,
             'by_user' => $byUser,
@@ -1086,12 +1118,22 @@ class ReportController extends Controller
         bool $skipActivity = false,
     ): array {
         $resolvedNow = now();
-        $entriesByUser = $entries->groupBy('user_id');
+        $workedEntries = $this->workedEntries($entries);
+        $totalBreakSeconds = $this->totalBreakSeconds($entries, $resolvedNow);
+        $entriesByUser = $workedEntries->groupBy('user_id');
+        $breakEntriesByUser = $entries->where('is_break', true)->values()->groupBy('user_id');
         $adjustmentsByUser = $attendanceAdjustments->groupBy('user_id');
         $userIds = $users->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->filter(fn ($id) => $id > 0)
             ->values();
+        $onBreakUserIds = $userIds->isEmpty()
+            ? collect()
+            : BreakTime::whereIn('user_id', $userIds)
+                ->whereNull('end_at')
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
         $idleSummary = $skipActivity
             ? ['by_user' => [], 'by_user_day' => []]
             : $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
@@ -1112,8 +1154,9 @@ class ReportController extends Controller
             $activitiesByUser = $activities->groupBy(fn ($activity) => (int) ($activity->user_id ?? 0));
         }
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $resolvedNow, $calendarDaysCount, $activitiesByUser, $startDate, $endDate) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $breakEntriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $onBreakUserIds, $resolvedNow, $calendarDaysCount, $activitiesByUser, $startDate, $endDate) {
             $userEntries = $entriesByUser->get($user->id, collect());
+            $userBreakSeconds = $this->totalBreakSeconds($breakEntriesByUser->get($user->id, collect()), $resolvedNow);
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
             $adjustmentDuration = (int) $userAttendanceRecords
                 ->sum(fn (AttendanceRecord $record) => (int) ($record->manual_adjustment_seconds ?? 0));
@@ -1154,13 +1197,16 @@ class ReportController extends Controller
                 'entries_count' => $userEntries->count(),
                 'last_activity_at' => $lastActivityByUser[(int) $user->id] ?? null,
                 'is_working' => $activeUserIds->contains((int) $user->id),
+                'is_on_break' => $onBreakUserIds->contains((int) $user->id),
+                'break_seconds' => $userBreakSeconds,
+                'break_hours' => round($userBreakSeconds / 3600, 2),
                 'idle_validated' => $validatedIdle['corrected'],
                 'idle_validation_reason' => $validatedIdle['reason'],
             ] + $timeBreakdown + $attendanceSummary;
         })->values();
 
         $dayUserBuckets = [];
-        foreach ($entries as $entry) {
+        foreach ($workedEntries as $entry) {
             $date = Carbon::parse($entry->start_time)->toDateString();
             $key = (string) $entry->user_id.'|'.$date;
 
@@ -1240,6 +1286,8 @@ class ReportController extends Controller
             'summary' => [
                 'users_count' => $users->count(),
                 'active_users' => $activeUserIds->unique()->count(),
+                'total_break_seconds' => $totalBreakSeconds,
+                'break_hours' => round($totalBreakSeconds / 3600, 2),
                 'is_lite' => true,
             ] + $summaryBreakdown,
             'users' => $users,
@@ -1385,9 +1433,11 @@ class ReportController extends Controller
             ->where('project_id', $project->id)
             ->whereBetween('start_time', [$startDate, $endDate])
             ->get();
+        $workedEntries = $this->workedEntries($entries);
+        $breakSeconds = $this->totalBreakSeconds($entries, now());
         $idleDuration = 0;
         if ($entries->isNotEmpty()) {
-            $activities = $this->activityFeedService->forTimeEntriesForIdle($entries->pluck('id'), $startDate, $endDate);
+            $activities = $this->activityFeedService->forTimeEntriesForIdle($workedEntries->pluck('id'), $startDate, $endDate);
             $idleDuration = $this->safeCalculateIdleTime($activities, [
                 'report' => 'project',
                 'project_id' => $project->id,
@@ -1395,7 +1445,7 @@ class ReportController extends Controller
             ]);
         }
         $timeBreakdown = $this->timeBreakdownService->build(
-            $this->timeEntryDurationService->sumEffectiveDuration($entries),
+            $this->timeEntryDurationService->sumEffectiveDuration($workedEntries, now()),
             $idleDuration
         );
 
@@ -1408,6 +1458,8 @@ class ReportController extends Controller
             'working_time' => $timeBreakdown['working_duration'],
             'billable_time' => $timeBreakdown['billable_time'],
             'idle_time' => $timeBreakdown['idle_duration'],
+            'break_seconds' => $breakSeconds,
+            'break_hours' => round($breakSeconds / 3600, 2),
         ] + $timeBreakdown);
     }
 
@@ -1552,7 +1604,8 @@ class ReportController extends Controller
 
         // ── Default: Generic time-entry export (reports-hub / analytics-hub) ──
         $entriesQuery = TimeEntry::with(['project', 'task', 'user'])
-            ->whereBetween('start_time', [$startDate, $endDate]);
+            ->whereBetween('start_time', [$startDate, $endDate])
+            ->where('is_break', false);
 
         if ($this->canViewAll($user) && $user->organization_id) {
             $entriesQuery->whereIn('user_id', $scopedUserIds->all());
@@ -1659,7 +1712,8 @@ class ReportController extends Controller
     private function buildHoursTrackedExportCsv(User $user, Collection $scopedUserIds, Carbon $startDate, Carbon $endDate, string $entryTz)
     {
         $entries = TimeEntry::with(['project', 'task', 'user'])
-            ->whereBetween('start_time', [$startDate, $endDate]);
+            ->whereBetween('start_time', [$startDate, $endDate])
+            ->where('is_break', false);
 
         if ($this->canViewAll($user) && $user->organization_id) {
             $entries->whereIn('user_id', $scopedUserIds->all());
@@ -2575,8 +2629,8 @@ class ReportController extends Controller
             : TimeEntry::query()
                 ->whereIn('user_id', $userIds->all())
                 ->whereBetween('start_time', [$startDate, $endDate])
-                ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
-        $entriesByUser = $entries->groupBy(fn (TimeEntry $entry) => (int) $entry->user_id);
+                ->get(['id', 'user_id', 'start_time', 'end_time', 'duration', 'is_break']);
+        $entriesByUser = $this->workedEntries($entries)->groupBy(fn (TimeEntry $entry) => (int) $entry->user_id);
 
         $idleSummary = $userIds->isEmpty()
             ? ['by_user' => []
@@ -3175,7 +3229,7 @@ class ReportController extends Controller
         try {
             $entries = TimeEntry::where('user_id', $selectedUser->id)
                 ->whereBetween('start_time', [$startDate, $endDate])
-                ->get(['id', 'start_time', 'end_time', 'duration']);
+                ->get(['id', 'start_time', 'end_time', 'duration', 'is_break']);
             $entriesCount = $entries->count();
             $resolvedNow = now();
 
@@ -3201,7 +3255,9 @@ class ReportController extends Controller
             );
         $selectedMetrics = (array) ($selectedUsageSummary['metrics'] ?? []);
         $rawTotalIdle = (int) ($selectedMetrics['idle_time'] ?? 0);
-        $selectedTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow);
+        $selectedWorkedEntries = $this->workedEntries($entries);
+        $selectedBreakSeconds = $this->totalBreakSeconds($entries, $resolvedNow);
+        $selectedTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($selectedWorkedEntries, $resolvedNow);
         $activityTotalDuration = (int) ($selectedMetrics['total_time'] ?? 0);
         
         // Enhanced idle validation with automatic correction
@@ -3245,8 +3301,8 @@ class ReportController extends Controller
                 ? collect()
                 : TimeEntry::whereIn('user_id', $analyticsUserIds)
                     ->whereBetween('start_time', [$startDate, $endDate])
-                    ->get(['id', 'user_id', 'start_time', 'end_time', 'duration']);
-            $organizationEntriesByUser = $organizationEntries->groupBy(fn ($entry) => (int) $entry->user_id);
+                    ->get(['id', 'user_id', 'start_time', 'end_time', 'duration', 'is_break']);
+            $organizationEntriesByUser = $this->workedEntries($organizationEntries)->groupBy(fn ($entry) => (int) $entry->user_id);
             $organizationActivities = $analyticsUserIds->isEmpty()
                 ? collect()
                 : $this->activityFeedService->forUsersInRangeForIdle($analyticsUserIds, $startDate, $endDate);
@@ -3265,8 +3321,10 @@ class ReportController extends Controller
                     includeProcessedLogs: false,
                 );
             $userMetrics = (array) ($userUsageSummary['metrics'] ?? []);
+            $userTrackedEntries = $organizationEntriesByUser->get($userId, collect());
+            $userBreakSeconds = $this->totalBreakSeconds($userTrackedEntries, $resolvedNow);
             $userTrackedDuration = $this->timeEntryDurationService->sumEffectiveDuration(
-                $organizationEntriesByUser->get($userId, collect()),
+                $userTrackedEntries,
                 $resolvedNow,
             );
             $activityTotalDuration = (int) ($userMetrics['total_time'] ?? 0);
@@ -3292,6 +3350,8 @@ class ReportController extends Controller
                 'total_duration' => (int) ($userTimeBreakdown['total_duration'] ?? 0),
                 'working_duration' => (int) ($userTimeBreakdown['working_duration'] ?? 0),
                 'idle_duration' => (int) ($userTimeBreakdown['idle_duration'] ?? 0),
+                'break_seconds' => $userBreakSeconds,
+                'break_hours' => round($userBreakSeconds / 3600, 2),
             ];
 
             foreach (['productive', 'unproductive', 'neutral', 'context_dependent'] as $classification) {
@@ -3407,6 +3467,14 @@ class ReportController extends Controller
                 ->map(fn ($id) => (int) $id)
                 ->unique();
 
+        $onBreakUserIds = $analyticsUserIds->isEmpty()
+            ? collect()
+            : BreakTime::whereIn('user_id', $analyticsUserIds)
+                ->whereNull('end_at')
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
+
         $userScoreById = collect($perUserScore);
         $orgGroups = ReportGroup::with(['users:id,name,email,role,role_id', 'users.customRole:id,hierarchy_level'])
             ->where('organization_id', $currentUser->organization_id)
@@ -3502,12 +3570,16 @@ class ReportController extends Controller
             ];
         })->values();
 
-        $liveMonitoringRows = $liveMonitoringRows->map(function (array $row) use ($onLeaveUserIds, $recentActivitiesByUser) {
+        $liveMonitoringRows = $liveMonitoringRows->map(function (array $row) use ($onLeaveUserIds, $onBreakUserIds, $recentActivitiesByUser) {
             $isOnLeave = $onLeaveUserIds->contains((int) ($row['user']['id'] ?? 0));
+            $isOnBreak = $onBreakUserIds->contains((int) ($row['user']['id'] ?? 0));
             $row['is_on_leave'] = $isOnLeave;
+            $row['is_on_break'] = $isOnBreak;
 
             if ($isOnLeave) {
                 $row['work_status'] = 'on_leave';
+            } elseif ($isOnBreak) {
+                $row['work_status'] = 'on_break';
             } elseif (! (bool) ($row['is_working'] ?? false)) {
                 $row['work_status'] = 'inactive';
             } else {
@@ -3550,6 +3622,8 @@ class ReportController extends Controller
                 'activity_total_duration' => (int) ($selectedMetrics['total_time'] ?? 0),
                 'idle_total_duration' => (int) ($selectedTimeBreakdown['idle_duration'] ?? 0),
                 'idle_avg_duration' => $avgIdle,
+                'break_seconds' => $selectedBreakSeconds,
+                'break_hours' => round($selectedBreakSeconds / 3600, 2),
                 'activity_events' => $activities->count(),
             ],
             'activity_breakdown' => $activityBreakdown,
@@ -3570,6 +3644,8 @@ class ReportController extends Controller
                 'unproductive_duration' => $orgUnproductiveDuration,
                 'neutral_duration' => $orgNeutralDuration,
                 'context_dependent_duration' => $orgContextDependentDuration,
+                'break_seconds' => $this->totalBreakSeconds($organizationEntries, $resolvedNow),
+                'break_hours' => round($this->totalBreakSeconds($organizationEntries, $resolvedNow) / 3600, 2),
                 'productive_share' => (float) round(($orgProductiveDuration / max(1, $orgActivityDuration)) * 100, 2),
                 'unproductive_share' => (float) round(($orgUnproductiveDuration / max(1, $orgActivityDuration)) * 100, 2),
                 'neutral_share' => (float) round(($orgNeutralDuration / max(1, $orgActivityDuration)) * 100, 2),
@@ -3593,6 +3669,7 @@ class ReportController extends Controller
                 'employees_active' => $employeeLiveRows->where('work_status', 'active')->take(10)->values(),
                 'employees_inactive' => $employeeLiveRows->where('work_status', 'inactive')->take(10)->values(),
                 'employees_on_leave' => $employeeLiveRows->where('work_status', 'on_leave')->take(10)->values(),
+                'employees_on_break' => $employeeLiveRows->where('work_status', 'on_break')->take(10)->values(),
             ],
                 'recent_screenshots' => $recentScreenshots,
             ]);
@@ -3665,6 +3742,7 @@ class ReportController extends Controller
                     'employees_active' => [],
                     'employees_inactive' => [],
                     'employees_on_leave' => [],
+                    'employees_on_break' => [],
                 ],
                 'recent_screenshots' => [],
             ]);
@@ -3691,7 +3769,9 @@ class ReportController extends Controller
         ]);
         
         // Enhanced idle validation with automatic correction
-        $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow);
+        $workedEntries = $this->workedEntries($entries);
+        $breakSeconds = $this->totalBreakSeconds($entries, $resolvedNow);
+        $trackedDuration = $this->timeEntryDurationService->sumEffectiveDuration($workedEntries, $resolvedNow);
         $validatedIdle = $this->idleValidationService->validateIdleTime(
             $selectedUser->id,
             $trackedDuration,
@@ -3714,6 +3794,11 @@ class ReportController extends Controller
         $isWorking = TimeEntry::query()
             ->where('user_id', $selectedUser->id)
             ->whereNull('end_time')
+            ->exists();
+
+        $isOnBreak = BreakTime::query()
+            ->where('user_id', $selectedUser->id)
+            ->whereNull('end_at')
             ->exists();
 
         $hasRecentNonIdleActivity = false;
@@ -3746,8 +3831,9 @@ class ReportController extends Controller
             'last_activity_at' => null,
             'browser_tracking' => $this->summarizeBrowserTrackingConnections($browserTracking),
             'is_on_leave' => false,
+            'is_on_break' => $isOnBreak,
             'is_idle' => $isWorking && ! $hasRecentNonIdleActivity,
-            'work_status' => $isWorking ? ($hasRecentNonIdleActivity ? 'active' : 'idle') : 'inactive',
+            'work_status' => $isOnBreak ? 'on_break' : ($isWorking ? ($hasRecentNonIdleActivity ? 'active' : 'idle') : 'inactive'),
         ];
         $isEmployee = $selectedUser->getHierarchyLevel() >= 100;
 
@@ -3773,6 +3859,8 @@ class ReportController extends Controller
                 'activity_total_duration' => 0,
                 'idle_total_duration' => (int) ($timeBreakdown['idle_duration'] ?? 0),
                 'idle_avg_duration' => (int) ($timeBreakdown['idle_duration'] ?? 0),
+                'break_seconds' => $breakSeconds,
+                'break_hours' => round($breakSeconds / 3600, 2),
                 'activity_events' => 0,
                 'is_lite' => true,
             ],
@@ -3813,6 +3901,7 @@ class ReportController extends Controller
                 'employees_active' => $isWorking && $isEmployee ? [$selectedUserLive] : [],
                 'employees_inactive' => ! $isWorking && $isEmployee ? [$selectedUserLive] : [],
                 'employees_on_leave' => [],
+                'employees_on_break' => $isOnBreak && $isEmployee ? [$selectedUserLive] : [],
             ],
             'recent_screenshots' => [],
         ];
@@ -3845,5 +3934,25 @@ class ReportController extends Controller
     {
         $escaped = str_replace('"', '""', $value);
         return '"'.$escaped.'"';
+    }
+
+    /**
+     * Sum the effective duration of break (is_break = true) TimeEntries in a
+     * collection, so callers can surface break time separately from worked time.
+     */
+    private function totalBreakSeconds(Collection $entries, ?Carbon $now = null): int
+    {
+        return $this->timeEntryDurationService->sumEffectiveDuration(
+            $entries->where('is_break', true)->values(),
+            $now ?? now()
+        );
+    }
+
+    /**
+     * Return only the worked (is_break = false) TimeEntries from a collection.
+     */
+    private function workedEntries(Collection $entries): Collection
+    {
+        return $entries->where('is_break', false)->values();
     }
 }

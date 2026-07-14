@@ -263,7 +263,7 @@ export default function Layout() {
                 : item
           );
 
-          if (group.label === 'Attendance' && filteredItems?.length === 1) {
+          if ((group.label === 'Attendance' || group.label === 'Monitoring') && filteredItems?.length === 1) {
             const singleItem = filteredItems[0];
 
             return {
@@ -721,13 +721,29 @@ export default function Layout() {
     const newOpen = new Set(openSidebarGroups);
     let changed = false;
 
+    // Find the BEST matching item across all groups (longest route wins)
+    let bestMatchGroupLabel: string | null = null;
+    let bestMatchLength = 0;
+
     for (const group of primaryNavigation) {
       if (!group.items?.length) continue;
-      const hasActive = group.items.some((item) => item.to && isRouteActive(item.to));
-      if (hasActive && !newOpen.has(group.label)) {
-        newOpen.add(group.label);
-        changed = true;
+      for (const item of group.items) {
+        if (!item.to) continue;
+        const normalizedItemTo = String(item.to).split('?')[0] || item.to;
+        if (
+          (location.pathname === normalizedItemTo ||
+            (normalizedItemTo !== '/dashboard' && location.pathname.startsWith(`${normalizedItemTo}/`))) &&
+          normalizedItemTo.length > bestMatchLength
+        ) {
+          bestMatchLength = normalizedItemTo.length;
+          bestMatchGroupLabel = group.label;
+        }
       }
+    }
+
+    if (bestMatchGroupLabel && !newOpen.has(bestMatchGroupLabel)) {
+      newOpen.add(bestMatchGroupLabel);
+      changed = true;
     }
 
     if (changed) {
@@ -751,6 +767,15 @@ export default function Layout() {
     items
       .filter((item) => isRouteActive(item.to))
       .sort((left, right) => String(right.to || '').length - String(left.to || '').length)[0]?.to;
+
+  const globalBestMatch = primaryNavigation
+    .filter((g) => g.items)
+    .flatMap((g) => g.items!.map((item) => ({ groupLabel: g.label, itemTo: item.to })))
+    .filter((entry) => entry.itemTo && isRouteActive(entry.itemTo))
+    .sort((a, b) => String(b.itemTo || '').length - String(a.itemTo || '').length)[0] as
+    | { groupLabel: string; itemTo: string }
+    | undefined;
+
 
   const renderSidebarLink = (item: any, nested = false, activeOverride?: boolean) => {
     const Icon = item.icon;
@@ -794,7 +819,8 @@ export default function Layout() {
           <nav className="flex-1 overflow-y-auto px-3 py-4">
             {primaryNavigation.map((group) => {
               const activeItemTo = getBestMatchedItemTo(group.items);
-              const groupActive = isRouteActive(group.to) || Boolean(activeItemTo);
+              const groupActive = isRouteActive(group.to) ||
+                (activeItemTo && activeItemTo === globalBestMatch?.itemTo);
 
               if (group.to) {
                 return (

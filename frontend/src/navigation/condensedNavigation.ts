@@ -17,10 +17,10 @@ import {
   MapPin,
   MessageSquare,
   Network,
+  Package,
   Settings,
   Target,
   Share2,
-  Shield,
   ShieldCheck,
   SquareKanban,
   Users,
@@ -84,11 +84,16 @@ export const condensedNavigation: NavGroup[] = [
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
       { label: 'New Hires', to: '/new-hires', icon: UserPlus, adminOnly: true },
       { label: 'Resignations', to: '/resignations', icon: UserMinus, adminOnly: true },
-      { label: 'Departments', to: '/employees/teams', icon: Building2, adminOnly: true },
-      { label: 'Roles & Permissions', to: '/employees/roles', icon: ShieldCheck, adminOnly: true },
-      { label: 'Announcements', to: '/notifications', icon: Bell, adminOnly: true },
       { label: 'My Team', to: '/my-team', icon: Share2, employeeOnly: true },
-      { label: 'Chat', to: '/chat', icon: MessageSquare, planFeature: 'chat' },
+    ],
+  },
+  {
+    label: 'ROLES & PERMISSIONS',
+    icon: ShieldCheck,
+    adminOnly: true,
+    items: [
+      { label: 'Roles', to: '/employees/roles', icon: ShieldCheck, adminOnly: true },
+      { label: 'Department', to: '/employees/teams', icon: Building2, adminOnly: true },
     ],
   },
   {
@@ -100,10 +105,21 @@ export const condensedNavigation: NavGroup[] = [
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
       { label: 'Breaks', to: '/breaks', icon: Coffee },
+      { label: 'Shifts', to: '/shifts', icon: Coffee, adminOnly: true, planFeature: 'shift_management' },
+    ],
+  },
+  {
+    label: 'Monitoring',
+    icon: Gauge,
+    adminOnly: true,
+    planFeature: 'monitoring',
+    permission: 'monitoring.view',
+    items: [
       { label: 'Monitoring', to: '/monitoring/productive-time', icon: Gauge, adminOnly: true, planFeature: 'monitoring', permission: 'monitoring.view' },
       { label: 'Screenshots', to: '/monitoring/screenshots', icon: Camera, adminOnly: true, permission: 'screenshots.view' },
       { label: 'Selfies Map', to: '/attendance/selfies-map', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing', permission: 'selfies.view' },
-      { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true, permission: 'reports.view' },
+      { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true, planFeature: 'employee_timeline', permission: 'reports.view' },
+      { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true, planFeature: 'monitoring', permission: 'monitoring.view' },
     ],
   },
   {
@@ -125,6 +141,21 @@ export const condensedNavigation: NavGroup[] = [
     ],
   },
   {
+    label: 'Communication',
+    icon: MessageSquare,
+    items: [
+      { label: 'Announcements', to: '/notifications', icon: Bell, adminOnly: true },
+      { label: 'Chat', to: '/chat', icon: MessageSquare, planFeature: 'chat' },
+    ],
+  },
+  {
+    label: 'Assets',
+    icon: Package,
+    items: [
+      { label: 'Assets', to: '/assets', icon: Package, permission: 'assets.view' },
+    ],
+  },
+  {
     label: 'Reports',
     icon: BarChart3,
     adminOnly: true,
@@ -132,8 +163,16 @@ export const condensedNavigation: NavGroup[] = [
     items: [
       { label: 'Reports', to: '/reports', icon: BarChart3, adminOnly: true, permission: 'reports.view' },
       { label: 'Analytics', to: '/analytics', icon: LineChart, adminOnly: true, permission: 'reports.view' },
-      { label: 'Timeline', to: '/reports/timeline', icon: Waypoints, adminOnly: true, planFeature: 'employee_timeline', permission: 'reports.view' },
-      { label: 'Web & App Usage', to: '/reports/web-app-usage', icon: Activity, adminOnly: true, planFeature: 'monitoring', permission: 'monitoring.view' },
+      { label: 'Attendance Report', to: '/reports/attendance', icon: BarChart3, adminOnly: true, permission: 'reports.view' },
+    ],
+  },
+  {
+    label: 'Payroll',
+    icon: Wallet,
+    planFeature: 'payroll',
+    items: [
+      { label: 'Payroll', to: '/payroll', icon: Wallet, planFeature: 'payroll', adminOnly: true },
+      { label: 'My Payroll', to: '/my-payroll', icon: Wallet, planFeature: 'payroll' },
     ],
   },
   {
@@ -145,21 +184,7 @@ export const condensedNavigation: NavGroup[] = [
       { label: 'Settings', to: '/settings', icon: Settings, adminOnly: true, permission: 'settings.view' },
       { label: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, adminOnly: true, permission: 'audit.view' },
       { label: 'Geofence Zones', to: '/settings/geofence', icon: MapPin, adminOnly: true, planFeature: 'geo_fencing', permission: 'geofence.manage' },
-      { label: 'Roles', to: '/settings/roles', icon: Shield, adminOnly: true, planFeature: 'multi_role_access', permission: 'roles.manage' },
     ],
-  },
-  {
-    label: 'Payroll',
-    to: '/payroll',
-    icon: Wallet,
-    planFeature: 'payroll',
-    adminOnly: true,
-  },
-  {
-    label: 'My Payroll',
-    to: '/my-payroll',
-    icon: Wallet,
-    planFeature: 'payroll',
   },
   {
     label: 'Resignation',

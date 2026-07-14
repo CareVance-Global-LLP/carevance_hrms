@@ -19,7 +19,7 @@ import { getWorkingDuration } from '@/lib/timeBreakdown';
 import { formatDurationSmart as formatDuration } from '@/lib/formatters';
 import { formatDateTime } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
-import { BarChart3, Calendar, Clock, Download, TrendingUp, Users } from 'lucide-react';
+import { BarChart3, Calendar, Clock, Coffee, Download, TrendingUp, Users } from 'lucide-react';
 
 type OrgUser = { id: number; name: string; email: string; role: string };
 type Group = { id: number; name: string; users: OrgUser[] };
@@ -366,9 +366,10 @@ export default function Reports() {
 
       <div className="space-y-4">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <MetricCard label="Tracked Time" value={formatDuration(overallData?.summary?.total_duration || reportTotals?.total_duration || 0)} icon={Calendar} accent="sky" />
-          <MetricCard label="Working Time" value={formatDuration(getWorkingDuration(overallData?.summary) || getWorkingDuration(reportTotals))} icon={TrendingUp} accent="emerald" />
+          <MetricCard label="Track Time" value={formatDuration(overallData?.summary?.total_duration || reportTotals?.total_duration || 0)} icon={Calendar} accent="sky" />
+          <MetricCard label="Work Time" value={formatDuration(getWorkingDuration(overallData?.summary) || getWorkingDuration(reportTotals))} icon={TrendingUp} accent="emerald" />
           <MetricCard label="Idle Time" value={formatDuration(overallData?.summary?.idle_duration || 0)} icon={Clock} accent="amber" />
+          <MetricCard label="Break Time" value={formatDuration(overallData?.summary?.total_break_seconds || reportTotals?.total_break_seconds || 0)} icon={Coffee} accent="slate" />
           <MetricCard label="Users" value={String(overallData?.summary?.users_count || 0)} icon={Users} accent="violet" />
           <MetricCard label="Active Users" value={String(overallData?.summary?.active_users || 0)} icon={BarChart3} accent="slate" />
         </div>
@@ -404,9 +405,9 @@ export default function Reports() {
           emptyMessage="No report rows found."
           columns={[
             { key: 'user', header: 'User', render: (row: any) => <span className="font-medium text-slate-950">{row.user.name}</span> },
-            { key: 'total', header: 'Tracked', render: (row: any) => formatDuration(row.total_duration || 0) },
-            { key: 'working', header: 'Working', render: (row: any) => formatDuration(getWorkingDuration(row)) },
-            { key: 'idle', header: 'Idle', render: (row: any) => formatDuration(row.idle_duration || 0) },
+            { key: 'total', header: 'Track Time', render: (row: any) => formatDuration(row.total_duration || 0) },
+            { key: 'working', header: 'Work Time', render: (row: any) => formatDuration(getWorkingDuration(row)) },
+            { key: 'idle', header: 'Idle Time', render: (row: any) => formatDuration(row.idle_duration || 0) },
             { key: 'idle_percentage', header: 'Idle %', render: (row: any) => `${Number(row.idle_percentage || 0).toFixed(1)}%` },
             { key: 'activity', header: 'Last Activity', render: (row: any) => formatLastActivity(row.last_activity_at, viewerTimezone) },
             {

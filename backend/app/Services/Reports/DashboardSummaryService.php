@@ -26,6 +26,7 @@ class DashboardSummaryService
         private readonly UsageProcessingService $usageProcessingService,
         private readonly GroupAccessService $groupAccessService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
+        private readonly WorkTimeSummaryService $workTimeSummaryService,
     ) {
     }
 
@@ -70,10 +71,16 @@ class DashboardSummaryService
             return $entry;
         });
 
+        // Break TimeEntries are tracked separately and must not count as worked time.
+        $workEntries = $todayEntries->where('is_break', false)->values();
+        $todayBreakSeconds = (int) $todayEntries
+            ->where('is_break', true)
+            ->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now));
+
         // Calculate durations with caching for expensive operations
         $todayAdjustmentDuration = $this->manualAdjustmentDurationForRange($user->id, $todayStart, $todayEnd);
-        $todayDuration = (int) $todayEntries->sum(fn (TimeEntry $entry) => $this->storedDuration($entry)) + $todayAdjustmentDuration;
-        $todayElapsedDuration = (int) $todayEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now)) + $todayAdjustmentDuration;
+        $todayDuration = (int) $workEntries->sum(fn (TimeEntry $entry) => $this->storedDuration($entry)) + $todayAdjustmentDuration;
+        $todayElapsedDuration = (int) $workEntries->sum(fn (TimeEntry $entry) => $this->elapsedDuration($entry, $now)) + $todayAdjustmentDuration;
         
         // Cache the all-time duration calculation (expensive)
         $allTimeCacheKey = self::CACHE_PREFIX . 'alltime_' . $user->id;
@@ -81,10 +88,12 @@ class DashboardSummaryService
             $allAdjustmentDuration = $this->manualAdjustmentDurationForUser($user->id);
             $closedAllTimeDuration = (int) TimeEntry::query()
                 ->where('user_id', $user->id)
+                ->where('is_break', false)
                 ->whereNotNull('end_time')
                 ->sum('duration');
             $runningAllTimeDuration = (int) TimeEntry::query()
                 ->where('user_id', $user->id)
+                ->where('is_break', false)
                 ->whereNull('end_time')
                 ->select(['id', 'start_time', 'end_time', 'duration'])
                 ->get()
@@ -116,6 +125,7 @@ class DashboardSummaryService
         $weekCacheKey = self::CACHE_PREFIX . 'week_' . $user->id . '_' . $weekStart->toDateString();
         $weekData = Cache::remember($weekCacheKey, 300, function () use ($user, $weekStart, $weekEnd, $now) {
             $weekEntries = TimeEntry::where('user_id', $user->id)
+                ->where('is_break', false)
                 ->whereBetween('start_time', [$weekStart, $weekEnd])
                 ->select(['id', 'start_time', 'end_time', 'duration', 'billable'])
                 ->get();
@@ -136,15 +146,36 @@ class DashboardSummaryService
             ];
         });
 
+        $todaySummary = $this->workTimeSummaryService->forUserRange(
+            $user->id,
+            $todayStart,
+            $todayEnd
+        );
+        $weekSummary = $this->workTimeSummaryService->forUserRange(
+            $user->id,
+            $weekStart,
+            $weekEnd
+        );
+
         $result = [
             'active_timer' => $activeEntry,
             'today_entries' => $todayEntries,
             'today_total_duration' => $todayDuration,
             'today_total_elapsed_duration' => $todayElapsedDuration,
+            'total_break_seconds' => $todayBreakSeconds,
+            'break_hours' => round($todayBreakSeconds / 3600, 2),
+            'today_track_time' => $todaySummary['track_time'],
+            'today_work_time' => $todaySummary['work_time'],
+            'today_idle_time' => $todaySummary['idle_time'],
+            'today_break_time' => $todaySummary['break_time'],
             'all_time_total_duration' => $allTimeDuration,
             'all_time_total_elapsed_duration' => $allTimeElapsedDuration,
             'yesterday_total_duration' => $yesterdayDuration,
             'weekly_total_elapsed_duration' => $weekData['week_total'],
+            'weekly_track_time' => $weekSummary['track_time'],
+            'weekly_work_time' => $weekSummary['work_time'],
+            'weekly_idle_time' => $weekSummary['idle_time'],
+            'weekly_break_time' => $weekSummary['break_time'],
             'today_change_percent' => $todayChangePercent,
             'active_projects_count' => $teamStats['active_projects_count'],
             'total_projects_count' => $teamStats['total_projects_count'],
