@@ -5,6 +5,7 @@ import {
   Building2,
   CheckCircle2,
   ChevronRight,
+  Crown,
   FolderKanban,
   MailPlus,
   MoreVertical,
@@ -12,7 +13,6 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
-  UserCog,
   UserPlus2,
   UserRound,
   Users,
@@ -22,7 +22,6 @@ import type { DepartmentTeam } from '@/services/api';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
-import StatusBadge from '@/components/ui/StatusBadge';
 import { TextInput, TextareaInput } from '@/components/ui/FormField';
 import { resolveUserRoleLabel } from '@/lib/permissions';
 
@@ -334,8 +333,15 @@ function DepartmentDetailPanel({
   onAddMember: (team: any) => void;
   onRemoveMember: (member: any, team: any) => void;
 }) {
-  const [tab, setTab] = useState<'members' | 'teams'>('members');
+  const [tab, setTab] = useState<'members' | 'teams'>('teams');
   const otherGroups = groups.filter((group: any) => group.id !== team.id);
+
+  const managerMap = useMemo(() => new Map((users || []).map((u: any) => [Number(u.id), u.name])), [users]);
+
+  const orderedMembers = useMemo(
+    () => [...membersInGroup].sort((a, b) => getHierarchyLevel(a) - getHierarchyLevel(b)),
+    [membersInGroup, getHierarchyLevel]
+  );
 
   const moveTo = (member: any, targetGroup: any) => {
     syncMembershipMutation.mutate({
@@ -418,7 +424,7 @@ function DepartmentDetailPanel({
                 No members are assigned to this department yet.
               </div>
             ) : (
-              membersInGroup.map((member: any) => {
+              orderedMembers.map((member: any) => {
                 const canManageMembership = getHierarchyLevel(member) >= 100 || (getHierarchyLevel(member) <= 50 && currentUserLevel <= 10);
                 return (
                   <div key={member.id} className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition hover:border-slate-300 hover:shadow-sm">
@@ -433,6 +439,12 @@ function DepartmentDetailPanel({
                         </span>
                       </div>
                       <p className="truncate text-xs text-slate-500">{member.email}</p>
+                      {(() => {
+                        const rmId = member.employeeWorkInfo?.reporting_manager_id;
+                        if (rmId == null) return null;
+                        const name = managerMap.get(Number(rmId));
+                        return <p className="mt-0.5 text-[11px] text-slate-400">Reports to: {name ?? `Manager #${rmId}`}</p>;
+                      })()}
                     </div>
                     <div className="opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
                       <MemberActionMenu
@@ -452,7 +464,13 @@ function DepartmentDetailPanel({
         </div>
       ) : (
         <div className="mt-5">
-          <DepartmentTeamsPanel departmentId={team.id} users={users} departmentUsers={departmentUsers} />
+          <DepartmentTeamsPanel
+            departmentId={team.id}
+            users={users}
+            departmentUsers={departmentUsers}
+            departmentName={team.name}
+            leadName={team.leadName}
+          />
         </div>
       )}
     </div>
@@ -463,10 +481,14 @@ function DepartmentTeamsPanel({
   departmentId,
   users,
   departmentUsers,
+  departmentName,
+  leadName,
 }: {
   departmentId: number;
   users: any[];
   departmentUsers: any[];
+  departmentName?: string;
+  leadName?: string;
 }) {
   const [teams, setTeams] = useState<DepartmentTeam[]>([]);
   const [loading, setLoading] = useState(false);
@@ -481,6 +503,29 @@ function DepartmentTeamsPanel({
   }, [users]);
 
   const employeeName = (id?: number) => (id ? employeeMap.get(id)?.name ?? `User #${id}` : '—');
+
+  // People in the department who are NOT inside any team → "Direct reports".
+  const teamMemberIds = useMemo(() => {
+    const ids = new Set<number>();
+    teams.forEach((t: any) => {
+      (t.member_ids ?? t.members?.map((m: any) => m.id) ?? []).forEach((id: any) => ids.add(Number(id)));
+      (t.manager_ids ?? t.managers?.map((m: any) => m.id) ?? []).forEach((id: any) => ids.add(Number(id)));
+    });
+    return ids;
+  }, [teams]);
+
+  const directMembers = useMemo(
+    () => (departmentUsers || []).filter((u: any) => !teamMemberIds.has(Number(u.id))),
+    [departmentUsers, teamMemberIds]
+  );
+  const directManagers = useMemo(
+    () => directMembers.filter((u: any) => u.role === 'manager' || u.role === 'admin'),
+    [directMembers]
+  );
+  const directEmployees = useMemo(
+    () => directMembers.filter((u: any) => u.role !== 'manager' && u.role !== 'admin'),
+    [directMembers]
+  );
 
   const loadTeams = useCallback(async () => {
     setLoading(true);
@@ -594,23 +639,7 @@ function DepartmentTeamsPanel({
         </div>
       ) : null}
 
-      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Department members <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-600">{departmentUsers.length}</span>
-        </p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {departmentUsers.length === 0 ? (
-            <span className="text-xs text-slate-400">No members in this department yet.</span>
-          ) : (
-            departmentUsers.map((u) => (
-              <span key={u.id} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
-                {u.name}
-              </span>
-            ))
-          )}
-        </div>
-      </div>
-
+      {/* Create team */}
       <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
         <div>
           <TextInput value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New team name" />
@@ -628,27 +657,75 @@ function DepartmentTeamsPanel({
         </Button>
       </div>
 
-      {loading ? (
-        <p className="mt-3 text-xs text-slate-500">Loading teams…</p>
-      ) : teams.length === 0 ? (
-        <p className="mt-3 text-xs text-slate-500">No teams yet in this department.</p>
-      ) : (
-        <div className="mt-3 space-y-3">
-          {teams.map((team) => (
-            <TeamCard
-              key={team.id}
-              team={team}
-              users={departmentUsers}
-              employeeName={employeeName}
-              onAddMembers={(ids) => handleAddMembers(team.id, ids)}
-              onRemoveMember={(uid) => handleRemoveMember(team.id, uid)}
-              onAddManagers={(ids) => handleAddManagers(team.id, ids)}
-              onRemoveManager={(uid) => handleRemoveManager(team.id, uid)}
-              onDelete={() => handleDelete(team.id)}
-            />
-          ))}
+      {/* Hierarchy: Department → Direct reports + Teams */}
+      <div className="mt-4">
+        <div className="flex items-center gap-3 rounded-xl border-2 border-slate-300 bg-white p-3 shadow-sm">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+            <Building2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Department</p>
+            <p className="truncate text-sm font-semibold text-slate-900">{departmentName || 'Department'}</p>
+          </div>
+          {leadName && leadName !== 'Not assigned' ? (
+            <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              <UserRound className="h-3.5 w-3.5" /> {leadName}
+            </span>
+          ) : null}
         </div>
-      )}
+
+        <div className="ml-6 mt-0 border-l-2 border-slate-200 pl-5">
+          {loading ? (
+            <p className="py-3 text-xs text-slate-500">Loading teams…</p>
+          ) : directMembers.length === 0 && teams.length === 0 ? (
+            <p className="py-3 text-xs text-slate-500">No teams or direct members yet in this department.</p>
+          ) : (
+            <>
+              {directMembers.length > 0 ? (
+                <div className="mb-3">
+                  <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    <UserRound className="h-3 w-3" /> Direct reports
+                    <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-600">{directMembers.length}</span>
+                  </p>
+                  <div className="space-y-1.5">
+                    {directManagers.map((u: any) => (
+                      <div key={u.id} className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/50 px-2.5 py-1.5">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600" title="Department manager">
+                          <Crown className="h-3 w-3" />
+                        </span>
+                        <span className="flex-1 truncate text-sm font-semibold text-slate-800">{u.name}</span>
+                      </div>
+                    ))}
+                    {directEmployees.map((u: any) => (
+                      <div key={u.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+                          {getInitials(u.name)}
+                        </span>
+                        <span className="flex-1 truncate text-sm text-slate-700">{u.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {teams.map((team) => (
+                <div key={team.id} className="mb-3">
+                  <TeamCard
+                    team={team}
+                    users={departmentUsers}
+                    employeeName={employeeName}
+                    onAddMembers={(ids) => handleAddMembers(team.id, ids)}
+                    onRemoveMember={(uid) => handleRemoveMember(team.id, uid)}
+                    onAddManagers={(ids) => handleAddManagers(team.id, ids)}
+                    onRemoveManager={(uid) => handleRemoveManager(team.id, uid)}
+                    onDelete={() => handleDelete(team.id)}
+                  />
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -709,63 +786,39 @@ function TeamCard({
         </Button>
       </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <section>
-          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            <Users className="h-3 w-3" /> Members
-            <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-600">{memberIds.length}</span>
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {memberIds.length === 0 ? (
-              <span className="text-xs text-slate-400">No members</span>
-            ) : (
-              memberIds.map((id) => (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700"
-                >
-                  {employeeName(id)}
-                  <button type="button" onClick={() => onRemoveMember(id)} className="text-slate-400 transition hover:text-rose-600" aria-label={`Remove ${employeeName(id)}`}>
-                    <Trash2 className="h-2.5 w-2.5" />
-                  </button>
-                </span>
-              ))
-            )}
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <div className="flex-1">
-              <EmployeeSelect employees={users} value={memberPicker} onChange={setMemberPicker} placeholder="Add member" />
-            </div>
-            <Button size="sm" variant="secondary" onClick={addMember} disabled={memberPicker === ''}>
-              Add
-            </Button>
-          </div>
-        </section>
+      <p className="mt-3 text-[11px] text-slate-500">
+        {managerIds.length === 0
+          ? `${memberIds.length} member${memberIds.length === 1 ? '' : 's'} · no team manager yet`
+          : `${managerIds.length} team manager${managerIds.length === 1 ? '' : 's'} jointly oversee ${memberIds.length} member${memberIds.length === 1 ? '' : 's'}`}
+      </p>
 
+      <div className="mt-3 space-y-3">
         <section>
           <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            <UserCog className="h-3 w-3" /> Managers
+            <Crown className="h-3 w-3 text-indigo-500" /> Team managers
             <span className="rounded-full bg-indigo-100 px-1.5 text-[10px] text-indigo-700">{managerIds.length}</span>
           </p>
-          <div className="flex flex-wrap gap-1.5">
-            {managerIds.length === 0 ? (
-              <span className="text-xs text-slate-400">No managers</span>
-            ) : (
-              managerIds.map((id) => (
-                <span
+          {managerIds.length === 0 ? (
+            <span className="text-xs text-slate-400">No managers assigned</span>
+          ) : (
+            <div className="space-y-1.5">
+              {managerIds.map((id) => (
+                <div
                   key={id}
-                  className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700"
+                  className="flex items-center gap-2 rounded-lg border border-indigo-100 bg-indigo-50/50 px-2.5 py-1.5"
                 >
-                  {employeeName(id)}
-                  <StatusBadge tone="info">manager</StatusBadge>
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600" title="Team manager">
+                    <Crown className="h-3 w-3" />
+                  </span>
+                  <span className="flex-1 truncate text-sm font-semibold text-slate-800">{employeeName(id)}</span>
                   <button type="button" onClick={() => onRemoveManager(id)} className="text-indigo-400 transition hover:text-rose-600" aria-label={`Remove manager ${employeeName(id)}`}>
-                    <Trash2 className="h-2.5 w-2.5" />
+                    <Trash2 className="h-3 w-3" />
                   </button>
-                </span>
-              ))
-            )}
-          </div>
-          <div className="mt-3 flex items-center gap-2">
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-2 flex items-center gap-2">
             <div className="flex-1">
               <EmployeeSelect employees={users} value={managerPicker} onChange={setManagerPicker} placeholder="Add manager (higher-up)" />
             </div>
@@ -774,6 +827,45 @@ function TeamCard({
             </Button>
           </div>
           <p className="mt-2 text-[10px] text-slate-400">Only managers/admins can be assigned. A team may have any number of managers.</p>
+        </section>
+
+        {managerIds.length > 0 && memberIds.length > 0 ? (
+          <div className="ml-3 border-l-2 border-indigo-100 pl-3" />
+        ) : null}
+
+        <section>
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <Users className="h-3 w-3" /> Members
+            <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-600">{memberIds.length}</span>
+          </p>
+          {memberIds.length === 0 ? (
+            <span className="text-xs text-slate-400">No members</span>
+          ) : (
+            <div className="space-y-1.5">
+              {memberIds.map((id) => (
+                <div
+                  key={id}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5"
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+                    {getInitials(employeeName(id))}
+                  </span>
+                  <span className="flex-1 truncate text-sm text-slate-700">{employeeName(id)}</span>
+                  <button type="button" onClick={() => onRemoveMember(id)} className="text-slate-400 transition hover:text-rose-600" aria-label={`Remove ${employeeName(id)}`}>
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex-1">
+              <EmployeeSelect employees={users} value={memberPicker} onChange={setMemberPicker} placeholder="Add member" />
+            </div>
+            <Button size="sm" variant="secondary" onClick={addMember} disabled={memberPicker === ''}>
+              Add
+            </Button>
+          </div>
         </section>
       </div>
     </div>
@@ -837,6 +929,7 @@ export default function DepartmentWorkspace({
   handleRemoveEmployeeFromGroup,
   handleDeleteGroup,
 }: DepartmentWorkspaceProps) {
+  const [showManagerHint, setShowManagerHint] = useState(true);
   const internalUsers = useMemo(() => users.filter((member: any) => member.role !== 'client'), [users]);
   const findUserById = (userId: number) => users.find((candidate: any) => Number(candidate.id) === Number(userId));
   const canManageGroupMember = (member: any) => {
@@ -890,7 +983,34 @@ export default function DepartmentWorkspace({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">Employee management</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-slate-950">Teams / Departments</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-slate-950">Teams / Departments</h1>
+            {showManagerHint ? (
+              <span className="relative mt-1 inline-flex">
+                <button
+                  type="button"
+                  aria-label="What is a team manager vs reporting manager?"
+                  onClick={() => setShowManagerHint(false)}
+                  className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-[11px] font-bold text-slate-500 transition hover:bg-slate-100"
+                >
+                  ?
+                </button>
+                <span className="absolute left-6 top-1/2 z-20 w-72 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-600 shadow-lg">
+                  <span className="mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-semibold text-slate-800">
+                      <Crown className="h-3.5 w-3.5 text-indigo-500" /> Team Manager
+                    </span>
+                    <button type="button" onClick={() => setShowManagerHint(false)} className="text-slate-400 transition hover:text-slate-600" aria-label="Dismiss">×</button>
+                  </span>
+                  Oversees a team&apos;s day-to-day work inside a department.
+                  <span className="mt-2 flex items-center gap-1.5 font-semibold text-slate-800">
+                    <ArrowRightLeft className="h-3.5 w-3.5 text-slate-400" /> Reporting Manager
+                  </span>
+                  Your approval line — who signs off on your requests.
+                </span>
+              </span>
+            ) : null}
+          </div>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
             Organise people into departments, move members between them, and manage teams — all from one calm workspace.
           </p>
@@ -962,7 +1082,17 @@ export default function DepartmentWorkspace({
                             </div>
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-slate-950">{group.name}</p>
-                              <p className="truncate text-xs text-slate-500">{membersInGroup.length} member{membersInGroup.length === 1 ? '' : 's'}</p>
+                              <p className="truncate text-xs text-slate-500">
+                                {membersInGroup.length} member{membersInGroup.length === 1 ? '' : 's'}
+                                {membersInGroup.length > 0
+                                  ? (() => {
+                                      const top = [...membersInGroup].sort(
+                                        (a, b) => getHierarchyLevel(a) - getHierarchyLevel(b)
+                                      )[0];
+                                      return ` · led by ${top.name}`;
+                                    })()
+                                  : ''}
+                              </p>
                             </div>
                           </button>
                           {canCreateGroups ? (

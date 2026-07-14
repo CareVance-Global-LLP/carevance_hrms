@@ -39,18 +39,17 @@ class EmployeeDashboardController extends Controller
         $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $monthEnd = $monthStart->copy()->endOfMonth();
 
-        $monthlySeconds = (int) TimeEntry::where('user_id', $user->id)
+        // Single aggregate query replaces two sequential TimeEntry queries
+        // (monthly seconds + distinct active days) for this small payload.
+        $monthlySummary = TimeEntry::where('user_id', $user->id)
             ->whereNotNull('end_time')
             ->where('start_time', '>=', $monthStart)
             ->where('start_time', '<=', $monthEnd)
-            ->sum('duration');
+            ->selectRaw('COALESCE(SUM(duration), 0) as total_seconds, COUNT(DISTINCT DATE(start_time)) as active_days')
+            ->first();
 
-        $monthlyDays = (int) TimeEntry::where('user_id', $user->id)
-            ->whereNotNull('end_time')
-            ->where('start_time', '>=', $monthStart)
-            ->where('start_time', '<=', $monthEnd)
-            ->distinct('start_time')
-            ->count(\DB::raw('DATE(start_time)'));
+        $monthlySeconds = (int) ($monthlySummary->total_seconds ?? 0);
+        $monthlyDays = (int) ($monthlySummary->active_days ?? 0);
 
         return response()->json([
             'active_timer' => $activeTimer ? [

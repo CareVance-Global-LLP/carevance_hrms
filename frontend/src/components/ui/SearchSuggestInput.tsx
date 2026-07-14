@@ -44,7 +44,9 @@ export default function SearchSuggestInput({
     () => rankSearchSuggestions(suggestions, value, maxSuggestions),
     [maxSuggestions, suggestions, value]
   );
-  const shouldShowSuggestions = isOpen && hasTypedQuery;
+  // Show suggestions when focused: if empty query, show all suggestions (limited by maxSuggestions)
+  // If there's a query, show filtered/ranked suggestions
+  const shouldShowSuggestions = isOpen && (hasTypedQuery ? rankedSuggestions.length > 0 : suggestions.length > 0);
   const { panelRef, panelStyle } = useFloatingDropdown(inputRef, shouldShowSuggestions);
 
   useEffect(() => {

@@ -568,6 +568,32 @@ class ReportController extends Controller
         return response()->json($this->dashboardSummaryService->build($user));
     }
 
+    private function resolveReportListEntries(Request $request, Builder $query, int $defaultLimit = 2000): array
+    {
+        if ($request->has('page') || $request->has('per_page')) {
+            $page = max(1, (int) $request->integer('page', 1));
+            $perPage = min(200, max(1, (int) $request->integer('per_page', 50)));
+            $paginator = $query->paginate($perPage, page: $page);
+
+            return [
+                'entries' => $paginator->getCollection(),
+                'pagination' => [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                ],
+            ];
+        }
+
+        // Bounded safety cap so org-wide ranges can't materialize unbounded
+        // rows into memory. Self-scope requests are effectively never near it.
+        return [
+            'entries' => $query->limit($defaultLimit)->get(),
+            'pagination' => null,
+        ];
+    }
+
     public function daily(Request $request)
     {
         $date = $request->get('date', Carbon::today()->toDateString());
@@ -588,12 +614,18 @@ class ReportController extends Controller
             $query->where('user_id', $user->id);
         }
 
-        $timeEntries = $query->get();
+        $resolved = $this->resolveReportListEntries($request, $query);
+        $timeEntries = $resolved['entries'];
 
-        return response()->json(array_merge(
+        $response = array_merge(
             ['date' => $date],
             $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
-        ));
+        );
+        if ($resolved['pagination']) {
+            $response['pagination'] = $resolved['pagination'];
+        }
+
+        return response()->json($response);
     }
 
     public function weekly(Request $request)
@@ -620,15 +652,21 @@ class ReportController extends Controller
             $query->where('user_id', $user->id);
         }
 
-        $timeEntries = $query->get();
+        $resolved = $this->resolveReportListEntries($request, $query);
+        $timeEntries = $resolved['entries'];
 
-        return response()->json(array_merge(
+        $response = array_merge(
             [
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
             ],
             $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
-        ));
+        );
+        if ($resolved['pagination']) {
+            $response['pagination'] = $resolved['pagination'];
+        }
+
+        return response()->json($response);
     }
 
     public function monthly(Request $request)
@@ -663,7 +701,8 @@ class ReportController extends Controller
             $query->where('user_id', $user->id);
         }
 
-        $timeEntries = $query->get();
+        $resolved = $this->resolveReportListEntries($request, $query);
+        $timeEntries = $resolved['entries'];
 
         $resolvedNow = now();
         $byDay = $timeEntries->groupBy(function ($entry) {
@@ -675,14 +714,19 @@ class ReportController extends Controller
             ];
         })->values();
 
-        return response()->json(array_merge(
+        $response = array_merge(
             [
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
                 'by_day' => $byDay,
             ],
             $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
-        ));
+        );
+        if ($resolved['pagination']) {
+            $response['pagination'] = $resolved['pagination'];
+        }
+
+        return response()->json($response);
     }
 
     public function productivity(Request $request)
@@ -751,17 +795,43 @@ class ReportController extends Controller
         $endDate = $request->get('end_date', Carbon::now()->endOfWeek()->toDateString());
 
         $users = User::where('organization_id', $currentUser->organization_id)->get();
-        $resolvedNow = now();
-        $byUser = $users->map(function (User $user) use ($startDate, $endDate, $resolvedNow) {
-            $entries = TimeEntry::where('user_id', $user->id)
+        $userIds = $users->pluck('id')->all();
+
+        // Bulk-load all entries for the org in a single query, then group in
+        // PHP. This replaces the previous per-user query loop (N+1) so the
+        // query count stays constant regardless of org size. The result is
+        // cached per org + date range + data fingerprint so repeated admin
+        // views of the same range are essentially free (mirrors the
+        // employee_insights buildCachedUserRangeSummary pattern).
+        $fingerprint = $this->fingerprintTimeEntryRange($userIds, $startDate, $endDate);
+        $ttl = (int) config('usage_processing.cache.ttl_seconds', 300);
+        $ttl = max(30, min($ttl, 600));
+        $cacheKey = sprintf(
+            'reports.team:%d:%s:%s:%s',
+            $currentUser->organization_id,
+            $startDate,
+            $endDate,
+            $fingerprint
+        );
+
+        $byUser = Cache::remember($cacheKey, $ttl, function () use ($users, $userIds, $startDate, $endDate) {
+            $entries = TimeEntry::with('project', 'task')
+                ->whereIn('user_id', $userIds)
                 ->whereBetween('start_time', [$startDate, $endDate])
                 ->get();
+            $entriesByUser = $entries->groupBy('user_id');
 
-            return [
-                'user' => $user,
-                'total_time' => $this->timeEntryDurationService->sumEffectiveDuration($entries, $resolvedNow),
-                'entries' => $entries,
-            ];
+            $resolvedNow = now();
+
+            return $users->map(function (User $user) use ($entriesByUser, $resolvedNow) {
+                $userEntries = $entriesByUser->get($user->id, collect());
+
+                return [
+                    'user' => $user,
+                    'total_time' => $this->timeEntryDurationService->sumEffectiveDuration($userEntries, $resolvedNow),
+                    'entries' => $userEntries->values(),
+                ];
+            })->values();
         });
 
         return response()->json([
@@ -769,6 +839,26 @@ class ReportController extends Controller
             'end_date' => $endDate,
             'by_user' => $byUser,
         ]);
+    }
+
+    /**
+     * Stable, short fingerprint for a range of time entries. Uses entry count
+     * + max(id) + latest write timestamp so two requests over unchanged data
+     * hash identically and cached report payloads stay valid.
+     */
+    private function fingerprintTimeEntryRange(array $userIds, $startDate, $endDate): string
+    {
+        if ($userIds === []) {
+            return 'empty';
+        }
+
+        $row = TimeEntry::query()
+            ->whereIn('user_id', $userIds)
+            ->whereBetween('start_time', [$startDate, $endDate])
+            ->selectRaw('COUNT(*) as cnt, COALESCE(MAX(id), 0) as max_id, COALESCE(MAX(updated_at), MAX(created_at)) as max_ts')
+            ->first();
+
+        return substr(md5(sprintf('%d|%d|%s', (int) $row->cnt, (int) $row->max_id, (string) $row->max_ts)), 0, 16);
     }
 
     public function overall(Request $request)

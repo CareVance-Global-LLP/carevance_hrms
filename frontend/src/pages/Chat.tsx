@@ -1,13 +1,14 @@
-import { ClipboardEvent, FormEvent, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardEvent, FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import SearchSuggestInput from '@/components/ui/SearchSuggestInput';
 import { useAuth } from '@/contexts/AuthContext';
-import { buildEmployeeSearchSuggestions, getSuggestionDisplayValue, normalizeSearchValue, rankSearchSuggestions } from '@/lib/searchSuggestions';
 import { formatDateTime } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
-import { decodeHtmlEntities } from '@/lib/formatters';
 import { chatApi } from '@/services/api';
 import type { ChatConversation, ChatGroup, ChatGroupMessage, ChatMessage, ChatTypingUser } from '@/types';
+import ChatSidebar from '@/components/chat/ChatSidebar';
+import MessageArea from '@/components/chat/MessageArea';
+import NewConversationModal from '@/components/chat/NewConversationModal';
+import CreateGroupModal from '@/components/chat/CreateGroupModal';
 
 type ThreadSelection =
   | { type: 'direct'; id: number }
@@ -15,19 +16,6 @@ type ThreadSelection =
   | null;
 
 type ChatFeedMessage = ChatMessage | ChatGroupMessage;
-type MessageContextMenuState = {
-  message: ChatFeedMessage;
-  mine: boolean;
-  x: number;
-  y: number;
-};
-
-
-type MessageContextMenuLayout = {
-  left: number;
-  top: number;
-  maxHeight: number;
-};
 
 type ImageViewerState = {
   url: string;
@@ -35,116 +23,20 @@ type ImageViewerState = {
   revokeOnClose: boolean;
 };
 
-const NORMALIZED_QUICK_REACTIONS = ['\u{1F44D}', '\u2764\uFE0F', '\u{1F602}', '\u{1F389}', '\u{1F62E}'];
-const EMOJI_PICKER_GROUPS = [
-  {
-    label: 'Smileys',
-    emojis: ['\u{1F600}', '\u{1F604}', '\u{1F601}', '\u{1F602}', '\u{1F923}', '\u{1F60A}', '\u{1F60D}', '\u{1F618}', '\u{1F60E}', '\u{1F914}', '\u{1F62D}', '\u{1F62E}'],
-  },
-  {
-    label: 'Gestures',
-    emojis: ['\u{1F44D}', '\u{1F44E}', '\u{1F44F}', '\u{1F64C}', '\u{1F64F}', '\u{1F44C}', '\u270C\uFE0F', '\u{1F91D}', '\u{1F4AA}', '\u{1F525}', '\u2705', '\u{1F440}'],
-  },
-  {
-    label: 'Hearts',
-    emojis: ['\u2764\uFE0F', '\u{1F9E1}', '\u{1F49B}', '\u{1F49A}', '\u{1F499}', '\u{1F49C}', '\u{1F90D}', '\u{1F5A4}', '\u{1F496}', '\u{1F4AF}', '\u2728', '\u{1F389}'],
-  },
-  {
-    label: 'Work',
-    emojis: ['\u{1F4CC}', '\u{1F4CE}', '\u{1F4E3}', '\u{1F4DD}', '\u{1F4AC}', '\u{1F4C5}', '\u23F0', '\u{1F680}', '\u{1F3AF}', '\u{1F91D}', '\u{1F4C8}', '\u{1F3C6}'],
-  },
-];
-
-const calculateContextMenuLayout = (
-  anchorX: number,
-  anchorY: number,
-  menuWidth: number,
-  menuHeight: number
-): MessageContextMenuLayout => {
-  const margin = 12;
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const safeWidth = Math.min(menuWidth, viewportWidth - margin * 2);
-  const safeHeight = Math.min(menuHeight, viewportHeight - margin * 2);
-  const spaceAbove = anchorY - margin;
-  const spaceBelow = viewportHeight - anchorY - margin;
-  const shouldOpenBelow = spaceBelow >= safeHeight || spaceBelow >= spaceAbove;
-  const maxHeight = Math.max(260, shouldOpenBelow ? spaceBelow : spaceAbove);
-  const left = Math.max(margin, Math.min(anchorX, viewportWidth - safeWidth - margin));
-  const unclampedTop = shouldOpenBelow ? anchorY : anchorY - safeHeight;
-  const top = Math.max(margin, Math.min(unclampedTop, viewportHeight - safeHeight - margin));
-
-  return {
-    left,
-    top,
-    maxHeight: Math.min(viewportHeight - margin * 2, maxHeight),
-  };
-};
-
 const getThreadKey = (thread: ThreadSelection) => (thread ? `${thread.type}:${thread.id}` : '');
 
 const MAX_CHAT_ATTACHMENT_BYTES = 200 * 1024 * 1024;
-const EMAIL_TOKEN_PATTERN = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
-const URL_TOKEN_PATTERN = /^(https?:\/\/|www\.)[^\s<]+$/i;
-const URL_OR_EMAIL_PATTERN = /((?:https?:\/\/|www\.)[^\s<]+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/gi;
-
-const resolveLinkTarget = (token: string) => {
-  if (EMAIL_TOKEN_PATTERN.test(token)) {
-    return {
-      href: `mailto:${token}`,
-      label: token,
-    };
-  }
-
-  const sanitized = token.replace(/[),.;!?]+$/, '');
-
-  return {
-    href: sanitized.startsWith('http://') || sanitized.startsWith('https://')
-      ? sanitized
-      : `https://${sanitized}`,
-    label: sanitized,
-  };
-};
 
 const isSameThread = (left: ThreadSelection, right: ThreadSelection) => (
   left?.type === right?.type && left?.id === right?.id
 );
 
-// Helper function to format date separators like WhatsApp
-const formatDateSeparator = (dateString: string): string => {
-  const date = new Date(dateString);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  // Check if it's today
-  if (date.toDateString() === today.toDateString()) {
-    return 'Today';
-  }
-
-  // Check if it's yesterday
-  if (date.toDateString() === yesterday.toDateString()) {
-    return 'Yesterday';
-  }
-
-  // Check if it's within this week
-  const daysDiff = Math.floor((today.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-  if (daysDiff < 7) {
-    return date.toLocaleDateString('en-US', { weekday: 'long' });
-  }
-
-  // Otherwise show full date
-  return date.toLocaleDateString('en-US', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-};
-
-// Helper to get date key for grouping
-const getDateKey = (dateString: string): string => {
-  return new Date(dateString).toDateString();
-};
+const isGroupMessage = (message: ChatFeedMessage): message is ChatGroupMessage => 'group_id' in message;
+const getInlineAttachmentKey = (message: ChatFeedMessage) => `${isGroupMessage(message) ? 'group' : 'direct'}:${message.id}`;
+const isImageAttachment = (message: ChatFeedMessage) => (
+  Boolean(message.has_attachment)
+  && String(message.attachment_mime || '').toLowerCase().startsWith('image/')
+);
 
 export default function Chat() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -156,10 +48,6 @@ export default function Chat() {
   const [selectedThread, setSelectedThread] = useState<ThreadSelection>(null);
   const [messages, setMessages] = useState<ChatFeedMessage[]>([]);
   const [typingUsers, setTypingUsers] = useState<ChatTypingUser[]>([]);
-  const [startEmail, setStartEmail] = useState('');
-  const [selectedStartUserId, setSelectedStartUserId] = useState<number | null>(null);
-  const [groupName, setGroupName] = useState('');
-  const [groupMemberIds, setGroupMemberIds] = useState<number[]>([]);
   const [messageText, setMessageText] = useState('');
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -167,22 +55,22 @@ export default function Chat() {
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [messageContextMenu, setMessageContextMenu] = useState<MessageContextMenuState | null>(null);
-  const [messageContextMenuLayout, setMessageContextMenuLayout] = useState<MessageContextMenuLayout | null>(null);
   const [isDeletingMessage, setIsDeletingMessage] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [inlineAttachmentUrls, setInlineAttachmentUrls] = useState<Record<string, string>>({});
   const [imageViewer, setImageViewer] = useState<ImageViewerState | null>(null);
+  const [showNewConversationModal, setShowNewConversationModal] = useState(false);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const messageContextMenuRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const lastTypingSentAtRef = useRef<number>(0);
   const shouldStickToBottomRef = useRef(true);
   const pendingThreadRef = useRef<ThreadSelection>(null);
   const activeThreadKeyRef = useRef('');
   const openDirectRequestRef = useRef(0);
+  const previewUrlsRef = useRef<Map<File, string>>(new Map());
 
   const selectThread = (thread: ThreadSelection) => {
     activeThreadKeyRef.current = getThreadKey(thread);
@@ -198,18 +86,6 @@ export default function Chat() {
     () => (selectedThread?.type === 'group' ? groups.find((group) => group.id === selectedThread.id) || null : null),
     [groups, selectedThread]
   );
-
-  const selectedThreadLabel = selectedThread?.type === 'group' ? 'group' : 'conversation';
-  const selectedStartUser = useMemo(
-    () => availableUsers.find((candidate) => Number(candidate.id) === Number(selectedStartUserId)) || null,
-    [availableUsers, selectedStartUserId]
-  );
-  const availableUserSuggestions = useMemo(
-    () => buildEmployeeSearchSuggestions(availableUsers),
-    [availableUsers]
-  );
-  const persistedQuickReactions = NORMALIZED_QUICK_REACTIONS;
-  const previewUrlsRef = useRef<Map<File, string>>(new Map());
 
   const getFilePreviewUrl = (file: File) => {
     if (!file.type.startsWith('image/')) return null;
@@ -228,17 +104,9 @@ export default function Chat() {
   const handleMessagesScroll = () => {
     const container = messagesContainerRef.current;
     if (!container) return;
-
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     shouldStickToBottomRef.current = distanceFromBottom < 80;
   };
-
-  const isGroupMessage = (message: ChatFeedMessage): message is ChatGroupMessage => 'group_id' in message;
-  const getInlineAttachmentKey = (message: ChatFeedMessage) => `${isGroupMessage(message) ? 'group' : 'direct'}:${message.id}`;
-  const isImageAttachment = (message: ChatFeedMessage) => (
-    Boolean(message.has_attachment)
-    && String(message.attachment_mime || '').toLowerCase().startsWith('image/')
-  );
 
   const loadThreads = async () => {
     try {
@@ -294,9 +162,7 @@ export default function Chat() {
         ? await chatApi.getMessages(thread.id, sinceId ? { since_id: sinceId } : undefined)
         : await chatApi.getGroupMessages(thread.id, sinceId ? { since_id: sinceId } : undefined);
 
-      if (activeThreadKeyRef.current !== threadKey) {
-        return;
-      }
+      if (activeThreadKeyRef.current !== threadKey) return;
 
       const incoming = response.data || [];
       if (!sinceId) {
@@ -349,15 +215,12 @@ export default function Chat() {
 
   useEffect(() => {
     loadThreads();
-
     const interval = setInterval(loadThreads, 10000);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    if (user?.id) {
-      loadAvailableUsers();
-    }
+    if (user?.id) loadAvailableUsers();
   }, [user?.id]);
 
   useEffect(() => {
@@ -368,13 +231,13 @@ export default function Chat() {
       : null;
 
     setSelectedThread((currentThread) => {
-      if (threadType === 'direct' && threadId > 0 && conversations.some((conversation) => conversation.id === threadId)) {
+      if (threadType === 'direct' && threadId > 0 && conversations.some((c) => c.id === threadId)) {
         const nextThread = { type: 'direct' as const, id: threadId };
         activeThreadKeyRef.current = getThreadKey(nextThread);
         return isSameThread(currentThread, nextThread) ? currentThread : nextThread;
       }
 
-      if (threadType === 'group' && threadId > 0 && groups.some((group) => group.id === threadId)) {
+      if (threadType === 'group' && threadId > 0 && groups.some((g) => g.id === threadId)) {
         const nextThread = { type: 'group' as const, id: threadId };
         activeThreadKeyRef.current = getThreadKey(nextThread);
         return isSameThread(currentThread, nextThread) ? currentThread : nextThread;
@@ -382,16 +245,14 @@ export default function Chat() {
 
       if (currentThread) {
         const exists = currentThread.type === 'direct'
-          ? conversations.some((conversation) => conversation.id === currentThread.id)
-          : groups.some((group) => group.id === currentThread.id);
+          ? conversations.some((c) => c.id === currentThread.id)
+          : groups.some((g) => g.id === currentThread.id);
 
         if (exists) {
           activeThreadKeyRef.current = getThreadKey(currentThread);
           return currentThread;
         }
 
-        // Keep the current selection while thread data is catching up instead of
-        // snapping back to the first conversation and causing the UI to flicker.
         if (
           requestedThread &&
           requestedThread.id > 0 &&
@@ -465,7 +326,6 @@ export default function Chat() {
     setEditingMessageId(null);
     setEditingMessageText('');
     setIsSavingEdit(false);
-    setMessageContextMenu(null);
     setError('');
 
     loadMessages(selectedThread);
@@ -481,96 +341,12 @@ export default function Chat() {
 
   useEffect(() => {
     return () => {
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-      }
+      if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
     };
   }, []);
 
   useEffect(() => {
-    if (!messageContextMenu) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target) {
-        return;
-      }
-
-      if (messageContextMenuRef.current?.contains(target)) {
-        return;
-      }
-
-      setMessageContextMenu(null);
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMessageContextMenu(null);
-      }
-    };
-
-    const handleViewportResize = () => setMessageContextMenu(null);
-    const handleViewportScroll = (event: Event) => {
-      const target = event.target as Node | null;
-      if (target && messageContextMenuRef.current?.contains(target)) {
-        return;
-      }
-
-      setMessageContextMenu(null);
-    };
-
-    window.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('resize', handleViewportResize);
-    window.addEventListener('scroll', handleViewportScroll, true);
-    window.addEventListener('keydown', handleEscape);
-
-    return () => {
-      window.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('resize', handleViewportResize);
-      window.removeEventListener('scroll', handleViewportScroll, true);
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, [messageContextMenu]);
-
-  useLayoutEffect(() => {
-    if (!messageContextMenu || !messageContextMenuRef.current) {
-      return;
-    }
-
-    const rect = messageContextMenuRef.current.getBoundingClientRect();
-    const nextLayout = calculateContextMenuLayout(
-      messageContextMenu.x,
-      messageContextMenu.y,
-      rect.width || 336,
-      rect.height || 520
-    );
-
-    setMessageContextMenuLayout((current) => {
-      if (
-        current &&
-        current.left === nextLayout.left &&
-        current.top === nextLayout.top &&
-        current.maxHeight === nextLayout.maxHeight
-      ) {
-        return current;
-      }
-
-      return nextLayout;
-    });
-  }, [messageContextMenu]);
-
-  useEffect(() => {
-    if (!messageContextMenu) {
-      setMessageContextMenuLayout(null);
-    }
-  }, [messageContextMenu]);
-
-  useEffect(() => {
-    if (shouldStickToBottomRef.current) {
-      scrollToBottom();
-    }
+    if (shouldStickToBottomRef.current) scrollToBottom();
   }, [messages.length]);
 
   useEffect(() => {
@@ -586,7 +362,6 @@ export default function Chat() {
           next[key] = value;
           return;
         }
-
         URL.revokeObjectURL(value);
         changed = true;
       });
@@ -595,9 +370,7 @@ export default function Chat() {
     });
 
     const missingMessages = imageMessages.filter((message) => !inlineAttachmentUrls[getInlineAttachmentKey(message)]);
-    if (missingMessages.length === 0) {
-      return;
-    }
+    if (missingMessages.length === 0) return;
 
     let cancelled = false;
 
@@ -606,48 +379,35 @@ export default function Chat() {
         const response = isGroupMessage(message)
           ? await chatApi.getGroupAttachment(message.id)
           : await chatApi.getAttachment(message.id);
-
         const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'image/*';
         const blob = new Blob([response.data], { type: contentType });
-
-        return {
-          key: getInlineAttachmentKey(message),
-          objectUrl: URL.createObjectURL(blob),
-        };
+        return { key: getInlineAttachmentKey(message), objectUrl: URL.createObjectURL(blob) };
       } catch {
         return null;
       }
     })).then((results) => {
       if (cancelled) {
         results.forEach((result) => {
-          if (result?.objectUrl) {
-            URL.revokeObjectURL(result.objectUrl);
-          }
+          if (result?.objectUrl) URL.revokeObjectURL(result.objectUrl);
         });
         return;
       }
 
       setInlineAttachmentUrls((previous) => {
         const next = { ...previous };
-
         results.forEach((result) => {
           if (!result) return;
-
           if (next[result.key]) {
             URL.revokeObjectURL(result.objectUrl);
             return;
           }
-
           next[result.key] = result.objectUrl;
         });
-
         return next;
       });
     });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [inlineAttachmentUrls, messages]);
 
   useEffect(() => {
@@ -658,47 +418,11 @@ export default function Chat() {
 
   useEffect(() => {
     return () => {
-      if (imageViewer?.revokeOnClose) {
-        URL.revokeObjectURL(imageViewer.url);
-      }
-    };
-  }, [imageViewer]);
-
-  useEffect(() => {
-    if (!imageViewer) {
-      return;
-    }
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        closeImageViewer();
-      }
-    };
-
-    window.addEventListener('keydown', handleEscape);
-
-    return () => {
-      window.removeEventListener('keydown', handleEscape);
-    };
-  }, [imageViewer]);
-
-  useEffect(() => {
-    const urls = Array.from(previewUrlsRef.current.values());
-    return () => {
+      const urls = Array.from(previewUrlsRef.current.values());
       urls.forEach((url) => URL.revokeObjectURL(url));
       previewUrlsRef.current.clear();
     };
   }, [attachmentFiles]);
-
-  useEffect(() => {
-    if (editingMessageId && !messages.some((message) => message.id === editingMessageId)) {
-      cancelEditingMessage();
-    }
-
-    if (messageContextMenu && !messages.some((message) => message.id === messageContextMenu.message.id)) {
-      setMessageContextMenu(null);
-    }
-  }, [editingMessageId, messageContextMenu, messages]);
 
   const openDirectConversation = async (email: string) => {
     setError('');
@@ -710,13 +434,9 @@ export default function Chat() {
 
     try {
       const response = await chatApi.startConversation(nextEmail);
-      if (requestId !== openDirectRequestRef.current) {
-        return;
-      }
+      if (requestId !== openDirectRequestRef.current) return;
 
       const created = response.data;
-      setStartEmail('');
-      setSelectedStartUserId(null);
       if (created?.id) {
         const nextThread = { type: 'direct' as const, id: created.id };
         pendingThreadRef.current = nextThread;
@@ -730,60 +450,8 @@ export default function Chat() {
     }
   };
 
-  const startConversationFromDraft = async () => {
-    const typedValue = startEmail.trim();
-    if (!typedValue) return;
-
-    const normalizedTypedValue = normalizeSearchValue(typedValue);
-    const rankedMatches = rankSearchSuggestions(availableUserSuggestions, typedValue, 2);
-    const singleSuggestedUser = rankedMatches.length === 1
-      ? availableUsers.find((candidate) => Number(candidate.id) === Number(rankedMatches[0].id)) || null
-      : null;
-    const matchedUser =
-      selectedStartUser ||
-      availableUsers.find((candidate) => (
-        normalizeSearchValue(candidate.name) === normalizedTypedValue ||
-        normalizeSearchValue(candidate.email) === normalizedTypedValue
-      )) ||
-      singleSuggestedUser ||
-      null;
-
-    await openDirectConversation(matchedUser?.email?.trim() || typedValue);
-  };
-
-  const handleStartConversation = async (e: FormEvent) => {
-    e.preventDefault();
-    await startConversationFromDraft();
-  };
-
-  const handleCreateGroup = async (e: FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (!groupName.trim() || groupMemberIds.length === 0) {
-      setError('Group name and at least one member are required.');
-      return;
-    }
-
-    try {
-      const response = await chatApi.createGroup({
-        name: groupName.trim(),
-        user_ids: groupMemberIds,
-      });
-      setGroupName('');
-      setGroupMemberIds([]);
-      await loadThreads();
-      if (response.data?.id) {
-        selectThread({ type: 'group', id: response.data.id });
-      }
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Could not create group');
-    }
-  };
-
   const applyAttachmentFiles = (nextFiles: FileList | null) => {
-    if (!nextFiles || nextFiles.length === 0) {
-      return;
-    }
+    if (!nextFiles || nextFiles.length === 0) return;
 
     const valid: File[] = [];
     for (const file of Array.from(nextFiles)) {
@@ -795,7 +463,6 @@ export default function Chat() {
     }
 
     if (valid.length === 0) return;
-
     setAttachmentFiles((prev) => [...prev, ...valid]);
     setError('');
   };
@@ -818,22 +485,12 @@ export default function Chat() {
   };
 
   const handleComposerPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (!selectedThread) {
-      return;
-    }
-
+    if (!selectedThread) return;
     const clipboardItems = Array.from(event.clipboardData?.items || []);
     const imageItem = clipboardItems.find((item) => item.type.startsWith('image/'));
-
-    if (!imageItem) {
-      return;
-    }
-
+    if (!imageItem) return;
     const pastedFile = imageItem.getAsFile();
-    if (!pastedFile) {
-      return;
-    }
-
+    if (!pastedFile) return;
     event.preventDefault();
     if (pastedFile.size > MAX_CHAT_ATTACHMENT_BYTES) {
       setError('Pasted image exceeds the 200 MB limit.');
@@ -930,51 +587,9 @@ export default function Chat() {
     }
   };
 
-  const handleEditMessage = (message: ChatFeedMessage) => {
-    setEditingMessageId(message.id);
-    setEditingMessageText(message.body || '');
-    setError('');
-  };
-
-  const cancelEditingMessage = () => {
-    setEditingMessageId(null);
-    setEditingMessageText('');
-    setIsSavingEdit(false);
-  };
-
-  const handleSaveEditedMessage = async (message: ChatFeedMessage) => {
-    if (!selectedThread || editingMessageId !== message.id) {
-      return;
-    }
-
-    const nextBody = editingMessageText.trim();
-    if (!nextBody) {
-      setError('Message cannot be empty.');
-      return;
-    }
-
-    try {
-      setError('');
-      setIsSavingEdit(true);
-      setMessageContextMenu(null);
-      const response = selectedThread.type === 'direct'
-        ? await chatApi.updateMessage(selectedThread.id, message.id, { body: nextBody })
-        : await chatApi.updateGroupMessage(selectedThread.id, message.id, { body: nextBody });
-
-      setMessages((prev) => prev.map((candidate) => (candidate.id === message.id ? response.data : candidate)));
-      cancelEditingMessage();
-      await loadThreads();
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Could not edit message');
-      setIsSavingEdit(false);
-    }
-  };
-
   const handleMessageChange = (value: string) => {
     setMessageText(value);
-    if (!selectedThread) {
-      return;
-    }
+    if (!selectedThread) return;
 
     const isTyping = value.trim().length > 0;
     const now = Date.now();
@@ -988,9 +603,7 @@ export default function Chat() {
       updateTyping.catch(() => {});
     }
 
-    if (typingTimeoutRef.current) {
-      window.clearTimeout(typingTimeoutRef.current);
-    }
+    if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
 
     typingTimeoutRef.current = window.setTimeout(() => {
       const clearTyping = selectedThread.type === 'direct'
@@ -1000,61 +613,60 @@ export default function Chat() {
     }, 1800);
   };
 
-  const closeImageViewer = () => {
-    setImageViewer((current) => {
-      if (current?.revokeOnClose) {
-        URL.revokeObjectURL(current.url);
-      }
+  const handleSaveEditedMessage = async (message: ChatFeedMessage) => {
+    if (!selectedThread || editingMessageId !== message.id) return;
 
-      return null;
-    });
-  };
-
-  const downloadImageFromViewer = () => {
-    if (!imageViewer) {
-      return;
-    }
-
-    const anchor = document.createElement('a');
-    anchor.href = imageViewer.url;
-    anchor.download = imageViewer.fileName || `chat-image-${Date.now()}`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-  };
-
-  const openImageViewer = async (message: ChatFeedMessage) => {
-    const existingInlineUrl = inlineAttachmentUrls[getInlineAttachmentKey(message)];
-    if (existingInlineUrl) {
-      setImageViewer({
-        url: existingInlineUrl,
-        fileName: message.attachment_name || `chat-image-${message.id}.png`,
-        revokeOnClose: false,
-      });
+    const nextBody = editingMessageText.trim();
+    if (!nextBody) {
+      setError('Message cannot be empty.');
       return;
     }
 
     try {
-      const response = isGroupMessage(message)
-        ? await chatApi.getGroupAttachment(message.id)
-        : await chatApi.getAttachment(message.id);
-      const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'image/*';
-      const blob = new Blob([response.data], { type: contentType });
-      const objectUrl = URL.createObjectURL(blob);
+      setError('');
+      setIsSavingEdit(true);
+      const response = selectedThread.type === 'direct'
+        ? await chatApi.updateMessage(selectedThread.id, message.id, { body: nextBody })
+        : await chatApi.updateGroupMessage(selectedThread.id, message.id, { body: nextBody });
 
-      setImageViewer({
-        url: objectUrl,
-        fileName: message.attachment_name || `chat-image-${message.id}.png`,
-        revokeOnClose: true,
-      });
+      setMessages((prev) => prev.map((candidate) => (candidate.id === message.id ? response.data : candidate)));
+      setEditingMessageId(null);
+      setEditingMessageText('');
+      setIsSavingEdit(false);
+      await loadThreads();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Could not open image.');
+      setError(err?.response?.data?.message || 'Could not edit message');
+      setIsSavingEdit(false);
     }
   };
 
   const openAttachment = async (message: ChatFeedMessage) => {
     if (isImageAttachment(message)) {
-      await openImageViewer(message);
+      const existingInlineUrl = inlineAttachmentUrls[getInlineAttachmentKey(message)];
+      if (existingInlineUrl) {
+        setImageViewer({
+          url: existingInlineUrl,
+          fileName: message.attachment_name || `chat-image-${message.id}.png`,
+          revokeOnClose: false,
+        });
+        return;
+      }
+
+      try {
+        const response = isGroupMessage(message)
+          ? await chatApi.getGroupAttachment(message.id)
+          : await chatApi.getAttachment(message.id);
+        const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'image/*';
+        const blob = new Blob([response.data], { type: contentType });
+        const objectUrl = URL.createObjectURL(blob);
+        setImageViewer({
+          url: objectUrl,
+          fileName: message.attachment_name || `chat-image-${message.id}.png`,
+          revokeOnClose: true,
+        });
+      } catch (err: any) {
+        setError(err?.response?.data?.message || 'Could not open image.');
+      }
       return;
     }
 
@@ -1062,11 +674,9 @@ export default function Chat() {
       const response = isGroupMessage(message)
         ? await chatApi.getGroupAttachment(message.id)
         : await chatApi.getAttachment(message.id);
-
       const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'application/octet-stream';
       const blob = new Blob([response.data], { type: contentType });
       const objectUrl = URL.createObjectURL(blob);
-
       const anchor = document.createElement('a');
       anchor.href = objectUrl;
       anchor.target = '_blank';
@@ -1075,7 +685,6 @@ export default function Chat() {
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
-
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not open attachment');
@@ -1087,11 +696,9 @@ export default function Chat() {
       const response = isGroupMessage(message)
         ? await chatApi.getGroupAttachment(message.id)
         : await chatApi.getAttachment(message.id);
-
       const contentType = (response.headers?.['content-type'] as string) || message.attachment_mime || 'application/octet-stream';
       const blob = new Blob([response.data], { type: contentType });
       const objectUrl = URL.createObjectURL(blob);
-
       const anchor = document.createElement('a');
       anchor.href = objectUrl;
       anchor.download = message.attachment_name || `attachment-${message.id}`;
@@ -1099,85 +706,22 @@ export default function Chat() {
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
-
       setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not download attachment');
     }
   };
 
-  const getFileExtension = (filename?: string | null) => {
-    if (!filename) return '?';
-    const parts = filename.split('.');
-    const ext = parts.length > 1 ? parts.pop() : '';
-    return ext ? ext.substring(0, 4).toUpperCase() : '?';
-  };
-
-  const toggleGroupMember = (userId: number) => {
-    setGroupMemberIds((prev) => (
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
-    ));
-  };
-
-  const formatBytes = (size?: number | null) => {
-    if (!size || size <= 0) return '';
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const renderMessageBody = (body: string, mine: boolean) => {
-    // First decode any HTML entities that might have been encoded
-    const decodedBody = decodeHtmlEntities(body);
-    const lines = decodedBody.split('\n');
-
-    return lines.map((line, lineIndex) => {
-      const segments = line.split(URL_OR_EMAIL_PATTERN);
-
-      return (
-        <Fragment key={`line-${lineIndex}`}>
-          {segments.map((segment, segmentIndex) => {
-            const isLinkToken = EMAIL_TOKEN_PATTERN.test(segment) || URL_TOKEN_PATTERN.test(segment);
-
-            if (!isLinkToken) {
-              // For non-link segments, escape HTML and then split by special characters to preserve them
-              return <Fragment key={`text-${lineIndex}-${segmentIndex}`}>{segment}</Fragment>;
-            }
-
-            const { href, label } = resolveLinkTarget(segment);
-
-            return (
-              <a
-                key={`link-${lineIndex}-${segmentIndex}`}
-                href={href}
-                target={href.startsWith('mailto:') ? undefined : '_blank'}
-                rel={href.startsWith('mailto:') ? undefined : 'noopener noreferrer'}
-                className={mine ? 'underline text-primary-100' : 'underline text-primary-700'}
-              >
-                {label}
-              </a>
-            );
-          })}
-          {lineIndex < lines.length - 1 ? <br /> : null}
-        </Fragment>
-      );
-    });
-  };
-
-  const openMessageContextMenu = (event: React.MouseEvent<HTMLDivElement>, message: ChatFeedMessage, mine: boolean) => {
-    if (editingMessageId === message.id) {
-      return;
+  const handleReactToMessage = async (message: ChatFeedMessage, emoji: string) => {
+    if (!selectedThread) return;
+    try {
+      const response = selectedThread.type === 'direct'
+        ? await chatApi.reactToMessage(selectedThread.id, message.id, { emoji })
+        : await chatApi.reactToGroupMessage(selectedThread.id, message.id, { emoji });
+      setMessages((prev) => prev.map((candidate) => (candidate.id === message.id ? response.data : candidate)));
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not add reaction');
     }
-
-    event.preventDefault();
-    event.stopPropagation();
-    setMessageContextMenuLayout(calculateContextMenuLayout(event.clientX, event.clientY, 336, 520));
-    setMessageContextMenu({
-      message,
-      mine,
-      x: event.clientX,
-      y: event.clientY,
-    });
   };
 
   const handleCopyMessage = async (message: ChatFeedMessage) => {
@@ -1195,47 +739,19 @@ export default function Chat() {
         document.execCommand('copy');
         document.body.removeChild(textArea);
       }
-
       setError('');
     } catch {
-      setError('Could not copy message.');
-    } finally {
-      setMessageContextMenu(null);
-    }
-  };
-
-  const handleReactToMessage = async (message: ChatFeedMessage, emoji: string) => {
-    if (!selectedThread) {
-      return;
-    }
-
-    try {
-      const response = selectedThread.type === 'direct'
-        ? await chatApi.reactToMessage(selectedThread.id, message.id, { emoji })
-        : await chatApi.reactToGroupMessage(selectedThread.id, message.id, { emoji });
-
-      setMessages((prev) => prev.map((candidate) => (candidate.id === message.id ? response.data : candidate)));
-      setError('');
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Could not react to message.');
-    } finally {
-      setMessageContextMenu(null);
+      setError('Could not copy message');
     }
   };
 
   const handleDeleteMessage = async (message: ChatFeedMessage) => {
-    if (!selectedThread || isDeletingMessage) {
-      return;
-    }
-
+    if (!selectedThread) return;
     const confirmed = window.confirm('Delete this message? This cannot be undone.');
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     try {
       setIsDeletingMessage(true);
-      setMessageContextMenu(null);
       setError('');
 
       if (selectedThread.type === 'direct') {
@@ -1246,23 +762,28 @@ export default function Chat() {
 
       setMessages((prev) => prev.filter((candidate) => candidate.id !== message.id));
       if (editingMessageId === message.id) {
-        cancelEditingMessage();
+        setEditingMessageId(null);
+        setEditingMessageText('');
       }
       await loadThreads();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Could not delete message.');
+      setError(err?.response?.data?.message || 'Could not delete message');
     } finally {
       setIsDeletingMessage(false);
     }
   };
 
-  const renderMessageTimestamp = (message: ChatFeedMessage, mine: boolean, groupMessage: boolean) => (
-    <div className={`mt-1 flex items-center gap-2 text-[10px] ${mine ? 'text-primary-100' : 'text-gray-400'}`}>
-      <span>{formatDateTime(message.created_at, viewerTimezone)}</span>
-      {message.is_edited ? <span>Edited</span> : null}
-      {!groupMessage && mine ? <span>{(message as ChatMessage).read_at ? 'Read' : 'Sent'}</span> : null}
-    </div>
-  );
+  const handleConversationCreated = async (threadId: number) => {
+    const nextThread = { type: 'direct' as const, id: threadId };
+    pendingThreadRef.current = nextThread;
+    selectThread(nextThread);
+    await loadThreads();
+  };
+
+  const handleGroupCreated = async (groupId: number) => {
+    selectThread({ type: 'group', id: groupId });
+    await loadThreads();
+  };
 
   if (isLoading) {
     return (
@@ -1274,610 +795,71 @@ export default function Chat() {
 
   return (
     <div className="grid h-[calc(100vh-10rem)] grid-cols-1 overflow-hidden rounded-xl border border-gray-200 bg-white lg:grid-cols-3">
-      <div className="min-h-0 space-y-4 overflow-y-auto border-r border-gray-200 p-4">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Chat</h1>
-          <p className="text-sm text-gray-500">Private chats and group rooms for your organization</p>
-        </div>
-
-        <form onSubmit={handleStartConversation} className="space-y-2 rounded-lg border border-gray-200 p-3">
-          <h2 className="text-sm font-semibold text-gray-900">Start private chat</h2>
-          <SearchSuggestInput
-            type="text"
-            value={startEmail}
-            onValueChange={(value) => {
-              setStartEmail(value);
-
-              if (!selectedStartUser) {
-                return;
-              }
-
-              const normalizedValue = normalizeSearchValue(value);
-              if (
-                normalizedValue !== normalizeSearchValue(selectedStartUser.name) &&
-                normalizedValue !== normalizeSearchValue(selectedStartUser.email)
-              ) {
-                setSelectedStartUserId(null);
-              }
-            }}
-            onSuggestionSelect={(suggestion) => {
-              const nextUserId = Number((suggestion.payload as { id?: number } | undefined)?.id || suggestion.id || 0);
-              const nextUser = availableUsers.find((candidate) => Number(candidate.id) === nextUserId) || null;
-              setStartEmail(getSuggestionDisplayValue(suggestion));
-              setSelectedStartUserId(Number.isFinite(nextUserId) && nextUserId > 0 ? nextUserId : null);
-              if (nextUser?.email) {
-                void openDirectConversation(nextUser.email);
-              }
-            }}
-            onCommit={() => {
-              void startConversationFromDraft();
-            }}
-            suggestions={availableUserSuggestions}
-            placeholder="Search teammate by name or enter email"
-            emptyMessage="No teammate names match this search."
-            autoComplete="off"
-          />
-          <button type="submit" className="w-full rounded-lg bg-primary-600 px-3 py-2 text-sm text-white hover:bg-primary-700">
-            Start / Open Chat
-          </button>
-        </form>
-
-        <form onSubmit={handleCreateGroup} className="space-y-3 rounded-lg border border-gray-200 p-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Create group chat</h2>
-            <p className="text-xs text-gray-500">Pick teammates who should chat together</p>
-          </div>
-          <input
-            type="text"
-            value={groupName}
-            onChange={(e) => setGroupName(e.target.value)}
-            placeholder="Group name"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          />
-          <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
-            {availableUsers.length === 0 ? (
-              <p className="text-xs text-gray-500">No teammates available.</p>
-            ) : (
-              availableUsers.map((candidate) => (
-                <label key={candidate.id} className="flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={groupMemberIds.includes(candidate.id)}
-                    onChange={() => toggleGroupMember(candidate.id)}
-                  />
-                  <span>{candidate.name}</span>
-                  <span className="text-xs text-gray-400">{candidate.email}</span>
-                </label>
-              ))
-            )}
-          </div>
-          <button type="submit" className="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm text-white hover:bg-gray-800">
-            Create Group
-          </button>
-        </form>
-
-        <div className="space-y-4">
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Private chats</h2>
-              <span className="text-xs text-gray-400">{conversations.length}</span>
-            </div>
-            <div className="max-h-[24vh] space-y-2 overflow-y-auto pr-1">
-              {conversations.length === 0 ? (
-                <p className="text-sm text-gray-500">No conversations yet.</p>
-              ) : (
-                conversations.map((conversation) => (
-                  <button
-                    key={conversation.id}
-                    onClick={() => selectThread({ type: 'direct', id: conversation.id })}
-                    className={`w-full rounded-lg border p-3 text-left ${
-                      selectedThread?.type === 'direct' && selectedThread.id === conversation.id
-                        ? 'border-primary-300 bg-primary-50'
-                        : 'border-gray-200'
-                    }`}
-                  >
-                    <p className="font-medium text-gray-900">{conversation.other_user?.name}</p>
-                    <p className="text-xs text-gray-500">{conversation.other_user?.email}</p>
-                    {conversation.last_message?.body && (
-                      <p className="mt-1 truncate text-xs text-gray-600">{decodeHtmlEntities(conversation.last_message.body)}</p>
-                    )}
-                    {!!conversation.unread_count && conversation.unread_count > 0 && (
-                      <span className="mt-1 inline-block rounded-full bg-primary-600 px-2 py-0.5 text-xs text-white">
-                        {conversation.unread_count}
-                      </span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Group chats</h2>
-              <span className="text-xs text-gray-400">{groups.length}</span>
-            </div>
-            <div className="max-h-[24vh] space-y-2 overflow-y-auto pr-1">
-              {groups.length === 0 ? (
-                <p className="text-sm text-gray-500">No groups yet.</p>
-              ) : (
-                groups.map((group) => (
-                  <button
-                    key={group.id}
-                    onClick={() => selectThread({ type: 'group', id: group.id })}
-                    className={`w-full rounded-lg border p-3 text-left ${
-                      selectedThread?.type === 'group' && selectedThread.id === group.id
-                        ? 'border-primary-300 bg-primary-50'
-                        : 'border-gray-200'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate font-medium text-gray-900">{group.name}</p>
-                      <span className="rounded-full bg-primary-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-primary-700">
-                        Group
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500">{group.member_count || 0} members</p>
-                    {group.last_message?.body && (
-                      <p className="mt-1 truncate text-xs text-gray-600">{decodeHtmlEntities(group.last_message.body)}</p>
-                    )}
-                    {!!group.unread_count && group.unread_count > 0 && (
-                      <span className="mt-1 inline-block rounded-full bg-primary-600 px-2 py-0.5 text-xs text-white">
-                        {group.unread_count}
-                      </span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+      <ChatSidebar
+        conversations={conversations}
+        groups={groups}
+        selectedThread={selectedThread}
+        onSelectThread={(type, id) => selectThread({ type, id })}
+        onNewConversation={() => setShowNewConversationModal(true)}
+        onCreateGroup={() => setShowCreateGroupModal(true)}
+      />
+      <div className="min-h-0 lg:col-span-2">
+        <MessageArea
+          selectedThread={selectedThread}
+          selectedConversation={selectedConversation}
+          selectedGroup={selectedGroup}
+          messages={messages}
+          typingUsers={typingUsers}
+          messageText={messageText}
+          setMessageText={setMessageText}
+          attachmentFiles={attachmentFiles}
+          setAttachmentFiles={setAttachmentFiles}
+          editingMessageId={editingMessageId}
+          setEditingMessageId={setEditingMessageId}
+          editingMessageText={editingMessageText}
+          setEditingMessageText={setEditingMessageText}
+          isSavingEdit={isSavingEdit}
+          setIsSavingEdit={setIsSavingEdit}
+          error={error}
+          setError={setError}
+          inlineAttachmentUrls={inlineAttachmentUrls}
+          setInlineAttachmentUrls={setInlineAttachmentUrls}
+          imageViewer={imageViewer}
+          setImageViewer={setImageViewer}
+          onSendMessage={handleSendMessage}
+          onKeyDown={handleKeyDown}
+          handleMessageChange={handleMessageChange}
+          handleComposerPaste={handleComposerPaste}
+          applyAttachmentFiles={applyAttachmentFiles}
+          removeAttachmentFile={removeAttachmentFile}
+          getFilePreviewUrl={getFilePreviewUrl}
+          handleDragEnter={handleDragEnter}
+          handleDragOver={handleDragOver}
+          handleDragLeave={handleDragLeave}
+          handleDrop={handleDrop}
+          onOpenAttachment={openAttachment}
+          onDownloadAttachment={downloadAttachment}
+          onReactToMessage={handleReactToMessage}
+          onCopyMessage={handleCopyMessage}
+          onDeleteMessage={handleDeleteMessage}
+          isDeletingMessage={isDeletingMessage}
+          onNewConversation={() => setShowNewConversationModal(true)}
+        />
       </div>
 
-      <div className="flex min-h-0 flex-col lg:col-span-2">
-        <div className="border-b border-gray-200 px-4 py-3">
-          {selectedConversation ? (
-            <>
-              <p className="flex items-center gap-2 font-semibold text-gray-900">
-                <span>{selectedConversation.other_user?.name}</span>
-                <span className={`inline-flex h-2.5 w-2.5 rounded-full ${selectedConversation.other_user?.is_online ? 'bg-green-500' : 'bg-gray-300'}`}></span>
-                <span className="text-xs font-normal text-gray-500">
-                  {selectedConversation.other_user?.is_online ? 'Online' : 'Offline'}
-                </span>
-              </p>
-              <p className="text-xs text-gray-500">
-                {selectedConversation.other_user?.email}
-                {!selectedConversation.other_user?.is_online && selectedConversation.other_user?.last_seen_at
-                  ? ` • Last seen ${formatDateTime(selectedConversation.other_user.last_seen_at, viewerTimezone)}`
-                  : ''}
-              </p>
-            </>
-          ) : selectedGroup ? (
-            <>
-              <p className="font-semibold text-gray-900">{selectedGroup.name}</p>
-              <p className="text-xs text-gray-500">
-                {(selectedGroup.member_count || selectedGroup.members?.length || 0)} members
-                {selectedGroup.members?.length
-                  ? ` • ${selectedGroup.members.slice(0, 4).map((member) => member.name).join(', ')}${selectedGroup.members.length > 4 ? '...' : ''}`
-                  : ''}
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-gray-500">Select a conversation or group</p>
-          )}
-        </div>
+      <NewConversationModal
+        isOpen={showNewConversationModal}
+        onClose={() => setShowNewConversationModal(false)}
+        onConversationCreated={handleConversationCreated}
+        availableUsers={availableUsers}
+      />
 
-        <div
-          ref={messagesContainerRef}
-          onScroll={handleMessagesScroll}
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className="relative flex-1 min-h-0 space-y-3 overflow-y-auto bg-gray-50 p-4"
-        >
-          {isDragOver ? (
-            <div className="absolute inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-primary-400 bg-primary-50/80">
-              <p className="rounded-xl bg-white px-6 py-3 text-sm font-medium text-primary-700 shadow-lg">
-                Drop files here to attach
-              </p>
-            </div>
-          ) : null}
-          {!selectedThread ? (
-            <p className="text-sm text-gray-500">Choose or start a private chat, or create a group.</p>
-          ) : messages.length === 0 ? (
-            <p className="text-sm text-gray-500">No messages yet.</p>
-          ) : (
-            messages.map((message, index) => {
-              // Check if we need to show a date separator
-              const showDateSeparator = index === 0 || 
-                getDateKey(message.created_at) !== getDateKey(messages[index - 1].created_at);
-              const mine = Number(message.sender_id) === Number(user?.id);
-              const groupMessage = isGroupMessage(message);
-              const hasReactions = (message.reactions || []).length > 0;
-              const messageInlineAttachmentUrl = inlineAttachmentUrls[getInlineAttachmentKey(message)] || null;
-              const messageHasImageAttachment = isImageAttachment(message);
-              const hasBodyText = Boolean((message.body || '').trim());
-
-              return (
-                <Fragment key={`${groupMessage ? 'group' : 'direct'}-${message.id}`}>
-                  {showDateSeparator ? (
-                    <div className="flex justify-center py-4">
-                      <span className="rounded-full bg-gray-200 px-4 py-1 text-xs font-medium text-gray-600">
-                        {formatDateSeparator(message.created_at)}
-                      </span>
-                    </div>
-                  ) : null}
-                  <div
-                    className={`group flex ${mine ? 'justify-end' : 'justify-start'} ${hasReactions ? 'pt-6' : 'pt-4'}`}
-                  >
-                    <div className="relative max-w-[70%]" onContextMenu={(event) => openMessageContextMenu(event, message, mine)}>
-                    {hasReactions ? (
-                      <div
-                        className={`pointer-events-none absolute z-10 flex max-w-full flex-wrap gap-1 ${
-                          mine ? '-left-3 -top-5 justify-start' : '-right-3 -top-5 justify-end'
-                        }`}
-                      >
-                        {(message.reactions || []).map((reaction) => (
-                          <span
-                            key={`${message.id}-${reaction.emoji}`}
-                            className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 text-sm leading-none shadow-[0_12px_24px_-14px_rgba(15,23,42,0.55)] ${
-                              reaction.reacted_by_me
-                                ? mine
-                                  ? 'bg-white text-primary-700'
-                                  : 'bg-primary-50 text-primary-800'
-                                : mine
-                                  ? 'bg-primary-500 text-white'
-                                  : 'bg-white text-gray-700'
-                            }`}
-                          >
-                            {reaction.emoji}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div
-                      className={`rounded-xl px-3 py-2 text-sm ${mine ? 'bg-primary-600 text-white' : 'border border-gray-200 bg-white text-gray-800'}`}
-                    >
-                      {!mine && groupMessage && (
-                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary-700">
-                          {message.sender?.name || 'Teammate'}
-                        </p>
-                      )}
-                      {editingMessageId === message.id ? (
-                        <div className="space-y-2">
-                          <textarea
-                            value={editingMessageText}
-                            onChange={(e) => setEditingMessageText(e.target.value)}
-                            rows={3}
-                            className="w-full resize-y rounded-lg border border-white/50 bg-white px-3 py-2 text-sm text-gray-900 focus:border-white focus:outline-none"
-                          />
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={cancelEditingMessage}
-                              className="rounded-md border border-white/50 px-2 py-1 text-xs text-white hover:bg-white/10"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSaveEditedMessage(message)}
-                              disabled={isSavingEdit || !editingMessageText.trim()}
-                              className="rounded-md bg-white px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-60"
-                            >
-                              {isSavingEdit ? 'Saving...' : 'Save'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          {messageHasImageAttachment ? (
-                            <button
-                              onClick={() => openAttachment(message)}
-                              type="button"
-                              className={`block overflow-hidden rounded-lg border ${mine ? 'border-primary-400/50' : 'border-gray-200'} bg-black/5`}
-                            >
-                              {messageInlineAttachmentUrl ? (
-                                <img
-                                  src={messageInlineAttachmentUrl}
-                                  alt={message.attachment_name || 'Shared image'}
-                                  className="max-h-72 w-full max-w-[22rem] object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-32 w-56 items-center justify-center text-xs text-gray-500">
-                                  Loading image...
-                                </div>
-                              )}
-                            </button>
-                          ) : null}
-
-                          {hasBodyText ? (
-                            <p className={`${messageHasImageAttachment ? 'mt-2' : ''} break-words whitespace-pre-wrap`}>
-                              {renderMessageBody(message.body || '', mine)}
-                            </p>
-                          ) : null}
-
-                          {message.has_attachment && !messageHasImageAttachment ? (
-                            <div className={`mt-2 flex items-center gap-2 rounded-lg border p-2 ${
-                              mine
-                                ? 'border-primary-400/40 bg-primary-500/20'
-                                : 'border-gray-200 bg-gray-50'
-                            }`}>
-                              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[11px] font-bold ${
-                                mine
-                                  ? 'bg-primary-500 text-white'
-                                  : 'bg-primary-100 text-primary-700'
-                              }`}>
-                                {getFileExtension(message.attachment_name)}
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className={`truncate text-xs font-medium ${
-                                  mine ? 'text-primary-100' : 'text-gray-800'
-                                }`}>
-                                  {message.attachment_name || 'Attachment'}
-                                </p>
-                                {message.attachment_size ? (
-                                  <p className={`text-[10px] ${
-                                    mine ? 'text-primary-200' : 'text-gray-500'
-                                  }`}>
-                                    {formatBytes(message.attachment_size)}
-                                  </p>
-                                ) : null}
-                              </div>
-                              <div className="flex shrink-0 gap-1">
-                                <button
-                                  onClick={() => openAttachment(message)}
-                                  type="button"
-                                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
-                                    mine
-                                      ? 'bg-primary-500 text-white hover:bg-primary-400'
-                                      : 'bg-primary-100 text-primary-700 hover:bg-primary-200'
-                                  }`}
-                                >
-                                  Open
-                                </button>
-                                <button
-                                  onClick={() => downloadAttachment(message)}
-                                  type="button"
-                                  className={`rounded-md px-2 py-1 text-[11px] font-medium transition ${
-                                    mine
-                                      ? 'bg-white/20 text-white hover:bg-white/30'
-                                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                  }`}
-                                >
-                                  Download
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
-                        </>
-                      )}
-                      {renderMessageTimestamp(message, mine, groupMessage)}
-                    </div>
-                  </div>
-                </div>
-                </Fragment>
-              );
-            })
-          )}
-          {typingUsers.length > 0 && (
-            <p className="text-xs italic text-gray-500">
-              {typingUsers.map((typingUser) => typingUser.name).join(', ')} typing...
-            </p>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-        {messageContextMenu ? (
-          <div
-            ref={messageContextMenuRef}
-            className="fixed z-[70] flex w-[21rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border border-gray-200 bg-white p-2 shadow-[0_18px_40px_-18px_rgba(15,23,42,0.45)]"
-            style={{
-              left: messageContextMenuLayout?.left ?? Math.max(12, Math.min(messageContextMenu.x, window.innerWidth - 360)),
-              top: messageContextMenuLayout?.top ?? Math.max(12, Math.min(messageContextMenu.y, window.innerHeight - 420)),
-              maxHeight: messageContextMenuLayout?.maxHeight ?? Math.max(260, window.innerHeight - 24),
-            }}
-            onClick={(event) => event.stopPropagation()}
-            onContextMenu={(event) => event.preventDefault()}
-          >
-            <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
-              <div className="rounded-lg bg-gray-50 px-3 py-2">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">React</p>
-                <div className="flex flex-wrap gap-2">
-                  {persistedQuickReactions.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => void handleReactToMessage(messageContextMenu.message, emoji)}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg shadow-sm transition hover:bg-primary-50"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-lg border border-gray-100 px-3 py-2">
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Emoji panel</p>
-                <div className="grid gap-3">
-                  {EMOJI_PICKER_GROUPS.map((group) => (
-                    <div key={group.label}>
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{group.label}</p>
-                      <div className="flex flex-wrap gap-2">
-                        {group.emojis.map((emoji) => (
-                          <button
-                            key={`${group.label}-${emoji}`}
-                            type="button"
-                            onClick={() => void handleReactToMessage(messageContextMenu.message, emoji)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-50 text-lg transition hover:bg-primary-50"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="mt-2 border-t border-gray-100 pt-2">
-              <button
-                type="button"
-                onClick={() => void handleCopyMessage(messageContextMenu.message)}
-                className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50"
-              >
-                Copy message
-              </button>
-              {messageContextMenu.mine ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleEditMessage(messageContextMenu.message);
-                    setMessageContextMenu(null);
-                  }}
-                  className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-50"
-                >
-                  Edit message
-                </button>
-              ) : null}
-              {messageContextMenu.mine ? (
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteMessage(messageContextMenu.message)}
-                  disabled={isDeletingMessage}
-                  className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 disabled:opacity-60"
-                >
-                  {isDeletingMessage ? 'Deleting...' : 'Delete message'}
-                </button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
-        {imageViewer ? (
-          <div
-            className="fixed inset-0 z-[80] flex flex-col bg-black/90"
-            role="dialog"
-            aria-modal="true"
-            onClick={closeImageViewer}
-          >
-            <div className="flex items-center justify-between gap-3 border-b border-white/20 px-4 py-3 text-white">
-              <p className="truncate text-sm font-medium">{imageViewer.fileName}</p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={downloadImageFromViewer}
-                  className="rounded-md border border-white/30 px-3 py-1.5 text-xs font-medium hover:bg-white/10"
-                >
-                  Download
-                </button>
-                <button
-                  type="button"
-                  onClick={closeImageViewer}
-                  className="rounded-md border border-white/30 px-3 py-1.5 text-xs font-medium hover:bg-white/10"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={closeImageViewer}
-              className="flex min-h-0 flex-1 items-center justify-center p-4"
-            >
-              <img
-                src={imageViewer.url}
-                alt={imageViewer.fileName || 'Opened screenshot'}
-                onClick={(event) => event.stopPropagation()}
-                className="max-h-full max-w-full object-contain"
-              />
-            </button>
-          </div>
-        ) : null}
-
-        <form
-          onSubmit={handleSendMessage}
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className="border-t border-gray-200 p-3"
-        >
-          <div className="space-y-3">
-            {attachmentFiles.length > 0 && (
-              <div className="space-y-2">
-                {attachmentFiles.map((file, fileIndex) => {
-                  const previewUrl = getFilePreviewUrl(file);
-                  return (
-                    <div key={`${file.name}-${file.size}-${fileIndex}`} className="rounded-xl border border-gray-200 bg-white p-2">
-                      <div className="relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                        {previewUrl ? (
-                          <img
-                            src={previewUrl}
-                            alt={file.name}
-                            className="max-h-40 w-full object-contain"
-                          />
-                        ) : (
-                          <div className="flex h-12 items-center gap-2 px-3 text-xs text-gray-500">
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary-100 text-[10px] font-bold text-primary-700">
-                              {getFileExtension(file.name)}
-                            </span>
-                            <span className="truncate">{file.name}</span>
-                            {file.size ? <span className="shrink-0 text-gray-400">({formatBytes(file.size)})</span> : null}
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeAttachmentFile(fileIndex)}
-                          className="absolute right-2 top-2 rounded-full bg-black/65 px-2 py-1 text-xs font-medium text-white hover:bg-black/75"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="flex items-end gap-2">
-              <textarea
-                value={messageText}
-                onChange={(e) => handleMessageChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onPaste={handleComposerPaste}
-                placeholder={attachmentFiles.length > 0
-                  ? 'Add a caption (optional)'
-                  : selectedThread
-                    ? `Type a message to this ${selectedThreadLabel}...`
-                    : 'Select chat first'}
-                disabled={!selectedThread}
-                rows={attachmentFiles.length > 0 ? 2 : 2}
-                className="w-full resize-y rounded-2xl border border-gray-300 px-4 py-2.5 text-sm disabled:bg-gray-100"
-              />
-              <button
-                type="submit"
-                disabled={!selectedThread || (!messageText.trim() && attachmentFiles.length === 0)}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-primary-600 text-base font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
-                aria-label="Send message"
-              >
-                ➤
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="file"
-                multiple
-                disabled={!selectedThread}
-                onChange={(e) => applyAttachmentFiles(e.target.files)}
-                className="block w-full text-xs text-gray-600 file:mr-2 file:rounded-full file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-xs file:font-medium"
-              />
-              <span className="text-[11px] text-gray-500">Max 200 MB</span>
-            </div>
-          </div>
-        </form>
-        {error && <p className="px-3 pb-3 text-sm text-red-600">{error}</p>}
-      </div>
+      <CreateGroupModal
+        isOpen={showCreateGroupModal}
+        onClose={() => setShowCreateGroupModal(false)}
+        onGroupCreated={handleGroupCreated}
+        availableUsers={availableUsers}
+      />
     </div>
   );
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\AppNotification;
 use App\Models\AttendanceRecord;
+use App\Models\DepartmentTeam;
 use App\Models\AttendanceTimeEditRequest;
 use App\Models\EmployeeWorkInfo;
 use App\Models\Group;
@@ -65,6 +66,8 @@ class UserController extends Controller
                 'employeeProfile',
                 'employeeWorkInfo.department:id,name,slug',
                 'customRole',
+                'departmentTeamMemberships:id,name,department_id',
+                'departmentTeamManagerships:id,name,department_id',
             ])
             ->when($currentUser->getHierarchyLevel() > Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'] && $currentUser->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], function ($query) use ($currentUser) {
                 $visibleGroupIds = $this->groupIdsForUser($currentUser);
@@ -118,6 +121,11 @@ class UserController extends Controller
                         ? (int) $user->employeeWorkInfo->reporting_manager_id
                         : null,
                     'department' => trim($departmentName),
+                    'department_id' => $user->employeeWorkInfo?->department?->id
+                        ? (int) $user->employeeWorkInfo->department->id
+                        : ($user->groups->first()?->id ? (int) $user->groups->first()->id : null),
+                    'team' => $this->resolveOrgChartTeam($user),
+                    'created_at' => $user->created_at?->toIsoString() ?? null,
                     'groups' => collect($user->groups)->map(fn ($group) => [
                         'id' => (int) $group->id,
                         'name' => $group->name,
@@ -1056,5 +1064,66 @@ class UserController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Resolve a single org-chart team for a user.
+     *
+     * A user may belong to multiple teams via the members / managers pivot
+     * tables. We pick deterministically: prefer a team whose department_id
+     * equals the user's department_id; tie-break by manager over member,
+     * then by lowest team id.
+     */
+    private function resolveOrgChartTeam(User $user): ?array
+    {
+        $departmentId = $user->employeeWorkInfo?->department?->id
+            ? (int) $user->employeeWorkInfo->department->id
+            : ($user->groups->first()?->id ? (int) $user->groups->first()->id : null);
+
+        $candidates = collect();
+
+        if ($user->relationLoaded('departmentTeamManagerships')) {
+            foreach ($user->departmentTeamManagerships as $team) {
+                $candidates->push([
+                    'team' => $team,
+                    'is_manager' => true,
+                    'same_department' => $departmentId !== null && (int) $team->department_id === $departmentId,
+                ]);
+            }
+        }
+
+        if ($user->relationLoaded('departmentTeamMemberships')) {
+            foreach ($user->departmentTeamMemberships as $team) {
+                $candidates->push([
+                    'team' => $team,
+                    'is_manager' => false,
+                    'same_department' => $departmentId !== null && (int) $team->department_id === $departmentId,
+                ]);
+            }
+        }
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        $chosen = $candidates
+            ->sort(function (array $a, array $b) {
+                if ($a['same_department'] !== $b['same_department']) {
+                    return $a['same_department'] ? -1 : 1;
+                }
+                if ($a['is_manager'] !== $b['is_manager']) {
+                    return $a['is_manager'] ? -1 : 1;
+                }
+                return ($a['team']->id ?? 0) <=> ($b['team']->id ?? 0);
+            })
+            ->first();
+
+        $team = $chosen['team'];
+
+        return [
+            'id' => (int) $team->id,
+            'name' => (string) $team->name,
+            'is_manager' => (bool) $chosen['is_manager'],
+        ];
     }
 }

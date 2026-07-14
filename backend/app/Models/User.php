@@ -158,6 +158,18 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    public function departmentTeamMemberships(): BelongsToMany
+    {
+        return $this->belongsToMany(DepartmentTeam::class, 'department_team_members', 'user_id', 'team_id')
+            ->withTimestamps();
+    }
+
+    public function departmentTeamManagerships(): BelongsToMany
+    {
+        return $this->belongsToMany(DepartmentTeam::class, 'department_team_managers', 'user_id', 'team_id')
+            ->withTimestamps();
+    }
+
     public function reportGroups(): BelongsToMany
     {
         return $this->belongsToMany(ReportGroup::class, 'group_user', 'user_id', 'group_id')
