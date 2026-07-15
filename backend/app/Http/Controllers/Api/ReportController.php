@@ -620,22 +620,17 @@ class ReportController extends Controller
 
         $response = array_merge(
             ['date' => $date],
-<<<<<<< HEAD
-            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
+            $this->reportPayloadBuilder->buildCommonReportPayload(
+                $timeEntries,
+                Carbon::parse($date)->startOfDay(),
+                Carbon::parse($date)->endOfDay()
+            )
         );
         if ($resolved['pagination']) {
             $response['pagination'] = $resolved['pagination'];
         }
 
         return response()->json($response);
-=======
-            $this->reportPayloadBuilder->buildCommonReportPayload(
-                $timeEntries,
-                Carbon::parse($date)->startOfDay(),
-                Carbon::parse($date)->endOfDay()
-            )
-        ));
->>>>>>> 5b1716b1f2cc1ac1440db636f4e4acaf7b05a765
     }
 
     public function weekly(Request $request)
@@ -670,18 +665,13 @@ class ReportController extends Controller
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
             ],
-<<<<<<< HEAD
-            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
+            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries, $startDate, $endDate)
         );
         if ($resolved['pagination']) {
             $response['pagination'] = $resolved['pagination'];
         }
 
         return response()->json($response);
-=======
-            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries, $startDate, $endDate)
-        ));
->>>>>>> 5b1716b1f2cc1ac1440db636f4e4acaf7b05a765
     }
 
     public function monthly(Request $request)
@@ -735,18 +725,13 @@ class ReportController extends Controller
                 'end_date' => $endDate->toDateString(),
                 'by_day' => $byDay,
             ],
-<<<<<<< HEAD
-            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries)
+            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries, $startDate, $endDate)
         );
         if ($resolved['pagination']) {
             $response['pagination'] = $resolved['pagination'];
         }
 
         return response()->json($response);
-=======
-            $this->reportPayloadBuilder->buildCommonReportPayload($timeEntries, $startDate, $endDate)
-        ));
->>>>>>> 5b1716b1f2cc1ac1440db636f4e4acaf7b05a765
     }
 
     public function productivity(Request $request)
@@ -845,7 +830,6 @@ class ReportController extends Controller
                 ->whereIn('user_id', $userIds)
                 ->whereBetween('start_time', [$startDate, $endDate])
                 ->get();
-<<<<<<< HEAD
             $entriesByUser = $entries->groupBy('user_id');
 
             $resolvedNow = now();
@@ -859,18 +843,6 @@ class ReportController extends Controller
                     'entries' => $userEntries->values(),
                 ];
             })->values();
-=======
-            $worked = $this->workedEntries($entries);
-            $breakSeconds = $this->totalBreakSeconds($entries, $resolvedNow);
-
-            return [
-                'user' => $user,
-                'total_time' => $this->timeEntryDurationService->sumEffectiveDuration($worked, $resolvedNow),
-                'break_seconds' => $breakSeconds,
-                'break_hours' => round($breakSeconds / 3600, 2),
-                'entries' => $entries,
-            ];
->>>>>>> 5b1716b1f2cc1ac1440db636f4e4acaf7b05a765
         });
 
         return response()->json([

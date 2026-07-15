@@ -45,32 +45,17 @@ class EmployeeDashboardController extends Controller
         $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $monthEnd = $monthStart->copy()->endOfMonth();
 
-<<<<<<< HEAD
         // Single aggregate query replaces two sequential TimeEntry queries
         // (monthly seconds + distinct active days) for this small payload.
         $monthlySummary = TimeEntry::where('user_id', $user->id)
-=======
-        $monthlySeconds = (int) TimeEntry::where('user_id', $user->id)
-            ->where('is_break', false)
->>>>>>> 5b1716b1f2cc1ac1440db636f4e4acaf7b05a765
             ->whereNotNull('end_time')
             ->where('start_time', '>=', $monthStart)
             ->where('start_time', '<=', $monthEnd)
             ->selectRaw('COALESCE(SUM(duration), 0) as total_seconds, COUNT(DISTINCT DATE(start_time)) as active_days')
             ->first();
 
-<<<<<<< HEAD
         $monthlySeconds = (int) ($monthlySummary->total_seconds ?? 0);
         $monthlyDays = (int) ($monthlySummary->active_days ?? 0);
-=======
-        $monthlyDays = (int) TimeEntry::where('user_id', $user->id)
-            ->where('is_break', false)
-            ->whereNotNull('end_time')
-            ->where('start_time', '>=', $monthStart)
-            ->where('start_time', '<=', $monthEnd)
-            ->distinct('start_time')
-            ->count(\DB::raw('DATE(start_time)'));
->>>>>>> 5b1716b1f2cc1ac1440db636f4e4acaf7b05a765
 
         $monthlyBreakSeconds = (int) TimeEntry::where('user_id', $user->id)
             ->where('is_break', true)
