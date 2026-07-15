@@ -1304,8 +1304,23 @@ export default function OrganizationTree() {
               transformOrigin: '0 0',
             }}
           >
-            {/* SVG connectors (in wrapper space, matches connector coords) */}
-              <svg className="pointer-events-none absolute inset-0 z-0" width="100%" height="100%">
+            {/* Scaled stage */}
+            <div
+              ref={stageRef}
+              className="relative inline-block p-10"
+              style={{ transform: `scale(${zoom})`, transformOrigin: '0 0' }}
+            >
+              {/* SVG connectors live INSIDE the scaled stage, so the ancestor's
+                  transform: scale(zoom) rescales them together with the nodes for
+                  free — no redraw is needed on zoom. width/height 100% now resolve
+                  against the stage's own UNSCALED box (percentages are computed
+                  before the transform), which is exactly the coordinate space
+                  getNodePos() produces. */}
+              <svg
+                className="pointer-events-none absolute inset-0 z-0"
+                width="100%"
+                height="100%"
+              >
                 {connectors.map((c, i) =>
                   c.path ? (
                     <g key={`c${i}`}>
@@ -1334,12 +1349,6 @@ export default function OrganizationTree() {
                 )}
               </svg>
 
-            {/* Scaled stage */}
-            <div
-              ref={stageRef}
-              className="relative inline-block p-10"
-              style={{ transform: `scale(${zoom})`, transformOrigin: '0 0' }}
-            >
               {view === 'departments' ? (
                 /* By Dept tree: Admin → Department → Team → Members (real nested tree) */
                 <div className="relative z-10 flex flex-col items-center gap-8">
