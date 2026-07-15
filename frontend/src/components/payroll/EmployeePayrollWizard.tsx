@@ -422,7 +422,7 @@ export default function EmployeePayrollWizard({
     if (!summary) return;
     setWorkingDays(String(Math.round(summary.working_days)));
     setDaysPresent(String(Math.round(summary.present_days)));
-    setLOPDays(String(Math.round(summary.lop_days)));
+      setLOPDays(String(Math.round(summary.total_lop_days ?? summary.legacy_lop_days ?? 0)));
     setPaidLeaveDays(String(Math.round(summary.paid_leave_days ?? 0)));
   }, [data?.attendance_summary]);
 

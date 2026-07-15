@@ -1053,7 +1053,9 @@ class PayrollDepartmentController extends Controller
         $attendance = $this->attendance->monthlyAttendanceSummary($user, $request->month_year);
         $workingDays = $request->filled('working_days') ? (int) $request->working_days : (int) round($attendance['working_days']);
         $daysPresent = $request->filled('days_present') ? (int) $request->days_present : (int) round($attendance['present_days']);
-        $lOPDays = $request->filled('lOP_days') ? (float) $request->lOP_days : (float) $attendance['lop_days'];
+        $lOPDays = $request->filled('lOP_days')
+            ? (float) $request->lOP_days
+            : (float) ($attendance['total_lop_days'] ?? $attendance['legacy_lop_days'] ?? 0);
         $overtimeHours = $request->filled('overtime_hours')
             ? (float) $request->overtime_hours
             : round($attendance['overtime_seconds'] / 3600, 2);

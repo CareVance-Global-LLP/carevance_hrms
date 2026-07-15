@@ -157,8 +157,8 @@ function SubordinateTree({
   parentId: number;
   depth: number;
   childrenMap: Map<number, OrgUser[]>;
-  collapsed: Set<number>;
-  onToggle: (id: number) => void;
+  collapsed: Set<NodeId>;
+  onToggle: (id: NodeId) => void;
   q: string;
   simple?: boolean;
   onHoverUser?: (id: number) => void;
@@ -320,7 +320,7 @@ const nodeLevel = (n: OrgNode): number => {
   return -1;
 };
 
-function DeptNodeCard({ node }: { node: OrgNode & { kind: 'dept' } }) {
+function DeptNodeCard({ node, isCollapsed, onToggle }: { node: OrgNode & { kind: 'dept' }; isCollapsed?: boolean; onToggle?: () => void }) {
   return (
     <div
       data-node-id={node.id}
@@ -336,11 +336,16 @@ function DeptNodeCard({ node }: { node: OrgNode & { kind: 'dept' } }) {
       <span className="ml-auto shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
         {node.headcount}
       </span>
+      {onToggle && (
+        <button onClick={onToggle} className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">
+          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+      )}
     </div>
   );
 }
 
-function TeamNodeCard({ node }: { node: OrgNode & { kind: 'team' } }) {
+function TeamNodeCard({ node, isCollapsed, onToggle }: { node: OrgNode & { kind: 'team' }; isCollapsed?: boolean; onToggle?: () => void }) {
   return (
     <div
       data-node-id={node.id}
@@ -356,6 +361,11 @@ function TeamNodeCard({ node }: { node: OrgNode & { kind: 'team' } }) {
       <span className="ml-auto shrink-0 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-700">
         {node.headcount}
       </span>
+      {onToggle && (
+        <button onClick={onToggle} className="shrink-0 rounded p-0.5 text-indigo-400 transition hover:bg-indigo-100 hover:text-indigo-600">
+          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+      )}
     </div>
   );
 }
@@ -373,8 +383,8 @@ function DeptSubTree({
 }: {
   parentId: NodeId;
   childrenMap: Map<NodeId, OrgNode[]>;
-  collapsed: Set<number>;
-  onToggle: (id: number) => void;
+  collapsed: Set<NodeId>;
+  onToggle: (id: NodeId) => void;
   q: string;
   onHoverUser?: (id: number) => void;
   onPinUser?: (id: number) => void;
@@ -406,6 +416,7 @@ function DeptSubTree({
       {sorted.map((node) => {
         const childNodes = childrenMap.get(node.id) ?? [];
         const hasChildren = childNodes.length > 0;
+        const nodeCollapsed = collapsed.has(node.id);
         return (
           <div key={String(node.id)} className="flex flex-col items-center gap-8">
             {node.kind === 'user' ? (
@@ -413,18 +424,26 @@ function DeptSubTree({
                 user={node.user}
                 emphasize={node.user.team?.is_manager}
                 count={childNodes.length}
-                isCollapsed={collapsed.has(node.user.id)}
+                isCollapsed={nodeCollapsed}
                 onToggle={hasChildren ? () => onToggle(node.user.id) : undefined}
                 matched={q ? matchUser(node.user, q) : undefined}
                 {...cardHandlers(node.user.id)}
               />
             ) : node.kind === 'dept' ? (
-              <DeptNodeCard node={node} />
+              <DeptNodeCard
+                node={node}
+                isCollapsed={nodeCollapsed}
+                onToggle={hasChildren ? () => onToggle(node.id) : undefined}
+              />
             ) : (
-              <TeamNodeCard node={node} />
+              <TeamNodeCard
+                node={node}
+                isCollapsed={nodeCollapsed}
+                onToggle={hasChildren ? () => onToggle(node.id) : undefined}
+              />
             )}
 
-            {hasChildren && (
+            {hasChildren && !nodeCollapsed && (
               <DeptSubTree
                 parentId={node.id}
                 childrenMap={childrenMap}
@@ -444,19 +463,12 @@ function DeptSubTree({
 
 /* ── Main ── */
 
-let __zoomSets = 0;
-let __draws = 0;
-const __logZoom = (label: string, from: number, to: number) => {
-  __zoomSets++;
-  console.log(`[ZOOM] #${__zoomSets} ${label} ${from.toFixed(3)} -> ${to.toFixed(3)}`);
-};
-
 export default function OrganizationTree() {
   const { isLoading: isAuthLoading, isAuthenticated } = useAuth();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [connectors, setConnectors] = useState<ConnectorSeg[]>([]);
   const [search, setSearch] = useState('');
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<NodeId>>(new Set());
 
   /* ── Simple / Detailed / Departments view ── */
   const [view, setView] = useState<'simple' | 'detailed' | 'departments'>('simple');
@@ -488,7 +500,7 @@ export default function OrganizationTree() {
   const onViewportWheel = useCallback((e: WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
-    setZoom((z) => { const nz = clampZoom(z * (e.deltaY < 0 ? 1.1 : 0.9)); __logZoom('wheel', z, nz); return nz; });
+    setZoom((z) => clampZoom(z * (e.deltaY < 0 ? 1.1 : 0.9)));
   }, []);
 
   useEffect(() => {
@@ -532,7 +544,7 @@ export default function OrganizationTree() {
       // Guard (fix direction #3): only change zoom if it actually differs.
       const targetZoom = clampZoom(Math.max(zoom, 1.1));
       if (Math.abs(targetZoom - zoom) > 0.01) {
-        setZoom((z) => { __logZoom('focusNode', z, targetZoom); return targetZoom; });
+        setZoom(targetZoom);
       }
 
       // Center the node in the viewport once, on the next frame if we zoomed.
@@ -564,7 +576,6 @@ export default function OrganizationTree() {
       const h = el.offsetHeight;
       if (Math.abs(w - last.w) > 0.5 || Math.abs(h - last.h) > 0.5) {
         last = { w, h };
-        console.log('[STAGESIZE SET]', Math.round(w), Math.round(h));
         setStageSize({ w, h });
       }
     };
@@ -578,24 +589,9 @@ export default function OrganizationTree() {
   const { data: raw = [], isLoading, isError, refetch } = useQuery<OrgUser[]>({
     queryKey: ['organization-tree', isAuthenticated],
     queryFn: async () => {
-      // === TEMP MOCK DATA (diagnostic only) ===
-      const list: any[] = (() => {
-        const out: any[] = [];
-        for (let i = 1; i <= 50; i++) {
-          out.push({
-            id: i, name: 'User ' + i, email: 'u' + i + '@x.com',
-            role: i === 1 ? 'admin' : 'employee', role_name: i === 1 ? 'Admin' : 'Employee',
-            hierarchy_level: i === 1 ? 1 : 100,
-            department_id: (i % 3) + 1, department: ['Engineering', 'Sales', 'HR'][(i % 3)],
-            reporting_manager_id: i === 1 ? null : 1,
-            team: i % 2 ? { id: 1, name: 'Team A', is_manager: false } : null,
-            created_at: '2024-01-01',
-          });
-        }
-        return out;
-      })();
-      console.log(`[OrganizationTree] TEMP MOCK users: ${list.length}`);
-      
+      const res: any = await userApi.getAll({ simple: 1, is_active: true });
+      const list: any[] = res?.data ?? (Array.isArray(res) ? res : []);
+
       const mapped = list.map((u: any) => ({
         id: u.id,
         name: u.name,
@@ -614,15 +610,7 @@ export default function OrganizationTree() {
         created_at: u.created_at ?? undefined,
         groups: Array.isArray(u.groups) ? u.groups.map((g: any) => ({ id: g.id, name: g.name, slug: g.slug })) : [],
       })) as OrgUser[];
-      
-      // Debug: Log users by department
-      const byDept: Record<string, number> = {};
-      mapped.forEach(u => {
-        const dept = u.department || 'Unassigned';
-        byDept[dept] = (byDept[dept] || 0) + 1;
-      });
-      console.log('[OrganizationTree] Users by department:', byDept);
-      
+
       return mapped;
     },
     enabled: isAuthenticated && !isAuthLoading,
@@ -807,13 +795,6 @@ export default function OrganizationTree() {
             other.hierarchy_level < u.hierarchy_level,
         );
 
-        if (import.meta.env.DEV) {
-          console.log(
-            `[Tree] ${u.name} (L${u.hierarchy_level}) dept="${userDept}" superiors=`,
-            deptSuperiors.map((s) => `${s.name}(L${s.hierarchy_level})`),
-          );
-        }
-
         if (deptSuperiors.length > 0) {
           // Closest superior = highest level number that is still lower than the employee's
           const closestSuperior = deptSuperiors.sort(
@@ -940,16 +921,46 @@ export default function OrganizationTree() {
     return { deptChildrenMap: childrenMap, deptNodeById: nodeById };
   }, [raw, tree.admin]);
 
-  /* ── Auto-collapse large branches ── */
-  useEffect(() => {
-    if (tree.childrenMap.size > 0 && collapsed.size === 0) {
-      const auto = new Set<number>();
-      for (const [parentId, children] of tree.childrenMap) {
-        if (children.length > 10) auto.add(parentId);
+  /* ── Auto-collapse defaults ──
+     By Dept has more structural levels (Admin → Department → Team → Manager →
+     Members) than the reporting tree, so it uses a stricter default: every
+     department except the first is collapsed on entry, plus any oversized
+     branch. Simple/Detailed keep the per-branch (>10 children) threshold. */
+  const computeDefaultCollapsed = useCallback(
+    (mode: 'simple' | 'detailed' | 'departments'): Set<NodeId> => {
+      const auto = new Set<NodeId>();
+      if (mode === 'departments') {
+        const adminId = tree.admin?.id ?? -1;
+        const depts = deptChildrenMap.get(adminId) ?? [];
+        depts.forEach((d, i) => {
+          if (i > 0) auto.add(d.id); // keep only the first department open
+        });
+        for (const [parentId, children] of deptChildrenMap) {
+          if (children.length > 10) auto.add(parentId);
+        }
+      } else {
+        for (const [parentId, children] of tree.childrenMap) {
+          if (children.length > 10) auto.add(parentId);
+        }
       }
-      if (auto.size > 0) setCollapsed(auto);
-    }
-  }, [tree]);
+      return auto;
+    },
+    [deptChildrenMap, tree.childrenMap, tree.admin],
+  );
+
+  // Apply the default collapse once, when tree data first becomes available.
+  // View switches apply their own default synchronously in the toolbar handler,
+  // so this must NOT re-run on every collapsed change (that would break
+  // "Expand All"). A ref gates it to a single application per initial load.
+  const autoCollapseInitialized = useRef(false);
+  useEffect(() => {
+    if (autoCollapseInitialized.current) return;
+    const hasData = view === 'departments' ? deptChildrenMap.size > 0 : tree.childrenMap.size > 0;
+    if (!hasData) return;
+    autoCollapseInitialized.current = true;
+    const auto = computeDefaultCollapsed(view);
+    if (auto.size > 0) setCollapsed(auto);
+  }, [view, deptChildrenMap, tree.childrenMap, computeDefaultCollapsed]);
 
   /* ── View-dependent tree maps (shared connector mechanism) ── */
   const reportNodeById = useMemo(
@@ -962,7 +973,6 @@ export default function OrganizationTree() {
   /* ── Draw connectors (live INSIDE the scaled stage, so they zoom WITH the
       nodes and never need redrawing on zoom — kills the per-step flicker) ── */
   useEffect(() => {
-    console.log('[CONNECTOR EFFECT RUN]');
     const draw = () => {
       const el = stageRef.current;
       if (!el) return;
@@ -971,8 +981,17 @@ export default function OrganizationTree() {
       const z = zoomRef.current;
       const segs: ConnectorSeg[] = [];
 
+      // One indexed DOM pass per draw call — attribute selectors aren't indexed,
+      // so querying [data-node-id="X"] per node is an O(DOM) scan each time.
+      // Build a Map once and look up from it instead.
+      const nodeEls = new Map<string, HTMLElement>();
+      el.querySelectorAll<HTMLElement>('[data-node-id]').forEach((node) => {
+        const id = node.getAttribute('data-node-id');
+        if (id) nodeEls.set(id, node);
+      });
+
       const getNodePos = (id: NodeId) => {
-        const node = el.querySelector<HTMLElement>(`[data-node-id="${id}"]`);
+        const node = nodeEls.get(String(id));
         if (!node) return null;
         const r = node.getBoundingClientRect();
         const ux = (r.left - sr.left) / z;
@@ -1018,8 +1037,6 @@ export default function OrganizationTree() {
         }
       }
 
-      __draws++;
-      console.log('[DRAW] #' + __draws + ' segs=' + segs.length);
       setConnectors(segs);
     };
 
@@ -1028,10 +1045,10 @@ export default function OrganizationTree() {
     if (wrapper) ro.observe(wrapper);
     requestAnimationFrame(draw);
     return () => ro.disconnect();
-  }, [activeChildrenMap, activeNodeById, collapsed, search, raw, zoom, view]);
+  }, [activeChildrenMap, activeNodeById, collapsed, search, raw, view]);
 
   /* ── Toggle collapse ── */
-  const toggle = (id: number) => {
+  const toggle = (id: NodeId) => {
     setCollapsed((p) => {
       const n = new Set(p);
       if (n.has(id)) n.delete(id);
@@ -1141,7 +1158,13 @@ export default function OrganizationTree() {
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => setView(mode)}
+                  onClick={() => {
+                    setView(mode);
+                    // Apply this view's default collapse in the same render so a
+                    // large By Dept tree never renders fully expanded, even for
+                    // one frame (which is what froze the tab).
+                    setCollapsed(computeDefaultCollapsed(mode));
+                  }}
                   className={`rounded px-3 py-1.5 text-xs font-semibold capitalize transition ${
                     view === mode ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
                   }`}
@@ -1159,21 +1182,21 @@ export default function OrganizationTree() {
             </div>
             <div className="flex items-center rounded-md border border-slate-200 bg-white">
               <button
-                onClick={() => setZoom((z) => { const nz = clampZoom(z - 0.1); __logZoom('btn-out', z, nz); return nz; })}
+                onClick={() => setZoom((z) => clampZoom(z - 0.1))}
                 className="px-2.5 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
                 title="Zoom out"
               >
                 &#8722;
               </button>
               <button
-                onClick={() => { __logZoom('btn-reset', zoom, 1); setZoom(1); }}
+                onClick={() => setZoom(1)}
                 className="border-x border-slate-200 px-2 py-2 text-[11px] font-semibold tabular-nums text-slate-600 transition hover:bg-slate-50"
                 title="Reset zoom"
               >
                 {Math.round(zoom * 100)}%
               </button>
               <button
-                onClick={() => setZoom((z) => { const nz = clampZoom(z + 0.1); __logZoom('btn-in', z, nz); return nz; })}
+                onClick={() => setZoom((z) => clampZoom(z + 0.1))}
                 className="px-2.5 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
                 title="Zoom in"
               >

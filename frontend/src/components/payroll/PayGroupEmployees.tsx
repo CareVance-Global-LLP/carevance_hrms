@@ -69,8 +69,13 @@ function EmployeeCard({
   onViewPayslip: (e: React.MouseEvent) => void;
   onDownloadPayslip: (e: React.MouseEvent) => void;
 }) {
-  const isPaid = employee.payroll_status.payment_status === 'paid';
-  const status: 'paid' | 'pending' = isPaid ? 'paid' : 'pending';
+  const paymentStatus = employee.payroll_status?.payment_status ?? 'pending';
+  const isPaid = paymentStatus === 'paid';
+  // "Processed" = a payroll item exists for this month (calculated, even
+  // if not yet disbursed). This drives the payslip actions and stops
+  // prompting the user to process the employee again.
+  const isProcessed = employee.payroll_status?.is_processed ?? paymentStatus !== 'pending';
+  const status: 'paid' | 'processed' | 'pending' = isPaid ? 'paid' : isProcessed ? 'processed' : 'pending';
 
   const statusConfig = {
     paid: {
@@ -80,6 +85,14 @@ function EmployeeCard({
       textColor: 'text-emerald-600',
       borderColor: 'border-emerald-200',
       tooltip: 'Funds have been credited to this employee\'s bank account.',
+    },
+    processed: {
+      icon: CheckCircle2,
+      label: 'Processed',
+      bgColor: 'bg-sky-50',
+      textColor: 'text-sky-600',
+      borderColor: 'border-sky-200',
+      tooltip: 'Payroll calculated — payslip is ready. Disburse to mark as paid.',
     },
     pending: {
       icon: Clock,
@@ -106,10 +119,10 @@ function EmployeeCard({
       <div className="flex items-start gap-4">
         {/* Checkbox — disabled if already paid */}
         <button
-          onClick={(e) => { e.stopPropagation(); if (!isPaid) onSelect(); }}
-          className={`mt-1 flex-shrink-0 ${isPaid ? 'cursor-not-allowed opacity-40' : ''}`}
-          disabled={isPaid}
-          title={isPaid ? 'Already paid for this month — cannot be selected' : undefined}
+          onClick={(e) => { e.stopPropagation(); if (status === 'pending') onSelect(); }}
+          className={`mt-1 flex-shrink-0 ${status !== 'pending' ? 'cursor-not-allowed opacity-40' : ''}`}
+          disabled={status !== 'pending'}
+          title={status !== 'pending' ? 'Already processed for this month — cannot be selected' : undefined}
         >
           {isSelected ? (
             <CheckSquare className="h-5 w-5 text-emerald-600" />
@@ -135,14 +148,14 @@ function EmployeeCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between">
             <div>
-              <h3
-                className={`font-semibold ${
-                  isPaid ? 'text-slate-500' : 'text-slate-900'
-                }`}
-              >
-                {employee.name}
-              </h3>
-              <p className={`text-sm truncate ${isPaid ? 'text-slate-400' : 'text-slate-500'}`}>
+                <h3
+                  className={`font-semibold ${
+                    status !== 'pending' ? 'text-slate-500' : 'text-slate-900'
+                  }`}
+                >
+                  {employee.name}
+                </h3>
+                <p className={`text-sm truncate ${status !== 'pending' ? 'text-slate-400' : 'text-slate-500'}`}>
                 {employee.designation || employee.email}
               </p>
               {employee.employee_code && (
@@ -173,7 +186,7 @@ function EmployeeCard({
             </div>
 
             {/* Net Pay Display */}
-            {employee.payroll_status.is_processed ? (
+            {isProcessed ? (
               <div className="text-right">
                 <p className="text-xs text-slate-400">Net Pay</p>
                 <p className="font-semibold text-emerald-600">

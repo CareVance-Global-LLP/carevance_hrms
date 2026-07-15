@@ -8,6 +8,7 @@ import { payrollApi } from '@/services/api';
 
 import PayGroupEmployees from '@/components/payroll/PayGroupEmployees';
 import BulkPayrollMatrix from '@/components/payroll/BulkPayrollMatrix';
+import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
 import PayGroupCard from '@/components/payroll/PayGroupCard';
 import PayGroupModal from '@/components/payroll/PayGroupModal';
 import Button from '@/components/ui/Button';
@@ -37,6 +38,7 @@ export default function RunPayrollTab() {
   );
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkIds, setBulkIds] = useState<number[]>([]);
+  const [processingEmployeeId, setProcessingEmployeeId] = useState<number | null>(null);
   const [isCreatePayGroupOpen, setIsCreatePayGroupOpen] = useState(false);
 
   useEffect(() => {
@@ -90,12 +92,34 @@ export default function RunPayrollTab() {
               selectedEmployeeIds={bulkIds}
             />
           </div>
+        ) : processingEmployeeId ? (
+          <EmployeePayrollWizard
+            key={processingEmployeeId}
+            employeeId={processingEmployeeId}
+            monthYear={monthYear}
+            initialStep={0}
+            backLabel="Back to Pay Group"
+            onBack={() => setProcessingEmployeeId(null)}
+            onViewRun={() => {}}
+            onComplete={(step) => {
+              // handleContinue fires onComplete for EVERY step (1..6). Only
+              // the final step means payroll was processed — refresh the
+              // pay-group card list so the status flips to Paid/Processed.
+              // We deliberately do NOT close the wizard here; the success
+              // view stays visible and the Back button (onBack) closes it.
+              if (step === 6) {
+                queryClient.invalidateQueries({
+                  queryKey: ['payroll', 'pay-group', selectedPayGroupId, 'employees', monthYear],
+                });
+              }
+            }}
+          />
         ) : (
           <PayGroupEmployees
             payGroupId={selectedPayGroupId}
             monthYear={monthYear}
             onBack={noop}
-            onSelectEmployee={(id) => navigate(`/payroll?view=employee&emp=${id}&step=0`)}
+            onSelectEmployee={(id) => setProcessingEmployeeId(id)}
             onOpenBulkPayroll={(ids) => {
               setBulkIds(ids);
               setBulkOpen(true);

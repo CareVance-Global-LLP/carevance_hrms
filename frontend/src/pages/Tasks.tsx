@@ -122,6 +122,12 @@ export default function Tasks() {
   const userLevel = user?.hierarchy_level ?? (user?.role === 'admin' ? 10 : user?.role === 'manager' ? 50 : 100);
   const canManageTasks = userLevel <= 50;
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  // Surface a failed action to the user (reuses the FeedbackBanner pattern) and
+  // log it for debugging, instead of silently swallowing the error.
+  const notifyError = (message: string, error: unknown) => {
+    console.error(message, error);
+    setFeedback({ tone: 'error', message });
+  };
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -595,7 +601,9 @@ export default function Tasks() {
                                     try {
                                       await taskApi.deleteAttachment(att.id);
                                       setAttachments((prev) => prev.filter((a) => a.id !== att.id));
-                                    } catch {}
+                                    } catch (err) {
+                                      notifyError('Could not delete attachment. Please try again.', err);
+                                    }
                                   }}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -617,7 +625,9 @@ export default function Tasks() {
                                   formData.append('file', file);
                                   const res = await taskApi.createAttachment(expandedTaskId!, formData);
                                   setAttachments((prev) => [res.data, ...prev]);
-                                } catch {} finally {
+                                } catch (err) {
+                                  notifyError('Could not upload the file. Please try again.', err);
+                                } finally {
                                   setUploading(false);
                                   if (fileInputRef.current) fileInputRef.current.value = '';
                                 }
@@ -652,7 +662,9 @@ export default function Tasks() {
                                   const res = await taskApi.createComment(expandedTaskId!, { content: commentText.trim() });
                                   setComments((prev) => [res.data, ...prev]);
                                   setCommentText('');
-                                } catch {}
+                                } catch (err) {
+                                  notifyError('Could not post your comment. Please try again.', err);
+                                }
                               }
                             }}
                           />
@@ -663,7 +675,9 @@ export default function Tasks() {
                                 const res = await taskApi.createComment(expandedTaskId!, { content: commentText.trim() });
                                 setComments((prev) => [res.data, ...prev]);
                                 setCommentText('');
-                              } catch {}
+                              } catch (err) {
+                                notifyError('Could not post your comment. Please try again.', err);
+                              }
                             }}
                           >
                             <Send className="h-4 w-4" />
@@ -686,7 +700,9 @@ export default function Tasks() {
                                     try {
                                       await taskApi.deleteComment(c.id);
                                       setComments((prev) => prev.filter((x) => x.id !== c.id));
-                                    } catch {}
+                                    } catch (err) {
+                                      notifyError('Could not delete comment. Please try again.', err);
+                                    }
                                   }}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -714,7 +730,9 @@ export default function Tasks() {
                                   try {
                                     const res = await taskApi.updateChecklistItem(item.id, { is_completed: !item.is_completed });
                                     setChecklistItems((prev) => prev.map((ci) => ci.id === item.id ? res.data : ci));
-                                  } catch {}
+                                  } catch (err) {
+                                    notifyError('Could not update checklist item. Please try again.', err);
+                                  }
                                 }}
                                 className="h-4 w-4 rounded border-slate-300 text-sky-600"
                               />
@@ -723,7 +741,9 @@ export default function Tasks() {
                                 try {
                                   await taskApi.deleteChecklistItem(item.id);
                                   setChecklistItems((prev) => prev.filter((ci) => ci.id !== item.id));
-                                } catch {}
+                                } catch (err) {
+                                  notifyError('Could not delete checklist item. Please try again.', err);
+                                }
                               }} className="text-slate-400 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
                             </div>
                           ))}
@@ -740,7 +760,9 @@ export default function Tasks() {
                                     const res = await taskApi.createChecklistItem(expandedTaskId!, { title: newChecklistTitle.trim() });
                                     setChecklistItems((prev) => [...prev, res.data]);
                                     setNewChecklistTitle('');
-                                  } catch {}
+                                  } catch (err) {
+                                    notifyError('Could not add checklist item. Please try again.', err);
+                                  }
                                 }
                               }}
                             />
@@ -749,7 +771,9 @@ export default function Tasks() {
                                 const res = await taskApi.createChecklistItem(expandedTaskId!, { title: newChecklistTitle.trim() });
                                 setChecklistItems((prev) => [...prev, res.data]);
                                 setNewChecklistTitle('');
-                              } catch {}
+                              } catch (err) {
+                                notifyError('Could not add checklist item. Please try again.', err);
+                              }
                             }}><Plus className="h-4 w-4" /></Button>
                           </div>
                         </div>
@@ -772,7 +796,9 @@ export default function Tasks() {
                                 try {
                                   await taskApi.deleteDependency(dep.id);
                                   setDependencies((prev) => prev.filter((d) => d.id !== dep.id));
-                                } catch {}
+                                } catch (err) {
+                                  notifyError('Could not remove dependency. Please try again.', err);
+                                }
                               }} className="text-slate-400 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
                             </div>
                           ))}
@@ -793,7 +819,9 @@ export default function Tasks() {
                                   const res = await taskApi.createDependency(expandedTaskId!, Number(newDependencyTaskId));
                                   setDependencies((prev) => [...prev, res.data]);
                                   setNewDependencyTaskId('');
-                                } catch {}
+                                } catch (err) {
+                                  notifyError('Could not add dependency. Please try again.', err);
+                                }
                               }}><Plus className="h-4 w-4" /></Button>
                             </div>
                           ) : null}
@@ -824,7 +852,9 @@ export default function Tasks() {
                                       try {
                                         const res = await taskApi.updateRecurrence(recurrenceData.id, { is_active: !recurrenceData.is_active });
                                         setRecurrenceData(res.data);
-                                      } catch {}
+                                      } catch (err) {
+                                        notifyError('Could not update recurrence. Please try again.', err);
+                                      }
                                     }}
                                     className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600"
                                   />
@@ -835,7 +865,9 @@ export default function Tasks() {
                                   try {
                                     await taskApi.deleteRecurrence(recurrenceData.id);
                                     setRecurrenceData(null);
-                                  } catch {}
+                                  } catch (err) {
+                                    notifyError('Could not remove recurrence. Please try again.', err);
+                                  }
                                 }} className="text-slate-400 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
                               </div>
                             </div>
@@ -899,7 +931,9 @@ export default function Tasks() {
                                   setRecurrenceData(res.data);
                                   setShowRecurrenceForm(false);
                                   setRecurrenceForm({ frequency: 'weekly', interval_value: 1, days_of_week: '', day_of_month: '', end_date: '' });
-                                } catch {}
+                                } catch (err) {
+                                  notifyError('Could not save recurrence. Please try again.', err);
+                                }
                               }}>
                                 {recurrenceData ? 'Update' : 'Create'} Recurrence
                               </Button>

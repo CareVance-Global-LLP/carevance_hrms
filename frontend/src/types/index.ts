@@ -1413,7 +1413,8 @@ export interface EmployeePayrollDetails {
     present_days: number;
     absent_days: number;
     paid_leave_days: number;
-    lop_days: number;
+    total_lop_days: number;
+    legacy_lop_days: number;
     half_days: number;
     late_count: number;
     unregularized_absences: number;

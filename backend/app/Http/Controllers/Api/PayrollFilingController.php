@@ -577,7 +577,12 @@ class PayrollFilingController extends Controller
                     ],
                     'current_step' => $template && $template->steps_month_year === $monthYear ? (int) ($template->current_step ?? 1) : 1,
                     'payroll_status' => [
-                        'is_processed' => $item && $item->payment_status !== 'pending',
+                        // A PayrollItem is only ever created once payroll is
+                        // processed for an employee+month, so item existence
+                        // (not payment_status) is the correct "processed"
+                        // signal. Items stay 'pending' until disbursed, which
+                        // is what the disbursement queries filter on.
+                        'is_processed' => $item !== null,
                         'net_pay' => $item ? (float) $item->net_pay : 0,
                         'payment_status' => $item?->payment_status ?? 'pending',
                         'gross_salary' => $item ? (float) $item->gross_salary : 0,

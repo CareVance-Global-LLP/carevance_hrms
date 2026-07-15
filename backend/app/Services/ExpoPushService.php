@@ -54,7 +54,7 @@ class ExpoPushService
 
         try {
             $ch = curl_init(self::PUSH_URL);
-            curl_setopt_array($ch, [
+            $options = [
                 CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS => $json,
                 CURLOPT_HTTPHEADER => [
@@ -65,9 +65,16 @@ class ExpoPushService
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => 15,
                 CURLOPT_CONNECTTIMEOUT => 5,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => 0,
-            ]);
+            ];
+
+            // Only disable SSL verification for local Windows dev (curl CA bundle
+            // issues) — never in production. Mirrors OAuthController's handling.
+            if (app()->environment('local') && strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                $options[CURLOPT_SSL_VERIFYPEER] = false;
+                $options[CURLOPT_SSL_VERIFYHOST] = 0;
+            }
+
+            curl_setopt_array($ch, $options);
 
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);

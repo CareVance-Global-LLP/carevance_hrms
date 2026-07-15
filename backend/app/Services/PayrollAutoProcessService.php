@@ -103,9 +103,13 @@ class PayrollAutoProcessService
 
     private function createOrGetRun(int $orgId, string $monthYear, int $userId): PayrollMonthlyRun
     {
+        // Look up ANY existing run for this org + month. Filtering by
+        // status here previously caused a duplicate-key insert: when a run
+        // already existed in a non-draft/processing state (e.g. processed,
+        // paid, locked) the lookup returned nothing and we tried to
+        // create a second row, violating payroll_runs_org_month_unique.
         $run = PayrollMonthlyRun::where('organization_id', $orgId)
             ->where('month_year', $monthYear)
-            ->whereIn('status', ['draft', 'processing'])
             ->first();
 
         if (!$run) {
@@ -117,8 +121,13 @@ class PayrollAutoProcessService
                 'created_by' => $userId,
             ]);
         } else {
-            $run->update(['status' => 'processing']);
-            $run->items()->delete();
+            // Only rebuild (wipe items) while the run is still mutable.
+            // Terminal states (locked/paid/released/disbursed) must keep
+            // their items and status intact.
+            if (in_array($run->status, ['draft', 'processing'], true)) {
+                $run->items()->delete();
+                $run->update(['status' => 'processing']);
+            }
         }
 
         return $run;

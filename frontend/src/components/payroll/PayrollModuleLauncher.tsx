@@ -112,8 +112,9 @@ export default function PayrollModuleLauncher({
   const [activeCategory, setActiveCategory] = useState<string>('All');
 
   const modules = useMemo<ModuleEntry[]>(() => {
-    // 1. In-page views handled by Payroll.tsx's URL view-mode router. These
-    //    have no route in dashboardNavigation, so they are wired via callbacks.
+    // 1. In-page views handled by callbacks (no dedicated route in
+    //    dashboardNavigation). These are rendered inline within the payroll
+    //    tabs rather than via a URL view-mode router.
     const inPageModules: ModuleEntry[] = [
       {
         id: 'create-pay-group',
