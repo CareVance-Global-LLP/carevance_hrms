@@ -15,8 +15,11 @@ import {
   Eye,
   Settings,
   UserPlus,
+  X,
+  IndianRupee,
+  Loader2,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
@@ -258,7 +261,10 @@ export default function PayGroupEmployees({
    const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
    const [sortBy, setSortBy] = useState<SortBy>('name');
    const [showFilters, setShowFilters] = useState(false);
-   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
+  const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
+  const [ctcModalEmployee, setCtcModalEmployee] = useState<any | null>(null);
+  const [ctcInput, setCtcInput] = useState('');
+  const queryClient = useQueryClient();
 
   // Payslip PDF (same blob + open-in-new-tab pattern as DepartmentEmployees)
   const viewPayslipPdf = async (userId: number, monthYearArg: string, employeeName: string) => {
@@ -580,7 +586,9 @@ export default function PayGroupEmployees({
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filteredEmployees.map((employee) => (
+            {filteredEmployees.map((employee) => {
+              const employeeHasCtc = !!(employee.annual_ctc && employee.annual_ctc > 0);
+              return (
               <EmployeeCard
                 key={employee.id}
                 employee={employee as any}
@@ -589,7 +597,12 @@ export default function PayGroupEmployees({
                 onClick={() => onSelectEmployee(employee.id)}
                 onProcess={(e) => {
                   e.stopPropagation();
-                  onSelectEmployee(employee.id);
+                  if (!employeeHasCtc) {
+                    setCtcInput(employee.annual_ctc ? String(employee.annual_ctc) : '');
+                    setCtcModalEmployee(employee);
+                  } else {
+                    onSelectEmployee(employee.id);
+                  }
                 }}
                 onViewPayslip={(e) => {
                   e.stopPropagation();
@@ -600,7 +613,8 @@ export default function PayGroupEmployees({
                   void downloadPayslipPdf(employee.id, monthYear, employee.name);
                 }}
               />
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -637,13 +651,148 @@ export default function PayGroupEmployees({
          </div>
        )}
 
-       <AddEmployeeToPayGroupModal
-         isOpen={showAddEmployeeModal}
-         onClose={() => setShowAddEmployeeModal(false)}
-         payGroupId={payGroupId}
-         payGroupName={payGroupName}
-         onSuccess={() => setShowAddEmployeeModal(false)}
-       />
-     </div>
-   );
+        <AddEmployeeToPayGroupModal
+          isOpen={showAddEmployeeModal}
+          onClose={() => setShowAddEmployeeModal(false)}
+          payGroupId={payGroupId}
+          payGroupName={payGroupName}
+          onSuccess={() => setShowAddEmployeeModal(false)}
+        />
+
+        {ctcModalEmployee && (
+          <SetCtcModal
+            employee={ctcModalEmployee}
+            monthYear={monthYear}
+            ctcInput={ctcInput}
+            onCtcChange={setCtcInput}
+            onClose={() => {
+              setCtcModalEmployee(null);
+              setCtcInput('');
+            }}
+            onSaved={() => {
+              queryClient.invalidateQueries({
+                queryKey: ['payroll', 'pay-group', payGroupId, 'employees'],
+              });
+              setCtcModalEmployee(null);
+              setCtcInput('');
+            }}
+          />
+        )}
+      </div>
+    );
+}
+
+// Inline "Set CTC & Process" modal. Opens from an employee card when the
+// employee has no CTC. Saves the CTC via quickSaveCtc, then processes that
+// single employee's payroll so the card immediately updates.
+function SetCtcModal({
+  employee,
+  monthYear,
+  ctcInput,
+  onCtcChange,
+  onClose,
+  onSaved,
+}: {
+  employee: any;
+  monthYear: string;
+  ctcInput: string;
+  onCtcChange: (v: string) => void;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ctcValue = parseFloat(ctcInput);
+  const isValid = !Number.isNaN(ctcValue) && ctcValue > 0;
+
+  const handleSaveAndProcess = async () => {
+    if (!isValid) {
+      setError('Enter an annual CTC greater than 0.');
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      await payrollApi.quickSaveCtc(employee.id, {
+        annual_ctc: ctcValue,
+        month_year: monthYear,
+      });
+      await payrollApi.processScoped({
+        month_year: monthYear,
+        scope: 'single',
+        user_ids: [employee.id],
+      });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
+      onSaved();
+    } catch (err: any) {
+      const msg = getApiErrorMessage(err, 'Could not set CTC and process payroll.');
+      setError(msg || 'Could not set CTC and process payroll.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+      <SurfaceCard className="w-full max-w-md p-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Set CTC &amp; Process</h3>
+            <p className="text-sm text-slate-500 mt-0.5">{employee.name}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-5">
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Annual CTC (₹)
+          </label>
+          <div className="relative">
+            <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="number"
+              min="0"
+              autoFocus
+              value={ctcInput}
+              onChange={(e) => {
+                onCtcChange(e.target.value);
+                setError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && isValid && !isSaving) void handleSaveAndProcess();
+              }}
+              placeholder="e.g. 1200000"
+              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          {error && (
+            <p className="mt-1.5 text-sm text-rose-600">{error}</p>
+          )}
+        </div>
+
+        <div className="mt-6 flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            iconLeft={isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            onClick={() => void handleSaveAndProcess()}
+            disabled={isSaving || !isValid}
+          >
+            {isSaving ? 'Saving…' : 'Set & Process'}
+          </Button>
+        </div>
+      </SurfaceCard>
+    </div>
+  );
 }

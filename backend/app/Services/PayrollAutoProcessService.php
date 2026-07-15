@@ -238,7 +238,7 @@ class PayrollAutoProcessService
                 ->where('status', 'approved')
                 ->whereMonth('created_at', explode('-', $run->month_year)[1])
                 ->whereYear('created_at', explode('-', $run->month_year)[0])
-                ->sum('amount');
+                ->sum('net_amount');
 
             if ($encashments > 0) {
                 $currentTotal = (float) ($item->custom_earnings ?? 0);

@@ -67,7 +67,7 @@ interface AuthContextType {
   updateOrganization: (organization: Organization | null) => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const COOKIE_AUTH_STATE_TOKEN = '__cookie_authenticated__';
 
 // Demo mode - only enabled in development when explicitly set

@@ -444,6 +444,13 @@ function DeptSubTree({
 
 /* ── Main ── */
 
+let __zoomSets = 0;
+let __draws = 0;
+const __logZoom = (label: string, from: number, to: number) => {
+  __zoomSets++;
+  console.log(`[ZOOM] #${__zoomSets} ${label} ${from.toFixed(3)} -> ${to.toFixed(3)}`);
+};
+
 export default function OrganizationTree() {
   const { isLoading: isAuthLoading, isAuthenticated } = useAuth();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -463,6 +470,8 @@ export default function OrganizationTree() {
 
   /* ── Zoom & pan ── */
   const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   const panning = useRef(false);
   const panLast = useRef({ x: 0, y: 0 });
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -471,11 +480,23 @@ export default function OrganizationTree() {
 
   const clampZoom = (z: number) => Math.min(2, Math.max(0.4, z));
 
-  const onViewportWheel = (e: ReactWheelEvent) => {
+  // NOTE: attached as a NATIVE non-passive listener below (not via JSX onWheel,
+  // which React makes passive). If this stays passive, e.preventDefault() is a
+  // no-op and the browser's native ctrl+wheel page-zoom fires on top of the
+  // canvas zoom — the page keeps rescaling, the connector ResizeObserver
+  // redraws every frame, and the canvas appears to "vibrate".
+  const onViewportWheel = useCallback((e: WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
-    setZoom((z) => clampZoom(z * (e.deltaY < 0 ? 1.1 : 0.9)));
-  };
+    setZoom((z) => { const nz = clampZoom(z * (e.deltaY < 0 ? 1.1 : 0.9)); __logZoom('wheel', z, nz); return nz; });
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', onViewportWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onViewportWheel);
+  }, [onViewportWheel]);
 
   const onViewportMouseDown = (e: ReactMouseEvent) => {
     const target = e.target as HTMLElement;
@@ -511,7 +532,7 @@ export default function OrganizationTree() {
       // Guard (fix direction #3): only change zoom if it actually differs.
       const targetZoom = clampZoom(Math.max(zoom, 1.1));
       if (Math.abs(targetZoom - zoom) > 0.01) {
-        setZoom(targetZoom);
+        setZoom((z) => { __logZoom('focusNode', z, targetZoom); return targetZoom; });
       }
 
       // Center the node in the viewport once, on the next frame if we zoomed.
@@ -543,6 +564,7 @@ export default function OrganizationTree() {
       const h = el.offsetHeight;
       if (Math.abs(w - last.w) > 0.5 || Math.abs(h - last.h) > 0.5) {
         last = { w, h };
+        console.log('[STAGESIZE SET]', Math.round(w), Math.round(h));
         setStageSize({ w, h });
       }
     };
@@ -556,10 +578,23 @@ export default function OrganizationTree() {
   const { data: raw = [], isLoading, isError, refetch } = useQuery<OrgUser[]>({
     queryKey: ['organization-tree', isAuthenticated],
     queryFn: async () => {
-      console.log('[OrganizationTree] Fetching users...');
-      const res: any = await userApi.getAll({ simple: 1, is_active: true });
-      const list: any[] = res?.data ?? (Array.isArray(res) ? res : []);
-      console.log(`[OrganizationTree] Received ${list.length} users`);
+      // === TEMP MOCK DATA (diagnostic only) ===
+      const list: any[] = (() => {
+        const out: any[] = [];
+        for (let i = 1; i <= 50; i++) {
+          out.push({
+            id: i, name: 'User ' + i, email: 'u' + i + '@x.com',
+            role: i === 1 ? 'admin' : 'employee', role_name: i === 1 ? 'Admin' : 'Employee',
+            hierarchy_level: i === 1 ? 1 : 100,
+            department_id: (i % 3) + 1, department: ['Engineering', 'Sales', 'HR'][(i % 3)],
+            reporting_manager_id: i === 1 ? null : 1,
+            team: i % 2 ? { id: 1, name: 'Team A', is_manager: false } : null,
+            created_at: '2024-01-01',
+          });
+        }
+        return out;
+      })();
+      console.log(`[OrganizationTree] TEMP MOCK users: ${list.length}`);
       
       const mapped = list.map((u: any) => ({
         id: u.id,
@@ -924,23 +959,28 @@ export default function OrganizationTree() {
   const activeChildrenMap = view === 'departments' ? deptChildrenMap : tree.childrenMap;
   const activeNodeById = view === 'departments' ? deptNodeById : reportNodeById;
 
-  /* ── Draw connectors ── */
+  /* ── Draw connectors (live INSIDE the scaled stage, so they zoom WITH the
+      nodes and never need redrawing on zoom — kills the per-step flicker) ── */
   useEffect(() => {
+    console.log('[CONNECTOR EFFECT RUN]');
     const draw = () => {
-      const el = wrapperRef.current;
+      const el = stageRef.current;
       if (!el) return;
 
-      const wr = el.getBoundingClientRect();
+      const sr = el.getBoundingClientRect();
+      const z = zoomRef.current;
       const segs: ConnectorSeg[] = [];
 
       const getNodePos = (id: NodeId) => {
         const node = el.querySelector<HTMLElement>(`[data-node-id="${id}"]`);
         if (!node) return null;
         const r = node.getBoundingClientRect();
+        const ux = (r.left - sr.left) / z;
+        const uy = (r.top - sr.top) / z;
         return {
-          cx: r.left - wr.left + r.width / 2,
-          top: r.top - wr.top,
-          bottom: r.top - wr.top + r.height,
+          cx: ux + r.width / (2 * z),
+          top: uy,
+          bottom: uy + r.height / z,
         };
       };
 
@@ -978,6 +1018,8 @@ export default function OrganizationTree() {
         }
       }
 
+      __draws++;
+      console.log('[DRAW] #' + __draws + ' segs=' + segs.length);
       setConnectors(segs);
     };
 
@@ -1117,21 +1159,21 @@ export default function OrganizationTree() {
             </div>
             <div className="flex items-center rounded-md border border-slate-200 bg-white">
               <button
-                onClick={() => setZoom((z) => clampZoom(z - 0.1))}
+                onClick={() => setZoom((z) => { const nz = clampZoom(z - 0.1); __logZoom('btn-out', z, nz); return nz; })}
                 className="px-2.5 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
                 title="Zoom out"
               >
                 &#8722;
               </button>
               <button
-                onClick={() => setZoom(1)}
+                onClick={() => { __logZoom('btn-reset', zoom, 1); setZoom(1); }}
                 className="border-x border-slate-200 px-2 py-2 text-[11px] font-semibold tabular-nums text-slate-600 transition hover:bg-slate-50"
                 title="Reset zoom"
               >
                 {Math.round(zoom * 100)}%
               </button>
               <button
-                onClick={() => setZoom((z) => clampZoom(z + 0.1))}
+                onClick={() => setZoom((z) => { const nz = clampZoom(z + 0.1); __logZoom('btn-in', z, nz); return nz; })}
                 className="px-2.5 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
                 title="Zoom in"
               >
@@ -1225,7 +1267,6 @@ export default function OrganizationTree() {
           ref={scrollRef}
           className="relative cursor-grab overflow-auto rounded-xl border border-slate-200 bg-white active:cursor-grabbing"
           style={{ minHeight: '400px', maxHeight: '80vh' }}
-          onWheel={onViewportWheel}
           onMouseDown={onViewportMouseDown}
           onMouseMove={onViewportMouseMove}
           onMouseUp={endPan}

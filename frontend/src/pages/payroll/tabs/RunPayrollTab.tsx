@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -60,6 +60,7 @@ const noop = () => {};
 
 export default function RunPayrollTab() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isStrictAdmin = hasStrictAdminAccess(user);
   const queryClient = useQueryClient();
@@ -182,7 +183,7 @@ export default function RunPayrollTab() {
                   payGroupId={selectedPayGroupId}
                   monthYear={monthYear}
                   onBack={noop}
-                  onSelectEmployee={noop}
+                  onSelectEmployee={(id) => navigate(`/payroll?view=employee&emp=${id}&step=0`)}
                   onOpenBulkPayroll={(ids) => {
                     setBulkIds(ids);
                     setBulkOpen(true);
