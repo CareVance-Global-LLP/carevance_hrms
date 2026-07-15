@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import {
   Users,
-  ChevronRight,
   Play,
   AlertCircle,
   CheckCircle2,
@@ -14,14 +13,13 @@ import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
-import StatusBadge from '@/components/ui/StatusBadge';
 import PayrollRunCard from '@/components/ui/PayrollRunCard';
 import MonthTimeline from './MonthTimeline';
 import CompensationAnalytics from './CompensationAnalytics';
 import PayrollToDoRail from './PayrollToDoRail';
 import ComplianceStatusBoard from './ComplianceStatusBoard';
 import PayrollModuleLauncher from './PayrollModuleLauncher';
-import { cn } from '@/utils/cn';
+import PayGroupCard from './PayGroupCard';
 
 import type { PayGroup, PayrollMonthlyRun, PayrollDepartment } from '@/types';
 
@@ -44,90 +42,6 @@ interface PayrollDashboardProps {
 
 function formatCurrency(amount: number): string {
   return '₹' + Number(amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-}
-
-// Pay Group Card Component
-function PayGroupCard({
-  payGroup,
-  onClick,
-}: {
-  payGroup: PayGroup;
-  onClick: () => void;
-}) {
-  const progress = payGroup.employee_count > 0
-    ? (payGroup.processed_count / payGroup.employee_count) * 100
-    : 0;
-
-  const isComplete = progress === 100;
-  const hasPending = payGroup.processed_count < payGroup.employee_count;
-
-  return (
-    <SurfaceCard
-      className="p-5 cursor-pointer hover:shadow-lg hover:border-emerald-300 transition-all group"
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-            {payGroup.name.charAt(0)}
-          </div>
-          <div>
-            <h3 className="font-semibold text-slate-900 group-hover:text-emerald-600 transition-colors">
-              {payGroup.name}
-            </h3>
-            <p className="text-sm text-slate-500">
-              {payGroup.employee_count} employee{payGroup.employee_count === 1 ? '' : 's'}
-            </p>
-          </div>
-        </div>
-        <ChevronRight className="h-5 w-5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
-      </div>
-
-      {/* Progress Bar */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between text-xs mb-2">
-          <span className="text-slate-500">Processing Progress</span>
-          <span className={cn('font-medium', isComplete ? 'text-emerald-600' : 'text-amber-600')}>
-            {payGroup.processed_count}/{payGroup.employee_count}
-          </span>
-        </div>
-        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className={cn(
-              'h-full rounded-full transition-all duration-500',
-              isComplete ? 'bg-emerald-500' : 'bg-emerald-400',
-            )}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-        <div>
-          <p className="text-xs text-slate-400 mb-1">Total Net Pay</p>
-          <p className="font-semibold text-slate-900">{formatCurrency(payGroup.total_net_pay)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-slate-400 mb-1">Paid</p>
-          <p className="font-semibold text-emerald-600">
-            {payGroup.paid_count} {payGroup.paid_count === 1 ? 'employee' : 'employees'}
-          </p>
-        </div>
-      </div>
-
-      {/* Status Badge */}
-      <div className="mt-4 flex items-center gap-2">
-        <StatusBadge tone={isComplete ? 'success' : hasPending ? 'warning' : 'neutral'}>
-          {isComplete
-            ? 'Complete'
-            : hasPending
-              ? `${payGroup.employee_count - payGroup.processed_count} pending`
-              : 'Not Started'}
-        </StatusBadge>
-      </div>
-    </SurfaceCard>
-  );
 }
 
 export default function PayrollDashboard({
@@ -205,6 +119,58 @@ export default function PayrollDashboard({
     return { totalEmployees, processedCount, paidCount, totalNetPay, pendingCount };
   }, [payGroups]);
 
+  // Previous month for Month-over-Month (MoM) comparison.
+  const prevMonth = useMemo(() => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    return prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0');
+  }, [selectedMonth]);
+
+  const { data: prevPayGroupsData } = useQuery({
+    queryKey: ['payroll', 'pay-groups', prevMonth],
+    queryFn: () =>
+      payrollApi.listPayGroups({ month_year: prevMonth }).then((r) => r.data),
+    enabled: !!prevMonth,
+  });
+
+  const prevRuns = useMemo(() => {
+    const prev = runs.find((r) => r.month_year === prevMonth) ?? null;
+    return prev;
+  }, [runs, prevMonth]);
+
+  const prevStats = useMemo(() => {
+    const prevPgs: PayGroup[] = (prevPayGroupsData?.pay_groups ?? []) as PayGroup[];
+    return {
+      totalEmployees: prevPgs.reduce((s, pg) => s + pg.employee_count, 0),
+      processedCount: prevPgs.reduce((s, pg) => s + pg.processed_count, 0),
+      paidCount: prevPgs.reduce((s, pg) => s + pg.paid_count, 0),
+      totalNetPay: prevPgs.reduce((s, pg) => s + pg.total_net_pay, 0),
+    };
+  }, [prevPayGroupsData]);
+
+  const momDelta = (curr: number, prev: number | undefined | null): number | null => {
+    if (prev === undefined || prev === null || !Number.isFinite(prev) || prev === 0) return null;
+    if (!Number.isFinite(curr)) return null;
+    return ((curr - prev) / Math.abs(prev)) * 100;
+  };
+
+  const netPayDelta = momDelta(summaryStats.totalNetPay, prevStats.totalNetPay ?? (prevRuns ? prevRuns.total_net_pay : null));
+  const employeesDelta = momDelta(summaryStats.totalEmployees, prevStats.totalEmployees || (prevRuns ? prevRuns.total_employees : null) || null);
+  const pendingDelta = momDelta(summaryStats.pendingCount, prevStats.totalEmployees - prevStats.processedCount);
+  const paidDelta = momDelta(summaryStats.paidCount, prevStats.paidCount);
+
+  // "Needs attention" live counts (always-on, even with nothing pending).
+  const { data: attentionData } = useQuery({
+    queryKey: ['payroll', 'dashboard-attention'],
+    queryFn: () => payrollApi.getDashboardAttention().then((r) => r.data?.attention ?? null),
+  });
+
+  const { data: settingsData } = useQuery({
+    queryKey: ['payroll', 'settings'],
+    queryFn: () => payrollApi.getPayrollSettings().then((r) => r.data),
+  });
+  const payrollSettings = (settingsData?.settings ?? {}) as Record<string, any>;
+
   const paidPct = summaryStats.totalEmployees > 0
     ? Math.round((summaryStats.paidCount / summaryStats.totalEmployees) * 100)
     : 0;
@@ -224,6 +190,9 @@ export default function PayrollDashboard({
         onOpenProcessAndPay={() => onOpenProcessAndPay(selectedMonth, summaryStats.pendingCount, summaryStats.totalNetPay)}
         onOpenFilings={onOpenFilings}
       />
+
+      {/* Compliance due-date rail — upcoming statutory filing deadlines */}
+      <ComplianceDueDateRail settings={payrollSettings} selectedMonth={selectedMonth} />
 
       {/* Current Pay Run snapshot + primary action */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -281,6 +250,14 @@ export default function PayrollDashboard({
         </SurfaceCard>
       </div>
 
+      {/* Needs Attention — always-on, surfaces real blockers */}
+      <NeedsAttentionRail
+        attention={attentionData}
+        onOpenUnassignedEmployees={onOpenUnassignedEmployees}
+        onOpenEmployeeCards={onOpenEmployeeCards}
+        onOpenFbp={() => onOpenFilings?.()}
+      />
+
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
@@ -289,6 +266,7 @@ export default function PayrollDashboard({
           hint={`${summaryStats.processedCount} employees processed`}
           icon={Wallet}
           accent="emerald"
+          delta={netPayDelta}
         />
         <MetricCard
           label="Total Employees"
@@ -296,6 +274,7 @@ export default function PayrollDashboard({
           hint={`${summaryStats.processedCount} processed`}
           icon={Users}
           accent="violet"
+          delta={employeesDelta}
         />
         <MetricCard
           label="Pending Processing"
@@ -303,6 +282,8 @@ export default function PayrollDashboard({
           hint={`${summaryStats.totalEmployees - summaryStats.paidCount} awaiting payment`}
           icon={Clock}
           accent={summaryStats.pendingCount > 0 ? 'amber' : 'emerald'}
+          delta={pendingDelta}
+          invertDelta
         />
         <MetricCard
           label="Paid This Month"
@@ -310,6 +291,7 @@ export default function PayrollDashboard({
           hint={`${paidPct}% completion`}
           icon={CheckCircle2}
           accent="emerald"
+          delta={paidDelta}
         />
       </div>
 
@@ -383,6 +365,7 @@ export default function PayrollDashboard({
               <li>Create a pay group and assign employees</li>
               <li>Select employees to process or process all at once</li>
               <li>Review the run — Lock → Approve → Release → Disburse</li>
+              <li>When a second approver is required, a <span className="font-medium">different admin</span> must approve and release before disbursement</li>
               <li>Generate bank file and upload to your banking portal</li>
             </ol>
           </div>
@@ -396,7 +379,7 @@ function RecentRuns({
   runs,
   onOpenRunDetail,
 }: {
-  runs: Array<{ id: number; month_year?: string; run_month?: string; status?: string; total_employees?: number; employee_count?: number; total_net_pay?: number }>;
+  runs: Array<{ id: number; month_year?: string; run_month?: string; status?: string; total_employees?: number; employee_count?: number; total_net_pay?: number; payslips_notified_status?: string | null; locked_by_name?: string | null; approved_by_name?: string | null; released_by_name?: string | null }>;
   onOpenRunDetail?: (runId: number) => void;
 }) {
   if (!runs || runs.length === 0) return null;
@@ -438,20 +421,44 @@ function RecentRuns({
                 onClick={() => onOpenRunDetail?.(r.id)}
                 className="w-full flex items-center justify-between p-3 hover:bg-blue-50 transition-colors text-left"
               >
-                <div className="min-w-0 flex-1">
+                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-slate-900">{monthLabel.long}</p>
                   <p className="text-xs text-slate-500">
                     <span className="font-mono">{r.month_year ?? r.run_month ?? '—'}</span>
                     {' · '}Run #{r.id}{' · '}{r.total_employees ?? r.employee_count ?? 0} employees
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {[
+                      r.locked_by_name && `Locked: ${r.locked_by_name}`,
+                      r.approved_by_name && `Approved: ${r.approved_by_name}`,
+                      r.released_by_name && `Released: ${r.released_by_name}`,
+                    ].filter(Boolean).join(' · ') || 'No approvers yet'}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-slate-900">
                     ₹{Number(r.total_net_pay ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                   </p>
-                  <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${statusTone[r.status ?? ''] ?? 'bg-slate-100 text-slate-700'}`}>
-                    {r.status ?? 'draft'}
-                  </span>
+                  <div className="flex items-center justify-end gap-1 mt-1">
+                    {r.status === 'disbursed' && (
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${
+                        r.payslips_notified_status === 'sent'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : r.payslips_notified_status === 'failed'
+                            ? 'bg-rose-100 text-rose-700'
+                            : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {r.payslips_notified_status === 'sent'
+                          ? 'Notified'
+                          : r.payslips_notified_status === 'failed'
+                            ? 'Notify failed'
+                            : 'Not sent'}
+                      </span>
+                    )}
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${statusTone[r.status ?? ''] ?? 'bg-slate-100 text-slate-700'}`}>
+                      {r.status ?? 'draft'}
+                    </span>
+                  </div>
                 </div>
               </button>
             );
@@ -461,3 +468,199 @@ function RecentRuns({
     </div>
   );
 }
+
+interface AttentionItem {
+  key: string;
+  label: string;
+  count: number;
+  onResolve?: () => void;
+}
+
+function NeedsAttentionRail({
+  attention,
+  onOpenUnassignedEmployees,
+  onOpenEmployeeCards,
+  onOpenFbp,
+}: {
+  attention: {
+    missing_bank_details?: number;
+    missing_pan_uan?: number;
+    unassigned_employees?: number;
+    pending_fbp_declarations?: number;
+  } | null;
+  onOpenUnassignedEmployees?: () => void;
+  onOpenEmployeeCards?: () => void;
+  onOpenFbp?: () => void;
+}) {
+  const items: AttentionItem[] = [
+    { key: 'unassigned', label: 'Unassigned employees', count: attention?.unassigned_employees ?? 0, onResolve: onOpenUnassignedEmployees },
+    { key: 'bank', label: 'Missing bank details', count: attention?.missing_bank_details ?? 0, onResolve: onOpenEmployeeCards },
+    { key: 'pan', label: 'Missing PAN / UAN', count: attention?.missing_pan_uan ?? 0, onResolve: onOpenEmployeeCards },
+    { key: 'fbp', label: 'Pending FBP declarations', count: attention?.pending_fbp_declarations ?? 0, onResolve: onOpenFbp },
+  ];
+
+  const total = items.reduce((s, i) => s + i.count, 0);
+
+  return (
+    <SurfaceCard className="p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <h3 className="text-sm font-semibold text-slate-900">Needs attention</h3>
+        </div>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${total > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+          {total > 0 ? `${total} item${total === 1 ? '' : 's'}` : 'All clear'}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {items.map((it) => {
+          const tone = it.count > 0
+            ? 'border-amber-200 bg-amber-50 hover:bg-amber-100'
+            : 'border-slate-200 bg-white';
+          return (
+            <button
+              key={it.key}
+              type="button"
+              onClick={it.onResolve}
+              disabled={!it.onResolve}
+              className={`text-left rounded-lg border p-3 flex items-center justify-between gap-2 transition-colors ${tone} ${it.onResolve ? 'cursor-pointer' : 'cursor-default'}`}
+            >
+              <span className="text-sm text-slate-700">{it.label}</span>
+              <span className={`inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full text-xs font-bold ${it.count > 0 ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                {it.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </SurfaceCard>
+  );
+}
+
+const COMPLIANCE_DEFAULTS = {
+  pf: true,
+  esi: true,
+  pt: true,
+  tds: true,
+  lwf: false,
+};
+
+function lastWorkingDay(year: number, month: number): Date {
+  // month is 1-indexed
+  const d = new Date(year, month, 0); // last day of month
+  const day = d.getDay();
+  if (day === 0) d.setDate(d.getDate() - 2); // Sunday -> Friday
+  else if (day === 6) d.setDate(d.getDate() - 1); // Saturday -> Friday
+  return d;
+}
+
+function addMonths(year: number, month: number, delta: number): { year: number; month: number } {
+  const total = year * 12 + (month - 1) + delta;
+  return { year: Math.floor(total / 12), month: (total % 12) + 1 };
+}
+
+interface DueDate {
+  key: string;
+  label: string;
+  due: Date;
+  frequency: 'monthly' | 'annual';
+}
+
+function computeDueDates(
+  compliance: Record<string, any>,
+  defaultState: string | undefined,
+  overrides: Record<string, any> | undefined,
+  selectedMonth: string,
+): DueDate[] {
+  const enabled: Record<string, boolean> = { ...COMPLIANCE_DEFAULTS, ...(compliance ?? {}) };
+  const [y, m] = (selectedMonth ?? '').split('-').map(Number);
+  if (!y || !m) return [];
+
+  // Payroll month M → filings are due in the following month.
+  const next = addMonths(y, m, 1);
+
+  const out: DueDate[] = [];
+
+  if (enabled.pf ?? COMPLIANCE_DEFAULTS.pf) {
+    out.push({ key: 'pf', label: 'PF', due: new Date(next.year, next.month - 1, 15), frequency: 'monthly' });
+    out.push({ key: 'esi', label: 'ESI', due: new Date(next.year, next.month - 1, 15), frequency: 'monthly' });
+  }
+  if (enabled.tds ?? COMPLIANCE_DEFAULTS.tds) {
+    out.push({ key: 'tds', label: 'TDS', due: new Date(next.year, next.month - 1, 7), frequency: 'monthly' });
+  }
+  if (enabled.pt ?? COMPLIANCE_DEFAULTS.pt) {
+    // PT is state-specific; default to the last working day of the following month.
+    out.push({ key: 'pt', label: `PT (${defaultState ?? 'state'})`, due: lastWorkingDay(next.year, next.month), frequency: 'monthly' });
+  }
+  if (enabled.lwf ?? COMPLIANCE_DEFAULTS.lwf) {
+    // LWF is annual — due by the last working day of the financial year (Mar 31).
+    out.push({ key: 'lwf', label: 'LWF', due: lastWorkingDay(y, 3), frequency: 'annual' });
+  }
+
+  // Apply org overrides when provided.
+  if (overrides) {
+    for (const d of out) {
+      const ov = overrides[d.key];
+      if (ov && typeof ov === 'string' && !Number.isNaN(Date.parse(ov))) {
+        d.due = new Date(ov);
+      }
+    }
+  }
+
+  return out.sort((a, b) => a.due.getTime() - b.due.getTime());
+}
+
+function ComplianceDueDateRail({
+  settings,
+  selectedMonth,
+}: {
+  settings: Record<string, any>;
+  selectedMonth: string;
+}) {
+  const compliance = (settings?.compliance ?? {}) as Record<string, any>;
+  const defaultState = settings?.defaultState as string | undefined;
+  const overrides = settings?.compliance_due_dates as Record<string, any> | undefined;
+
+  const dueDates = computeDueDates(compliance, defaultState, overrides, selectedMonth);
+  if (dueDates.length === 0) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return (
+    <SurfaceCard className="p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <CalendarClock className="h-4 w-4 text-blue-600" />
+        <h3 className="text-sm font-semibold text-slate-900">Upcoming compliance due dates</h3>
+        <span className="text-xs text-slate-400">· filing deadlines for {selectedMonth}</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {dueDates.map((d) => {
+          const days = Math.ceil((d.due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          const overdue = days < 0;
+          const tone = overdue
+            ? 'bg-rose-100 text-rose-700 border-rose-200'
+            : days <= 3
+              ? 'bg-rose-50 text-rose-700 border-rose-200'
+              : days <= 7
+                ? 'bg-amber-100 text-amber-700 border-amber-200'
+                : 'bg-slate-100 text-slate-700 border-slate-200';
+          const label = overdue
+            ? `${Math.abs(days)}d overdue`
+            : days === 0
+              ? 'Due today'
+              : `${days}d left`;
+          return (
+            <div key={d.key} className={`flex flex-col gap-0.5 rounded-lg border px-3 py-2 ${tone}`}>
+              <span className="text-sm font-semibold">{d.label}</span>
+              <span className="text-xs">
+                {d.due.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </SurfaceCard>
+  );
+}
+

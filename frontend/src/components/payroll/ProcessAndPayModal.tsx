@@ -256,8 +256,8 @@ export function ProcessAndPayPanel({
                           <span className="text-xs font-bold text-blue-600">1</span>
                         </div>
                         <div>
-                          <p className="font-medium text-sm text-slate-900">Calculate Payroll</p>
-                          <p className="text-xs text-slate-500">Apply all components and deductions</p>
+                          <p className="font-medium text-sm text-slate-900">Calculate &amp; Lock</p>
+                          <p className="text-xs text-slate-500">Apply all components, then lock for compliance</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
@@ -265,8 +265,8 @@ export function ProcessAndPayPanel({
                           <span className="text-xs font-bold text-blue-600">2</span>
                         </div>
                         <div>
-                          <p className="font-medium text-sm text-slate-900">Lock Numbers</p>
-                          <p className="text-xs text-slate-500">Immutable for compliance</p>
+                          <p className="font-medium text-sm text-slate-900">Approve</p>
+                          <p className="text-xs text-slate-500">A different admin must approve when required</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
@@ -274,8 +274,8 @@ export function ProcessAndPayPanel({
                           <span className="text-xs font-bold text-blue-600">3</span>
                         </div>
                         <div>
-                          <p className="font-medium text-sm text-slate-900">Generate Bank File</p>
-                          <p className="text-xs text-slate-500">NEFT format with auto-skipping</p>
+                          <p className="font-medium text-sm text-slate-900">Release Bank File</p>
+                          <p className="text-xs text-slate-500">Generate NEFT file with auto-skipping</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2">
@@ -283,11 +283,16 @@ export function ProcessAndPayPanel({
                           <span className="text-xs font-bold text-blue-600">4</span>
                         </div>
                         <div>
-                          <p className="font-medium text-sm text-slate-900">Upload & Confirm</p>
+                          <p className="font-medium text-sm text-slate-900">Upload &amp; Confirm</p>
                           <p className="text-xs text-slate-500">Mark as disbursed after bank upload</p>
                         </div>
                       </div>
                     </div>
+                    <p className="text-xs text-slate-500 mt-3">
+                      When your organization requires a second approver, the run pauses after locking and a
+                      <span className="font-medium text-slate-700"> different admin</span> must approve and release it
+                      before it can be disbursed.
+                    </p>
                   </div>
                 </div>
               </SurfaceCard>
@@ -379,6 +384,24 @@ export function ProcessAndPayPanel({
                   </div>
                 </div>
               </SurfaceCard>
+
+              {result?.awaiting_second_approver && (
+                <SurfaceCard className="p-5 bg-blue-50 border-blue-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                      <Shield className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-base font-semibold text-blue-900">Awaiting second approver</h3>
+                      <p className="text-sm text-blue-800 mt-1">
+                        This run is locked but cannot be released or disbursed by you. A
+                        <span className="font-medium"> different admin</span> must approve and release it
+                        from the payroll runs list before payslips can be published.
+                      </p>
+                    </div>
+                  </div>
+                </SurfaceCard>
+              )}
 
               {/* Bank file download */}
               {bankFile && (
@@ -504,7 +527,9 @@ export function ProcessAndPayPanel({
                 </div>
               </details>
 
-              {/* Primary action: confirm bank upload + disburse */}
+              {/* Primary action: confirm bank upload + disburse (only when no
+                  second approver is pending) */}
+              {!result?.awaiting_second_approver && (
               <SurfaceCard className="p-5 border border-slate-200 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50">
                 <div className="flex items-start gap-4 mb-4">
                   <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
@@ -541,6 +566,7 @@ export function ProcessAndPayPanel({
                   </Button>
                 </div>
               </SurfaceCard>
+              )}
             </>
           )}
 

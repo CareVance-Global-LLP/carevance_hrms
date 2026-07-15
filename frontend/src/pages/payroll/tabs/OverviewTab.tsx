@@ -71,7 +71,7 @@ export default function OverviewTab() {
         </div>
         <button
           type="button"
-          onClick={() => openRunTab('assign')}
+          onClick={() => navigate('/payroll/unassigned-employees')}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600"
         >
           Assign employees
@@ -98,7 +98,7 @@ export default function OverviewTab() {
         onSelectPayGroup={(payGroupId) => navigate(`/payroll/run?step=assign&payGroup=${payGroupId}`)}
         onOpenReports={() => navigate('/payroll/reports?panel=register')}
         onOpenDepartmentTemplates={() => navigate('/payroll/employee-pay?type=dept-templates')}
-        onOpenUnassignedEmployees={() => openRunTab('assign')}
+        onOpenUnassignedEmployees={() => navigate('/payroll/unassigned-employees')}
         onOpenSalaryComponents={() => navigate('/payroll/employee-pay?type=salary-components')}
       />
 

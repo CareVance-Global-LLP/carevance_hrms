@@ -166,6 +166,9 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::post('/runs/{runId}/approve', [PayrollDepartmentController::class, 'approvePayrollRun']);
     Route::post('/runs/{runId}/release', [PayrollDepartmentController::class, 'releasePayrollRun']);
     Route::post('/runs/{runId}/disburse', [PayrollDepartmentController::class, 'disburseRun']);
+    Route::post('/runs/{runId}/notify-payslips', [PayrollDepartmentController::class, 'resendPayslipNotification']);
+    Route::post('/runs/{runId}/reverse', [PayrollDepartmentController::class, 'reversePaymentRun']);
+    Route::get('/runs/{runId}/reversals', [PayrollDepartmentController::class, 'getRunReversals']);
     Route::post('/runs/{runId}/process-payment', [PayrollDepartmentController::class, 'processRunPayment']);
     Route::post('/items/{itemId}/mark-paid', [PayrollDepartmentController::class, 'markItemPaid']);
 
@@ -234,8 +237,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::post('/settings/reset', [\App\Http\Controllers\Api\PayrollSettingsController::class, 'resetSettings']);
     Route::post('/settings/apply-to-all-employees', [\App\Http\Controllers\Api\PayrollSettingsController::class, 'applyToAllEmployees']);
     
-    // Dashboard Data
-    Route::get('/dashboard-data', [\App\Http\Controllers\Api\PayrollDashboardController::class, 'getDashboardData']);
+    Route::get('/dashboard-attention', [PayrollDepartmentController::class, 'getDashboardAttention']);
     
     // Legacy endpoints
     Route::get('/employees', [PayrollController::class, 'getEmployees']);

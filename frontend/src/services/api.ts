@@ -1895,10 +1895,24 @@ export const payrollApi = {
    * run to immutable `disbursed` state.
    */
   disburseRun: (runId: number, opts?: { payment_method?: string; pay_date?: string }) =>
-    api.post<{ success: boolean; message: string; run: any }>(
+    api.post<{ success: boolean; message: string; run: any; payslip_notification?: any }>(
       `/payroll/runs/${runId}/disburse`,
       { payment_method: opts?.payment_method ?? 'bank_transfer', pay_date: opts?.pay_date },
     ),
+
+  notifyPayslips: (runId: number) =>
+    api.post<{ success: boolean; message: string; run: any; payslip_notification?: any }>(
+      `/payroll/runs/${runId}/notify-payslips`,
+    ),
+
+  reversePaymentRun: (runId: number, reason: string) =>
+    api.post<{ success: boolean; message: string; reversals: any[] }>(
+      `/payroll/runs/${runId}/reverse`,
+      { reason },
+    ),
+
+  getRunReversals: (runId: number) =>
+    api.get<{ success: boolean; reversals: any[] }>(`/payroll/runs/${runId}/reversals`),
 
   getPayrollRunDetail: (runId: number) =>
     api.get<{ run: any; items: any[] }>(`/payroll/runs/${runId}`),
@@ -1936,6 +1950,17 @@ export const payrollApi = {
         created_at: string;
       }>;
     }>(`/payroll/runs/${runId}/activity`),
+
+  getDashboardAttention: () =>
+    api.get<{
+      success: boolean;
+      attention: {
+        missing_bank_details?: number;
+        missing_pan_uan?: number;
+        unassigned_employees?: number;
+        pending_fbp_declarations?: number;
+      };
+    }>('/payroll/dashboard-attention'),
 
   getRunCompleteness: (runId: number) =>
     api.get<{

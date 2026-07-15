@@ -13,6 +13,7 @@ use App\Models\ReimbursementPayrollLink;
 use App\Models\LeaveEncashment;
 use App\Models\ArrearPayment;
 use App\Models\FbpClaim;
+use App\Services\FbpService;
 use App\Models\PerquisiteRecord;
 use App\Models\VariablePayAssignment;
 use App\Models\User;
@@ -27,6 +28,7 @@ class PayrollAutoProcessService
     protected PayrollFilingService $filings;
     protected PayrollChecklistService $checklist;
     protected AttendanceService $attendance;
+    protected FbpService $fbp;
 
     public function __construct(
         PayrollCalculatorService $calculator,
@@ -34,12 +36,14 @@ class PayrollAutoProcessService
         PayrollFilingService $filings,
         PayrollChecklistService $checklist,
         AttendanceService $attendance,
+        FbpService $fbp,
     ) {
         $this->calculator = $calculator;
         $this->validation = $validation;
         $this->filings = $filings;
         $this->checklist = $checklist;
         $this->attendance = $attendance;
+        $this->fbp = $fbp;
     }
 
     public function quickProcess(int $orgId, string $monthYear, int $userId): array
@@ -441,6 +445,11 @@ class PayrollAutoProcessService
             $tds = 0;
             if ($template->tds_enabled) {
                 $annualProjected = $gross * 12;
+                // Net the FBP exemption out of the tax base so only the
+                // portion of a taxable FBP component above its exemption
+                // limit is taxed. Non-taxable FBP (e.g. food coupons) is
+                // excluded entirely. Earnings (gross/net pay) are untouched.
+                $annualProjected = max(0, $annualProjected - $this->fbp->getFbpTaxExclusion($item->user_id, $run->organization_id));
                 // getApprovedTaxDeductions returns a flat float total; the
                 // tax calculator wants a per-section array. Pass the full
                 // declaration map (or empty for "no exemptions") — the

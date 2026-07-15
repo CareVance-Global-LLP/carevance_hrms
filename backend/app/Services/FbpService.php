@@ -128,8 +128,17 @@ class FbpService
             $component = $alloc->component;
             $maxExempt = (float) ($component->max_exempt_limit ?? PHP_FLOAT_MAX);
             $approved = (float) $alloc->approved_amount;
-            $taxable = $component->is_taxable ? $approved : 0;
-            $exempt = min($approved, $maxExempt);
+            if ($component->is_taxable) {
+                // Only the portion ABOVE the exemption limit is taxed; the
+                // within-limit amount remains exempt.
+                $exempt = min($approved, $maxExempt);
+                $taxable = max(0, $approved - $exempt);
+            } else {
+                // Non-taxable components (e.g. food coupons) are exempt in
+                // full — the entire approved amount is excluded from tax.
+                $exempt = $approved;
+                $taxable = 0;
+            }
 
             $result[] = [
                 'component' => $component->name,
@@ -152,5 +161,27 @@ class FbpService
             ->where('month_year', $monthYear)
             ->where('status', 'approved')
             ->sum('approved_amount');
+    }
+
+    /**
+     * Annual amount of approved FBP that should be EXCLUDED from the tax
+     * base for a user.
+     *
+     * FBP is paid in full (earnings are untouched), but only the portion
+     * above each component's exemption limit is taxable. Non-taxable
+     * components (e.g. food coupons) are excluded entirely.
+     *
+     * The result equals the sum over components of
+     * (approved_amount - taxable_amount), so the excess over the limit is
+     * what remains taxable.
+     */
+    public function getFbpTaxExclusion(int $userId, int $orgId, ?int $financialYearId = null): float
+    {
+        $exclusion = 0.0;
+        foreach ($this->calculateTaxExemptions($userId, $orgId, $financialYearId) as $row) {
+            $exclusion += (float) $row['approved'] - (float) $row['taxable_amount'];
+        }
+
+        return $exclusion;
     }
 }

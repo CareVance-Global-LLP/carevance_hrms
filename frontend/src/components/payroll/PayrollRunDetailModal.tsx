@@ -11,6 +11,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/utils/cn';
 import PayrollRunLifecycleStepper, { RunLifecycleState } from './PayrollRunLifecycleStepper';
 import PayrollOutcome from './PayrollOutcome';
@@ -36,12 +37,15 @@ export default function PayrollRunDetailModal({
 }: PayrollRunDetailModalProps) {
   const queryClient = useQueryClient();
   const { show } = useToast();
+  const { user } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [showUnlockDialog, setShowUnlockDialog] = useState(false);
   const [showDisburseConfirm, setShowDisburseConfirm] = useState(false);
   const [unlockReason, setUnlockReason] = useState('');
   const [partialLockData, setPartialLockData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'employees' | 'activity'>('overview');
+  const [showReverseDialog, setShowReverseDialog] = useState(false);
+  const [reverseReason, setReverseReason] = useState('');
 
   const { data: detailData, isLoading } = useQuery({
     queryKey: ['payroll', 'run-detail', runId],
@@ -143,6 +147,41 @@ export default function PayrollRunDetailModal({
       show({ kind: 'success', message: 'Payments disbursed. Run is now immutable.' });
     },
     onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to disburse payments') }),
+  });
+
+  // Reversal history for a disbursed run
+  const { data: reversals } = useQuery({
+    queryKey: ['payroll', 'run-reversals', runId],
+    queryFn: () => runId ? payrollApi.getRunReversals(runId).then((r) => r.data?.reversals ?? []) : [],
+    enabled: !!runId && isOpen,
+  });
+
+  const reverseMutation = useMutation({
+    mutationFn: (reason: string) =>
+      runId ? payrollApi.reversePaymentRun(runId, reason).then((r) => r.data) : Promise.reject(new Error('no run')),
+    onSuccess: (data: any) => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'run-reversals', runId] });
+      setShowReverseDialog(false);
+      setReverseReason('');
+      show({ kind: 'success', message: data?.message ?? 'Payment reversal initiated.' });
+    },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to reverse payment') }),
+  });
+
+  const notifyMutation = useMutation({
+    mutationFn: () => runId ? payrollApi.notifyPayslips(runId).then((r) => r.data) : null,
+    onSuccess: (data: any) => {
+      invalidateAll();
+      const failed = data?.payslip_notification?.failed_count ?? 0;
+      show({
+        kind: failed > 0 ? 'warning' : 'success',
+        message: failed > 0
+          ? `Payslip notifications resent (${data?.payslip_notification?.sent_count ?? 0} sent, ${failed} failed).`
+          : 'Payslip notifications resent to all employees.',
+      });
+    },
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to notify employees') }),
   });
 
   const processRemainingMutation = useMutation({
@@ -255,6 +294,7 @@ export default function PayrollRunDetailModal({
     approveMutation.isPending ||
     releaseMutation.isPending ||
     disburseMutation.isPending ||
+    notifyMutation.isPending ||
     processRemainingMutation.isPending;
 
   const completenessInfo: any = completeness;
@@ -376,11 +416,19 @@ export default function PayrollRunDetailModal({
                     onRelease={() => releaseMutation.mutate()}
                     onDisburseClick={() => setShowDisburseConfirm(true)}
                     onDownloadBankFile={handleDownloadBankFile}
+                    onNotify={() => notifyMutation.mutate()}
                     lockPending={lockMutation.isPending}
                     unlockPending={unlockMutation.isPending}
                     approvePending={approveMutation.isPending}
                     releasePending={releaseMutation.isPending}
                     disbursePending={disburseMutation.isPending}
+                    notifyPending={notifyMutation.isPending}
+                    payslipNotifiedStatus={(run as any)?.payslips_notified_status}
+                    payslipNotifiedAt={(run as any)?.payslips_notified_at}
+                    payslipNotifiedFailed={(run as any)?.payslips_notified_failed_count}
+                    canReverse={['admin', 'super_admin'].includes((user as any)?.role)}
+                    onReverseClick={() => setShowReverseDialog(true)}
+                    reversePending={reverseMutation.isPending}
                   />
                 </section>
               </aside>
@@ -436,7 +484,10 @@ export default function PayrollRunDetailModal({
                       <PayrollOutcome run={run as any} items={items as any} />
                     )}
 
-                    {/* Missing bank details */}
+                    {/* Reversal history */}
+                    {currentState === 'disbursed' && (reversals?.length ?? 0) > 0 && (
+                      <ReversalHistoryCard reversals={reversals ?? []} formatCurrency={formatCurrency} />
+                    )}
                     {missingCount > 0 && (currentState === 'approved' || currentState === 'released') && (
                       <MissingBankCard
                         missingEmployees={missingEmployees}
@@ -495,6 +546,23 @@ export default function PayrollRunDetailModal({
           onConfirm={() => unlockMutation.mutate(unlockReason)}
           reason={unlockReason}
           setReason={setUnlockReason}
+        />
+      )}
+
+      {/* Reverse payment dialog */}
+      {showReverseDialog && (
+        <ReasonDialog
+          icon={AlertTriangle}
+          title="Reverse this Payment"
+          tone="danger"
+          message="This will initiate a reversal for every paid payslip in this run. The action is audit-logged and should only be used to claw back a mistaken disbursement."
+          placeholder="Reason for reversal (e.g. wrong net pay due to incorrect LOP days)"
+          confirmLabel="Reverse Payment"
+          isPending={reverseMutation.isPending}
+          onCancel={() => { setShowReverseDialog(false); setReverseReason(''); }}
+          onConfirm={() => reverseMutation.mutate(reverseReason.trim())}
+          reason={reverseReason}
+          setReason={setReverseReason}
         />
       )}
 
@@ -623,11 +691,19 @@ interface ActionBarProps {
   onRelease: () => void;
   onDisburseClick: () => void;
   onDownloadBankFile: () => void;
+  onNotify: () => void;
   lockPending: boolean;
   unlockPending: boolean;
   approvePending: boolean;
   releasePending: boolean;
   disbursePending: boolean;
+  notifyPending: boolean;
+  payslipNotifiedStatus?: string | null;
+  payslipNotifiedAt?: string | null;
+  payslipNotifiedFailed?: number | null;
+  canReverse?: boolean;
+  onReverseClick?: () => void;
+  reversePending?: boolean;
 }
 
 function ActionBar({
@@ -641,11 +717,19 @@ function ActionBar({
   onRelease,
   onDisburseClick,
   onDownloadBankFile,
+  onNotify,
   lockPending,
   unlockPending,
   approvePending,
   releasePending,
   disbursePending,
+  notifyPending,
+  payslipNotifiedStatus,
+  payslipNotifiedAt,
+  payslipNotifiedFailed,
+  canReverse,
+  onReverseClick,
+  reversePending,
 }: ActionBarProps) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -740,14 +824,31 @@ function ActionBar({
       )}
 
       {currentState === 'disbursed' && (
-        <div className="w-full">
+        <div className="w-full space-y-3">
           <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
             <Check className="h-4 w-4" />
             <span>
               <strong>Disbursed.</strong> All payments recorded. This run is immutable for compliance.
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-2">
+          <PayrollNotificationStatus
+            status={payslipNotifiedStatus}
+            notifiedAt={payslipNotifiedAt}
+            failedCount={payslipNotifiedFailed}
+            isSending={notifyPending}
+            onResend={onNotify}
+          />
+          {canReverse && (
+            <Button
+              variant="danger"
+              iconLeft={reversePending ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+              onClick={onReverseClick}
+              disabled={reversePending}
+            >
+              Reverse this Payment
+            </Button>
+          )}
+          <p className="text-xs text-slate-500">
             Bank file download remains available for your records.
           </p>
           <Button
@@ -1142,6 +1243,112 @@ function TabButton({ label, icon: Icon, active, disabled, onClick }: TabButtonPr
       <Icon className="h-4 w-4" />
       {label}
     </button>
+  );
+}
+
+interface PayrollNotificationStatusProps {
+  status?: string | null;
+  notifiedAt?: string | null;
+  failedCount?: number | null;
+  isSending: boolean;
+  onResend: () => void;
+}
+
+function PayrollNotificationStatus({
+  status,
+  notifiedAt,
+  failedCount,
+  isSending,
+  onResend,
+}: PayrollNotificationStatusProps) {
+  const tone =
+    status === 'sent'
+      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+      : status === 'failed'
+        ? 'bg-rose-50 border-rose-200 text-rose-700'
+        : 'bg-slate-50 border-slate-200 text-slate-600';
+
+  const label =
+    status === 'sent'
+      ? 'Payslips notified'
+      : status === 'failed'
+        ? `Payslip notifications sent with ${failedCount ?? 0} failure(s)`
+        : 'Payslips not yet notified';
+
+  return (
+    <div className={`rounded-lg border p-3 ${tone}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Send className="h-4 w-4 flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{label}</p>
+            {notifiedAt && (
+              <p className="text-xs opacity-80">
+                {new Date(notifiedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+              </p>
+            )}
+          </div>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          iconLeft={isSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+          onClick={onResend}
+          disabled={isSending}
+        >
+          {isSending ? 'Sending…' : 'Resend'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface ReversalHistoryCardProps {
+  reversals: any[];
+  formatCurrency: (n: number) => string;
+}
+
+function ReversalHistoryCard({ reversals, formatCurrency }: ReversalHistoryCardProps) {
+  const statusTone: Record<string, string> = {
+    pending: 'bg-amber-100 text-amber-700',
+    approved: 'bg-blue-100 text-blue-700',
+    completed: 'bg-emerald-100 text-emerald-700',
+    failed: 'bg-rose-100 text-rose-700',
+    rejected: 'bg-slate-100 text-slate-600',
+  };
+
+  return (
+    <SurfaceCard className="p-5 bg-rose-50 border-rose-200 rounded-lg">
+      <div className="flex items-start gap-4 mb-4">
+        <div className="h-10 w-10 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
+          <AlertTriangle className="h-5 w-5 text-rose-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base font-bold text-rose-900 mb-1">
+            Payment Reversal{(reversals.length > 1 ? 's' : '')} ({reversals.length})
+          </h3>
+          <p className="text-sm text-rose-800">
+            Reversal request{(reversals.length > 1 ? 's' : '')} for this run. Each is processed by the bank.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {reversals.map((rev: any) => (
+          <div key={rev.id} className="bg-white border border-rose-200 rounded-lg p-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-medium text-slate-900 text-sm truncate">{rev.user?.name ?? `Employee #${rev.user_id}`}</p>
+              <p className="text-xs text-slate-500 truncate">{rev.reason}</p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-sm font-semibold text-slate-900">{formatCurrency(rev.amount)}</p>
+              <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${statusTone[rev.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                {rev.status}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </SurfaceCard>
   );
 }
 

@@ -201,6 +201,11 @@ export default function PayrollPage() {
     updateParams({ view: 'employee', emp: employeeId, step: 0 });
   };
 
+  // In standalone (non-matrix) mode the wizard drives its own step
+  // advancement and renders its own "processed" success view, so we must
+  // NOT auto-bounce the user to the dashboard after processing an employee.
+  const handleEmployeeWizardComplete = () => {};
+
   const handleSelectPayGroup = (payGroupId: number) => {
     updateParams({ view: 'pay-group', payGroup: payGroupId, emp: null, step: null });
   };
@@ -329,11 +334,7 @@ export default function PayrollPage() {
             initialStep={currentStep}
             onBack={selectedPayGroupId ? handleBackToPayGroup : handleBackToDashboard}
             backLabel={selectedPayGroupId ? 'Back to Pay Group' : 'Back to Dashboard'}
-            onComplete={(step) => {
-              if (step === 6) {
-                updateParams({ view: 'dashboard', emp: null, step: null });
-              }
-            }}
+            onComplete={handleEmployeeWizardComplete}
             onViewRun={handleOpenRunDetail}
           />
         )}

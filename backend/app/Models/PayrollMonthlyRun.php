@@ -86,6 +86,21 @@ class PayrollMonthlyRun extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function lockedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'locked_by');
+    }
+
+    public function releasedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'released_by');
+    }
+
+    public function disbursedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'disbursed_by');
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(PayrollItem::class, 'payroll_run_id');

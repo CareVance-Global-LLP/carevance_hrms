@@ -90,6 +90,7 @@ const GoogleSignupCompletion = lazyWithChunkRetry(() => import('@/pages/GoogleSi
 const PayrollShell = lazyWithChunkRetry(() => import('@/pages/payroll/PayrollShell'));
 const OverviewTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/OverviewTab'));
 const RunPayrollTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/RunPayrollTab'));
+const UnassignedEmployeesPage = lazyWithChunkRetry(() => import('@/pages/payroll/UnassignedEmployeesPage'));
 const EmployeePayTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/EmployeePayTab'));
 const TaxComplianceTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/TaxComplianceTab'));
 const ReportsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/ReportsTab'));
@@ -630,6 +631,8 @@ function App() {
               <Route path="tax-compliance" element={<TaxComplianceTab />} />
               <Route path="reports" element={<ReportsTab />} />
             </Route>
+            {/* Standalone Unassigned Employees screen (not a tab) */}
+            <Route path="payroll/unassigned-employees" element={<PlanFeatureRoute feature="payroll"><AdminRoute><UnassignedEmployeesPage /></AdminRoute></PlanFeatureRoute>} />
             <Route path="my-payroll" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><MyPayroll /></ProtectedRoute></PlanFeatureRoute>} />
 
             {/* Legacy payroll routes → redirect into the new tabbed shell */}

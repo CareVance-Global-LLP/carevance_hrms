@@ -13,10 +13,13 @@ import { useToast } from '@/components/ui/Toast';
 import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import { checklistCheckTone, titleCase } from '@/utils/payrollStatus';
 
-export default function PrePayrollChecklistPage() {
+export default function PrePayrollChecklistPage({ runId = null }: { runId?: number | null }) {
   const queryClient = useQueryClient();
   const { show } = useToast();
-  const [selectedRun, setSelectedRun] = useState<number | null>(null);
+  const [selectedRunManual, setSelectedRunManual] = useState<number | null>(null);
+  // When launched from the Run Payroll flow, a run is preselected by month and
+  // the manual picker is hidden. Standalone usage passes no runId.
+  const selectedRun = runId ?? selectedRunManual;
   const [resolving, setResolving] = useState<{ checkId: number; name: string } | null>(null);
 
   const { data: runs } = useQuery({
@@ -70,33 +73,35 @@ export default function PrePayrollChecklistPage() {
       <PageHeader title="Pre-Payroll Checklist" description="Run validation checks before processing payroll" />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
-        {/* Run Selector */}
-        <SurfaceCard className="p-5">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <FieldLabel>Select Payroll Run</FieldLabel>
-              <SelectInput
-                value={selectedRun ?? ''}
-                onChange={(e) => setSelectedRun(Number(e.target.value) || null)}
+        {/* Run Selector — hidden when a run is preselected from the Run Payroll flow */}
+        {!runId && (
+          <SurfaceCard className="p-5">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex-1 min-w-[200px]">
+                <FieldLabel>Select Payroll Run</FieldLabel>
+                <SelectInput
+                  value={selectedRun ?? ''}
+                  onChange={(e) => setSelectedRunManual(Number(e.target.value) || null)}
+                >
+                  <option value="">Choose a run...</option>
+                  {runsList.map((run: any) => (
+                    <option key={run.id} value={run.id}>
+                      {run.month_year} — {run.status}
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
+              <Button
+                variant="primary"
+                iconLeft={validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                onClick={() => selectedRun && validateMutation.mutate(selectedRun)}
+                disabled={!selectedRun || validateMutation.isPending}
               >
-                <option value="">Choose a run...</option>
-                {runsList.map((run: any) => (
-                  <option key={run.id} value={run.id}>
-                    {run.month_year} — {run.status}
-                  </option>
-                ))}
-              </SelectInput>
+                {validateMutation.isPending ? 'Running...' : 'Run Validation'}
+              </Button>
             </div>
-            <Button
-              variant="primary"
-              iconLeft={validateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              onClick={() => selectedRun && validateMutation.mutate(selectedRun)}
-              disabled={!selectedRun || validateMutation.isPending}
-            >
-              {validateMutation.isPending ? 'Running...' : 'Run Validation'}
-            </Button>
-          </div>
-        </SurfaceCard>
+          </SurfaceCard>
+        )}
 
         {/* Stats */}
         {selectedRun && checks.length > 0 && (

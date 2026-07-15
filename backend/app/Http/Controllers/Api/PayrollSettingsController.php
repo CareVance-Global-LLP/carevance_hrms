@@ -34,6 +34,9 @@ class PayrollSettingsController extends Controller
         'vpfEnabled' => false,
         'vpfPercentage' => 0,
         'isMetroCity' => true,
+        // Maker-checker: when true, a *different* admin must approve/release
+        // a run. When null (default), it is derived from the live admin count.
+        'requireSecondApprover' => null,
     ];
 
     /**
@@ -83,9 +86,12 @@ class PayrollSettingsController extends Controller
             'vpfEnabled' => 'nullable|boolean',
             'vpfPercentage' => 'nullable|numeric|min:0|max:100',
             'isMetroCity' => 'nullable|boolean',
+            'requireSecondApprover' => 'nullable|boolean',
             // Compliance toggles (SetupCompliance)
             'compliance' => 'nullable|array',
             'compliance.*' => 'nullable|boolean',
+            'compliance_due_dates' => 'nullable|array',
+            'compliance_due_dates.*' => 'nullable|string',
             // Pay schedule (SetupPaySchedule)
             'paySchedule' => 'nullable|array',
             'paySchedule.frequency' => 'nullable|in:monthly,biweekly,weekly,daily',
@@ -142,10 +148,12 @@ class PayrollSettingsController extends Controller
                 'vpfEnabled',
                 'vpfPercentage',
                 'isMetroCity',
+                'requireSecondApprover',
                 'compliance',
                 'paySchedule',
                 'bank',
                 'statutory',
+                'compliance_due_dates',
             ])
         );
         

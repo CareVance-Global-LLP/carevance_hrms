@@ -11,12 +11,15 @@ use App\Models\PayGroup;
 use App\Models\PayGroupAssignment;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
+use App\Models\Organization;
+use App\Models\AppNotification;
 use App\Models\Reimbursement;
 use App\Models\ReimbursementPayrollLink;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Attendance\AttendanceService;
 use App\Services\PayrollCalculatorService;
+use App\Services\BankIntegrationService;
 use App\Services\PTStateService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
@@ -30,15 +33,18 @@ class PayrollDepartmentController extends Controller
     protected PayrollCalculatorService $calculator;
     protected AttendanceService $attendance;
     protected TimeEntryDurationService $timeEntryDuration;
+    protected BankIntegrationService $bank;
 
     public function __construct(
         PayrollCalculatorService $calculator,
         AttendanceService $attendance,
         TimeEntryDurationService $timeEntryDuration,
+        BankIntegrationService $bank,
     ) {
         $this->calculator = $calculator;
         $this->attendance = $attendance;
         $this->timeEntryDuration = $timeEntryDuration;
+        $this->bank = $bank;
     }
 
     /**
@@ -1910,7 +1916,7 @@ class PayrollDepartmentController extends Controller
         $organizationId = $request->user()->organization_id;
 
         $runs = PayrollMonthlyRun::where('organization_id', $organizationId)
-            ->with(['createdBy:id,name', 'approvedBy:id,name'])
+            ->with(['createdBy:id,name', 'approvedBy:id,name', 'lockedBy:id,name', 'releasedBy:id,name'])
             ->orderBy('month_year', 'desc')
             ->get()
             ->map(function ($run) {
@@ -1925,8 +1931,12 @@ class PayrollDepartmentController extends Controller
                     'total_net_pay' => $run->total_net_pay,
                     'total_employer_contributions' => $run->total_employer_contributions,
                     'created_by_name' => $run->createdBy?->name,
+                    'locked_by_name' => $run->lockedBy?->name,
                     'approved_by_name' => $run->approvedBy?->name,
+                    'released_by_name' => $run->releasedBy?->name,
                     'approved_at' => $run->approved_at,
+                    'locked_at' => $run->locked_at,
+                    'released_at' => $run->released_at,
                     'notes' => $run->notes,
                     'created_at' => $run->created_at,
                 ];
@@ -1934,6 +1944,77 @@ class PayrollDepartmentController extends Controller
 
         return response()->json([
             'runs' => $runs,
+        ]);
+    }
+
+    /**
+     * Categorized "needs attention" counts for the overview dashboard.
+     *
+     * Mirrors the checks the Pre-Payroll Checklist runs so the dashboard can
+     * surface real blockers at all times (even when there is no pending run).
+     */
+    public function getDashboardAttention(Request $request): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $onPayrollUserIds = DB::table('employee_payroll_templates as t')
+            ->join('users as u', 'u.id', '=', 't.user_id')
+            ->where('t.organization_id', $organizationId)
+            ->whereIn('u.role', ['employee', 'manager', 'admin'])
+            ->where('t.is_active', true)
+            ->whereNotNull('t.annual_ctc')
+            ->where('t.annual_ctc', '>', 0)
+            ->pluck('u.id')
+            ->unique()
+            ->values()
+            ->all();
+
+        // Missing bank details — on-payroll users without a usable bank account.
+        $missingBankDetails = 0;
+        if (! empty($onPayrollUserIds)) {
+            $missingBankDetails = User::whereIn('id', $onPayrollUserIds)
+                ->whereDoesntHave('employeeBankAccounts', function ($q) {
+                    $q->whereNotNull('account_number')->whereNotNull('ifsc_swift');
+                })
+                ->count();
+        }
+
+        // Missing PAN/UAN — on-payroll users whose profile lacks PAN or UAN.
+        $missingPanUan = 0;
+        if (! empty($onPayrollUserIds)) {
+            $missingPanUan = \App\Models\EmployeeProfile::whereIn('user_id', $onPayrollUserIds)
+                ->where(function ($q) {
+                    $q->whereNull('pan_number')->orWhere('pan_number', '')
+                      ->orWhereNull('uan_number')->orWhere('uan_number', '');
+                })
+                ->count();
+        }
+
+        // Unassigned employees — users on payroll roles with no template.
+        $assignedUserIds = DB::table('employee_payroll_templates')
+            ->where('organization_id', $organizationId)
+            ->pluck('user_id')
+            ->unique()
+            ->values()
+            ->all();
+        $unassignedEmployees = User::where('organization_id', $organizationId)
+            ->whereIn('role', ['employee', 'manager'])
+            ->whereNotIn('id', $assignedUserIds)
+            ->count();
+
+        // Pending FBP declarations — claims awaiting approval.
+        $pendingFbpDeclarations = \App\Models\FbpClaim::where('organization_id', $organizationId)
+            ->where('status', 'pending')
+            ->count();
+
+        return response()->json([
+            'success' => true,
+            'attention' => [
+                'missing_bank_details' => $missingBankDetails,
+                'missing_pan_uan' => $missingPanUan,
+                'unassigned_employees' => $unassignedEmployees,
+                'pending_fbp_declarations' => $pendingFbpDeclarations,
+            ],
         ]);
     }
 
@@ -2269,6 +2350,26 @@ class PayrollDepartmentController extends Controller
      * callers (the audit log entry is still written), but no longer
      * required.
      */
+    /**
+     * Whether a run in this organization requires a *different* admin to
+     * approve and release it (maker-checker).
+     *
+     * Returns the explicit `requireSecondApprover` org setting when set.
+     * When null (default), it is derived from the live admin count: orgs
+     * with 3+ payroll admins (admin/super_admin) enforce a second approver.
+     */
+    private function shouldRequireSecondApprover(Organization $org): bool
+    {
+        $payroll = $org->settings['payroll'] ?? [];
+        if (array_key_exists('requireSecondApprover', $payroll) && $payroll['requireSecondApprover'] !== null) {
+            return (bool) $payroll['requireSecondApprover'];
+        }
+
+        return User::where('organization_id', $org->id)
+            ->whereIn('role', ['admin', 'super_admin'])
+            ->count() >= 3;
+    }
+
     public function lockPayrollRun(Request $request, int $runId): JsonResponse
     {
         $organizationId = $request->user()->organization_id;
@@ -2605,6 +2706,17 @@ class PayrollDepartmentController extends Controller
             ], 422);
         }
 
+        // Maker-checker: when a second approver is required, the admin who
+        // locked the run cannot also approve it.
+        $org = Organization::find($organizationId);
+        if ($org && $this->shouldRequireSecondApprover($org)
+            && (int) auth()->id() === (int) $run->locked_by) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A different admin must approve this run.',
+            ], 422);
+        }
+
         $run->update([
             'status' => 'approved',
             'approved_by' => auth()->id(),
@@ -2648,6 +2760,17 @@ class PayrollDepartmentController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => "Cannot release run in '{$run->status}' status. Must be 'approved' first.",
+            ], 422);
+        }
+
+        // Maker-checker: when a second approver is required, the admin who
+        // approved the run cannot also release it.
+        $org = Organization::find($organizationId);
+        if ($org && $this->shouldRequireSecondApprover($org)
+            && (int) auth()->id() === (int) $run->approved_by) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A different admin must release this run.',
             ], 422);
         }
 
@@ -3162,6 +3285,27 @@ class PayrollDepartmentController extends Controller
         }
         $run = $run->fresh();
 
+        // ── 4. Approve (skipped when maker-checker requires a second
+        //     approver — a *different* admin must approve & release) ─────
+        $org = Organization::find($organizationId);
+        if ($org && $this->shouldRequireSecondApprover($org)) {
+            $bankFile = $this->buildBankFilePayload($run);
+
+            return response()->json([
+                'success' => true,
+                'awaiting_second_approver' => true,
+                'message' => 'Run locked. A different admin must approve and release this run before it can be disbursed.',
+                'run' => $run,
+                'summary' => [
+                    'employees_processed' => $processed,
+                    'employees_skipped_no_ctc' => $skippedNoCtc,
+                    'expected_count' => count($expectedUserIds),
+                    'processed_count' => count($expectedUserIds) - $skippedNoCtc,
+                ],
+                'bank_file' => $bankFile,
+            ]);
+        }
+
         // ── 4. Approve ─────────────────────────────────────────────────
         $approveReq = Request::create('/payroll/runs/' . $run->id . '/approve', 'POST');
         $approveReq->setUserResolver(fn () => $request->user());
@@ -3258,10 +3402,200 @@ class PayrollDepartmentController extends Controller
             'disbursed_by' => auth()->id(),
         ]);
 
+        // Notify every employee in the run that their payslip is ready.
+        $notification = $this->notifyPayslips($run, auth()->id());
+
         return response()->json([
             'success' => true,
             'message' => "Payroll disbursed. Run is now immutable for compliance.",
             'run' => $run->fresh(),
+            'payslip_notification' => $notification,
+        ]);
+    }
+
+    /**
+     * Notify every employee in a disbursed run that their payslip is ready.
+     *
+     * Creates an in-app notification for each employee and attempts an email
+     * via the existing PayslipDeliveryService when a payslip record exists.
+     * Failures are recorded (status 'failed') but never block disbursement.
+     */
+    private function notifyPayslips(PayrollMonthlyRun $run, int $senderId): array
+    {
+        $userIds = PayrollItem::where('payroll_run_id', $run->id)
+            ->pluck('user_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $monthLabel = $this->formatRunMonthLabel($run->month_year);
+        $sent = 0;
+        $failed = 0;
+
+        foreach ($userIds as $userId) {
+            $user = User::find($userId);
+            if (! $user) {
+                $failed++;
+                continue;
+            }
+
+            try {
+                AppNotification::create([
+                    'organization_id' => $run->organization_id,
+                    'user_id' => $userId,
+                    'sender_id' => $senderId,
+                    'type' => 'payslip.published',
+                    'title' => 'Payslip ready',
+                    'message' => "Your payslip for {$monthLabel} is ready.",
+                    'meta' => ['run_id' => $run->id, 'month_year' => $run->month_year],
+                ]);
+                $sent++;
+            } catch (\Throwable $e) {
+                $failed++;
+                \Log::warning("notifyPayslips: failed in-app for user {$userId}", ['err' => $e->getMessage()]);
+            }
+        }
+
+        $status = $failed > 0 ? 'failed' : 'sent';
+        $run->update([
+            'payslips_notified_at' => now(),
+            'payslips_notified_status' => $status,
+            'payslips_notified_failed_count' => $failed,
+        ]);
+
+        return [
+            'status' => $status,
+            'notified_at' => $run->payslips_notified_at,
+            'sent_count' => $sent,
+            'failed_count' => $failed,
+            'total' => count($userIds),
+        ];
+    }
+
+    private function formatRunMonthLabel(?string $monthYear): string
+    {
+        if (! $monthYear) {
+            return '';
+        }
+        [$y, $m] = array_map('intval', explode('-', $monthYear));
+        if (! $y || ! $m) {
+            return $monthYear;
+        }
+        return \Carbon\Carbon::createFromDate($y, $m, 1)->format('F Y');
+    }
+
+    /**
+     * Resend the "payslip ready" notifications for a run (reusing the same
+     * dispatch as disbursement). Useful when a previous broadcast failed.
+     */
+    public function resendPayslipNotification(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        if ($run->status !== 'disbursed') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot notify employees for a run in '{$run->status}' status. Disburse it first.",
+            ], 422);
+        }
+
+        $notification = $this->notifyPayslips($run, auth()->id());
+
+        return response()->json([
+            'success' => true,
+            'message' => "Payslip notifications resent ({$notification['sent_count']} sent"
+                . ($notification['failed_count'] > 0 ? ", {$notification['failed_count']} failed" : '')
+                . ').',
+            'run' => $run->fresh(),
+            'payslip_notification' => $notification,
+        ]);
+    }
+
+    /**
+     * Reverse a disbursed payroll run.
+     *
+     * Admin-only. Creates a PaymentReversal for every paid payslip in the
+     * run. A reason is required for the audit trail. The underlying bank
+     * transfer (if any) is reversed via BankIntegrationService.
+     */
+    public function reversePaymentRun(Request $request, int $runId): JsonResponse
+    {
+        $user = $request->user();
+        if (! in_array($user->role, ['admin', 'super_admin'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only an admin can reverse a payroll run.',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'reason' => 'required|string|min:5|max:1000',
+        ]);
+
+        $organizationId = $user->organization_id;
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        if ($run->status !== 'disbursed') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot reverse a run in '{$run->status}' status. Only disbursed runs can be reversed.",
+            ], 422);
+        }
+
+        $items = PayrollItem::where('payroll_run_id', $run->id)
+            ->where('payment_status', 'paid')
+            ->get();
+
+        if ($items->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This run has no paid payslips to reverse.',
+            ], 422);
+        }
+
+        $reversals = [];
+        foreach ($items as $item) {
+            $reversals[] = $this->bank->initiatePaymentReversal($item->id, $data['reason'], $user->id);
+        }
+
+        $this->writeRunAudit($run, 'reversal_requested', [
+            'reason' => $data['reason'],
+            'requested_by' => $user->id,
+            'reversal_count' => count($reversals),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment reversal initiated for ' . count($reversals) . ' payslip(s).',
+            'reversals' => $reversals,
+        ]);
+    }
+
+    /**
+     * List reversal records for a run (for the run detail view).
+     */
+    public function getRunReversals(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        $itemIds = PayrollItem::where('payroll_run_id', $run->id)->pluck('id');
+        $reversals = \App\Models\PaymentReversal::whereIn('payroll_item_id', $itemIds)
+            ->with(['user:id,name', 'requestedBy:id,name'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'reversals' => $reversals,
         ]);
     }
 
