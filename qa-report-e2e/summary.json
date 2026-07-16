@@ -1,0 +1,44 @@
+[
+  {
+    "role": "employee",
+    "flow": "attendance-punch-in",
+    "ok": true,
+    "detail": "API shows checked-in"
+  },
+  {
+    "role": "employee",
+    "flow": "attendance-punch-out",
+    "ok": true,
+    "detail": "API shows checked-out"
+  },
+  {
+    "role": "employee",
+    "flow": "leave-apply",
+    "ok": true,
+    "detail": "created leave id=32"
+  },
+  {
+    "role": "employee",
+    "flow": "timer-start",
+    "ok": true,
+    "detail": "running timer id=178"
+  },
+  {
+    "role": "employee",
+    "flow": "timer-stop",
+    "ok": true,
+    "detail": "no running timer after pause"
+  },
+  {
+    "role": "admin",
+    "flow": "approval-inbox-shows-pending-leave",
+    "ok": true,
+    "detail": "pending leave id=32 visible in API"
+  },
+  {
+    "role": "admin",
+    "flow": "create-employee",
+    "ok": true,
+    "detail": "created user (api)"
+  }
+]

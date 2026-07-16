@@ -42,8 +42,9 @@ class ApprovalRoutingService
         // Then find the nearest higher-ranked person in the same department(s)
         $nearestReviewerIds = $this->nearestHigherRankedReviewerIds($requester, $requesterLevel);
 
-        // Manager-tier users (level 10-100) also route to all org admins regardless of department
-        $adminIds = $requesterLevel < 100
+        // Manager-tier users (level 10-100) and regular employees (level 100)
+        // also route to all org admins regardless of department.
+        $adminIds = $requesterLevel <= 100
             ? $this->organizationAdminIds($requester)
             : collect();
 

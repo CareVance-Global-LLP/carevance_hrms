@@ -483,7 +483,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         removeStoredAuthValue('organization');
       }
     } catch (error) {
-      console.error('Failed to fetch user:', error);
+      // A 401 from /auth/me during bootstrap just means "not logged in yet" -
+      // this is the app's normal auth probe and is handled gracefully by the
+      // caller, so it should not be surfaced as a hard console error.
+      const status = getResponseStatus(error);
+      if (status === 401) {
+        console.debug('No active session (401 from /auth/me); will prompt for login.');
+      } else {
+        console.error('Failed to fetch user:', error);
+      }
       throw error;
     }
   };

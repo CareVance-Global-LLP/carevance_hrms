@@ -1,0 +1,47 @@
+[
+  {
+    "role": "admin",
+    "email": "ayushborwal004@gmail.com",
+    "loginOk": true,
+    "allowed": [],
+    "blocked": [],
+    "mismatches": [],
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  },
+  {
+    "role": "manager",
+    "email": "test2@gmail.com",
+    "loginOk": true,
+    "allowed": [],
+    "blocked": [],
+    "mismatches": [],
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  },
+  {
+    "role": "employee",
+    "email": "test1@gmail.com",
+    "loginOk": true,
+    "allowed": [],
+    "blocked": [],
+    "mismatches": [],
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  },
+  {
+    "role": "super_admin",
+    "email": "qa.superadmin@carevance.test",
+    "loginOk": true,
+    "allowed": [],
+    "blocked": [],
+    "mismatches": [],
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  },
+  {
+    "role": "custom_limited",
+    "email": "qa.customrole@carevance.test",
+    "loginOk": true,
+    "allowed": [],
+    "blocked": [],
+    "mismatches": [],
+    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+  }
+]

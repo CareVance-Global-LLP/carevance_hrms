@@ -1,0 +1,18 @@
+[
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  },
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  },
+  {
+    "type": "error",
+    "text": "Failed to load resource: the server responded with a status of 403 ()"
+  },
+  {
+    "type": "error",
+    "text": "[GSI_LOGGER]: The given origin is not allowed for the given client ID."
+  }
+]

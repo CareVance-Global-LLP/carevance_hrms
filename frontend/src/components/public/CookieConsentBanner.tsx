@@ -1,6 +1,6 @@
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import { useConsent } from '@/contexts/ConsentContext';
-import { isPublicExperiencePath } from '@/lib/publicRoutes';
+import { isIndexableMarketingPath } from '@/lib/publicRoutes';
 import { Cookie } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
@@ -14,8 +14,11 @@ export default function CookieConsentBanner() {
     closePreferences,
   } = useConsent();
 
+  // Only surface the consent banner on genuine public/marketing pages. Rendering
+  // it inside the authenticated app (e.g. /leave, /attendance) overlays and
+  // blocks the page's own action buttons at the bottom of the viewport.
   const isVisible =
-    isPublicExperiencePath(location.pathname) &&
+    isIndexableMarketingPath(location.pathname) &&
     (consent.status === 'pending' || preferencesOpen);
 
   if (!isVisible) {

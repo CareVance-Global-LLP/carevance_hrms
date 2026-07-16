@@ -1,0 +1,196 @@
+[
+  {
+    "index": 0,
+    "text": "Reject non-essential",
+    "action": "SKIPPED",
+    "reason": "destructive-keyword"
+  },
+  {
+    "index": 1,
+    "text": "Accept analytics",
+    "action": "SKIPPED",
+    "reason": "not-in-safe-allowlist"
+  },
+  {
+    "index": 2,
+    "text": "",
+    "action": "SKIPPED",
+    "reason": "no-text"
+  },
+  {
+    "index": 3,
+    "text": "Product",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 4,
+    "text": "Features",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 5,
+    "text": "Pricing",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 6,
+    "text": "Workflow",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 7,
+    "text": "FAQ",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 8,
+    "text": "Download",
+    "action": "CLICKED",
+    "redirected": false,
+    "navigatedTo": null
+  },
+  {
+    "index": 9,
+    "text": "Login",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 10,
+    "text": "Book Demo",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 11,
+    "text": "Start Free Trial",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 12,
+    "text": "Toggle navigation",
+    "action": "SKIPPED",
+    "reason": "not-visible"
+  },
+  {
+    "index": 13,
+    "text": "Email sales sales@carevance.example",
+    "action": "SKIPPED",
+    "reason": "not-in-safe-allowlist"
+  },
+  {
+    "index": 14,
+    "text": "Start the conversation",
+    "action": "SKIPPED",
+    "reason": "not-in-safe-allowlist"
+  },
+  {
+    "index": 15,
+    "text": "Prefer to start with a free trial?",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 16,
+    "text": "",
+    "action": "SKIPPED",
+    "reason": "no-text"
+  },
+  {
+    "index": 17,
+    "text": "",
+    "action": "SKIPPED",
+    "reason": "no-text"
+  },
+  {
+    "index": 18,
+    "text": "",
+    "action": "SKIPPED",
+    "reason": "no-text"
+  },
+  {
+    "index": 19,
+    "text": "",
+    "action": "SKIPPED",
+    "reason": "no-text"
+  },
+  {
+    "index": 20,
+    "text": "Pricing",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 21,
+    "text": "Start Trial",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 22,
+    "text": "Book Demo",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 23,
+    "text": "Dashboard",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 24,
+    "text": "Sign In",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 25,
+    "text": "Owner Signup",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 26,
+    "text": "Support",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 27,
+    "text": "Contact Sales",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 28,
+    "text": "Privacy Policy",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 29,
+    "text": "Terms & Conditions",
+    "action": "SKIPPED",
+    "reason": "navigation-link"
+  },
+  {
+    "index": 30,
+    "text": "Cookie Preferences",
+    "action": "SKIPPED",
+    "reason": "not-in-safe-allowlist"
+  },
+  {
+    "index": 31,
+    "text": "Open CareVance Assistant",
+    "action": "CLICKED",
+    "redirected": false,
+    "navigatedTo": null
+  }
+]

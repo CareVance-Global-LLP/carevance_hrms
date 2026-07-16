@@ -1,0 +1,541 @@
+[
+  {
+    "tag": "a",
+    "text": "Dashboard",
+    "href": "/dashboard",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Organization",
+    "href": "/organization-tree",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "PEOPLE",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Employees",
+    "href": "/employees",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "New Hires",
+    "href": "/new-hires",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Resignations",
+    "href": "/resignations",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "ROLES & PERMISSIONS",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Roles",
+    "href": "/employees/roles",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Department",
+    "href": "/employees/teams",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "ATTENDANCE",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Attendance",
+    "href": "/attendance",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Leave",
+    "href": "/leave",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Approval Inbox",
+    "href": "/approval-inbox?section=leave&view=pending&leave_window=today",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Overtime",
+    "href": "/edit-time",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Breaks",
+    "href": "/breaks",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "MONITORING",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Monitoring",
+    "href": "/monitoring/productive-time",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Screenshots",
+    "href": "/monitoring/screenshots",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Selfies Map",
+    "href": "/attendance/selfies-map",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Timeline",
+    "href": "/reports/timeline",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Web & App Usage",
+    "href": "/reports/web-app-usage",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "PERFORMANCE",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Performance Reviews",
+    "href": "/performance",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Goals",
+    "href": "/performance-goals",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "WORK",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Timesheets",
+    "href": "/reports/hours-tracked",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Projects",
+    "href": "/projects",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Tasks",
+    "href": "/tasks",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Time Reports",
+    "href": "/tasks/time-reports",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "COMMUNICATION",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Announcements",
+    "href": "/notifications",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Chat",
+    "href": "/chat",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "ASSETS",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Assets",
+    "href": "/assets",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "REPORTS",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Reports",
+    "href": "/reports",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Analytics",
+    "href": "/analytics",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Attendance Report",
+    "href": "/reports/attendance",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "PAYROLL",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Payroll",
+    "href": "/payroll",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "My Payroll",
+    "href": "/my-payroll",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "SETTINGS",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Settings",
+    "href": "/settings",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Audit Logs",
+    "href": "/audit-logs",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Geofence Zones",
+    "href": "/settings/geofence",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "Notifications",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "A Ayush Borwal Admin",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Settings",
+    "href": "/settings",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "Today",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Last 2 days",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Last 5 days",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Last 7 days",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Last 15 days",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Last month",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Custom",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Overall",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Specific Employee",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "All departments",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "Total Employees 0 0 joined in range",
+    "href": "/employees",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "Present 0 0% of total",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "On Leave 0 0% of total",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Absent 0 0% of total",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "button",
+    "text": "Present Late 0 0% of total",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  },
+  {
+    "tag": "a",
+    "text": "New Hires 00 Joined in range",
+    "href": "/new-hires",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Resignations 00 Exited in range",
+    "href": "/resignations",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Open Attendance",
+    "href": "/attendance",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Open Chat",
+    "href": "/chat",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "View",
+    "href": "/audit-logs",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "View",
+    "href": "/notifications",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Manage Employees",
+    "href": "/employees",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Open Directory",
+    "href": "/employees",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Manage",
+    "href": "/tasks",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "View All",
+    "href": "/projects",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Open Hours",
+    "href": "/reports/hours-tracked",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Open Directory",
+    "href": "/employees",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "a",
+    "text": "Open Analytics",
+    "href": "/analytics",
+    "disabled": false,
+    "type": null
+  },
+  {
+    "tag": "button",
+    "text": "Open AI Assistant",
+    "href": null,
+    "disabled": false,
+    "type": "button"
+  }
+]

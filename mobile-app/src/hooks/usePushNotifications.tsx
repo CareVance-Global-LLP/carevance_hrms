@@ -7,10 +7,10 @@ import { notificationApi } from '../api/endpoints';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
-    shouldShowList: true,
   }),
 });
 
@@ -21,7 +21,7 @@ Notifications.setNotificationCategoryAsync('announcement', [
 export function usePushNotifications() {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
-  const responseListener = useRef<Notifications.Subscription>();
+  const responseListener = useRef<Notifications.Subscription | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -33,8 +33,8 @@ export function usePushNotifications() {
     ]).catch(() => {});
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data;
-      if (data?.route) router.push(data.route);
+      const data = response.notification.request.content.data as { route?: string };
+      if (data?.route) router.push(data.route as Parameters<typeof router.push>[0]);
     });
 
     return () => {
