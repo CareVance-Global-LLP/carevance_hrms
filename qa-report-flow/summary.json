@@ -3,45 +3,906 @@
     "role": "admin",
     "email": "ayushborwal004@gmail.com",
     "loginOk": true,
-    "allowed": [],
-    "blocked": [],
+    "allowed": [
+      {
+        "path": "/dashboard",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 12251,
+        "hasChrome": true
+      },
+      {
+        "path": "/employees",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/employees",
+        "bodyLen": 521,
+        "hasChrome": true
+      },
+      {
+        "path": "/organization-tree",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/organization-tree",
+        "bodyLen": 4280,
+        "hasChrome": true
+      },
+      {
+        "path": "/payroll",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/payroll",
+        "bodyLen": 4618,
+        "hasChrome": true
+      },
+      {
+        "path": "/settings/billing",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/settings/billing",
+        "bodyLen": 936,
+        "hasChrome": true
+      },
+      {
+        "path": "/audit-logs",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/audit-logs",
+        "bodyLen": 1790,
+        "hasChrome": true
+      },
+      {
+        "path": "/attendance",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/attendance",
+        "bodyLen": 9022,
+        "hasChrome": true
+      },
+      {
+        "path": "/leave",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/leave",
+        "bodyLen": 801,
+        "hasChrome": true
+      },
+      {
+        "path": "/reports",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/reports",
+        "bodyLen": 1718,
+        "hasChrome": true
+      },
+      {
+        "path": "/analytics",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/analytics",
+        "bodyLen": 2335,
+        "hasChrome": true
+      },
+      {
+        "path": "/monitoring/productive-time",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/monitoring/productive-time",
+        "bodyLen": 527,
+        "hasChrome": true
+      },
+      {
+        "path": "/approval-inbox",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/approval-inbox",
+        "bodyLen": 1907,
+        "hasChrome": true
+      },
+      {
+        "path": "/invoices",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/invoices",
+        "bodyLen": 520,
+        "hasChrome": true
+      },
+      {
+        "path": "/assets",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/assets",
+        "bodyLen": 1449,
+        "hasChrome": true
+      },
+      {
+        "path": "/settings/roles",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/settings/roles",
+        "bodyLen": 878,
+        "hasChrome": true
+      }
+    ],
+    "blocked": [
+      {
+        "path": "/super-admin",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3029
+      },
+      {
+        "path": "/super-admin/organizations",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3029
+      },
+      {
+        "path": "/super-admin/users",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3029
+      },
+      {
+        "path": "/super-admin/billing",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3029
+      },
+      {
+        "path": "/super-admin/plans",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3029
+      },
+      {
+        "path": "/super-admin/companies",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3029
+      }
+    ],
     "mismatches": [],
-    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    "guardTypes": {
+      "/dashboard": "hierarchy",
+      "/employees": "hierarchy",
+      "/organization-tree": "hierarchy",
+      "/payroll": "plan",
+      "/settings/billing": "hierarchy",
+      "/audit-logs": "hierarchy",
+      "/attendance": "hierarchy",
+      "/leave": "plan",
+      "/reports": "hierarchy",
+      "/analytics": "hierarchy",
+      "/monitoring/productive-time": "plan",
+      "/approval-inbox": "hierarchy",
+      "/invoices": "hierarchy",
+      "/assets": "permission",
+      "/settings/roles": "hierarchy",
+      "/super-admin": "hierarchy",
+      "/super-admin/organizations": "hierarchy",
+      "/super-admin/users": "hierarchy",
+      "/super-admin/billing": "hierarchy",
+      "/super-admin/plans": "hierarchy",
+      "/super-admin/companies": "hierarchy"
+    }
   },
   {
     "role": "manager",
     "email": "test2@gmail.com",
     "loginOk": true,
-    "allowed": [],
-    "blocked": [],
+    "allowed": [
+      {
+        "path": "/dashboard",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 5570,
+        "hasChrome": true
+      },
+      {
+        "path": "/employees",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/employees",
+        "bodyLen": 1680,
+        "hasChrome": true
+      },
+      {
+        "path": "/attendance",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/attendance",
+        "bodyLen": 3025,
+        "hasChrome": true
+      },
+      {
+        "path": "/leave",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/leave",
+        "bodyLen": 827,
+        "hasChrome": true
+      },
+      {
+        "path": "/reports",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/reports",
+        "bodyLen": 1744,
+        "hasChrome": true
+      },
+      {
+        "path": "/analytics",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/analytics",
+        "bodyLen": 2361,
+        "hasChrome": true
+      },
+      {
+        "path": "/approval-inbox",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/approval-inbox",
+        "bodyLen": 1933,
+        "hasChrome": true
+      },
+      {
+        "path": "/tasks",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/tasks",
+        "bodyLen": 0,
+        "hasChrome": false
+      },
+      {
+        "path": "/projects",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/projects",
+        "bodyLen": 626,
+        "hasChrome": true
+      },
+      {
+        "path": "/monitoring/productive-time",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/monitoring/productive-time",
+        "bodyLen": 1766,
+        "hasChrome": true
+      },
+      {
+        "path": "/payroll",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/payroll",
+        "bodyLen": 3963,
+        "hasChrome": true
+      },
+      {
+        "path": "/audit-logs",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/audit-logs",
+        "bodyLen": 1819,
+        "hasChrome": true
+      },
+      {
+        "path": "/organization-tree",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/organization-tree",
+        "bodyLen": 581,
+        "hasChrome": true
+      },
+      {
+        "path": "/assets",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/assets",
+        "bodyLen": 1479,
+        "hasChrome": true
+      },
+      {
+        "path": "/settings/roles",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/settings/roles",
+        "bodyLen": 896,
+        "hasChrome": true
+      }
+    ],
+    "blocked": [
+      {
+        "path": "/super-admin",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3055
+      },
+      {
+        "path": "/super-admin/companies",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3055
+      },
+      {
+        "path": "/my-team",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 3055
+      },
+      {
+        "path": "/settings/billing",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/employees",
+        "bodyLen": 547
+      }
+    ],
     "mismatches": [],
-    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    "guardTypes": {
+      "/dashboard": "hierarchy",
+      "/employees": "hierarchy",
+      "/attendance": "hierarchy",
+      "/leave": "plan",
+      "/reports": "hierarchy",
+      "/analytics": "hierarchy",
+      "/approval-inbox": "hierarchy",
+      "/tasks": "plan",
+      "/projects": "plan",
+      "/monitoring/productive-time": "plan",
+      "/payroll": "plan",
+      "/audit-logs": "hierarchy",
+      "/organization-tree": "hierarchy",
+      "/assets": "permission",
+      "/settings/roles": "hierarchy",
+      "/super-admin": "hierarchy",
+      "/super-admin/companies": "hierarchy",
+      "/my-team": "hierarchy",
+      "/settings/billing": "hierarchy"
+    }
   },
   {
     "role": "employee",
     "email": "test1@gmail.com",
     "loginOk": true,
-    "allowed": [],
-    "blocked": [],
+    "allowed": [
+      {
+        "path": "/dashboard",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681,
+        "hasChrome": true
+      },
+      {
+        "path": "/attendance",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/attendance",
+        "bodyLen": 2943,
+        "hasChrome": true
+      },
+      {
+        "path": "/leave",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/leave",
+        "bodyLen": 767,
+        "hasChrome": true
+      },
+      {
+        "path": "/my-payroll",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/my-payroll",
+        "bodyLen": 537,
+        "hasChrome": true
+      },
+      {
+        "path": "/tasks",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/tasks",
+        "bodyLen": 658,
+        "hasChrome": true
+      },
+      {
+        "path": "/projects",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/projects",
+        "bodyLen": 323,
+        "hasChrome": true
+      },
+      {
+        "path": "/chat",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/chat?threadType=direct&threadId=6",
+        "bodyLen": 552,
+        "hasChrome": true
+      },
+      {
+        "path": "/notifications",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/notifications",
+        "bodyLen": 1274,
+        "hasChrome": true
+      },
+      {
+        "path": "/settings",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/settings",
+        "bodyLen": 1103,
+        "hasChrome": true
+      }
+    ],
+    "blocked": [
+      {
+        "path": "/super-admin",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/employees",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/payroll",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/organization-tree",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/audit-logs",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/approval-inbox",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/monitoring/productive-time",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/reports",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/analytics",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/settings/billing",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/settings/roles",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/invoices",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      },
+      {
+        "path": "/assets",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 2681
+      }
+    ],
     "mismatches": [],
-    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    "guardTypes": {
+      "/dashboard": "hierarchy",
+      "/attendance": "hierarchy",
+      "/leave": "plan",
+      "/my-payroll": "plan",
+      "/tasks": "plan",
+      "/projects": "plan",
+      "/chat": "plan",
+      "/notifications": "hierarchy",
+      "/settings": "hierarchy",
+      "/super-admin": "hierarchy",
+      "/employees": "hierarchy",
+      "/payroll": "plan",
+      "/organization-tree": "hierarchy",
+      "/audit-logs": "hierarchy",
+      "/approval-inbox": "hierarchy",
+      "/monitoring/productive-time": "plan",
+      "/reports": "hierarchy",
+      "/analytics": "hierarchy",
+      "/settings/billing": "hierarchy",
+      "/settings/roles": "hierarchy",
+      "/invoices": "hierarchy",
+      "/assets": "permission"
+    }
   },
   {
     "role": "super_admin",
     "email": "qa.superadmin@carevance.test",
     "loginOk": true,
-    "allowed": [],
+    "allowed": [
+      {
+        "path": "/dashboard",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 978,
+        "hasChrome": false
+      },
+      {
+        "path": "/super-admin",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/super-admin",
+        "bodyLen": 978,
+        "hasChrome": false
+      },
+      {
+        "path": "/super-admin/organizations",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/super-admin/organizations",
+        "bodyLen": 397,
+        "hasChrome": false
+      },
+      {
+        "path": "/super-admin/users",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/super-admin/users",
+        "bodyLen": 1826,
+        "hasChrome": false
+      },
+      {
+        "path": "/super-admin/billing",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/super-admin/billing",
+        "bodyLen": 498,
+        "hasChrome": false
+      },
+      {
+        "path": "/super-admin/plans",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/super-admin/plans",
+        "bodyLen": 1830,
+        "hasChrome": false
+      },
+      {
+        "path": "/super-admin/companies",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/super-admin/companies",
+        "bodyLen": 179,
+        "hasChrome": false
+      },
+      {
+        "path": "/employees",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/employees",
+        "bodyLen": 615,
+        "hasChrome": true
+      },
+      {
+        "path": "/payroll",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/payroll",
+        "bodyLen": 3369,
+        "hasChrome": true
+      },
+      {
+        "path": "/settings/billing",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/settings/billing",
+        "bodyLen": 432,
+        "hasChrome": false
+      },
+      {
+        "path": "/audit-logs",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/audit-logs",
+        "bodyLen": 1332,
+        "hasChrome": false
+      },
+      {
+        "path": "/organization-tree",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/organization-tree",
+        "bodyLen": 85,
+        "hasChrome": false
+      },
+      {
+        "path": "/assets",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/assets",
+        "bodyLen": 242,
+        "hasChrome": false
+      },
+      {
+        "path": "/settings/roles",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/settings/roles",
+        "bodyLen": 336,
+        "hasChrome": false
+      },
+      {
+        "path": "/monitoring/productive-time",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/monitoring/productive-time",
+        "bodyLen": 1060,
+        "hasChrome": false
+      },
+      {
+        "path": "/reports",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/reports",
+        "bodyLen": 1252,
+        "hasChrome": false
+      },
+      {
+        "path": "/analytics",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/analytics",
+        "bodyLen": 1869,
+        "hasChrome": false
+      }
+    ],
     "blocked": [],
     "mismatches": [],
-    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    "guardTypes": {
+      "/dashboard": "hierarchy",
+      "/super-admin": "hierarchy",
+      "/super-admin/organizations": "hierarchy",
+      "/super-admin/users": "hierarchy",
+      "/super-admin/billing": "hierarchy",
+      "/super-admin/plans": "hierarchy",
+      "/super-admin/companies": "hierarchy",
+      "/employees": "hierarchy",
+      "/payroll": "plan",
+      "/settings/billing": "hierarchy",
+      "/audit-logs": "hierarchy",
+      "/organization-tree": "hierarchy",
+      "/assets": "permission",
+      "/settings/roles": "hierarchy",
+      "/monitoring/productive-time": "plan",
+      "/reports": "hierarchy",
+      "/analytics": "hierarchy"
+    }
   },
   {
     "role": "custom_limited",
     "email": "qa.customrole@carevance.test",
     "loginOk": true,
-    "allowed": [],
-    "blocked": [],
+    "allowed": [
+      {
+        "path": "/dashboard",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348,
+        "hasChrome": true
+      },
+      {
+        "path": "/attendance",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/attendance",
+        "bodyLen": 1711,
+        "hasChrome": true
+      },
+      {
+        "path": "/leave",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/leave",
+        "bodyLen": 714,
+        "hasChrome": true
+      },
+      {
+        "path": "/time-tracker",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/time-tracker",
+        "bodyLen": 1420,
+        "hasChrome": true
+      },
+      {
+        "path": "/tasks",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/tasks",
+        "bodyLen": 672,
+        "hasChrome": true
+      },
+      {
+        "path": "/projects",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/projects",
+        "bodyLen": 337,
+        "hasChrome": true
+      },
+      {
+        "path": "/chat",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/chat",
+        "bodyLen": 404,
+        "hasChrome": true
+      },
+      {
+        "path": "/notifications",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/notifications",
+        "bodyLen": 560,
+        "hasChrome": true
+      },
+      {
+        "path": "/settings",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/settings",
+        "bodyLen": 1080,
+        "hasChrome": true
+      },
+      {
+        "path": "/my-payroll",
+        "rendered": true,
+        "finalUrl": "http://127.0.0.1:5173/my-payroll",
+        "bodyLen": 534,
+        "hasChrome": true
+      }
+    ],
+    "blocked": [
+      {
+        "path": "/super-admin",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/super-admin/companies",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/employees",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/payroll",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/organization-tree",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/audit-logs",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/approval-inbox",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/reports",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/analytics",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/monitoring/productive-time",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/settings/billing",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/settings/roles",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/invoices",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      },
+      {
+        "path": "/assets",
+        "blocked": true,
+        "finalUrl": "http://127.0.0.1:5173/dashboard",
+        "bodyLen": 1348
+      }
+    ],
     "mismatches": [],
-    "error": "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:5173/login\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:5173/login\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    "guardTypes": {
+      "/dashboard": "hierarchy",
+      "/attendance": "hierarchy",
+      "/leave": "plan",
+      "/time-tracker": "hierarchy",
+      "/tasks": "plan",
+      "/projects": "plan",
+      "/chat": "plan",
+      "/notifications": "hierarchy",
+      "/settings": "hierarchy",
+      "/my-payroll": "plan",
+      "/super-admin": "hierarchy",
+      "/super-admin/companies": "hierarchy",
+      "/employees": "hierarchy",
+      "/payroll": "plan",
+      "/organization-tree": "hierarchy",
+      "/audit-logs": "hierarchy",
+      "/approval-inbox": "hierarchy",
+      "/reports": "hierarchy",
+      "/analytics": "hierarchy",
+      "/monitoring/productive-time": "plan",
+      "/settings/billing": "hierarchy",
+      "/settings/roles": "hierarchy",
+      "/invoices": "hierarchy",
+      "/assets": "permission"
+    }
+  },
+  {
+    "role": "custom_limited_with_asset_access",
+    "loginOk": true,
+    "permissionPositive": {
+      "key": "custom_limited_with_asset_access",
+      "permissionRoute": "/assets",
+      "requiredPermission": "assets.view",
+      "steps": [
+        {
+          "step": "baseline-has-permission",
+          "value": false,
+          "permissionSet": [
+            "dashboard.view",
+            "timer.use",
+            "employees.view",
+            "attendance.view",
+            "leave.view"
+          ]
+        },
+        {
+          "step": "without-permission-rendered",
+          "value": false,
+          "finalUrl": "http://127.0.0.1:5173/dashboard"
+        },
+        {
+          "step": "blocked-without-permission",
+          "value": true
+        },
+        {
+          "step": "grant-permission",
+          "value": true,
+          "detail": "GRANTED"
+        },
+        {
+          "step": "after-grant-has-permission",
+          "value": true,
+          "permissionSet": [
+            "dashboard.view",
+            "timer.use",
+            "employees.view",
+            "attendance.view",
+            "leave.view",
+            "assets.view"
+          ]
+        },
+        {
+          "step": "with-permission-rendered",
+          "value": true,
+          "finalUrl": "http://127.0.0.1:5173/assets"
+        },
+        {
+          "step": "revert-permission",
+          "value": true
+        }
+      ],
+      "ok": true,
+      "detail": "route blocked without assets.view, rendered after granting it (positive case proven)"
+    },
+    "mismatches": []
   }
 ]

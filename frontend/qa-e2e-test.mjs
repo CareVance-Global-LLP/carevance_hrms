@@ -42,6 +42,124 @@ async function apiGet(path, token) {
   const r = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
   return r;
 }
+async function apiPost(path, token, body) {
+  const r = await fetch(`${API_URL}${path}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  return r;
+}
+async function apiPatch(path, token, body) {
+  const r = await fetch(`${API_URL}${path}`, {
+    method: 'PATCH', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  return r;
+}
+// Read the underlying attendance record's manual_adjustment_seconds for a user
+// + date directly from the DB (the source of truth for the time-edit mutation).
+async function dbManualAdjustment(userId, date) {
+  const backendDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'backend');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { writeFile, rm } = await import('node:fs/promises');
+  const execFileP = promisify(execFile);
+  const tmp = join(backendDir, `qa_att_${Date.now()}.php`);
+  const boot = `<?php require __DIR__ . '/vendor/autoload.php'; $app = require __DIR__ . '/bootstrap/app.php'; $k = $app->make(Illuminate\\Contracts\\Console\\Kernel::class); $k->bootstrap();`;
+  const php = `$rec = App\\Models\\AttendanceRecord::where('user_id', ${userId})->whereDate('attendance_date', '${date}')->first(); echo json_encode(['manual_adjustment_seconds' => $rec ? (int)$rec->manual_adjustment_seconds : null, 'worked_seconds' => $rec ? (int)$rec->worked_seconds : null]);`;
+  await writeFile(tmp, boot + "\n" + php + "\n");
+  try {
+    const { stdout } = await execFileP('php', [tmp], { cwd: backendDir, timeout: 30000 });
+    return JSON.parse(stdout.trim());
+  } finally {
+    await rm(tmp, { force: true });
+  }
+}
+
+// Resolve the employee's DB id (needed for the attendance-record lookup).
+async function dbUserId(email) {
+  const backendDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'backend');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { writeFile, rm } = await import('node:fs/promises');
+  const execFileP = promisify(execFile);
+  const tmp = join(backendDir, `qa_uid_${Date.now()}.php`);
+  const boot = `<?php require __DIR__ . '/vendor/autoload.php'; $app = require __DIR__ . '/bootstrap/app.php'; $k = $app->make(Illuminate\\Contracts\\Console\\Kernel::class); $k->bootstrap();`;
+  const php = `$u = App\\Models\\User::where('email', '${email}')->first(); echo $u ? (int)$u->id : 0;`;
+  await writeFile(tmp, boot + "\n" + php + "\n");
+  try {
+    const { stdout } = await execFileP('php', [tmp], { cwd: backendDir, timeout: 30000 });
+    return parseInt(stdout.trim(), 10) || 0;
+  } finally {
+    await rm(tmp, { force: true });
+  }
+}
+
+// Read a leave request by id (from the reviewer/admin index is not id-keyed, so
+// use the admin pending list and find by id).
+async function findLeaveById(token, id) {
+  const r = await apiGet(`/leave-requests?status=pending&limit=200`, token);
+  const j = await r.json();
+  const list = j?.data?.data || j?.data || j || [];
+  const arr = Array.isArray(list) ? list : (list.data || []);
+  return arr.find((x) => String(x.id) === String(id)) || null;
+}
+async function findTimeEditById(token, id) {
+  const r = await apiGet(`/attendance-time-edit-requests?status=pending&limit=200`, token);
+  const j = await r.json();
+  const list = j?.data?.data || j?.data || j || [];
+  const arr = Array.isArray(list) ? list : (list.data || []);
+  return arr.find((x) => String(x.id) === String(id)) || null;
+}
+
+// Remove any stale pending time-edit / leave requests for a user so subsequent
+// test creations don't collide with "already exists for this date" / overlap
+// validation. Runs a tiny backend PHP via temp file (no shell-escaping issues).
+async function dbDeletePendingTimeEdits(userId) {
+  const backendDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'backend');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { writeFile, rm } = await import('node:fs/promises');
+  const execFileP = promisify(execFile);
+  const tmp = join(backendDir, `qa_del_te_${Date.now()}.php`);
+  const boot = `<?php require __DIR__ . '/vendor/autoload.php'; $app = require __DIR__ . '/bootstrap/app.php'; $k = $app->make(Illuminate\\Contracts\\Console\\Kernel::class); $k->bootstrap();`;
+  const php = `echo App\\Models\\AttendanceTimeEditRequest::where('user_id', ${userId})->where('status','pending')->delete();`;
+  await writeFile(tmp, boot + "\n" + php + "\n");
+  try { await execFileP('php', [tmp], { cwd: backendDir, timeout: 30000 }); } finally { await rm(tmp, { force: true }); }
+}
+async function dbDeletePendingLeaves(userId) {
+  const backendDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'backend');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { writeFile, rm } = await import('node:fs/promises');
+  const execFileP = promisify(execFile);
+  const tmp = join(backendDir, `qa_del_lv_${Date.now()}.php`);
+  const boot = `<?php require __DIR__ . '/vendor/autoload.php'; $app = require __DIR__ . '/bootstrap/app.php'; $k = $app->make(Illuminate\\Contracts\\Console\\Kernel::class); $k->bootstrap();`;
+  // Delete ALL leaves for the user (any status) so prior approved/rejected
+  // requests from earlier runs can't collide via the overlap check.
+  const php = `echo App\\Models\\LeaveRequest::where('user_id', ${userId})->delete();`;
+  await writeFile(tmp, boot + "\n" + php + "\n");
+  try { await execFileP('php', [tmp], { cwd: backendDir, timeout: 30000 }); } finally { await rm(tmp, { force: true }); }
+}
+
+// Return the next `count` weekday (Mon-Fri) YYYY-MM-DD strings starting from
+// today + `startOffsetDays`. Avoids weekend ranges that trip "covers no
+// working days" leave validation.
+function weekdayDates(startOffsetDays, count) {
+  const out = [];
+  const d = new Date();
+  d.setDate(d.getDate() + startOffsetDays);
+  while (out.length < count) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) {
+      out.push(d.toISOString().slice(0, 10));
+      d.setDate(d.getDate() + 1);
+    } else {
+      d.setDate(d.getDate() + 1);
+    }
+  }
+  return out;
+}
 
 async function dismissConsent(page) {
   // A fixed cookie-consent banner can intercept pointer events over page
@@ -68,6 +186,301 @@ async function loginUI(page, creds) {
     await page.waitForTimeout(3000);
   }
   await dismissConsent(page);
+}
+
+// Find an approval-inbox card belonging to `identifier` (employee name or
+// email) and click its Approve (or Reject) button. Drives the real UI.
+async function clickInboxAction(page, identifier, action) {
+  // Cards live inside the `space-y-3` container; each is a SurfaceCard. We
+  // scope to cards that actually mention the requester, then click the
+  // matching action button inside that card.
+  const cards = page.locator('div.space-y-3 > div').filter({ hasText: identifier });
+  const count = await cards.count();
+  for (let i = 0; i < count; i++) {
+    const card = cards.nth(i);
+    const btn = card.getByRole('button', { name: new RegExp(`^${action}$`, 'i') }).first();
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click({ timeout: 6000 });
+      await page.waitForTimeout(1500);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Make the approval-inbox show a specific section (leave / time-edit /
+// resignation) via the URL query param the component reads. Waits for the
+// pending cards to render (data loads asynchronously from several endpoints).
+async function openInboxSection(page, section) {
+  await page.goto(`${BASE_URL}/approval-inbox?section=${section}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(6000);
+  // Wait until at least one Approve/Reject button is present (data loaded).
+  try {
+    await page.getByRole('button', { name: /^Approve$/i }).first().waitFor({ state: 'visible', timeout: 15000 });
+  } catch {
+    // No pending items for this section — callers handle that gracefully.
+  }
+}
+
+async function approvalFlows(browser) {
+  const adminCtx = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+  const adminPage = await adminCtx.newPage();
+  adminPage.setDefaultTimeout(10000);
+  await loginUI(adminPage, ADMIN);
+  const adminToken = await apiLogin(ADMIN);
+
+  const empCtx = await browser.newContext({ viewport: { width: 1366, height: 900 } });
+  const empPage = await empCtx.newPage();
+  empPage.setDefaultTimeout(10000);
+  await loginUI(empPage, EMPLOYEE);
+  const empToken = await apiLogin(EMPLOYEE);
+
+  // Resolve the admin's org + reviewer set for routing expectations.
+  const meR = await apiGet('/auth/me', adminToken);
+  const meJ = await meR.json();
+  const adminUser = meJ.user || meJ.data || meJ;
+
+  // -----------------------------------------------------------------------
+  // STAGE 3.1 — leave-request-full-cycle (employee -> admin approves via UI)
+  // -----------------------------------------------------------------------
+  try {
+    const empId = await dbUserId(EMPLOYEE.email);
+    await dbDeletePendingLeaves(empId); // avoid overlap/build-up across runs
+    const [start, end] = weekdayDates(20, 2);
+    const createR = await apiPost('/leave-requests', empToken, {
+      start_date: start, end_date: end, leave_type: 'full_day', leave_category: 'paid', reason: `E2E leave ${Date.now()}`,
+    });
+    const cj = await createR.json();
+    const createdId = cj?.data?.id || cj?.id;
+    // Confirm it shows up as pending for the admin (routing)
+    const lr = await apiGet('/leave-requests?status=pending&limit=200', adminToken);
+    const lj = await lr.json();
+    const llist = lj?.data?.data || lj?.data || [];
+    const larr = Array.isArray(llist) ? llist : (llist.data || []);
+    const leave = larr.find((x) => String(x.id) === String(createdId)) || larr.find((x) => (x.reason || '').includes('E2E leave'));
+    const routedToAdmin = !!leave && Array.isArray(leave.current_reviewer_ids) && leave.current_reviewer_ids.map(Number).includes(Number(adminUser.id));
+    log('admin', 'leave-request-routing', !!leave, leave ? `pending leave id=${leave.id} routedToAdmin=${routedToAdmin}` : `create resp ${createR.status} ${JSON.stringify(cj).slice(0,120)}`);
+
+    // Admin approves via the real UI
+    if (leave) {
+      await openInboxSection(adminPage, 'leave');
+      const clicked = await clickInboxAction(adminPage, EMPLOYEE.email, 'Approve');
+      await adminPage.waitForTimeout(3000);
+      // After approval the request leaves the pending list; verify via the
+      // approved list instead.
+      const apR = await apiGet('/leave-requests?status=approved&limit=200', adminToken);
+      const apJ = await apR.json();
+      const apList = apJ?.data?.data || apJ?.data || [];
+      const apArr = Array.isArray(apList) ? apList : (apList.data || []);
+      const after = apArr.find((x) => String(x.id) === String(leave.id));
+      const approved = !!after;
+      log('admin', 'leave-request-full-cycle', approved, approved ? `leave id=${leave.id} approved via UI` : `not in approved list (clickedApprove=${clicked})`);
+    } else {
+      log('admin', 'leave-request-full-cycle', false, 'no leave created to approve');
+    }
+  } catch (e) {
+    log('admin', 'leave-request-full-cycle', false, String(e.message || e).slice(0, 200));
+  }
+
+  // -----------------------------------------------------------------------
+  // STAGE 3.2 — leave-request-rejection (employee -> admin rejects via UI)
+  // -----------------------------------------------------------------------
+  try {
+    const empId = await dbUserId(EMPLOYEE.email);
+    await dbDeletePendingLeaves(empId);
+    const [start, end] = weekdayDates(30, 2);
+    const createR = await apiPost('/leave-requests', empToken, {
+      start_date: start, end_date: end, leave_type: 'full_day', leave_category: 'paid', reason: `E2E leave reject ${Date.now()}`,
+    });
+    const cj = await createR.json();
+    const createdId = cj?.data?.id || cj?.id;
+    const lr = await apiGet('/leave-requests?status=pending&limit=200', adminToken);
+    const lj = await lr.json();
+    const llist = lj?.data?.data || lj?.data || [];
+    const larr = Array.isArray(llist) ? llist : (llist.data || []);
+    const leave = larr.find((x) => String(x.id) === String(createdId)) || larr.find((x) => (x.reason || '').includes('E2E leave reject'));
+    if (leave) {
+      await openInboxSection(adminPage, 'leave');
+      const clicked = await clickInboxAction(adminPage, EMPLOYEE.email, 'Reject');
+      await adminPage.waitForTimeout(3000);
+      // After reject the request leaves the pending list; verify via the
+      // rejected list instead.
+      const rjR = await apiGet('/leave-requests?status=rejected&limit=200', adminToken);
+      const rjJ = await rjR.json();
+      const rjList = rjJ?.data?.data || rjJ?.data || [];
+      const rjArr = Array.isArray(rjList) ? rjList : (rjList.data || []);
+      const after = rjArr.find((x) => String(x.id) === String(leave.id));
+      const rejected = !!after;
+      log('admin', 'leave-request-rejection', rejected, rejected ? `leave id=${leave.id} rejected via UI` : `not in rejected list (clickedReject=${clicked})`);
+    } else {
+      log('admin', 'leave-request-rejection', false, 'no leave created to reject');
+    }
+  } catch (e) {
+    log('admin', 'leave-request-rejection', false, String(e.message || e).slice(0, 200));
+  }
+
+  // -----------------------------------------------------------------------
+  // STAGE 3.3 — leave-request-wrong-reviewer-blocked (403 regression guard)
+  // -----------------------------------------------------------------------
+  try {
+    const empId = await dbUserId(EMPLOYEE.email);
+    await dbDeletePendingLeaves(empId);
+    const [start, end] = weekdayDates(40, 2);
+    const createR = await apiPost('/leave-requests', empToken, {
+      start_date: start, end_date: end, leave_type: 'full_day', leave_category: 'paid', reason: `E2E leave 403 ${Date.now()}`,
+    });
+    const cj = await createR.json();
+    const createdId = cj?.data?.id || cj?.id;
+    if (createdId) {
+      // Attempt to approve as the SAME employee (peer, not in reviewer set).
+      const r = await apiPatch(`/leave-requests/${createdId}/approve`, empToken, {});
+      const blocked = r.status === 403;
+      log('employee', 'leave-request-wrong-reviewer-blocked', blocked, blocked ? `peer approve of leave id=${createdId} correctly 403` : `unexpected status ${r.status}`);
+    } else {
+      log('employee', 'leave-request-wrong-reviewer-blocked', false, `no leave created (resp ${createR.status})`);
+    }
+  } catch (e) {
+    log('employee', 'leave-request-wrong-reviewer-blocked', false, String(e.message || e).slice(0, 200));
+  }
+
+  // -----------------------------------------------------------------------
+  // STAGE 4.1 — time-edit-request-full-cycle (employee -> admin approves via UI)
+  // Verifies approval MUTATES the underlying attendance record.
+  // -----------------------------------------------------------------------
+  try {
+    const date = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10); // well in the past, unique
+    const empId = await dbUserId(EMPLOYEE.email);
+    await dbDeletePendingTimeEdits(empId); // avoid "already exists for this date"
+    const createR = await apiPost('/attendance-time-edit-requests', empToken, {
+      attendance_date: date, extra_minutes: 30, message: `E2E time edit ${Date.now()}`, worked_seconds: 0, overtime_seconds: 0,
+    });
+    const cj = await createR.json();
+    const createdId = cj?.data?.id || cj?.id;
+    const listed = await findTimeEditById(adminToken, createdId);
+    const routed = !!listed && Array.isArray(listed.current_reviewer_ids) && listed.current_reviewer_ids.map(Number).includes(Number(adminUser.id));
+    log('admin', 'time-edit-request-routing', !!listed, listed ? `time-edit id=${createdId} routedToAdmin=${routed}` : `create resp ${createR.status}`);
+
+    if (listed) {
+      await openInboxSection(adminPage, 'time-edit');
+      const clicked = await clickInboxAction(adminPage, EMPLOYEE.email, 'Approve');
+      await adminPage.waitForTimeout(3000);
+      const afterR = await apiGet('/attendance-time-edit-requests?status=approved&limit=200', adminToken);
+      const aj = await afterR.json();
+      const alist = aj?.data?.data || aj?.data || [];
+      const aarr = Array.isArray(alist) ? alist : (alist.data || []);
+      const approved = aarr.find((x) => String(x.id) === String(createdId));
+
+      // Verify the underlying attendance record was actually adjusted.
+      const att = await dbManualAdjustment(empId, date);
+      const manualAdj = att?.manual_adjustment_seconds ?? 0;
+      const mutated = Number(manualAdj) > 0;
+      log('admin', 'time-edit-request-full-cycle', !!approved && mutated,
+        `approved=${!!approved} attendance manual_adjustment_seconds=${manualAdj} (mutated=${mutated}) clickedApprove=${clicked}`);
+    } else {
+      log('admin', 'time-edit-request-full-cycle', false, 'no time-edit request created to approve');
+    }
+  } catch (e) {
+    log('admin', 'time-edit-request-full-cycle', false, String(e.message || e).slice(0, 200));
+  }
+
+  // -----------------------------------------------------------------------
+  // STAGE 4.2 — time-edit-request-rejection (verify attendance UNCHANGED)
+  // -----------------------------------------------------------------------
+  try {
+    const date = new Date(Date.now() - 61 * 86400000).toISOString().slice(0, 10);
+    const empId = await dbUserId(EMPLOYEE.email);
+    await dbDeletePendingTimeEdits(empId);
+    const createR = await apiPost('/attendance-time-edit-requests', empToken, {
+      attendance_date: date, extra_minutes: 45, message: `E2E time edit reject ${Date.now()}`, worked_seconds: 0, overtime_seconds: 0,
+    });
+    const cj = await createR.json();
+    const createdId = cj?.data?.id || cj?.id;
+    const listed = await findTimeEditById(adminToken, createdId);
+    if (listed) {
+      const attB = await dbManualAdjustment(empId, date);
+      const beforeAdj = Number(attB?.manual_adjustment_seconds ?? 0);
+
+      await openInboxSection(adminPage, 'time-edit');
+      const clicked = await clickInboxAction(adminPage, EMPLOYEE.email, 'Reject');
+      await adminPage.waitForTimeout(3000);
+      const afterR = await apiGet('/attendance-time-edit-requests?status=rejected&limit=200', adminToken);
+      const aj = await afterR.json();
+      const alist = aj?.data?.data || aj?.data || [];
+      const aarr = Array.isArray(alist) ? alist : (alist.data || []);
+      const rejected = aarr.find((x) => String(x.id) === String(createdId));
+
+      const attA = await dbManualAdjustment(empId, date);
+      const afterAdj = Number(attA?.manual_adjustment_seconds ?? 0);
+      const unchanged = beforeAdj === afterAdj;
+      log('admin', 'time-edit-request-rejection', !!rejected && unchanged,
+        `rejected=${!!rejected} attendance adj before=${beforeAdj} after=${afterAdj} (unchanged=${unchanged}) clickedReject=${clicked}`);
+    } else {
+      log('admin', 'time-edit-request-rejection', false, 'no time-edit request created to reject');
+    }
+  } catch (e) {
+    log('admin', 'time-edit-request-rejection', false, String(e.message || e).slice(0, 200));
+  }
+
+  // -----------------------------------------------------------------------
+  // STAGE 4.3 — time-edit-wrong-reviewer-blocked (403 regression guard)
+  // -----------------------------------------------------------------------
+  try {
+    const date = new Date(Date.now() - 62 * 86400000).toISOString().slice(0, 10);
+    const empId = await dbUserId(EMPLOYEE.email);
+    await dbDeletePendingTimeEdits(empId);
+    const createR = await apiPost('/attendance-time-edit-requests', empToken, {
+      attendance_date: date, extra_minutes: 15, message: `E2E time edit 403 ${Date.now()}`, worked_seconds: 0, overtime_seconds: 0,
+    });
+    const cj = await createR.json();
+    const createdId = cj?.data?.id || cj?.id;
+    if (createdId) {
+      const r = await apiPatch(`/attendance-time-edit-requests/${createdId}/approve`, empToken, {});
+      const blocked = r.status === 403;
+      log('employee', 'time-edit-wrong-reviewer-blocked', blocked, blocked ? `peer approve of time-edit id=${createdId} correctly 403` : `unexpected status ${r.status}`);
+    } else {
+      log('employee', 'time-edit-wrong-reviewer-blocked', false, 'no time-edit request created to test 403');
+    }
+  } catch (e) {
+    log('employee', 'time-edit-wrong-reviewer-blocked', false, String(e.message || e).slice(0, 200));
+  }
+
+  // -----------------------------------------------------------------------
+  // STAGE 5 — resignation full apply -> approve cycle
+  // -----------------------------------------------------------------------
+  try {
+    // Cancel any existing pending resignation so we can submit a fresh one.
+    await apiPost('/resignations/my', empToken, {}).catch(() => {});
+    const future = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+    const subR = await apiPost('/resignations', empToken, { last_working_date: future, reason: `E2E resignation ${Date.now()}` });
+    const sj = await subR.json();
+    const resId = sj?.resignation?.id || sj?.data?.id || sj?.id;
+    const listedR = await apiGet('/resignations?status=pending&limit=200', adminToken);
+    const lj = await listedR.json();
+    const llist = lj?.data?.data || lj?.data || [];
+    const larr = Array.isArray(llist) ? llist : (llist.data || []);
+    const res = larr.find((x) => String(x.id) === String(resId)) || larr.find((x) => (x.user?.email || '') === EMPLOYEE.email);
+    const routed = !!res && Array.isArray(res.current_reviewer_ids) && res.current_reviewer_ids.map(Number).includes(Number(adminUser.id));
+    log('admin', 'resignation-routing', !!res, res ? `resignation id=${res.id} routedToAdmin=${routed}` : `submit resp ${subR.status}`);
+
+    if (res) {
+      await openInboxSection(adminPage, 'resignation');
+      const clicked = await clickInboxAction(adminPage, EMPLOYEE.email, 'Approve');
+      await adminPage.waitForTimeout(3000);
+      const afterR = await apiGet('/resignations?status=approved&limit=200', adminToken);
+      const aj = await afterR.json();
+      const alist = aj?.data?.data || aj?.data || [];
+      const aarr = Array.isArray(alist) ? alist : (alist.data || []);
+      const approved = aarr.find((x) => String(x.id) === String(res.id));
+      log('admin', 'resignation-approve-cycle', !!approved, approved ? `resignation id=${res.id} approved via UI` : `not found approved (clickedApprove=${clicked})`);
+    } else {
+      log('admin', 'resignation-approve-cycle', false, 'no resignation created to approve');
+    }
+  } catch (e) {
+    log('admin', 'resignation-approve-cycle', false, String(e.message || e).slice(0, 200));
+  }
+
+  await empCtx.close();
+  await adminCtx.close();
 }
 
 async function main() {
@@ -306,6 +719,9 @@ async function main() {
 
     await ctx.close();
   }
+
+  // ---- Stages 3-5: approval request->review->resolution flows ----
+  await approvalFlows(browser);
 
   await browser.close();
   await writeFile(join(REPORT_DIR, 'summary.json'), JSON.stringify(results, null, 2));
