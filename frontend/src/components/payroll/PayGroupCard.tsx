@@ -1,4 +1,4 @@
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Settings } from 'lucide-react';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import type { PayGroup } from '@/types';
@@ -11,9 +11,11 @@ function formatCurrency(amount: number): string {
 export default function PayGroupCard({
   payGroup,
   onClick,
+  onSettingsClick,
 }: {
   payGroup: PayGroup;
   onClick: () => void;
+  onSettingsClick?: () => void;
 }) {
   const progress = payGroup.employee_count > 0
     ? (payGroup.processed_count / payGroup.employee_count) * 100
@@ -41,7 +43,22 @@ export default function PayGroupCard({
             </p>
           </div>
         </div>
-        <ChevronRight className="h-5 w-5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
+        <div className="flex items-center gap-2">
+          {onSettingsClick && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSettingsClick();
+              }}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              title="Settings"
+              aria-label={`Settings for ${payGroup.name}`}
+            >
+              <Settings className="h-4 w-4" />
+            </button>
+          )}
+          <ChevronRight className="h-5 w-5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
+        </div>
       </div>
 
       {/* Progress Bar */}

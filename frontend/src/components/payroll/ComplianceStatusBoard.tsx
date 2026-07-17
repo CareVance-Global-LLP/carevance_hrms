@@ -133,7 +133,7 @@ export default function ComplianceStatusBoard({ monthYear, onOpenFilings }: Comp
 
       return { item, filing, tone, statusLabel };
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [filingsList, monthRun, month, year]);
 
   const generateSingle = useMutation({

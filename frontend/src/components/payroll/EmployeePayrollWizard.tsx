@@ -437,7 +437,7 @@ export default function EmployeePayrollWizard({
       calculatePreview();
     }, 500);
     return () => clearTimeout(t);
-  }, [annualCtc]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [annualCtc]);  
 
   // Persist annual_ctc to the template so the bulk "Process All Employees"
   // handler can read it from EmployeePayrollTemplate.annual_ctc. Without

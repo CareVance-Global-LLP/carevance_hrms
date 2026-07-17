@@ -19,7 +19,7 @@ export const generateNotificationSound = (
       const duration = 0.15;
       const gain = 0.3;
 
-      let startTime = audioContext.currentTime;
+      const startTime = audioContext.currentTime;
 
       freqs.forEach((freq, index) => {
         const oscillator = audioContext.createOscillator();

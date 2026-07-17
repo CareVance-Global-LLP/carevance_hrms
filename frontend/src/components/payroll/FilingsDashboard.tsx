@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, ClipboardCheck, CalendarClock } from 'lucide-react';
 import { payrollApi } from '@/services/api';
@@ -7,6 +7,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import HowItWorksCard from './HowItWorksCard';
 import { useToast } from '@/components/ui/Toast';
+import type { PayGroupFilingDetail } from '@/types';
 
 type ComplianceStatus = 'ready' | 'reference_only' | 'not_configured' | 'source_data_only';
 
@@ -337,10 +338,36 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     onError: (e: any) => show({ kind: 'error', message: e?.response?.data?.message || 'Failed to load portal info', durationMs: 4000 }),
   });
 
+  // Fetch pay group settings to get configured state for LWF/PT defaults
+  const { data: payGroupSettingsData } = useQuery({
+    queryKey: ['pay-group-settings'],
+    queryFn: () => payrollApi.getPayGroupSettings().then((r) => r.data),
+    enabled: !!selectedRun,
+  });
+
+  // Auto-select state from pay group filing details when run changes
   const runsList = Array.isArray(runs) ? runs : (runs as any)?.runs ?? [];
   const filingsList = filingsData?.data ?? filingsData ?? [];
   const reviewList = reviewData?.data ?? reviewData ?? [];
   const employeesList = Array.isArray(employees) ? employees : (employees as any)?.data ?? [];
+
+  const payGroups = (payGroupSettingsData as any)?.pay_groups ?? [];
+
+  // When a run is selected, find its pay group and populate state defaults from filing_details
+  const selectedRunData = runsList.find((r: any) => r.id === selectedRun);
+  const runPayGroupId = selectedRunData?.pay_group_id as number | undefined;
+  const payGroup = runPayGroupId
+    ? payGroups.find((pg: { id: number; filing_details: PayGroupFilingDetail[] }) => pg.id === runPayGroupId)
+    : undefined;
+
+  useEffect(() => {
+    if (payGroup?.filing_details && ptState === '' && lwfState === '') {
+      const firstPtEnabled = payGroup.filing_details.find((d: PayGroupFilingDetail) => d.pt_enabled);
+      const firstLwfEnabled = payGroup.filing_details.find((d: PayGroupFilingDetail) => d.lwf_enabled);
+      if (firstPtEnabled && !ptState) setPtState(firstPtEnabled.state_code);
+      if (firstLwfEnabled && !lwfState) setLwfState(firstLwfEnabled.state_code);
+    }
+  }, [payGroup, ptState, lwfState, setPtState, setLwfState]);
 
   const dueDates = (settings as any)?.settings?.compliance_due_dates ?? (settings as any)?.compliance_due_dates ?? {};
 

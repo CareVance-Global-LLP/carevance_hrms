@@ -126,7 +126,7 @@ export default function PayGroupModal({
     },
     onError: (err) => {
       // Stay on the configure step so the user can retry.
-      // eslint-disable-next-line no-console
+       
       console.error('Failed to create pay group', err);
     },
   });
@@ -138,7 +138,7 @@ export default function PayGroupModal({
       onCreated(createMutation.data?.pay_group_id ?? 0, createdName);
     }, 1500);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [step]);
 
   const visibleIds = useMemo(

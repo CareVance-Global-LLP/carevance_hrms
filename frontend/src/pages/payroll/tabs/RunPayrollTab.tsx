@@ -124,7 +124,7 @@ export default function RunPayrollTab() {
               setBulkIds(ids);
               setBulkOpen(true);
             }}
-            onOpenPayGroupSettings={noop}
+            onOpenPayGroupSettings={(pgId) => navigate(`/payroll/pay-group-settings/${pgId}`)}
           />
         )}
       </div>
@@ -144,11 +144,12 @@ export default function RunPayrollTab() {
       {payGroups.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {payGroups.map((pg: any) => (
-            <PayGroupCard
-              key={pg.id}
-              payGroup={pg}
-              onClick={() => navigate(`/payroll/run?payGroup=${pg.id}`)}
-            />
+<PayGroupCard
+               key={pg.id}
+               payGroup={pg}
+               onClick={() => navigate(`/payroll/run?payGroup=${pg.id}`)}
+               onSettingsClick={() => navigate(`/payroll/pay-group-settings/${pg.id}`)}
+             />
           ))}
         </div>
       ) : (
