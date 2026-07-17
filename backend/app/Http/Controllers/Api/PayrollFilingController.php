@@ -3,22 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Organization;
 use App\Models\PayGroup;
 use App\Models\PayrollFiling;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
 use App\Models\User;
+use App\Services\Approvals\ApprovalRoutingService;
 use App\Services\PayrollFilingService;
-use App\Services\PayrollRegisterService;
-use App\Services\BankIntegrationService;
-use App\Services\TaxSimulatorService;
-use App\Services\SalaryRevisionService;
-use App\Services\ArrearCalculatorService;
-use App\Services\VariablePayEngine;
-use App\Services\PayrollChecklistService;
-use App\Services\FbpService;
-use App\Services\PerquisiteCalculator;
-use App\Services\SalaryFormulaEngine;
+use App\Services\PayrollFilingValidatorService;
+use App\Services\PortalAdapter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -28,7 +22,9 @@ class PayrollFilingController extends Controller
     {
         $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
         $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
         $filing = $filingService->generatePfEcr($run, auth()->user()->organization_id, auth()->id());
+
         return response()->json($filing);
     }
 
@@ -36,7 +32,9 @@ class PayrollFilingController extends Controller
     {
         $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
         $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
         $filing = $filingService->generateEsiChallan($run, auth()->user()->organization_id, auth()->id());
+
         return response()->json($filing);
     }
 
@@ -44,7 +42,9 @@ class PayrollFilingController extends Controller
     {
         $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
         $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
         $filing = $filingService->generateForm24Q($run, auth()->user()->organization_id, auth()->id());
+
         return response()->json($filing);
     }
 
@@ -55,6 +55,16 @@ class PayrollFilingController extends Controller
             'financial_year' => 'required|string|regex:/^\d{4}-\d{4}$/',
         ]);
 
+        // Verify the employee belongs to this organization
+        $employee = User::where('id', $data['user_id'])
+            ->where('organization_id', auth()->user()->organization_id)
+            ->first();
+        if (!$employee) {
+            return response()->json([
+                'message' => 'Employee not found in your organization.',
+            ], 422);
+        }
+
         try {
             $filing = $filingService->generateForm16(
                 $data['user_id'],
@@ -62,6 +72,7 @@ class PayrollFilingController extends Controller
                 auth()->user()->organization_id,
                 auth()->id()
             );
+
             return response()->json($filing);
         } catch (\RuntimeException $e) {
             // Return a user-friendly error when no payroll data exists
@@ -69,7 +80,7 @@ class PayrollFilingController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'No payroll data found for this financial year. Please process payroll before generating Form 16.',
-                    'error_code' => 'NO_PAYROLL_DATA'
+                    'error_code' => 'NO_PAYROLL_DATA',
                 ], 422);
             }
             // Re-throw other runtime exceptions
@@ -81,7 +92,9 @@ class PayrollFilingController extends Controller
     {
         $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
         $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
         $filing = $filingService->generateForm12BA($run, auth()->user()->organization_id, auth()->id());
+
         return response()->json($filing);
     }
 
@@ -92,33 +105,305 @@ class PayrollFilingController extends Controller
             'state' => 'required|string',
         ]);
         $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
         $filing = $filingService->generatePtReturn($run, $request->state, auth()->user()->organization_id, auth()->id());
+
         return response()->json($filing);
     }
 
     public function generateLwfReturn(Request $request, PayrollFilingService $filingService)
     {
-        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
-        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
-        $filing = $filingService->generateLwfReturn($run, auth()->user()->organization_id, auth()->id());
+        $data = $request->validate([
+            'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
+            'state' => 'required|string',
+        ]);
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
+        $this->assertRunFileable($run);
+        try {
+            $filing = $filingService->generateLwfReturn($run, $data['state'], auth()->user()->organization_id, auth()->id());
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
         return response()->json($filing);
     }
 
-    public function generateAllFilings(Request $request, PayrollFilingService $filingService)
+    public function generateBonusFormC(Request $request, PayrollFilingService $filingService)
+    {
+        $data = $request->validate([
+            'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
+            'bonus_percent' => 'required|numeric|min:8.33|max:20',
+            'financial_year' => 'nullable|string|regex:/^\d{4}-\d{4}$/',
+        ]);
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
+        $this->assertRunFileable($run);
+        try {
+            $filing = $filingService->generateBonusFormC(
+                $run,
+                auth()->user()->organization_id,
+                auth()->id(),
+                (float) $data['bonus_percent'],
+                $data['financial_year'] ?? null
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($filing);
+    }
+
+    public function generateAllFilings(Request $request, PayrollFilingService $filingService, ApprovalRoutingService $routing)
     {
         $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
         $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
         $filings = $filingService->generateAllFilings($run, auth()->user()->organization_id, auth()->id());
-        return response()->json(['filings' => $filings, 'count' => count($filings)]);
+
+        // Auto-route each generated filing to the internal reviewer (maker-checker),
+        // matching the payroll-run approval pattern.
+        $requester = auth()->user();
+        $reviewerIds = $routing->reviewerUserIds($requester);
+        $reviewerId = $reviewerIds->first();
+
+        foreach ($filings as $filing) {
+            if (! empty($filing->file_path) && $filing->status === 'generated') {
+                $filing->status = 'submitted';
+                $filing->submitted_at = now();
+                $filing->submitted_by = $requester->id;
+                $filing->reviewer_user_id = $reviewerId;
+                $filing->portal_status = 'pending_upload';
+                $filing->save();
+            }
+        }
+
+        return response()->json([
+            'filings' => $filings,
+            'count' => count($filings),
+            'reviewer_ids' => $reviewerIds->all(),
+        ]);
+    }
+
+    /**
+     * Pre-flight validation report for a filing type against a run. Returns a
+     * green/red "ready to file" checklist (errors block, warnings are advisory).
+     */
+    public function validateFiling(Request $request, PayrollFilingValidatorService $validator)
+    {
+        $data = $request->validate([
+            'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
+            'type' => 'required|string',
+            'state' => 'nullable|string',
+            'bonus_percent' => 'nullable|numeric',
+            'user_id' => 'nullable|integer',
+            'financial_year' => 'nullable|string',
+        ]);
+
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
+        $runStateErrors = $validator->validateRunState($run);
+
+        $result = $validator->validate($run, $data['type'], [
+            'state' => $data['state'] ?? null,
+            'bonus_percent' => $data['bonus_percent'] ?? null,
+            'user_id' => $data['user_id'] ?? null,
+            'financial_year' => $data['financial_year'] ?? null,
+        ]);
+
+        $errors = array_merge($runStateErrors, $result['errors']);
+
+        return response()->json([
+            'type' => $data['type'],
+            'ready' => $errors === [],
+            'errors' => $errors,
+            'warnings' => $result['warnings'],
+            'run_status' => $run->status,
+        ]);
+    }
+
+    /**
+     * Validate the run state only (used by the UI to gate the whole Generate tab).
+     */
+    public function validateRun(Request $request, PayrollFilingValidatorService $validator)
+    {
+        $data = $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
+        $errors = $validator->validateRunState($run);
+
+        return response()->json([
+            'run_status' => $run->status,
+            'ready' => $errors === [],
+            'errors' => $errors,
+        ]);
+    }
+
+    /**
+     * Submits a generated filing to the internal reviewer (maker-checker).
+     * Routes the reviewer via ApprovalRoutingService, matching the payroll-run
+     * approval pattern. Sets status -> submitted.
+     */
+    public function submitForReview(Request $request, ApprovalRoutingService $routing, int $id)
+    {
+        $filing = PayrollFiling::where('id', $id)
+            ->where('organization_id', auth()->user()->organization_id)
+            ->firstOrFail();
+
+        if (! in_array($filing->status, ['generated', 'rejected', 'submitted'])) {
+            return response()->json(['success' => false, 'message' => 'Only generated filings can be submitted for review.'], 422);
+        }
+        if (empty($filing->file_path)) {
+            return response()->json(['success' => false, 'message' => 'This filing has no generated file. Generate it before submitting.'], 422);
+        }
+
+        $requester = auth()->user();
+        $reviewerIds = $routing->reviewerUserIds($requester);
+
+        $filing->status = 'submitted';
+        $filing->submitted_at = now();
+        $filing->submitted_by = $requester->id;
+        $filing->reviewer_user_id = $reviewerIds->first(); // nearest reviewer
+        $filing->review_note = $request->input('note');
+        $filing->portal_status = 'pending_upload';
+        $filing->save();
+
+        return response()->json([
+            'filing' => $filing,
+            'reviewer_ids' => $reviewerIds->all(),
+            'message' => 'Filing submitted for internal review.',
+        ]);
+    }
+
+    /**
+     * Reviewer approves the filing -> approved. Still must be filed by a human.
+     */
+    public function approveFiling(Request $request, int $id)
+    {
+        $filing = PayrollFiling::where('id', $id)
+            ->where('organization_id', auth()->user()->organization_id)
+            ->firstOrFail();
+
+        if ($filing->status !== 'submitted') {
+            return response()->json(['success' => false, 'message' => 'Only submitted filings can be approved.'], 422);
+        }
+
+        $filing->status = 'approved';
+        $filing->approved_at = now();
+        $filing->approved_by = auth()->id();
+        $filing->review_note = $request->input('note', $filing->review_note);
+        $filing->save();
+
+        return response()->json(['filing' => $filing, 'message' => 'Filing approved. It is ready for the human to file on the portal.']);
+    }
+
+    /**
+     * Reviewer rejects the filing -> back to generated with a note.
+     */
+    public function rejectFiling(Request $request, int $id)
+    {
+        $request->validate(['note' => 'required|string']);
+        $filing = PayrollFiling::where('id', $id)
+            ->where('organization_id', auth()->user()->organization_id)
+            ->firstOrFail();
+
+        if ($filing->status !== 'submitted') {
+            return response()->json(['success' => false, 'message' => 'Only submitted filings can be rejected.'], 422);
+        }
+
+        $filing->status = 'generated';
+        $filing->review_note = $request->input('note');
+        $filing->submitted_at = null;
+        $filing->submitted_by = null;
+        $filing->reviewer_user_id = null;
+        $filing->save();
+
+        return response()->json(['filing' => $filing, 'message' => 'Filing rejected and returned to generated.']);
+    }
+
+    /**
+     * Records that the human filed the return on the government portal. Uses the
+     * already-existing acknowledgment_number / filed_by / filed_at columns.
+     */
+    public function markFiled(Request $request, int $id)
+    {
+        $data = $request->validate([
+            'acknowledgment_number' => 'required|string|max:100',
+            'portal_status' => 'nullable|in:pending_upload,uploaded,paid,error',
+            'notes' => 'nullable|string',
+        ]);
+
+        $filing = PayrollFiling::where('id', $id)
+            ->where('organization_id', auth()->user()->organization_id)
+            ->firstOrFail();
+
+        if (! in_array($filing->status, ['approved', 'submitted', 'generated'])) {
+            return response()->json(['success' => false, 'message' => 'This filing cannot be marked filed in its current state.'], 422);
+        }
+
+        $filing->status = 'filed';
+        $filing->filed_at = now();
+        $filing->filed_by = auth()->id();
+        $filing->acknowledgment_number = $data['acknowledgment_number'];
+        $filing->portal_status = $data['portal_status'] ?? 'paid';
+        if (! empty($data['notes'])) {
+            $filing->notes = $data['notes'];
+        }
+        $filing->save();
+
+        return response()->json(['filing' => $filing, 'message' => 'Filing recorded as filed.']);
+    }
+
+    /**
+     * Returns the portal adapter info (upload target + instructions) for a filing.
+     */
+    public function portalInfo(int $id, PortalAdapter $adapter)
+    {
+        $filing = PayrollFiling::with(['generatedBy', 'filedBy', 'submittedBy', 'approvedBy'])
+            ->where('id', $id)
+            ->where('organization_id', auth()->user()->organization_id)
+            ->firstOrFail();
+
+        $org = Organization::find(auth()->user()->organization_id);
+        $info = $adapter->resolve($filing, $org);
+
+        return response()->json(array_merge($info, [
+            'filing_id' => $filing->id,
+            'status' => $filing->status,
+            'portal_status' => $filing->portal_status,
+            'file_path' => $filing->file_path,
+            'has_file' => ! empty($filing->file_path),
+            'can_upload' => $filing->isReadyToUpload(),
+        ]));
+    }
+
+    /**
+     * Reviewer queue: filings submitted and awaiting review in this org.
+     */
+    public function reviewQueue(Request $request)
+    {
+        $user = auth()->user();
+        $query = PayrollFiling::with(['generatedBy', 'submittedBy'])
+            ->where('organization_id', $user->organization_id)
+            ->where('status', 'submitted');
+
+        // Restrict to filings routed to this reviewer (nearest), unless admin.
+        if (! in_array($user->role, ['admin', 'super_admin'])) {
+            $query->where('reviewer_user_id', $user->id);
+        }
+
+        return response()->json($query->orderBy('submitted_at', 'desc')->paginate(20));
     }
 
     public function listFilings(Request $request)
     {
         $query = PayrollFiling::where('organization_id', auth()->user()->organization_id);
 
-        if ($request->type) $query->where('type', $request->type);
-        if ($request->status) $query->where('status', $request->status);
-        if ($request->period_year) $query->where('period_year', $request->period_year);
+        if ($request->type) {
+            $query->where('type', $request->type);
+        }
+        if ($request->status) {
+            $query->where('status', $request->status);
+        }
+        if ($request->period_year) {
+            $query->where('period_year', $request->period_year);
+        }
 
         return response()->json($query->orderBy('created_at', 'desc')->paginate(20));
     }
@@ -129,7 +414,7 @@ class PayrollFilingController extends Controller
             ->where('organization_id', auth()->user()->organization_id)
             ->firstOrFail();
 
-        if (!$filing->file_path || !Storage::disk('local')->exists($filing->file_path)) {
+        if (! $filing->file_path || ! Storage::disk('local')->exists($filing->file_path)) {
             return response()->json(['error' => 'File not found'], 404);
         }
 
@@ -138,287 +423,26 @@ class PayrollFilingController extends Controller
 
     public function getFiling(int $id)
     {
-        $filing = PayrollFiling::with(['generatedBy', 'filedBy'])
+        $filing = PayrollFiling::with(['generatedBy', 'filedBy', 'submittedBy', 'approvedBy'])
             ->where('organization_id', auth()->user()->organization_id)
             ->findOrFail($id);
+
         return response()->json($filing);
     }
 
-    // FBP
-    public function getFbpComponents(FbpService $fbp)
+    /**
+     * Safety guard (Plan Phase E): a statutory filing may only be generated from
+     * a run that has been locked/approved. Generating from a draft run would
+     * produce returns on unverified numbers — block it server-side, not just
+     * in the UI.
+     */
+    private function assertRunFileable(PayrollMonthlyRun $run): void
     {
-        return response()->json($fbp->getAllocateComponent(auth()->user()->organization_id));
+        if (! in_array($run->status, ['locked', 'approved', 'released', 'disbursed'])) {
+            abort(422, 'Payroll run is not approved/locked. Process, lock and approve the run before generating statutory filings.');
+        }
     }
 
-    public function getFbpAllocation(FbpService $fbp, int $userId)
-    {
-        return response()->json($fbp->getAllocationForUser($userId, auth()->user()->organization_id));
-    }
-
-    public function allocateFbp(Request $request, FbpService $fbp)
-    {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'fbp_component_id' => 'required|exists:fbp_components,id',
-            'amount' => 'required|numeric|min:0',
-        ]);
-        $allocation = $fbp->allocateOrUpdate(
-            $request->user_id, auth()->user()->organization_id,
-            $request->fbp_component_id, $request->amount
-        );
-        return response()->json($allocation);
-    }
-
-    public function submitFbpClaim(Request $request, FbpService $fbp)
-    {
-        $request->validate([
-            'fbp_allocation_id' => 'required|exists:fbp_allocations,id',
-            'fbp_component_id' => 'required|exists:fbp_components,id',
-            'claimed_amount' => 'required|numeric|min:0',
-            'user_id' => 'required|exists:users,id',
-            'bill_number' => 'nullable|string',
-            'bill_date' => 'nullable|date',
-            'description' => 'nullable|string',
-        ]);
-        $claim = $fbp->submitClaim(array_merge($request->all(), [
-            'organization_id' => auth()->user()->organization_id,
-        ]));
-        return response()->json($claim, 201);
-    }
-
-    public function approveFbpClaim(Request $request, FbpService $fbp, int $id)
-    {
-        $request->validate(['approved_amount' => 'required|numeric|min:0']);
-        $claim = $fbp->approveClaim($id, auth()->id(), $request->approved_amount, $request->month_year);
-        return response()->json($claim);
-    }
-
-    public function rejectFbpClaim(Request $request, FbpService $fbp, int $id)
-    {
-        $request->validate(['reason' => 'required|string']);
-        $claim = $fbp->rejectClaim($id, auth()->id(), $request->reason);
-        return response()->json($claim);
-    }
-
-    // Perquisites
-    public function createPerquisite(Request $request, PerquisiteCalculator $calc)
-    {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'type' => 'required|string|in:car,accommodation,esop,sweeper,gardener,domestic_help,gas_electricity,free_food,education,others',
-            'monthly_value' => 'required|numeric|min:0',
-            'details' => 'nullable|array',
-        ]);
-        $record = $calc->createPerquisiteRecord(
-            $request->user_id, auth()->user()->organization_id,
-            $request->type, $request->monthly_value, $request->details ?? []
-        );
-        return response()->json($record, 201);
-    }
-
-    public function getUserPerquisites(PerquisiteCalculator $calc, int $userId)
-    {
-        return response()->json($calc->calculateAllPerquisites($userId, auth()->user()->organization_id));
-    }
-
-    // Tax Simulator
-    public function compareTaxRegimes(Request $request, TaxSimulatorService $simulator)
-    {
-        $request->validate(['annual_ctc' => 'required|numeric|min:0']);
-        return response()->json($simulator->compareRegimes(
-            $request->annual_ctc,
-            $request->exemptions ?? [],
-            $request->is_metro ?? true,
-        ));
-    }
-
-    public function taxWhatIf(Request $request, TaxSimulatorService $simulator)
-    {
-        $request->validate([
-            'current_ctc' => 'required|numeric|min:0',
-            'scenarios' => 'required|array',
-        ]);
-        return response()->json($simulator->whatIfScenario($request->current_ctc, $request->scenarios));
-    }
-
-    public function calculateMonthlyTakeHome(Request $request, TaxSimulatorService $simulator)
-    {
-        $request->validate(['annual_ctc' => 'required|numeric|min:0']);
-        return response()->json($simulator->calculateMonthlyTakeHome(
-            $request->annual_ctc, $request->regime ?? 'new', $request->exemptions ?? []
-        ));
-    }
-
-    // Salary Revision
-    public function generateRevisionLetter(Request $request, SalaryRevisionService $service)
-    {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'new_ctc' => 'required|numeric|min:0',
-            'revision_type' => 'required|in:annual_increment,promotion,correction,other',
-            'reason' => 'required|string',
-        ]);
-        $letter = $service->generateLetter(
-            $request->user_id, auth()->user()->organization_id,
-            $request->new_ctc, $request->revision_type, $request->reason, auth()->id()
-        );
-        return response()->json($letter);
-    }
-
-    public function getRevisionLetters(Request $request, SalaryRevisionService $service, ?int $userId = null)
-    {
-        $uid = $userId ?? auth()->id();
-        return response()->json($service->getLetterHistory($uid, auth()->user()->organization_id));
-    }
-
-    public function acceptRevisionLetter(SalaryRevisionService $service, int $id)
-    {
-        return response()->json($service->acceptLetter($id, auth()->id()));
-    }
-
-    public function rejectRevisionLetter(SalaryRevisionService $service, int $id)
-    {
-        return response()->json($service->rejectLetter($id, auth()->id()));
-    }
-
-    // Checklist
-    public function runPayrollValidation(Request $request, PayrollChecklistService $service)
-    {
-        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
-        return response()->json($service->runFullValidation(
-            $request->payroll_run_id, auth()->user()->organization_id, auth()->id()
-        ));
-    }
-
-    public function getChecklistStatus(PayrollChecklistService $service, int $runId)
-    {
-        return response()->json($service->getRunChecklistStatus($runId));
-    }
-
-    public function resolveCheck(Request $request, PayrollChecklistService $service)
-    {
-        $request->validate([
-            'check_id' => 'required|exists:payroll_run_checklists,id',
-            'resolution' => 'required|string',
-        ]);
-        return response()->json($service->resolveCheck($request->check_id, $request->resolution, auth()->id()));
-    }
-
-    // Arrears
-    public function detectCtcArrears(Request $request, ArrearCalculatorService $service, int $userId)
-    {
-        $request->validate(['current_month_year' => 'required|string']);
-        return response()->json($service->detectCtcChanges(
-            $userId, auth()->user()->organization_id, $request->current_month_year
-        ));
-    }
-
-    public function calculateArrear(Request $request, ArrearCalculatorService $service)
-    {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'month_year' => 'required|string',
-            'amount' => 'required|numeric|min:0',
-            'reason' => 'required|string',
-        ]);
-        $arrear = $service->calculateArrear(
-            $request->user_id, auth()->user()->organization_id,
-            $request->month_year, $request->amount, $request->reason
-        );
-        return response()->json($arrear);
-    }
-
-    // Variable Pay
-    public function calculateVariablePay(Request $request, VariablePayEngine $engine)
-    {
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'payroll_item_id' => 'required|exists:payroll_items,id',
-        ]);
-        $item = \App\Models\PayrollItem::findOrFail($request->payroll_item_id);
-        $amount = $engine->calculateVariablePay(
-            $request->user_id, auth()->user()->organization_id, $item
-        );
-        return response()->json(['variable_pay' => $amount]);
-    }
-
-    // Payroll Register
-    public function getPayrollRegister(Request $request, PayrollRegisterService $service)
-    {
-        $request->validate(['month_year' => 'required|string']);
-        return response()->json($service->getPayrollRegister(
-            auth()->user()->organization_id, $request->month_year, $request->filters ?? []
-        ));
-    }
-
-    public function getStatutoryRegister(Request $request, PayrollRegisterService $service)
-    {
-        $request->validate([
-            'month_year' => 'required|string',
-            'type' => 'required|in:pf,esi,pt,tds',
-        ]);
-        return response()->json($service->getStatutoryRegister(
-            auth()->user()->organization_id, $request->month_year, $request->type
-        ));
-    }
-
-    public function getBankReconciliation(Request $request, PayrollRegisterService $service)
-    {
-        $request->validate(['month_year' => 'required|string']);
-        return response()->json($service->getBankReconciliation(
-            auth()->user()->organization_id, $request->month_year
-        ));
-    }
-
-    // Bank Integration
-    public function createTransferBatch(Request $request, BankIntegrationService $service)
-    {
-        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
-        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
-        $batch = $service->createTransferBatch($run, auth()->user()->organization_id, auth()->id(), $request->bank_name);
-        return response()->json($batch);
-    }
-
-    public function processBatch(Request $request, BankIntegrationService $service, int $batchId)
-    {
-        $batch = \App\Models\BankTransferBatch::where('organization_id', auth()->user()->organization_id)
-            ->findOrFail($batchId);
-        return response()->json($service->processBatchTransfer($batch));
-    }
-
-    public function generateBankFile(Request $request, BankIntegrationService $service, int $batchId)
-    {
-        $batch = \App\Models\BankTransferBatch::where('organization_id', auth()->user()->organization_id)
-            ->findOrFail($batchId);
-        $path = $service->generateBankFile($batch, $request->format ?? 'csv');
-        return response()->json(['file_path' => $path, 'download_url' => Storage::disk('local')->url($path)]);
-    }
-
-    public function initiatePaymentReversal(Request $request, BankIntegrationService $service)
-    {
-        $request->validate([
-            'payroll_item_id' => 'required|exists:payroll_items,id',
-            'reason' => 'required|string',
-        ]);
-        $reversal = $service->initiatePaymentReversal($request->payroll_item_id, $request->reason, auth()->id());
-        return response()->json($reversal);
-    }
-
-    // Formula Engine
-    public function evaluateFormula(Request $request, SalaryFormulaEngine $engine)
-    {
-        $request->validate(['expression' => 'required|string']);
-        $result = $engine->setVariables($request->variables ?? [])->evaluate($request->expression);
-        return response()->json(['expression' => $request->expression, 'result' => $result]);
-    }
-
-    public function validateFormula(Request $request, SalaryFormulaEngine $engine)
-    {
-        $request->validate(['expression' => 'required|string']);
-        return response()->json(['valid' => $engine->validateFormula($request->expression)]);
-    }
-
-    // Pay Groups
     public function storePayGroup(Request $request)
     {
         $data = $request->validate([
@@ -437,19 +461,6 @@ class PayrollFilingController extends Controller
     /**
      * List all active pay groups in the caller's organization with
      * per-group payroll aggregates for the requested month.
-     *
-     * The response shape mirrors `getDepartments` so the dashboard
-     * can render Pay Group cards in the same structure as
-     * Department cards:
-     *   { pay_groups: [{
-     *       id, name, code, pay_frequency,
-     *       employee_count, processed_count, paid_count, total_net_pay
-     *   }] }
-     *
-     * The totals are computed in two batched queries per group to
-     * avoid N+1 — one to load active assignments, and one to sum
-     * payroll items for the month. Both run in O(1) queries per
-     * group thanks to eager loading of the assignments relation.
      */
     public function listPayGroups(Request $request)
     {
@@ -498,22 +509,10 @@ class PayrollFilingController extends Controller
     }
 
     /**
-     * Get the active employees in a pay group along with their
-     * per-month payroll status, so the PayGroupEmployees view can
-     * render the same kind of list as DepartmentEmployees.
-     *
-     * The response shape mirrors PayrollDepartmentEmployee so the
-     * EmployeeCard component can be shared between the two views:
-     *   {
-     *     pay_group: { id, name, code, pay_frequency },
-     *     employees: [{ id, name, email, role, employee_code,
-     *                   designation, department, annual_ctc,
-     *                   net_pay, payment_status, is_processed,
-     *                   is_paid, avatar }]
-     *   }
-     *
-     * Authorization: the pay group must belong to the caller's
-     * organization; otherwise firstOrFail throws a 404.
+     * Get the active employees in a pay group with their per-month
+     * payroll status. Response shape mirrors getDepartmentEmployees so
+     * the EmployeeCard component is shared.
+     * Query: ?month_year=YYYY-MM (default: current month)
      */
     public function getPayGroupEmployees(int $id, Request $request)
     {
@@ -531,25 +530,22 @@ class PayrollFilingController extends Controller
         if (empty($userIds)) {
             $employees = collect();
         } else {
-            // BULK fetch all users with relations (1 query)
             $users = User::whereIn('id', $userIds)
                 ->with(['employeeProfile', 'employeeWorkInfo', 'groups'])
                 ->get()
                 ->keyBy('id');
 
-            // BULK fetch all payroll items for this month (1 query — fixes N+1)
             $payrollItems = PayrollItem::whereIn('user_id', $userIds)
                 ->where('month_year', $monthYear)
                 ->get()
                 ->keyBy('user_id');
 
-            // BULK fetch all templates (1 query — fixes N+1)
             $templates = \App\Models\EmployeePayrollTemplate::where('organization_id', $request->user()->organization_id)
                 ->whereIn('user_id', $userIds)
                 ->get()
                 ->keyBy('user_id');
 
-            $employees = collect($userIds)->map(function ($uid) use ($users, $payrollItems, $templates, $monthYear) {
+            $employees = collect($userIds)->map(function ($uid) use ($users, $payrollItems, $templates) {
                 $u = $users->get($uid);
                 if (!$u) return null;
 
@@ -568,21 +564,16 @@ class PayrollFilingController extends Controller
                     'department' => $group?->name,
                     'annual_ctc' => (float) ($template?->annual_ctc ?? 0),
                     'steps_completed' => [
-                        'step1' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step1_completed : false,
-                        'step2' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step2_completed : false,
-                        'step3' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step3_completed : false,
-                        'step4' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step4_completed : false,
-                        'step5' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step5_completed : false,
-                        'step6' => $template && $template->steps_month_year === $monthYear ? (bool) $template->step6_completed : false,
+                        'step1' => (bool) ($template?->step1_completed),
+                        'step2' => (bool) ($template?->step2_completed),
+                        'step3' => (bool) ($template?->step3_completed),
+                        'step4' => (bool) ($template?->step4_completed),
+                        'step5' => (bool) ($template?->step5_completed),
+                        'step6' => (bool) ($template?->step6_completed),
                     ],
-                    'current_step' => $template && $template->steps_month_year === $monthYear ? (int) ($template->current_step ?? 1) : 1,
+                    'current_step' => (int) ($template?->current_step ?? 1),
                     'payroll_status' => [
-                        // A PayrollItem is only ever created once payroll is
-                        // processed for an employee+month, so item existence
-                        // (not payment_status) is the correct "processed"
-                        // signal. Items stay 'pending' until disbursed, which
-                        // is what the disbursement queries filter on.
-                        'is_processed' => $item !== null,
+                        'is_processed' => $item && $item->payment_status !== 'pending',
                         'net_pay' => $item ? (float) $item->net_pay : 0,
                         'payment_status' => $item?->payment_status ?? 'pending',
                         'gross_salary' => $item ? (float) $item->gross_salary : 0,
@@ -615,21 +606,17 @@ class PayrollFilingController extends Controller
             'step' => 'required|integer|min:1|max:6',
             'user_ids' => 'required|array|min:1',
             'user_ids.*' => 'integer|exists:users,id',
-            'month_year' => 'required|string|max:7',
         ]);
 
         $organizationId = $request->user()->organization_id;
 
-        // Verify the pay group belongs to the caller's org.
-        $payGroup = \App\Models\PayGroup::where('id', $id)
+        $payGroup = PayGroup::where('id', $id)
             ->where('organization_id', $organizationId)
             ->first();
         if (!$payGroup) {
             return response()->json(['success' => false, 'message' => 'Pay group not found'], 404);
         }
 
-        // Verify all submitted user_ids are current active members of
-        // this pay group (prevents arbitrary users from being marked).
         $userIds = array_values(array_unique(array_map('intval', $data['user_ids'])));
         $validUserIds = \App\Models\PayGroupAssignment::where('pay_group_id', $id)
             ->where('organization_id', $organizationId)
@@ -646,9 +633,7 @@ class PayrollFilingController extends Controller
         }
 
         $column = "step{$data['step']}_completed";
-        $monthYear = $data['month_year'];
 
-        // BULK ensure templates exist (1 query to find existing, 1 query to create missing)
         $existing = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $validUserIds)
             ->pluck('user_id')
@@ -661,32 +646,9 @@ class PayrollFilingController extends Controller
             }
         }
 
-        // Reset stale completions when crossing into a NEW payroll month.
-        // A single shared `steps_month_year` column gates all six cumulative
-        // `stepN_completed` booleans. If an employee still carries
-        // step2..6_completed = true from a previous month, completing a step
-        // for the new month would otherwise flip `steps_month_year` and reveal
-        // those stale flags as "done". Start the new month fresh so only the
-        // step actually being completed is marked.
-        \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
-            ->whereIn('user_id', $validUserIds)
-            ->where(function ($q) use ($monthYear) {
-                $q->where('steps_month_year', '!=', $monthYear)
-                  ->orWhereNull('steps_month_year');
-            })
-            ->update([
-                'step1_completed' => false,
-                'step2_completed' => false,
-                'step3_completed' => false,
-                'step4_completed' => false,
-                'step5_completed' => false,
-                'step6_completed' => false,
-                'current_step' => 1,
-            ]);
-
         $updated = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $validUserIds)
-            ->update([$column => true, 'steps_month_year' => $monthYear]);
+            ->update([$column => true]);
 
         return response()->json([
             'success' => true,
@@ -706,12 +668,11 @@ class PayrollFilingController extends Controller
     {
         $data = $request->validate([
             'step' => 'required|integer|min:1|max:6',
-            'month_year' => 'required|string|max:7',
         ]);
 
         $organizationId = $request->user()->organization_id;
 
-        $payGroup = \App\Models\PayGroup::where('id', $id)
+        $payGroup = PayGroup::where('id', $id)
             ->where('organization_id', $organizationId)
             ->first();
         if (!$payGroup) {
@@ -732,9 +693,7 @@ class PayrollFilingController extends Controller
         }
 
         $column = "step{$data['step']}_completed";
-        $monthYear = $data['month_year'];
 
-        // BULK ensure templates exist (1 query to find existing, 1 query to create missing)
         $existing = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $userIds)
             ->pluck('user_id')
@@ -747,30 +706,9 @@ class PayrollFilingController extends Controller
             }
         }
 
-        // Reset stale completions when crossing into a NEW payroll month.
-        // See completeStep() for the full rationale. A single shared
-        // `steps_month_year` gates all six cumulative booleans, so we must
-        // start the new month fresh before marking the requested step.
-        \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
-            ->whereIn('user_id', $userIds)
-            ->where(function ($q) use ($monthYear) {
-                $q->where('steps_month_year', '!=', $monthYear)
-                  ->orWhereNull('steps_month_year');
-            })
-            ->update([
-                'step1_completed' => false,
-                'step2_completed' => false,
-                'step3_completed' => false,
-                'step4_completed' => false,
-                'step5_completed' => false,
-                'step6_completed' => false,
-                'current_step' => 1,
-            ]);
-
-        // BULK update all in 1 query
         $updated = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $userIds)
-            ->update([$column => true, 'steps_month_year' => $monthYear]);
+            ->update([$column => true]);
 
         return response()->json([
             'success' => true,
@@ -788,10 +726,9 @@ class PayrollFilingController extends Controller
      */
     public function getStepStatus(Request $request, int $id): \Illuminate\Http\JsonResponse
     {
-        $monthYear = $request->get('month_year', now()->format('Y-m'));
         $organizationId = $request->user()->organization_id;
 
-        $payGroup = \App\Models\PayGroup::where('id', $id)
+        $payGroup = PayGroup::where('id', $id)
             ->where('organization_id', $organizationId)
             ->first();
         if (!$payGroup) {
@@ -816,15 +753,12 @@ class PayrollFilingController extends Controller
 
         $rows = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $userIds)
-            ->get(['user_id', 'step1_completed', 'step2_completed', 'step3_completed', 'step4_completed', 'step5_completed', 'step6_completed', 'steps_month_year']);
-
-        // Filter rows to only count completions for the requested month
-        $filteredRows = $rows->where('steps_month_year', $monthYear);
+            ->get(['user_id', 'step1_completed', 'step2_completed', 'step3_completed', 'step4_completed', 'step5_completed', 'step6_completed']);
 
         $steps = [];
         for ($n = 1; $n <= 6; $n++) {
             $col = "step{$n}_completed";
-            $completed = $filteredRows->where($col, true)->count();
+            $completed = $rows->where($col, true)->count();
             $steps[$n] = [
                 'completed_count' => $completed,
                 'pending_count' => $totalMembers - $completed,
@@ -836,23 +770,5 @@ class PayrollFilingController extends Controller
             'total_members' => $totalMembers,
             'steps' => $steps,
         ]);
-    }
-
-    // Daily Wage & CTC Bands
-    public function listDailyWageStructures()
-    {
-        return response()->json(\App\Models\DailyWageStructure::where('organization_id', auth()->user()->organization_id)->get());
-    }
-
-    public function listCtcBands()
-    {
-        return response()->json(\App\Models\CtcRangeBand::where('organization_id', auth()->user()->organization_id)->get());
-    }
-
-    public function findCtcBand(Request $request)
-    {
-        $request->validate(['annual_ctc' => 'required|numeric|min:0']);
-        $band = \App\Models\CtcRangeBand::findBandForCtc(auth()->user()->organization_id, $request->annual_ctc);
-        return response()->json($band ?? ['message' => 'No matching band found']);
     }
 }

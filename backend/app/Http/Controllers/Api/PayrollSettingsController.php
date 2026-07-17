@@ -37,6 +37,9 @@ class PayrollSettingsController extends Controller
         // Maker-checker: when true, a *different* admin must approve/release
         // a run. When null (default), it is derived from the live admin count.
         'requireSecondApprover' => null,
+        // Payment of Bonus Act: applicable rate (8.33%–20%) set by finance each
+        // year based on the company's allocable surplus. Used by Bonus Form C.
+        'bonusPercent' => 8.33,
     ];
 
     /**
@@ -87,6 +90,7 @@ class PayrollSettingsController extends Controller
             'vpfPercentage' => 'nullable|numeric|min:0|max:100',
             'isMetroCity' => 'nullable|boolean',
             'requireSecondApprover' => 'nullable|boolean',
+            'bonusPercent' => 'nullable|numeric|min:8.33|max:20',
             // Compliance toggles (SetupCompliance)
             'compliance' => 'nullable|array',
             'compliance.*' => 'nullable|boolean',
@@ -149,6 +153,7 @@ class PayrollSettingsController extends Controller
                 'vpfPercentage',
                 'isMetroCity',
                 'requireSecondApprover',
+                'bonusPercent',
                 'compliance',
                 'paySchedule',
                 'bank',

@@ -26,8 +26,9 @@ class BrowserTrackingConnectionService
         $ready = (bool) ($payload['ready'] ?? false);
         $disconnectReason = trim((string) ($payload['last_error'] ?? ''));
         $now = now();
+        $screenshotCapture = $payload['screenshot_capture'] ?? null;
         $connections = collect((array) ($payload['connections'] ?? []))
-            ->map(function (array $connection) use ($payload, $now) {
+            ->map(function (array $connection) use ($payload, $now, $screenshotCapture) {
                 $fallbackLastSeenAt = $payload['last_event_at'] ?? null;
 
                 return [
@@ -38,6 +39,7 @@ class BrowserTrackingConnectionService
                     'last_seen_at' => $this->parseOptionalDate($connection['last_seen_at'] ?? $fallbackLastSeenAt, $now),
                     'meta' => [
                         'extension_origin' => trim((string) ($connection['extension_origin'] ?? '')) ?: null,
+                        'screenshot_capture' => $screenshotCapture,
                     ],
                 ];
             })

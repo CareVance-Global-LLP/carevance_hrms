@@ -116,6 +116,10 @@ export default function PayGroupModal({
       setStep('success');
       // Refresh the pay-groups list (used elsewhere) and the
       // employee summaries so the new assignments are visible.
+      // NOTE: RunPayrollTab queries under key ['payroll', 'pay-groups-list'],
+      // so invalidate that exact key (plus the looser prefix) to ensure the
+      // picker actually re-fetches after a create.
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups-list'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-groups'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'all-employees'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'dashboard'] });

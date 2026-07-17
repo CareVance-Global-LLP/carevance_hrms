@@ -144,7 +144,7 @@ describe('useDesktopTracker', () => {
     mocks.updateActivitySessionMock.mockResolvedValue({ data: { id: 801 } });
     mocks.syncBrowserTrackingConnectionsMock.mockResolvedValue({ data: { data: [] } });
     mocks.uploadScreenshotMock.mockResolvedValue({ data: { id: 1 } });
-    mocks.captureScreenshotMock.mockResolvedValue(null);
+    mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
     mocks.getSystemIdleSecondsMock.mockResolvedValue(0);
     mocks.getActiveWindowContextMock.mockResolvedValue({
       app: 'Visual Studio Code',
@@ -381,7 +381,7 @@ describe('useDesktopTracker', () => {
   });
 
   it('captures screenshots on the single 3 minute interval while the timer is running', async () => {
-    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+    mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
 
     render(<TrackerHarness />);
 
@@ -389,8 +389,9 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    // One immediate capture when the interval starts, plus one at the 3 min tick.
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenNthCalledWith(
       1,
       55,
@@ -406,7 +407,7 @@ describe('useDesktopTracker', () => {
         monitoring_interval_minutes: 1,
       },
     };
-    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+    mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
 
     render(<TrackerHarness />);
 
@@ -414,8 +415,9 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    // Immediate capture on start + one at the 60s tick.
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a separate 5 minute screenshot interval for another invited user', async () => {
@@ -427,7 +429,7 @@ describe('useDesktopTracker', () => {
         monitoring_interval_minutes: 5,
       },
     };
-    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+    mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
 
     render(<TrackerHarness />);
 
@@ -435,19 +437,21 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(0);
+    // Only the immediate capture so far — the 5 min interval has not ticked yet.
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    // Immediate capture + first 5 min tick.
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
   });
 
   it('continues screenshot capture when the user is idle at the screenshot interval', async () => {
     const idleSince = Date.now();
-    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+    mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
     mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
 
     render(<TrackerHarness />);
@@ -456,8 +460,9 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    // Immediate capture + 3 min tick.
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenNthCalledWith(
       1,
       55,
@@ -467,7 +472,7 @@ describe('useDesktopTracker', () => {
   });
 
   it('clears and recreates the screenshot interval cleanly on remount without duplicating captures', async () => {
-    mocks.captureScreenshotMock.mockResolvedValue('data:image/png;base64,ZmFrZQ==');
+    mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
 
     const firstRender = render(<TrackerHarness />);
     firstRender.unmount();
@@ -478,8 +483,10 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    // After remount: a single immediate capture + one 3 min tick (no duplicate
+    // interval left over from the unmounted render).
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
   });
 
   it('recovers future screenshots when one screenshot capture call hangs', async () => {
@@ -492,7 +499,7 @@ describe('useDesktopTracker', () => {
         return new Promise(() => {});
       }
 
-      return Promise.resolve('data:image/png;base64,ZmFrZQ==');
+      return Promise.resolve({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
     });
 
     render(<TrackerHarness />);
@@ -501,19 +508,19 @@ describe('useDesktopTracker', () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(0);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(15 * 1000);
-    });
+    // The immediate capture hangs but times out after 15s, releasing the
+    // in-flight guard; the 3 min interval tick then captures and uploads
+    // successfully. So two capture attempts and one successful upload.
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
     });
 
-    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
-    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
+    // A further interval tick keeps capturing and uploading normally.
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(3);
+    expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
 
     errorSpy.mockRestore();
   });
@@ -1256,5 +1263,83 @@ describe('useDesktopTracker', () => {
       ended_at: '2026-04-21T11:29:10.000Z',
       duration_seconds: 16,
     }));
+  });
+
+  // ── Part 3: idle boundary coverage ────────────────────────────────────────
+  // Business rule: <3min not counted, 3min..<5min counted but not auto-stopped,
+  // 5min continuous auto-stops. Boundary conditions are where off-by-one bugs
+  // hide, so each threshold edge is asserted explicitly.
+  it('does NOT count idle at exactly 2:59 (below the 3 minute track threshold)', async () => {
+    const idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000 + 59 * 1000);
+    });
+
+    expect(mocks.createActivityMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'idle' }));
+    expect(mocks.stopMock).not.toHaveBeenCalled();
+    expect(mocks.deleteActivityMock).not.toHaveBeenCalled();
+  });
+
+  it('DOES count idle at exactly 3:00 (at the track threshold) but does NOT auto-stop', async () => {
+    const idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    });
+
+    expect(
+      mocks.createActivityMock.mock.calls.some(([payload]) => payload?.type === 'idle')
+    ).toBe(true);
+    expect(mocks.stopMock).not.toHaveBeenCalled();
+  });
+
+  it('counts idle at 4:59 with a resume and does NOT auto-stop', async () => {
+    let idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000 + 59 * 1000);
+    });
+
+    expect(
+      mocks.createActivityMock.mock.calls.some(([payload]) => payload?.type === 'idle')
+    ).toBe(true);
+    expect(mocks.stopMock).not.toHaveBeenCalled();
+
+    // Resume activity; the idle window should be rewound and the timer kept.
+    await act(async () => {
+      idleSince = Date.now();
+      window.dispatchEvent(new Event('keydown'));
+      await vi.advanceTimersByTimeAsync(5 * 1000);
+    });
+
+    expect(mocks.stopMock).not.toHaveBeenCalled();
+  });
+
+  it('auto-stops the timer at exactly 5:00 of continuous idle', async () => {
+    const idleSince = Date.now();
+    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    });
+
+    expect(mocks.stopMock).toHaveBeenCalledWith({
+      timer_slot: 'primary',
+      auto_stopped_for_idle: true,
+      idle_seconds: 300,
+      last_activity_at: '2026-03-18T09:00:00.000Z',
+    });
   });
 });

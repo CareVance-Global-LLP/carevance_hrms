@@ -2170,10 +2170,42 @@ export const payrollApi = {
     api.post<any>('/payroll/filings/generate/form-12ba', { payroll_run_id: payrollRunId }),
   generatePtReturn: (payrollRunId: number, state: string) =>
     api.post<any>('/payroll/filings/generate/pt-return', { payroll_run_id: payrollRunId, state }),
-  generateLwfReturn: (payrollRunId: number) =>
-    api.post<any>('/payroll/filings/generate/lwf-return', { payroll_run_id: payrollRunId }),
+  generateLwfReturn: (payrollRunId: number, state: string) =>
+    api.post<any>('/payroll/filings/generate/lwf-return', { payroll_run_id: payrollRunId, state }),
+  generateBonusFormC: (payrollRunId: number, bonusPercent: number, financialYear?: string) =>
+    api.post<any>('/payroll/filings/generate/bonus-form-c', {
+      payroll_run_id: payrollRunId,
+      bonus_percent: bonusPercent,
+      financial_year: financialYear,
+    }),
   generateAllFilings: (payrollRunId: number) =>
     api.post<any>('/payroll/filings/generate/all', { payroll_run_id: payrollRunId }),
+
+  // ===== E-Filing review workflow (semi-auto) =====
+  validateFiling: (payrollRunId: number, type: string, opts?: { state?: string; bonusPercent?: number }) =>
+    api.post<any>('/payroll/filings/validate', {
+      payroll_run_id: payrollRunId,
+      type,
+      state: opts?.state,
+      bonus_percent: opts?.bonusPercent,
+    }),
+  validateRun: (payrollRunId: number, bonusPercent?: number) =>
+    api.post<any>('/payroll/filings/validate-run', { payroll_run_id: payrollRunId, bonus_percent: bonusPercent }),
+  submitFiling: (id: number) =>
+    api.post<any>(`/payroll/filings/${id}/submit`),
+  approveFiling: (id: number) =>
+    api.post<any>(`/payroll/filings/${id}/approve`),
+  rejectFiling: (id: number, reason: string) =>
+    api.post<any>(`/payroll/filings/${id}/reject`, { reason }),
+  markFilingFiled: (id: number, acknowledgmentNumber: string, portalStatus?: string) =>
+    api.post<any>(`/payroll/filings/${id}/mark-filed`, {
+      acknowledgment_number: acknowledgmentNumber,
+      portal_status: portalStatus,
+    }),
+  getPortalInfo: (id: number) =>
+    api.get<any>(`/payroll/filings/${id}/portal`),
+  getReviewQueue: () =>
+    api.get<any>('/payroll/filings/review/queue'),
 
   // ===== FBP =====
   getFbpComponents: () =>

@@ -345,12 +345,22 @@ export interface BrowserTrackingConnectionSyncItem {
   last_seen_at?: string | null;
 }
 
+export interface ScreenshotCaptureHealth {
+  status: 'ok' | 'failing' | 'denied';
+  since?: string | null;
+  reason?: string | null;
+  guidance?: string | null;
+}
+
 export interface BrowserTrackingConnectionSyncRequest {
   device_id: string;
   device_label?: string | null;
   ready: boolean;
   last_error?: string | null;
   last_event_at?: string | null;
+  // Device-level screenshot capture health, piggybacked onto the existing
+  // desktop→admin heartbeat so silently failing captures surface in Monitoring.
+  screenshot_capture?: ScreenshotCaptureHealth | null;
   connections: BrowserTrackingConnectionSyncItem[];
 }
 
@@ -1498,6 +1508,17 @@ export interface PayrollOrganizationSettings {
   tdsEnabled: boolean;
   lwfEnabled: boolean;
   isMetroCity: boolean;
+  // Statutory identifiers surfaced from org settings (Payroll Settings).
+  statutory?: {
+    tan?: string;
+    pan?: string;
+    establishmentCode?: string;
+    esiCode?: string;
+    ptRegNumber?: string;
+    lwfRegNumber?: string;
+  };
+  // Per-filing-type due dates (ISO date strings) from Payroll Settings.
+  compliance_due_dates?: Record<string, string | null>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────

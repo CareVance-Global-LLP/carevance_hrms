@@ -24,6 +24,7 @@ import type {
   BrowserTrackingEvent,
   BrowserTrackingState,
   DesktopDeviceIdentity,
+  ScreenshotCaptureHealth,
   TimeEntry,
 } from '@/types';
 
@@ -32,6 +33,13 @@ const DEFAULT_SCREENSHOT_INTERVAL_MINUTES = 3;
 const ALLOWED_SCREENSHOT_INTERVAL_MINUTES = [1, 3, 5, 10, 15, 30] as const;
 const SCREENSHOT_CAPTURE_TIMEOUT_MS = 15 * 1000;
 const SCREENSHOT_UPLOAD_TIMEOUT_MS = 30 * 1000;
+// After this many consecutive capture failures we surface a real notification
+// to the user instead of staying silent (previously: silent forever).
+const SCREENSHOT_FAILURE_NOTIFY_AFTER = 3;
+// After this many consecutive failures we additionally report the broken state
+// to the admin/Monitoring side via the activity heartbeat so it's visible there.
+const SCREENSHOT_FAILURE_REPORT_AFTER = 3;
+const SCREENSHOT_FAILURE_REPORT_DEBOUNCE_MS = 5 * 60 * 1000;
 const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
 const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, IDLE_THRESHOLD_SECONDS);
 const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
@@ -287,14 +295,16 @@ const resolveLatestBrowserTrackingSignalAt = (state?: BrowserTrackingState | nul
 const buildBrowserTrackingHealthSyncPayload = (
   state: BrowserTrackingState,
   deviceIdentity: DesktopDeviceIdentity,
-): BrowserTrackingConnectionSyncRequest => ({
-  device_id: String(deviceIdentity.device_id || '').trim(),
-  device_label: String(deviceIdentity.device_label || '').trim() || null,
-  ready: Boolean(state.ready),
-  last_error: String(state.last_error || '').trim() || null,
-  last_event_at: resolveLatestBrowserTrackingSignalAt(state),
-  connections: Array.isArray(state.connections)
-    ? state.connections.map((connection) => ({
+  screenshotCaptureHealth?: ScreenshotCaptureHealth | null,
+): BrowserTrackingConnectionSyncRequest => {
+  const payload: BrowserTrackingConnectionSyncRequest = {
+    device_id: String(deviceIdentity.device_id || '').trim(),
+    device_label: String(deviceIdentity.device_label || '').trim() || null,
+    ready: Boolean(state.ready),
+    last_error: String(state.last_error || '').trim() || null,
+    last_event_at: resolveLatestBrowserTrackingSignalAt(state),
+    connections: Array.isArray(state.connections)
+      ? state.connections.map((connection) => ({
         browser_name: String(connection.browser_name || '').trim().toLowerCase(),
         profile_key: String(connection.profile_key || '').trim(),
         extension_origin: String(connection.extension_origin || '').trim() || null,
@@ -306,8 +316,17 @@ const buildBrowserTrackingHealthSyncPayload = (
         .sort((left, right) => (
           `${left.browser_name}|${left.profile_key}`.localeCompare(`${right.browser_name}|${right.profile_key}`)
         ))
-    : [],
-});
+      : [],
+  };
+
+  // Only attach screenshot capture health when there is something to report,
+  // so the heartbeat payload is unchanged for the common healthy case.
+  if (screenshotCaptureHealth) {
+    payload.screenshot_capture = screenshotCaptureHealth;
+  }
+
+  return payload;
+};
 
 const buildBrowserTrackingHealthSyncSignature = (payload: BrowserTrackingConnectionSyncRequest) => JSON.stringify(payload);
 
@@ -325,6 +344,12 @@ export const useDesktopTracker = () => {
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
   const activeScreenshotEntryIdRef = useRef<number | null>(null);
+  const screenshotFailureCountRef = useRef(0);
+  const lastScreenshotFailureReasonRef = useRef<string | null>(null);
+  const lastScreenshotFailureSinceRef = useRef<string | null>(null);
+  const lastScreenshotFailureGuidanceRef = useRef<string | null>(null);
+  const lastScreenshotFailureReportMsRef = useRef(0);
+  const screenshotPermissionNotifiedRef = useRef(false);
   const idleStopInFlightRef = useRef(false);
   const idleStopBlockedUntilMsRef = useRef(0);
   const idleStopAttemptsPerEntryRef = useRef<Map<number, number>>(new Map());
@@ -408,7 +433,13 @@ export const useDesktopTracker = () => {
   useEffect(() => {
     const isTrackedUser = isTrackedTimerUser(user);
     const desktopApi = window.desktopTracker;
-    const canCaptureScreenshots = typeof desktopApi?.captureScreenshot === 'function';
+    console.info('[desktop-tracker] tracker effect init', {
+      isAuthenticated,
+      userId: user?.id ?? null,
+      hasDesktopBridge: Boolean(desktopApi),
+      canCaptureScreenshots: typeof desktopApi?.captureScreenshot === 'function',
+      monitoringIntervalMinutes: Number(user?.settings?.monitoring_interval_minutes) || null,
+    });
     if (!isAuthenticated || !isTrackedUser) {
       clearTrackerIntervals();
       activeSegmentRef.current = null;
@@ -434,9 +465,14 @@ export const useDesktopTracker = () => {
       pendingTrackedSecondsRef.current = 0;
       systemLockedAtMsRef.current = null;
       lockScreenAutoStopRevealPendingRef.current = false;
+      screenshotFailureCountRef.current = 0;
+      lastScreenshotFailureReasonRef.current = null;
+      lastScreenshotFailureSinceRef.current = null;
+      lastScreenshotFailureGuidanceRef.current = null;
+      lastScreenshotFailureReportMsRef.current = 0;
+      screenshotPermissionNotifiedRef.current = false;
       return;
     }
-
     const runId = ++desktopTrackerRunSequence;
     const isCurrentRun = () => desktopTrackerRunSequence === runId;
     const hasForegroundWindowBridge = typeof desktopApi?.onForegroundWindowChange === 'function';
@@ -466,6 +502,12 @@ export const useDesktopTracker = () => {
     lastIdleStopAttemptMsRef.current = 0;
     lastReliableTrackingContextRef.current = null;
     pendingTrackedSecondsRef.current = 0;
+    screenshotFailureCountRef.current = 0;
+    lastScreenshotFailureReasonRef.current = null;
+    lastScreenshotFailureSinceRef.current = null;
+    lastScreenshotFailureGuidanceRef.current = null;
+    lastScreenshotFailureReportMsRef.current = 0;
+    screenshotPermissionNotifiedRef.current = false;
 
     const syncScreenshotInterval = (timeEntryId: number | null) => {
       if (activeScreenshotEntryIdRef.current === timeEntryId) {
@@ -483,13 +525,37 @@ export const useDesktopTracker = () => {
         return;
       }
 
-      if (!canCaptureScreenshots) {
+      // Re-evaluate the desktop bridge lazily instead of trusting the value
+      // captured once when the effect first ran. The preload bridge can be
+      // attached slightly after this hook mounts, and the earlier one-shot
+      // `canCaptureScreenshots` check would then permanently (and silently)
+      // disable screenshots for the whole session.
+      const liveDesktopApi = window.desktopTracker;
+      const canCaptureNow = typeof liveDesktopApi?.captureScreenshot === 'function';
+      if (!canCaptureNow) {
+        console.warn('[desktop-tracker] screenshot interval NOT started: desktop capture bridge unavailable', {
+          timeEntryId,
+          hasDesktopTracker: Boolean(liveDesktopApi),
+          captureType: typeof liveDesktopApi?.captureScreenshot,
+        });
         return;
       }
+
+      console.info('[desktop-tracker] screenshot interval started', {
+        timeEntryId,
+        intervalMs: screenshotIntervalMs,
+      });
 
       screenshotIntervalRef.current = setInterval(() => {
         void captureScreenshotOnInterval();
       }, screenshotIntervalMs);
+
+      // Capture once immediately on (re)start. Timers can be short-lived or
+      // restart before the first interval tick fires, so relying solely on the
+      // interval means a session may produce zero screenshots. The capture
+      // function is idempotent-guarded (screenshotInFlight) so this cannot
+      // overlap with an interval tick.
+      void captureScreenshotOnInterval();
     };
 
     const clearTrackedActivitySegment = () => {
@@ -735,7 +801,11 @@ export const useDesktopTracker = () => {
         return;
       }
 
-      const payload = buildBrowserTrackingHealthSyncPayload(state, deviceIdentity);
+      const payload = buildBrowserTrackingHealthSyncPayload(
+        state,
+        deviceIdentity,
+        getScreenshotCaptureHealth(),
+      );
       const nextSignature = buildBrowserTrackingHealthSyncSignature(payload);
       if (nextSignature === browserTrackingSyncSignatureRef.current) {
         return;
@@ -748,6 +818,131 @@ export const useDesktopTracker = () => {
       } catch (error) {
         browserTrackingSyncSignatureRef.current = null;
         console.warn('Desktop tracker browser tracking health sync failed:', error);
+      }
+    };
+
+    // Builds the device-level screenshot capture health block that gets
+    // piggybacked onto the browser-tracking heartbeat so a silently failing
+    // capture becomes visible on the admin Monitoring dashboard.
+    const getScreenshotCaptureHealth = (): ScreenshotCaptureHealth | null => {
+      const failures = screenshotFailureCountRef.current;
+      const reason = lastScreenshotFailureReasonRef.current;
+      if (failures <= 0) {
+        return null;
+      }
+
+      if (reason === 'screen_permission_denied') {
+        return {
+          status: 'denied',
+          since: lastScreenshotFailureSinceRef.current,
+          reason,
+          guidance: lastScreenshotFailureGuidanceRef.current,
+        };
+      }
+
+      return {
+        status: 'failing',
+        since: lastScreenshotFailureSinceRef.current,
+        reason: reason || 'no_usable_source',
+      };
+    };
+
+    const reportScreenshotCaptureFailure = (
+      result: { reason: string; guidance?: string } | null,
+    ) => {
+      const reason = result?.reason ?? 'no_usable_source';
+      const guidance = result?.guidance ?? undefined;
+      const now = Date.now();
+
+      if (screenshotFailureCountRef.current === 0) {
+        lastScreenshotFailureSinceRef.current = new Date(now).toISOString();
+      }
+      screenshotFailureCountRef.current += 1;
+      lastScreenshotFailureReasonRef.current = reason;
+      lastScreenshotFailureGuidanceRef.current = guidance ?? null;
+
+      console.warn('[desktop-tracker] screenshot capture failed', {
+        consecutiveFailures: screenshotFailureCountRef.current,
+        reason,
+      });
+
+      // Surface to the user after a small number of repeated failures.
+      if (screenshotFailureCountRef.current >= SCREENSHOT_FAILURE_NOTIFY_AFTER) {
+        if (typeof desktopApi?.showNotification === 'function') {
+          const body = reason === 'screen_permission_denied'
+            ? (guidance
+              ? `Screenshots aren't being captured. ${guidance}`
+              : 'Screenshots aren\'t being captured because screen-recording permission is denied.')
+            : 'Screenshots aren\'t being captured. Check that screen recording is allowed for this app.';
+          try {
+            void desktopApi.showNotification({
+              id: Date.now(),
+              title: 'Screenshot Capture Unavailable',
+              body,
+              route: '/dashboard',
+              type: 'screenshot_capture_failed',
+            });
+          } catch (notificationError) {
+            console.warn('[desktop-tracker] failed to show screenshot failure notification:', notificationError);
+          }
+        }
+
+        // On macOS, also guide the user to the exact setting once.
+        if (reason === 'screen_permission_denied' && !screenshotPermissionNotifiedRef.current) {
+          screenshotPermissionNotifiedRef.current = true;
+          if (typeof desktopApi?.openBrowserTrackingGuide === 'function') {
+            // Reuse the existing desktop "open guide" pattern to bring the
+            // relevant settings/help forward for the user.
+            try {
+              void desktopApi.revealWindow();
+            } catch {}
+          }
+        }
+      }
+
+      // Report to the admin/Monitoring side via the heartbeat, throttled so we
+      // don't spam the endpoint on every interval.
+      if (
+        screenshotFailureCountRef.current >= SCREENSHOT_FAILURE_REPORT_AFTER
+        && now - lastScreenshotFailureReportMsRef.current >= SCREENSHOT_FAILURE_REPORT_DEBOUNCE_MS
+        && desktopDeviceIdentityRef.current?.device_id
+      ) {
+        lastScreenshotFailureReportMsRef.current = now;
+        // Force a heartbeat sync carrying the screenshot capture health.
+        browserTrackingSyncSignatureRef.current = null;
+        void syncBrowserTrackingHealth(browserTrackingStateRef.current ?? {
+          ready: true,
+          connections: [],
+          local_url: null,
+          pairing_code: null,
+          last_event_at: null,
+          last_error: null,
+        });
+      }
+    };
+
+    const reportScreenshotCaptureSuccess = () => {
+      if (screenshotFailureCountRef.current === 0) {
+        return;
+      }
+
+      screenshotFailureCountRef.current = 0;
+      lastScreenshotFailureReasonRef.current = null;
+      lastScreenshotFailureGuidanceRef.current = null;
+      lastScreenshotFailureSinceRef.current = null;
+      screenshotPermissionNotifiedRef.current = false;
+
+      // Clear the admin-side signal by pushing an "ok" heartbeat once.
+      if (desktopDeviceIdentityRef.current?.device_id) {
+        browserTrackingSyncSignatureRef.current = null;
+        void syncBrowserTrackingHealth(browserTrackingStateRef.current ?? {
+          ready: true,
+          connections: [],
+          local_url: null,
+          pairing_code: null,
+          last_event_at: null,
+          last_error: null,
+        });
       }
     };
 
@@ -908,8 +1103,15 @@ export const useDesktopTracker = () => {
     };
 
     const getIdleState = async (now: number) => {
+      // Resolve the bridge live each call. The reference captured when the
+      // effect first ran can be undefined (preload not yet attached, or a
+      // renderer reload from SPA routing), and falling back to DOM-input idle
+      // makes the user look permanently idle whenever they work in any other
+      // application — the tracker window receives no keyboard/mouse events.
+      const liveDesktopApi = window.desktopTracker ?? desktopApi;
       try {
-        const idleSecondsSystem = Number(await desktopApi?.getSystemIdleSeconds?.());
+        const rawIdle = await liveDesktopApi?.getSystemIdleSeconds?.();
+        const idleSecondsSystem = Number(rawIdle);
 
         if (Number.isFinite(idleSecondsSystem)) {
           const safeIdleSecondsSystem = Math.max(0, Math.floor(idleSecondsSystem));
@@ -918,10 +1120,37 @@ export const useDesktopTracker = () => {
             idleSeconds: safeIdleSecondsSystem,
             lastActivityAtMs: Math.max(0, now - (safeIdleSecondsSystem * 1000)),
             contextName: null,
+            source: 'system' as const,
           };
         }
+
+        // The bridge exists but returned a non-numeric value — surface this
+        // loudly because it silently degrades into unreliable input-based idle.
+        console.warn('[desktop-tracker] system idle lookup returned non-numeric value; falling back to page input', {
+          rawIdle,
+          hasBridge: Boolean(liveDesktopApi),
+          hasGetter: typeof liveDesktopApi?.getSystemIdleSeconds,
+        });
       } catch (error) {
         console.warn('Desktop tracker system idle lookup failed, falling back to page input activity.', error);
+      }
+
+      // Fallback path. On the desktop this hook runs inside an Electron window
+      // that almost never has DOM focus while the user works in other apps, so
+      // `lastInputRef` (updated only by in-window DOM events) makes a busy user
+      // look permanently idle. That previously auto-stopped timers and killed
+      // the screenshot interval. Only trust DOM input when this is a real
+      // browser tab (no desktop bridge at all); inside the desktop shell, fail
+      // safe to "active" so we never wrongly stop tracking when the OS idle
+      // bridge is briefly unavailable.
+      const isDesktopShell = typeof window.desktopTracker !== 'undefined';
+      if (isDesktopShell) {
+        return {
+          idleSeconds: 0,
+          lastActivityAtMs: now,
+          contextName: null,
+          source: 'assumed-active' as const,
+        };
       }
 
       const idleSecondsFromInput = Math.max(0, Math.floor((now - lastInputRef.current) / 1000));
@@ -930,6 +1159,7 @@ export const useDesktopTracker = () => {
         idleSeconds: idleSecondsFromInput,
         lastActivityAtMs: lastInputRef.current,
         contextName: null,
+        source: 'input' as const,
       };
     };
 
@@ -1269,7 +1499,13 @@ export const useDesktopTracker = () => {
           scheduleLockAutoStop();
         }
 
-        const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName } = await getIdleState(now);
+        const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName, source: idleSource } = await getIdleState(now);
+        console.debug('[desktop-tracker] tick idle', {
+          idleSeconds,
+          source: idleSource,
+          autoStopThreshold: IDLE_AUTO_STOP_THRESHOLD_SECONDS,
+          entryId: activeEntry.id,
+        });
         if (idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
           idleStopBlockedUntilMsRef.current = 0;
         }
@@ -1739,39 +1975,65 @@ export const useDesktopTracker = () => {
           activeEntry = activeEntryRef.current;
         }
         if (!activeEntry?.id) {
-          if (navigator.onLine) {
-            // Confirmed no active timer from the server
-            activeEntryRef.current = null;
-            syncScreenshotInterval(null);
-          }
+          // No active entry right now. Do NOT tear down the interval here: a
+          // single transient/empty `active` response would otherwise reset the
+          // whole screenshot cadence (and re-fire the immediate capture),
+          // producing the "only the first screenshot ever lands" symptom. The
+          // periodic tick() owns interval lifecycle and will stop it cleanly
+          // when the timer has genuinely ended.
           return;
         }
 
-        await runIdleGuard();
+        // NOTE: idle handling is intentionally NOT invoked here. Idle has its
+        // own dedicated interval and runs inside tick(); calling runIdleGuard()
+        // from the capture path coupled screenshot cadence to idle evaluation
+        // and could tear down / rebuild this very interval mid-cycle.
 
-        const currentActiveEntry = activeEntryRef.current;
-        if (!currentActiveEntry?.id) {
-          syncScreenshotInterval(null);
-          return;
-        }
-
-        if (currentActiveEntry.id !== scheduledEntryId) {
-          syncScreenshotInterval(currentActiveEntry.id);
+        if (activeEntry.id !== scheduledEntryId) {
+          // The active timer changed since this interval was scheduled. Let the
+          // tick() lifecycle re-point the interval; just skip this capture.
           return;
         }
 
         const now = Date.now();
-        if (!canCaptureScreenshots || typeof desktopApi?.captureScreenshot !== 'function') {
+        const liveDesktopApi = window.desktopTracker ?? desktopApi;
+        if (typeof liveDesktopApi?.captureScreenshot !== 'function') {
+          console.warn('[desktop-tracker] screenshot tick skipped: capture bridge unavailable', {
+            scheduledEntryId,
+            hasDesktopTracker: Boolean(window.desktopTracker),
+          });
           return;
         }
-        const screenshotDataUrl = await withTimeout(
-          desktopApi.captureScreenshot(),
-          SCREENSHOT_CAPTURE_TIMEOUT_MS,
-          'Desktop screenshot capture'
-        );
-        if (!screenshotDataUrl) {
+        let captureResult: DesktopScreenshotCaptureResult;
+        try {
+          captureResult = await withTimeout(
+            liveDesktopApi.captureScreenshot(),
+            SCREENSHOT_CAPTURE_TIMEOUT_MS,
+            'Desktop screenshot capture'
+          );
+        } catch (captureError: any) {
+          console.warn('[desktop-tracker] screenshot capture threw', {
+            error: captureError?.message || String(captureError),
+          });
+          reportScreenshotCaptureFailure(null);
           return;
         }
+
+        // Structured result: explicitly handle failure reasons instead of
+        // silently returning on a falsy value.
+        if (!captureResult || !captureResult.ok) {
+          const failure = (!captureResult || captureResult.ok)
+            ? null
+            : (captureResult as { ok: false; reason: string; guidance?: string });
+          reportScreenshotCaptureFailure({
+            reason: failure?.reason ?? 'no_usable_source',
+            guidance: failure?.guidance,
+          });
+          return;
+        }
+
+        const screenshotDataUrl = captureResult.dataUrl;
+        reportScreenshotCaptureSuccess();
 
         try {
           await withTimeout(

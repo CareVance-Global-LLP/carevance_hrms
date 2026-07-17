@@ -20,7 +20,7 @@ if (fs.existsSync(frontendEnvPath)) {
   console.log('[Desktop] No .env file found, using existing environment variables');
 }
 
-const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage, Tray, Menu, net } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const { execSync } = require('child_process');
@@ -1336,15 +1336,74 @@ const initializeAutoUpdater = () => {
   }, 30 * 60 * 1000);
 };
 
+// Capture result shape consumed by the renderer. We deliberately never return
+// a bare `null` again — a silent null is what let this bug hide for so long.
+// The renderer can now distinguish "not granted permission" from "permission
+// ok but no usable source" and react differently (guided fix vs. generic warn).
+const SCREEN_CAPTURE_PERMISSION_DENIED = 'screen_permission_denied';
+const SCREEN_CAPTURE_NO_SOURCE = 'no_usable_source';
+
+const resolveScreenCapturePermissionStatus = () => {
+  try {
+    if (process.platform !== 'darwin') {
+      return null;
+    }
+
+    if (typeof systemPreferences?.getMediaAccessStatus !== 'function') {
+      return null;
+    }
+
+    return systemPreferences.getMediaAccessStatus('screen');
+  } catch {
+    return null;
+  }
+};
+
+const buildScreenPermissionDeniedResult = () => {
+  const platform = process.platform;
+  const guidance = platform === 'darwin'
+    ? 'Open System Settings → Privacy & Security → Screen Recording and enable CareVance Tracker, then restart the app.'
+    : 'Check that screen capture is allowed for this app (it may be blocked by device policy).';
+
+  return {
+    ok: false,
+    reason: SCREEN_CAPTURE_PERMISSION_DENIED,
+    platform,
+    guidance,
+  };
+};
+
 ipcMain.handle('desktop:capture-screenshot', async () => {
   const preferredDisplayId = resolvePreferredDisplayId();
   const attempts = buildScreenshotCaptureAttempts();
 
-  for (const attempt of attempts) {
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: attempt.width, height: attempt.height },
+  // On macOS, screen-recording permission is an explicit, mandatory user grant.
+  // If it isn't granted, desktopCapturer.getSources() never yields screens, so
+  // detect that up front and return a structured, distinguishable result rather
+  // than falling through to a generic "no source" failure.
+  const permissionStatus = resolveScreenCapturePermissionStatus();
+  if (permissionStatus && permissionStatus !== 'granted' && permissionStatus !== 'not-determined') {
+    console.warn('[desktop-tracker] screenshot capture skipped: screen permission not granted', {
+      platform: process.platform,
+      status: permissionStatus,
     });
+    return buildScreenPermissionDeniedResult();
+  }
+
+  for (const attempt of attempts) {
+    let sources = [];
+    try {
+      sources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: attempt.width, height: attempt.height },
+      });
+    } catch (captureError) {
+      console.warn('[desktop-tracker] screenshot capture attempt threw', {
+        attempt,
+        error: captureError?.message || String(captureError),
+      });
+      continue;
+    }
 
     if (!sources.length) {
       continue;
@@ -1353,16 +1412,34 @@ ipcMain.handle('desktop:capture-screenshot', async () => {
     const bestSource = pickBestScreenSource(sources, preferredDisplayId);
     const dataUrl = thumbnailToDataUrl(bestSource?.thumbnail || null);
     if (dataUrl) {
-      return dataUrl;
+      return { ok: true, dataUrl };
     }
   }
 
   console.warn('[desktop-tracker] screenshot capture returned no usable source', {
     preferredDisplayId,
     attempts,
+    permissionStatus: permissionStatus || 'unknown',
   });
 
-  return null;
+  return {
+    ok: false,
+    reason: SCREEN_CAPTURE_NO_SOURCE,
+    platform: process.platform,
+  };
+});
+
+ipcMain.handle('desktop:get-screen-capture-permission', async () => {
+  const status = resolveScreenCapturePermissionStatus();
+  if (!status) {
+    return { supported: false, status: null };
+  }
+
+  return {
+    supported: true,
+    status,
+    granted: status === 'granted',
+  };
 });
 
 ipcMain.handle('desktop:get-system-idle-seconds', async () => {

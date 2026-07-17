@@ -691,15 +691,24 @@ class TimeEntryController extends Controller
     }
 
     /**
-     * Real-time idle check: if the running timer has no non-idle activity
-     * beyond the idle threshold, auto-stop it as a server-side fallback
-     * for desktop-driven idle detection.
+     * Real-time idle check: if the running timer has had no non-idle activity
+     * for longer than the idle threshold, auto-stop it as a server-side
+     * fallback for desktop-driven idle detection.
+     *
+     * Idle is measured from the user's LAST real activity, not from the timer's
+     * start_time. A user who works for 2 minutes and then goes idle must not be
+     * stopped 5 minutes after starting the timer; they must be stopped 5 minutes
+     * after they last worked. The worked portion (start_time -> last activity)
+     * is preserved as the recorded duration, and the idle tail is not counted.
      */
     private function closeIdleRunningEntry(int $userId): void
     {
         $idleThreshold = max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
-        $cutoff = now()->subSeconds($idleThreshold);
+        $now = now();
+        $cutoff = $now->copy()->subSeconds($idleThreshold);
 
+        // Only consider timers that have existed at least as long as the idle
+        // threshold; a freshly started timer can never be idle-eligible yet.
         $entry = $this->runningEntriesQuery($userId, 'primary')
             ->where('start_time', '<', $cutoff)
             ->orderByDesc('start_time')
@@ -709,38 +718,54 @@ class TimeEntryController extends Controller
             return;
         }
 
-        // Check for recent non-idle activity
-        $lastActiveAt = \App\Models\Activity::query()
+        $startTime = Carbon::parse($entry->start_time);
+
+        // Anchor on the most recent NON-IDLE activity for this timer. This is
+        // "when the user last actually worked". If the tracker has not recorded
+        // any work activity (e.g. it never produced an activity row), we fall
+        // back to the timer start_time so the safety net still eventually fires.
+        $lastActivity = \App\Models\Activity::query()
             ->where('user_id', $userId)
+            ->where('time_entry_id', $entry->id)
             ->where('type', '!=', 'idle')
-            ->where('recorded_at', '>=', $cutoff)
             ->orderByDesc('recorded_at')
             ->first(['recorded_at']);
 
-        if ($lastActiveAt) {
-            return; // Recent activity found — not idle
+        $lastActivityAt = $lastActivity
+            ? Carbon::parse($lastActivity->recorded_at)
+            : $startTime;
+
+        // Idle is time since the last real activity. Not idle long enough yet.
+        if ($lastActivityAt->gt($cutoff)) {
+            return;
         }
 
-        // No recent activity — auto-stop
-        $now = now();
-        $startTime = Carbon::parse($entry->start_time);
-        $duration = (int) max(0, $startTime->diffInSeconds($now));
+        // Auto-stop. End the entry AT the last activity time so the idle tail is
+        // excluded from worked time, while the worked portion is preserved.
+        $endTime = $lastActivityAt->copy();
+        if ($endTime->lt($startTime)) {
+            $endTime = $startTime->copy();
+        }
+        $duration = (int) max(0, $startTime->diffInSeconds($endTime));
 
         $entry->timestamps = false;
         $entry->update([
-            'end_time' => $now,
+            'end_time' => $endTime,
             'duration' => $duration,
             'auto_stopped_for_idle' => true,
         ]);
 
-        $this->closeOpenAttendancePunches($userId, $now);
+        $this->closeOpenAttendancePunches($userId, $endTime);
 
         Log::info('Running timer auto-stopped by real-time idle check', [
             'time_entry_id' => $entry->id,
             'user_id' => $userId,
-            'start_time' => $entry->start_time->toIso8601String(),
-            'end_time' => $now->toIso8601String(),
-            'idle_seconds' => $idleThreshold,
+            'start_time' => $startTime->toIso8601String(),
+            'last_activity_at' => $lastActivityAt->toIso8601String(),
+            'end_time' => $endTime->toIso8601String(),
+            'worked_seconds' => $duration,
+            'idle_threshold_seconds' => $idleThreshold,
+            'anchored_on' => $lastActivity ? 'last_activity' : 'start_time',
             'auto_stopped_for_idle' => true,
         ]);
     }

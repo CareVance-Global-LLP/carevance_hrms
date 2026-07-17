@@ -13,6 +13,7 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useTheme } from '../../src/hooks/useTheme';
+import { isManager } from '../../src/hooks/usePermissions';
 import type { ThemeColors } from '../../src/constants/theme';
 import { dashboardApi, geofenceApi, notificationApi, orgApi, approvalApi } from '../../src/api/endpoints';
 import type { EmployeeDashboard, GeoPosition, GeofenceZone, AppNotification, OrgMember } from '../../src/types';
@@ -53,7 +54,7 @@ export default function DashboardScreen() {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [banner, setBanner] = useState<{ title: string; message?: string; route: string; key: number } | null>(null);
   const prevAnnouncementIds = useRef<Set<number>>(new Set());
-  const isManager = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'super_admin';
+  const isManager = isManager(user);
 
   const s = useMemo(() => styles(colors), [colors]);
 

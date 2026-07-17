@@ -547,9 +547,16 @@ class PayrollAutoProcessService
             $filings[] = $this->filings->generateForm12BA($run, $orgId, $userId);
         } catch (\Throwable $e) { report($e); }
 
-        try {
-            $filings[] = $this->filings->generateLwfReturn($run, $orgId, $userId);
-        } catch (\Throwable $e) { report($e); }
+        // LWF is state-specific; reuse the org's default state (same approach as PT below).
+        $lwfState = EmployeePayrollTemplate::where('organization_id', $orgId)
+            ->where('lwf_enabled', true)
+            ->distinct('pt_state')
+            ->value('pt_state');
+        if ($lwfState && isset(\App\Services\PayrollFilingService::LWF_STATE_CONFIG[$lwfState])) {
+            try {
+                $filings[] = $this->filings->generateLwfReturn($run, $lwfState, $orgId, $userId);
+            } catch (\Throwable $e) { report($e); }
+        }
 
         $state = EmployeePayrollTemplate::where('organization_id', $orgId)
             ->whereNotNull('pt_state')

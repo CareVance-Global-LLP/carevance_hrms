@@ -29,6 +29,24 @@ declare global {
     recorded_at: string;
   }
 
+  // Structured result from desktop:capture-screenshot. Replaces the previous
+  // bare `null` so the renderer can tell "permission denied" apart from
+  // "permission ok but no usable source" and react differently.
+  type DesktopScreenshotCaptureResult =
+    | { ok: true; dataUrl: string }
+    | {
+        ok: false;
+        reason: 'screen_permission_denied' | 'no_usable_source';
+        platform: string;
+        guidance?: string;
+      };
+
+  interface DesktopScreenCapturePermission {
+    supported: boolean;
+    status: string | null;
+    granted?: boolean;
+  }
+
   interface DesktopOfflineStatus {
     enabled: boolean;
     online: boolean;
@@ -58,7 +76,8 @@ declare global {
   }
 
   interface DesktopTrackerBridge {
-    captureScreenshot: () => Promise<string | null>;
+    captureScreenshot: () => Promise<DesktopScreenshotCaptureResult>;
+    getScreenCapturePermission: () => Promise<DesktopScreenCapturePermission>;
     getSystemIdleSeconds: () => Promise<number>;
     getSystemLockState?: () => Promise<DesktopSystemLockState>;
     getActiveWindowContext: () => Promise<{

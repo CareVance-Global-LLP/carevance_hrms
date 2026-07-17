@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useTheme } from '../../src/hooks/useTheme';
+import { isManager } from '../../src/hooks/usePermissions';
 import type { ThemeColors } from '../../src/constants/theme';
 import { payslipApi, notificationApi } from '../../src/api/endpoints';
 import type { Payslip } from '../../src/types';
@@ -18,7 +19,7 @@ export default function MoreScreen() {
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [switchValue, setSwitchValue] = useState(isDark);
-  const isManager = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'super_admin';
+  const isManager = isManager(user);
 
   useEffect(() => { setSwitchValue(isDark); }, [isDark]);
 

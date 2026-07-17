@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "esnext",
+    "lib": ["esnext", "dom"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "strict": true
+  },
+  "include": [
+    "src/hooks/usePermissions.tsx",
+    "src/hooks/usePushNotifications.tsx",
+    "src/hooks/useAuth.tsx",
+    "src/types/index.ts"
+  ]
+}

@@ -354,7 +354,7 @@ function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNo
   return <>{children}</>;
 }
 
-function AdminRoute({ children }: { children: React.ReactNode }) {
+export function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
@@ -372,7 +372,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function StrictAdminRoute({ children }: { children: React.ReactNode }) {
+export function StrictAdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
@@ -390,7 +390,7 @@ function StrictAdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function SuperAdminRoute({ children }: { children: React.ReactNode }) {
+export function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
@@ -408,7 +408,7 @@ function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+export function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
@@ -444,7 +444,7 @@ function EmployeeOrManagerRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function EmployeeRoute({ children }: { children: React.ReactNode }) {
+export function EmployeeRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {

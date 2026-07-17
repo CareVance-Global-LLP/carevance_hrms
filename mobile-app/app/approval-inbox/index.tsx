@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
 import { useAuth } from '../../src/hooks/useAuth';
+import { canApprove } from '../../src/hooks/usePermissions';
 import type { ThemeColors } from '../../src/constants/theme';
 import { approvalApi, reimbursementApi } from '../../src/api/endpoints';
 import type { LeaveRequest, TimeEditRequest, Reimbursement } from '../../src/types';
@@ -21,7 +22,7 @@ export default function ApprovalInboxScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const s = useMemo(() => styles(colors), [colors]);
-  const canApprove = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'super_admin';
+  const canApprove = canApprove(user);
   const [activeTab, setActiveTab] = useState<TabType>('leave');
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [timeEdits, setTimeEdits] = useState<TimeEditRequest[]>([]);

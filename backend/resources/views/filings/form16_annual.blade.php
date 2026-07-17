@@ -27,11 +27,11 @@
 <body>
 
 <div class="header">
-  <h1>FORM 16</h1>
-  <div class="sub">Certificate under Section 203 of the Income-tax Act, 1961<br/>
-    for Tax Deducted at Source from Salaries</div>
+  <h1>FORM 16 — PART B</h1>
+  <div class="sub">Salary Statement under Section 203 of the Income-tax Act, 1961<br/>
+    (issued by the employer — annual salary computation)</div>
   <div class="sub"><strong>Financial Year: {{ $financialYear }}</strong></div>
-  <div class="sub">Certificate No: {{ $certificateNo }}</div>
+  <div class="sub" style="color:#a00;">Part A (TDS certificate no. from TRACES) to be attached separately.</div>
 </div>
 
 <h2>Part A — Deductor (Employer) Details</h2>
@@ -140,8 +140,11 @@ the salary of {{ $employee->name }} for the financial year {{ $financialYear }}.
 </div>
 
 <div class="footer">
-  This is a computer-generated certificate. The figures are derived from monthly payroll_items
-  records aggregated for FY {{ $financialYear }}. Digital signature / DSC verification pending.
+  This is a computer-generated Part B (Salary Statement) for FY {{ $financialYear }}.
+  Part A — the certificate of TDS deducted, bearing the certificate number issued by
+  TRACES — must be downloaded by the employer from TRACES after quarterly TDS returns
+  are filed, and attached to this Part B before issuing to the employee.
+  The figures above are derived from monthly payroll_items records aggregated for FY {{ $financialYear }}.
 </div>
 
 </body>

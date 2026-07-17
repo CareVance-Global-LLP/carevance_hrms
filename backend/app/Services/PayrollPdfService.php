@@ -122,6 +122,41 @@ class PayrollPdfService
         return base64_encode($pdf->output());
     }
 
+    /**
+     * Render an arbitrary Blade view to a Dompdf instance using the same
+     * options as the payslip generator (no remote resources, DejaVu Sans).
+     *
+     * Used by the statutory filing generators (Form 12BA, Form 16 Part B,
+     * Bonus Form C) that need to emit a human-readable PDF without pulling
+     * in a separate PDF library.
+     */
+    public function renderPdf(string $view, array $data, string $paper = 'A4', string $orientation = 'portrait'): Dompdf
+    {
+        $options = new Options();
+        $options->set('isHtml5ParserEnabled', true);
+        $options->set('isRemoteEnabled', false);
+        $options->set('defaultFont', 'DejaVu Sans');
+
+        $pdf = new Dompdf($options);
+        $html = view($view, $data)->render();
+        $pdf->loadHtml($html);
+        $pdf->setPaper($paper, $orientation);
+        $pdf->render();
+
+        return $pdf;
+    }
+
+    /**
+     * Render a Blade view to a PDF and persist it to the local disk.
+     * Returns the storage path; callers set `file_path`/`original_filename`
+     * on the corresponding PayrollFiling record.
+     */
+    public function renderPdfToStorage(string $view, array $data, string $path, string $paper = 'A4', string $orientation = 'portrait'): void
+    {
+        $pdf = $this->renderPdf($view, $data, $paper, $orientation);
+        Storage::disk('local')->put($path, $pdf->output());
+    }
+
     private function loadLogoBase64($org): ?string
     {
         $logoUrl = $org->settings['branding']['logo_url'] ?? null;

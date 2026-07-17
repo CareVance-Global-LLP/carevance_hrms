@@ -33,6 +33,14 @@ class BrowserTrackingConnectionController extends Controller
             'connections.*.extension_version' => 'nullable|string|max:40',
             'connections.*.paired_at' => 'nullable|date',
             'connections.*.last_seen_at' => 'nullable|date',
+            // Device-level screenshot capture health, piggybacked onto the
+            // existing desktop→admin heartbeat so a silently failing capture
+            // becomes visible in Monitoring without a separate endpoint.
+            'screenshot_capture' => 'nullable|array',
+            'screenshot_capture.status' => 'nullable|string|in:ok,failing,denied',
+            'screenshot_capture.since' => 'nullable|date',
+            'screenshot_capture.reason' => 'nullable|string|max:255',
+            'screenshot_capture.guidance' => 'nullable|string|max:512',
         ]);
 
         $connections = $this->browserTrackingConnectionService
@@ -53,6 +61,7 @@ class BrowserTrackingConnectionController extends Controller
                 'disconnected_at' => optional($connection->disconnected_at)?->toIso8601String(),
                 'disconnect_reason' => $connection->disconnect_reason,
                 'meta' => $connection->meta,
+                'screenshot_capture' => $connection->meta['screenshot_capture'] ?? null,
             ])
             ->values();
 

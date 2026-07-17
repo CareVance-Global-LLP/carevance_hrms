@@ -5,13 +5,18 @@ import { useRouter } from 'expo-router';
 import { useAuth } from './useAuth';
 import { notificationApi } from '../api/endpoints';
 
+// Exported so the regression test can assert the config satisfies the current
+// expo-notifications NotificationBehavior shape (shouldShowBanner/shouldShowList/
+// shouldPlaySound/shouldSetBadge) without needing a physical device.
+export const notificationHandlerConfig: Notifications.NotificationBehavior = {
+  shouldShowBanner: true,
+  shouldShowList: true,
+  shouldPlaySound: true,
+  shouldSetBadge: true,
+};
+
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async () => notificationHandlerConfig,
 });
 
 Notifications.setNotificationCategoryAsync('announcement', [
@@ -33,14 +38,24 @@ export function usePushNotifications() {
     ]).catch(() => {});
 
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as { route?: string };
-      if (data?.route) router.push(data.route as Parameters<typeof router.push>[0]);
+      handleNotificationResponse(response, router);
     });
 
     return () => {
       responseListener.current?.remove();
     };
   }, [isAuthenticated]);
+}
+
+// Extracted so the regression test pins the two other parts of the original fix:
+// the required useRef<Subscription | null>(null) argument (kept in the hook) and
+// the typed router.push cast for data.route.
+export function handleNotificationResponse(
+  response: Notifications.NotificationResponse,
+  router: Pick<import('expo-router').Router, 'push'>,
+) {
+  const data = response.notification.request.content.data as { route?: string };
+  if (data?.route) router.push(data.route as Parameters<import('expo-router').Router['push']>[0]);
 }
 
 async function registerForPushNotifications() {

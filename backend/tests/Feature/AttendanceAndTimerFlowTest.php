@@ -698,4 +698,126 @@ class AttendanceAndTimerFlowTest extends TestCase
         $this->assertNotNull($timeEntry->end_time);
         $this->assertTrue((bool) $timeEntry->auto_stopped_for_idle);
     }
+
+    public function test_server_side_real_time_idle_check_persists_auto_stopped_flag(): void
+    {
+        // Regression: closeIdleRunningEntry() writes the idle flag via Model::update(),
+        // which silently dropped `auto_stopped_for_idle` while it was missing from
+        // $fillable. The row ended with end_time set but auto_stopped_for_idle=false,
+        // so the desktop UI could never show the "stopped because you were idle"
+        // notice. This asserts the flag is actually persisted by the server-side
+        // fallback that runs on the `active` endpoint.
+        $organization = Organization::create(['name' => 'Org RT', 'slug' => 'org-rt']);
+        $user = User::create([
+            'name' => 'Employee RT',
+            'email' => 'idle-rt@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $startResponse = $this->postJson('/api/time-entries/start', [
+            'description' => 'Idle fallback timer',
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated();
+
+        $timeEntryId = (int) $startResponse->json('id');
+
+        // Push the start well past the idle threshold with no non-idle activity,
+        // so the real-time idle check auto-stops it on the next `active` call.
+        TimeEntry::query()->whereKey($timeEntryId)->update([
+            'start_time' => now()->subMinutes(10),
+        ]);
+
+        $this->getJson('/api/time-entries/active?timer_slot=primary', $headers)->assertOk();
+
+        $timeEntry = TimeEntry::findOrFail($timeEntryId);
+        $this->assertNotNull($timeEntry->end_time, 'Idle timer should be auto-stopped by the server.');
+        $this->assertTrue(
+            (bool) $timeEntry->auto_stopped_for_idle,
+            'Server-side idle fallback must persist auto_stopped_for_idle=true.'
+        );
+    }
+
+    public function test_server_idle_check_anchors_on_last_activity_and_preserves_worked_time(): void
+    {
+        // Scenario the user reported: worked for 2 minutes, then went idle.
+        // The idle window must be measured from the LAST activity (2 min in),
+        // not from the timer start. And the 2 minutes of work must be preserved
+        // as the recorded duration (the idle tail is not counted, and the timer
+        // must NOT be stopped merely because 5 minutes have elapsed since start
+        // when the user only stopped working recently enough).
+        $organization = Organization::create(['name' => 'Org Anchor', 'slug' => 'org-anchor']);
+        $user = User::create([
+            'name' => 'Employee Anchor',
+            'email' => 'idle-anchor@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $headers = $this->apiHeadersFor($user);
+
+        $startResponse = $this->postJson('/api/time-entries/start', [
+            'description' => 'Worked then idle timer',
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated();
+
+        $timeEntryId = (int) $startResponse->json('id');
+
+        // Timer started 6 minutes ago. The user worked for the first 2 minutes
+        // (last activity at start + 2 min = 4 min ago). Since then (4 min) they
+        // have been idle. With a 5-minute threshold this is NOT yet idle-eligible.
+        $start = now()->subMinutes(6);
+        TimeEntry::query()->whereKey($timeEntryId)->update(['start_time' => $start]);
+        Activity::create([
+            'user_id' => $user->id,
+            'time_entry_id' => $timeEntryId,
+            'type' => 'app',
+            'name' => 'Visual Studio Code',
+            'duration' => 120,
+            'recorded_at' => (clone $start)->addMinutes(2), // last worked 4 min ago
+        ]);
+
+        $this->getJson('/api/time-entries/active?timer_slot=primary', $headers)->assertOk();
+
+        $timeEntry = TimeEntry::findOrFail($timeEntryId);
+        $this->assertNull(
+            $timeEntry->end_time,
+            'Timer must not be auto-stopped only 4 minutes after last activity (threshold is 5 min).'
+        );
+
+        // Now advance idle past the threshold: last activity becomes 6 minutes ago.
+        Activity::query()
+            ->where('time_entry_id', $timeEntryId)
+            ->update(['recorded_at' => now()->subMinutes(6)]);
+
+        $this->getJson('/api/time-entries/active?timer_slot=primary', $headers)->assertOk();
+
+        $timeEntry = TimeEntry::findOrFail($timeEntryId);
+        $this->assertNotNull($timeEntry->end_time, 'Timer must be auto-stopped once idle exceeds the threshold.');
+        $this->assertTrue((bool) $timeEntry->auto_stopped_for_idle);
+
+        // Worked time = start -> last activity. Last activity is now 6 min ago,
+        // start is 6 min before that... but we updated only the activity, not the
+        // start. Start is still 6 min ago and last activity is 6 min ago, so the
+        // worked duration equals start..lastActivity. Assert the idle tail was
+        // NOT counted: end_time equals the last activity time, and duration is
+        // the worked seconds up to that point (not the full elapsed time).
+        $lastActivityAt = Activity::where('time_entry_id', $timeEntryId)->max('recorded_at');
+        $this->assertEquals(
+            \Illuminate\Support\Carbon::parse($lastActivityAt)->timestamp,
+            $timeEntry->end_time->timestamp,
+            'Entry must end at the last activity time so the idle tail is excluded.'
+        );
+        $expectedWorked = (int) \Illuminate\Support\Carbon::parse($timeEntry->start_time)
+            ->diffInSeconds(\Illuminate\Support\Carbon::parse($lastActivityAt));
+        $this->assertEquals(
+            $expectedWorked,
+            (int) $timeEntry->duration,
+            'Recorded duration must be the worked time (start -> last activity), excluding idle.'
+        );
+    }
 }

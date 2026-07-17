@@ -46,6 +46,21 @@ import { getTimeEntrySubtitle, getTimeEntryTitle } from '@/lib/timeEntryDisplay'
 import type { TimeEntry } from '@/types';
 import type { Project, Task } from '@/types';
 
+// Part 2: explicit timer state machine. Illegal combinations of the old
+// boolean guard flags (wasAutoStarted / justStoppedByIdle / hasRestoredSnapshot)
+// are now structurally impossible because only one of these states is active.
+type TimerState =
+  | 'idle'
+  | 'running'
+  | 'paused_for_break'
+  | 'stopped_by_idle'
+  | 'syncing';
+
+// How often the running display reconciles with the backend. The server can
+// auto-stop a timer on its own (idle fallback); this keeps the visible timer
+// from running away while still being cheap (one lightweight request).
+const TIMER_RECONCILE_INTERVAL_MS = 15 * 1000;
+
 const getStartTimeMs = (startTime?: string) => {
   if (!startTime) return NaN;
   const parsed = new Date(startTime).getTime();
@@ -246,6 +261,24 @@ export default function DesktopTimerDashboard() {
   const fetchAbortControllerRef = useRef<AbortController | null>(null);
   const isTimerOperationInProgressRef = useRef(false);
   const justStoppedByIdleRef = useRef(false);
+  // Guards the idle-stop popup so it fires exactly once per stopped timer id,
+  // no matter which poll (fetchData or the reconcile poll) observes the stop
+  // first. Reset when a genuinely new timer starts.
+  const idleNoticeShownForRef = useRef<number | null>(null);
+  // Part 2: single explicit source-of-truth state machine. Replaces the three
+  // independent boolean guard refs (wasAutoStartedRef, justStoppedByIdleRef,
+  // hasRestoredSnapshotRef) whose combinations were never exhaustively checked.
+  const timerStateRef = useRef<TimerState>('idle');
+  // Once a timer is running, its start_time is locked for that timer id. A
+  // background "active_timer" API response with the same id must never
+  // overwrite the displayed start_time, because the server can silently
+  // refresh it and that is what reset the visible timer.
+  const knownStartTimeRef = useRef<{ id: number; start_time: string } | null>(null);
+  // Locked client-side epoch anchor for the running timer. The displayed
+  // elapsed time is always extrapolated forward from THIS anchor, never
+  // recomputed from a start_time that could be silently refreshed by an
+  // unrelated API response.
+  const startAnchorRef = useRef<number | null>(null);
 
   useEffect(() => {
     console.log('[Live Duration] Effect triggered', {
@@ -274,22 +307,18 @@ export default function DesktopTimerDashboard() {
 
     const computeDuration = () => {
       const base = Number.isFinite(Number(activeTimer.duration)) ? Number(activeTimer.duration) : 0;
-      const startMs = getStartTimeMs(activeTimer.start_time);
-      console.log('[Live Duration] computeDuration', {
-        activeTimerId: activeTimer.id,
-        startTime: activeTimer.start_time,
-        duration: activeTimer.duration,
-        base,
-        startMs,
-        now: Date.now(),
-      });
-      if (!Number.isFinite(startMs)) {
+      // Single source of truth for elapsed time: trust the server's last-known
+      // duration (base) and extrapolate forward from the locked client anchor.
+      // We deliberately do NOT recompute elapsed from activeTimer.start_time,
+      // because that value can be silently refreshed by an unrelated API
+      // response and reset the visible timer.
+      const anchorMs = startAnchorRef.current;
+      if (!Number.isFinite(anchorMs)) {
         return base;
       }
 
-      // Calculate elapsed time since timer started
-      const elapsed = Math.floor((Date.now() - startMs) / 1000);
-      // Use the larger of server-reported duration or client-computed elapsed
+      const elapsed = Math.floor((Date.now() - anchorMs) / 1000);
+      // Use the larger of server-reported duration or client-extrapolated elapsed
       return Math.max(base, elapsed, 0);
     };
 
@@ -302,11 +331,196 @@ export default function DesktopTimerDashboard() {
     return () => clearInterval(interval);
   }, [activeTimer?.id, activeTimer?.duration, activeTimer?.start_time]);
 
-  const syncTimerEntryLocally = (entry: TimeEntry | null) => {
+  // Reconciliation poll: while a timer is displayed as running, periodically
+  // confirm with the backend that it is still running. The server can stop a
+  // timer on its own (e.g. the server-side idle fallback `closeIdleRunningEntry`
+  // auto-stops after the idle threshold) without the desktop hook emitting a
+  // client event. Without this poll the local 1s counter would keep counting
+  // forever — that is the "timer showed 14 minutes while I was idle" bug — and
+  // only a manual refresh would reveal the timer had already ended.
+  useEffect(() => {
+    if (!activeTimer?.id) {
+      return;
+    }
+
+    const runningTimerId = activeTimer.id;
+    let cancelled = false;
+
+    const reconcile = async () => {
+      if (cancelled) return;
+      let serverEntry: TimeEntry | null = null;
+      try {
+        const response = await timeEntryApi.active({ timer_slot: 'primary' });
+        serverEntry = response.data || null;
+      } catch {
+        // Network blip — do not touch the display; try again next tick.
+        return;
+      }
+      if (cancelled) return;
+
+      // The `active` endpoint only returns timers whose end_time is NULL, so a
+      // server-side idle auto-stop makes it return `null` (or a *different*
+      // timer if a new one was started). Any of these means our displayed timer
+      // is no longer the running one.
+      const serverSaysStopped =
+        !serverEntry ||
+        serverEntry.id !== runningTimerId ||
+        Boolean(serverEntry.end_time);
+
+      if (!serverSaysStopped) {
+        return;
+      }
+
+      // The backend no longer has this timer running. Reconcile the display so
+      // it stops counting immediately instead of running away.
+      console.warn('[Timer] Reconcile: backend reports running timer stopped; syncing display', {
+        displayedTimerId: runningTimerId,
+        serverEntryId: serverEntry?.id ?? null,
+        serverEndTime: serverEntry?.end_time ?? null,
+      });
+
+      // Determine *why* it stopped. `active` never carries the stopped entry's
+      // flags (it returns null once stopped), so fetch the specific entry by id
+      // and read its authoritative `auto_stopped_for_idle` flag. This is the
+      // fool-proof idle signal: it is the exact column the backend idle fallback
+      // sets, regardless of whether the stop happened via the client event, the
+      // real-time idle check, or the `active`-endpoint fallback.
+      const stoppedForIdle = await wasStoppedForIdle(runningTimerId);
+      if (cancelled) return;
+
+      const finalWorkedSeconds = latestWorkedSecondsRef.current;
+      setWorkedBaseSeconds(finalWorkedSeconds);
+      setTodayTotal((current) => Math.max(current, finalWorkedSeconds));
+      setTimerBaseSeconds(0);
+      if (userId) {
+        setWorkedBaselineSnapshot(userId, finalWorkedSeconds, attendanceToday?.attendance_date);
+      }
+      commitActiveTimer('reconcile:serverStopped', null, stoppedForIdle ? 'stopped_by_idle' : 'idle');
+      setLiveDuration(0);
+      localStorage.removeItem(ACTIVE_TIMER_KEY);
+      if (userId) {
+        emitDesktopTimerStopped({ userId });
+      }
+      if (stoppedForIdle) {
+        showIdleStopNotice(runningTimerId);
+      }
+    };
+
+    const reconcileInterval = setInterval(() => {
+      void reconcile();
+    }, TIMER_RECONCILE_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(reconcileInterval);
+    };
+  }, [activeTimer?.id, userId, attendanceToday?.attendance_date]);
+
+  // Diagnostic wrapper around setActiveTimer. Part 2 requires us to identify
+  // which code path resets the displayed timer's start_time during live
+  // reproduction (start timer, wait ~1 min, observe reset). Every mutation of
+  // the displayed timer now flows through here with a caller tag + stack, so
+  // the exact trigger is visible in the console instead of guessed.
+  const applyActiveTimer = (tag: string, entry: TimeEntry | null) => {
+    if (entry) {
+      console.warn('[ActiveTimer][set]', tag, {
+        entryId: entry.id,
+        start_time: entry.start_time,
+        duration: entry.duration,
+        stack: new Error().stack,
+      });
+    } else {
+      console.warn('[ActiveTimer][clear]', tag, {
+        stack: new Error().stack,
+      });
+    }
     setActiveTimer(entry);
+  };
+
+  // Authoritative mutation of the displayed timer. Enforces the Part 2 rule:
+  // once a timer is running, its start_time is immutable for that timer id. If
+  // a background sync returns the same timer id, any start_time it carries is
+  // IGNORED in favor of the already-known value. Only a genuinely different
+  // timer id may change the displayed start_time. Also drives the single
+  // explicit state machine.
+  const commitActiveTimer = (tag: string, entry: TimeEntry | null, nextState?: TimerState) => {
+    if (entry) {
+      const known = knownStartTimeRef.current;
+      if (known && known.id === entry.id && known.start_time) {
+        // Same timer id as the one we're already displaying: never let an
+        // unrelated API response silently rewrite the start time.
+        if (entry.start_time && entry.start_time !== known.start_time) {
+          console.warn('[ActiveTimer][immutable] ignoring start_time from sync for same timer id', {
+            tag,
+            entryId: entry.id,
+            incoming: entry.start_time,
+            kept: known.start_time,
+          });
+          entry = { ...entry, start_time: known.start_time };
+        }
+        // Keep the existing anchor for this running timer.
+      } else if (entry.start_time) {
+        // New timer id (or first sighting): lock its start_time and anchor now.
+        knownStartTimeRef.current = { id: entry.id, start_time: entry.start_time };
+        const parsedAnchor = getStartTimeMs(entry.start_time);
+        startAnchorRef.current = Number.isFinite(parsedAnchor) ? parsedAnchor : Date.now();
+        // A genuinely new running timer: allow the idle notice to fire again for
+        // this fresh session (the guard is keyed by the stopped timer id, but we
+        // also clear it here so a restarted timer is never suppressed).
+        idleNoticeShownForRef.current = null;
+      }
+
+      if (nextState) {
+        timerStateRef.current = nextState;
+      } else if (timerStateRef.current === 'idle' || timerStateRef.current === 'stopped_by_idle') {
+        timerStateRef.current = 'running';
+      }
+    } else {
+      knownStartTimeRef.current = null;
+      startAnchorRef.current = null;
+      timerStateRef.current = nextState ?? 'idle';
+    }
+
+    applyActiveTimer(tag, entry);
+  };
+
+  // Fool-proof idle-stop finalizer. Both the reconciliation poll and the main
+  // fetchData poll can be the first to notice the backend auto-stopped the
+  // running timer (there is an inherent race between the two). Rather than
+  // duplicate the "show the idle popup" logic in each — and risk one path
+  // clearing the timer before the other can show the message — both funnel the
+  // transition through here. It is idempotent (guarded by idleNoticeShownRef)
+  // and always reads the authoritative `auto_stopped_for_idle` flag from the
+  // specific stopped entry, so the popup fires exactly once whenever the stop
+  // was caused by idle, regardless of which poll won.
+  const wasStoppedForIdle = async (stoppedTimerId: number): Promise<boolean> => {
+    try {
+      const response = await timeEntryApi.get(stoppedTimerId);
+      const entry = response.data;
+      return Boolean(entry && entry.end_time && (entry as any).auto_stopped_for_idle);
+    } catch {
+      return false;
+    }
+  };
+
+  const showIdleStopNotice = (stoppedTimerId: number) => {
+    if (idleNoticeShownForRef.current === stoppedTimerId) {
+      return;
+    }
+    idleNoticeShownForRef.current = stoppedTimerId;
+    timerStateRef.current = 'stopped_by_idle';
+    setFeedback({
+      tone: 'error',
+      message: 'Your timer was stopped automatically because you were idle.',
+    });
+  };
+
+  const syncTimerEntryLocally = (entry: TimeEntry | null) => {
     if (!entry) {
       return;
     }
+
+    commitActiveTimer('syncTimerEntryLocally', entry);
 
     setTodayEntries((prev) => {
       const nextEntries = prev.some((current) => current.id === entry.id)
@@ -454,11 +668,28 @@ export default function DesktopTimerDashboard() {
           console.log('[Timer] Ignoring stale timer from API after idle stop');
           justStoppedByIdleRef.current = false;
         } else {
-          setActiveTimer(activeFromApi);
+          // Capture the id of the timer we were displaying BEFORE we commit the
+          // (possibly null) server state. If we were showing a running timer and
+          // the server now reports none, the timer was stopped out from under us
+          // — most commonly by the backend idle fallback. We check the stopped
+          // entry's authoritative flag and, if it was idle, show the popup. This
+          // makes the idle notice fool-proof even when fetchData (not the
+          // reconcile poll) is the first to observe the stop.
+          const previouslyDisplayedId = knownStartTimeRef.current?.id ?? null;
+          const transitionedToStopped = Boolean(previouslyDisplayedId) && !activeFromApi;
+
+          commitActiveTimer('fetchData:sync', activeFromApi);
           if (!activeFromApi) {
             localStorage.removeItem(ACTIVE_TIMER_KEY);
             setLiveDuration(0);
             justStoppedByIdleRef.current = false;
+            if (transitionedToStopped && previouslyDisplayedId) {
+              void wasStoppedForIdle(previouslyDisplayedId).then((stoppedForIdle) => {
+                if (stoppedForIdle) {
+                  showIdleStopNotice(previouslyDisplayedId);
+                }
+              });
+            }
           } else {
             clearAutoStartArm(userId);
             clearAutoStartSuppression(userId);
@@ -575,7 +806,7 @@ export default function DesktopTimerDashboard() {
     wasAutoStartedRef.current = false;
     setNotice('');
     setFeedback(null);
-    setActiveTimer(null);
+    commitActiveTimer('init:reset', null, 'idle');
     setTodayEntries([]);
     setTodayTotal(0);
     setAllTimeTotal(0);
@@ -600,7 +831,7 @@ export default function DesktopTimerDashboard() {
       hasRestoredSnapshotRef.current = true;
       const restoredWorkedSeconds = Number(restoredSnapshot.duration || 0);
       const seededWorkedSeconds = Math.max(persistedWorkedSeconds, restoredWorkedSeconds);
-      setActiveTimer(restoredSnapshot);
+      commitActiveTimer('init:restoreSnapshot', restoredSnapshot, 'running');
       setSelectedTaskId(restoredSnapshot.task_id || null);
       setTodayTotal(seededWorkedSeconds);
       setWorkedBaseSeconds(seededWorkedSeconds);
@@ -627,7 +858,7 @@ export default function DesktopTimerDashboard() {
       setWorkedBaselineSnapshot(userId, finalWorkedSeconds, attendanceToday?.attendance_date);
       setFeedback({ tone: 'error', message: pendingNotice });
       setNotice('');
-      setActiveTimer(null);
+      commitActiveTimer('idleStop:consumeNotice', null, 'stopped_by_idle');
       justStoppedByIdleRef.current = true;
       localStorage.removeItem(ACTIVE_TIMER_KEY);
       emitDesktopTimerStopped({ userId });
@@ -656,7 +887,7 @@ export default function DesktopTimerDashboard() {
       } : prev);
       setFeedback({ tone: 'error', message: detail.message });
       setNotice('');
-      setActiveTimer(null);
+      commitActiveTimer('idleStop:event', null, 'stopped_by_idle');
       setLiveDuration(0);
       justStoppedByIdleRef.current = true;
       localStorage.removeItem(ACTIVE_TIMER_KEY);
@@ -945,7 +1176,7 @@ export default function DesktopTimerDashboard() {
           tone: 'error',
           message: stopResult.error || 'Failed to stop timer. The change will be retried when you reconnect.',
         });
-        setActiveTimer(null);
+        commitActiveTimer('handleStopTimer:offlineFail', null, 'idle');
         setTimerBaseSeconds(0);
         localStorage.removeItem(ACTIVE_TIMER_KEY);
         if (userId) {
@@ -963,7 +1194,7 @@ export default function DesktopTimerDashboard() {
         todayDisplaySeconds,
         workedBaseSeconds + Math.max(0, stoppedDuration - timerBaseSeconds),
       );
-      setActiveTimer(null);
+      commitActiveTimer('handleStopTimer:success', null, 'idle');
       setTimerBaseSeconds(0);
       setWorkedBaseSeconds(nextWorkedSeconds);
       setTodayTotal((current) => Math.max(current, nextWorkedSeconds));
@@ -1003,7 +1234,7 @@ export default function DesktopTimerDashboard() {
       if (status === 404) {
         clearAutoStartArm(userId);
         suppressAutoStart(userId);
-        setActiveTimer(null);
+        commitActiveTimer('handleStopTimer:404', null, 'idle');
         localStorage.removeItem(ACTIVE_TIMER_KEY);
         setWorkedBaselineSnapshot(userId, todayDisplaySeconds, attendanceToday?.attendance_date);
         if (userId) {

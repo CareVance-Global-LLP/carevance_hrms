@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopTracker', {
   captureScreenshot: () => ipcRenderer.invoke('desktop:capture-screenshot'),
+  getScreenCapturePermission: () => ipcRenderer.invoke('desktop:get-screen-capture-permission'),
   getSystemIdleSeconds: () => ipcRenderer.invoke('desktop:get-system-idle-seconds'),
   getSystemLockState: () => ipcRenderer.invoke('desktop:get-system-lock-state'),
   getActiveWindowContext: () => ipcRenderer.invoke('desktop:get-active-window-context'),

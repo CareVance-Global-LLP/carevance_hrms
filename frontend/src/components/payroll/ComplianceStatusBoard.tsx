@@ -143,7 +143,7 @@ export default function ComplianceStatusBoard({ monthYear, onOpenFilings }: Comp
         case 'esi_challan': return payrollApi.generateEsiChallan(runId);
         case 'form_24q': return payrollApi.generateForm24Q(runId);
         case 'form_12ba': return payrollApi.generateForm12BA(runId);
-        case 'lwf_return': return payrollApi.generateLwfReturn(runId);
+        case 'lwf_return': return payrollApi.generateLwfReturn(runId, '');
         default: throw new Error('Unknown filing type');
       }
     },
