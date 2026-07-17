@@ -22,6 +22,8 @@ class EmployeeDocument extends Model
         'review_status',
         'notes',
         'meta',
+        'part',
+        'financial_year',
     ];
 
     protected function casts(): array

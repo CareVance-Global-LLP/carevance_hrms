@@ -2151,22 +2151,35 @@ export const payrollApi = {
   getSummary: (params?: { month?: string }) =>
     api.get<PayrollSummary>('/payroll/summary', { params }),
 
-  // ===== Statutory Filings =====
-  listFilings: (params?: Record<string, any>) =>
-    api.get<any>('/payroll/filings', { params }),
-  getFiling: (id: number) =>
-    api.get<any>(`/payroll/filings/${id}`),
-  downloadFiling: (id: number) =>
-    api.get(`/payroll/filings/${id}/download`, { responseType: 'blob' }),
-  generatePfEcr: (payrollRunId: number) =>
-    api.post<any>('/payroll/filings/generate/pf-ecr', { payroll_run_id: payrollRunId }),
-  generateEsiChallan: (payrollRunId: number) =>
-    api.post<any>('/payroll/filings/generate/esi-challan', { payroll_run_id: payrollRunId }),
-  generateForm24Q: (payrollRunId: number) =>
-    api.post<any>('/payroll/filings/generate/form-24q', { payroll_run_id: payrollRunId }),
-  generateForm16: (userId: number, financialYear: string) =>
-    api.post<any>('/payroll/filings/generate/form-16', { user_id: userId, financial_year: financialYear }),
-  generateForm12BA: (payrollRunId: number) =>
+// ===== Statutory Filings =====
+   listFilings: (params?: Record<string, any>) =>
+     api.get<any>('/payroll/filings', { params }),
+   getFiling: (id: number) =>
+     api.get<any>(`/payroll/filings/${id}`),
+   downloadFiling: (id: number) =>
+     api.get(`/payroll/filings/${id}/download`, { responseType: 'blob' }),
+   generatePfEcr: (payrollRunId: number) =>
+     api.post<any>('/payroll/filings/generate/pf-ecr', { payroll_run_id: payrollRunId }),
+   generateEsiChallan: (payrollRunId: number) =>
+     api.post<any>('/payroll/filings/generate/esi-challan', { payroll_run_id: payrollRunId }),
+   generateForm24Q: (payrollRunId: number) =>
+     api.post<any>('/payroll/filings/generate/form-24q', { payroll_run_id: payrollRunId }),
+   generateForm16: (userId: number, financialYear: string) =>
+     api.post<any>('/payroll/filings/generate/form-16', { user_id: userId, financial_year: financialYear }),
+   uploadForm16: (formData: FormData, onProgress?: (progress: number) => void) => {
+     return api.post<{
+       matched: number;
+       unmatched: { filename: string; extracted_pan: string; reason: string }[];
+       invalid_files: string[];
+     }>('/payroll/filings/upload/form-16', formData, {
+       headers: { 'Content-Type': 'multipart/form-data' },
+       onUploadProgress: (progressEvent) => {
+         const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+         onProgress?.(percent);
+       },
+     });
+   },
+   generateForm12BA: (payrollRunId: number) =>
     api.post<any>('/payroll/filings/generate/form-12ba', { payroll_run_id: payrollRunId }),
   generatePtReturn: (payrollRunId: number, state: string) =>
     api.post<any>('/payroll/filings/generate/pt-return', { payroll_run_id: payrollRunId, state }),

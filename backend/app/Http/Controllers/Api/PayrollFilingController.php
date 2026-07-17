@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\EmployeeDocument;
 use App\Models\Organization;
 use App\Models\PayGroup;
 use App\Models\PayrollFiling;
@@ -86,6 +87,191 @@ class PayrollFilingController extends Controller
             // Re-throw other runtime exceptions
             throw $e;
         }
+    }
+
+    /**
+     * Upload Form 16 Part A and Part B zip files.
+     * Extracts PDFs and matches them to employees by PAN.
+     */
+    public function uploadForm16(Request $request)
+    {
+        $data = $request->validate([
+            'part_a_zip' => 'required|file|mimes:zip|max:102400', // 100MB max
+            'part_b_zip' => 'required|file|mimes:zip|max:102400',
+            'financial_year' => 'required|string|regex:/^\d{4}-\d{4}$/',
+        ]);
+
+        $orgId = auth()->user()->organization_id;
+        $financialYear = $data['financial_year'];
+
+        $unmatched = [];
+        $invalidFiles = [];
+        $matchedCount = 0;
+
+        // Process Part A zip
+        $partAResult = $this->processZipForForm16(
+            $data['part_a_zip'],
+            'A',
+            $orgId,
+            $financialYear
+        );
+        $matchedCount += $partAResult['matched'];
+        $unmatched = array_merge($unmatched, $partAResult['unmatched']);
+        $invalidFiles = array_merge($invalidFiles, $partAResult['invalid']);
+
+        // Process Part B zip
+        $partBResult = $this->processZipForForm16(
+            $data['part_b_zip'],
+            'B',
+            $orgId,
+            $financialYear
+        );
+        $matchedCount += $partBResult['matched'];
+        $unmatched = array_merge($unmatched, $partBResult['unmatched']);
+        $invalidFiles = array_merge($invalidFiles, $partBResult['invalid']);
+
+        return response()->json([
+            'matched' => $matchedCount,
+            'unmatched' => $unmatched,
+            'invalid_files' => $invalidFiles,
+        ]);
+    }
+
+/**
+      * Process a single zip file for Form 16 uploads.
+      */
+    private function processZipForForm16($zipFile, string $part, int $orgId, string $financialYear): array
+    {
+        $unmatched = [];
+        $invalid = [];
+        $matched = 0;
+
+        $tempDir = storage_path('app/temp/form16_' . uniqid());
+        if (!is_dir($tempDir)) {
+            mkdir($tempDir, 0755, true);
+        }
+
+        $zipPath = $tempDir . '/upload.zip';
+        
+        // Move uploaded file to temp location
+        $zipFile->move($tempDir, 'upload.zip');
+
+        try {
+            $zip = new \ZipArchive();
+            if (!$zip->open($zipPath)) {
+                return ['matched' => 0, 'unmatched' => [], 'invalid' => ['Failed to open zip file']];
+            }
+
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $entry = $zip->getNameIndex($i);
+                
+                // Skip directories and non-PDFs
+                if (substr($entry, -1) === '/' || !str_ends_with(strtolower($entry), '.pdf')) {
+                    continue;
+                }
+
+                $filename = basename($entry);
+                $zip->extractTo($tempDir, $entry);
+                $pdfPath = $tempDir . '/' . $entry;
+
+                if (!file_exists($pdfPath)) {
+                    continue;
+                }
+
+                // Extract PAN from filename: Form16_{FinancialYear}_{PAN}.pdf
+                // e.g., Form16_2025-26_ABCDE1234F.pdf
+                $pan = $this->extractPanFromFilename($filename);
+
+                if (!$pan || !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]$/', $pan)) {
+                    $invalid[] = $filename;
+                    continue;
+                }
+
+                // Look up employee by PAN
+                $employee = User::where('organization_id', $orgId)
+                    ->whereHas('employeeProfile', function ($q) use ($pan) {
+                        $q->where('pan_number', $pan);
+                    })
+                    ->first();
+
+                if (!$employee) {
+                    $unmatched[] = [
+                        'filename' => $filename,
+                        'extracted_pan' => $pan,
+                        'reason' => 'No employee found with this PAN',
+                    ];
+                    continue;
+                }
+
+                // Store as EmployeeDocument
+                $storedPath = 'employee_documents/form16/' . $employee->id . '/part_' . $part . '/' . $filename;
+                Storage::disk('local')->put($storedPath, file_get_contents($pdfPath));
+
+                EmployeeDocument::create([
+                    'organization_id' => $orgId,
+                    'user_id' => $employee->id,
+                    'title' => 'Form 16 Part ' . $part,
+                    'category' => 'form_16',
+                    'file_path' => $storedPath,
+                    'file_name' => $filename,
+                    'file_disk' => 'local',
+                    'mime_type' => 'application/pdf',
+                    'file_size' => filesize($pdfPath),
+                    'uploaded_by' => auth()->id(),
+                    'uploaded_at' => now(),
+                    'financial_year' => $financialYear,
+                    'part' => $part,
+                ]);
+
+                $matched++;
+            }
+
+            $zip->close();
+        } catch (\Exception $e) {
+            // Log error but continue
+            \Illuminate\Support\Facades\Log::error('Form 16 upload error (part ' . $part . ')', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Clean up temp files
+        $this->cleanupTempDir($tempDir);
+
+        return ['matched' => $matched, 'unmatched' => $unmatched, 'invalid' => $invalid];
+    }
+
+    /**
+     * Extract PAN from TRACES filename format.
+     * Format: Form16_{FinancialYear}_{PAN}.pdf (e.g., Form16_2025-26_ABCDE1234F.pdf)
+     */
+    private function extractPanFromFilename(string $filename): ?string
+    {
+        // Remove extension
+        $name = pathinfo($filename, PATHINFO_FILENAME);
+        
+        // Split by underscore and get last segment
+        $parts = explode('_', $name);
+        return end($parts) ?: null;
+    }
+
+/**
+      * Clean up temporary directory.
+      */
+    private function cleanupTempDir(string $path): void
+    {
+        if (!is_dir($path)) {
+            return;
+        }
+        
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST
+        );
+        
+        foreach ($files as $file) {
+            $file->isDir() ? rmdir($file->getRealPath()) : unlink($file->getRealPath());
+        }
+        rmdir($path);
     }
 
     public function generateForm12BA(Request $request, PayrollFilingService $filingService)

@@ -36,6 +36,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
 
         // Form 16 (per employee)
         Route::post('/generate/form-16', [PayrollFilingController::class, 'generateForm16']);
+        Route::post('/upload/form-16', [PayrollFilingController::class, 'uploadForm16']);
 
         // Form 12BA (perquisites)
         Route::post('/generate/form-12ba', [PayrollFilingController::class, 'generateForm12BA']);
@@ -51,16 +52,6 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
 
         // Generate All
         Route::post('/generate/all', [PayrollFilingController::class, 'generateAllFilings']);
-
-        // Pre-flight validation (Phase B)
-        Route::post('/validate', [PayrollFilingController::class, 'validateFiling']);
-        Route::post('/validate-run', [PayrollFilingController::class, 'validateRun']);
-
-        // Maker-checker review workflow (Phase C)
-        Route::post('/{id}/submit', [PayrollFilingController::class, 'submitForReview']);
-        Route::post('/{id}/approve', [PayrollFilingController::class, 'approveFiling']);
-        Route::post('/{id}/reject', [PayrollFilingController::class, 'rejectFiling']);
-        Route::post('/{id}/mark-filed', [PayrollFilingController::class, 'markFiled']);
     });
 
     // ===== Flexible Benefits Plan (FBP) =====

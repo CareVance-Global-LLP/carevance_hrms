@@ -2,12 +2,15 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, ClipboardCheck, CalendarClock } from 'lucide-react';
 import { payrollApi } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import HowItWorksCard from './HowItWorksCard';
 import { useToast } from '@/components/ui/Toast';
 import type { PayGroupFilingDetail } from '@/types';
+
+import UploadForm16Modal from './UploadForm16Modal';
 
 type ComplianceStatus = 'ready' | 'reference_only' | 'not_configured' | 'source_data_only';
 
@@ -159,13 +162,16 @@ const STATUS_BADGE: Record<FilingStatus, string> = {
 export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   const queryClient = useQueryClient();
   const { show } = useToast();
+  const { organization } = useAuth();
+  const organizationName = organization?.name || '';
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
   const [ptState, setPtState] = useState<string>('');
   const [lwfState, setLwfState] = useState<string>('');
   const [bonusPercent, setBonusPercent] = useState<string>('8.33');
   const [form16EmployeeId, setForm16EmployeeId] = useState<number | null>(null);
   const [form16FinancialYear, setForm16FinancialYear] = useState<string>('2026-2027');
-  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'form16' | 'review'>('generate');
+  const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'form16' | 'upload-form16' | 'review'>('generate');
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const [markFiledFor, setMarkFiledFor] = useState<number | null>(null);
   const [ackInput, setAckInput] = useState<string>('');
 
@@ -477,6 +483,14 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
           Form 16
         </Button>
         <Button
+          variant={activeTab === 'upload-form16' ? 'primary' : 'secondary'}
+          size="sm"
+          iconLeft={<Upload className="h-4 w-4" />}
+          onClick={() => setActiveTab('upload-form16')}
+        >
+          Upload Form 16
+        </Button>
+        <Button
           variant={activeTab === 'history' ? 'primary' : 'secondary'}
           size="sm"
           iconLeft={<History className="h-4 w-4" />}
@@ -656,15 +670,26 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
             </Button>
           </div>
 {generateForm16Mutation.isError && (
-             <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-               <strong>Error:</strong>{' '}
-               {(generateForm16Mutation.error as any)?.response?.data?.errors
-                 ? Object.entries((generateForm16Mutation.error as any)?.response?.data?.errors).map(([_field, msgs]: [string, any]) =>
-                     Array.isArray(msgs) ? msgs.join(', ') : msgs).join(' | ')
-                 : (generateForm16Mutation.error as any)?.response?.data?.message || generateForm16Mutation.error?.message || 'Something went wrong'}
-             </div>
-           )}
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                <strong>Error:</strong>{' '}
+                {(generateForm16Mutation.error as any)?.response?.data?.errors
+                  ? Object.entries((generateForm16Mutation.error as any)?.response?.data?.errors).map(([_field, msgs]: [string, any]) =>
+                      Array.isArray(msgs) ? msgs.join(', ') : msgs).join(' | ')
+                  : (generateForm16Mutation.error as any)?.response?.data?.message || generateForm16Mutation.error?.message || 'Something went wrong'}
+              </div>
+            )}
         </SurfaceCard>
+      ) : activeTab === 'upload-form16' ? (
+        <div className="flex items-center justify-center py-12">
+          <Button
+            variant="primary"
+            size="lg"
+            iconLeft={<Upload className="h-5 w-5" />}
+            onClick={() => setShowUploadModal(true)}
+          >
+            Upload Form 16 Files
+          </Button>
+        </div>
       ) : activeTab === 'review' ? (
         <SurfaceCard className="overflow-hidden">
           {reviewLoading ? (
@@ -860,6 +885,14 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
           </div>
         </div>
       )}
+
+      {/* Upload Form 16 Modal */}
+      <UploadForm16Modal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        financialYear={form16FinancialYear}
+        organizationName={organizationName}
+      />
     </div>
   );
 }
