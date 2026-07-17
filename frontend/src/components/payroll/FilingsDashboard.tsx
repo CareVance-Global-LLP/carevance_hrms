@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, ClipboardCheck, CalendarClock } from 'lucide-react';
+import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, CalendarClock } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import Button from '@/components/ui/Button';
@@ -197,14 +197,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   const { data: filingsData, isLoading: filingsLoading } = useQuery({
     queryKey: ['payroll-filings'],
     queryFn: () => payrollApi.listFilings().then((r) => r.data),
-    enabled: activeTab === 'history' || activeTab === 'review',
-  });
-
-  // Reviewer queue
-  const { data: reviewData, isLoading: reviewLoading } = useQuery({
-    queryKey: ['payroll-filing-review-queue'],
-    queryFn: () => payrollApi.getReviewQueue().then((r) => r.data),
-    enabled: activeTab === 'review',
+    enabled: activeTab === 'history',
   });
 
   // Pre-flight run-state validation (gates the Generate tab)
@@ -276,8 +269,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     mutationFn: (runId: number) => payrollApi.generateAllFilings(runId),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
-      const reviewerMsg = data?.reviewer_ids?.length ? ' Routed to your reviewer for internal approval.' : '';
-      show({ kind: 'success', message: `All filings generated.${reviewerMsg}`, durationMs: 4000 });
+      show({ kind: 'success', message: 'All filings generated.', durationMs: 4000 });
     },
     onError: (e: any) => {
       show({ kind: 'error', message: e?.response?.data?.message || e?.message || 'Failed to generate filings', durationMs: 5000 });
@@ -290,31 +282,12 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
       payrollApi.generateForm16(userId, financialYear).then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
-      show({ kind: 'success', message: `Form 16 generated successfully`, durationMs: 4000 });
+      show({ kind: 'success', message: 'Form 16 generated successfully', durationMs: 4000 });
     },
     onError: (e: any) => {
       const msg = e?.response?.data?.message || e?.message || 'Failed to generate Form 16';
       show({ kind: 'error', message: msg, durationMs: 6000 });
     },
-  });
-
-  // Approve / reject (reviewer)
-  const approveMutation = useMutation({
-    mutationFn: (id: number) => payrollApi.approveFiling(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payroll-filing-review-queue'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
-      show({ kind: 'success', message: 'Approved. Ready for the human to file on the portal.', durationMs: 4000 });
-    },
-    onError: (e: any) => show({ kind: 'error', message: e?.response?.data?.message || 'Failed to approve', durationMs: 4000 }),
-  });
-  const rejectMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: number; reason: string }) => payrollApi.rejectFiling(id, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payroll-filing-review-queue'] });
-      show({ kind: 'success', message: 'Rejected and returned to generated.', durationMs: 4000 });
-    },
-    onError: (e: any) => show({ kind: 'error', message: e?.response?.data?.message || 'Failed to reject', durationMs: 4000 }),
   });
 
   // Mark filed (record ack number)
@@ -354,7 +327,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   // Auto-select state from pay group filing details when run changes
   const runsList = Array.isArray(runs) ? runs : (runs as any)?.runs ?? [];
   const filingsList = filingsData?.data ?? filingsData ?? [];
-  const reviewList = reviewData?.data ?? reviewData ?? [];
   const employeesList = Array.isArray(employees) ? employees : (employees as any)?.data ?? [];
 
   const payGroups = (payGroupSettingsData as any)?.pay_groups ?? [];
@@ -428,8 +400,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
           { step: 1, label: 'Pick a run', desc: 'Select the approved/locked payroll run you want to file' },
           { step: 2, label: 'Pick filing type', desc: 'Each card shows its real compliance status — filing-ready, reference-only, or not configured' },
           { step: 3, label: 'Generate', desc: 'System pulls data and formats it per what that return actually is' },
-          { step: 4, label: 'Submit & review', desc: 'Generated filings route to your internal reviewer (maker-checker) before filing' },
-          { step: 5, label: 'File it yourself', desc: 'Use "Upload to portal" to open the right portal + exact file; then "Mark Filed" with the challan/ack number' },
+          { step: 4, label: 'File it yourself', desc: 'Use "Upload to portal" to open the right portal + exact file; then "Mark Filed" with the challan/ack number' },
         ]}
         commonMistakes={[
           'Treating the ESI/PT summary or Form 24Q export as a ready-to-upload file (they are not)',
@@ -497,14 +468,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
           onClick={() => setActiveTab('history')}
         >
           Filing History
-        </Button>
-        <Button
-          variant={activeTab === 'review' ? 'primary' : 'secondary'}
-          size="sm"
-          iconLeft={<ClipboardCheck className="h-4 w-4" />}
-          onClick={() => setActiveTab('review')}
-        >
-          Reviewer Queue{reviewList.length ? ` (${reviewList.length})` : ''}
         </Button>
       </div>
 
@@ -690,43 +653,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
             Upload Form 16 Files
           </Button>
         </div>
-      ) : activeTab === 'review' ? (
-        <SurfaceCard className="overflow-hidden">
-          {reviewLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
-          ) : reviewList.length === 0 ? (
-            <div className="text-center py-12">
-              <ClipboardCheck className="h-12 h-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-500">No filings awaiting your review.</p>
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Period</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Submitted</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {reviewList.map((f: any) => (
-                  <tr key={f.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-900">{f.type?.replace(/_/g, ' ')?.toUpperCase()}</td>
-                    <td className="px-4 py-3 text-slate-600">{f.period_month ? `${f.period_month}/${f.period_year}` : `FY ${f.period_year}`}</td>
-                    <td className="px-4 py-3 text-slate-600">{f.submitted_at ? new Date(f.submitted_at).toLocaleDateString() : '-'}</td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <Button variant="ghost" size="sm" className="text-emerald-600" onClick={() => approveMutation.mutate(f.id)} disabled={approveMutation.isPending}>Approve</Button>
-                      <Button variant="ghost" size="sm" className="text-rose-600" onClick={() => { const r = window.prompt('Rejection reason'); if (r) rejectMutation.mutate({ id: f.id, reason: r }); }}>Reject</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </SurfaceCard>
       ) : (
         <SurfaceCard className="overflow-hidden">
           {filingsLoading ? (
@@ -834,7 +760,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                             Upload to portal
                           </Button>
                         )}
-                        {(filing.status === 'approved' || filing.status === 'submitted' || filing.status === 'generated') && (
+{filing.status === 'generated' && (
                           <Button
                             variant="ghost"
                             size="sm"

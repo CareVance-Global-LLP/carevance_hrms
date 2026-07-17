@@ -10,7 +10,6 @@ use App\Models\PayrollFiling;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
 use App\Models\User;
-use App\Services\Approvals\ApprovalRoutingService;
 use App\Services\PayrollFilingService;
 use App\Services\PayrollFilingValidatorService;
 use App\Services\PortalAdapter;
@@ -338,34 +337,16 @@ class PayrollFilingController extends Controller
         return response()->json($filing);
     }
 
-    public function generateAllFilings(Request $request, PayrollFilingService $filingService, ApprovalRoutingService $routing)
+    public function generateAllFilings(Request $request, PayrollFilingService $filingService)
     {
         $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
         $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
         $this->assertRunFileable($run);
         $filings = $filingService->generateAllFilings($run, auth()->user()->organization_id, auth()->id());
 
-        // Auto-route each generated filing to the internal reviewer (maker-checker),
-        // matching the payroll-run approval pattern.
-        $requester = auth()->user();
-        $reviewerIds = $routing->reviewerUserIds($requester);
-        $reviewerId = $reviewerIds->first();
-
-        foreach ($filings as $filing) {
-            if (! empty($filing->file_path) && $filing->status === 'generated') {
-                $filing->status = 'submitted';
-                $filing->submitted_at = now();
-                $filing->submitted_by = $requester->id;
-                $filing->reviewer_user_id = $reviewerId;
-                $filing->portal_status = 'pending_upload';
-                $filing->save();
-            }
-        }
-
         return response()->json([
             'filings' => $filings,
             'count' => count($filings),
-            'reviewer_ids' => $reviewerIds->all(),
         ]);
     }
 
@@ -519,7 +500,7 @@ class PayrollFilingController extends Controller
             ->where('organization_id', auth()->user()->organization_id)
             ->firstOrFail();
 
-        if (! in_array($filing->status, ['approved', 'submitted', 'generated'])) {
+        if (! in_array($filing->status, ['generated'])) {
             return response()->json(['success' => false, 'message' => 'This filing cannot be marked filed in its current state.'], 422);
         }
 
