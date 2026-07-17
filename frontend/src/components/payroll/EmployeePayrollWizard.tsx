@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -19,6 +19,7 @@ import {
   ListChecks,
   Trash2,
   Receipt,
+  Plus,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -186,12 +187,106 @@ export default function EmployeePayrollWizard({
    * onStepChange (advancing the step). The next employee would see
    * step N+1's content — wrong.
    *
-   * In standalone mode (no `controlledStep` prop), this helper is
-   * equivalent to calling setCurrentStep directly.
-   */
+    * In standalone mode (no `controlledStep` prop), this helper is
+    * equivalent to calling setCurrentStep directly.
+    */
+
+  // ── Draft state (Step 1 attendance + Step 2 custom earnings/deductions) ──
+  // Declared before handleContinue so the synchronous draft-save closure can
+  // reference them without a temporal-dead-zone error.
+  const [annualCtc, setAnnualCtc] = useState('');
+  const [workingDays, setWorkingDays] = useState('26');
+  const [daysPresent, setDaysPresent] = useState('26');
+  const [lOPDays, setLOPDays] = useState('0');
+  const [paidLeaveDays, setPaidLeaveDays] = useState('0');
+  const [overtimeHours, setOvertimeHours] = useState('');
+  const [overtimePayAmount, setOvertimePayAmount] = useState('');
+  const [step2CustomEarnings, setStep2CustomEarnings] = useState<Array<{ name: string; type: 'fixed' | 'percentage'; value: number }>>([]);
+  const [step2CustomDeductions, setStep2CustomDeductions] = useState<Array<{ name: string; type: 'fixed' | 'percentage'; value: number }>>([]);
+  const [isEditingAttendance, setIsEditingAttendance] = useState(false);
+  const [draftsLoaded, setDraftsLoaded] = useState(false);
+  // True only after the user has manually changed an attendance field
+  // (while editing). Prevents the auto-save from persisting the
+  // auto-fetched summary as a "draft" on first visit.
+  const [attendanceEdited, setAttendanceEdited] = useState(false);
+  // Loads attendance from the server exactly ONCE per mount. Because the
+  // wizard is keyed by employeeId (remounts on every employee switch),
+  // a fresh mount re-loads cleanly. Within a single mount, later refetches
+  // (window focus / query invalidation) must NOT overwrite the user's
+  // local edits — hence we bail out after the first successful load.
+  const attendanceInitialized = useRef(false);
+
+  // Save wizard drafts (attendance overrides + custom earnings/deductions)
+  // on navigation / refresh so they survive employee switches.
+  const saveDraftsMutation = useMutation({
+    mutationFn: (payload: {
+      month_year: string;
+      working_days?: number | null;
+      days_present?: number | null;
+      lop_days?: number | null;
+      paid_leave_days?: number | null;
+      overtime_hours?: number | null;
+      overtime_pay?: number | null;
+      custom_earnings?: Array<{ name: string; type: 'fixed' | 'percentage'; value: number }> | null;
+      custom_deductions?: Array<{ name: string; type: 'fixed' | 'percentage'; value: number }> | null;
+    }) => payrollApi.saveDrafts(employeeId, payload),
+    onSuccess: (_response, variables) => {
+      // Keep the employee's payroll-details cache in sync with the saved
+      // draft. Without this, navigating back to this employee inside the SPA
+      // serves the stale cached data (which predates the save) and the edits
+      // look "lost" — only a full page refresh re-fetched the saved values.
+      queryClient.setQueryData(
+        ['payroll', 'employee', employeeId, monthYear],
+        (old: any) => {
+          if (!old) return old;
+          return {
+            ...old,
+            drafts: {
+              month_year: variables.month_year,
+              working_days: variables.working_days,
+              days_present: variables.days_present,
+              lop_days: variables.lop_days,
+              paid_leave_days: variables.paid_leave_days,
+              overtime_hours: variables.overtime_hours,
+              overtime_pay: variables.overtime_pay,
+              custom_earnings: variables.custom_earnings ?? old?.drafts?.custom_earnings ?? [],
+              custom_deductions: variables.custom_deductions ?? old?.drafts?.custom_deductions ?? [],
+            },
+          };
+        }
+      );
+    },
+    onError: (error) => {
+      console.warn('Failed to save wizard drafts:', error);
+    },
+  });
+
   const handleContinue = useCallback(
-    (nextStep: number, stepNum?: number) => {
+    async (nextStep: number, stepNum?: number) => {
+      // SAVE DRAFTS SYNCHRONOUSLY before advancing. This is the
+      // GUARANTEED save — the auto-save useEffect (Change D) is
+      // best-effort debounced, but this fires on the exact click that
+      // triggers the employee switch. await ensures the HTTP request
+      // completes before the wizard unmounts and React state is
+      // destroyed.
       if (stepNum !== undefined) {
+        try {
+          await saveDraftsMutation.mutateAsync({
+            month_year: monthYear,
+            working_days: parseFloat(workingDays) || null,
+            days_present: parseFloat(daysPresent) || null,
+            lop_days: parseFloat(lOPDays) || null,
+            paid_leave_days: parseFloat(paidLeaveDays) || null,
+            overtime_hours: parseFloat(overtimeHours) || null,
+            overtime_pay: parseFloat(overtimePayAmount) || null,
+            custom_earnings: step2CustomEarnings.length > 0 ? step2CustomEarnings : null,
+            custom_deductions: step2CustomDeductions.length > 0 ? step2CustomDeductions : null,
+          });
+        } catch (e) {
+          // Draft save failed — log but don't block the step advance.
+          // The step completion flag (onComplete) is more critical.
+          console.warn('Draft save failed, continuing anyway:', e);
+        }
         onComplete?.(stepNum);
       }
       // In controlled mode, advance only when the matrix has *already*
@@ -202,16 +297,28 @@ export default function EmployeePayrollWizard({
         setCurrentStep(nextStep);
       }
     },
-    [isControlled, onComplete, setCurrentStep],
+    [isControlled, onComplete, setCurrentStep, saveDraftsMutation, monthYear,
+     workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours,
+     overtimePayAmount, step2CustomEarnings, step2CustomDeductions],
   );
 
-  const [annualCtc, setAnnualCtc] = useState('');
-  const [workingDays, setWorkingDays] = useState('26');
-  const [daysPresent, setDaysPresent] = useState('26');
-  const [lOPDays, setLOPDays] = useState('0');
-  const [paidLeaveDays, setPaidLeaveDays] = useState('0');
-  const [overtimeHours, setOvertimeHours] = useState('0');
-  const [isEditingAttendance, setIsEditingAttendance] = useState(false);
+  // Commit the current attendance edits to the backend without advancing
+  // the step. Used when the user finishes editing ("Done Editing") so the
+  // values survive the per-employee remount that happens on navigation.
+  const commitAttendanceDraft = useCallback(() => {
+    if (!monthYear) return;
+    saveDraftsMutation.mutate({
+      month_year: monthYear,
+      working_days: parseFloat(workingDays) || null,
+      days_present: parseFloat(daysPresent) || null,
+      lop_days: parseFloat(lOPDays) || null,
+      paid_leave_days: parseFloat(paidLeaveDays) || null,
+      overtime_hours: parseFloat(overtimeHours) || null,
+      overtime_pay: parseFloat(overtimePayAmount) || null,
+      custom_earnings: step2CustomEarnings.length > 0 ? step2CustomEarnings : null,
+      custom_deductions: step2CustomDeductions.length > 0 ? step2CustomDeductions : null,
+    });
+  }, [monthYear, saveDraftsMutation, workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, overtimePayAmount, step2CustomEarnings, step2CustomDeductions]);
 
   const [template, setTemplate] = useState<EmployeePayrollTemplate | null>(null);
   const [calculation, setCalculation] = useState<PayrollCalculation | null>(null);
@@ -346,7 +453,7 @@ export default function EmployeePayrollWizard({
     },
   });
 
-  // Process payroll mutation
+  // Toast helper used by the reimbursement-removal mutation below.
   const { show } = useToast();
 
   const processPayrollMutation = useMutation({
@@ -358,6 +465,9 @@ export default function EmployeePayrollWizard({
       days_present: parseInt(daysPresent) || 0,
       lOP_days: parseFloat(lOPDays) || 0,
       overtime_hours: parseFloat(overtimeHours) || 0,
+      overtime_pay: parseFloat(overtimePayAmount) || 0,
+      custom_earnings: step2CustomEarnings,
+      custom_deductions: step2CustomDeductions,
     }),
     onSuccess: (res) => {
       // Mark step 6 (Preview & Process) done — this is the final
@@ -414,17 +524,43 @@ export default function EmployeePayrollWizard({
     }
   }, [data, template, annualCtc]);
 
-  // Auto-populate attendance from the monthly attendance summary
-  // (single source of truth). Working days, present days, LOP, and
-  // paid leave are pulled verbatim from the backend.
+  // Auto-populate attendance. PRIORITY:
+  //   1. Saved drafts for THIS month (restored from DB)
+  //   2. Auto-fetched attendance summary (fresh data)
+  // Drafts take priority so manual edits survive refresh/employee-switch.
+  // draft_month_year mismatch (e.g. viewing May but drafts are April) → null
+  // → falls back to auto-fetched summary. Prevents cross-month bleed.
   useEffect(() => {
+    // Load attendance from the server only once per mount. Subsequent
+    // refetches (window focus / invalidation) must not clobber the user's
+    // local edits — the wizard remounts per employee, so a fresh mount
+    // always re-loads cleanly.
+    if (attendanceInitialized.current || !data) return;
+    const drafts = data?.drafts;
+    if (drafts && drafts.month_year === data?.month_year) {
+      setWorkingDays(String(drafts.working_days ?? 26));
+      setDaysPresent(String(drafts.days_present ?? 0));
+      setLOPDays(String(drafts.lop_days ?? 0));
+      setPaidLeaveDays(String(drafts.paid_leave_days ?? 0));
+      setOvertimeHours(String(drafts.overtime_hours ?? 0));
+      setOvertimePayAmount(String(drafts.overtime_pay ?? 0));
+      setStep2CustomEarnings(drafts.custom_earnings ?? []);
+      setStep2CustomDeductions(drafts.custom_deductions ?? []);
+      attendanceInitialized.current = true;
+      setDraftsLoaded(true);
+      setAttendanceEdited(false);
+      return;
+    }
     const summary = data?.attendance_summary;
     if (!summary) return;
     setWorkingDays(String(Math.round(summary.working_days)));
     setDaysPresent(String(Math.round(summary.present_days)));
       setLOPDays(String(Math.round(summary.total_lop_days ?? summary.legacy_lop_days ?? 0)));
     setPaidLeaveDays(String(Math.round(summary.paid_leave_days ?? 0)));
-  }, [data?.attendance_summary]);
+    attendanceInitialized.current = true;
+    setDraftsLoaded(true);
+    setAttendanceEdited(false);
+  }, [data?.drafts, data?.attendance_summary, data?.month_year]);
 
   // Auto-trigger calculation when CTC becomes a positive number (after template loads).
   // The 500ms debounce lets the user finish typing before we hit the API.
@@ -454,6 +590,28 @@ export default function EmployeePayrollWizard({
     }, 600);
     return () => clearTimeout(t);
   }, [annualCtc, template?.annual_ctc]);
+
+  // Auto-save wizard drafts on any Step 1 or Step 2 data change.
+  // Debounced at 800ms to avoid API spam while typing. Covers the
+  // "edit and navigate away" scenario. handleContinue ALSO saves
+  // synchronously to guarantee persistence before employee switch.
+  useEffect(() => {
+    if (!monthYear || !draftsLoaded || !attendanceEdited) return;
+    const t = setTimeout(() => {
+      saveDraftsMutation.mutate({
+        month_year: monthYear,
+        working_days: parseFloat(workingDays) || null,
+        days_present: parseFloat(daysPresent) || null,
+        lop_days: parseFloat(lOPDays) || null,
+        paid_leave_days: parseFloat(paidLeaveDays) || null,
+        overtime_hours: parseFloat(overtimeHours) || null,
+        overtime_pay: parseFloat(overtimePayAmount) || null,
+        custom_earnings: step2CustomEarnings.length > 0 ? step2CustomEarnings : null,
+        custom_deductions: step2CustomDeductions.length > 0 ? step2CustomDeductions : null,
+      });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, overtimePayAmount, step2CustomEarnings, step2CustomDeductions, monthYear, employeeId, draftsLoaded, attendanceEdited]);
 
   // Calculate preview
   const calculatePreview = async () => {
@@ -657,7 +815,15 @@ export default function EmployeePayrollWizard({
               </span>
             </h4>
             <button
-              onClick={() => setIsEditingAttendance(!isEditingAttendance)}
+              onClick={() => {
+                const next = !isEditingAttendance;
+                setIsEditingAttendance(next);
+                // Commit edits to the employee's record when leaving edit mode,
+                // so they persist across the per-employee remount on navigation.
+                if (!next && attendanceEdited) {
+                  commitAttendanceDraft();
+                }
+              }}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
             >
               {isEditingAttendance ? 'Done Editing' : 'Edit Values'}
@@ -678,7 +844,7 @@ export default function EmployeePayrollWizard({
               <TextInput
                 type="number"
                 value={workingDays}
-                onChange={(e) => setWorkingDays(e.target.value)}
+                onChange={(e) => { setWorkingDays(e.target.value); if (isEditingAttendance) setAttendanceEdited(true); }}
                 min="1"
                 max="31"
                 placeholder="26"
@@ -700,7 +866,7 @@ export default function EmployeePayrollWizard({
               <TextInput
                 type="number"
                 value={daysPresent}
-                onChange={(e) => setDaysPresent(e.target.value)}
+                onChange={(e) => { setDaysPresent(e.target.value); if (isEditingAttendance) setAttendanceEdited(true); }}
                 min="0"
                 max={workingDays}
                 placeholder="26"
@@ -722,7 +888,7 @@ export default function EmployeePayrollWizard({
               <TextInput
                 type="number"
                 value={lOPDays}
-                onChange={(e) => setLOPDays(e.target.value)}
+                onChange={(e) => { setLOPDays(e.target.value); if (isEditingAttendance) setAttendanceEdited(true); }}
                 min="0"
                 step="0.5"
                 placeholder="0"
@@ -740,8 +906,8 @@ export default function EmployeePayrollWizard({
                  </div>
                  <TextInput
                    type="number"
-                   value={overtimeHours}
-                   onChange={(e) => setOvertimeHours(e.target.value)}
+                    value={overtimeHours}
+                    onChange={(e) => { setOvertimeHours(e.target.value); if (isEditingAttendance) setAttendanceEdited(true); }}
                    min="0"
                    step="0.5"
                    placeholder="0"
@@ -921,7 +1087,194 @@ export default function EmployeePayrollWizard({
                 {template[item.key as keyof EmployeePayrollTemplate] ? <ToggleRight className="h-6 w-6" /> : <ToggleLeft className="h-6 w-6" />}
               </button>
             </div>
-          ))}
+          )          )}
+        </div>
+
+        {/* Overtime info + admin-entered amount (Step 2, run-only) */}
+        {parseFloat(overtimeHours) > 0 && (
+          <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="h-4 w-4 text-blue-600" />
+              <h4 className="text-sm font-medium text-slate-900">Overtime from Step 1</h4>
+            </div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-slate-600">Hours</span>
+              <span className="text-sm font-semibold text-slate-900 tabular-nums">
+                {parseFloat(overtimeHours).toLocaleString('en-IN', { maximumFractionDigits: 2 })}h
+                <span className="ml-2 text-xs font-normal text-slate-400">(read-only)</span>
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-600">Overtime Pay</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-slate-400">₹</span>
+                <TextInput
+                  type="number"
+                  value={overtimePayAmount}
+                  onChange={(e) => setOvertimePayAmount(e.target.value)}
+                  min="0"
+                  className="w-32 text-right"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Other Earnings — run-only, not saved to template */}
+        <div className="mt-6">
+          <div className="flex items-center gap-3 my-3">
+            <div className="flex-1 border-t border-slate-200"></div>
+            <span className="text-xs text-slate-400 whitespace-nowrap">Other Earnings</span>
+            <div className="flex-1 border-t border-slate-200"></div>
+          </div>
+
+          {step2CustomEarnings.length > 0 && (
+            <div className="space-y-2">
+              {step2CustomEarnings.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 py-2">
+                  <input
+                    type="text"
+                    value={item.name}
+                    onChange={(e) => {
+                      const updated = [...step2CustomEarnings];
+                      updated[idx].name = e.target.value;
+                      setStep2CustomEarnings(updated);
+                    }}
+                    placeholder="Component name"
+                    className="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm
+                               focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none"
+                  />
+                  <select
+                    value={item.type}
+                    onChange={(e) => {
+                      const updated = [...step2CustomEarnings];
+                      updated[idx].type = e.target.value as 'fixed' | 'percentage';
+                      setStep2CustomEarnings(updated);
+                    }}
+                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm bg-white
+                               focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none"
+                  >
+                    <option value="fixed">₹ Fixed</option>
+                    <option value="percentage">% Basic</option>
+                  </select>
+                  <div className="flex items-center gap-1">
+                    {item.type === 'fixed' && <span className="text-sm text-slate-400">₹</span>}
+                    <input
+                      type="number"
+                      value={item.value === 0 ? '' : item.value}
+                      onChange={(e) => {
+                        const updated = [...step2CustomEarnings];
+                        updated[idx].value = e.target.value === '' ? 0 : Number(e.target.value);
+                        setStep2CustomEarnings(updated);
+                      }}
+                      className="w-24 text-right px-2 py-1.5 border border-slate-200 rounded-lg text-sm
+                                 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none
+                                 [&::-webkit-inner-spin-button]:appearance-none
+                                 [&::-webkit-outer-spin-button]:appearance-none"
+                      min={0}
+                    />
+                    {item.type === 'percentage' && <span className="text-sm text-slate-400">%</span>}
+                  </div>
+                  <button
+                    onClick={() => setStep2CustomEarnings(step2CustomEarnings.filter((_, j) => j !== idx))}
+                    className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+                    aria-label="Remove earning"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setStep2CustomEarnings([...step2CustomEarnings, { name: '', type: 'fixed', value: 0 }])}
+            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+                       text-blue-600 bg-blue-50 border border-blue-200 rounded-lg
+                       hover:bg-blue-100 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Earning
+          </button>
+        </div>
+
+        {/* Other Deductions — run-only, not saved to template */}
+        <div className="mt-6">
+          <div className="flex items-center gap-3 my-3">
+            <div className="flex-1 border-t border-slate-200"></div>
+            <span className="text-xs text-slate-400 whitespace-nowrap">Other Deductions</span>
+            <div className="flex-1 border-t border-slate-200"></div>
+          </div>
+
+          {step2CustomDeductions.length > 0 && (
+            <div className="space-y-2">
+              {step2CustomDeductions.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 py-2">
+                  <input
+                    type="text"
+                    value={item.name}
+                    onChange={(e) => {
+                      const updated = [...step2CustomDeductions];
+                      updated[idx].name = e.target.value;
+                      setStep2CustomDeductions(updated);
+                    }}
+                    placeholder="Component name"
+                    className="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-sm
+                               focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none"
+                  />
+                  <select
+                    value={item.type}
+                    onChange={(e) => {
+                      const updated = [...step2CustomDeductions];
+                      updated[idx].type = e.target.value as 'fixed' | 'percentage';
+                      setStep2CustomDeductions(updated);
+                    }}
+                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm bg-white
+                               focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none"
+                  >
+                    <option value="fixed">₹ Fixed</option>
+                    <option value="percentage">% Basic</option>
+                  </select>
+                  <div className="flex items-center gap-1">
+                    {item.type === 'fixed' && <span className="text-sm text-slate-400">₹</span>}
+                    <input
+                      type="number"
+                      value={item.value === 0 ? '' : item.value}
+                      onChange={(e) => {
+                        const updated = [...step2CustomDeductions];
+                        updated[idx].value = e.target.value === '' ? 0 : Number(e.target.value);
+                        setStep2CustomDeductions(updated);
+                      }}
+                      className="w-24 text-right px-2 py-1.5 border border-slate-200 rounded-lg text-sm
+                                 focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none
+                                 [&::-webkit-inner-spin-button]:appearance-none
+                                 [&::-webkit-outer-spin-button]:appearance-none"
+                      min={0}
+                    />
+                    {item.type === 'percentage' && <span className="text-sm text-slate-400">%</span>}
+                  </div>
+                  <button
+                    onClick={() => setStep2CustomDeductions(step2CustomDeductions.filter((_, j) => j !== idx))}
+                    className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+                    aria-label="Remove deduction"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setStep2CustomDeductions([...step2CustomDeductions, { name: '', type: 'fixed', value: 0 }])}
+            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+                       text-rose-600 bg-rose-50 border border-rose-200 rounded-lg
+                       hover:bg-rose-100 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Deduction
+          </button>
         </div>
       </SurfaceCard>
 
@@ -1455,16 +1808,18 @@ export default function EmployeePayrollWizard({
             <Button variant="secondary" onClick={() => setCurrentStep(3)}>
               Back
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                // In matrix mode: mark step 5 done only.
-                handleContinue(5, 5);
-              }}
-              iconRight={<ChevronRight className="h-4 w-4" />}
-            >
-              Continue
-            </Button>
+            {!isStepCompleteForAll && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  // In matrix mode: mark step 5 done only.
+                  handleContinue(5, 5);
+                }}
+                iconRight={<ChevronRight className="h-4 w-4" />}
+              >
+                Continue
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1501,7 +1856,13 @@ export default function EmployeePayrollWizard({
               </Button>
             </div>
             
-            <SalaryBreakdown calculation={calculation} template={template} />
+            <SalaryBreakdown
+              calculation={calculation}
+              template={template}
+              overtimePay={parseFloat(overtimePayAmount) || 0}
+              customEarnings={step2CustomEarnings}
+              customDeductions={step2CustomDeductions}
+            />
           </SurfaceCard>
 
           {/* New in 6-step flow: side-by-side totals for reimbursements,
