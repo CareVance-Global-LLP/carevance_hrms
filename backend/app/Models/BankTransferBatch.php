@@ -4,24 +4,33 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BankTransferBatch extends Model
 {
+    public const STATUS_PENDING = 'pending';
+    public const STATUS_PROCESSING = 'processing';
+    public const STATUS_COMPLETED = 'completed';
+    public const STATUS_FAILED = 'failed';
+
     protected $table = 'bank_transfer_batches';
 
     protected $fillable = [
-        'organization_id', 'payroll_run_id', 'batch_reference', 'bank_name',
-        'total_amount', 'total_transactions', 'success_count', 'failure_count',
-        'status', 'file_format', 'file_path', 'api_response', 'error_message',
-        'processed_at', 'completed_at', 'created_by',
+        'organization_id',
+        'payroll_run_id',
+        'batch_name',
+        'bank_name',
+        'total_amount',
+        'total_employees',
+        'status',
+        'file_path',
+        'processed_at',
+        'created_by',
     ];
 
     protected $casts = [
         'total_amount' => 'decimal:2',
-        'api_response' => 'array',
+        'total_employees' => 'integer',
         'processed_at' => 'datetime',
-        'completed_at' => 'datetime',
     ];
 
     public function organization(): BelongsTo
@@ -34,13 +43,8 @@ class BankTransferBatch extends Model
         return $this->belongsTo(PayrollMonthlyRun::class, 'payroll_run_id');
     }
 
-    public function createdBy(): BelongsTo
+    public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
-    }
-
-    public function items(): HasMany
-    {
-        return $this->hasMany(BankTransferItem::class, 'bank_transfer_batch_id');
     }
 }

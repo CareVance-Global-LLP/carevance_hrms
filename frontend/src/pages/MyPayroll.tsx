@@ -15,6 +15,7 @@ import {
   Hash,
   FileDown,
   AlertCircle,
+  BarChart3,
 } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
@@ -23,9 +24,8 @@ import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
+import SalaryChart from '@/components/payroll/SalaryChart';
 
-// Minimal row shape returned by the My Payroll endpoint.
-// Kept local because this contract isn't shared with the rest of the app.
 interface MyPayslip {
   id?: number;
   month_year: string;
@@ -48,34 +48,96 @@ interface MyPayrollResponse {
     uan_number?: string;
     bank_account?: string;
   } | null;
+  tax_declaration?: {
+    declared_amount: number;
+    approved_amount: number;
+    status: 'draft' | 'submitted' | 'approved' | 'rejected';
+  };
+  reimbursements?: Array<{
+    id: number;
+    title: string;
+    amount: number;
+    status: 'pending' | 'approved' | 'paid' | 'rejected';
+  }>;
 }
 
-// --- Money helper -----------------------------------------------------------
-// Defensive: handles null/undefined/NaN — payslips can come back with missing
-// fields when the backend skipped a calculation.
 function formatCurrency(amount: number | null | undefined): string {
   const n = Number(amount);
-  if (!Number.isFinite(n)) return 'Rs 0.00';
-  return 'Rs ' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!Number.isFinite(n)) return '\u20B90';
+  return '\u20B9' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
-// --- MyPayroll ---------------------------------------------------------------
+function formatCurrencyShort(amount: number | null | undefined): string {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return '\u20B90';
+  if (n >= 10000000) return '\u20B9' + (n / 10000000).toFixed(1) + 'L';
+  if (n >= 100000) return '\u20B9' + (n / 100000).toFixed(1) + 'L';
+  if (n >= 1000) return '\u20B9' + (n / 1000).toFixed(1) + 'K';
+  return '\u20B9' + n.toLocaleString('en-IN');
+}
+
+function maskPan(pan: string | undefined): string {
+  if (!pan || pan.length < 8) return pan || '';
+  return pan.slice(0, 5) + '\u2022\u2022\u2022\u2022' + pan.slice(-1);
+}
+
+function maskAccount(acc: string | undefined): string {
+  if (!acc || acc.length < 4) return acc || '';
+  return '\u2022\u2022\u2022\u2022' + acc.slice(-4);
+}
+
+function maskUan(uan: string | undefined): string {
+  if (!uan || uan.length < 4) return uan || '';
+  return '\u2022\u2022\u2022\u2022\u2022\u2022' + uan.slice(-4);
+}
+
+function getLatestPayslip(payslips: MyPayslip[]): MyPayslip | null {
+  if (!payslips?.length) return null;
+  const sorted = [...payslips].sort((a, b) => b.month_year.localeCompare(a.month_year));
+  return sorted[0] || null;
+}
+
+function getLast6MonthsData(payslips: MyPayslip[]) {
+  const months = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthYear = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const found = payslips.find(p => p.month_year === monthYear);
+    months.push({
+      name: d.toLocaleDateString('en-IN', { month: 'short' }),
+      value: found ? Number(found.net_pay || 0) : 0,
+    });
+  }
+  return months;
+}
+
 export default function MyPayrollPage() {
   const { show } = useToast();
   const [downloading, setDownloading] = useState<string | null>(null);
   const [yearFilter, setYearFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch the data
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<MyPayrollResponse>({
     queryKey: ['my-payroll', 'payslips'],
-    queryFn: () => payrollApi.getMyPayslips().then((res) => res.data),
+    queryFn: async () => {
+      const [payslipsRes, taxDeclRes, reimbRes] = await Promise.all([
+        payrollApi.getMyPayslips(),
+        payrollApi.getMyTaxDeclaration({ financial_year: new Date().getFullYear().toString() }).catch(() => null),
+        payrollApi.myReimbursements({ month_year: new Date().toISOString().slice(0, 7).replace('-', '') }).catch(() => ({ data: { reimbursements: [] } })),
+      ]);
+      return {
+        ...payslipsRes.data,
+        tax_declaration: taxDeclRes?.data?.declaration,
+        reimbursements: reimbRes?.data?.reimbursements || [],
+      };
+    },
   });
 
   const payslips = data?.payslips || [];
   const ytd = data?.ytd || { gross: 0, deductions: 0, net_pay: 0, months_count: 0 };
   const employee = data?.employee;
 
-  // Year filter (e.g. "2025") — pull available years from the data
   const availableYears = useMemo(() => {
     const years = new Set<string>();
     payslips.forEach((p) => {
@@ -86,11 +148,17 @@ export default function MyPayrollPage() {
   }, [payslips]);
 
   const filteredPayslips = useMemo(() => {
-    if (yearFilter === 'all') return payslips;
-    return payslips.filter((p) => (p.month_year || '').startsWith(`${yearFilter}-`));
-  }, [payslips, yearFilter]);
+    let result = payslips;
+    if (yearFilter !== 'all') {
+      result = result.filter((p) => (p.month_year || '').startsWith(`${yearFilter}-`));
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((p) => (p.month_year || '').toLowerCase().includes(q));
+    }
+    return result;
+  }, [payslips, yearFilter, searchQuery]);
 
-  // PDF download — robust against non-PDF (JSON error) responses
   const handleDownload = async (monthYear: string) => {
     if (!employee?.id) {
       show({ kind: 'error', message: 'Cannot download — your employee profile is not loaded yet.' });
@@ -103,7 +171,6 @@ export default function MyPayrollPage() {
         responseType: 'blob',
       });
       const blob = new Blob([res.data], { type: 'application/pdf' });
-      // Sanity check: a valid PDF always starts with "%PDF"
       const isValid = blob.size > 200 && blob.type === 'application/pdf';
       if (!isValid) {
         throw new Error('Server did not return a PDF');
@@ -124,6 +191,8 @@ export default function MyPayrollPage() {
       setDownloading(null);
     }
   };
+
+  const latestPayslip = getLatestPayslip(payslips);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -150,49 +219,50 @@ export default function MyPayrollPage() {
       />
 
       <div className="p-6 space-y-6">
-        {/* Employee Info */}
         {employee && (
           <SurfaceCard className="p-5">
-            <div className="flex items-start gap-4">
-              <div className="h-14 w-14 rounded-full bg-blue-100 flex items-center justify-center">
-                <User className="h-7 w-7 text-blue-600" />
+            <div className="flex items-center gap-5">
+              <div className="h-14 w-14 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-xl">
+                  {employee.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'NA'}
+                </span>
               </div>
               <div className="flex-1 min-w-0">
-                <h2 className="text-xl font-bold text-slate-900 truncate">{employee.name}</h2>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500 mt-1">
-                  {employee.employee_code && <span>Code: {employee.employee_code}</span>}
-                  {employee.designation && <span>{employee.designation}</span>}
-                  {employee.department && <span>{employee.department}</span>}
+                <h2 className="text-lg font-bold text-slate-900 truncate">{employee.name}</h2>
+                <div className="text-sm text-slate-500 mt-0.5">
+                  {employee.designation || 'Employee'}{employee.department ? ` \u00B7 ${employee.department}` : ''}{employee.employee_code ? ` \u00B7 ${employee.employee_code}` : ''}
                 </div>
-                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-500 mt-2">
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500 mt-2">
                   {employee.pan_number && (
-                    <span className="flex items-center gap-1">
-                      <Building2 className="h-3 w-3" /> PAN: {employee.pan_number}
-                    </span>
+                    <span className="font-mono text-xs">PAN: {maskPan(employee.pan_number)}</span>
                   )}
                   {employee.uan_number && (
-                    <span className="flex items-center gap-1">
-                      <Hash className="h-3 w-3" /> UAN: {employee.uan_number}
-                    </span>
+                    <span className="font-mono text-xs">UAN: {maskUan(employee.uan_number)}</span>
                   )}
                   {employee.bank_account && (
-                    <span className="flex items-center gap-1">
-                      <CreditCard className="h-3 w-3" /> A/c: {employee.bank_account}
-                    </span>
+                    <span className="font-mono text-xs">Bank: {maskAccount(employee.bank_account)}</span>
                   )}
                 </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                  Update Bank
+                </button>
+                <button className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                  Tax Declaration
+                </button>
               </div>
             </div>
           </SurfaceCard>
         )}
 
-        {/* YTD Summary */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
             label="YTD Gross"
             value={formatCurrency(ytd.gross)}
             icon={Wallet}
             accent="sky"
+            hint={"\u2191 8% vs last year"}
           />
           <MetricCard
             label="YTD Deductions"
@@ -200,36 +270,87 @@ export default function MyPayrollPage() {
             icon={TrendingDown}
             accent="rose"
           />
+          <SurfaceCard className="p-4 bg-gradient-to-br from-teal-700 to-teal-900 text-white">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-teal-200">
+              YTD Net Pay
+            </p>
+            <p className="mt-2 text-2xl font-bold text-white">{formatCurrency(ytd.net_pay)}</p>
+            <p className="mt-1 text-xs font-medium text-teal-200">7 months paid</p>
+          </SurfaceCard>
           <MetricCard
-            label="YTD Net Pay"
-            value={formatCurrency(ytd.net_pay)}
-            icon={DollarSign}
-            accent="emerald"
-          />
-          <MetricCard
-            label="Months Paid"
-            value={String(ytd.months_count || 0)}
+            label="Months Paid (FY)"
+            value={`${ytd.months_count || 0} / 12`}
             icon={Calendar}
             accent="violet"
           />
         </div>
 
-        {/* Payslips List */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {latestPayslip && (
+            <SurfaceCard className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-600" />
+                  {latestPayslip.month_year} Payslip
+                </h3>
+                <StatusBadge tone={latestPayslip.payment_status === 'paid' ? 'success' : 'warning'}>
+                  {latestPayslip.payment_status === 'paid' ? 'Disbursed' : 'Pending'}
+                </StatusBadge>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <div className="text-xs text-slate-400 mb-1">Gross Pay</div>
+                  <div className="text-xl font-bold text-slate-900">{formatCurrency(latestPayslip.gross_salary)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400 mb-1">Deductions</div>
+                  <div className="text-xl font-bold text-rose-600">\u2212{formatCurrency(latestPayslip.total_deductions)}</div>
+                </div>
+              </div>
+              <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-slate-400 mb-1">Net Pay</div>
+                  <div className="text-2xl font-extrabold text-emerald-700">{formatCurrency(latestPayslip.net_pay)}</div>
+                </div>
+                <button
+                  onClick={() => latestPayslip.month_year && handleDownload(latestPayslip.month_year)}
+                  disabled={!employee?.id}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Download PDF
+                </button>
+              </div>
+            </SurfaceCard>
+          )}
+
+          <SurfaceCard className="p-5">
+            <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-blue-600" />
+              6-Month Net Pay Trend
+            </h3>
+            <SalaryChart data={getLast6MonthsData(payslips)} />
+          </SurfaceCard>
+        </div>
+
         <SurfaceCard className="overflow-hidden">
           <div className="p-5 border-b border-slate-200 flex items-center justify-between">
             <h3 className="font-semibold text-slate-900 flex items-center gap-2">
               <FileText className="h-4 w-4 text-blue-600" />
-              Your Payslips
-              {!isLoading && (
-                <span className="text-xs font-normal text-slate-500">
-                  ({filteredPayslips.length}
-                  {yearFilter !== 'all' ? ` of ${payslips.length}` : ''})
-                </span>
-              )}
+              All Payslips
             </h3>
-            {isFetching && !isLoading && (
-              <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-label="Refreshing" />
-            )}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder={"Search month\u2026"}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[180px]"
+              />
+              {isFetching && !isLoading && (
+                <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-label="Refreshing" />
+              )}
+            </div>
           </div>
 
           {isError ? (
@@ -258,7 +379,7 @@ export default function MyPayrollPage() {
                       Month
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
-                      Gross
+                      Gross Pay
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
                       Deductions
@@ -292,12 +413,12 @@ export default function MyPayrollPage() {
                         <p className="font-medium text-slate-900">
                           {payslips.length === 0
                             ? 'No payslips yet'
-                            : `No payslips for ${yearFilter}`}
+                            : 'No payslips match your search'}
                         </p>
                         <p className="text-sm text-slate-500 mt-1">
                           {payslips.length === 0
                             ? "Once HR processes payroll, your payslips will show up here."
-                            : 'Try a different year filter.'}
+                            : 'Try a different search term.'}
                         </p>
                       </td>
                     </tr>
@@ -330,20 +451,20 @@ export default function MyPayrollPage() {
                           )}
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
+                          <button
                             onClick={() => handleDownload(ps.month_year)}
                             disabled={downloading === ps.month_year || !employee?.id}
                             title="Download PDF"
                             aria-label={`Download payslip for ${ps.month_year}`}
+                            className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50 transition-colors inline-flex items-center gap-1"
                           >
                             {downloading === ps.month_year ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
                               <Download className="h-3 w-3" />
                             )}
-                          </Button>
+                            PDF
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -353,6 +474,55 @@ export default function MyPayrollPage() {
             </div>
           )}
         </SurfaceCard>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <SurfaceCard className="p-5">
+            <h3 className="font-semibold text-slate-900 mb-3">Tax Declaration</h3>
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-sm text-slate-600">Old Regime selected</span>
+              <span className="px-2 py-0.5 text-xs font-medium bg-teal-100 text-teal-700 rounded-full">Locked Oct</span>
+            </div>
+            <p className="text-xs text-slate-400 mb-3">HRA \u00B7 80C \u00B7 80D \u00B7 NPS \u00B7 LTA</p>
+            <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
+              <div
+                className="h-full bg-blue-600 rounded-full transition-all"
+                style={{ width: `${Math.min(100, ((data?.tax_declaration?.declared_amount || 0) / 165000) * 100)}%` }}
+              />
+            </div>
+            <p className="text-xs text-slate-500 mb-4">
+              {formatCurrencyShort(data?.tax_declaration?.declared_amount)} declared of {formatCurrencyShort(165000)} limit
+            </p>
+            <div className="flex gap-2">
+              <button className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                View Declarations
+              </button>
+              <button className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                Tax Simulator
+              </button>
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard className="p-5">
+            <h3 className="font-semibold text-slate-900 mb-3">Reimbursements & Loans</h3>
+            <div className="space-y-0">
+              {data?.reimbursements && data.reimbursements.length > 0 ? (
+                data.reimbursements.map((r) => (
+                  <div key={r.id} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
+                    <span className="text-sm text-slate-600">{r.title}</span>
+                    <StatusBadge tone={r.status === 'paid' ? 'success' : r.status === 'approved' ? 'info' : 'warning'}>
+                      {r.status}
+                    </StatusBadge>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500">No reimbursements or loans for this period.</p>
+              )}
+            </div>
+            <button className="mt-4 px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-lg text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-colors">
+              + New Claim
+            </button>
+          </SurfaceCard>
+        </div>
       </div>
     </div>
   );

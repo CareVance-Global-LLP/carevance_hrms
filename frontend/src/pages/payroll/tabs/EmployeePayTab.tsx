@@ -10,8 +10,7 @@ import ReimbursementsPage from '@/pages/ReimbursementsPage';
 import Loans from '@/pages/Loans';
 import ArrearsPage from '@/pages/ArrearsPage';
 import EmployeePayrollCards from '@/pages/payroll/EmployeePayrollCards';
-import SalaryComponents from '@/pages/payroll/SalaryComponents';
-import DepartmentTemplates from '@/components/payroll/DepartmentTemplates';
+import SalaryComponentsEditor from '@/components/payroll/SalaryComponentsEditor';
 
 type EmployeePayType =
   | 'revisions'
@@ -21,7 +20,6 @@ type EmployeePayType =
   | 'loans'
   | 'arrears'
   | 'employee-cards'
-  | 'salary-components'
   | 'dept-templates';
 
 interface PayTypeDef {
@@ -31,15 +29,14 @@ interface PayTypeDef {
 }
 
 const PAY_TYPES: PayTypeDef[] = [
-  { id: 'revisions', label: 'Revisions', strictAdminOnly: true },
+  { id: 'revisions', label: 'Salary Revisions', strictAdminOnly: true },
   { id: 'fbp', label: 'FBP', strictAdminOnly: true },
   { id: 'perquisites', label: 'Perquisites', strictAdminOnly: true },
   { id: 'reimbursements', label: 'Reimbursements' },
   { id: 'loans', label: 'Loans' },
   { id: 'arrears', label: 'Arrears', strictAdminOnly: true },
   { id: 'employee-cards', label: 'Employee Cards', strictAdminOnly: true },
-  { id: 'salary-components', label: 'Salary Components', strictAdminOnly: true },
-  { id: 'dept-templates', label: 'Dept Templates', strictAdminOnly: true },
+  { id: 'dept-templates', label: 'Salary Templates', strictAdminOnly: true },
 ];
 
 const noop = () => {};
@@ -78,10 +75,10 @@ export default function EmployeePayTab() {
               type="button"
               onClick={() => selectType(t.id)}
               className={cn(
-                'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                'rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors',
                 isActive
-                  ? 'border-[#5D969D] bg-[rgba(93,150,157,0.1)] text-[#5D969D]'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                  ? 'bg-teal-700 text-white'
+                  : 'border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
               )}
             >
               {t.label}
@@ -103,8 +100,7 @@ export default function EmployeePayTab() {
           {active === 'loans' && <Loans />}
           {active === 'arrears' && <ArrearsPage />}
           {active === 'employee-cards' && <EmployeePayrollCards onBack={noop} />}
-          {active === 'salary-components' && <SalaryComponents />}
-          {active === 'dept-templates' && <DepartmentTemplates onBack={noop} />}
+          {active === 'dept-templates' && <SalaryComponentsEditor />}
         </div>
       )}
     </div>

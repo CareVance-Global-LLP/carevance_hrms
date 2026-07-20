@@ -99,7 +99,6 @@ export default function OverviewTab() {
         onOpenReports={() => navigate('/payroll/reports?panel=register')}
         onOpenDepartmentTemplates={() => navigate('/payroll/employee-pay?type=dept-templates')}
         onOpenUnassignedEmployees={() => navigate('/payroll/unassigned-employees')}
-        onOpenSalaryComponents={() => navigate('/payroll/employee-pay?type=salary-components')}
       />
 
       <PayrollRunDetailModal

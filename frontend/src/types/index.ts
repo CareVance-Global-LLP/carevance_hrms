@@ -1142,6 +1142,8 @@ export interface AllEmployee {
   department_id: number | null;
   designation: string | null;
   employee_code?: string | null;
+  joining_date?: string | null;
+  annual_ctc?: number | null;
 }
 
 /**
@@ -1487,6 +1489,9 @@ export interface ProcessPayrollRequest {
   days_present: number;
   lOP_days?: number;
   overtime_hours?: number;
+  overtime_pay?: number;
+  custom_earnings?: Array<{ name: string; type: 'fixed' | 'percentage'; value: number }>;
+  custom_deductions?: Array<{ name: string; type: 'fixed' | 'percentage'; value: number }>;
 }
 
 export interface PayrollOrganizationSettings {
@@ -1653,6 +1658,11 @@ export interface SalaryStructure {
     type: 'fixed' | 'percentage';
     value: number;
   }> | null;
+  other_deductions: Array<{
+    name: string;
+    type: 'fixed' | 'percentage';
+    value: number;
+  }> | null;
   is_default: boolean;
   is_active: boolean;
   created_at: string;
@@ -1703,6 +1713,11 @@ export interface CreateSalaryStructurePayload {
   nps_percentage?: number;
   vpf_percentage?: number;
   other_earnings?: Array<{
+    name: string;
+    type: 'fixed' | 'percentage';
+    value: number;
+  }>;
+  other_deductions?: Array<{
     name: string;
     type: 'fixed' | 'percentage';
     value: number;
@@ -1878,40 +1893,4 @@ export interface FormulaValidateResult {
   valid: boolean;
   errors?: string[];
   parsed?: string;
-}
-
-// ===== Salary Component Types (org-level component manager) =====
-
-export interface SalaryFormula {
-  id: number;
-  organization_id: number;
-  salary_component_id: number;
-  name: string;
-  formula_expression: string;
-  description?: string;
-  effective_from?: string;
-  effective_to?: string;
-  is_active: boolean;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface SalaryComponent {
-  id: number;
-  organization_id: number;
-  name: string;
-  code: string;
-  category: 'earning' | 'deduction';
-  impact?: string;
-  value_type: 'flat' | 'percentage' | 'formula';
-  calculation_basis?: 'ctc' | 'basic' | 'gross' | null;
-  default_value: number;
-  is_taxable: boolean;
-  is_compliance_component: boolean;
-  is_system_default: boolean;
-  is_active: boolean;
-  meta?: Record<string, unknown> | null;
-  formulas?: SalaryFormula[];
-  created_at?: string;
-  updated_at?: string;
 }

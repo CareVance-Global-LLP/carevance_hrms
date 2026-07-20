@@ -1,7 +1,7 @@
-import { Check, Lock, ShieldCheck, Send, Wallet, FileCheck } from 'lucide-react';
+import { Check, Lock, ShieldCheck, Send, Wallet, FileCheck, Cog } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
-export type RunLifecycleState = 'draft' | 'locked' | 'approved' | 'released' | 'disbursed';
+export type RunLifecycleState = 'draft' | 'processing' | 'locked' | 'approved' | 'released' | 'disbursed';
 
 interface PayrollRunLifecycleStepperProps {
   currentState: RunLifecycleState;
@@ -11,6 +11,7 @@ interface PayrollRunLifecycleStepperProps {
 
 const STEPS: Array<{ state: RunLifecycleState; label: string; icon: any }> = [
   { state: 'draft', label: 'Draft', icon: FileCheck },
+  { state: 'processing', label: 'Processing', icon: Cog },
   { state: 'locked', label: 'Locked', icon: Lock },
   { state: 'approved', label: 'Approved', icon: ShieldCheck },
   { state: 'released', label: 'Released', icon: Send },
@@ -19,10 +20,11 @@ const STEPS: Array<{ state: RunLifecycleState; label: string; icon: any }> = [
 
 const stateOrder: Record<RunLifecycleState, number> = {
   draft: 0,
-  locked: 1,
-  approved: 2,
-  released: 3,
-  disbursed: 4,
+  processing: 1,
+  locked: 2,
+  approved: 3,
+  released: 4,
+  disbursed: 5,
 };
 
 function formatTimestamp(iso?: string): string {

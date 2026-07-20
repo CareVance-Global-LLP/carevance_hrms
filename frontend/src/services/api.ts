@@ -87,8 +87,6 @@ import type {
   PayGroupSettings,
   CreatePayGroupSettingsPayload,
   UpdateFilingDetailsPayload,
-  SalaryComponent,
-  SalaryFormula,
   IndianState,
   PollItem,
   PollResultsResponse,
@@ -1728,6 +1726,9 @@ export const payrollApi = {
   getDashboard: () =>
     api.get<PayrollDashboardData>('/payroll/dashboard'),
 
+  getPayrollDashboard: (params?: { month_year?: string }) =>
+    api.get<PayrollDashboardData>('/payroll/dashboard', { params }),
+
   getStats: (params?: { month_year?: string }) =>
     api.get<PayrollStats>('/payroll/stats', { params }),
 
@@ -1809,7 +1810,7 @@ export const payrollApi = {
     api.get<{ success: boolean; templates: any[]; departments_without_template: Array<{ id: number; name: string; slug: string }> }>('/payroll/department-templates'),
 
   upsertDepartmentTemplate: (departmentId: number, data: any) =>
-    api.post<{ success: boolean }>(`/payroll/departments/${departmentId}/template`, data),
+    api.put<{ success: boolean }>(`/payroll/department-templates/${departmentId}`, data),
 
   deleteDepartmentTemplate: (templateId: number) =>
     api.delete(`/payroll/department-templates/${templateId}`),
@@ -2145,7 +2146,7 @@ export const payrollApi = {
 
   // Dashboard Data
   getDashboardData: (params?: { month_year?: string }) =>
-    api.get<{ success: boolean; data: any }>('/payroll/dashboard-data', { params }),
+    api.get<{ success: boolean; data: any }>('/payroll/dashboard', { params }),
 
   // Legacy Summary
   getSummary: (params?: { month?: string }) =>
@@ -2249,7 +2250,7 @@ export const payrollApi = {
     api.post<any>('/payroll/tax-simulator/monthly-take-home', data),
 
   // ===== Salary Revision Letters =====
-  generateRevisionLetter: (data: { user_id: number; new_ctc: number; revision_type: string; reason: string }) =>
+  generateRevisionLetter: (data: { user_id: number; new_ctc: number; revision_type?: string; reason?: string; effective_date?: string; generate_arrears?: boolean }) =>
     api.post<any>('/payroll/revision-letters', data),
   getRevisionLetters: (userId?: number) =>
     api.get<any>(userId ? `/payroll/revision-letters/user/${userId}` : '/payroll/revision-letters'),
@@ -2315,8 +2316,6 @@ export const payrollApi = {
     api.post<any>('/payroll/reports/bank-reconciliation', { month_year: monthYear }),
 
   // ===== Bank Integration =====
-  listBatches: () =>
-    api.get<any>('/payroll/bank/batches'),
   createTransferBatch: (payrollRunId: number, bankName?: string) =>
     api.post<any>('/payroll/bank/create-batch', { payroll_run_id: payrollRunId, bank_name: bankName }),
   processBatch: (batchId: number) =>
@@ -2404,6 +2403,16 @@ export const payrollApi = {
       succeeded: Array<{ user_id: number; payroll_item_id: number | null }>;
       failed: Array<{ user_id: number; reason: string }>;
     }>(`/payroll/pay-groups/${payGroupId}/process-selected`, data),
+  // Reset (delete) a single employee's payroll item so they can be
+  // re-processed. Reverses loan side effects.
+  resetEmployeePayroll: (
+    payGroupId: number,
+    data: { user_id: number; month_year: string },
+  ) =>
+    api.post<{ success: boolean; message: string }>(
+      `/payroll/pay-groups/${payGroupId}/reset-employee`,
+      data,
+    ),
   // Bulk Payroll Matrix — step completion tracking.
   // Marks a single wizard step (1..6) as complete for one or more
   // employees in a pay group.
@@ -2517,7 +2526,7 @@ export const payrollApi = {
 
   // ===== Revision Letters (Employee self-service) =====
   myRevisionLetters: () =>
-    api.get<{ data: any[] }>('/payroll/revision-letters/user/me'),
+    api.get<{ data: any[] }>('/payroll/revision-letters'),
 
   // ===== Onboarding (first-time user guidance) =====
   getOnboardingStatus: () =>
@@ -2616,37 +2625,6 @@ export const payrollApi = {
     api.put<{ success: boolean; message: string; pay_group: PayGroupSettings }>(`/payroll/pay-group-settings/${id}/filing-details`, data),
   getPayGroups: (params?: { is_active?: boolean }) =>
     api.get<{ success: boolean; pay_groups: PayGroup[] }>('/payroll/pay-groups', { params }),
-
-  // ===== Salary Components (org-level component manager) =====
-  listSalaryComponents: () =>
-    api.get<{ success: boolean; components: SalaryComponent[] }>('/payroll/salary-components').then(r => r.data),
-  getSalaryComponent: (id: number) =>
-    api.get<{ success: boolean; component: SalaryComponent }>(`/payroll/salary-components/${id}`).then(r => r.data),
-  createSalaryComponent: (data: {
-    name: string;
-    code: string;
-    category: 'earning' | 'deduction';
-    value_type: 'flat' | 'percentage' | 'formula';
-    calculation_basis?: string;
-    default_value?: number;
-    is_taxable?: boolean;
-    is_compliance_component?: boolean;
-  }) => api.post<{ success: boolean; message: string; component: SalaryComponent }>('/payroll/salary-components', data).then(r => r.data),
-  updateSalaryComponent: (id: number, data: Record<string, unknown>) =>
-    api.put<{ success: boolean; message: string; component: SalaryComponent }>(`/payroll/salary-components/${id}`, data).then(r => r.data),
-  deleteSalaryComponent: (id: number) =>
-    api.delete<{ success: boolean; message: string }>(`/payroll/salary-components/${id}`).then(r => r.data),
-  toggleSalaryComponent: (id: number) =>
-    api.post<{ success: boolean; message: string; component: SalaryComponent }>(`/payroll/salary-components/${id}/toggle`).then(r => r.data),
-  saveComponentFormula: (componentId: number, data: { formula_expression: string; description?: string }) =>
-    api.post<{ success: boolean; message: string; formula: SalaryFormula; component: SalaryComponent }>(
-      `/payroll/salary-components/${componentId}/formula`, data).then(r => r.data),
-  deleteComponentFormula: (componentId: number, formulaId: number) =>
-    api.delete<{ success: boolean; message: string }>(
-      `/payroll/salary-components/${componentId}/formula/${formulaId}`).then(r => r.data),
-  validateComponentFormula: (componentId: number, data: { formula_expression: string }) =>
-    api.post<{ success: boolean; valid: boolean; message: string }>(
-      `/payroll/salary-components/${componentId}/formula/validate`, data).then(r => r.data),
 };
 
 export default api;

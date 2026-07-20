@@ -444,17 +444,25 @@ class PayrollDepartmentController extends Controller
         $employees = User::where('organization_id', $organizationId)
             ->whereIn('role', ['employee', 'manager'])
             ->whereNotIn('id', $assignedUserIds)
-            ->with(['employeeWorkInfo'])
+            ->with(['employeeWorkInfo', 'employeeWorkInfo.department'])
             ->orderBy('name')
             ->get()
-            ->map(fn ($u) => [
-                'id' => $u->id,
-                'name' => $u->name,
-                'email' => $u->email,
-                'role' => $u->role,
-                'designation' => $u->employeeWorkInfo?->designation,
-                'employee_code' => $u->employeeWorkInfo?->employee_code,
-            ]);
+            ->map(function ($u) use ($organizationId) {
+                $template = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+                    ->where('user_id', $u->id)
+                    ->first();
+                return [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'role' => $u->role,
+                    'designation' => $u->employeeWorkInfo?->designation,
+                    'employee_code' => $u->employeeWorkInfo?->employee_code,
+                    'department' => $u->employeeWorkInfo?->department?->name,
+                    'joining_date' => $u->employeeWorkInfo?->joining_date?->toDateString(),
+                    'annual_ctc' => $template ? (float) $template->annual_ctc : null,
+                ];
+            });
 
         return response()->json([
             'employees' => $employees,
@@ -1002,6 +1010,10 @@ class PayrollDepartmentController extends Controller
             'days_present' => 'nullable|integer|min:0',
             'lOP_days' => 'nullable|numeric|min:0',
             'overtime_hours' => 'nullable|numeric|min:0',
+            'custom_deductions' => 'nullable|array',
+            'custom_deductions.*.name' => 'required_with:custom_deductions|string',
+            'custom_deductions.*.type' => 'required_with:custom_deductions|in:fixed,percentage',
+            'custom_deductions.*.value' => 'required_with:custom_deductions|numeric|min:0',
         ]);
 
         $organizationId = $request->user()->organization_id;
@@ -1046,6 +1058,25 @@ class PayrollDepartmentController extends Controller
                 'created_by' => auth()->id(),
             ]
         );
+
+        // For non-draft runs (locked/approved/released), block re-processing.
+        // Draft/processing runs allow re-processing for iteration.
+        if (!in_array($payrollRun->status, ['draft', 'processing'])) {
+            $existingItem = \App\Models\PayrollItem::where('payroll_run_id', $payrollRun->id)
+                ->where('user_id', $userId)
+                ->first();
+            if ($existingItem) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee already processed for ' . $request->month_year . '. Run is in "' . $payrollRun->status . '" status and cannot be re-processed.',
+                    'already_processed' => true,
+                ], 422);
+            }
+        }
+
+        // Check if loan was already deducted for this employee+run (idempotent).
+        // This prevents double-deduction when re-processing a draft run.
+        $loanAlreadyDeducted = false;
 
         // Attendance: use the shared monthly summary as the source of truth.
         // If the caller (wizard manual override) explicitly passes the
@@ -1125,7 +1156,9 @@ class PayrollDepartmentController extends Controller
         // Prevent negative days
         $daysAbsent = max(0, $workingDays - $daysPresent - $lOPDays);
 
-        // Loan / Advance EMI deduction
+        // Loan / Advance EMI deduction — idempotent: skip side effects
+        // if the loan was already deducted in a previous processing for
+        // this employee+run (prevents double-deduction on draft re-runs).
         $loanEmiAmount = 0;
         $loanDetails = null;
         $activeLoan = \App\Models\EmployeeLoan::where('user_id', $userId)
@@ -1134,10 +1167,26 @@ class PayrollDepartmentController extends Controller
             ->first();
         if ($activeLoan) {
             $loanEmiAmount = (float) $activeLoan->emi_amount;
-            $activeLoan->increment('paid_installments');
-            $activeLoan->decrement('remaining_amount', $loanEmiAmount);
-            if ($activeLoan->remaining_amount <= 0) {
-                $activeLoan->update(['remaining_amount' => 0, 'status' => 'closed']);
+            // Check if this loan was already deducted for this run
+            $existingLoanDeduction = \App\Models\PayrollItem::where('payroll_run_id', $payrollRun->id)
+                ->where('user_id', $userId)
+                ->first();
+            $alreadyHasLoan = false;
+            if ($existingLoanDeduction) {
+                $components = $existingLoanDeduction->additional_components ?? [];
+                foreach ($components as $comp) {
+                    if (($comp['type'] ?? '') === 'loan_emi') {
+                        $alreadyHasLoan = true;
+                        break;
+                    }
+                }
+            }
+            if (!$alreadyHasLoan) {
+                $activeLoan->increment('paid_installments');
+                $activeLoan->decrement('remaining_amount', $loanEmiAmount);
+                if ($activeLoan->remaining_amount <= 0) {
+                    $activeLoan->update(['remaining_amount' => 0, 'status' => 'closed']);
+                }
             }
             $loanDetails = [
                 'loan_id' => $activeLoan->id,
@@ -1156,7 +1205,26 @@ class PayrollDepartmentController extends Controller
             ];
         }
 
-        $totalDeductions = $pfAmount + $esiAmount + $ptAmount + $tdsAmount + $lOPDeduction + $loanEmiAmount;
+        // Custom deductions submitted from the wizard (Step 2). Mirrors the
+        // other_earnings handling: fixed = flat amount, percentage = of gross.
+        $requestCustomDeductions = [];
+        $customDeductionsTotal = 0;
+        $customDeductionsFromRequest = $request->get('custom_deductions', []);
+        foreach ($customDeductionsFromRequest as $cd) {
+            $raw = (float) ($cd['value'] ?? 0);
+            $amount = (($cd['type'] ?? 'fixed') === 'percentage')
+                ? $calculation['monthly']['gross'] * ($raw / 100)
+                : $raw;
+            $amount = round($amount, 2);
+            $customDeductionsTotal += $amount;
+            $requestCustomDeductions[] = [
+                'type' => 'custom_deduction',
+                'label' => $cd['name'] ?? 'Deduction',
+                'amount' => $amount,
+            ];
+        }
+
+        $totalDeductions = $pfAmount + $esiAmount + $ptAmount + $tdsAmount + $lOPDeduction + $loanEmiAmount + $customDeductionsTotal;
 
         // Include approved reimbursements and active FBP allocations in
         // the gross. Reimbursements are non-taxable, FBP is allocated
@@ -1277,7 +1345,7 @@ class PayrollDepartmentController extends Controller
                 'pt' => $ptAmount,
                 'tds' => $tdsAmount,
                 'lOP_deduction' => $lOPDeduction,
-                'custom_deductions' => $loanEmiAmount,
+                'custom_deductions' => $loanEmiAmount + $customDeductionsTotal,
                 'custom_earnings' => $customEarningsTotal,
                 'total_deductions' => $totalDeductions,
                 'pf_employer' => $template->pf_enabled ? $calculation['components']['employer_contributions']['pf_employer'] : 0,
@@ -1292,7 +1360,8 @@ class PayrollDepartmentController extends Controller
                 'template_snapshot' => $template->toArray(),
                 'additional_components' => array_merge(
                     $formulaComponents,
-                    $customDeductions
+                    $customDeductions,
+                    $requestCustomDeductions
                 ),
             ]
         );
@@ -1680,6 +1749,73 @@ class PayrollDepartmentController extends Controller
             'message' => count($succeeded) . ' processed, ' . count($failed) . ' failed',
             'succeeded' => $succeeded,
             'failed' => $failed,
+        ]);
+    }
+
+    /**
+     * Reset (delete) a single employee's payroll item for the given month
+     * so they can be re-processed. Reverses loan side effects before
+     * deleting. Only allowed for non-disbursed runs.
+     */
+    public function resetEmployeePayroll(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate([
+            'user_id' => 'required|integer',
+            'month_year' => 'required|string',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+
+        $payGroup = PayGroup::where('id', $id)
+            ->where('organization_id', $organizationId)
+            ->first();
+        if (!$payGroup) {
+            return response()->json(['success' => false, 'message' => 'Pay group not found'], 404);
+        }
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $data['month_year'])
+            ->first();
+        if (!$run) {
+            return response()->json(['success' => false, 'message' => 'No payroll run found for ' . $data['month_year']], 404);
+        }
+        if ($run->status === 'disbursed') {
+            return response()->json(['success' => false, 'message' => 'Cannot reset a disbursed payroll run.'], 422);
+        }
+
+        $item = \App\Models\PayrollItem::where('payroll_run_id', $run->id)
+            ->where('user_id', $data['user_id'])
+            ->first();
+
+        if (!$item) {
+            return response()->json(['success' => false, 'message' => 'No payroll item found for this employee.'], 404);
+        }
+
+        // Reverse loan side effects if a loan EMI was deducted
+        $loanEmi = collect($item->additional_components ?? [])->firstWhere('type', 'loan_emi');
+        if ($loanEmi && ($loanEmi['amount'] ?? 0) > 0) {
+            $loan = \App\Models\EmployeeLoan::where('user_id', $data['user_id'])
+                ->where('status', 'approved')
+                ->first();
+            if (!$loan) {
+                $loan = \App\Models\EmployeeLoan::where('user_id', $data['user_id'])
+                    ->where('status', 'closed')
+                    ->first();
+            }
+            if ($loan) {
+                $loan->decrement('paid_installments');
+                $loan->increment('remaining_amount', $loanEmi['amount']);
+                if ($loan->status === 'closed' && $loan->remaining_amount > 0) {
+                    $loan->update(['status' => 'approved']);
+                }
+            }
+        }
+
+        $item->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payroll reset for this employee. They can now be re-processed.',
         ]);
     }
 

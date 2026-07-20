@@ -2,25 +2,26 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class FbpAllocation extends Model
+class EmployeePerquisite extends Model
 {
-    protected $table = 'fbp_allocations';
-
     protected $fillable = [
         'organization_id',
         'user_id',
-        'fbp_component_id',
-        'allocated_amount',
+        'perquisite_type',
+        'description',
+        'annual_value',
+        'taxable_value',
         'financial_year',
         'status',
     ];
 
     protected $casts = [
-        'allocated_amount' => 'decimal:2',
+        'annual_value' => 'decimal:2',
+        'taxable_value' => 'decimal:2',
     ];
 
     public function organization(): BelongsTo
@@ -33,13 +34,13 @@ class FbpAllocation extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function component(): BelongsTo
+    public function scopeActive(Builder $query): Builder
     {
-        return $this->belongsTo(FbpComponent::class, 'fbp_component_id');
+        return $query->where('status', 'active');
     }
 
-    public function claims(): HasMany
+    public function scopeForFinancialYear(Builder $query, string $year): Builder
     {
-        return $this->hasMany(FbpClaim::class, 'fbp_allocation_id');
+        return $query->where('financial_year', $year);
     }
 }

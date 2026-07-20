@@ -5,6 +5,9 @@ import type { PayrollCalculation, EmployeePayrollTemplate } from '@/types';
 interface SalaryBreakdownProps {
   calculation: PayrollCalculation | null;
   template?: EmployeePayrollTemplate | null;
+  overtimePay?: number;
+  customEarnings?: Array<{ name: string; type: 'fixed' | 'percentage'; value: number }>;
+  customDeductions?: Array<{ name: string; type: 'fixed' | 'percentage'; value: number }>;
 }
 
 function formatCurrency(amount: number): string {

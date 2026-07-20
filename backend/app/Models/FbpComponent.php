@@ -11,14 +11,16 @@ class FbpComponent extends Model
     protected $table = 'fbp_components';
 
     protected $fillable = [
-        'organization_id', 'name', 'code', 'category', 'max_exempt_limit',
-        'requires_proof', 'is_taxable', 'description', 'is_active',
+        'organization_id',
+        'name',
+        'code',
+        'description',
+        'max_annual_amount',
+        'is_active',
     ];
 
     protected $casts = [
-        'max_exempt_limit' => 'decimal:2',
-        'requires_proof' => 'boolean',
-        'is_taxable' => 'boolean',
+        'max_annual_amount' => 'decimal:2',
         'is_active' => 'boolean',
     ];
 
@@ -30,5 +32,10 @@ class FbpComponent extends Model
     public function allocations(): HasMany
     {
         return $this->hasMany(FbpAllocation::class, 'fbp_component_id');
+    }
+
+    public function claims(): HasMany
+    {
+        return $this->hasMany(FbpClaim::class, 'fbp_component_id');
     }
 }

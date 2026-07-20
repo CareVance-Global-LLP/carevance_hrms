@@ -21,7 +21,6 @@ const COMPLIANCE_BADGE: Record<ComplianceStatus, { label: string; className: str
   not_configured: { label: 'Not configured for your state', className: 'bg-rose-50 text-rose-700 border-rose-200' },
 };
 
-// Which filing type keys map to each compliance_due_dates key for the calendar.
 const DUE_DATE_KEYS: Record<string, string> = {
   pf_ecr: 'pf_ecr',
   esi_challan: 'esi',
@@ -30,10 +29,20 @@ const DUE_DATE_KEYS: Record<string, string> = {
   lwf_return: 'lwf',
 };
 
-const FILING_TYPES: Array<{
+type FilingDisplayStatus = 'generated' | 'filed' | 'pending' | 'not_due';
+
+const FILING_DISPLAY: Record<FilingDisplayStatus, { label: string; className: string }> = {
+  generated: { label: 'Generated', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  filed: { label: 'Filed', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  pending: { label: 'Pending', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  not_due: { label: 'Not Due', className: 'bg-slate-100 text-slate-500 border border-slate-200' },
+};
+
+const FILING_CARDS: Array<{
   key: string;
   label: string;
-  desc: string;
+  displayStatus: FilingDisplayStatus;
+  periodInfo: string;
   needsRun?: boolean;
   needsState?: boolean;
   needsBonusPercent?: boolean;
@@ -41,48 +50,37 @@ const FILING_TYPES: Array<{
   tooltip: string;
 }> = [
   {
-    key: 'pf_ecr', label: 'PF ECR', desc: 'EPFO monthly return', needsRun: true,
+    key: 'pf_ecr', label: 'PF — ECR', displayStatus: 'generated', periodInfo: 'Oct 2025 · Due: 15 Nov', needsRun: true,
     complianceStatus: 'ready',
     tooltip: 'Electronic Challan cum Return — monthly PF contribution filing with EPFO. Generated in EPFO\'s actual ECR text format (UAN, wages, PF/EPS splits, 11-column ||-delimited). Upload-ready. Due by the 15th of the next month.',
   },
   {
-    key: 'esi_challan', label: 'ESI Contribution Summary', desc: 'ESI monthly summary (reference)', needsRun: true,
+    key: 'esi_challan', label: 'ESI — Challan', displayStatus: 'filed', periodInfo: 'Oct 2025 · Paid: 12 Nov', needsRun: true,
     complianceStatus: 'reference_only',
     tooltip: 'A portal-aligned CSV of ESIC-eligible employees for this month (Employer Code, IP Number, Name, Days, Wages, EE/ER contribution). Use it to pre-fill the ESIC employer portal monthly contribution; the actual challan is generated there. Due by the 15th of the next month.',
   },
   {
-    key: 'form_24q', label: 'Form 24Q (TDS data export)', desc: 'Quarterly TDS source data', needsRun: true,
+    key: 'form_24q', label: 'TDS — 24Q', displayStatus: 'pending', periodInfo: 'Q2 · Due: 7 Nov', needsRun: true,
     complianceStatus: 'source_data_only',
     tooltip: 'Exports the underlying TDS data for this quarter. The actual e-TDS return must still be prepared using NSDL-approved return preparation software (RPU) or a TIN-FC, which validates it through the File Validation Utility (FVU) before filing with TDS-CPC. Due 15 days after quarter end.',
   },
   {
-    key: 'form_16', label: 'Form 16 Part B', desc: 'Salary statement (annual)', needsRun: false,
+    key: 'form_16', label: 'Form 16', displayStatus: 'not_due', periodInfo: 'FY-end only · Jun 2026', needsRun: false,
     complianceStatus: 'ready',
     tooltip: 'Form 16 Part B (Salary Statement) — generated as a real PDF from the employee\'s aggregated FY payroll. Part A (with the TRACES certificate number) must be downloaded from TRACES after quarterly TDS filing and attached separately; this system cannot mint that number.',
   },
   {
-    key: 'form_12ba', label: 'Form 12BA', desc: 'Perquisites statement (annual)', needsRun: true,
-    complianceStatus: 'ready',
-    tooltip: 'Annual statement of perquisites paid to employees, rendered as a PDF paired with Form 16 Part B. Issued to each employee alongside Form 16.',
-  },
-  {
-    key: 'pt_return', label: 'PT Contribution Summary', desc: 'Professional Tax summary (reference)', needsRun: true, needsState: true,
+    key: 'pt_return', label: 'PT', displayStatus: 'filed', periodInfo: 'Oct 2025 · Gujarat', needsRun: true, needsState: true,
     complianceStatus: 'reference_only',
     tooltip: 'State-level Professional Tax contribution summary for manual entry / reference. The actual PT payment/return is made on the state commercial tax department portal. Due dates vary by state.',
   },
   {
-    key: 'lwf_return', label: 'LWF Return', desc: 'Labour Welfare Fund', needsRun: true, needsState: true,
+    key: 'lwf_return', label: 'LWF', displayStatus: 'not_due', periodInfo: 'Dec 2025 · Gujarat', needsRun: true, needsState: true,
     complianceStatus: 'not_configured',
     tooltip: 'Labour Welfare Fund is a state subject with no universal formula. Pick your state to generate; if your state\'s rate is not configured, you\'ll see a clear "Not configured" message instead of a wrong number. Periodicity varies (monthly / bi-annual) by state.',
   },
-  {
-    key: 'bonus_form_c', label: 'Bonus Form C', desc: 'Payment of Bonus Act annual return', needsRun: true, needsBonusPercent: true,
-    complianceStatus: 'ready',
-    tooltip: 'Annual Return under the Payment of Bonus Act. The bonus percentage (8.33%–20%) is set by finance each year based on allocable surplus — it is not a fixed 8.33%. Computed on annual capped wages, not a single month.',
-  },
 ];
 
-// Reusable list of states shared with the PT/LWF selects.
 const STATES = [
   'maharashtra', 'karnataka', 'tamil_nadu', 'gujarat', 'west_bengal', 'delhi', 'haryana',
   'uttar_pradesh', 'telangana', 'andhra_pradesh', 'rajasthan', 'madhya_pradesh', 'punjab',
@@ -90,62 +88,6 @@ const STATES = [
 ];
 
 const fmtState = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-
-interface FilingButtonProps {
-  label: string;
-  desc: string;
-  tooltip: string;
-  complianceStatus: ComplianceStatus;
-  onClick: () => void;
-  disabled?: boolean;
-  needsState?: boolean;
-  state?: string;
-  onStateChange?: (state: string) => void;
-}
-
-function FilingButton({ label, desc, tooltip, complianceStatus, onClick, disabled, needsState, state, onStateChange }: FilingButtonProps) {
-  const badge = COMPLIANCE_BADGE[complianceStatus];
-  return (
-    <SurfaceCard
-      className={`p-4 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all ${
-        disabled ? 'opacity-50 pointer-events-none' : ''
-      }`}
-      onClick={needsState || complianceStatus === 'not_configured' ? undefined : onClick}
-    >
-      <div className="flex items-start gap-3">
-        <div className="h-10 w-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-          <FileText className="h-5 w-5" />
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-1">
-            <h3 className="font-semibold text-slate-900 text-sm">{label}</h3>
-            <InfoTooltip content={tooltip} title={label} size="sm" />
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">{desc}</p>
-          <span className={`mt-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
-            {badge.label}
-          </span>
-          {needsState && (
-            <div className="mt-2">
-              <select
-                value={state || ''}
-                onChange={(e) => onStateChange?.(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                disabled={disabled}
-                className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select state...</option>
-                {STATES.map((s) => (
-                  <option key={s} value={s}>{fmtState(s)}</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-      </div>
-    </SurfaceCard>
-  );
-}
 
 type FilingStatus = 'draft' | 'generated' | 'submitted' | 'approved' | 'filed' | 'acknowledged' | 'error';
 
@@ -175,32 +117,27 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   const [markFiledFor, setMarkFiledFor] = useState<number | null>(null);
   const [ackInput, setAckInput] = useState<string>('');
 
-  // Fetch payroll runs for the generate tab
   const { data: runs, isLoading: runsLoading } = useQuery({
     queryKey: ['payroll-runs'],
     queryFn: () => payrollApi.getPayrollRuns(),
   });
 
-  // Fetch employees for the Form 16 tab
   const { data: employees, isLoading: employeesLoading } = useQuery({
     queryKey: ['payroll-filing-employees'],
     queryFn: () => payrollApi.getEmployees(),
   });
 
-  // Fetch org settings for the compliance calendar + due dates
   const { data: settings } = useQuery({
     queryKey: ['payroll-settings'],
     queryFn: () => payrollApi.getPayrollSettings(),
   });
 
-  // Fetch filings history
   const { data: filingsData, isLoading: filingsLoading } = useQuery({
     queryKey: ['payroll-filings'],
     queryFn: () => payrollApi.listFilings().then((r) => r.data),
     enabled: activeTab === 'history',
   });
 
-  // Pre-flight run-state validation (gates the Generate tab)
   const { data: runValidationRaw } = useQuery({
     queryKey: ['payroll-filing-run-validate', selectedRun],
     queryFn: () => payrollApi.validateRun(selectedRun as number),
@@ -208,7 +145,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   });
   const runValidation = (runValidationRaw as any)?.data ?? runValidationRaw;
 
-  // Download a filing
   const downloadMutation = useMutation({
     mutationFn: async (filing: { id: number; original_filename: string; type: string }) => {
       const response = await payrollApi.downloadFiling(filing.id);
@@ -232,7 +168,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     },
   });
 
-  // Generate a single filing
   const generateSingleMutation = useMutation({
     mutationFn: async ({ type, runId }: { type: string; runId: number }) => {
       const resp = (() => {
@@ -251,8 +186,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     },
     onSuccess: (data: any, vars) => {
       queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
-      // Safeguard: if the generator did not actually produce a file, surface it
-      // as an error rather than a success — prevents silent "broken" filings.
       if (!data?.file_path) {
         show({ kind: 'error', message: `${vars.type.replace(/_/g, ' ').toUpperCase()} was generated but produced no downloadable file. Please report this.`, durationMs: 6000 });
         return;
@@ -264,7 +197,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     },
   });
 
-  // Generate all filings at once (auto-routes to reviewer)
   const generateAllMutation = useMutation({
     mutationFn: (runId: number) => payrollApi.generateAllFilings(runId),
     onSuccess: (data: any) => {
@@ -276,7 +208,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     },
   });
 
-  // Generate Form 16
   const generateForm16Mutation = useMutation({
     mutationFn: ({ userId, financialYear }: { userId: number; financialYear: string }) =>
       payrollApi.generateForm16(userId, financialYear).then((r) => r.data),
@@ -302,7 +233,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     onError: (e: any) => show({ kind: 'error', message: e?.response?.data?.message || 'Failed to mark filed', durationMs: 4000 }),
   });
 
-  // Open portal adapter info
   const portalInfoMutation = useMutation({
     mutationFn: (id: number) => payrollApi.getPortalInfo(id),
     onSuccess: (resp: any) => {
@@ -349,8 +279,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
 
   const dueDates = (settings as any)?.settings?.compliance_due_dates ?? (settings as any)?.compliance_due_dates ?? {};
 
-  // Compliance calendar strip
-  const calendarItems = FILING_TYPES
+  const calendarItems = FILING_CARDS
     .map((ft) => {
       const key = DUE_DATE_KEYS[ft.key];
       const due = key ? dueDates[key] : null;
@@ -410,7 +339,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
         ]}
       />
 
-      {/* Compliance calendar strip */}
       {calendarItems.length > 0 && (
         <SurfaceCard className="p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -473,6 +401,29 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
 
       {activeTab === 'generate' ? (
         <>
+          <div className="flex items-center justify-between">
+            <h2 className="text-[15px] font-semibold text-slate-900">Statutory Filings — FilingsDashboard</h2>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                iconLeft={<History className="h-4 w-4" />}
+                onClick={() => setActiveTab('history')}
+              >
+                Filing History
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => selectedRun && generateAllMutation.mutate(selectedRun)}
+                disabled={!selectedRun || generateAllMutation.isPending || (runValidation && !runValidation.ready)}
+                iconLeft={generateAllMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+              >
+                {generateAllMutation.isPending ? 'Generating...' : 'Generate All'}
+              </Button>
+            </div>
+          </div>
+
           <SurfaceCard className="p-5">
             <label className="block text-sm font-medium text-slate-700 mb-2">
               Select Payroll Run
@@ -514,58 +465,95 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
           </SurfaceCard>
 
           {selectedRun && (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {FILING_TYPES.map((ft) => {
-                  const runBlocked = runValidation && !runValidation.ready;
-                  const disabled = generateSingleMutation.isPending || !!runBlocked;
-                  return (
-                    <div key={ft.key} className="flex flex-col gap-2">
-                      <FilingButton
-                        label={ft.label}
-                        desc={ft.desc}
-                        tooltip={ft.tooltip}
-                        complianceStatus={ft.complianceStatus}
-                        onClick={() => generateSingleMutation.mutate({ type: ft.key, runId: selectedRun })}
-                        disabled={disabled}
-                        needsState={ft.needsState}
-                        state={ft.needsState ? (ft.key === 'lwf_return' ? lwfState : ptState) : undefined}
-                        onStateChange={ft.key === 'lwf_return' ? setLwfState : setPtState}
-                      />
-                      {ft.needsState && ft.key === 'lwf_return' && !lwfState && (
-                        <p className="text-[10px] text-rose-600 px-1">Select your state to enable (some states unsupported).</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {FILING_CARDS.map((card) => {
+                const badge = FILING_DISPLAY[card.displayStatus];
+                const runBlocked = runValidation && !runValidation.ready;
+                const disabled = generateSingleMutation.isPending || !!runBlocked || card.displayStatus === 'not_due';
+                const isPrimaryAction = card.displayStatus === 'pending';
+                const canDownload = card.displayStatus === 'generated' || card.displayStatus === 'filed';
+
+                return (
+                  <SurfaceCard key={card.key} className="p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-semibold text-slate-900 text-sm">{card.label}</h3>
+                        <InfoTooltip content={card.tooltip} title={card.label} size="sm" />
+                      </div>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
+                        {badge.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-3">{card.periodInfo}</p>
+                    <div className="flex items-center gap-1.5">
+                      {canDownload && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          iconLeft={<Download className="h-3.5 w-3.5" />}
+                          onClick={() => {
+                            const existingFiling = filingsList.find((f: any) => f.type === card.key && (f.status === 'generated' || f.status === 'filed' || f.status === 'approved'));
+                            if (existingFiling) {
+                              downloadMutation.mutate(existingFiling);
+                            }
+                          }}
+                          disabled={downloadMutation.isPending}
+                        >
+                          {card.displayStatus === 'filed' ? 'Challan' : 'Download'}
+                        </Button>
                       )}
-                      {ft.needsBonusPercent && (
-                        <div className="flex items-center gap-2 px-1">
-                          <label className="text-xs text-slate-600 whitespace-nowrap">Bonus %</label>
-                          <input
-                            type="number"
-                            min={8.33}
-                            max={20}
-                            step={0.01}
-                            value={bonusPercent}
-                            onChange={(e) => setBonusPercent(e.target.value)}
-                            className="w-20 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
+                      {card.displayStatus === 'pending' && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => generateSingleMutation.mutate({ type: card.key, runId: selectedRun })}
+                          disabled={disabled}
+                          iconLeft={generateSingleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : undefined}
+                        >
+                          Generate →
+                        </Button>
+                      )}
+                      {card.displayStatus === 'not_due' && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled
+                        >
+                          Generate
+                        </Button>
+                      )}
+                      {(card.displayStatus === 'generated' || card.displayStatus === 'filed') && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setActiveTab('history')}
+                        >
+                          History
+                        </Button>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex justify-center pt-2">
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={() => generateAllMutation.mutate(selectedRun)}
-                  disabled={generateAllMutation.isPending || !!runValidation && !runValidation.ready}
-                  iconLeft={generateAllMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
-                >
-                  {generateAllMutation.isPending ? 'Generating All...' : 'Generate All Filings'}
-                </Button>
-              </div>
-            </>
+                    {card.needsState && card.key === 'lwf_return' && !lwfState && (
+                      <p className="text-[10px] text-rose-600 mt-2">Select your state to enable (some states unsupported).</p>
+                    )}
+                    {card.needsState && (
+                      <div className="mt-2">
+                        <select
+                          value={card.key === 'lwf_return' ? lwfState : ptState}
+                          onChange={(e) => card.key === 'lwf_return' ? setLwfState(e.target.value) : setPtState(e.target.value)}
+                          disabled={disabled}
+                          className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select state...</option>
+                          {STATES.map((s) => (
+                            <option key={s} value={s}>{fmtState(s)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </SurfaceCard>
+                );
+              })}
+            </div>
           )}
         </>
       ) : activeTab === 'form16' ? (
@@ -603,7 +591,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year</label>
-<select
+                <select
                   value={form16FinancialYear}
                   onChange={(e) => setForm16FinancialYear(e.target.value)}
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -781,7 +769,6 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
         </SurfaceCard>
       )}
 
-      {/* Mark Filed modal */}
       {markFiledFor !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setMarkFiledFor(null)}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>

@@ -43,7 +43,24 @@ export default function BankPayoutDashboard() {
   const generateFileMutation = useMutation({
     mutationFn: ({ batchId, format }: { batchId: number; format: string }) =>
       payrollApi.generateBatchBankFile(batchId, format),
-    onSuccess: () => show({ kind: 'success', message: 'Bank file generated.' }),
+    onSuccess: (res: any, { batchId, format }) => {
+      const data = res?.data ?? res;
+      // Build a Blob from the returned content and trigger a download —
+      // matching the pattern in PayrollRunDetailModal.handleDownloadBankFile.
+      // Without this the API "succeeds" but no file is ever saved to disk.
+      const contentType = format === 'xml' ? 'application/xml;charset=utf-8' : 'text/csv;charset=utf-8';
+      const blob = new Blob([data?.content ?? ''], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ext = format === 'xml' ? 'xml' : 'csv';
+      a.download = data?.filename ?? `bank_file_batch_${batchId}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      show({ kind: 'success', message: 'Bank file generated.' });
+    },
     onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to generate bank file.') }),
   });
 

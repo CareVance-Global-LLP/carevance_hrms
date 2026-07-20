@@ -5,7 +5,6 @@ import {
   Search,
   ArrowRight,
   Users,
-  Settings2,
   CreditCard,
   FileText,
   BookOpen,
@@ -27,7 +26,6 @@ import { cn } from '@/utils/cn';
 
 interface PayrollModuleLauncherProps {
   onOpenCreatePayGroup?: () => void;
-  onOpenSalaryComponents?: () => void;
   onOpenEmployeeCards?: () => void;
   onOpenFilings?: () => void;
   onOpenDepartmentTemplates?: () => void;
@@ -96,7 +94,6 @@ const ROUTED_MODULES: ModuleEntry[] = [
 
 export default function PayrollModuleLauncher({
   onOpenCreatePayGroup,
-  onOpenSalaryComponents,
   onOpenEmployeeCards,
   onOpenFilings,
   onOpenDepartmentTemplates,
@@ -141,14 +138,6 @@ export default function PayrollModuleLauncher({
         onClick: onOpenEmployeeCards,
       },
       {
-        id: 'salary-components',
-        label: 'Salary Components',
-        description: 'Enable earnings, deductions and formula-based components',
-        icon: Settings2,
-        section: 'Compensation',
-        onClick: onOpenSalaryComponents,
-      },
-      {
         id: 'dept-templates',
         label: 'Salary Templates',
         description: 'Manage salary component templates per department',
@@ -180,7 +169,6 @@ export default function PayrollModuleLauncher({
       .map((m) => ({ ...m, section: m.section }));
   }, [
     onOpenCreatePayGroup,
-    onOpenSalaryComponents,
     onOpenEmployeeCards,
     onOpenFilings,
     onOpenDepartmentTemplates,

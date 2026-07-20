@@ -78,6 +78,10 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     // Body: { month_year, user_ids, working_days, default_annual_ctc?, lOP_days?, overtime_hours? }
     Route::post('/pay-groups/{id}/process-selected', [PayrollDepartmentController::class, 'processPayGroupSelectedEmployees']);
 
+    // Reset a single employee's payroll item so they can be re-processed.
+    // Body: { user_id: int, month_year: string }
+    Route::post('/pay-groups/{id}/reset-employee', [PayrollDepartmentController::class, 'resetEmployeePayroll']);
+
     // Bulk Payroll Matrix — step completion tracking.
     // Body: { step: 1..6, user_ids: number[] }
     Route::post('/pay-groups/{id}/complete-step', [PayrollFilingController::class, 'completeStep']);

@@ -461,7 +461,7 @@ export const getGlossaryBySection = (section: GlossarySection): GlossaryEntry[] 
 
 export const COMPLIANCE_DEADLINES = [
   { form: 'PF ECR', deadline: '15th of next month', desc: 'EPFO monthly contribution — file the Electronic Challan cum Return.' },
-  { form: 'ESI Challan', deadline: '15th of next month', desc: 'ESIC monthly contribution — file the challan with employee/employer details.' },
+  { form: 'ESI Challan', deadline: '21st of next month', desc: 'ESIC monthly contribution — file the challan with employee/employer details.' },
   { form: 'PT Return', deadline: 'Varies by state (usually 15–30th)', desc: 'State-level professional tax return — check your state\'s commercial tax dept.' },
   { form: 'TDS Form 24Q', deadline: '15 days from quarter end', desc: 'Quarterly TDS return on salary — Q1: 15 Jul, Q2: 15 Oct, Q3: 15 Jan, Q4: 31 May.' },
   { form: 'TDS Form 26Q', deadline: '15 days from quarter end', desc: 'Quarterly TDS return on non-salary payments (rent, professional fees).' },

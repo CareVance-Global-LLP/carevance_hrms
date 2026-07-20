@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Building2, Percent, MapPin, IndianRupee, Loader2, CheckCircle } from 'lucide-react';
+import { X, Save, Building2, Loader2, CheckCircle } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
-import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import type { PayrollOrganizationSettings } from '@/types';
 
 interface PayrollSettingsModalProps {
@@ -34,12 +33,11 @@ const INDIAN_STATES = [
   { value: 'west_bengal', label: 'West Bengal' },
 ];
 
-// Default settings
 const DEFAULT_SETTINGS: PayrollOrganizationSettings = {
   defaultBasicPercentage: 40,
-  defaultHraPercentage: 50,
-  defaultConveyance: 1600,
-  defaultState: 'maharashtra',
+  defaultHraPercentage: 20,
+  defaultConveyance: 0,
+  defaultState: 'gujarat',
   defaultTaxRegime: 'new',
   pfWageCap: 15000,
   esiThreshold: 21000,
@@ -60,23 +58,20 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<PayrollOrganizationSettings>(DEFAULT_SETTINGS);
 
-  // Fetch settings from backend
   const { data: settingsData, isLoading } = useQuery({
     queryKey: ['payroll', 'settings'],
     queryFn: () => payrollApi.getPayrollSettings().then(res => res.data),
     enabled: isOpen,
   });
 
-  // Update settings when data is fetched
   useEffect(() => {
     if (settingsData?.settings) {
       setSettings({ ...DEFAULT_SETTINGS, ...settingsData.settings });
     }
   }, [settingsData]);
 
-  // Save settings mutation
   const saveMutation = useMutation({
-    mutationFn: (newSettings: Partial<PayrollOrganizationSettings>) => 
+    mutationFn: (newSettings: Partial<PayrollOrganizationSettings>) =>
       payrollApi.updatePayrollSettings(newSettings),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['payroll', 'settings'] });
@@ -87,7 +82,6 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
     },
   });
 
-  // Early return must be after all hooks
   if (!isOpen) {
     return null;
   }
@@ -104,188 +98,191 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <SurfaceCard className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-200">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Building2 className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Payroll Settings</h2>
-              <p className="text-sm text-slate-500">Configure default payroll parameters</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-            <X className="h-5 w-5 text-slate-500" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40">
+      <div className="w-full max-w-[560px] bg-white rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <div className="text-base font-bold text-slate-900">Payroll Settings</div>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-md transition-colors">
+            <X className="h-4 w-4 text-slate-500" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-0">
           {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-6 w-6 text-blue-600 animate-spin" />
             </div>
           ) : (
             <>
-              {/* Success Message */}
               {saveMutation.isSuccess && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
-                  <CheckCircle className="h-5 w-5 text-emerald-600" />
+                <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-emerald-600" />
                   <p className="text-sm text-emerald-800">Settings saved successfully!</p>
                 </div>
               )}
 
-              {/* Error Message */}
               {saveMutation.isError && (
-                <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 flex items-center gap-3">
-                  <CheckCircle className="h-5 w-5 text-rose-600" />
+                <div className="mb-4 bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-rose-600" />
                   <p className="text-sm text-rose-800">Failed to save settings. Please try again.</p>
                 </div>
               )}
 
-              {/* Default Salary Structure */}
               <div>
-                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-4 flex items-center gap-2">
-                  <Percent className="h-4 w-4" />
-                  Default Salary Structure
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                  Salary Structure Defaults
+                </div>
+
+                <div className="mb-4">
+                  <FieldLabel>Working Days / Month</FieldLabel>
+                  <TextInput
+                    type="number"
+                    value={settings.workingDaysPerMonth}
+                    onChange={(e) => updateSetting('workingDaysPerMonth', parseInt(e.target.value) || 26)}
+                    min="1"
+                    max="31"
+                  />
+                </div>
+
+                <div className="mb-1">
+                  <FieldLabel>Salary Structure %</FieldLabel>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <FieldLabel>Basic (% of CTC)</FieldLabel>
+                    <div className="text-xs text-slate-500 mb-1">Basic</div>
                     <TextInput
                       type="number"
                       value={settings.defaultBasicPercentage}
                       onChange={(e) => updateSetting('defaultBasicPercentage', parseFloat(e.target.value) || 0)}
                       min="0"
                       max="100"
+                      className="text-center"
                     />
-                    <p className="text-xs text-slate-500 mt-1">Recommended: 40-50%</p>
                   </div>
                   <div>
-                    <FieldLabel>HRA (% of Basic)</FieldLabel>
+                    <div className="text-xs text-slate-500 mb-1">HRA</div>
                     <TextInput
                       type="number"
                       value={settings.defaultHraPercentage}
                       onChange={(e) => updateSetting('defaultHraPercentage', parseFloat(e.target.value) || 0)}
                       min="0"
                       max="100"
+                      className="text-center"
                     />
-                    <p className="text-xs text-slate-500 mt-1">
-                      Metro: 50%, Non-metro: 40%
-                    </p>
                   </div>
                   <div>
-                    <FieldLabel>Conveyance Allowance (₹)</FieldLabel>
+                    <div className="text-xs text-slate-500 mb-1">Special</div>
                     <TextInput
                       type="number"
-                      value={settings.defaultConveyance}
-                      onChange={(e) => updateSetting('defaultConveyance', parseFloat(e.target.value) || 0)}
+                      value={(settings as any).defaultSpecialPercentage ?? 40}
+                      onChange={(e) => updateSetting('defaultSpecialPercentage' as any, parseFloat(e.target.value) || 0)}
                       min="0"
+                      max="100"
+                      className="text-center"
                     />
-                    <p className="text-xs text-slate-500 mt-1">Standard: ₹1,600/month</p>
-                  </div>
-                  <div>
-                    <FieldLabel>Working Days/Month</FieldLabel>
-                    <TextInput
-                      type="number"
-                      value={settings.workingDaysPerMonth}
-                      onChange={(e) => updateSetting('workingDaysPerMonth', parseInt(e.target.value) || 26)}
-                      min="1"
-                      max="31"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Usually 26 days (Mon-Sat)</p>
                   </div>
                 </div>
               </div>
 
-              {/* Tax & Compliance */}
-              <div className="pt-6 border-t border-slate-200">
-                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-4 flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />
-                  Tax & Compliance Defaults
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <FieldLabel>Default State</FieldLabel>
-                    <SelectInput
-                      value={settings.defaultState}
-                      onChange={(e) => updateSetting('defaultState', e.target.value)}
+              <div className="my-5 border-t border-slate-200" />
+
+              <div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                  Tax & Statutory
+                </div>
+
+                <div className="mb-4">
+                  <FieldLabel>Default Tax Regime</FieldLabel>
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      type="button"
+                      className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        settings.defaultTaxRegime === 'old'
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                      onClick={() => updateSetting('defaultTaxRegime', 'old')}
                     >
-                      {INDIAN_STATES.map((state) => (
-                        <option key={state.value} value={state.value}>
-                          {state.label}
-                        </option>
-                      ))}
-                    </SelectInput>
-                    <p className="text-xs text-slate-500 mt-1">Used for Professional Tax</p>
-                  </div>
-                  <div>
-                    <FieldLabel>Default Tax Regime</FieldLabel>
-                    <SelectInput
-                      value={settings.defaultTaxRegime}
-                      onChange={(e) => updateSetting('defaultTaxRegime', e.target.value as 'new' | 'old')}
+                      Old Regime
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        settings.defaultTaxRegime === 'new'
+                          ? 'bg-blue-600 text-white'
+                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                      onClick={() => updateSetting('defaultTaxRegime', 'new')}
                     >
-                      <option value="new">New Regime</option>
-                      <option value="old">Old Regime</option>
-                    </SelectInput>
-                    <p className="text-xs text-slate-500 mt-1">New regime has lower rates</p>
+                      New Regime
+                    </button>
                   </div>
+                </div>
+
+                <div className="mb-4">
+                  <FieldLabel>PT State</FieldLabel>
+                  <SelectInput
+                    value={settings.defaultState}
+                    onChange={(e) => updateSetting('defaultState', e.target.value)}
+                  >
+                    {INDIAN_STATES.map((state) => (
+                      <option key={state.value} value={state.value}>
+                        {state.label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </div>
+
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm text-slate-700">PF Wage Cap</span>
+                  <TextInput
+                    type="number"
+                    value={settings.pfWageCap}
+                    onChange={(e) => updateSetting('pfWageCap', parseFloat(e.target.value) || 15000)}
+                    min="0"
+                    className="w-[120px] text-right"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm text-slate-700">ESI Threshold</span>
+                  <TextInput
+                    type="number"
+                    value={settings.esiThreshold}
+                    onChange={(e) => updateSetting('esiThreshold', parseFloat(e.target.value) || 21000)}
+                    min="0"
+                    className="w-[120px] text-right"
+                  />
                 </div>
               </div>
 
-              {/* Statutory Limits */}
-              <div className="pt-6 border-t border-slate-200">
-                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-4 flex items-center gap-2">
-                  <IndianRupee className="h-4 w-4" />
-                  Statutory Limits
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <FieldLabel>PF Wage Cap (₹)</FieldLabel>
-                    <TextInput
-                      type="number"
-                      value={settings.pfWageCap}
-                      onChange={(e) => updateSetting('pfWageCap', parseFloat(e.target.value) || 15000)}
-                      min="0"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Max ₹15,000 for PF calculation</p>
-                  </div>
-                  <div>
-                    <FieldLabel>ESI Threshold (₹)</FieldLabel>
-                    <TextInput
-                      type="number"
-                      value={settings.esiThreshold}
-                      onChange={(e) => updateSetting('esiThreshold', parseFloat(e.target.value) || 21000)}
-                      min="0"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Gross salary limit for ESI</p>
-                  </div>
-                </div>
-              </div>
+              <div className="my-5 border-t border-slate-200" />
 
-              {/* Information Note */}
-              <div className="bg-blue-50 rounded-lg p-4 text-sm text-blue-800">
-                <p className="font-medium mb-1">Note:</p>
-                <p className="text-blue-700">
-                  These settings will be used as defaults when creating new employee payroll templates. 
-                  Individual employee settings can be customized from their payroll page.
-                </p>
+              <div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                  Pay Schedule
+                </div>
+                <div>
+                  <FieldLabel>Pay Day</FieldLabel>
+                  <TextInput
+                    type="number"
+                    value={(settings as any).payDay ?? 28}
+                    onChange={(e) => updateSetting('payDay' as any, parseInt(e.target.value) || 28)}
+                    min="1"
+                    max="31"
+                  />
+                </div>
               </div>
             </>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex gap-3 p-6 border-t border-slate-200">
-          <Button variant="secondary" className="flex-1" onClick={onClose}>
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200">
+          <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button 
-            variant="primary" 
-            className="flex-1"
+          <Button
+            variant="primary"
             onClick={handleSave}
             disabled={saveMutation.isPending || isLoading}
             iconLeft={saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -293,7 +290,7 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
             {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
           </Button>
         </div>
-      </SurfaceCard>
+      </div>
     </div>
   );
 }

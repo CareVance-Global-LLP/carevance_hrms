@@ -10,6 +10,12 @@ interface OtherEarning {
   value: number;
 }
 
+interface OtherDeduction {
+  name: string;
+  type: 'fixed' | 'percentage';
+  value: number;
+}
+
 interface FormData {
   name: string;
   description: string;
@@ -28,6 +34,7 @@ interface FormData {
   nps_percentage: number;
   vpf_percentage: number;
   other_earnings: OtherEarning[];
+  other_deductions: OtherDeduction[];
   is_default: boolean;
 }
 
@@ -49,6 +56,7 @@ const defaultFormData: FormData = {
   nps_percentage: 0,
   vpf_percentage: 0,
   other_earnings: [],
+  other_deductions: [],
   is_default: false,
 };
 
@@ -313,6 +321,7 @@ export default function SalaryStructureTemplates() {
       nps_percentage: structure.nps_percentage,
       vpf_percentage: structure.vpf_percentage,
       other_earnings: structure.other_earnings ?? [],
+      other_deductions: structure.other_deductions ?? [],
       is_default: structure.is_default,
     });
   };
@@ -642,6 +651,54 @@ export default function SalaryStructureTemplates() {
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Add Earning
+                </button>
+
+                {/* ── Other Deductions ── */}
+                <div className="flex items-center gap-3 my-3">
+                  <div className="flex-1 border-t border-gray-200"></div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">Other Deductions</span>
+                  <div className="flex-1 border-t border-gray-200"></div>
+                </div>
+
+                {formData.other_deductions.length > 0 && (
+                  <div className="space-y-1">
+                    {formData.other_deductions.map((item, idx) => (
+                      <OtherEarningRow
+                        key={idx}
+                        item={item}
+                        index={idx}
+                        onChange={(i, field, val) => {
+                          const updated = [...formData.other_deductions];
+                          (updated[i] as any)[field] = val;
+                          setFormData({ ...formData, other_deductions: updated });
+                        }}
+                        onRemove={(i) => {
+                          setFormData({
+                            ...formData,
+                            other_deductions: formData.other_deductions.filter((_, j) => j !== i),
+                          });
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      other_deductions: [
+                        ...formData.other_deductions,
+                        { name: '', type: 'fixed', value: 0 },
+                      ],
+                    })
+                  }
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
+                             text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg
+                             hover:bg-indigo-100 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Deduction
                 </button>
               </div>
 

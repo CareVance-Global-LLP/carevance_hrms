@@ -304,8 +304,11 @@ export default function PayrollRunDetailModal({
   const missingForCompletion = completenessInfo?.missing_count ?? 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50">
-      <SurfaceCard className="w-full max-w-7xl max-h-[92vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <SurfaceCard
+        className="w-full max-w-4xl h-full max-h-full overflow-hidden flex flex-col animate-slide-in-right rounded-l-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between z-10 flex-shrink-0">
           <div>
@@ -313,7 +316,7 @@ export default function PayrollRunDetailModal({
               <FileText className="h-5 w-5 text-blue-600" />
               Run #{run?.id ?? '—'} · {run?.month_year ?? monthYear ?? 'Unknown month'}
               <InfoTooltip
-                content="Every payroll run moves through 5 stages. Disbursed runs are immutable for compliance — you can't delete or re-process them."
+                content="Every payroll run moves through 6 stages. Disbursed runs are immutable for compliance — you can't delete or re-process them."
                 title="Run lifecycle"
               />
             </h2>
@@ -324,7 +327,7 @@ export default function PayrollRunDetailModal({
                 : `${totals.employees} employee${totals.employees === 1 ? '' : 's'}`}
               <span className="ml-1 text-slate-300">·</span>
               <span className="uppercase tracking-wider">
-                Step {(['draft', 'locked', 'approved', 'released', 'disbursed'].indexOf(currentState) + 1)} of 5
+                Step {(['draft', 'processing', 'locked', 'approved', 'released', 'disbursed'].indexOf(currentState) + 1)} of 6
               </span>
             </p>
           </div>

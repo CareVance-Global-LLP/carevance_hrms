@@ -216,77 +216,56 @@ export default function EmployeePayrollWizard({
   // local edits — hence we bail out after the first successful load.
   const attendanceInitialized = useRef(false);
 
-  // Save wizard drafts (attendance overrides + custom earnings/deductions)
-  // on navigation / refresh so they survive employee switches.
-  const saveDraftsMutation = useMutation({
-    mutationFn: (payload: {
-      month_year: string;
-      working_days?: number | null;
-      days_present?: number | null;
-      lop_days?: number | null;
-      paid_leave_days?: number | null;
-      overtime_hours?: number | null;
-      overtime_pay?: number | null;
-      custom_earnings?: Array<{ name: string; type: 'fixed' | 'percentage'; value: number }> | null;
-      custom_deductions?: Array<{ name: string; type: 'fixed' | 'percentage'; value: number }> | null;
-    }) => payrollApi.saveDrafts(employeeId, payload),
-    onSuccess: (_response, variables) => {
-      // Keep the employee's payroll-details cache in sync with the saved
-      // draft. Without this, navigating back to this employee inside the SPA
-      // serves the stale cached data (which predates the save) and the edits
-      // look "lost" — only a full page refresh re-fetched the saved values.
-      queryClient.setQueryData(
-        ['payroll', 'employee', employeeId, monthYear],
-        (old: any) => {
-          if (!old) return old;
-          return {
-            ...old,
-            drafts: {
-              month_year: variables.month_year,
-              working_days: variables.working_days,
-              days_present: variables.days_present,
-              lop_days: variables.lop_days,
-              paid_leave_days: variables.paid_leave_days,
-              overtime_hours: variables.overtime_hours,
-              overtime_pay: variables.overtime_pay,
-              custom_earnings: variables.custom_earnings ?? old?.drafts?.custom_earnings ?? [],
-              custom_deductions: variables.custom_deductions ?? old?.drafts?.custom_deductions ?? [],
-            },
-          };
-        }
-      );
-    },
-    onError: (error) => {
-      console.warn('Failed to save wizard drafts:', error);
-    },
-  });
+  // localStorage-based draft persistence (backend saveDrafts endpoint
+  // does not exist). Keyed by employeeId+monthYear so edits survive
+  // the per-employee remount on employee switch.
+  const DRAFT_KEY = `payroll-draft-${employeeId}-${monthYear}`;
+
+  const saveDraftToStorage = useCallback(() => {
+    try {
+      const draft = {
+        month_year: monthYear,
+        working_days: workingDays,
+        days_present: daysPresent,
+        lop_days: lOPDays,
+        paid_leave_days: paidLeaveDays,
+        overtime_hours: overtimeHours,
+        overtime_pay: overtimePayAmount,
+        custom_earnings: step2CustomEarnings,
+        custom_deductions: step2CustomDeductions,
+        saved_at: Date.now(),
+      };
+      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch { /* private mode or quota */ }
+  }, [DRAFT_KEY, monthYear, workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, overtimePayAmount, step2CustomEarnings, step2CustomDeductions]);
+
+  const loadDraftFromStorage = useCallback((): Record<string, any> | null => {
+    try {
+      const raw = window.localStorage.getItem(DRAFT_KEY);
+      if (!raw) return null;
+      const draft = JSON.parse(raw);
+      // Expire drafts after 24 hours
+      if (typeof draft.saved_at === 'number' && Date.now() - draft.saved_at > 24 * 60 * 60 * 1000) {
+        window.localStorage.removeItem(DRAFT_KEY);
+        return null;
+      }
+      return draft;
+    } catch { return null; }
+  }, [DRAFT_KEY]);
+
+  const commitAttendanceDraft = useCallback(() => {
+    saveDraftToStorage();
+  }, [saveDraftToStorage]);
 
   const handleContinue = useCallback(
     async (nextStep: number, stepNum?: number) => {
       // SAVE DRAFTS SYNCHRONOUSLY before advancing. This is the
       // GUARANTEED save — the auto-save useEffect (Change D) is
       // best-effort debounced, but this fires on the exact click that
-      // triggers the employee switch. await ensures the HTTP request
-      // completes before the wizard unmounts and React state is
-      // destroyed.
+      // triggers the employee switch. localStorage is synchronous so
+      // no await needed.
       if (stepNum !== undefined) {
-        try {
-          await saveDraftsMutation.mutateAsync({
-            month_year: monthYear,
-            working_days: parseFloat(workingDays) || null,
-            days_present: parseFloat(daysPresent) || null,
-            lop_days: parseFloat(lOPDays) || null,
-            paid_leave_days: parseFloat(paidLeaveDays) || null,
-            overtime_hours: parseFloat(overtimeHours) || null,
-            overtime_pay: parseFloat(overtimePayAmount) || null,
-            custom_earnings: step2CustomEarnings.length > 0 ? step2CustomEarnings : null,
-            custom_deductions: step2CustomDeductions.length > 0 ? step2CustomDeductions : null,
-          });
-        } catch (e) {
-          // Draft save failed — log but don't block the step advance.
-          // The step completion flag (onComplete) is more critical.
-          console.warn('Draft save failed, continuing anyway:', e);
-        }
+        saveDraftToStorage();
         onComplete?.(stepNum);
       }
       // In controlled mode, advance only when the matrix has *already*
@@ -297,28 +276,10 @@ export default function EmployeePayrollWizard({
         setCurrentStep(nextStep);
       }
     },
-    [isControlled, onComplete, setCurrentStep, saveDraftsMutation, monthYear,
+    [isControlled, onComplete, setCurrentStep, saveDraftToStorage, monthYear,
      workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours,
      overtimePayAmount, step2CustomEarnings, step2CustomDeductions],
   );
-
-  // Commit the current attendance edits to the backend without advancing
-  // the step. Used when the user finishes editing ("Done Editing") so the
-  // values survive the per-employee remount that happens on navigation.
-  const commitAttendanceDraft = useCallback(() => {
-    if (!monthYear) return;
-    saveDraftsMutation.mutate({
-      month_year: monthYear,
-      working_days: parseFloat(workingDays) || null,
-      days_present: parseFloat(daysPresent) || null,
-      lop_days: parseFloat(lOPDays) || null,
-      paid_leave_days: parseFloat(paidLeaveDays) || null,
-      overtime_hours: parseFloat(overtimeHours) || null,
-      overtime_pay: parseFloat(overtimePayAmount) || null,
-      custom_earnings: step2CustomEarnings.length > 0 ? step2CustomEarnings : null,
-      custom_deductions: step2CustomDeductions.length > 0 ? step2CustomDeductions : null,
-    });
-  }, [monthYear, saveDraftsMutation, workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, overtimePayAmount, step2CustomEarnings, step2CustomDeductions]);
 
   const [template, setTemplate] = useState<EmployeePayrollTemplate | null>(null);
   const [calculation, setCalculation] = useState<PayrollCalculation | null>(null);
@@ -525,42 +486,40 @@ export default function EmployeePayrollWizard({
   }, [data, template, annualCtc]);
 
   // Auto-populate attendance. PRIORITY:
-  //   1. Saved drafts for THIS month (restored from DB)
-  //   2. Auto-fetched attendance summary (fresh data)
-  // Drafts take priority so manual edits survive refresh/employee-switch.
-  // draft_month_year mismatch (e.g. viewing May but drafts are April) → null
-  // → falls back to auto-fetched summary. Prevents cross-month bleed.
+  //   1. Saved drafts in localStorage (survives employee-switch remounts)
+  //   2. Auto-fetched attendance summary (fresh data from server)
+  // Drafts take priority so manual edits survive employee-switch.
   useEffect(() => {
-    // Load attendance from the server only once per mount. Subsequent
-    // refetches (window focus / invalidation) must not clobber the user's
-    // local edits — the wizard remounts per employee, so a fresh mount
-    // always re-loads cleanly.
     if (attendanceInitialized.current || !data) return;
-    const drafts = data?.drafts;
-    if (drafts && drafts.month_year === data?.month_year) {
-      setWorkingDays(String(drafts.working_days ?? 26));
-      setDaysPresent(String(drafts.days_present ?? 0));
-      setLOPDays(String(drafts.lop_days ?? 0));
-      setPaidLeaveDays(String(drafts.paid_leave_days ?? 0));
-      setOvertimeHours(String(drafts.overtime_hours ?? 0));
-      setOvertimePayAmount(String(drafts.overtime_pay ?? 0));
-      setStep2CustomEarnings(drafts.custom_earnings ?? []);
-      setStep2CustomDeductions(drafts.custom_deductions ?? []);
+
+    // 1. Try localStorage first
+    const stored = loadDraftFromStorage();
+    if (stored && stored.month_year === monthYear) {
+      setWorkingDays(String(stored.working_days ?? 26));
+      setDaysPresent(String(stored.days_present ?? 0));
+      setLOPDays(String(stored.lop_days ?? 0));
+      setPaidLeaveDays(String(stored.paid_leave_days ?? 0));
+      setOvertimeHours(String(stored.overtime_hours ?? 0));
+      setOvertimePayAmount(String(stored.overtime_pay ?? 0));
+      setStep2CustomEarnings(stored.custom_earnings ?? []);
+      setStep2CustomDeductions(stored.custom_deductions ?? []);
       attendanceInitialized.current = true;
       setDraftsLoaded(true);
       setAttendanceEdited(false);
       return;
     }
+
+    // 2. Fall back to auto-fetched attendance summary
     const summary = data?.attendance_summary;
     if (!summary) return;
     setWorkingDays(String(Math.round(summary.working_days)));
     setDaysPresent(String(Math.round(summary.present_days)));
-      setLOPDays(String(Math.round(summary.total_lop_days ?? summary.legacy_lop_days ?? 0)));
+    setLOPDays(String(Math.round(summary.total_lop_days ?? summary.legacy_lop_days ?? 0)));
     setPaidLeaveDays(String(Math.round(summary.paid_leave_days ?? 0)));
     attendanceInitialized.current = true;
     setDraftsLoaded(true);
     setAttendanceEdited(false);
-  }, [data?.drafts, data?.attendance_summary, data?.month_year]);
+  }, [data?.attendance_summary, data?.month_year, loadDraftFromStorage, monthYear]);
 
   // Auto-trigger calculation when CTC becomes a positive number (after template loads).
   // The 500ms debounce lets the user finish typing before we hit the API.
@@ -591,27 +550,17 @@ export default function EmployeePayrollWizard({
     return () => clearTimeout(t);
   }, [annualCtc, template?.annual_ctc]);
 
-  // Auto-save wizard drafts on any Step 1 or Step 2 data change.
-  // Debounced at 800ms to avoid API spam while typing. Covers the
-  // "edit and navigate away" scenario. handleContinue ALSO saves
-  // synchronously to guarantee persistence before employee switch.
+  // Auto-save wizard drafts to localStorage on any Step 1 or Step 2 data
+  // change. Debounced at 800ms to avoid excessive writes while typing.
+  // handleContinue ALSO saves synchronously to guarantee persistence before
+  // employee switch.
   useEffect(() => {
     if (!monthYear || !draftsLoaded || !attendanceEdited) return;
     const t = setTimeout(() => {
-      saveDraftsMutation.mutate({
-        month_year: monthYear,
-        working_days: parseFloat(workingDays) || null,
-        days_present: parseFloat(daysPresent) || null,
-        lop_days: parseFloat(lOPDays) || null,
-        paid_leave_days: parseFloat(paidLeaveDays) || null,
-        overtime_hours: parseFloat(overtimeHours) || null,
-        overtime_pay: parseFloat(overtimePayAmount) || null,
-        custom_earnings: step2CustomEarnings.length > 0 ? step2CustomEarnings : null,
-        custom_deductions: step2CustomDeductions.length > 0 ? step2CustomDeductions : null,
-      });
+      saveDraftToStorage();
     }, 800);
     return () => clearTimeout(t);
-  }, [workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, overtimePayAmount, step2CustomEarnings, step2CustomDeductions, monthYear, employeeId, draftsLoaded, attendanceEdited]);
+  }, [workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, overtimePayAmount, step2CustomEarnings, step2CustomDeductions, monthYear, employeeId, draftsLoaded, attendanceEdited, saveDraftToStorage]);
 
   // Calculate preview
   const calculatePreview = async () => {
@@ -2022,18 +1971,15 @@ export default function EmployeePayrollWizard({
   );
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
           onClick={() => {
             if (currentStep === 0) {
-              // Step 1 (Attendance) → exit wizard back
               onBack();
             } else {
-              // Any later step → navigate to the previous step within
-              // the wizard (steps 1..5 → step - 1)
               setCurrentStep(currentStep - 1);
             }
           }}
@@ -2052,14 +1998,45 @@ export default function EmployeePayrollWizard({
       {/* Progress Steps */}
       {!hideStepIndicator && <ProgressSteps steps={WIZARD_STEPS} currentStep={currentStep} />}
 
-      {/* Step Content */}
-      <div className="mt-8">
-        {currentStep === 0 && renderStep1()}
-        {currentStep === 1 && renderStep2()}
-        {currentStep === 2 && renderStep2Statutory()}
-        {currentStep === 3 && renderStep3Benefits()}
-        {currentStep === 4 && renderStep4Loans()}
-        {currentStep === 5 && renderStep3()}
+      {/* Sidebar + Content layout */}
+      <div className="mt-8 flex flex-col lg:flex-row gap-6">
+        {/* Persistent left sidebar — Salary Breakdown */}
+        <div className="lg:w-80 flex-shrink-0">
+          <div className="lg:sticky lg:top-6 space-y-4">
+            <SurfaceCard className="p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Wallet className="h-4 w-4 text-blue-600" />
+                <h3 className="text-sm font-semibold text-slate-900">Salary Breakdown</h3>
+              </div>
+              {calculation ? (
+                <SalaryBreakdown
+                  calculation={calculation}
+                  template={template}
+                  overtimePay={parseFloat(overtimePayAmount) || 0}
+                  customEarnings={step2CustomEarnings}
+                  customDeductions={step2CustomDeductions}
+                />
+              ) : (
+                <div className="text-center py-6">
+                  <DollarSign className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                  <p className="text-xs text-slate-400">
+                    Complete Salary Structure to see breakdown
+                  </p>
+                </div>
+              )}
+            </SurfaceCard>
+          </div>
+        </div>
+
+        {/* Step Content */}
+        <div className="flex-1 min-w-0">
+          {currentStep === 0 && renderStep1()}
+          {currentStep === 1 && renderStep2()}
+          {currentStep === 2 && renderStep2Statutory()}
+          {currentStep === 3 && renderStep3Benefits()}
+          {currentStep === 4 && renderStep4Loans()}
+          {currentStep === 5 && renderStep3()}
+        </div>
       </div>
     </div>
   );

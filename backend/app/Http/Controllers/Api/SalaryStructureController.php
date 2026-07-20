@@ -56,6 +56,10 @@ class SalaryStructureController extends Controller
             'other_earnings.*.name' => 'required_with:other_earnings|string',
             'other_earnings.*.type' => 'required_with:other_earnings|in:fixed,percentage',
             'other_earnings.*.value' => 'required_with:other_earnings|numeric|min:0',
+            'other_deductions' => 'nullable|array',
+            'other_deductions.*.name' => 'required_with:other_deductions|string',
+            'other_deductions.*.type' => 'required_with:other_deductions|in:fixed,percentage',
+            'other_deductions.*.value' => 'required_with:other_deductions|numeric|min:0',
             'is_default' => 'nullable|boolean',
         ]);
 
@@ -88,6 +92,7 @@ class SalaryStructureController extends Controller
             'nps_percentage' => $validated['nps_percentage'] ?? 0,
             'vpf_percentage' => $validated['vpf_percentage'] ?? 0,
             'other_earnings' => $validated['other_earnings'] ?? null,
+            'other_deductions' => $validated['other_deductions'] ?? null,
             'is_default' => $validated['is_default'] ?? false,
             'is_active' => true,
             'currency' => 'INR',
@@ -172,6 +177,10 @@ class SalaryStructureController extends Controller
             'other_earnings.*.name' => 'required_with:other_earnings|string',
             'other_earnings.*.type' => 'required_with:other_earnings|in:fixed,percentage',
             'other_earnings.*.value' => 'required_with:other_earnings|numeric|min:0',
+            'other_deductions' => 'nullable|array',
+            'other_deductions.*.name' => 'required_with:other_deductions|string',
+            'other_deductions.*.type' => 'required_with:other_deductions|in:fixed,percentage',
+            'other_deductions.*.value' => 'required_with:other_deductions|numeric|min:0',
             'is_default' => 'nullable|boolean',
             'is_active' => 'nullable|boolean',
         ]);

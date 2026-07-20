@@ -1,23 +1,20 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
-  CheckCircle2,
-  Circle,
   Loader2,
-  Users,
-  CheckSquare,
-  Calculator,
-  Wallet,
-  Receipt,
-  FileText,
+  Clock,
   DollarSign,
-  Play,
+  Calculator,
+  Receipt,
+  Wallet,
+  FileText,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
-import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
-import { Virtuoso } from 'react-virtuoso';
 import { cn } from '@/utils/cn';
 import { useToast } from '@/components/ui/Toast';
 import { getApiErrorMessage } from '@/services/api';
@@ -26,20 +23,40 @@ interface BulkPayrollMatrixProps {
   payGroupId: number;
   monthYear: string;
   onBack: () => void;
-  selectedEmployeeIds?: number[]; // empty/undefined = show all (backwards compat)
+  selectedEmployeeIds?: number[];
+  onProcessComplete?: () => void;
 }
 
-// The 6 wizard steps, in order. The number is the 1-indexed
-// user-facing step; the internal currentStep in the wizard is
-// step - 1.
 const WIZARD_STEPS = [
-  { num: 1, label: 'Attendance', short: 'Atten', icon: Calculator },
-  { num: 2, label: 'Salary Structure', short: 'Salary', icon: Wallet },
-  { num: 3, label: 'Statutory', short: 'Stat', icon: Receipt },
-  { num: 4, label: 'Reimbursements', short: 'Reim', icon: DollarSign },
-  { num: 5, label: 'Loans & Advances', short: 'Loans', icon: FileText },
-  { num: 6, label: 'Preview & Process', short: 'Previ', icon: Play },
+  { num: 1, label: 'Leave & Attendance', icon: Clock },
+  { num: 2, label: 'Salary Structure', icon: DollarSign },
+  { num: 3, label: 'Statutory Compliances', icon: Calculator },
+  { num: 4, label: 'Reimbursements & FBP', icon: Receipt },
+  { num: 5, label: 'Loans & Advances', icon: Wallet },
+  { num: 6, label: 'Preview & Process', icon: FileText },
 ] as const;
+
+interface MatrixRowData {
+  working_days: number;
+  present_days: number;
+  lop_days: number;
+  paid_leave_days: number;
+  overtime_hours: number;
+  annual_ctc: number;
+  basic: number;
+  hra: number;
+  special_allowance: number;
+  conveyance: number;
+  other_earnings: number;
+  overtime_pay_amount: number;
+  other_deduction: number;
+  pf_employee: number;
+  pf_employer: number;
+  esi_employee: number;
+  esi_employer: number;
+  pt: number;
+  tds: number;
+}
 
 function formatMonthLabel(monthYear: string): string {
   const [y, m] = monthYear.split('-').map(Number);
@@ -47,510 +64,970 @@ function formatMonthLabel(monthYear: string): string {
   return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
+function getInitials(name: string): string {
+  return name.split(' ').map((n) => n.charAt(0).toUpperCase()).join('').substring(0, 2);
+}
+
+function fmt(n: number): string {
+  return n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
 export default function BulkPayrollMatrix({
   payGroupId,
   monthYear,
   onBack,
   selectedEmployeeIds,
+  onProcessComplete,
 }: BulkPayrollMatrixProps) {
-  // 1-indexed wizard step (1..6). The wizard's internal currentStep is
-  // this minus 1.
   const [currentStep, setCurrentStep] = useState(1);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(null);
-  const [payGroupName, setPayGroupName] = useState<string>('Pay Group');
-
+  const [matrixData, setMatrixData] = useState<Map<number, MatrixRowData>>(new Map());
   const queryClient = useQueryClient();
   const { show } = useToast();
 
-  // Fetch employees with per-step completion status
   const { data: employeesData, isLoading: isEmployeesLoading } = useQuery({
     queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
     queryFn: () =>
-      payrollApi
-        .getPayGroupEmployees(payGroupId, { month_year: monthYear })
-        .then((r) => r.data),
+      payrollApi.getPayGroupEmployees(payGroupId, { month_year: monthYear }).then((r) => r.data),
     enabled: payGroupId > 0,
   });
 
-  // Sync the pay group name + initialize currentStep from the server's
-  // last-known position (first time we see this user, default to 1).
-  useEffect(() => {
-    if (employeesData?.pay_group?.name && payGroupName === 'Pay Group') {
-      setPayGroupName(employeesData.pay_group.name);
-    }
-  }, [employeesData, payGroupName]);
-
-  // Derive the full employee list BEFORE the auto-select effect
-  // so we can filter when selectedEmployeeIds is provided.
   const allEmployees = employeesData?.employees ?? [];
 
-  // Auto-select the first employee with current_step matching the
-  // active step (or the first employee if no step is set).
-  // When selectedEmployeeIds is set, prefer employees from that list.
-  useEffect(() => {
-    if (selectedEmployeeId !== null) return;
-    if (allEmployees.length === 0) return;
-
-    // Filter to only selected employees when prop is provided
-    const filteredEmployees = selectedEmployeeIds && selectedEmployeeIds.length > 0
-      ? allEmployees.filter(e => selectedEmployeeIds.includes(e.id))
-      : allEmployees;
-
-    if (filteredEmployees.length === 0) return;
-
-    // Prefer an employee still on current step, then first pending, then first
-    const candidate =
-      filteredEmployees.find((e) => e.current_step === currentStep && e.payroll_status?.payment_status !== 'paid')
-      ?? filteredEmployees.find((e) => e.payroll_status?.payment_status !== 'paid')
-      ?? filteredEmployees.find((e) => e.current_step === currentStep)
-      ?? filteredEmployees[0];
-    setSelectedEmployeeId(candidate.id);
-  }, [employeesData, currentStep, selectedEmployeeId, selectedEmployeeIds]);
-
-  // Filter to only selected employees when selectedEmployeeIds is provided
   const employees = useMemo(() => {
     if (!selectedEmployeeIds || selectedEmployeeIds.length === 0) return allEmployees;
     const idSet = new Set(selectedEmployeeIds);
-    return allEmployees.filter(e => idSet.has(e.id));
+    return allEmployees.filter((e) => idSet.has(e.id));
   }, [allEmployees, selectedEmployeeIds]);
 
-  // Mark a single employee's current step as complete. Called when
-  // the wizard's onComplete fires (i.e. the user clicked "Continue"
-  // past a step).
-const completeStepMutation = useMutation({
-    mutationFn: ({ userId, step }: { userId: number; step: number }) => {
-      return payrollApi.completeStep(payGroupId, { step, user_ids: [userId], month_year: monthYear });
-    },
-    onError: (error) => {
-      console.log('completeStep mutation error:', error);
-    },
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({
-        queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
-      });
-
-      // Auto-advance to the next employee who hasn't completed the current step
-      const stepKey = `step${vars.step}` as const;
-      
-      // Create updated employee list with the current step marked as complete for the current user
-      const updatedEmployees = employees?.map(e => {
-          if (e.id === vars.userId) {
-            return {
-              ...e,
-              steps_completed: {
-                ...e.steps_completed,
-                [stepKey]: true
-              }
-            };
+  const { data: reimbData } = useQuery({
+    queryKey: ['payroll', 'reimbursements', 'bulk', payGroupId, monthYear],
+    queryFn: async () => {
+      const results: Record<number, { reimbursements: number; fbp_allocated: number; fbp_utilized: number }> = {};
+      await Promise.all(
+        employees.map(async (emp) => {
+          try {
+            const [rRes, fbpRes] = await Promise.all([
+              payrollApi.getEmployeeReimbursements(emp.id, 'approved', monthYear).catch(() => ({ data: [] })),
+              payrollApi.getFbpAllocations(emp.id).catch(() => ({ data: [] })),
+            ]);
+            const reimb = Array.isArray(rRes.data) ? rRes.data.reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0) : 0;
+            const allocs = Array.isArray(fbpRes.data) ? fbpRes.data : [];
+            const allocated = allocs.reduce((s: number, a: any) => s + (Number(a.allocated_amount) || 0), 0);
+            const utilized = allocs.reduce((s: number, a: any) => s + (Number(a.utilized_amount) || 0), 0);
+            results[emp.id] = { reimbursements: reimb, fbp_allocated: allocated, fbp_utilized: utilized };
+          } catch {
+            results[emp.id] = { reimbursements: 0, fbp_allocated: 0, fbp_utilized: 0 };
           }
-          return e;
-        }) ?? [];
-      
-      // Find next employee who hasn't completed this step (using updated data)
-      // First, find the index of current employee
-      const currentIndex = updatedEmployees.findIndex(e => e.id === vars.userId);
-      
-      // Look for next employee AFTER the current one in the array
-      let nextEmployee = null;
-      for (let i = 1; i <= updatedEmployees.length; i++) {
-        const checkIndex = (currentIndex + i) % updatedEmployees.length;
-        const e = updatedEmployees[checkIndex];
-        // Skip current user and find the next one
-        if (e.id !== vars.userId) {
-          nextEmployee = e;
-          break;
+        })
+      );
+      return results;
+    },
+    enabled: employees.length > 0 && currentStep >= 4,
+  });
+
+  const { data: loansData } = useQuery({
+    queryKey: ['payroll', 'loans', 'bulk', payGroupId],
+    queryFn: async () => {
+      const results: Record<number, { name: string; emi: number; outstanding: number }[]> = {};
+      await Promise.all(
+        employees.map(async (emp) => {
+          try {
+            const res = await payrollApi.listLoans({ user_id: emp.id, status: 'approved' });
+            const loans = (res.data?.loans ?? []).map((l: any) => ({
+              name: l.title || l.loan_type || 'Loan',
+              emi: Number(l.emi_amount || l.monthly_deduction || 0),
+              outstanding: Number(l.outstanding_balance || l.remaining_amount || 0),
+            }));
+            results[emp.id] = loans;
+          } catch {
+            results[emp.id] = [];
+          }
+        })
+      );
+      return results;
+    },
+    enabled: employees.length > 0 && currentStep >= 5,
+  });
+
+  useEffect(() => {
+    if (employees.length === 0) return;
+    setMatrixData((prev) => {
+      const next = new Map(prev);
+      employees.forEach((emp) => {
+        if (!next.has(emp.id)) {
+          const ctc = emp.annual_ctc ?? 0;
+          const monthly = ctc / 12;
+          const basic = Math.round(monthly * 0.4);
+          const hra = Math.round(monthly * 0.2);
+          const special = Math.round(monthly * 0.35);
+          const conveyance = 1600;
+          const gross = basic + hra + special + conveyance;
+          const pf = Math.round(basic * 0.12);
+          next.set(emp.id, {
+            working_days: 26,
+            present_days: 26,
+            lop_days: 0,
+            paid_leave_days: 0,
+            overtime_hours: 0,
+            annual_ctc: ctc,
+            basic,
+            hra,
+            special_allowance: special,
+            conveyance,
+            other_earnings: 0,
+            overtime_pay_amount: 0,
+            other_deduction: 0,
+            pf_employee: pf,
+            pf_employer: pf,
+            esi_employee: gross <= 21000 ? Math.round(gross * 0.0075) : 0,
+            esi_employer: gross <= 21000 ? Math.round(gross * 0.0325) : 0,
+            pt: 0,
+            tds: 0,
+          });
         }
-      }
-      
-      if (nextEmployee) {
-        setSelectedEmployeeId(nextEmployee.id);
-      }
-    },
-  });
+      });
+      return next;
+    });
+  }, [employees]);
 
-  // Mark the current step complete for every active member in one
-  // shot. Used by the "Done All for Step N" button in the footer.
-  const completeAllStepsMutation = useMutation({
-    mutationFn: (step: number) =>
-      payrollApi.completeAllSteps(payGroupId, { step, month_year: monthYear }),
+  useEffect(() => {
+    if (employees.length === 0) return;
+    payrollApi.listDepartmentTemplates().then(({ data }) => {
+      const tmpl = data?.templates?.[0];
+      if (!tmpl) return;
+      const bPct = (tmpl.basic_pct ?? 40) / 100;
+      const hPct = (tmpl.hra_pct ?? 20) / 100;
+      const sPct = (tmpl.special_pct ?? 35) / 100;
+      setMatrixData((prev) => {
+        const next = new Map(prev);
+        employees.forEach((emp) => {
+          const row = next.get(emp.id);
+          if (!row) return;
+          const ctc = row.annual_ctc;
+          const monthly = ctc / 12;
+          const basic = Math.round(monthly * bPct);
+          const hra = Math.round(monthly * hPct);
+          const special = Math.round(monthly * sPct);
+          const gross = basic + hra + special + row.conveyance;
+          const pf = Math.round(basic * 0.12);
+          next.set(emp.id, {
+            ...row,
+            basic,
+            hra,
+            special_allowance: special,
+            pf_employee: pf,
+            pf_employer: pf,
+            esi_employee: gross <= 21000 ? Math.round(gross * 0.0075) : 0,
+            esi_employer: gross <= 21000 ? Math.round(gross * 0.0325) : 0,
+          });
+        });
+        return next;
+      });
+    }).catch(() => {});
+  }, [employees]);
+
+  const updateCell = (empId: number, field: keyof MatrixRowData, value: string) => {
+    const num = parseFloat(value) || 0;
+    setMatrixData((prev) => {
+      const next = new Map(prev);
+      const row = next.get(empId);
+      if (row) {
+        const updated = { ...row, [field]: num };
+        if (field === 'annual_ctc') {
+          const monthly = num / 12;
+          updated.basic = Math.round(monthly * 0.4);
+          updated.hra = Math.round(monthly * 0.2);
+          updated.special_allowance = Math.round(monthly * 0.35);
+        }
+        if (['basic', 'hra', 'special_allowance', 'conveyance'].includes(field)) {
+          const gross = updated.basic + updated.hra + updated.special_allowance + updated.conveyance;
+          const pf = Math.round(updated.basic * 0.12);
+          updated.pf_employee = pf;
+          updated.pf_employer = pf;
+          updated.esi_employee = gross <= 21000 ? Math.round(gross * 0.0075) : 0;
+          updated.esi_employer = gross <= 21000 ? Math.round(gross * 0.0325) : 0;
+        }
+        next.set(empId, updated);
+      }
+      return next;
+    });
+  };
+
+  const completeStepMutation = useMutation({
+    mutationFn: (step: number) => {
+      const userIds = employees.map((e) => e.id);
+      return payrollApi.completeStep(payGroupId, { step, user_ids: userIds, month_year: monthYear });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'],
-      });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear] });
+    },
+    onError: (err: unknown) => {
+      show({ kind: 'error', message: getApiErrorMessage(err, 'Failed to save step.') });
     },
   });
 
-  // Step completion calculations for footer
-  const stepKey = `step${currentStep}` as const;
-  
-  // Count steps as completed - count employees who have marked this step complete
-  const completedCount = employees?.filter(e => e.steps_completed[stepKey] === true).length ?? 0;
-  const totalCount = employees?.length ?? 0;
-  const isStepComplete = completedCount === totalCount && totalCount > 0;
+  const [processResult, setProcessResult] = useState<{
+    succeeded: Array<{ user_id: number; payroll_item_id: number | null }>;
+    failed: Array<{ user_id: number; reason: string }>;
+  } | null>(null);
 
-  // Process All mutation — actually processes payroll for all employees
-  // in the pay group (not just marking step 6 complete).
-  const processAllMutation = useMutation({
+  const processMutation = useMutation({
     mutationFn: () => {
-      const userIds = employees?.map((e) => e.id) ?? [];
+      const userIds = employees.map((e) => e.id);
+      const firstRow = rowEntries[0]?.[1];
+      const workingDays = firstRow?.working_days ?? 26;
+      const totalLop = rows.reduce((s, r) => s + r.lop_days, 0);
+      const avgLop = employees.length > 0 ? totalLop / employees.length : 0;
       return payrollApi.processPayGroupSelectedEmployees(payGroupId, {
         month_year: monthYear,
         user_ids: userIds,
-        working_days: 26,
+        working_days: workingDays,
+        lOP_days: avgLop,
       });
     },
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'pay-group', payGroupId, 'step-status'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'runs'] });
-      queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
-      const payload = (res as any)?.data ?? res;
-      const succeeded = payload?.succeeded?.length ?? 0;
-      const failed = payload?.failed?.length ?? 0;
+      const data = res.data;
+      setProcessResult({ succeeded: data.succeeded ?? [], failed: data.failed ?? [] });
+      queryClient.invalidateQueries({ queryKey: ['payroll'] });
       show({
-        kind: failed > 0 ? 'warning' : 'success',
-        message: `Payroll processed: ${succeeded} succeeded${failed > 0 ? `, ${failed} failed` : ''}`,
+        kind: data.failed?.length > 0 ? 'warning' : 'success',
+        message: `${data.succeeded?.length ?? 0} processed, ${data.failed?.length ?? 0} failed`,
       });
+      if (data.succeeded?.length > 0) onProcessComplete?.();
     },
-    onError: (err: unknown) => {
-      show({
-        kind: 'error',
-        message: getApiErrorMessage(err, 'Failed to process payroll for pay group.'),
-      });
+    onError: (err: any) => {
+      const data = err?.response?.data;
+      if (data?.already_processed) {
+        show({ kind: 'warning', message: data.message || 'Employee already processed for this month.' });
+      } else {
+        show({ kind: 'error', message: getApiErrorMessage(err, 'Failed to process payroll.') });
+      }
     },
   });
 
-  return (
-    <div className="flex flex-col h-full -m-6">
-      {/* Header */}
-      <div className="flex items-center gap-3 p-6 border-b border-slate-200 bg-white">
-        <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
-          Back to Pay Group
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Bulk Payroll: {payGroupName}
-          </h1>
-          <p className="text-sm text-slate-500">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 mr-2">
-              {formatMonthLabel(monthYear)}
-            </span>
-            {selectedEmployeeIds && selectedEmployeeIds.length > 0
-              ? `${employees.length} of ${allEmployees.length} selected`
-              : `${employees.length} ${employees.length === 1 ? 'employee' : 'employees'} in group`}
-          </p>
+  const handleSaveAndNext = async () => {
+    if (currentStep === 6) {
+      await completeStepMutation.mutateAsync(6);
+      processMutation.mutate();
+    } else {
+      completeStepMutation.mutate(currentStep);
+      if (currentStep < 6) setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const renderInput = (empId: number, field: keyof MatrixRowData, value: number, opts?: { readOnly?: boolean }) => (
+    <td key={`${empId}-${field}`} className="px-2 py-1.5">
+      <div className="relative">
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">₹</span>
+        <input
+          type="number"
+          value={value || ''}
+          onChange={(e) => updateCell(empId, field, e.target.value)}
+          readOnly={opts?.readOnly}
+          className={cn(
+            'w-full pl-6 pr-2 py-1.5 text-sm text-right border border-slate-200 rounded-md bg-white',
+            'focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-colors',
+            '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+            opts?.readOnly && 'bg-slate-50 text-slate-700 cursor-default'
+          )}
+        />
+      </div>
+    </td>
+  );
+
+  const renderEmployeeCell = (emp: any) => (
+    <>
+      <td className="px-4 py-2">
+        <div className="flex items-center gap-2.5">
+          <div className="h-7 w-7 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-semibold text-slate-600 flex-shrink-0">
+            {getInitials(emp.name)}
+          </div>
+          <span className="font-medium text-slate-900 text-sm truncate">{emp.name}</span>
+        </div>
+      </td>
+      <td className="px-4 py-2 text-slate-500 text-sm truncate">{emp.department || emp.designation || ''}</td>
+    </>
+  );
+
+  const rows = useMemo(() => Array.from(matrixData.values()), [matrixData]);
+  const rowEntries = useMemo(() => Array.from(matrixData.entries()), [matrixData]);
+
+  const renderAttendanceStep = () => {
+    const totals = rows.reduce(
+      (acc, r) => ({
+        working: acc.working + r.working_days,
+        present: acc.present + r.present_days,
+        lop: acc.lop + r.lop_days,
+        paidLeave: acc.paidLeave + r.paid_leave_days,
+        overtime: acc.overtime + r.overtime_hours,
+      }),
+      { working: 0, present: 0, lop: 0, paidLeave: 0, overtime: 0 }
+    );
+    return (
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[180px]">Employee</th>
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[120px]">Dept</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Working Days</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Present</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[80px]">LOP</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Paid Leave</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Overtime Hrs</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Days Absent</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rowEntries.map(([empId, row]) => {
+            const emp = employees.find((e) => e.id === empId);
+            if (!emp) return null;
+            const absent = Math.max(0, row.working_days - row.present_days - row.paid_leave_days);
+            return (
+              <tr key={empId} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                {renderEmployeeCell(emp)}
+                {renderInput(empId, 'working_days', row.working_days)}
+                {renderInput(empId, 'present_days', row.present_days)}
+                {renderInput(empId, 'lop_days', row.lop_days)}
+                {renderInput(empId, 'paid_leave_days', row.paid_leave_days)}
+                {renderInput(empId, 'overtime_hours', row.overtime_hours)}
+                <td className="px-3 py-2 text-right font-semibold text-red-600 text-sm tabular-nums">{absent}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold sticky bottom-0">
+            <td className="px-4 py-3 text-left text-sm text-slate-700">Total ({employees.length})</td>
+            <td></td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">{totals.working}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">{totals.present}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">{totals.lop}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">{totals.paidLeave}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">{totals.overtime}</td>
+            <td className="px-3 py-3 text-right text-sm text-red-600">
+              {Math.max(0, totals.working - totals.present - totals.paidLeave)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    );
+  };
+
+  const renderSalaryStep = () => {
+    const totals = rows.reduce(
+      (acc, r) => ({
+        ctc: acc.ctc + r.annual_ctc,
+        basic: acc.basic + r.basic,
+        hra: acc.hra + r.hra,
+        special: acc.special + r.special_allowance,
+        conveyance: acc.conveyance + r.conveyance,
+        other: acc.other + r.other_earnings,
+        otPay: acc.otPay + r.overtime_pay_amount,
+        otherDed: acc.otherDed + r.other_deduction,
+      }),
+      { ctc: 0, basic: 0, hra: 0, special: 0, conveyance: 0, other: 0, otPay: 0, otherDed: 0 }
+    );
+    return (
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[180px]">Employee</th>
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[120px]">Dept</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[110px]">Annual CTC</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Basic</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">HRA</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[110px]">Special Allow.</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Conveyance</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Other Earnings</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Overtime Pay</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">Other Deduction</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rowEntries.map(([empId, row]) => {
+            const emp = employees.find((e) => e.id === empId);
+            if (!emp) return null;
+            return (
+              <tr key={empId} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                {renderEmployeeCell(emp)}
+                {renderInput(empId, 'annual_ctc', row.annual_ctc)}
+                {renderInput(empId, 'basic', row.basic)}
+                {renderInput(empId, 'hra', row.hra)}
+                {renderInput(empId, 'special_allowance', row.special_allowance)}
+                {renderInput(empId, 'conveyance', row.conveyance)}
+                {renderInput(empId, 'other_earnings', row.other_earnings)}
+                {renderInput(empId, 'overtime_pay_amount', row.overtime_pay_amount)}
+                {renderInput(empId, 'other_deduction', row.other_deduction)}
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold sticky bottom-0">
+            <td className="px-4 py-3 text-left text-sm text-slate-700">Total ({employees.length})</td>
+            <td></td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.ctc)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.basic)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.hra)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.special)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.conveyance)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.other)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.otPay)}</td>
+            <td className="px-3 py-3 text-right text-sm text-red-600">₹{fmt(totals.otherDed)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    );
+  };
+
+  const renderStatutoryStep = () => {
+    const totals = rows.reduce(
+      (acc, r) => ({
+        pfE: acc.pfE + r.pf_employee,
+        pfEr: acc.pfEr + r.pf_employer,
+        esiE: acc.esiE + r.esi_employee,
+        esiEr: acc.esiEr + r.esi_employer,
+        pt: acc.pt + r.pt,
+        tds: acc.tds + r.tds,
+      }),
+      { pfE: 0, pfEr: 0, esiE: 0, esiEr: 0, pt: 0, tds: 0 }
+    );
+    return (
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[180px]">Employee</th>
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[120px]">Dept</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">PF (Emp)</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">PF (Er)</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">ESI (Emp)</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">ESI (Er)</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[80px]">PT</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">TDS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rowEntries.map(([empId, row]) => {
+            const emp = employees.find((e) => e.id === empId);
+            if (!emp) return null;
+            return (
+              <tr key={empId} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                {renderEmployeeCell(emp)}
+                {renderInput(empId, 'pf_employee', row.pf_employee)}
+                {renderInput(empId, 'pf_employer', row.pf_employer)}
+                {renderInput(empId, 'esi_employee', row.esi_employee)}
+                {renderInput(empId, 'esi_employer', row.esi_employer)}
+                {renderInput(empId, 'pt', row.pt)}
+                {renderInput(empId, 'tds', row.tds)}
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold sticky bottom-0">
+            <td className="px-4 py-3 text-left text-sm text-slate-700">Total ({employees.length})</td>
+            <td></td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.pfE)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.pfEr)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.esiE)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.esiEr)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.pt)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totals.tds)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    );
+  };
+
+  const renderBenefitsStep = () => {
+    const reimbTotals = { reimb: 0, allocated: 0, utilized: 0 };
+    rowEntries.forEach(([empId]) => {
+      const d = reimbData?.[empId];
+      if (d) {
+        reimbTotals.reimb += d.reimbursements;
+        reimbTotals.allocated += d.fbp_allocated;
+        reimbTotals.utilized += d.fbp_utilized;
+      }
+    });
+    return (
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[180px]">Employee</th>
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[120px]">Dept</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[130px]">Reimbursements</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[130px]">FBP Allocated</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[130px]">FBP Utilized</th>
+          </tr>
+        </thead>
+        <tbody>
+          {employees.map((emp) => {
+            const d = reimbData?.[emp.id];
+            return (
+              <tr key={emp.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                {renderEmployeeCell(emp)}
+                <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.reimbursements ?? 0)}</td>
+                <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.fbp_allocated ?? 0)}</td>
+                <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.fbp_utilized ?? 0)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold sticky bottom-0">
+            <td className="px-4 py-3 text-left text-sm text-slate-700">Total ({employees.length})</td>
+            <td></td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(reimbTotals.reimb)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(reimbTotals.allocated)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(reimbTotals.utilized)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    );
+  };
+
+  const renderLoansStep = () => {
+    let totalEmi = 0;
+    let totalOutstanding = 0;
+    return (
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[180px]">Employee</th>
+            <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[120px]">Dept</th>
+            <th className="px-3 py-3 text-left font-semibold text-slate-700 min-w-[150px]">Loan Name</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">EMI Amount</th>
+            <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[120px]">Outstanding</th>
+          </tr>
+        </thead>
+        <tbody>
+          {employees.map((emp) => {
+            const loans = loansData?.[emp.id] ?? [];
+            if (loans.length === 0) {
+              return (
+                <tr key={emp.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                  {renderEmployeeCell(emp)}
+                  <td className="px-3 py-2 text-sm text-slate-400 italic">No active loans</td>
+                  <td className="px-3 py-2 text-right text-sm text-slate-400">—</td>
+                  <td className="px-3 py-2 text-right text-sm text-slate-400">—</td>
+                </tr>
+              );
+            }
+            return loans.map((loan, li) => {
+              totalEmi += loan.emi;
+              totalOutstanding += loan.outstanding;
+              return (
+                <tr key={`${emp.id}-${li}`} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                  {li === 0 ? renderEmployeeCell(emp) : <td colSpan={2}></td>}
+                  <td className="px-3 py-2 text-sm text-slate-700">{loan.name}</td>
+                  <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(loan.emi)}</td>
+                  <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(loan.outstanding)}</td>
+                </tr>
+              );
+            });
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold sticky bottom-0">
+            <td className="px-4 py-3 text-left text-sm text-slate-700">Total ({employees.length})</td>
+            <td></td>
+            <td></td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totalEmi)}</td>
+            <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totalOutstanding)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    );
+  };
+
+  const renderReviewStep = () => {
+    let totalGross = 0;
+    let totalDeductions = 0;
+    let totalEmployer = 0;
+    let totalReimb = 0;
+    let totalLoans = 0;
+    let totalNet = 0;
+    let totalOtPay = 0;
+    let totalLopDed = 0;
+    let totalOtherDed = 0;
+
+    const perEmp = rowEntries.map(([empId, row]) => {
+      const emp = employees.find((e) => e.id === empId);
+      const lopDeduction = row.lop_days > 0 && row.working_days > 0
+        ? Math.round(((row.basic + row.hra) / row.working_days) * row.lop_days)
+        : 0;
+      const reimb = reimbData?.[empId]?.reimbursements ?? 0;
+      const loans = (loansData?.[empId] ?? []).reduce((s, l) => s + l.emi, 0);
+      const gross = row.basic + row.hra + row.special_allowance + row.conveyance
+        + row.other_earnings + row.overtime_pay_amount + reimb;
+      const deductions = row.pf_employee + row.esi_employee + row.pt + row.tds
+        + row.other_deduction + lopDeduction + loans;
+      const employer = row.pf_employer + row.esi_employer;
+      const netPay = gross - deductions;
+      totalGross += gross;
+      totalDeductions += deductions;
+      totalEmployer += employer;
+      totalReimb += reimb;
+      totalLoans += loans;
+      totalNet += netPay;
+      totalOtPay += row.overtime_pay_amount;
+      totalLopDed += lopDeduction;
+      totalOtherDed += row.other_deduction;
+      return { emp, row, gross, deductions, employer, reimb, loans, netPay, lopDeduction };
+    });
+
+    const summaryCards = [
+      { label: 'Total Earnings', value: totalGross, color: 'text-slate-900', bg: 'bg-blue-50 border-blue-200' },
+      { label: 'Total Deductions', value: totalDeductions, color: 'text-red-600', bg: 'bg-red-50 border-red-200' },
+      { label: 'Employer Cost', value: totalEmployer, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
+      { label: 'Reimbursements', value: totalReimb, color: 'text-purple-600', bg: 'bg-purple-50 border-purple-200' },
+      { label: 'Net Pay', value: totalNet, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+    ];
+
+    return (
+      <div className="space-y-5">
+        {/* Summary Cards */}
+        <div className="grid grid-cols-5 gap-3">
+          {summaryCards.map((c) => (
+            <div key={c.label} className={`rounded-lg border p-4 ${c.bg}`}>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{c.label}</p>
+              <p className={`text-xl font-bold mt-1 tabular-nums ${c.color}`}>₹{fmt(c.value)}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{employees.length} employees</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Full Breakdown Table */}
+        <div className="border border-slate-200 rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-200">
+                  <th className="px-3 py-2 text-left font-semibold text-slate-600 text-xs uppercase tracking-wide" colSpan={2}>Employee</th>
+                  <th className="px-2 py-2 text-center font-semibold text-slate-600 text-xs uppercase tracking-wide border-l border-slate-200" colSpan={3}>Attendance</th>
+                  <th className="px-2 py-2 text-center font-semibold text-slate-600 text-xs uppercase tracking-wide border-l border-slate-200" colSpan={7}>Earnings</th>
+                  <th className="px-2 py-2 text-center font-semibold text-slate-600 text-xs uppercase tracking-wide border-l border-slate-200" colSpan={7}>Deductions</th>
+                  <th className="px-2 py-2 text-center font-semibold text-slate-600 text-xs uppercase tracking-wide border-l border-slate-200" colSpan={2}>Computed</th>
+                </tr>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-700 min-w-[160px]">Name</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-700 min-w-[100px]">Dept</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[70px] border-l border-slate-200">Work</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[70px]">Present</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[60px]">LOP</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px] border-l border-slate-200">Basic</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">HRA</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">Special</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">Conv.</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">Other Earn.</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">OT Pay</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">Reimb.</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[70px] border-l border-slate-200">PF(E)</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[70px]">ESI(E)</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[60px]">PT</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">TDS</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">Other Ded.</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px]">LOP Ded.</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[80px] border-l border-slate-200">Loan EMI</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[100px] border-l border-slate-200">Gross</th>
+                  <th className="px-2 py-2.5 text-right font-semibold text-slate-700 min-w-[100px]">Net Pay</th>
+                </tr>
+              </thead>
+              <tbody>
+                {perEmp.map(({ emp, row, gross, deductions, employer, reimb, loans, netPay, lopDeduction }) => {
+                  if (!emp) return null;
+                  return (
+                    <tr key={emp.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                            {getInitials(emp.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900 truncate">{emp.name}</p>
+                            <p className="text-xs text-slate-400">{emp.employee_code || ''}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-sm text-slate-600">{emp.department || '—'}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums border-l border-slate-200">{row.working_days}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums">{row.present_days}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-red-600">{row.lop_days}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums border-l border-slate-200">₹{fmt(row.basic)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums">₹{fmt(row.hra)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums">₹{fmt(row.special_allowance)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums">₹{fmt(row.conveyance)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums">₹{fmt(row.other_earnings)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-emerald-600">₹{fmt(row.overtime_pay_amount)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-purple-600">₹{fmt(reimb)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums border-l border-slate-200">₹{fmt(row.pf_employee)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums">₹{fmt(row.esi_employee)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums">₹{fmt(row.pt)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums">₹{fmt(row.tds)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-red-600">₹{fmt(row.other_deduction)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums text-red-600">₹{fmt(lopDeduction)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm tabular-nums border-l border-slate-200">₹{fmt(loans)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm font-semibold tabular-nums border-l border-slate-200">₹{fmt(gross)}</td>
+                      <td className="px-2 py-2.5 text-right text-sm font-bold text-emerald-700 tabular-nums">₹{fmt(netPay)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+                  <td className="px-3 py-3 text-left text-sm text-slate-700" colSpan={2}>Total ({employees.length})</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums border-l border-slate-200">
+                    {perEmp.reduce((s, e) => s + e.row.working_days, 0)}
+                  </td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums">
+                    {perEmp.reduce((s, e) => s + e.row.present_days, 0)}
+                  </td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums text-red-600">
+                    {perEmp.reduce((s, e) => s + e.row.lop_days, 0)}
+                  </td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums border-l border-slate-200">₹{fmt(perEmp.reduce((s, e) => s + e.row.basic, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums">₹{fmt(perEmp.reduce((s, e) => s + e.row.hra, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums">₹{fmt(perEmp.reduce((s, e) => s + e.row.special_allowance, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums">₹{fmt(perEmp.reduce((s, e) => s + e.row.conveyance, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums">₹{fmt(perEmp.reduce((s, e) => s + e.row.other_earnings, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums text-emerald-600">₹{fmt(totalOtPay)}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums text-purple-600">₹{fmt(totalReimb)}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums border-l border-slate-200">₹{fmt(perEmp.reduce((s, e) => s + e.row.pf_employee, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums">₹{fmt(perEmp.reduce((s, e) => s + e.row.esi_employee, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums">₹{fmt(perEmp.reduce((s, e) => s + e.row.pt, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums">₹{fmt(perEmp.reduce((s, e) => s + e.row.tds, 0))}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums text-red-600">₹{fmt(totalOtherDed)}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums text-red-600">₹{fmt(totalLopDed)}</td>
+                  <td className="px-2 py-3 text-right text-sm tabular-nums border-l border-slate-200">₹{fmt(totalLoans)}</td>
+                  <td className="px-2 py-3 text-right text-sm border-l border-slate-200">₹{fmt(totalGross)}</td>
+                  <td className="px-2 py-3 text-right text-sm text-emerald-700">₹{fmt(totalNet)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       </div>
+    );
+  };
 
+  const renderStep = () => {
+    switch (currentStep) {
+      case 1: return renderAttendanceStep();
+      case 2: return renderSalaryStep();
+      case 3: return renderStatutoryStep();
+      case 4: return renderBenefitsStep();
+      case 5: return renderLoansStep();
+      case 6: return renderReviewStep();
+      default: return renderAttendanceStep();
+    }
+  };
 
-      
-      {/* Step Tabs — gated: can only click steps whose previous step is 100% done */}
-      <div className="flex border-b border-slate-200 bg-white px-6">
-        {WIZARD_STEPS.map((step) => {
-          const isActive = currentStep === step.num;
-          const Icon = step.icon;
-          const prevStepKey = `step${step.num - 1}` as const;
-          const stepKey = `step${step.num}` as const;
-          
-          // Check if all employees have completed the previous step (for navigation gating)
-          const prevStepDone = step.num === 1 ||
-            (employees?.length > 0 && employees?.every(e => e.steps_completed?.[prevStepKey] === true));
-          
-          // Check if all employees have completed THIS specific step (for tick indicator)
-          const isStepCompleted = employees?.length > 0 && 
-            employees?.every(e => e.steps_completed?.[stepKey] === true);
-          
-          const canClick = step.num <= currentStep || prevStepDone;
-          return (
-            <button
-              key={step.num}
-              onClick={() => canClick && setCurrentStep(step.num)}
-              disabled={!canClick}
-              className={cn(
-                'flex-1 flex flex-col items-center gap-1 py-3 px-2 text-sm font-medium border-b-2 transition-colors relative',
-                isActive
-                  ? 'border-emerald-500 text-emerald-700'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300',
-                !canClick && 'opacity-40 cursor-not-allowed',
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    'h-6 w-6 rounded-full flex items-center justify-center text-xs font-semibold transition-all',
-                    isActive
-                      ? 'bg-emerald-500 text-white scale-110 shadow-sm'
-                      : 'bg-slate-200 text-slate-600',
-                  )}
-                >
-                  {step.num}
-                </span>
-                <Icon className="h-4 w-4" />
-                <span className="hidden sm:inline font-medium">{step.short}</span>
-              </div>
-              <span className="text-[10px] sm:text-xs">{step.label}</span>
-              
-              {/* Progress indicator for completed steps */}
-              {/* Show tick only if THIS step is completed by ALL employees */}
-              {!isActive && isStepCompleted && (
-                <div className="absolute top-1 right-1">
-                  <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Main layout: Left sidebar + Right panel */}
-      <div className="flex flex-1 min-h-0">
-        {/* Left Sidebar — Employee List */}
-        <div className="w-64 border-r border-slate-200 bg-white flex flex-col flex-shrink-0">
-          <div className="p-4 border-b border-slate-200">
-            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Employees
-            </h3>
-            <p className="text-sm text-slate-700 mt-1">
-              {selectedEmployeeIds && selectedEmployeeIds.length > 0
-                ? `${employees.length} selected`
-                : `${employees.length} in group`}
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
+            ← Back
+          </Button>
+          <div>
+            <h1 className="text-base font-semibold text-slate-900">
+              Run Payroll — {employeesData?.pay_group?.name || 'Pay Group'}
+            </h1>
+            <p className="text-xs text-slate-500">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 mr-2">
+                {formatMonthLabel(monthYear)}
+              </span>
+              {employees.length} employees · Step {currentStep} of 6
             </p>
           </div>
-
-          <div className="flex-1">
-            {isEmployeesLoading && (
-              <div className="flex items-center justify-center p-6 text-sm text-slate-500">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Loading employees…
-              </div>
-            )}
-
-            {!isEmployeesLoading && employees.length === 0 && (
-              <div className="p-6 text-sm text-slate-500 text-center">
-                <Users className="h-8 w-8 mx-auto text-slate-300 mb-2" />
-                <p>No employees in this pay group</p>
-                <p className="text-xs mt-1">Add employees to the pay group to process payroll</p>
-              </div>
-            )}
-
-            {!isEmployeesLoading && employees.length > 0 && (
-              <div className="p-2 h-full">
-                <Virtuoso
-                  totalCount={employees.length}
-itemContent={(index) => {
-                      const emp = employees[index];
-                     const isSelected = selectedEmployeeId === emp.id;
-                     // Show step as done only if:
-                     // 1. This is NOT a fresh payroll month (hasAnyProcessedPayroll)
-// 2. Employee has marked this step complete
-                      // Show checkmark if employee has completed this step (for both fresh payroll and re-runs)
-                      const stepDone = emp.steps_completed[stepKey] === true;
-                    
-                    // Get employee initials
-                    const initials = emp.name
-                      .split(' ')
-                      .map(n => n.charAt(0).toUpperCase())
-                      .join('')
-                      .substring(0, 2);
-                    
-                    return (
-                      <button
-                        key={emp.id}
-                        onClick={() => setSelectedEmployeeId(emp.id)}
-                        className={cn(
-                          'w-full p-3 flex items-center gap-3 text-left rounded-lg transition-all mb-1',
-                          isSelected
-                            ? 'bg-emerald-50 border border-emerald-200 shadow-sm'
-                            : 'hover:bg-slate-50 border border-transparent',
-                        )}
-                      >
-                        <div
-                          className={cn(
-                            'h-9 w-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold transition-all',
-                            isSelected
-                              ? 'bg-emerald-500 text-white shadow-sm'
-                              : 'bg-slate-200 text-slate-600',
-                          )}
-                        >
-                          {initials || emp.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm text-slate-900 truncate">
-                            {emp.name}
-                          </p>
-                          <p className="text-xs text-slate-500 truncate">
-                            {emp.designation || emp.email || 'No designation'}
-                          </p>
-                        </div>
-                        <div className="flex-shrink-0">
-                          {stepDone ? (
-                            <div className="h-6 w-6 rounded-full bg-emerald-100 flex items-center justify-center">
-                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            </div>
-                          ) : (
-                            <div className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center">
-                              <Circle className="h-3 w-3 text-slate-400" />
-                            </div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  }}
-                  style={{ height: 'calc(100% - 1rem)' }}
-                />
-              </div>
-            )}
-          </div>
-
         </div>
-
-        {/* Right Panel — Wizard Content */}
-        <div className="flex-1 overflow-y-auto bg-slate-50 min-w-0">
-          {selectedEmployeeId ? (
-            <div className="p-6">
-              <EmployeePayrollWizard
-                   isStepCompleteForAll={isStepComplete}
-                // Key on employee only — NOT on currentStep. With
-                // controlledStep wired, the wizard's internal step is
-                // fully driven by the matrix; remounting on step
-                // change would reset all form state and cause a
-                // visible flicker between the draft restore.
-                key={selectedEmployeeId}
-                employeeId={selectedEmployeeId}
-                monthYear={monthYear}
-                hideStepIndicator={true}
-                initialStep={currentStep - 1}
-                // Controlled step: 0-indexed, derived from the
-                // matrix's 1-indexed currentStep. When the user clicks
-                // Continue inside the wizard, onStepChange fires
-                // (1-indexed from the wizard's perspective) and we
-                // sync the matrix's currentStep. The wizard remounts
-                // ONLY when the user clicks a different employee in
-                // the sidebar.
-                controlledStep={currentStep - 1}
-                onStepChange={(step) => setCurrentStep(step + 1)}
-                onBack={() => setSelectedEmployeeId(null)}
-                backLabel="← Back to List"
-                onComplete={(step) => {
-                  // Mark this employee + step as complete. The wizard
-                  // passes the authoritative 1-indexed step number it
-                  // just finished (Attendance=1 … Preview=6). Using the
-                  // wizard's value (instead of the matrix's currentStep)
-                  // guarantees we never mark the wrong step even if the
-                  // two ever drift apart.
-                  completeStepMutation.mutate({
-                    userId: selectedEmployeeId,
-                    step,
-                  });
-                }}
-                onViewRun={() => {
-                  /* The matrix view is read-only on the run; the
-                     full lifecycle is available in the dashboard's
-                     RecentRuns section. */
-                }}
-              />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full text-slate-400 p-6">
-              <div className="text-center">
-                <Users className="h-12 w-12 mx-auto mb-3 text-slate-300" />
-                <p className="text-sm">Select an employee to start</p>
-              </div>
-            </div>
-          )}
-        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            const headers = ['Employee', 'Dept', 'Working Days', 'Present', 'LOP', 'Paid Leave', 'Overtime Hours',
+              'Annual CTC', 'Basic', 'HRA', 'Special', 'Conveyance', 'Other Earnings', 'Overtime Pay', 'Other Deduction',
+              'PF Emp', 'PF Er', 'ESI Emp', 'ESI Er', 'PT', 'TDS', 'Gross', 'Deductions', 'Net Pay'];
+            const csvRows = [headers.join(',')];
+            rowEntries.forEach(([empId, row]) => {
+              const emp = employees.find((e) => e.id === empId);
+              const lopDed = row.lop_days > 0 && row.working_days > 0
+                ? Math.round(((row.basic + row.hra) / row.working_days) * row.lop_days) : 0;
+              const loans = (loansData?.[empId] ?? []).reduce((s, l) => s + l.emi, 0);
+              const reimb = reimbData?.[empId]?.reimbursements ?? 0;
+              const gross = row.basic + row.hra + row.special_allowance + row.conveyance
+                + row.other_earnings + row.overtime_pay_amount + reimb;
+              const deductions = row.pf_employee + row.esi_employee + row.pt + row.tds
+                + row.other_deduction + lopDed + loans;
+              const net = gross - deductions;
+              csvRows.push(`"${emp?.name || ''}","${emp?.department || ''}",${row.working_days},${row.present_days},${row.lop_days},${row.paid_leave_days},${row.overtime_hours},${row.annual_ctc},${row.basic},${row.hra},${row.special_allowance},${row.conveyance},${row.other_earnings},${row.overtime_pay_amount},${row.other_deduction},${row.pf_employee},${row.pf_employer},${row.esi_employee},${row.esi_employer},${row.pt},${row.tds},${gross},${deductions},${net}`);
+            });
+            const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `payroll-${monthYear}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          Export CSV
+        </Button>
       </div>
 
-      {/* Footer — Progress + Continue */}
-      <div className="border-t border-slate-200 p-4 bg-white">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <span>
-                Step <strong>{currentStep}</strong> of 6
-              </span>
-              <span className="text-slate-300">•</span>
-              <span>
-                {completedCount}/{totalCount} completed
-              </span>
-              {completeStepMutation.isPending && (
-                <span className="text-xs text-slate-400 flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  saving…
-                </span>
-              )}
-              {completeAllStepsMutation.isSuccess && (
-                <span className="text-xs text-emerald-600 flex items-center gap-1">
-                  <CheckCircle2 className="h-3 w-3" />
-                  all done
-                </span>
-              )}
-            </div>
-            <div className="w-48 h-2 bg-slate-100 rounded-full mt-1.5">
-              <div
-                className="h-full bg-emerald-500 rounded-full transition-all"
-                style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
-              />
-            </div>
+      <div className="flex-1 overflow-auto bg-white">
+        {isEmployeesLoading ? (
+          <div className="flex items-center justify-center h-full text-slate-500">
+            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            Loading employees...
           </div>
-
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Done All for Step N */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => completeAllStepsMutation.mutate(currentStep)}
-              disabled={completeAllStepsMutation.isPending || isStepComplete}
-            >
-              {completeAllStepsMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+        ) : processResult ? (
+          <div className="p-6 space-y-6">
+            <div className="flex items-center gap-3">
+              {processResult.failed.length === 0 ? (
+                <CheckCircle2 className="h-8 w-8 text-emerald-500" />
               ) : (
-                <CheckSquare className="h-4 w-4 mr-1" />
+                <AlertTriangle className="h-8 w-8 text-amber-500" />
               )}
-              Done All for Step {currentStep}
-            </Button>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Payroll Processing Complete</h2>
+                <p className="text-sm text-slate-500">
+                  {formatMonthLabel(monthYear)} · {employees.length} employees
+                </p>
+              </div>
+            </div>
 
-            {/* Continue to next step — only when 100% done */}
-            {isStepComplete && currentStep < 6 && (
-              <Button
-                size="sm"
-                onClick={() => {
-                  const nextStep = currentStep + 1;
-                  setCurrentStep(nextStep);
-                  const nextStepKey = `step${nextStep}` as const;
-                  // Find next employee who hasn't completed the next step
-                  const nextEmp = employees?.find(e => !e.steps_completed[nextStepKey]);
-                  if (nextEmp) setSelectedEmployeeId(nextEmp.id);
-                }}
-              >
-                Continue to Step {currentStep + 1} →
-              </Button>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                <p className="text-xs font-medium text-emerald-600 uppercase">Processed</p>
+                <p className="text-2xl font-bold text-emerald-700 mt-1">{processResult.succeeded.length}</p>
+              </div>
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <p className="text-xs font-medium text-red-600 uppercase">Failed</p>
+                <p className="text-2xl font-bold text-red-700 mt-1">{processResult.failed.length}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-medium text-slate-600 uppercase">Total</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{employees.length}</p>
+              </div>
+            </div>
+
+            {processResult.succeeded.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-2">Successfully Processed</h3>
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="px-4 py-2.5 text-left font-semibold text-slate-700">Employee</th>
+                        <th className="px-4 py-2.5 text-left font-semibold text-slate-700">Payroll Item ID</th>
+                        <th className="px-4 py-2.5 text-center font-semibold text-slate-700">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {processResult.succeeded.map((s) => {
+                        const emp = employees.find((e) => e.id === s.user_id);
+                        return (
+                          <tr key={s.user_id} className="border-b border-slate-100">
+                            <td className="px-4 py-2.5 text-sm font-medium text-slate-900">{emp?.name || `User #${s.user_id}`}</td>
+                            <td className="px-4 py-2.5 text-sm text-slate-600">#{s.payroll_item_id || '—'}</td>
+                            <td className="px-4 py-2.5 text-center">
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                                <CheckCircle2 className="h-3 w-3" /> Processed
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
 
-            {/* Process All — only on Step 6 when all done */}
-            {isStepComplete && currentStep === 6 && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => processAllMutation.mutate()}
-                disabled={processAllMutation.isPending}
-              >
-                {processAllMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                ) : (
-                  <Play className="h-4 w-4 mr-1" />
-                )}
-                Process All Employees
-              </Button>
+            {processResult.failed.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-2">Failed</h3>
+                <div className="border border-red-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-red-50 border-b border-red-200">
+                        <th className="px-4 py-2.5 text-left font-semibold text-slate-700">Employee</th>
+                        <th className="px-4 py-2.5 text-left font-semibold text-slate-700">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {processResult.failed.map((f) => {
+                        const emp = employees.find((e) => e.id === f.user_id);
+                        return (
+                          <tr key={f.user_id} className="border-b border-red-100">
+                            <td className="px-4 py-2.5 text-sm font-medium text-slate-900">{emp?.name || `User #${f.user_id}`}</td>
+                            <td className="px-4 py-2.5 text-sm text-red-600">{f.reason}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
+
+            <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
+              <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
+                ← Back to Employees
+              </Button>
+              {onProcessComplete && (
+                <Button variant="primary" onClick={onProcessComplete}>
+                  Back to Overview →
+                </Button>
+              )}
+            </div>
           </div>
+        ) : rows.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-slate-400">
+            <p className="text-sm">No employees to display</p>
+          </div>
+        ) : (
+          renderStep()
+        )}
+      </div>
+
+      <div className="border-t border-slate-200 bg-white flex-shrink-0">
+        <div className="flex items-center justify-center gap-2 px-6 py-3">
+          {WIZARD_STEPS.map((step, i) => (
+            <div key={step.num} className="flex items-center">
+              <button
+                onClick={() => setCurrentStep(step.num)}
+                className={cn(
+                  'px-4 py-1.5 rounded-full text-sm font-medium transition-all',
+                  currentStep === step.num
+                    ? 'bg-teal-700 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                )}
+              >
+                {step.label}
+              </button>
+              {i < WIZARD_STEPS.length - 1 && (
+                <div className="w-4 h-px bg-slate-300 mx-0.5" />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200">
+          <Button variant="ghost" size="sm" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
+            ← Back
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSaveAndNext}
+            disabled={completeStepMutation.isPending || processMutation.isPending}
+          >
+            {(completeStepMutation.isPending || processMutation.isPending) && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+            {currentStep === 6
+              ? (processResult ? 'Processed ✓' : processMutation.isPending ? 'Processing Payroll…' : 'Process All Employees')
+              : 'Save & Next →'}
+          </Button>
         </div>
       </div>
     </div>

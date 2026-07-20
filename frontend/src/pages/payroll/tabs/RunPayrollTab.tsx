@@ -8,9 +8,9 @@ import { payrollApi } from '@/services/api';
 
 import PayGroupEmployees from '@/components/payroll/PayGroupEmployees';
 import BulkPayrollMatrix from '@/components/payroll/BulkPayrollMatrix';
-import EmployeePayrollWizard from '@/components/payroll/EmployeePayrollWizard';
 import PayGroupCard from '@/components/payroll/PayGroupCard';
 import PayGroupModal from '@/components/payroll/PayGroupModal';
+import PayGroupSettings from '@/pages/payroll/PayGroupSettings';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 
@@ -21,8 +21,6 @@ function currentMonthYear(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
-
-const noop = () => {};
 
 export default function RunPayrollTab() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,18 +38,32 @@ export default function RunPayrollTab() {
   const [bulkIds, setBulkIds] = useState<number[]>([]);
   const [processingEmployeeId, setProcessingEmployeeId] = useState<number | null>(null);
   const [isCreatePayGroupOpen, setIsCreatePayGroupOpen] = useState(false);
+  const [settingsPayGroupId, setSettingsPayGroupId] = useState<number | null>(null);
 
+  // Sync state from URL params: payGroup (which group is open) and emp
+  // (a specific employee to open the wizard for, e.g. from the Overview
+  // dashboard's employee shortcut). The `step` param is consumed below
+  // to auto-open the bulk matrix or Process & Pay flow.
   useEffect(() => {
-    setSelectedPayGroupId(Number(searchParams.get('payGroup')) || null);
+    const pgId = Number(searchParams.get('payGroup')) || null;
+    setSelectedPayGroupId(pgId);
+    const empId = Number(searchParams.get('emp')) || null;
+    if (empId && pgId) {
+      setProcessingEmployeeId(empId);
+    }
   }, [searchParams]);
 
   const goToPicker = () => {
     setSelectedPayGroupId(null);
+    setBulkOpen(false);
+    setProcessingEmployeeId(null);
+    setSettingsPayGroupId(null);
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
         next.delete('payGroup');
         next.delete('step');
+        next.delete('emp');
         return next;
       },
       { replace: false },
@@ -83,42 +95,51 @@ export default function RunPayrollTab() {
           </Button>
         </div>
 
-        {bulkOpen ? (
+        {/* Inline Pay Group Settings view (replaces dead Settings noop). */}
+        {settingsPayGroupId ? (
+          <PayGroupSettings
+            payGroupId={settingsPayGroupId}
+            onBack={(target) => {
+              // 'group' → back to employee list; anything else → picker.
+              setSettingsPayGroupId(null);
+              if (target === 'dashboard') {
+                goToPicker();
+              }
+            }}
+          />
+        ) : bulkOpen ? (
           <div className="overflow-hidden">
             <BulkPayrollMatrix
               payGroupId={selectedPayGroupId}
               monthYear={monthYear}
               onBack={() => setBulkOpen(false)}
               selectedEmployeeIds={bulkIds}
+              onProcessComplete={() => {
+                setBulkOpen(false);
+                navigate('/payroll');
+              }}
             />
           </div>
         ) : processingEmployeeId ? (
-          <EmployeePayrollWizard
-            key={processingEmployeeId}
-            employeeId={processingEmployeeId}
-            monthYear={monthYear}
-            initialStep={0}
-            backLabel="Back to Pay Group"
-            onBack={() => setProcessingEmployeeId(null)}
-            onViewRun={() => {}}
-            onComplete={(step) => {
-              // handleContinue fires onComplete for EVERY step (1..6). Only
-              // the final step means payroll was processed — refresh the
-              // pay-group card list so the status flips to Paid/Processed.
-              // We deliberately do NOT close the wizard here; the success
-              // view stays visible and the Back button (onBack) closes it.
-              if (step === 6) {
-                queryClient.invalidateQueries({
-                  queryKey: ['payroll', 'pay-group', selectedPayGroupId, 'employees', monthYear],
-                });
-              }
-            }}
-          />
+          <div className="overflow-hidden">
+            <BulkPayrollMatrix
+              payGroupId={selectedPayGroupId}
+              monthYear={monthYear}
+              onBack={() => setProcessingEmployeeId(null)}
+              selectedEmployeeIds={[processingEmployeeId]}
+              onProcessComplete={() => {
+                setProcessingEmployeeId(null);
+                navigate('/payroll');
+              }}
+            />
+          </div>
         ) : (
           <PayGroupEmployees
             payGroupId={selectedPayGroupId}
             monthYear={monthYear}
-            onBack={noop}
+            // Wire the component's own "Back to Payroll" button to the
+            // real picker navigation instead of a noop.
+            onBack={goToPicker}
             onSelectEmployee={(id) => setProcessingEmployeeId(id)}
             onOpenBulkPayroll={(ids) => {
               setBulkIds(ids);

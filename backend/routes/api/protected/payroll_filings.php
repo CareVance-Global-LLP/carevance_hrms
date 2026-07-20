@@ -43,7 +43,6 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
 
         // Generate All
         Route::post('/generate/all', [PayrollFilingController::class, 'generateAllFilings']);
-
         // Mark filed
         Route::post('/{id}/mark-filed', [PayrollFilingController::class, 'markFiled']);
     });

@@ -40,6 +40,8 @@ export default function PayGroupCard({
             </h3>
             <p className="text-sm text-slate-500">
               {payGroup.employee_count} employee{payGroup.employee_count === 1 ? '' : 's'}
+              <span className="mx-1.5 text-slate-300">·</span>
+              <span className="capitalize">{payGroup.pay_frequency ?? 'monthly'}</span>
             </p>
           </div>
         </div>

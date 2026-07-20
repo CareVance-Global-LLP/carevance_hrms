@@ -431,162 +431,73 @@ export default function PayGroupEmployees({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
-            Back to Payroll
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-slate-900">{payGroupName}</h1>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {formatMonthLabel(monthYear)}
-              </span>
-            </div>
-            <p className="text-sm text-slate-500">
-              {employees.length} {employees.length === 1 ? 'employee' : 'employees'} • {counts.pending} pending
-            </p>
-          </div>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {payGroupName} — Members
+          </h1>
+          <p className="text-sm text-slate-500">
+            {employees.length} employee{employees.length === 1 ? '' : 's'} · {counts.pending} pending
+          </p>
         </div>
 
-         <div className="flex items-center gap-2">
-           <Button
-             variant="primary"
-             size="sm"
-             iconLeft={<UserPlus className="h-4 w-4" />}
-             onClick={() => setShowAddEmployeeModal(true)}
-           >
-             Add Employee
-           </Button>
-
-           <Button
-             variant="ghost"
-             size="sm"
-             iconLeft={<Settings className="h-4 w-4" />}
-             onClick={() => onOpenPayGroupSettings?.(payGroupId)}
-           >
-             Settings
-           </Button>
-
+        <div className="flex items-center gap-2">
           {selectedEmployees.size > 0 && (
-            <div className="flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-lg">
-              <span className="text-sm font-medium text-emerald-900">
-                {selectedEmployees.size} pending selected
-              </span>
-              <div className="h-4 w-px bg-emerald-200" />
-              <Button
-                variant="primary"
-                size="sm"
-                iconLeft={<Play className="h-4 w-4" />}
-                onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
-              >
-                Run Payroll
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedEmployees(new Set())}
-              >
-                Clear
-              </Button>
-            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              iconLeft={<Play className="h-4 w-4" />}
+              onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
+            >
+              Run Payroll
+            </Button>
           )}
+          <Button
+            variant="secondary"
+            size="sm"
+            iconLeft={<UserPlus className="h-4 w-4" />}
+            onClick={() => setShowAddEmployeeModal(true)}
+          >
+            + Add Member
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft={<Settings className="h-4 w-4" />}
+            onClick={() => onOpenPayGroupSettings?.(payGroupId)}
+          >
+            Settings
+          </Button>
         </div>
       </div>
 
-      {/* Status Tabs */}
-      <div className="flex flex-wrap gap-2">
-        {(['all', 'pending', 'paid'] as FilterStatus[]).map((status) => (
-          <button
-            key={status}
-            onClick={() => setFilterStatus(status)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterStatus === status
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-              filterStatus === status ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-600'
-            }`}>
-              {status === 'all' ? employees.length : counts[status]}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleSelectAll}
-            className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
-          >
-            {selectedEmployees.size === filteredEmployees.length && filteredEmployees.length > 0 ? (
-              <CheckSquare className="h-4 w-4 text-emerald-600" />
-            ) : (
-              <Square className="h-4 w-4 text-slate-400" />
-            )}
-            Select All
-          </button>
-          <span className="text-slate-300">|</span>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
-          >
-            <Filter className="h-4 w-4" />
-            Filters
-            <ChevronDown className={`h-3 w-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
-          </button>
-        </div>
-
-        <div className="flex-1" />
-
-        <div className="relative">
+      {/* Search */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <TextInput
             placeholder="Search by name, email, or designation..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 w-full sm:w-72"
+            className="pl-10 w-full"
           />
         </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onBack?.()}
+        >
+          ← Back to Pay Group
+        </Button>
       </div>
 
-      {/* Expanded Filters */}
-      {showFilters && (
-        <SurfaceCard className="p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">Sort by:</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortBy)}
-                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="name">Name</option>
-                <option value="ctc">CTC (High to Low)</option>
-                <option value="status">Status</option>
-              </select>
-            </div>
-          </div>
-        </SurfaceCard>
-      )}
-
-      {/* Employees Grid */}
-      <div className="space-y-4">
+      {/* Employees Table — wireframe layout */}
+      <SurfaceCard className="p-0 overflow-hidden">
         {isLoading ? (
-          Array.from({ length: 3 }).map((_, i) => (
-            <SurfaceCard key={i} className="p-5 animate-pulse">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 bg-slate-200 rounded-full" />
-                <div className="flex-1">
-                  <div className="h-5 bg-slate-200 rounded w-1/3 mb-2" />
-                  <div className="h-4 bg-slate-200 rounded w-1/4" />
-                </div>
-              </div>
-            </SurfaceCard>
-          ))
+          <div className="p-6 space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-12 bg-slate-100 rounded animate-pulse" />
+            ))}
+          </div>
         ) : filteredEmployees.length === 0 ? (
           <div className="text-center py-12">
             <Users className="h-12 w-12 mx-auto mb-3 text-slate-300" />
@@ -598,39 +509,115 @@ export default function PayGroupEmployees({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {filteredEmployees.map((employee) => {
-              const employeeHasCtc = !!(employee.annual_ctc && employee.annual_ctc > 0);
-              return (
-              <EmployeeCard
-                key={employee.id}
-                employee={employee as any}
-                isSelected={selectedEmployees.has(employee.id)}
-                onSelect={() => toggleSelect(employee.id)}
-                onClick={() => onSelectEmployee(employee.id)}
-                onProcess={(e) => {
-                  e.stopPropagation();
-                  if (!employeeHasCtc) {
-                    setCtcInput(employee.annual_ctc ? String(employee.annual_ctc) : '');
-                    setCtcModalEmployee(employee);
-                  } else {
-                    onSelectEmployee(employee.id);
-                  }
-                }}
-                onViewPayslip={(e) => {
-                  e.stopPropagation();
-                  void viewPayslipPdf(employee.id, monthYear, employee.name);
-                }}
-                onDownloadPayslip={(e) => {
-                  e.stopPropagation();
-                  void downloadPayslipPdf(employee.id, monthYear, employee.name);
-                }}
-              />
-              );
-            })}
-          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <th className="w-10 px-4 py-2.5">
+                  <button onClick={toggleSelectAll}>
+                    {selectedEmployees.size === filteredEmployees.filter(e => e.payroll_status?.payment_status !== 'paid').length && filteredEmployees.length > 0 ? (
+                      <CheckSquare className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <Square className="h-4 w-4 text-slate-400" />
+                    )}
+                  </button>
+                </th>
+                <th className="text-left px-4 py-2.5 font-medium text-slate-600">Employee</th>
+                <th className="text-left px-4 py-2.5 font-medium text-slate-600">Designation</th>
+                <th className="text-right px-4 py-2.5 font-medium text-slate-600">CTC</th>
+                <th className="text-center px-4 py-2.5 font-medium text-slate-600">Status</th>
+                <th className="text-right px-4 py-2.5 font-medium text-slate-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredEmployees.map((employee) => {
+                const paymentStatus = employee.payroll_status?.payment_status ?? 'pending';
+                const isPaid = paymentStatus === 'paid';
+                const isProcessed = employee.payroll_status?.is_processed ?? paymentStatus !== 'pending';
+                const status: 'paid' | 'processed' | 'pending' = isPaid ? 'paid' : isProcessed ? 'processed' : 'pending';
+                const statusTone = {
+                  paid: 'bg-emerald-100 text-emerald-700',
+                  processed: 'bg-sky-100 text-sky-700',
+                  pending: 'bg-amber-100 text-amber-700',
+                };
+                const statusLabel = { paid: 'Paid', processed: 'Processed', pending: 'Draft' };
+                const initials = employee.name.split(' ').map((n: string) => n.charAt(0)).join('').substring(0, 2).toUpperCase();
+                const employeeHasCtc = !!(employee.annual_ctc && employee.annual_ctc > 0);
+
+                return (
+                  <tr key={employee.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => status === 'pending' && toggleSelect(employee.id)}
+                        disabled={status !== 'pending'}
+                        className={status !== 'pending' ? 'opacity-40 cursor-not-allowed' : ''}
+                      >
+                        {selectedEmployees.has(employee.id) ? (
+                          <CheckSquare className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <Square className="h-4 w-4 text-slate-300" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-sm font-semibold text-emerald-600">{initials}</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">{employee.name}</p>
+                          <p className="text-xs text-slate-500">{employee.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{employee.designation || '—'}</td>
+                    <td className="px-4 py-3 text-right font-medium text-slate-900">
+                      {employee.annual_ctc ? `₹${Number(employee.annual_ctc).toLocaleString('en-IN')}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${statusTone[status]}`}>
+                        {statusLabel[status]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {status === 'paid' ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
+                            <CheckCircle2 className="h-3 w-3" /> Paid
+                          </span>
+                        ) : status === 'processed' ? (
+                          <>
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full">
+                              <CheckCircle2 className="h-3 w-3" /> Processed
+                            </span>
+                            <Button variant="ghost" size="sm" onClick={() => void viewPayslipPdf(employee.id, monthYear, employee.name)}>
+                              Payslip
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              if (!employeeHasCtc) {
+                                setCtcInput(employee.annual_ctc ? String(employee.annual_ctc) : '');
+                                setCtcModalEmployee(employee);
+                              } else {
+                                onSelectEmployee(employee.id);
+                              }
+                            }}
+                          >
+                            Start →
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
-      </div>
+      </SurfaceCard>
 
        {/* Summary Footer */}
        {employees.length > 0 && (
@@ -686,8 +673,13 @@ export default function PayGroupEmployees({
               queryClient.invalidateQueries({
                 queryKey: ['payroll', 'pay-group', payGroupId, 'employees'],
               });
+              const empId = ctcModalEmployee?.id;
               setCtcModalEmployee(null);
               setCtcInput('');
+              // Open the wizard for this employee so the admin can
+              // review the 6 steps — instead of processing headlessly.
+              // The wizard reads the now-saved CTC on mount.
+              if (empId) onSelectEmployee(empId);
             }}
           />
         )}
@@ -728,20 +720,18 @@ function SetCtcModal({
     setIsSaving(true);
     setError(null);
     try {
+      // Save the CTC only — do NOT headless-process. The wizard will
+      // open (via onSaved) so the admin can review the full 6-step
+      // flow before payroll is actually run.
       await payrollApi.quickSaveCtc(employee.id, {
         annual_ctc: ctcValue,
         month_year: monthYear,
       });
-      await payrollApi.processScoped({
-        month_year: monthYear,
-        scope: 'single',
-        user_ids: [employee.id],
-      });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'stats'] });
       onSaved();
     } catch (err: any) {
-      const msg = getApiErrorMessage(err, 'Could not set CTC and process payroll.');
-      setError(msg || 'Could not set CTC and process payroll.');
+      const msg = getApiErrorMessage(err, 'Could not set CTC. Please try again.');
+      setError(msg || 'Could not set CTC. Please try again.');
     } finally {
       setIsSaving(false);
     }

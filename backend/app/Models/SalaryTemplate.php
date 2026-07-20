@@ -28,6 +28,7 @@ class SalaryTemplate extends Model
         'nps_percentage',
         'vpf_percentage',
         'other_earnings',
+        'other_deductions',
         'is_default',
         'is_active',
     ];
@@ -52,6 +53,7 @@ class SalaryTemplate extends Model
             'nps_percentage' => 'decimal:2',
             'vpf_percentage' => 'decimal:2',
             'other_earnings' => 'array',
+            'other_deductions' => 'array',
         ];
     }
 
@@ -95,11 +97,29 @@ class SalaryTemplate extends Model
 
         $otherEarningsTotal = array_sum(array_column($otherEarningsMonthly, 'amount'));
 
+        $otherDeductionsMonthly = [];
+        if (!empty($this->other_deductions) && is_array($this->other_deductions)) {
+            foreach ($this->other_deductions as $item) {
+                $name = $item['name'] ?? 'Other';
+                $type = $item['type'] ?? 'fixed';
+                $value = (float) ($item['value'] ?? 0);
+                $amount = $type === 'percentage' ? $basic * ($value / 100) : $value;
+                $otherDeductionsMonthly[] = [
+                    'name' => $name,
+                    'amount' => round($amount, 2),
+                ];
+            }
+        }
+
+        $otherDeductionsTotal = array_sum(array_column($otherDeductionsMonthly, 'amount'));
+
         $monthlyGross = $basic + $hra + $this->conveyance_amount + $da
             + $this->cca_amount + $this->education_allowance + $this->internet_allowance
             + $this->meal_allowance + $this->transport_allowance + $this->uniform_allowance
             + $this->books_periodicals + $this->fuel_maintenance + $nps + $vpf
             + $otherEarningsTotal;
+
+        $monthlyNet = $monthlyGross - $otherDeductionsTotal;
 
         return [
             'monthly' => [
@@ -118,7 +138,10 @@ class SalaryTemplate extends Model
                 'nps' => round($nps, 2),
                 'vpf' => round($vpf, 2),
                 'other_earnings' => $otherEarningsMonthly,
+                'other_deductions' => $otherDeductionsMonthly,
+                'total_other_deductions' => round($otherDeductionsTotal, 2),
                 'gross' => round($monthlyGross, 2),
+                'net_pay' => round($monthlyNet, 2),
             ],
             'annual' => [
                 'basic' => round($basic * 12, 2),
@@ -135,7 +158,11 @@ class SalaryTemplate extends Model
                 'fuel_maintenance' => round($this->fuel_maintenance * 12, 2),
                 'nps' => round($nps * 12, 2),
                 'vpf' => round($vpf * 12, 2),
+                'other_earnings' => array_map(fn ($e) => ['name' => $e['name'], 'amount' => round($e['amount'] * 12, 2)], $otherEarningsMonthly),
+                'other_deductions' => array_map(fn ($d) => ['name' => $d['name'], 'amount' => round($d['amount'] * 12, 2)], $otherDeductionsMonthly),
+                'total_other_deductions' => round($otherDeductionsTotal * 12, 2),
                 'gross' => round($monthlyGross * 12, 2),
+                'net_pay' => round($monthlyNet * 12, 2),
             ],
             'percentages' => [
                 'basic_percentage' => $this->basic_percentage,

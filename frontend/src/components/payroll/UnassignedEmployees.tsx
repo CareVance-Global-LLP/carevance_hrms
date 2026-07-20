@@ -103,12 +103,12 @@ export default function UnassignedEmployees({ onBack }: UnassignedEmployeesProps
                 key={emp.id}
                 className="flex items-center justify-between p-4 hover:bg-slate-50/50"
               >
-                <div className="flex items-center gap-4">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600 flex-shrink-0">
                     {emp.name.charAt(0).toUpperCase()}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{emp.name}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-900 truncate">{emp.name}</p>
                     <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
                       <span>{emp.email}</span>
                       {emp.designation && <span>· {emp.designation}</span>}
@@ -116,7 +116,27 @@ export default function UnassignedEmployees({ onBack }: UnassignedEmployeesProps
                     </div>
                   </div>
                 </div>
-                <UserX className="h-4 w-4 text-slate-400" />
+                <div className="flex items-center gap-6 flex-shrink-0 text-sm">
+                  <div className="text-right hidden sm:block">
+                    <p className="text-xs text-slate-400">Department</p>
+                    <p className="text-slate-700">{emp.department ?? '—'}</p>
+                  </div>
+                  <div className="text-right hidden md:block">
+                    <p className="text-xs text-slate-400">CTC (Annual)</p>
+                    <p className="text-slate-700 font-medium">
+                      {emp.annual_ctc ? `₹${Number(emp.annual_ctc).toLocaleString('en-IN')}` : '—'}
+                    </p>
+                  </div>
+                  <div className="text-right hidden lg:block">
+                    <p className="text-xs text-slate-400">Joined</p>
+                    <p className="text-slate-700">
+                      {emp.joining_date
+                        ? new Date(emp.joining_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                        : '—'}
+                    </p>
+                  </div>
+                  <UserX className="h-4 w-4 text-slate-400" />
+                </div>
               </div>
             ))}
           </div>
