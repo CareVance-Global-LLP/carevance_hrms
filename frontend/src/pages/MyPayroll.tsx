@@ -24,7 +24,6 @@ import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
-import SalaryChart from '@/components/payroll/SalaryChart';
 
 interface MyPayslip {
   id?: number;
@@ -95,21 +94,6 @@ function getLatestPayslip(payslips: MyPayslip[]): MyPayslip | null {
   if (!payslips?.length) return null;
   const sorted = [...payslips].sort((a, b) => b.month_year.localeCompare(a.month_year));
   return sorted[0] || null;
-}
-
-function getLast6MonthsData(payslips: MyPayslip[]) {
-  const months = [];
-  const now = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthYear = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const found = payslips.find(p => p.month_year === monthYear);
-    months.push({
-      name: d.toLocaleDateString('en-IN', { month: 'short' }),
-      value: found ? Number(found.net_pay || 0) : 0,
-    });
-  }
-  return months;
 }
 
 export default function MyPayrollPage() {
@@ -329,7 +313,7 @@ export default function MyPayrollPage() {
               <BarChart3 className="h-4 w-4 text-blue-600" />
               6-Month Net Pay Trend
             </h3>
-            <SalaryChart data={getLast6MonthsData(payslips)} />
+            <p className="text-sm text-slate-400">Trend chart is unavailable.</p>
           </SurfaceCard>
         </div>
 
