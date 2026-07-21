@@ -21,10 +21,12 @@ import {
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AddEmployeeToPayGroupModal from './AddEmployeeToPayGroupModal';
 
 interface PayGroupEmployeesProps {
@@ -277,7 +279,9 @@ export default function PayGroupEmployees({
   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
   const [ctcModalEmployee, setCtcModalEmployee] = useState<any | null>(null);
   const [ctcInput, setCtcInput] = useState('');
+  const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(null);
   const queryClient = useQueryClient();
+  const { show } = useToast();
 
   // Payslip PDF (same blob + open-in-new-tab pattern as DepartmentEmployees)
   const viewPayslipPdf = async (userId: number, monthYearArg: string, employeeName: string) => {
@@ -407,7 +411,7 @@ export default function PayGroupEmployees({
     );
   }, [employees]);
 
-  // Selection handlers — only unpaid (pending) employees are selectable
+  // Selection handlers — only paid employees are NOT selectable (processed can be re-processed)
   const toggleSelectAll = () => {
     const selectableIds = filteredEmployees
       .filter(e => e.payroll_status?.payment_status !== 'paid')
@@ -427,6 +431,21 @@ export default function PayGroupEmployees({
     setSelectedEmployees(newSet);
   };
 
+  const handleBulkPayroll = (ids: number[]) => {
+    const processedIds = ids.filter((id) => {
+      const emp = employees.find((e) => e.id === id);
+      if (!emp) return false;
+      const ps = emp.payroll_status?.payment_status ?? 'pending';
+      const ip = emp.payroll_status?.is_processed ?? ps !== 'pending';
+      return ps !== 'paid' && ip;
+    });
+    if (processedIds.length > 0) {
+      setReprocessConfirmIds(ids);
+    } else {
+      onOpenBulkPayroll?.(ids);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -436,19 +455,22 @@ export default function PayGroupEmployees({
             {payGroupName} — Members
           </h1>
           <p className="text-sm text-slate-500">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 mr-2">
+              {formatMonthLabel(monthYear)}
+            </span>
             {employees.length} employee{employees.length === 1 ? '' : 's'} · {counts.pending} pending
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {selectedEmployees.size > 0 && (
-            <Button
-              variant="primary"
-              size="sm"
-              iconLeft={<Play className="h-4 w-4" />}
-              onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
-            >
-              Run Payroll
+                <Button
+                  variant="primary"
+                  size="sm"
+                  iconLeft={<Play className="h-4 w-4" />}
+                  onClick={() => handleBulkPayroll(Array.from(selectedEmployees))}
+                >
+                  Run Payroll
             </Button>
           )}
           <Button
@@ -547,9 +569,9 @@ export default function PayGroupEmployees({
                   <tr key={employee.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => status === 'pending' && toggleSelect(employee.id)}
-                        disabled={status !== 'pending'}
-                        className={status !== 'pending' ? 'opacity-40 cursor-not-allowed' : ''}
+                        onClick={() => status !== 'paid' && toggleSelect(employee.id)}
+                        disabled={status === 'paid'}
+                        className={status === 'paid' ? 'opacity-40 cursor-not-allowed' : ''}
                       >
                         {selectedEmployees.has(employee.id) ? (
                           <CheckSquare className="h-4 w-4 text-emerald-600" />
@@ -581,18 +603,16 @@ export default function PayGroupEmployees({
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {status === 'paid' ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
-                            <CheckCircle2 className="h-3 w-3" /> Paid
-                          </span>
-                        ) : status === 'processed' ? (
                           <>
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full">
-                              <CheckCircle2 className="h-3 w-3" /> Processed
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
+                              <CheckCircle2 className="h-3 w-3" /> Paid
                             </span>
                             <Button variant="ghost" size="sm" onClick={() => void viewPayslipPdf(employee.id, monthYear, employee.name)}>
                               Payslip
                             </Button>
                           </>
+                        ) : status === 'processed' ? (
+                          <span className="text-xs text-slate-400 italic">Processed — select & Run Payroll to re-process</span>
                         ) : (
                           <Button
                             variant="primary"
@@ -642,9 +662,9 @@ export default function PayGroupEmployees({
                  variant="primary"
                  size="sm"
                  iconLeft={<Play className="h-4 w-4" />}
-                 onClick={() => onOpenBulkPayroll?.(Array.from(selectedEmployees))}
-               >
-                 Run Payroll
+                  onClick={() => handleBulkPayroll(Array.from(selectedEmployees))}
+                >
+                  Run Payroll
                </Button>
              </div>
            )}
@@ -683,6 +703,22 @@ export default function PayGroupEmployees({
             }}
           />
         )}
+
+        <ConfirmDialog
+          isOpen={reprocessConfirmIds !== null}
+          title="Re-process Payroll?"
+          message={`Some selected employees already have processed payroll. Re-processing will overwrite their current payroll data. Continue?`}
+          confirmLabel="Yes, Re-process"
+          cancelLabel="Cancel"
+          tone="danger"
+          onConfirm={() => {
+            if (reprocessConfirmIds) {
+              onOpenBulkPayroll?.(reprocessConfirmIds);
+            }
+            setReprocessConfirmIds(null);
+          }}
+          onClose={() => setReprocessConfirmIds(null)}
+        />
       </div>
     );
 }

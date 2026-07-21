@@ -755,7 +755,7 @@ class PayrollFilingController extends Controller
                     ],
                     'current_step' => (int) ($template?->current_step ?? 1),
                     'payroll_status' => [
-                        'is_processed' => $item && $item->payment_status !== 'pending',
+                        'is_processed' => (bool) $item,
                         'net_pay' => $item ? (float) $item->net_pay : 0,
                         'payment_status' => $item?->payment_status ?? 'pending',
                         'gross_salary' => $item ? (float) $item->gross_salary : 0,

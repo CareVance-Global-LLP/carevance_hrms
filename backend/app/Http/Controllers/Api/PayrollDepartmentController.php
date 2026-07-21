@@ -26,7 +26,9 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use App\Services\PayrollPdfService;
 
 class PayrollDepartmentController extends Controller
 {
@@ -1059,25 +1061,6 @@ class PayrollDepartmentController extends Controller
             ]
         );
 
-        // For non-draft runs (locked/approved/released), block re-processing.
-        // Draft/processing runs allow re-processing for iteration.
-        if (!in_array($payrollRun->status, ['draft', 'processing'])) {
-            $existingItem = \App\Models\PayrollItem::where('payroll_run_id', $payrollRun->id)
-                ->where('user_id', $userId)
-                ->first();
-            if ($existingItem) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Employee already processed for ' . $request->month_year . '. Run is in "' . $payrollRun->status . '" status and cannot be re-processed.',
-                    'already_processed' => true,
-                ], 422);
-            }
-        }
-
-        // Check if loan was already deducted for this employee+run (idempotent).
-        // This prevents double-deduction when re-processing a draft run.
-        $loanAlreadyDeducted = false;
-
         // Attendance: use the shared monthly summary as the source of truth.
         // If the caller (wizard manual override) explicitly passes the
         // attendance fields, those win — the summary is the fallback.
@@ -1156,32 +1139,21 @@ class PayrollDepartmentController extends Controller
         // Prevent negative days
         $daysAbsent = max(0, $workingDays - $daysPresent - $lOPDays);
 
-        // Loan / Advance EMI deduction — idempotent: skip side effects
-        // if the loan was already deducted in a previous processing for
-        // this employee+run (prevents double-deduction on draft re-runs).
+        // Loan / Advance EMI deduction — idempotent: only deduct if
+        // no loan EMI was already deducted for this employee+run.
         $loanEmiAmount = 0;
         $loanDetails = null;
+        $alreadyHasLoanEmi = \App\Models\PayrollItem::where('payroll_run_id', $payrollRun->id)
+            ->where('user_id', $userId)
+            ->where('custom_deductions', '>', 0)
+            ->exists();
         $activeLoan = \App\Models\EmployeeLoan::where('user_id', $userId)
             ->where('status', 'approved')
             ->where('remaining_amount', '>', 0)
             ->first();
         if ($activeLoan) {
             $loanEmiAmount = (float) $activeLoan->emi_amount;
-            // Check if this loan was already deducted for this run
-            $existingLoanDeduction = \App\Models\PayrollItem::where('payroll_run_id', $payrollRun->id)
-                ->where('user_id', $userId)
-                ->first();
-            $alreadyHasLoan = false;
-            if ($existingLoanDeduction) {
-                $components = $existingLoanDeduction->additional_components ?? [];
-                foreach ($components as $comp) {
-                    if (($comp['type'] ?? '') === 'loan_emi') {
-                        $alreadyHasLoan = true;
-                        break;
-                    }
-                }
-            }
-            if (!$alreadyHasLoan) {
+            if (!$alreadyHasLoanEmi) {
                 $activeLoan->increment('paid_installments');
                 $activeLoan->decrement('remaining_amount', $loanEmiAmount);
                 if ($activeLoan->remaining_amount <= 0) {
@@ -3567,7 +3539,8 @@ class PayrollDepartmentController extends Controller
             ->all();
 
         $monthLabel = $this->formatRunMonthLabel($run->month_year);
-        $sent = 0;
+        $inAppSent = 0;
+        $emailSent = 0;
         $failed = 0;
 
         foreach ($userIds as $userId) {
@@ -3577,6 +3550,7 @@ class PayrollDepartmentController extends Controller
                 continue;
             }
 
+            // In-app notification (always)
             try {
                 AppNotification::create([
                     'organization_id' => $run->organization_id,
@@ -3587,10 +3561,35 @@ class PayrollDepartmentController extends Controller
                     'message' => "Your payslip for {$monthLabel} is ready.",
                     'meta' => ['run_id' => $run->id, 'month_year' => $run->month_year],
                 ]);
-                $sent++;
+                $inAppSent++;
             } catch (\Throwable $e) {
                 $failed++;
                 \Log::warning("notifyPayslips: failed in-app for user {$userId}", ['err' => $e->getMessage()]);
+            }
+
+            // Email with PDF payslip attachment
+            if (! empty($user->email)) {
+                try {
+                    $payrollItem = PayrollItem::where('payroll_run_id', $run->id)
+                        ->where('user_id', $userId)
+                        ->first();
+
+                    if ($payrollItem) {
+                        $pdfService = app(PayrollPdfService::class);
+                        $pdf = $pdfService->generatePayslip($payrollItem);
+                        $pdfContent = $pdf->output();
+
+                        Mail::send('emails.payslip', ['employee' => $user, 'monthLabel' => $monthLabel], function ($m) use ($user, $monthLabel, $pdfContent) {
+                            $m->to($user->email)
+                              ->subject("Your Payslip for {$monthLabel}")
+                              ->attachData($pdfContent, 'payslip_' . str_replace(' ', '_', $user->name) . '.pdf', ['mime' => 'application/pdf']);
+                        });
+                        $emailSent++;
+                    }
+                } catch (\Throwable $e) {
+                    $failed++;
+                    \Log::warning("notifyPayslips: email failed for user {$userId}", ['err' => $e->getMessage()]);
+                }
             }
         }
 
@@ -3604,7 +3603,8 @@ class PayrollDepartmentController extends Controller
         return [
             'status' => $status,
             'notified_at' => $run->payslips_notified_at,
-            'sent_count' => $sent,
+            'in_app_sent' => $inAppSent,
+            'email_sent' => $emailSent,
             'failed_count' => $failed,
             'total' => count($userIds),
         ];

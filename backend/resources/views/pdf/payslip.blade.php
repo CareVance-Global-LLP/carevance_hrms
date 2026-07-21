@@ -4,198 +4,249 @@
 <meta charset="utf-8">
 <style>
   @page { margin: 12mm 15mm; }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'DejaVu Sans', sans-serif;
-    margin: 0; padding: 0;
-    color: #1f2937; font-size: 10px;
-    line-height: 1.4;
+    color: #1f2937; font-size: 9.5px; line-height: 1.4;
   }
   table { border-collapse: collapse; width: 100%; }
+  .clearfix::after { content: ''; display: table; clear: both; }
+
+  /* ── Provisional Label ── */
+  .provisional-label {
+    font-size: 8px; color: #94a3b8; text-transform: uppercase;
+    letter-spacing: 1.2px; margin-bottom: 2px;
+  }
 
   /* ── Header ── */
-  .header-table td { vertical-align: top; padding: 0; }
-  .header-left { width: 60%; }
-  .header-right { width: 40%; text-align: right; }
-  .company-name {
-    font-size: 16px; font-weight: bold; color: #1e293b;
-    margin-bottom: 2px;
-  }
-  .company-address { font-size: 9px; color: #64748b; line-height: 1.5; }
+  .header { margin-bottom: 6px; }
+  .header-left { float: left; width: 65%; }
+  .header-right { float: right; width: 35%; text-align: right; }
   .payslip-title {
-    font-size: 14px; font-weight: bold; color: #1e293b;
+    font-size: 18px; font-weight: bold; color: #1e293b;
+    margin-bottom: 1px;
   }
-  .payslip-subtitle { font-size: 9px; color: #64748b; }
-  .logo-img { max-height: 50px; max-width: 160px; }
+  .payslip-title .month { font-weight: normal; color: #475569; }
+  .company-name {
+    font-size: 12px; font-weight: bold; color: #1e293b;
+    text-transform: uppercase; margin-top: 8px; margin-bottom: 2px;
+  }
+  .company-address { font-size: 8.5px; color: #64748b; line-height: 1.6; }
+  .logo-img { max-height: 60px; max-width: 120px; margin-top: 4px; }
+
+  /* ── Divider ── */
+  .hr { border-bottom: 1px solid #e2e8f0; margin: 8px 0; }
+  .hr-thin { border-bottom: 1px solid #f1f5f9; margin: 4px 0; }
+
+  /* ── Employee Name Bar ── */
+  .employee-name-bar {
+    font-size: 13px; font-weight: bold; color: #1e293b;
+    padding: 6px 0;
+  }
+
+  /* ── Info Grid ── */
+  .info-grid { width: 100%; margin: 4px 0 6px 0; }
+  .info-grid td { padding: 3px 0; vertical-align: top; width: 25%; }
+  .info-grid .label { font-size: 7.5px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+  .info-grid .value { font-size: 9px; font-weight: 600; color: #1e293b; }
+
+  /* ── Monthly Salary Row ── */
+  .salary-row { margin: 4px 0 6px 0; }
+  .salary-row .label { font-size: 7.5px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+  .salary-row .value { font-size: 10px; font-weight: 600; color: #1e293b; }
 
   /* ── Section Title ── */
   .section-title {
-    font-size: 10px; font-weight: bold; color: #94a3b8;
+    font-size: 9px; font-weight: bold; color: #64748b;
     text-transform: uppercase; letter-spacing: 0.8px;
-    padding-bottom: 4px; margin-bottom: 6px;
+    padding-bottom: 3px; margin-bottom: 4px;
+    border-bottom: 1px solid #e2e8f0;
   }
 
-  /* ── Employee Info Bar ── */
-  .info-bar { border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 10px; }
-  .info-bar td { padding: 1px 6px; font-size: 9px; vertical-align: top; }
-  .info-bar .label { color: #64748b; }
-  .info-bar .value { font-weight: 600; color: #1e293b; }
+  /* ── Salary Details ── */
+  .salary-details { width: 100%; margin: 6px 0; }
+  .salary-details td { padding: 3px 0; vertical-align: top; width: 25%; }
+  .salary-details .label { font-size: 7.5px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+  .salary-details .value { font-size: 9.5px; font-weight: 600; color: #1e293b; }
 
-  /* ── Amount Tables ── */
-  .amount-table { width: 100%; border-collapse: collapse; }
-  .amount-table th {
-    background: #1e293b; color: #ffffff; padding: 5px 8px;
-    text-align: left; font-size: 9px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.5px;
+  /* ── Earnings/Deductions Columns ── */
+  .columns-table { width: 100%; margin-top: 8px; }
+  .columns-table td { vertical-align: top; padding: 0; }
+  .col-earnings { width: 58%; padding-right: 10px; }
+  .col-deductions { width: 42%; padding-left: 10px; }
+
+  .comp-list { width: 100%; }
+  .comp-list td { padding: 3px 0; font-size: 9px; border-bottom: 1px solid #f8fafc; }
+  .comp-list td:last-child { text-align: right; font-family: 'DejaVu Sans Mono', monospace; }
+  .comp-list .total-row td {
+    font-weight: bold; border-top: 1px solid #cbd5e1;
+    border-bottom: none; padding: 5px 0; font-size: 9.5px;
   }
-  .amount-table th.amt, .amount-table td.amt { text-align: right; }
-  .amount-table td {
-    padding: 4px 8px; border-bottom: 1px solid #f1f5f9;
-    font-size: 9px;
-  }
-  .amount-table .total-row td {
-    background: #f8fafc; font-weight: bold; border-top: 1px solid #cbd5e1;
-    border-bottom: none; padding: 5px 8px;
-  }
-  .amount-table .total-row td.amt {
+  .comp-list .total-row td:last-child {
     font-family: 'DejaVu Sans Mono', monospace;
   }
-
-  /* ── Side-by-side wrapper ── */
-  .columns-table { width: 100%; margin-top: 10px; }
-  .columns-table td { width: 50%; vertical-align: top; padding: 0; }
-  .columns-table td:first-child { padding-right: 8px; }
-  .columns-table td:last-child { padding-left: 8px; }
+  .comp-list .empty-row td {
+    color: #94a3b8; text-align: center; padding: 6px 0;
+    font-style: italic; font-size: 8.5px;
+  }
 
   /* ── Net Pay Box ── */
   .net-pay-box {
-    background: #ecfdf5; border: 1px solid #a7f3d0;
-    border-radius: 4px; padding: 10px 16px; margin-top: 12px;
+    background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 3px; padding: 10px 14px; margin-top: 10px;
   }
-  .net-pay-box table td { padding: 0; }
-  .net-pay-label { font-size: 12px; font-weight: bold; color: #065f46; }
+  .net-pay-label { font-size: 10px; font-weight: bold; color: #334155; }
   .net-pay-amount {
-    font-size: 18px; font-weight: bold; color: #059669;
+    font-size: 16px; font-weight: bold; color: #0f172a;
     font-family: 'DejaVu Sans Mono', monospace; text-align: right;
+  }
+  .net-pay-words {
+    font-size: 8.5px; color: #475569; margin-top: 3px;
+    font-style: italic;
   }
 
   /* ── Footer ── */
   .footer {
-    margin-top: 18px; padding-top: 8px;
+    margin-top: 14px; padding-top: 6px;
     border-top: 1px solid #e2e8f0;
-    font-size: 8px; color: #94a3b8; text-align: center; line-height: 1.6;
+    font-size: 7.5px; color: #94a3b8; line-height: 1.6;
   }
-
-  /* ── Misc ── */
-  .hr { border-bottom: 1px solid #e2e8f0; margin: 10px 0; }
-  .mono { font-family: 'DejaVu Sans Mono', monospace; }
-  .text-muted { color: #94a3b8; }
 </style>
 </head>
 <body>
 
+<!-- ════════════ PROVISIONAL LABEL ════════════ -->
+<div class="provisional-label">Provisional</div>
+
 <!-- ════════════ HEADER ════════════ -->
-<table class="header-table">
-  <tr>
-    <td class="header-left">
-      @if($logoBase64)
-        <img src="{{ $logoBase64 }}" alt="Logo" class="logo-img"><br>
-      @endif
-      <div class="company-name">{{ $employerName }}</div>
-      <div class="company-address">{!! $companyAddress !!}</div>
-    </td>
-    <td class="header-right">
-      <div class="payslip-title">Payslip</div>
-      <div class="payslip-subtitle">for {{ $monthYear }}</div>
-    </td>
-  </tr>
-</table>
+<div class="clearfix header">
+  <div class="header-left">
+    <div class="payslip-title">
+      Payslip <span class="month">{{ \Carbon\Carbon::parse($monthYear . '-01')->format('F Y') }}</span>
+    </div>
+    <div class="company-name">{{ $employerName }}</div>
+    <div class="company-address">{!! $companyAddress !!}</div>
+  </div>
+  <div class="header-right">
+    @if($logoBase64)
+      <img src="{{ $logoBase64 }}" alt="Logo" class="logo-img">
+    @endif
+  </div>
+</div>
 
 <div class="hr"></div>
 
-<!-- ════════════ EMPLOYEE INFO BAR ════════════ -->
-<table class="info-bar">
+<!-- ════════════ EMPLOYEE NAME BAR ════════════ -->
+<div class="employee-name-bar">{{ $employeeName }}</div>
+<div class="hr-thin"></div>
+
+<!-- ════════════ EMPLOYEE INFO GRID ════════════ -->
+<table class="info-grid">
   <tr>
-    <td class="label">Employee</td>
-    <td class="value">{{ $employeeName }}</td>
-    <td class="label" style="padding-left:20px;">Designation</td>
-    <td class="value">{{ $designation ?? '—' }}</td>
+    <td>
+      <div class="label">Employee Number</div>
+      <div class="value">{{ $employeeCode ?? '—' }}</div>
+    </td>
+    <td>
+      <div class="label">Date Joined</div>
+      <div class="value">{{ $dateOfJoining ?? '—' }}</div>
+    </td>
+    <td>
+      <div class="label">Department</div>
+      <div class="value">{{ $department ?? '—' }}</div>
+    </td>
+    <td>
+      <div class="label">Sub Department</div>
+      <div class="value">{{ $subDepartment ?? '—' }}</div>
+    </td>
   </tr>
   <tr>
-    <td class="label">Employee ID</td>
-    <td class="value">{{ $employeeCode ?? '—' }}</td>
-    <td class="label" style="padding-left:20px;">PAN</td>
-    <td class="value">{{ $panNumber ?? '—' }}</td>
-  </tr>
-  <tr>
-    <td class="label">Bank Account</td>
-    <td class="value">{{ $bankAccount ?? '—' }}</td>
-    <td class="label" style="padding-left:20px;">IFSC</td>
-    <td class="value">{{ $bankIfsc ?? '—' }}</td>
+    <td>
+      <div class="label">Designation</div>
+      <div class="value">{{ $designation ?? '—' }}</div>
+    </td>
+    <td>
+      <div class="label">Payment Mode</div>
+      <div class="value">{{ $paymentMode ?? 'Bank Transfer' }}</div>
+    </td>
+    <td>
+      <div class="label">UAN</div>
+      <div class="value">{{ $uanNumber ?? '—' }}</div>
+    </td>
+    <td>
+      <div class="label">PF Number</div>
+      <div class="value">{{ $pfAccountNumber ?? '—' }}</div>
+    </td>
   </tr>
 </table>
 
-<!-- ════════════ PF / UAN ROW ════════════ -->
-<table class="info-bar" style="margin-top:6px;">
+<!-- ════════════ MONTHLY SALARY ════════════ -->
+<div class="salary-row">
+  <div class="label">Monthly Salary</div>
+  <div class="value">₹ {{ number_format($grossSalary, 2) }}</div>
+</div>
+<div class="hr-thin"></div>
+
+<!-- ════════════ SALARY DETAILS ════════════ -->
+<div class="section-title">Salary Details</div>
+<table class="salary-details">
   <tr>
-    <td class="label">PF Account No.</td>
-    <td class="value">{{ $pfAccountNumber ?? '—' }}</td>
-    <td class="label" style="padding-left:20px;">UAN</td>
-    <td class="value">{{ $uanNumber ?? '—' }}</td>
+    <td>
+      <div class="label">Actual Payable Days</div>
+      <div class="value">{{ $paidDays }}</div>
+    </td>
+    <td>
+      <div class="label">Total Working Days</div>
+      <div class="value">{{ $workingDays }}</div>
+    </td>
+    <td>
+      <div class="label">Loss Of Pay Days</div>
+      <div class="value">{{ $lopDays }}</div>
+    </td>
+    <td>
+      <div class="label">Days Payable</div>
+      <div class="value">{{ $paidDays }}</div>
+    </td>
   </tr>
 </table>
 
-<!-- ════════════ EARNINGS & DEDUCTIONS SIDE-BY-SIDE ════════════ -->
+<!-- ════════════ EARNINGS & DEDUCTIONS ════════════ -->
 <table class="columns-table">
   <tr>
-    <!-- EARNINGS -->
-    <td>
+    <!-- EARNINGS (58%) -->
+    <td class="col-earnings">
       <div class="section-title">Earnings</div>
-      <table class="amount-table">
-        <tr>
-          <th>Component</th>
-          <th class="amt">Amount (₹)</th>
-          <th class="amt">YTD</th>
-        </tr>
+      <table class="comp-list">
         @forelse($earningsComponents as $comp)
         <tr>
           <td>{{ $comp['label'] }}</td>
-          <td class="amt">{{ number_format($comp['amount'], 2) }}</td>
-          <td class="amt text-muted">—</td>
+          <td>{{ number_format($comp['amount'], 2) }}</td>
         </tr>
         @empty
-        <tr><td colspan="3" class="text-muted" style="text-align:center;padding:8px;">No earnings</td></tr>
+        <tr class="empty-row"><td colspan="2">No earnings</td></tr>
         @endforelse
         <tr class="total-row">
-          <td>Gross Salary</td>
-          <td class="amt">{{ number_format($grossSalary, 2) }}</td>
-          <td class="amt text-muted">—</td>
+          <td>Total Earnings (A)</td>
+          <td>{{ number_format($grossSalary, 2) }}</td>
         </tr>
       </table>
     </td>
 
-    <!-- DEDUCTIONS -->
-    <td>
-      <div class="section-title">Deductions</div>
-      <table class="amount-table">
-        <tr>
-          <th>Component</th>
-          <th class="amt">Amount (₹)</th>
-          <th class="amt">YTD</th>
-        </tr>
+    <!-- DEDUCTIONS (42%) -->
+    <td class="col-deductions">
+      <div class="section-title">Taxes &amp; Deductions</div>
+      <table class="comp-list">
         @forelse($deductionsComponents as $comp)
         <tr>
           <td>{{ $comp['label'] }}</td>
-          <td class="amt">{{ number_format($comp['amount'], 2) }}</td>
-          <td class="amt text-muted">—</td>
+          <td>{{ number_format($comp['amount'], 2) }}</td>
         </tr>
         @empty
-        <tr><td colspan="3" class="text-muted" style="text-align:center;padding:8px;">No deductions</td></tr>
+        <tr class="empty-row"><td colspan="2">No deductions</td></tr>
         @endforelse
         <tr class="total-row">
-          <td>Total Deductions</td>
-          <td class="amt">{{ number_format($totalDeductions, 2) }}</td>
-          <td class="amt text-muted">—</td>
+          <td>Total Deductions (B)</td>
+          <td>{{ number_format($totalDeductions, 2) }}</td>
         </tr>
       </table>
     </td>
@@ -204,19 +255,25 @@
 
 <!-- ════════════ NET PAY ════════════ -->
 <div class="net-pay-box">
-  <table>
+  <table style="width:100%">
     <tr>
-      <td class="net-pay-label">Net Pay</td>
-      <td class="net-pay-amount">₹ {{ number_format($netPay, 2) }}</td>
+      <td style="width:60%">
+        <div class="net-pay-label">Net Salary Payable (A − B)</div>
+      </td>
+      <td style="width:40%">
+        <div class="net-pay-amount">₹ {{ number_format($netPay, 2) }}</div>
+      </td>
     </tr>
   </table>
+  @if(!empty($netPayWords))
+  <div class="net-pay-words">Net Salary in words: <strong>{{ $netPayWords }}</strong></div>
+  @endif
 </div>
 
 <!-- ════════════ FOOTER ════════════ -->
 <div class="footer">
-  <strong>This is a computer-generated payslip and does not require signature.</strong><br>
-  Generated on: {{ $generatedAt }}<br>
-  &copy; {{ date('Y') }} {{ $employerName }}. All rights reserved.
+  <div>All figures are in Indian Rupees (₹). This is a computer-generated payslip and does not require a signature.</div>
+  <div>Generated on: {{ $generatedAt }} &bull; &copy; {{ date('Y') }} {{ $employerName }}. All rights reserved.</div>
 </div>
 
 </body>

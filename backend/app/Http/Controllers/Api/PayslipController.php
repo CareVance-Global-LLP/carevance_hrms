@@ -204,10 +204,28 @@ class PayslipController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $payslip = Payslip::with(['employee', 'payGroup'])->find($id);
+        $payslip = Payslip::with(['employee.organization', 'payGroup'])->find($id);
 
         if (!$payslip) {
             return response()->json(['success' => false, 'message' => 'Payslip not found.'], 404);
+        }
+
+        $employee = $payslip->employee;
+        $org = $employee?->organization;
+
+        $companyAddress = null;
+        if ($org) {
+            $addressParts = array_filter([
+                $org->address_line,
+                trim(($org->city ?? '') . ', ' . ($org->state ?? '') . ' ' . ($org->postal_code ?? '')),
+                $org->country,
+            ]);
+            $companyAddress = implode(', ', $addressParts) ?: null;
+        }
+
+        $logoUrl = null;
+        if ($org) {
+            $logoUrl = $org->settings['branding']['logo_url'] ?? null;
         }
 
         return response()->json([
@@ -251,19 +269,25 @@ class PayslipController extends Controller
                     'pt' => $payslip->ytd_pt,
                     'lwf' => $payslip->ytd_lwf,
                 ],
-                'employee' => $payslip->employee ? [
-                    'id' => $payslip->employee->id,
-                    'name' => $payslip->employee->name,
-                    'employee_code' => $payslip->employee->employee_code ?? '',
-                    'designation' => $payslip->employee->designation ?? '',
-                    'department' => $payslip->employee->department?->name ?? '',
-                    'date_of_joining' => $payslip->employee->doj?->format('d-M-Y') ?? '',
-                    'pan' => $payslip->employee->pan_number ?? '',
-                    'uan' => $payslip->employee->uan_number ?? '',
-                    'pf_account' => $payslip->employee->pf_account ?? '',
-                    'bank_account' => $payslip->employee->bank_account ?? '',
-                    'ifsc' => $payslip->employee->ifsc ?? '',
-                    'pt_state' => $payslip->employee->pt_state ?? '',
+                'employee' => $employee ? [
+                    'id' => $employee->id,
+                    'name' => $employee->name,
+                    'employee_code' => $employee->employee_code ?? '',
+                    'designation' => $employee->designation ?? '',
+                    'department' => $employee->department?->name ?? '',
+                    'date_of_joining' => $employee->doj?->format('d-M-Y') ?? '',
+                    'pan' => $employee->pan_number ?? '',
+                    'uan' => $employee->uan_number ?? '',
+                    'pf_account' => $employee->pf_account ?? '',
+                    'bank_account' => $employee->bank_account ?? '',
+                    'ifsc' => $employee->ifsc ?? '',
+                    'pt_state' => $employee->pt_state ?? '',
+                ] : null,
+                'organization' => $org ? [
+                    'name' => $org->name,
+                    'logo_url' => $logoUrl,
+                    'address' => $companyAddress,
+                    'pan' => $org->pan ?? null,
                 ] : null,
                 'has_pdf' => !empty($payslip->pdf_path),
                 'pdf_url' => $payslip->pdf_path ? Storage::url($payslip->pdf_path) : null,

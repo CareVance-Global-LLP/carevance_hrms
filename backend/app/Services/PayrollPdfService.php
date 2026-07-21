@@ -92,6 +92,10 @@ class PayrollPdfService
             'employeeName'          => $user->name,
             'employeeCode'          => $user->employeeWorkInfo?->employee_code,
             'designation'           => $user->employeeWorkInfo?->designation,
+            'department'            => $user->employeeWorkInfo?->department?->name ?? $user->employeeWorkInfo?->department_name ?? null,
+            'subDepartment'         => null,
+            'dateOfJoining'         => $user->employeeWorkInfo?->date_of_joining?->format('d-M-Y') ?? null,
+            'paymentMode'           => 'Bank Transfer',
             'panNumber'             => $user->employeeProfile?->pan_number,
             'uanNumber'             => $user->payrollProfile?->uan ?? $user->employeeProfile?->uan_number,
             'pfAccountNumber'       => $user->payrollProfile?->pf_account_number,
@@ -104,6 +108,7 @@ class PayrollPdfService
             'grossSalary'           => (float) ($item->gross_salary ?? 0),
             'totalDeductions'       => (float) ($item->total_deductions ?? 0),
             'netPay'                => (float) ($item->net_pay ?? 0),
+            'netPayWords'           => $this->numberToWords($item->net_pay ?? 0),
             'earningsComponents'    => $earningsComponents,
             'deductionsComponents'  => $deductionsComponents,
             'generatedAt'           => now()->format('d M Y, h:i A'),
@@ -190,5 +195,43 @@ class PayrollPdfService
             }
         }
         return $components;
+    }
+
+    private function numberToWords(float $number): string
+    {
+        $number = round($number, 2);
+        $whole = (int) $number;
+        $fraction = round(($number - $whole) * 100);
+
+        if ($whole === 0 && $fraction === 0) {
+            return 'Zero Rupees Only';
+        }
+
+        $ones = [
+            '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+            'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+            'Seventeen', 'Eighteen', 'Nineteen',
+        ];
+        $tens = [
+            '', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety',
+        ];
+
+        $convert = function ($num) use ($ones, $tens, &$convert) {
+            if ($num === 0) return '';
+            if ($num < 20) return $ones[$num];
+            if ($num < 100) return $tens[(int)($num / 10)] . ($num % 10 ? ' ' . $ones[$num % 10] : '');
+            if ($num < 1000) return $ones[(int)($num / 100)] . ' Hundred' . ($num % 100 ? ' and ' . $convert($num % 100) : '');
+            if ($num < 100000) return $convert((int)($num / 1000)) . ' Thousand' . ($num % 1000 ? ' ' . $convert($num % 1000) : '');
+            if ($num < 10000000) return $convert((int)($num / 100000)) . ' Lakh' . ($num % 100000 ? ' ' . $convert($num % 100000) : '');
+            return $convert((int)($num / 10000000)) . ' Crore' . ($num % 10000000 ? ' ' . $convert($num % 10000000) : '');
+        };
+
+        $words = $convert($whole) . ' Rupees';
+        if ($fraction > 0) {
+            $words .= ' and ' . $convert($fraction) . ' Paise';
+        }
+        $words .= ' Only';
+
+        return $words;
     }
 }
