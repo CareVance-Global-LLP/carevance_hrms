@@ -133,6 +133,27 @@ function TaxDeclarationsInline({ onOpenFull }: { onOpenFull: () => void }) {
           <button
             type="button"
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            onClick={() => {
+              if (!filtered.length) return;
+              const headers = ['Employee', 'Pan', 'Regime', 'Total Declared', 'Status'];
+              const rows = filtered.map((d: any) => [
+                d.user?.name ?? '',
+                d.pan_number ?? '',
+                d.tax_regime ?? 'old',
+                d.total_declared_amount ?? 0,
+                d.status ?? '',
+              ]);
+              const csv = [headers.join(','), ...rows.map((r: any[]) => r.join(','))].join('\n');
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'tax-declarations.csv';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }}
           >
             <Download className="h-3.5 w-3.5" />
             Export CSV

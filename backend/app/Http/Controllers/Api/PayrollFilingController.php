@@ -722,7 +722,33 @@ class PayrollFilingController extends Controller
                 ->get()
                 ->keyBy('user_id');
 
-            $employees = collect($userIds)->map(function ($uid) use ($users, $payrollItems, $templates, $monthYear) {
+            // Fetch attendance summaries in bulk for the requested month
+            $attendanceService = app(\App\Services\Attendance\AttendanceService::class);
+            $attendanceMap = [];
+            foreach ($userIds as $uid) {
+                $u = $users->get($uid);
+                if (!$u) continue;
+                try {
+                    $summary = $attendanceService->monthlyAttendanceSummary($u, $monthYear);
+                    $attendanceMap[$uid] = [
+                        'working_days' => round($summary['working_days'] ?? 0),
+                        'present_days' => round($summary['present_days'] ?? 0),
+                        'paid_leave_days' => round($summary['paid_leave_days'] ?? 0),
+                        'lop_days' => round($summary['total_lop_days'] ?? 0),
+                        'overtime_hours' => round(($summary['overtime_seconds'] ?? 0) / 3600, 2),
+                    ];
+                } catch (\Throwable $e) {
+                    $attendanceMap[$uid] = [
+                        'working_days' => 26,
+                        'present_days' => 26,
+                        'paid_leave_days' => 0,
+                        'lop_days' => 0,
+                        'overtime_hours' => 0,
+                    ];
+                }
+            }
+
+            $employees = collect($userIds)->map(function ($uid) use ($users, $payrollItems, $templates, $attendanceMap, $monthYear) {
                 $u = $users->get($uid);
                 if (!$u) return null;
 
@@ -745,6 +771,7 @@ class PayrollFilingController extends Controller
                     'designation' => $u->employeeWorkInfo?->designation,
                     'department' => $group?->name,
                     'annual_ctc' => (float) ($template?->annual_ctc ?? 0),
+                    'attendance' => $attendanceMap[$uid] ?? null,
                     'steps_completed' => [
                         'step1' => $stepsMatch && (bool) ($template?->step1_completed),
                         'step2' => $stepsMatch && (bool) ($template?->step2_completed),

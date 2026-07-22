@@ -58,7 +58,9 @@ class EmployeePayrollCardController extends Controller
 
             return [
                 'id' => $emp->id,
-                'name' => trim(($emp->employeeProfile->first_name ?? '') . ' ' . ($emp->employeeProfile->last_name ?? '')) ?: $emp->email,
+                'name' => trim(($emp->employeeProfile->first_name ?? '') . ' ' . ($emp->employeeProfile->last_name ?? ''))
+                    ?: ($emp->employeeProfile->first_name ?? null)
+                    ?: $emp->email,
                 'email' => $emp->email,
                 'department' => $dept?->name ?? null,
                 'department_id' => $dept?->id ?? null,
@@ -118,7 +120,9 @@ class EmployeePayrollCardController extends Controller
             'success' => true,
             'employee' => [
                 'id' => $employee->id,
-                'name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')),
+                'name' => trim(($employee->employeeProfile->first_name ?? '') . ' ' . ($employee->employeeProfile->last_name ?? ''))
+                    ?: ($employee->employeeProfile->first_name ?? null)
+                    ?: $employee->email,
                 'email' => $employee->email,
                 'department' => $employee->groups->first()?->name ?? null,
                 'department_id' => $employee->groups->first()?->id ?? null,

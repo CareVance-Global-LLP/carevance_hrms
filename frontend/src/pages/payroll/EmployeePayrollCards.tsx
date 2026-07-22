@@ -271,7 +271,12 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
           ) : selectedEmployee ? (
             <div>
               <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-bold text-gray-900">{selectedEmployee.name} — Payroll Card</div>
+                <div>
+                  <div className="text-sm font-bold text-gray-900">{selectedEmployee.name} — Payroll Card</div>
+                  {selectedEmployee.department && (
+                    <div className="text-xs text-gray-500">{selectedEmployee.department}</div>
+                  )}
+                </div>
                 <Button
                   variant="primary"
                   size="sm"

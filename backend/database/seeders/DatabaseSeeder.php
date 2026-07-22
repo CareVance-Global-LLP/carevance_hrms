@@ -79,5 +79,8 @@ class DatabaseSeeder extends Seeder
                 ]
             );
         }
+
+        // Seed comprehensive demo data for all entities
+        $this->call(ComprehensiveDemoSeeder::class);
     }
 }

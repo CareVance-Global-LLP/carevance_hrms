@@ -161,37 +161,37 @@ export default function BulkPayrollMatrix({
     setMatrixData((prev) => {
       const next = new Map(prev);
       employees.forEach((emp) => {
-        if (!next.has(emp.id)) {
-          const ctc = emp.annual_ctc ?? 0;
-          const monthly = ctc / 12;
-          const basic = Math.round(monthly * 0.4);
-          const hra = Math.round(monthly * 0.2);
-          const special = Math.round(monthly * 0.35);
-          const conveyance = 1600;
-          const gross = basic + hra + special + conveyance;
-          const pf = Math.round(basic * 0.12);
-          next.set(emp.id, {
-            working_days: 26,
-            present_days: 26,
-            lop_days: 0,
-            paid_leave_days: 0,
-            overtime_hours: 0,
-            annual_ctc: ctc,
-            basic,
-            hra,
-            special_allowance: special,
-            conveyance,
-            other_earnings: 0,
-            overtime_pay_amount: 0,
-            other_deduction: 0,
-            pf_employee: pf,
-            pf_employer: pf,
-            esi_employee: gross <= 21000 ? Math.round(gross * 0.0075) : 0,
-            esi_employer: gross <= 21000 ? Math.round(gross * 0.0325) : 0,
-            pt: 0,
-            tds: 0,
-          });
-        }
+        const existing = next.get(emp.id);
+        const att = emp.attendance;
+        const ctc = emp.annual_ctc ?? 0;
+        const monthly = ctc / 12;
+        const basic = Math.round(monthly * 0.4);
+        const hra = Math.round(monthly * 0.2);
+        const special = Math.round(monthly * 0.35);
+        const conveyance = 1600;
+        const gross = basic + hra + special + conveyance;
+        const pf = Math.round(basic * 0.12);
+        next.set(emp.id, {
+          working_days: att?.working_days ?? existing?.working_days ?? 26,
+          present_days: att?.present_days ?? existing?.present_days ?? 26,
+          lop_days: att?.lop_days ?? existing?.lop_days ?? 0,
+          paid_leave_days: att?.paid_leave_days ?? existing?.paid_leave_days ?? 0,
+          overtime_hours: att?.overtime_hours ?? existing?.overtime_hours ?? 0,
+          annual_ctc: ctc,
+          basic,
+          hra,
+          special_allowance: special,
+          conveyance,
+          other_earnings: existing?.other_earnings ?? 0,
+          overtime_pay_amount: existing?.overtime_pay_amount ?? 0,
+          other_deduction: existing?.other_deduction ?? 0,
+          pf_employee: existing?.pf_employee ?? pf,
+          pf_employer: existing?.pf_employer ?? pf,
+          esi_employee: existing?.esi_employee ?? (gross <= 21000 ? Math.round(gross * 0.0075) : 0),
+          esi_employer: existing?.esi_employer ?? (gross <= 21000 ? Math.round(gross * 0.0325) : 0),
+          pt: existing?.pt ?? 0,
+          tds: existing?.tds ?? 0,
+        });
       });
       return next;
     });

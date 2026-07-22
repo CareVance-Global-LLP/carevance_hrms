@@ -1345,6 +1345,13 @@ export type PayGroupEmployee = Omit<
   // Per-step completion flags (Bulk Payroll Matrix)
   steps_completed: StepsCompleted;
   current_step: number;
+  attendance?: {
+    working_days: number;
+    present_days: number;
+    paid_leave_days: number;
+    lop_days: number;
+    overtime_hours: number;
+  } | null;
 };
 
 /**

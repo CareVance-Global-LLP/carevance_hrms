@@ -43,6 +43,7 @@ export default function LoansPage() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
 
   const { data: adminData } = useQuery({
     queryKey: ['loans-admin', statusFilter],
@@ -167,6 +168,7 @@ export default function LoansPage() {
                         queryClient.invalidateQueries({ queryKey: ['loans-admin'] });
                         queryClient.invalidateQueries({ queryKey: ['my-loans'] });
                       }}
+                      onViewSchedule={setSelectedLoan}
                     />
                   ))
                 )}
@@ -186,11 +188,63 @@ export default function LoansPage() {
           }}
         />
       )}
+
+      {/* EMI Schedule Modal */}
+      {selectedLoan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setSelectedLoan(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-900">Repayment Schedule</h3>
+              <button className="p-1 text-slate-400 hover:text-slate-600" onClick={() => setSelectedLoan(null)}>
+                <span className="sr-only">Close</span>
+                ×
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Type</span>
+                <span className="font-medium text-slate-900">{titleCase(selectedLoan.loan_type)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Total Amount</span>
+                <span className="font-medium text-slate-900">{formatPayrollAmount(selectedLoan.amount)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">EMI</span>
+                <span className="font-medium text-slate-900">{formatPayrollAmount(selectedLoan.emi_amount)}/mo</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Progress</span>
+                <span className="font-medium text-slate-900">{selectedLoan.paid_installments}/{selectedLoan.total_installments}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">Remaining</span>
+                <span className="font-medium text-slate-900">{formatPayrollAmount(selectedLoan.remaining_amount)}</span>
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+                  <span>Installments paid</span>
+                  <span>{Math.round((selectedLoan.paid_installments / selectedLoan.total_installments) * 100)}%</span>
+                </div>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all"
+                    style={{ width: `${Math.min(100, (selectedLoan.paid_installments / selectedLoan.total_installments) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <Button variant="secondary" onClick={() => setSelectedLoan(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function LoanRow({ loan, isAdmin, colCount, onAction }: { loan: Loan; isAdmin: boolean; colCount: number; onAction: () => void }) {
+function LoanRow({ loan, isAdmin, colCount, onAction, onViewSchedule }: { loan: Loan; isAdmin: boolean; colCount: number; onAction: () => void; onViewSchedule: (loan: Loan) => void }) {
   const { show } = useToast();
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
@@ -297,6 +351,7 @@ function LoanRow({ loan, isAdmin, colCount, onAction }: { loan: Loan; isAdmin: b
                 <button
                   className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                   title="View Schedule"
+                  onClick={() => onViewSchedule(loan)}
                 >
                   <Eye className="h-4 w-4" />
                 </button>

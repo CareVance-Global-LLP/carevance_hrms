@@ -167,33 +167,64 @@ export default function FnFSettlementsPage() {
                 Clearance Checklist
               </h3>
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Assets returned</span>
-                  <span className="flex items-center gap-1.5">
-                    <Check className="h-4 w-4 text-emerald-500" />
-                    <span className="text-emerald-600 text-xs font-medium">Pass</span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Manager sign-off</span>
-                  <span className="flex items-center gap-1.5">
-                    <Check className="h-4 w-4 text-emerald-500" />
-                    <span className="text-emerald-600 text-xs font-medium">Pass</span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">Finance recovery acknowledgement</span>
-                  <span className="flex items-center gap-1.5">
-                    <X className="h-4 w-4 text-rose-500" />
-                    <span className="text-rose-600 text-xs font-medium">Fail</span>
-                  </span>
-                </div>
+                {(s.clearance_checklist ?? [
+                  { item: 'Assets returned', status: s.assets_returned ? 'pass' : 'pending' },
+                  { item: 'Manager sign-off', status: s.manager_signoff ? 'pass' : 'pending' },
+                  { item: 'Finance recovery acknowledgement', status: s.finance_recovery ? 'pass' : 'pending' },
+                ]).map((check: any, idx: number) => {
+                  const isPass = check.status === 'pass' || check.status === 'completed';
+                  const isFail = check.status === 'fail' || check.status === 'failed';
+                  return (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <span className="text-slate-600">{check.item || check.label || check.name}</span>
+                      <span className="flex items-center gap-1.5">
+                        {isPass ? (
+                          <Check className="h-4 w-4 text-emerald-500" />
+                        ) : isFail ? (
+                          <X className="h-4 w-4 text-rose-500" />
+                        ) : (
+                          <span className="h-4 w-4 rounded-full border-2 border-slate-300" />
+                        )}
+                        <span className={`text-xs font-medium ${isPass ? 'text-emerald-600' : isFail ? 'text-rose-600' : 'text-slate-400'}`}>
+                          {isPass ? 'Pass' : isFail ? 'Fail' : 'Pending'}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
               <div className="mt-6 space-y-2">
-                <Button variant="primary" className="w-full" disabled>
-                  Finalize Settlement
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  disabled={s.status === 'paid' || s.status === 'rejected'}
+                  onClick={() => {
+                    if (s.status === 'approved') {
+                      setProcessing({ id: s.id, name: s.user?.name || 'this settlement' });
+                    } else {
+                      setApproving({ id: s.id, name: s.user?.name || 'this settlement' });
+                    }
+                  }}
+                >
+                  {s.status === 'approved' ? 'Process Payment' : s.status === 'paid' ? 'Already Paid' : 'Approve Settlement'}
                 </Button>
-                <Button variant="secondary" className="w-full" iconLeft={<FileText className="h-4 w-4" />}>
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  iconLeft={<FileText className="h-4 w-4" />}
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ff-settlement-${s.user?.name?.replace(/\s+/g, '_') || s.id}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    show({ kind: 'success', message: 'F&F statement downloaded.' });
+                  }}
+                >
                   Generate F&F Statement
                 </Button>
               </div>

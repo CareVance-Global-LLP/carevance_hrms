@@ -94,6 +94,7 @@ const UnassignedEmployeesPage = lazyWithChunkRetry(() => import('@/pages/payroll
 const EmployeePayTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/EmployeePayTab'));
 const TaxComplianceTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/TaxComplianceTab'));
 const ReportsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/ReportsTab'));
+const PayrollReportsPage = lazyWithChunkRetry(() => import('@/pages/PayrollReportsPage'));
 const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
 const PayGroupSettings = lazyWithChunkRetry(() => import('@/pages/payroll/PayGroupSettings'));
 // Payroll Setup (page-based onboarding)
@@ -630,7 +631,7 @@ function App() {
               <Route path="run" element={<RunPayrollTab />} />
               <Route path="employee-pay" element={<EmployeePayTab />} />
               <Route path="tax-compliance" element={<TaxComplianceTab />} />
-              <Route path="reports" element={<ReportsTab />} />
+              <Route path="reports" element={<PayrollReportsPage />} />
             </Route>
             {/* Pay Group Settings - standalone page for configuring pay group state and statutory details */}
             <Route path="payroll/pay-group-settings" element={<PlanFeatureRoute feature="payroll"><StrictAdminRoute><PayGroupSettings onBack={function() {}} /></StrictAdminRoute></PlanFeatureRoute>} />

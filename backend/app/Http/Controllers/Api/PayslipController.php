@@ -297,25 +297,54 @@ class PayslipController extends Controller
     }
 
     /**
-     * Download payslip PDF
+     * Download payslip PDF — always regenerates fresh to avoid stale cached PDFs.
      */
     public function downloadPdf(int $id): JsonResponse
     {
-        $payslip = Payslip::find($id);
+        $payslip = Payslip::with(['user.payrollItems.payrollRun'])->find($id);
 
-        if (!$payslip || !$payslip->pdf_path) {
-            return response()->json(['success' => false, 'message' => 'PDF not found.'], 404);
+        if (!$payslip) {
+            return response()->json(['success' => false, 'message' => 'Payslip not found.'], 404);
         }
 
-        if (!Storage::exists($payslip->pdf_path)) {
-            return response()->json(['success' => false, 'message' => 'PDF file not found on disk.'], 404);
+        // Find the PayrollItem matching this payslip's user + month
+        $monthYear = sprintf('%d-%02d', $payslip->pay_year, $payslip->pay_month);
+        $payrollItem = $payslip->user?->payrollItems?->first(function ($item) use ($monthYear) {
+            return $item->payrollRun?->month_year === $monthYear;
+        });
+
+        if (!$payrollItem) {
+            // Fallback: try loading PayrollItem directly
+            $payrollItem = \App\Models\PayrollItem::where('user_id', $payslip->user_id)
+                ->whereHas('payrollRun', function ($q) use ($monthYear) {
+                    $q->where('month_year', $monthYear);
+                })
+                ->first();
         }
 
-        $payslip->update(['status' => 'downloaded']);
+        if (!$payrollItem) {
+            return response()->json(['success' => false, 'message' => 'Payroll data not found for this payslip.'], 404);
+        }
+
+        // Generate fresh PDF using the same service PayrollController uses
+        $pdfService = new \App\Services\PayrollPdfService();
+        $pdf = $pdfService->generatePayslip($payrollItem);
+
+        // Store the fresh PDF
+        $pdfContent = $pdf->output();
+        $pdfPath = "payslips/{$payslip->user_id}/{$monthYear}.pdf";
+        Storage::put($pdfPath, $pdfContent);
+
+        // Update payslip record with fresh path and timestamp
+        $payslip->update([
+            'pdf_path' => $pdfPath,
+            'pdf_generated_at' => now(),
+            'status' => 'downloaded',
+        ]);
 
         return response()->json([
             'success' => true,
-            'url' => Storage::url($payslip->pdf_path),
+            'url' => Storage::url($pdfPath),
         ]);
     }
 

@@ -141,7 +141,9 @@ export default function LeaveEncashmentPage() {
               </div>
             </div>
             {isAdmin && (
-              <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />}>
+              <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />} onClick={() => {
+                show({ kind: 'info', message: 'Select an employee from the Employee Payroll Cards page to process leave encashment for them.' });
+              }}>
                 + Process Encashment
               </Button>
             )}

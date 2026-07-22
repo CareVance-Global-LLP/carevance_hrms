@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Download, Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
 import { payrollApi } from '@/services/api';
@@ -74,7 +73,6 @@ interface PayslipData {
   created_at: string;
 }
 
-const MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_FULL = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const COMPONENT_LABELS: Record<string, string> = {
@@ -143,7 +141,7 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#3D656B]" />
         <span className="ml-2 text-gray-600">Loading payslip...</span>
       </div>
     );
@@ -163,9 +161,9 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
   const org = payslip.organization;
   const isProvisional = payslip.status === 'generated' || payslip.status === 'downloaded';
   const workingDays = Number(payslip.attendance.total_days);
-  const paidDays = Number(payslip.attendance.days_present) + Number(payslip.attendance.paid_leave);
+  const daysPresent = Number(payslip.attendance.days_present);
+  const paidLeave = Number(payslip.attendance.paid_leave);
   const lopDays = Number(payslip.attendance.lop_days);
-  const daysPayable = paidDays;
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -179,140 +177,69 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
           )}
           <div>
             <h2 className="text-lg font-semibold text-gray-900">
-              Salary Slip — {MONTH_NAMES[payslip.pay_month]} {payslip.pay_year}
+              Payslip — {MONTH_FULL[payslip.pay_month]} {payslip.pay_year}
             </h2>
-            <p className="text-xs text-gray-400">{payslip.payslip_number}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {payslip.has_pdf && (
-            <button
-              onClick={() => downloadMutation.mutate()}
-              disabled={downloadMutation.isPending}
-              className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 disabled:opacity-50"
-            >
-              {downloadMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4 mr-1.5" />
-              )}
-              Download PDF
-            </button>
+        <button
+          onClick={() => downloadMutation.mutate()}
+          disabled={downloadMutation.isPending}
+          className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-[#233B40] rounded-lg hover:bg-[#16262B] disabled:opacity-50 transition-colors"
+        >
+          {downloadMutation.isPending ? (
+            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4 mr-1.5" />
           )}
-        </div>
+          Download PDF
+        </button>
       </div>
 
-      {/* Payslip Content */}
+      {/* Payslip Document */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        {/* Dark Header */}
+        <div className="bg-[#16262B] text-white px-6 py-5 flex justify-between items-start">
+          <div>
+            <h1 className="text-lg font-bold">{org?.name || 'Company'}</h1>
+            <p className="text-xs opacity-70 mt-1">
+              Payslip for {MONTH_FULL[payslip.pay_month]} {payslip.pay_year} · {payslip.payslip_number}
+            </p>
+          </div>
+          <div className="text-right text-xs opacity-85">
+            <div className="font-medium">{employee?.name || '—'} {employee?.employee_code ? `· ${employee.employee_code}` : ''}</div>
+            <div>{employee?.designation || '—'} {employee?.department ? `· ${employee.department}` : ''}</div>
+          </div>
+        </div>
+
         {/* Provisional Label */}
         {isProvisional && (
-          <div className="px-6 pt-4">
+          <div className="px-6 pt-3">
             <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">Provisional</span>
           </div>
         )}
 
-        {/* Header: Company Info + Logo */}
-        <div className="flex justify-between items-start px-6 pt-2 pb-4">
-          <div className="flex-1">
-            <h1 className="text-[15px] font-bold text-gray-900">
-              {MONTH_FULL[payslip.pay_month]} {payslip.pay_year} Payslip
-            </h1>
-            {org && (
-              <>
-                <p className="text-sm font-bold text-gray-900 uppercase mt-3">{org.name}</p>
-                {org.address && (
-                  <p className="text-xs text-gray-500 mt-0.5 whitespace-pre-line">{org.address}</p>
-                )}
-              </>
-            )}
-          </div>
-          {org?.logo_url && (
-            <div className="ml-4 flex-shrink-0">
-              <img src={org.logo_url} alt="Company Logo" className="h-14 w-auto object-contain" />
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-gray-200 mx-6" />
-
-        {/* Employee Name Bar */}
-        <div className="px-6 py-2.5">
-          <p className="text-[13px] font-bold text-gray-900">{employee?.name ?? '—'}</p>
-        </div>
-        <div className="border-t border-gray-100 mx-6" />
-
-        {/* Employee Info Grid */}
-        <div className="px-6 py-3 grid grid-cols-4 gap-x-4 gap-y-2">
+        {/* Attendance Summary */}
+        <div className="px-6 py-4 grid grid-cols-3 gap-4 border-b border-gray-200">
           <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Employee Number</p>
-            <p className="text-xs font-semibold text-gray-900 mt-0.5">{employee?.employee_code ?? '—'}</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Days Present</p>
+            <p className="text-base font-semibold text-gray-900 mt-0.5">{daysPresent} / {workingDays}</p>
           </div>
           <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Date Joined</p>
-            <p className="text-xs font-semibold text-gray-900 mt-0.5">{employee?.date_of_joining ?? '—'}</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Paid Leave</p>
+            <p className="text-base font-semibold text-gray-900 mt-0.5">{paidLeave}</p>
           </div>
           <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Department</p>
-            <p className="text-xs font-semibold text-gray-900 mt-0.5">{employee?.department ?? '—'}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Sub Department</p>
-            <p className="text-xs font-semibold text-gray-900 mt-0.5">—</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Designation</p>
-            <p className="text-xs font-semibold text-gray-900 mt-0.5">{employee?.designation ?? '—'}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Payment Mode</p>
-            <p className="text-xs font-semibold text-gray-900 mt-0.5">Bank Transfer</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">UAN</p>
-            <p className="text-xs font-semibold text-gray-900 mt-0.5">{employee?.uan ?? '—'}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase tracking-wide">PF Number</p>
-            <p className="text-xs font-semibold text-gray-900 mt-0.5">{employee?.pf_account ?? '—'}</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide">LOP Days</p>
+            <p className={`text-base font-semibold mt-0.5 ${lopDays > 0 ? 'text-red-600' : 'text-gray-900'}`}>{lopDays}</p>
           </div>
         </div>
 
-        {/* Monthly Salary */}
-        <div className="px-6 py-2 border-t border-gray-100">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wide">Monthly Salary</p>
-          <p className="text-xs font-semibold text-gray-900 mt-0.5">₹ {formatCurrencyShort(payslip.total_earnings)}</p>
-        </div>
-        <div className="border-t border-gray-100 mx-6" />
-
-        {/* Salary Details */}
-        <div className="px-6 pt-3 pb-2">
-          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Salary Details</p>
-          <div className="grid grid-cols-4 gap-x-4">
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Actual Payable Days</p>
-              <p className="text-xs font-semibold text-gray-900 mt-0.5">{paidDays}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Total Working Days</p>
-              <p className="text-xs font-semibold text-gray-900 mt-0.5">{workingDays}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Loss Of Pay Days</p>
-              <p className="text-xs font-semibold text-gray-900 mt-0.5">{lopDays}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide">Days Payable</p>
-              <p className="text-xs font-semibold text-gray-900 mt-0.5">{daysPayable}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Earnings & Deductions */}
-        <div className="grid grid-cols-[58%_42%] border-t border-gray-200">
+        {/* Earnings & Deductions Side by Side */}
+        <div className="grid grid-cols-2 border-b border-gray-200">
           {/* Earnings */}
           <div className="px-6 py-4 border-r border-gray-200">
-            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 border-b border-gray-200 pb-2">Earnings</p>
-            <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">Earnings</p>
+            <div className="space-y-2">
               {Object.entries(payslip.earnings).map(([key, value]) => (
                 <div key={key} className="flex justify-between text-xs">
                   <span className="text-gray-600">{formatLabel(key)}</span>
@@ -320,7 +247,7 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
                 </div>
               ))}
               <div className="flex justify-between text-xs font-semibold border-t border-gray-200 pt-2 mt-2">
-                <span className="text-gray-900">Total Earnings (A)</span>
+                <span className="text-gray-900">Total Earnings</span>
                 <span className="text-gray-900 font-mono">{formatCurrencyShort(payslip.total_earnings)}</span>
               </div>
             </div>
@@ -328,8 +255,8 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
 
           {/* Deductions */}
           <div className="px-6 py-4">
-            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 border-b border-gray-200 pb-2">Taxes &amp; Deductions</p>
-            <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">Deductions</p>
+            <div className="space-y-2">
               {Object.entries(payslip.deductions).map(([key, value]) => (
                 <div key={key} className="flex justify-between text-xs">
                   <span className="text-gray-600">{formatLabel(key)}</span>
@@ -337,7 +264,7 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
                 </div>
               ))}
               <div className="flex justify-between text-xs font-semibold border-t border-gray-200 pt-2 mt-2">
-                <span className="text-gray-900">Total Deductions (B)</span>
+                <span className="text-gray-900">Total Deductions</span>
                 <span className="text-gray-900 font-mono">{formatCurrencyShort(payslip.total_deductions)}</span>
               </div>
             </div>
@@ -345,20 +272,70 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
         </div>
 
         {/* Net Pay */}
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+        <div className="px-6 py-4 bg-[#D9EBED]">
           <div className="flex justify-between items-center">
-            <p className="text-sm font-bold text-gray-900">Net Salary Payable (A − B)</p>
-            <p className="text-lg font-bold text-gray-900 font-mono">₹ {formatCurrencyShort(payslip.net_payable)}</p>
+            <div>
+              <p className="text-[10px] text-[#3D656B] uppercase tracking-wide font-semibold">Net Payable</p>
+              <p className="text-2xl font-bold text-[#16262B] mt-0.5">₹ {formatCurrencyShort(payslip.net_payable)}</p>
+            </div>
+            {payslip.net_pay_words && (
+              <div className="text-right max-w-xs">
+                <p className="text-[10px] text-[#3D656B] uppercase tracking-wide font-semibold">In Words</p>
+                <p className="text-xs text-[#233B40] mt-0.5">{payslip.net_pay_words}</p>
+              </div>
+            )}
           </div>
-          {payslip.net_pay_words && (
-            <p className="text-xs text-gray-500 mt-1 italic">Net Salary in words: <span className="font-medium text-gray-700">{payslip.net_pay_words}</span></p>
-          )}
+        </div>
+
+        {/* Employer Contributions + YTD */}
+        <div className="grid grid-cols-2 border-t border-gray-200">
+          {/* Employer Contributions */}
+          <div className="px-6 py-4 border-r border-gray-200">
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
+              Employer Contribution <span className="font-normal text-gray-400">(not part of net pay)</span>
+            </p>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">PF (Employer)</span>
+                <span className="text-gray-900 font-mono">{formatCurrencyShort(payslip.employer_contribution?.pf_er || payslip.statutory?.pf_er || 0)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">ESI (Employer)</span>
+                <span className="text-gray-900 font-mono">{formatCurrencyShort(payslip.employer_contribution?.esi_er || payslip.statutory?.esi_er || 0)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">EDLI Admin</span>
+                <span className="text-gray-900 font-mono">{formatCurrencyShort(payslip.employer_contribution?.edli_admin || 0)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* YTD Summary */}
+          <div className="px-6 py-4">
+            <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-3 border-b border-gray-200 pb-2">
+              Year to Date (FY {payslip.pay_year}-{(payslip.pay_year + 1) % 100})
+            </p>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Gross YTD</span>
+                <span className="text-gray-900 font-mono">{formatCurrencyShort(payslip.ytd?.gross || 0)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Deductions YTD</span>
+                <span className="text-gray-900 font-mono">{formatCurrencyShort(payslip.ytd?.deductions || 0)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-600">Net YTD</span>
+                <span className="text-gray-900 font-mono">{formatCurrencyShort(payslip.ytd?.net || 0)}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
         <div className="px-6 py-3 border-t border-gray-200 text-[10px] text-gray-400 space-y-0.5">
-          <p>All figures are in Indian Rupees (₹). This is a computer-generated payslip and does not require a signature.</p>
-          <p>Payslip ID: {payslip.payslip_number} &bull; Generated: {payslip.created_at}</p>
+          <p>This is a system-generated payslip and does not require a signature.</p>
+          <p>Payslip ID: {payslip.payslip_number} · Generated: {payslip.created_at}</p>
         </div>
       </div>
     </div>
