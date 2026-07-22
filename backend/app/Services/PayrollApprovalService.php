@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\PayrollMonthlyRun;
 use App\Models\PayrollApprovalWorkflow;
 use App\Models\PayrollApprovalStep;
 use App\Models\PayrollApprovalAction;
-use App\Models\PayrollRun;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -22,7 +22,7 @@ class PayrollApprovalService
     /**
      * Create a new approval workflow for a payroll run.
      */
-    public function createWorkflow(PayrollRun $run, array $steps): PayrollApprovalWorkflow
+    public function createWorkflow(PayrollMonthlyRun $run, array $steps): PayrollApprovalWorkflow
     {
         return DB::transaction(function () use ($run, $steps) {
             $workflow = PayrollApprovalWorkflow::create([

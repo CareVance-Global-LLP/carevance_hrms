@@ -258,8 +258,11 @@ class PayrollAutoProcessController extends Controller
         $syncedCount = 0;
         $reconciliationCount = 0;
 
+        $userIds = $items->pluck('user_id')->unique()->values()->all();
+        $usersById = \App\Models\User::whereIn('id', $userIds)->get()->keyBy('id');
+
         foreach ($items as $item) {
-            $user = \App\Models\User::find($item->user_id);
+            $user = $usersById[$item->user_id] ?? null;
             if (!$user) continue;
 
             $summary = app(\App\Services\Attendance\AttendanceService::class)

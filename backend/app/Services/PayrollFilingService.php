@@ -809,7 +809,8 @@ class PayrollFilingService
         // LWF is state-specific (no universal formula) — generate per enabled state.
         $lwfStates = EmployeePayrollTemplate::where('organization_id', $orgId)
             ->where('lwf_enabled', true)
-            ->distinct('pt_state')
+            ->select('pt_state')
+            ->distinct()
             ->pluck('pt_state')
             ->filter(fn ($s) => isset(self::LWF_STATE_CONFIG[$s]));
         foreach ($lwfStates as $state) {
@@ -824,7 +825,8 @@ class PayrollFilingService
         // PT is state-specific.
         $templates = EmployeePayrollTemplate::where('organization_id', $orgId)
             ->whereNotNull('pt_state')
-            ->distinct('pt_state')
+            ->select('pt_state')
+            ->distinct()
             ->pluck('pt_state');
 
         foreach ($templates as $state) {

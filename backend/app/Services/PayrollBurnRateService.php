@@ -2,13 +2,10 @@
 
 namespace App\Services;
 
-use App\Models\PayrollRun;
-use App\Models\Payroll;
-use App\Models\Department;
-use App\Models\Employee;
-use App\Models\User;
-use Carbon\Carbon;
+use App\Models\PayrollMonthlyRun;
+use App\Models\PayrollItem;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 /**
  * Real-time Payroll Burn-Rate Service
@@ -35,20 +32,26 @@ class PayrollBurnRateService
         $daysInMonth = $monthEnd->day;
         $daysRemaining = $daysInMonth - $daysElapsed;
 
-        $monthlyTotal = Payroll::where('organization_id', $organizationId)
-            ->whereBetween('payroll_period', [$monthStart, $now])
-            ->sum('net_pay');
-        $lastMonthTotal = Payroll::where('organization_id', $organizationId)
-            ->whereBetween('payroll_period', [$monthStart->copy()->subMonth(), $monthStart])
-            ->sum('net_pay');
+        $currentMonthYear = $monthStart->format('Y-m');
+        $prevMonthYear = $monthStart->copy()->subMonth()->format('Y-m');
+
+        $currentRun = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $currentMonthYear)
+            ->first();
+        $prevRun = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $prevMonthYear)
+            ->first();
+
+        $monthlyTotal = $currentRun ? (float) $currentRun->total_net_pay : 0;
+        $lastMonthTotal = $prevRun ? (float) $prevRun->total_net_pay : 0;
 
         $dailyBurn = $daysElapsed > 0 ? $monthlyTotal / $daysElapsed : 0;
         $projected = $dailyBurn * $daysInMonth;
-        $budget = $lastMonthTotal > 0 ? $lastMonthTotal * 1.05 : $projected; // 5% buffer
+        $budget = $lastMonthTotal > 0 ? $lastMonthTotal * 1.05 : $projected;
         $remaining = max(0, $budget - $monthlyTotal);
 
         return [
-            'month' => $monthStart->format('Y-m'),
+            'month' => $currentMonthYear,
             'month_label' => $monthStart->format('F Y'),
             'actual_spend' => round($monthlyTotal, 2),
             'projected_spend' => round($projected, 2),
@@ -69,10 +72,12 @@ class PayrollBurnRateService
     public function rollingTwelveMonths(int $organizationId): array
     {
         $start = Carbon::now()->subMonths(11)->startOfMonth();
-        $rows = Payroll::where('organization_id', $organizationId)
-            ->where('payroll_period', '>=', $start)
-            ->selectRaw('DATE_FORMAT(payroll_period, "%Y-%m") as month, SUM(net_pay) as total, COUNT(*) as employees')
-            ->groupBy('month')->orderBy('month')->get();
+        $startMonthYear = $start->format('Y-m');
+        $rows = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', '>=', $startMonthYear)
+            ->selectRaw('month_year as month, total_net_pay as total, total_employees as employees')
+            ->orderBy('month_year')
+            ->get();
         return $rows->map(fn($r) => [
             'month' => $r->month,
             'total' => round((float) $r->total, 2),
@@ -82,11 +87,13 @@ class PayrollBurnRateService
 
     public function departmentBreakdown(int $organizationId): array
     {
-        return DB::table('payrolls')
-            ->join('users', 'payrolls.user_id', '=', 'users.id')
-            ->where('payrolls.organization_id', $organizationId)
-            ->whereBetween('payrolls.payroll_period', [Carbon::now()->startOfMonth(), Carbon::now()])
-            ->selectRaw('users.department, SUM(payrolls.net_pay) as total, COUNT(DISTINCT payrolls.user_id) as headcount')
+        $currentMonthYear = Carbon::now()->format('Y-m');
+        return DB::table('payroll_items')
+            ->join('users', 'payroll_items.user_id', '=', 'users.id')
+            ->join('payroll_monthly_runs', 'payroll_items.payroll_run_id', '=', 'payroll_monthly_runs.id')
+            ->where('payroll_items.organization_id', $organizationId)
+            ->where('payroll_monthly_runs.month_year', $currentMonthYear)
+            ->selectRaw('users.department, SUM(payroll_items.net_pay) as total, COUNT(DISTINCT payroll_items.user_id) as headcount')
             ->groupBy('users.department')
             ->orderByDesc('total')
             ->get()

@@ -281,11 +281,11 @@ class EnhancedPayrollController extends Controller
             ], 422);
         }
 
-        // Immutability: cannot approve against a run that's already paid or released.
+        // Immutability: cannot approve against a run that's already locked/approved/disbursed.
         $run = PayrollMonthlyRun::where('organization_id', $organizationId)
             ->where('month_year', $encashment->month_year)
             ->first();
-        if ($run && in_array($run->status, ['paid', 'released'], true)) {
+        if ($run && !in_array($run->status, ['draft', 'processing'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => "Cannot approve — payroll run for {$encashment->month_year} is already {$run->status} and immutable.",
@@ -353,10 +353,18 @@ class EnhancedPayrollController extends Controller
             $pfRate = ((float) ($config['pfEmployeePercentage'] ?? 12)) / 100;
             $esiEmployeeRate = ((float) ($config['esiEmployeePercentage'] ?? 0.75)) / 100;
             $esiThreshold = (float) ($config['esiThreshold'] ?? 21000);
-            $tdsRate = 0.10; // TDS on arrear is typically 10% flat per IT Act s.192; not org-configurable
             $pfOnArrear = $basicDifference * $pfRate;
             $esiOnArrear = $grossDifference <= $esiThreshold ? $grossDifference * $esiEmployeeRate : 0;
-            $tdsOnArrear = $grossDifference * $tdsRate;
+
+            $taxRegime = $user->employeePayrollTemplate?->tax_regime ?? 'new';
+            $exemptionMap = $this->calculator->getApprovedTaxDeductionMap($user->id);
+            $revisedTdsResult = $taxRegime === 'new'
+                ? $this->calculator->calculateNewRegimeTax($request->revised_gross * 12, $exemptionMap)
+                : $this->calculator->calculateOldRegimeTax($request->revised_gross * 12, $exemptionMap);
+            $originalTdsResult = $taxRegime === 'new'
+                ? $this->calculator->calculateNewRegimeTax($request->original_gross * 12, $exemptionMap)
+                : $this->calculator->calculateOldRegimeTax($request->original_gross * 12, $exemptionMap);
+            $tdsOnArrear = round(max(0, ($revisedTdsResult['total_tax'] ?? 0) - ($originalTdsResult['total_tax'] ?? 0)) / 12, 2);
             $ptOnArrear = PTStateService::calculate(
                 $user->employeeProfile?->pt_state ?? $config['defaultState'] ?? 'maharashtra',
                 $grossDifference

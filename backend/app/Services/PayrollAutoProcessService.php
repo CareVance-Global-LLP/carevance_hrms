@@ -187,9 +187,12 @@ class PayrollAutoProcessService
     private function autoSyncAttendance(PayrollMonthlyRun $run): void
     {
         $items = PayrollItem::where('payroll_run_id', $run->id)->get();
-        
+
+        $userIds = $items->pluck('user_id')->unique()->values()->all();
+        $usersByid = User::whereIn('id', $userIds)->get()->keyBy('id');
+
         foreach ($items as $item) {
-            $user = User::find($item->user_id);
+            $user = $usersByid[$item->user_id] ?? null;
             if (!$user) {
                 continue;
             }
@@ -443,8 +446,11 @@ class PayrollAutoProcessService
             $epf = $pfEnabled ? round($pfWages * 0.0367, 2) : 0;
             $pfEmployer = $pfEmployee;
 
-            // ESI on payable gross (ESI eligibility is on payable wages after LOP)
-            $esiApplicable = $esiEnabled && $payableGross <= 21000;
+            // ESI eligibility is based on gross wages (before LOP) per the
+            // ESI Act. Contribution itself is computed on payable wages
+            // (after LOP) so partial-month absences reduce the contribution
+            // without invalidating coverage.
+            $esiApplicable = $esiEnabled && $gross <= 21000;
             $esiEmployee = $esiApplicable ? round($payableGross * 0.0075, 2) : 0;
             $esiEmployer = $esiApplicable ? round($payableGross * 0.0325, 2) : 0;
 
@@ -453,7 +459,7 @@ class PayrollAutoProcessService
 
             $tds = 0;
             if ($template->tds_enabled) {
-                $annualProjected = $gross * 12;
+                $annualProjected = $payableGross * 12;
                 // Net the FBP exemption out of the tax base so only the
                 // portion of a taxable FBP component above its exemption
                 // limit is taxed. Non-taxable FBP (e.g. food coupons) is
@@ -550,7 +556,8 @@ class PayrollAutoProcessService
         // LWF is state-specific; reuse the org's default state (same approach as PT below).
         $lwfState = EmployeePayrollTemplate::where('organization_id', $orgId)
             ->where('lwf_enabled', true)
-            ->distinct('pt_state')
+            ->select('pt_state')
+            ->distinct()
             ->value('pt_state');
         if ($lwfState && isset(\App\Services\PayrollFilingService::LWF_STATE_CONFIG[$lwfState])) {
             try {

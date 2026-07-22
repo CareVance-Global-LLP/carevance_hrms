@@ -5,7 +5,8 @@ namespace App\Services;
 use App\Models\User;
 use App\Models\TimeTracking;
 use App\Models\ActivityLog;
-use App\Models\PayrollRun;
+use App\Models\PayrollMonthlyRun;
+use App\Models\PayrollItem;
 use App\Models\PayrollAdjustment;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -85,30 +86,36 @@ class ProductivityPayrollService
     }
 
     /**
-     * Compute variable pay adjustment for a payroll run.
+     * Compute variable pay adjustment for a payroll monthly run.
+     *
+     * @param  PayrollMonthlyRun  $run
+     * @return array
      */
-    public function computeAdjustments(PayrollRun $run): array
+    public function computeAdjustments(PayrollMonthlyRun $run): array
     {
         $created = 0;
-        $month = Carbon::parse($run->payroll_period)->month;
-        $year = Carbon::parse($run->payroll_period)->year;
-        $payrolls = $run->payrolls()->with('user', 'employee')->get();
-        foreach ($payrolls as $p) {
-            $score = $this->computeScore($p->user_id, $month, $year)['final_score'];
-            $variableAmount = $this->variableAmount($score, (float) $p->basic);
+        [$year, $month] = explode('-', $run->month_year);
+        $payrollItems = $run->items()->with('user')->get();
+
+        foreach ($payrollItems as $item) {
+            $score = $this->computeScore($item->user_id, $month, $year)['final_score'];
+            $variableAmount = $this->variableAmount($score, (float) ($item->basic ?? 0));
             if ($variableAmount > 0) {
                 PayrollAdjustment::create([
-                    'payroll_id' => $p->id,
-                    'user_id' => $p->user_id,
-                    'type' => 'productivity_bonus',
+                    'organization_id' => $run->organization_id,
+                    'user_id' => $item->user_id,
+                    'title' => 'Productivity Bonus',
+                    'kind' => 'productivity_bonus',
+                    'effective_month' => $run->month_year,
                     'amount' => round($variableAmount, 2),
                     'reason' => "Productivity score: " . round($score, 1),
-                    'metadata' => ['score' => $score],
+                    'meta' => ['score' => $score, 'payroll_item_id' => $item->id],
                     'status' => 'pending_approval',
                 ]);
                 $created++;
             }
         }
+
         return ['created' => $created];
     }
 

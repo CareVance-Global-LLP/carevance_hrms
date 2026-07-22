@@ -206,7 +206,7 @@ class EmployeePayrollCardController extends Controller
 
         DB::transaction(function () use ($employee, $validated, $user) {
             $template = EmployeePayrollTemplate::firstOrCreate(
-                ['user_id' => $employee->id],
+                ['user_id' => $employee->id, 'organization_id' => $user->organization_id],
                 [
                     'organization_id' => $user->organization_id,
                     'basic_percentage' => 50,

@@ -341,12 +341,21 @@ class PayrollController extends Controller
                 $q->where('month_year', $request->month);
             })
             ->first();
-        
+
         if (!$payrollItem) {
             return response()->json([
                 'success' => false,
                 'message' => 'Payroll not found for this employee and month',
             ], 404);
+        }
+
+        // Guard: do not allow payments against a run that's already disbursed (terminal/immutable).
+        $run = $payrollItem->payrollRun;
+        if ($run && $run->isImmutable()) {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot process payment — payroll run for {$run->month_year} is already disbursed and immutable.",
+            ], 422);
         }
         
         // Update the payroll item payment status

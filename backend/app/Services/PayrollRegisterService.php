@@ -125,7 +125,7 @@ class PayrollRegisterService
                     'eps' => (float) ($item->eps ?? 0),
                     'epf_employer' => (float) ($item->epf ?? 0),
                     'pf_admin_charges' => min((float) ($item->basic ?? 0), 15000) * 0.005,
-                    'edli_charges' => min((float) ($item->basic ?? 0), 15000) * 0.005,
+                    'edli_charges' => min((float) ($item->basic ?? 0), 15000) * 0.0017,
                     'total' => (float) ($item->pf_employee ?? 0) + (float) ($item->pf_employer ?? 0),
                 ];
             }

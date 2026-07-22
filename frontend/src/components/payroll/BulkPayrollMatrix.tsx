@@ -368,7 +368,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
-        style={{ height: '100%' }}
+        style={{ height: '100%', minHeight: 400 }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200">
@@ -435,7 +435,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
-        style={{ height: '100%' }}
+        style={{ height: '100%', minHeight: 400 }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200">
@@ -503,7 +503,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
-        style={{ height: '100%' }}
+        style={{ height: '100%', minHeight: 400 }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200">
@@ -563,7 +563,7 @@ export default function BulkPayrollMatrix({
     });
     return (
       <TableVirtuoso
-        style={{ height: '100%' }}
+        style={{ height: '100%', minHeight: 400 }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200">
