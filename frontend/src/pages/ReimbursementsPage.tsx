@@ -322,7 +322,7 @@ export default function ReimbursementsPage() {
     if (selectedClaimId === null) return;
     if (activeTab !== 'inbox') return;
     markReadMutation.mutate(selectedClaimId);
-  }, [selectedClaimId, activeTab, markReadMutation]);
+  }, [selectedClaimId, activeTab]);
 
   // ─── Bulk approve/reject mutations ──────────────────────
 
@@ -560,6 +560,13 @@ export default function ReimbursementsPage() {
             hint={formatPayrollAmount(summary.approved_amount, { compact: true })}
             icon={CheckCircle}
             accent="emerald"
+          />
+          <MetricCard
+            label="Rejected"
+            value={summary.rejected_count || 0}
+            hint={formatPayrollAmount(summary.rejected_amount || 0, { compact: true })}
+            icon={XCircle}
+            accent="rose"
           />
         </div>
 

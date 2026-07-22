@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Wallet, Search, Plus, IndianRupee, FileText } from 'lucide-react';
+import { Wallet, Search, Plus, IndianRupee, FileText, Settings } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
@@ -10,6 +10,8 @@ import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
 import { PageLoadingState, PageEmptyState, PageErrorState, FeedbackBanner } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected'];
 
@@ -68,6 +70,7 @@ export default function FBPPage() {
     onSuccess: () => {
       setShowClaimForm(false);
       setClaimData({ user_id: '', fbp_component_id: '', fbp_allocation_id: '', claimed_amount: '', bill_number: '', bill_date: '', description: '' });
+      queryClient.invalidateQueries({ queryKey: ['fbp-allocations'] });
       show({ kind: 'success', message: 'FBP claim submitted.' });
     },
     onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to submit FBP claim.') }),
@@ -79,8 +82,8 @@ export default function FBPPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <PageHeader
-        title="Flexible Benefits Plan"
-        description="Restructure CTC into tax-free components (meal card, fuel, phone, books) — employees pick what suits them."
+        title="FBP Basket — All Employees"
+        description="Admin sets the FBP basket per template; employee allocates within their FBP amount, submits bills, admin verifies against exemption limits."
       />
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -113,7 +116,7 @@ export default function FBPPage() {
                   <FieldLabel>Status</FieldLabel>
                   <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                     <option value="">All Status</option>
-                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
                   </SelectInput>
                 </div>
                 <div>
@@ -128,7 +131,7 @@ export default function FBPPage() {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     <TextInput
-                      placeholder="Search..."
+                      placeholder="Search employee..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-10"
@@ -139,6 +142,9 @@ export default function FBPPage() {
             </SurfaceCard>
           </div>
           <div className="flex gap-2">
+            <Button variant="secondary" iconLeft={<Settings className="h-4 w-4" />}>
+              Configure Basket
+            </Button>
             <Button variant="secondary" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowClaimForm(true)}>
               Submit Claim
             </Button>
@@ -148,11 +154,11 @@ export default function FBPPage() {
           </div>
         </div>
 
-        {/* FBP Components Info */}
+        {/* Basket Components */}
         <SurfaceCard className="p-5">
           <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
             <Wallet className="h-5 w-5 text-blue-600" />
-            Available FBP Components
+            Basket Components (per Salary Template)
           </h3>
           {componentsLoading ? (
             <PageLoadingState label="Loading FBP components…" />

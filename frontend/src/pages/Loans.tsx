@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, IndianRupee, Ban, ThumbsUp } from 'lucide-react';
+import { Plus, IndianRupee, Ban, ThumbsUp, Eye } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel, TextareaInput } from '@/components/ui/FormField';
@@ -58,12 +58,12 @@ export default function LoansPage() {
 
   const loans: Loan[] = isAdmin ? (adminData?.loans || []) : (myData?.loans || []);
   const activeLoan: Loan | null = isAdmin ? null : (myData?.active_loan || null);
-  const colCount = isAdmin ? 9 : 7;
+  const colCount = isAdmin ? 7 : 5;
 
   return (
     <div className="min-h-screen bg-slate-50">
       <PageHeader
-        title="Loans & Advances"
+        title="Active Loans"
         description="Salary advances and EMI-based loans — recovered automatically from monthly payroll."
       />
 
@@ -145,13 +145,11 @@ export default function LoansPage() {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   {isAdmin && <th className="text-left p-3 font-medium text-slate-600">Employee</th>}
-                  <th className="text-left p-3 font-medium text-slate-600">Type</th>
-                  <th className="text-right p-3 font-medium text-slate-600">Amount</th>
+                  <th className="text-right p-3 font-medium text-slate-600">Principal</th>
                   <th className="text-right p-3 font-medium text-slate-600">EMI</th>
-                  <th className="text-center p-3 font-medium text-slate-600">Installments</th>
-                  <th className="text-right p-3 font-medium text-slate-600">Remaining</th>
+                  <th className="text-right p-3 font-medium text-slate-600">Outstanding</th>
+                  <th className="text-center p-3 font-medium text-slate-600">Progress</th>
                   <th className="text-center p-3 font-medium text-slate-600">Status</th>
-                  <th className="text-left p-3 font-medium text-slate-600">Date</th>
                   {isAdmin && <th className="text-center p-3 font-medium text-slate-600">Actions</th>}
                 </tr>
               </thead>
@@ -247,48 +245,63 @@ function LoanRow({ loan, isAdmin, colCount, onAction }: { loan: Loan; isAdmin: b
             <p className="text-xs text-slate-500">{loan.user?.email}</p>
           </td>
         )}
-        <td className="p-3">
-          <span className="capitalize">{loan.loan_type === 'advance' ? 'Salary Advance' : 'Loan'}</span>
-        </td>
         <td className="p-3 text-right font-medium">{formatPayrollAmount(loan.amount)}</td>
         <td className="p-3 text-right">{formatPayrollAmount(loan.emi_amount)}</td>
-        <td className="p-3 text-center">{loan.paid_installments}/{loan.total_installments}</td>
         <td className="p-3 text-right">{formatPayrollAmount(loan.remaining_amount)}</td>
+        <td className="p-3">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#5D969D] rounded-full transition-all"
+                style={{
+                  width: `${loan.total_installments > 0
+                    ? Math.round((loan.paid_installments / loan.total_installments) * 100)
+                    : 0}%`
+                }}
+              />
+            </div>
+            <span className="text-xs text-slate-500 min-w-[32px]">
+              {loan.total_installments > 0
+                ? Math.round((loan.paid_installments / loan.total_installments) * 100)
+                : 0}%
+            </span>
+          </div>
+        </td>
         <td className="p-3 text-center">
           <StatusBadge tone={payrollStatusTone(loan.status)}>{titleCase(loan.status)}</StatusBadge>
         </td>
-        <td className="p-3 text-xs text-slate-500">{new Date(loan.created_at).toLocaleDateString()}</td>
         {isAdmin && (
           <td className="p-3">
-            {loan.status === 'pending' && (
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 justify-center">
+              {loan.status === 'pending' && (
+                <>
+                  <button
+                    onClick={() => setConfirmApprove(true)}
+                    disabled={pending === 'approve'}
+                    className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
+                    title="Approve"
+                  >
+                    {pending === 'approve' ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 rounded-full border-t-transparent" /> : <ThumbsUp className="h-4 w-4" />}
+                  </button>
+                  <button
+                    onClick={() => setShowReject(true)}
+                    disabled={pending === 'reject'}
+                    className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+                    title="Reject"
+                  >
+                    <Ban className="h-4 w-4" />
+                  </button>
+                </>
+              )}
+              {loan.status === 'approved' && (
                 <button
-                  onClick={() => setConfirmApprove(true)}
-                  disabled={pending === 'approve'}
-                  className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-                  title="Approve"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                  title="View Schedule"
                 >
-                  {pending === 'approve' ? <div className="animate-spin h-4 w-4 border-2 border-emerald-600 rounded-full border-t-transparent" /> : <ThumbsUp className="h-4 w-4" />}
+                  <Eye className="h-4 w-4" />
                 </button>
-                <button
-                  onClick={() => setShowReject(true)}
-                  disabled={pending === 'reject'}
-                  className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
-                  title="Reject"
-                >
-                  <Ban className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-            {loan.status === 'approved' && loan.remaining_amount > 0 && (
-              <button
-                onClick={() => setConfirmClose(true)}
-                disabled={pending === 'close'}
-                className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-50"
-              >
-                Close
-              </button>
-            )}
+              )}
+            </div>
           </td>
         )}
       </tr>
@@ -317,16 +330,6 @@ function LoanRow({ loan, isAdmin, colCount, onAction }: { loan: Loan; isAdmin: b
         onConfirm={doApprove}
         onClose={() => !pending && setConfirmApprove(false)}
         isLoading={pending === 'approve'}
-      />
-
-      <ConfirmDialog
-        isOpen={confirmClose}
-        title="Close loan"
-        message={loan.remaining_amount > 0 ? `Close this loan? The remaining ${formatPayrollAmount(loan.remaining_amount)} will be marked as recovered.` : 'Close this loan?'}
-        confirmLabel="Close"
-        onConfirm={doClose}
-        onClose={() => !pending && setConfirmClose(false)}
-        isLoading={pending === 'close'}
       />
     </>
   );

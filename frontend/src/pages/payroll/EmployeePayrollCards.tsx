@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Save, Users, Loader2, Building2, ArrowLeft, FileText } from 'lucide-react';
+import { Search, Save, Users, Loader2, ArrowLeft } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
-import StatusBadge from '@/components/ui/StatusBadge';
-import SalaryBreakdown from '@/components/payroll/SalaryBreakdown';
+import { TextInput, SelectInput } from '@/components/ui/FormField';
 
 const INDIAN_STATES = [
   { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
@@ -92,14 +90,6 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
     queryFn: () => payrollApi.getEmployeePayrollCard(selectedEmployeeId!),
     enabled: !!selectedEmployeeId,
   });
-
-  const { data: taxDeclData } = useQuery({
-    queryKey: ['employee-tax-declaration', selectedEmployeeId],
-    queryFn: () => payrollApi.getMyTaxDeclaration({}).then(r => r.data),
-    enabled: !!selectedEmployeeId,
-  });
-
-  const taxDecl = taxDeclData?.declaration;
 
   const saveMutation = useMutation({
     mutationFn: ({ userId, data }: { userId: number; data: EmpFormState }) =>
@@ -250,8 +240,8 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                     <div className={`text-[13px] truncate ${selectedEmployeeId === emp.id ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                       {emp.name}
                     </div>
-                    <div className="text-[11px] text-gray-400 truncate">
-                      {Number(emp.annual_ctc) > 0 ? `₹${(Number(emp.annual_ctc) / 100000).toFixed(2)}L CTC` : 'No CTC'}
+                    <div className="text-[11px] text-gray-500 truncate">
+                      {Number(emp.annual_ctc) > 0 ? `₹${(Number(emp.annual_ctc) / 100000).toFixed(1)}L CTC` : 'CTC not set'}
                     </div>
                   </div>
                 </div>
@@ -345,19 +335,6 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                 <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-800 mb-3">
                   {errorMessage}
                 </div>
-              )}
-
-              {empForm.annual_ctc && empForm.annual_ctc > 0 && (
-                <>
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Resolved Salary Breakdown</div>
-                  <SalaryBreakdown
-                    calculation={null}
-                    template={{
-                      annual_ctc: empForm.annual_ctc,
-                      pt_state: empForm.pt_state,
-                    } as any}
-                  />
-                </>
               )}
             </div>
           ) : (

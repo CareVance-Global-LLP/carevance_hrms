@@ -117,25 +117,30 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   const [markFiledFor, setMarkFiledFor] = useState<number | null>(null);
   const [ackInput, setAckInput] = useState<string>('');
 
+  const currentYear = new Date().getFullYear();
+  const financialYears = Array.from({ length: 6 }, (_, i) => {
+    const start = currentYear - i;
+    return `${start}-${start + 1}`;
+  });
+
   const { data: runs, isLoading: runsLoading } = useQuery({
     queryKey: ['payroll-runs'],
-    queryFn: () => payrollApi.getPayrollRuns(),
+    queryFn: () => payrollApi.getPayrollRuns().then(r => r.data),
   });
 
   const { data: employees, isLoading: employeesLoading } = useQuery({
     queryKey: ['payroll-filing-employees'],
-    queryFn: () => payrollApi.getEmployees(),
+    queryFn: () => payrollApi.getEmployees().then(r => r.data),
   });
 
   const { data: settings } = useQuery({
     queryKey: ['payroll-settings'],
-    queryFn: () => payrollApi.getPayrollSettings(),
+    queryFn: () => payrollApi.getPayrollSettings().then(r => r.data),
   });
 
   const { data: filingsData, isLoading: filingsLoading } = useQuery({
     queryKey: ['payroll-filings'],
     queryFn: () => payrollApi.listFilings().then((r) => r.data),
-    enabled: activeTab === 'history',
   });
 
   const { data: runValidationRaw } = useQuery({
@@ -277,7 +282,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     }
   }, [payGroup, ptState, lwfState, setPtState, setLwfState]);
 
-  const dueDates = (settings as any)?.settings?.compliance_due_dates ?? (settings as any)?.compliance_due_dates ?? {};
+  const dueDates = (settings as any)?.compliance_due_dates ?? (settings as any)?.settings?.compliance_due_dates ?? {};
 
   const calendarItems = FILING_CARDS
     .map((ft) => {
@@ -597,11 +602,9 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select financial year...</option>
-                  <option value="2026-2027">2026-2027</option>
-                  <option value="2025-2026">2025-2026</option>
-                  <option value="2024-2025">2024-2025</option>
-                  <option value="2023-2024">2023-2024</option>
-                  <option value="2022-2023">2022-2023</option>
+                  {financialYears.map(fy => (
+                    <option key={fy} value={fy}>{fy}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -649,7 +652,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
             </div>
           ) : !Array.isArray(filingsList) || filingsList.length === 0 ? (
             <div className="text-center py-12">
-              <FileText className="h-12 h-12 text-slate-300 mx-auto mb-3" />
+              <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
               <p className="text-sm text-slate-500">No filings generated yet</p>
               <p className="text-xs text-slate-400 mt-1">Use the Generate tab to create PF, ESI, TDS, PT or LWF returns.</p>
             </div>

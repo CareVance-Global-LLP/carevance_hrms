@@ -136,7 +136,7 @@ export default function RunPayrollChecklist({ runId, className }: RunPayrollChec
                 <div className="flex items-center gap-2">
                   <Icon className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
                   <p className="text-sm font-medium text-slate-900 truncate">{step.title}</p>
-                  {(step as any).locked && (
+                  {'locked' in step && (step as any).locked && (
                     <Lock className="h-3 w-3 text-slate-400 flex-shrink-0" />
                   )}
                 </div>

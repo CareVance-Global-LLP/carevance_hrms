@@ -49,6 +49,7 @@ export default function TaxProofsReviewPage() {
       payrollApi.reviewTaxProof(id, { decision, approved_amount, notes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tax-proofs'] });
+      queryClient.invalidateQueries({ queryKey: ['tax-proofs-summary'] });
       setApproving(null);
       setRejecting(null);
       show({ kind: 'success', message: 'Tax proof reviewed.' });
@@ -65,6 +66,7 @@ export default function TaxProofsReviewPage() {
       payrollApi.bulkApproveTaxProofs(userId, financialYear),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tax-proofs'] });
+      queryClient.invalidateQueries({ queryKey: ['tax-proofs-summary'] });
       setBulkConfirming(false);
       show({ kind: 'success', message: 'Tax proofs approved.' });
     },

@@ -10,7 +10,7 @@ export default function ProofDocumentsCenter() {
 
   const { data: declarations, isLoading } = useQuery({
     queryKey: ['tax-declarations-proofs'],
-    queryFn: () => payrollApi.listTaxDeclarations({}),
+    queryFn: () => payrollApi.listTaxDeclarations({}).then(r => r.data),
   });
 
   const declList = Array.isArray(declarations)
@@ -99,7 +99,7 @@ export default function ProofDocumentsCenter() {
                         variant="ghost"
                         size="sm"
                         iconLeft={<Eye className="h-3 w-3" />}
-                        onClick={() => window.open(item.proof_path, '_blank')}
+                        onClick={() => window.open(item.proof_path, '_blank', 'noopener,noreferrer')}
                       >
                         View
                       </Button>

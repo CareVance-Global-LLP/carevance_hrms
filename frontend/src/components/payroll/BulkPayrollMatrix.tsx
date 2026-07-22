@@ -562,9 +562,11 @@ export default function BulkPayrollMatrix({
       }
     });
     return (
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+      <TableVirtuoso
+        style={{ height: '100%' }}
+        totalCount={rowEntries.length}
+        fixedHeaderContent={() => (
+          <tr className="bg-slate-50 border-b border-slate-200">
             <th className="px-3 py-3 text-left font-semibold text-slate-700 min-w-[80px]">Emp ID</th>
             <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[180px]">Employee</th>
             <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[120px]">Dept</th>
@@ -572,22 +574,9 @@ export default function BulkPayrollMatrix({
             <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[130px]">FBP Allocated</th>
             <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[130px]">FBP Utilized</th>
           </tr>
-        </thead>
-        <tbody>
-          {employees.map((emp) => {
-            const d = reimbData?.[emp.id];
-            return (
-              <tr key={emp.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                {renderEmployeeCell(emp)}
-                <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.reimbursements ?? 0)}</td>
-                <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.fbp_allocated ?? 0)}</td>
-                <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.fbp_utilized ?? 0)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold sticky bottom-0">
+        )}
+        fixedFooterContent={() => (
+          <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold">
             <td className="px-3 py-3 text-sm text-slate-700"></td>
             <td className="px-4 py-3 text-left text-sm text-slate-700">Total ({employees.length})</td>
             <td></td>
@@ -595,8 +584,22 @@ export default function BulkPayrollMatrix({
             <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(reimbTotals.allocated)}</td>
             <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(reimbTotals.utilized)}</td>
           </tr>
-        </tfoot>
-      </table>
+        )}
+        itemContent={(index) => {
+          const [empId] = rowEntries[index];
+          const emp = employeeMap.get(empId);
+          if (!emp) return null;
+          const d = reimbData?.[emp.id];
+          return (
+            <>
+              {renderEmployeeCell(emp)}
+              <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.reimbursements ?? 0)}</td>
+              <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.fbp_allocated ?? 0)}</td>
+              <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(d?.fbp_utilized ?? 0)}</td>
+            </>
+          );
+        }}
+      />
     );
   };
 
@@ -861,7 +864,7 @@ export default function BulkPayrollMatrix({
           variant="secondary"
           size="sm"
           onClick={() => {
-            const headers = ['Employee', 'Dept', 'Working Days', 'Present', 'LOP', 'Paid Leave', 'Overtime Hours',
+            const headers = ['Emp ID', 'Employee', 'Dept', 'Working Days', 'Present', 'LOP', 'Paid Leave', 'Overtime Hours',
               'Annual CTC', 'Basic', 'HRA', 'Special', 'Conveyance', 'Other Earnings', 'Overtime Pay', 'Other Deduction',
               'PF Emp', 'PF Er', 'ESI Emp', 'ESI Er', 'PT', 'TDS', 'Gross', 'Deductions', 'Net Pay'];
             const csvRows = [headers.join(',')];
@@ -876,7 +879,7 @@ export default function BulkPayrollMatrix({
               const deductions = row.pf_employee + row.esi_employee + row.pt + row.tds
                 + row.other_deduction + lopDed + loans;
               const net = gross - deductions;
-              csvRows.push(`"${emp?.name || ''}","${emp?.department || ''}",${row.working_days},${row.present_days},${row.lop_days},${row.paid_leave_days},${row.overtime_hours},${row.annual_ctc},${row.basic},${row.hra},${row.special_allowance},${row.conveyance},${row.other_earnings},${row.overtime_pay_amount},${row.other_deduction},${row.pf_employee},${row.pf_employer},${row.esi_employee},${row.esi_employer},${row.pt},${row.tds},${gross},${deductions},${net}`);
+              csvRows.push(`"${emp?.employee_code || emp?.id || ''}","${emp?.name || ''}","${emp?.department || ''}",${row.working_days},${row.present_days},${row.lop_days},${row.paid_leave_days},${row.overtime_hours},${row.annual_ctc},${row.basic},${row.hra},${row.special_allowance},${row.conveyance},${row.other_earnings},${row.overtime_pay_amount},${row.other_deduction},${row.pf_employee},${row.pf_employer},${row.esi_employee},${row.esi_employer},${row.pt},${row.tds},${gross},${deductions},${net}`);
             });
             const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);

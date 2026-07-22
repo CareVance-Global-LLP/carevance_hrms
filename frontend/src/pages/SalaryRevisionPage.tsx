@@ -30,7 +30,7 @@ export default function SalaryRevisionPage() {
 
   const { data: lettersData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['revision-letters', statusFilter],
-    queryFn: () => payrollApi.getRevisionLetters().then(res => res.data?.data ?? res.data ?? []),
+    queryFn: () => payrollApi.getRevisionLetters(undefined, statusFilter || undefined).then(res => res.data?.data ?? res.data ?? []),
   });
 
   const { data: usersData } = useQuery({
@@ -189,13 +189,23 @@ export default function SalaryRevisionPage() {
                   </div>
                 </div>
 
-                {formData.generate_arrears && formData.effective_date && (
-                  <div className="rounded-md bg-blue-50 border border-blue-200 p-3">
-                    <p className="text-sm text-blue-800">
-                      Projected arrear: ₹20,000 for Oct 2025
-                    </p>
-                  </div>
-                )}
+                {formData.generate_arrears && formData.effective_date && formData.user_id && formData.new_ctc && (() => {
+                  const selectedUser = users.find((u: any) => String(u.id) === formData.user_id) as any;
+                  const oldCtc = selectedUser?.annual_ctc || 0;
+                  const newCtc = parseFloat(formData.new_ctc) || 0;
+                  const monthlyDiff = (newCtc - oldCtc) / 12;
+                  const effectiveDate = new Date(formData.effective_date);
+                  const now = new Date();
+                  const monthsBack = Math.max(0, (now.getFullYear() - effectiveDate.getFullYear()) * 12 + (now.getMonth() - effectiveDate.getMonth()));
+                  const projected = Math.round(monthlyDiff * monthsBack);
+                  return monthsBack > 0 && projected !== 0 ? (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 p-3">
+                      <p className="text-sm text-blue-800">
+                        Projected arrear: {formatPayrollAmount(projected)} for {monthsBack} month{monthsBack > 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  ) : null;
+                })()}
 
                 <div className="flex gap-3 pt-4">
                   <Button

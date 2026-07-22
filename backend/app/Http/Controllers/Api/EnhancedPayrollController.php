@@ -248,10 +248,18 @@ class EnhancedPayrollController extends Controller
     {
         $organizationId = $request->user()->organization_id;
 
-        $encashments = LeaveEncashment::where('organization_id', $organizationId)
+        $query = LeaveEncashment::where('organization_id', $organizationId)
             ->with(['user:id,name,email', 'requester:id,name', 'approver:id,name'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+            ->orderBy('created_at', 'desc');
+
+        if ($request->has('user_id') && $request->user_id) {
+            $query->where('user_id', $request->user_id);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+
+        $encashments = $query->get();
 
         return response()->json([
             'success' => true,
@@ -395,10 +403,18 @@ class EnhancedPayrollController extends Controller
     {
         $organizationId = $request->user()->organization_id;
 
-        $arrears = ArrearPayment::where('organization_id', $organizationId)
+        $query = ArrearPayment::where('organization_id', $organizationId)
             ->with(['user:id,name,email'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+            ->orderBy('created_at', 'desc');
+
+        if ($request->has('user_id') && $request->user_id) {
+            $query->where('user_id', $request->user_id);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+
+        $arrears = $query->get();
 
         return response()->json([
             'success' => true,
@@ -643,10 +659,18 @@ class EnhancedPayrollController extends Controller
     {
         $organizationId = $request->user()->organization_id;
 
-        $settlements = FullAndFinalSettlement::where('organization_id', $organizationId)
+        $query = FullAndFinalSettlement::where('organization_id', $organizationId)
             ->with(['user:id,name,email', 'preparer:id,name', 'approver:id,name'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+            ->orderBy('created_at', 'desc');
+
+        if ($request->has('user_id') && $request->user_id) {
+            $query->where('user_id', $request->user_id);
+        }
+        if ($request->has('status') && $request->status) {
+            $query->where('status', $request->status);
+        }
+
+        $settlements = $query->get();
 
         return response()->json([
             'success' => true,

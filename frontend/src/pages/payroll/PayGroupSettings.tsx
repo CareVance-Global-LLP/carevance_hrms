@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2, ChevronDown, ChevronRight, X, Save, Settings, Building2, FileText, ToggleLeft, ToggleRight, ArrowLeft } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
-import type { PayGroupSettings, CreatePayGroupSettingsPayload, SalaryStructure, PayGroupFilingDetail } from '@/types';
+import type { PayGroupSettings, CreatePayGroupSettingsPayload, SalaryStructure, PayGroupFilingDetail, UpdateFilingDetailsPayload } from '@/types';
 
 const INDIAN_STATES = [
   { code: 'andhra_pradesh', name: 'Andhra Pradesh' },
@@ -831,7 +831,7 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (targ
   });
 
   const updateStatutoryMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) =>
+    mutationFn: ({ id, data }: { id: number; data: { pf_enabled?: boolean; esi_enabled?: boolean; pt_enabled?: boolean; lwf_enabled?: boolean; tds_enabled?: boolean } }) =>
       payrollApi.updatePayGroupStatutoryRules(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pay-group-settings'] });
@@ -855,7 +855,7 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (targ
   };
 
   const updateFilingMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => payrollApi.updatePayGroupFilingDetails(id, data),
+    mutationFn: ({ id, data }: { id: number; data: UpdateFilingDetailsPayload }) => payrollApi.updatePayGroupFilingDetails(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pay-group-settings'] });
     },

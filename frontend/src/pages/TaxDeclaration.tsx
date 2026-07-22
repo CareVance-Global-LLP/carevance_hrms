@@ -46,6 +46,7 @@ export default function TaxDeclarationPage() {
     onSuccess: () => {
       show({ kind: 'success', message: 'Declaration saved!' });
       queryClient.invalidateQueries({ queryKey: ['tax-declaration'] });
+      queryClient.invalidateQueries({ queryKey: ['tax-declarations'] });
     },
     onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to save declaration.') }),
   });
@@ -56,6 +57,7 @@ export default function TaxDeclarationPage() {
     onSuccess: () => {
       show({ kind: 'success', message: 'Declaration submitted for approval!' });
       queryClient.invalidateQueries({ queryKey: ['tax-declaration'] });
+      queryClient.invalidateQueries({ queryKey: ['tax-declarations'] });
     },
     onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to submit declaration.') }),
   });
@@ -96,6 +98,7 @@ export default function TaxDeclarationPage() {
       await payrollApi.uploadTaxProof(itemId, file);
       show({ kind: 'success', message: 'Proof uploaded!' });
       queryClient.invalidateQueries({ queryKey: ['tax-declaration'] });
+      queryClient.invalidateQueries({ queryKey: ['tax-declarations'] });
     } catch (e) {
       show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to upload proof.') });
     }

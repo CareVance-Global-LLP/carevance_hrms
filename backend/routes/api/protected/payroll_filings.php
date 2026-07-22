@@ -106,6 +106,7 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
 
     // ===== Bank Integration =====
     Route::prefix('bank')->group(function () {
+        Route::get('/batches', [PayrollFilingController::class, 'listBatches']);
         Route::post('/create-batch', [PayrollFilingController::class, 'createTransferBatch']);
         Route::post('/batches/{batchId}/process', [PayrollFilingController::class, 'processBatch']);
         Route::post('/batches/{batchId}/file', [PayrollFilingController::class, 'generateBankFile']);

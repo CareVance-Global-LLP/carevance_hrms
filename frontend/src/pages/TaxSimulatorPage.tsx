@@ -331,8 +331,9 @@ export default function TaxSimulatorPage() {
                         type="text"
                         value={scenario.name}
                         onChange={(e) => {
-                          const newScenarios = [...scenarios];
-                          newScenarios[idx].name = e.target.value;
+                          const newScenarios = scenarios.map((s, i) =>
+                            i === idx ? { ...s, name: e.target.value } : s
+                          );
                           setScenarios(newScenarios);
                         }}
                         className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-[#5D969D]"
@@ -343,8 +344,9 @@ export default function TaxSimulatorPage() {
                         value={idx === 0 ? annualCtc : scenario.ctc}
                         onChange={(e) => {
                           if (idx === 0) setAnnualCtc(e.target.value);
-                          const newScenarios = [...scenarios];
-                          newScenarios[idx].ctc = e.target.value;
+                          const newScenarios = scenarios.map((s, i) =>
+                            i === idx ? { ...s, ctc: e.target.value } : s
+                          );
                           setScenarios(newScenarios);
                         }}
                         placeholder="Annual CTC"

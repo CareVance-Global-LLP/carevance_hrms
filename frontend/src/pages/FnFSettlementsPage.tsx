@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Loader2, CheckCircle, XCircle, DollarSign, Briefcase } from 'lucide-react';
+import { Search, Loader2, CheckCircle, XCircle, IndianRupee, Briefcase, ArrowLeft, FileText, Check, X } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
@@ -25,13 +25,14 @@ export default function FnFSettlementsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('');
 
+  const [selectedSettlement, setSelectedSettlement] = useState<any>(null);
   const [rejecting, setRejecting] = useState<{ id: number; name: string } | null>(null);
   const [approving, setApproving] = useState<{ id: number; name: string } | null>(null);
   const [processing, setProcessing] = useState<{ id: number; name: string } | null>(null);
 
   const { data: settlementsData, isLoading } = useQuery({
     queryKey: ['fnf-settlements', statusFilter, userFilter],
-    queryFn: () => payrollApi.listFnFSettlements({ status: statusFilter || undefined }).then(res => res.data?.data ?? res.data ?? []),
+    queryFn: () => payrollApi.listFnFSettlements({ status: statusFilter || undefined, user_id: userFilter ? parseInt(userFilter) : undefined }).then(res => res.data?.data ?? res.data ?? []),
   });
 
   const { data: usersData } = useQuery({
@@ -98,6 +99,110 @@ export default function FnFSettlementsPage() {
     approved: settlements.filter(s => s.status === 'approved').length,
     paid: settlements.filter(s => s.status === 'paid').length,
   };
+
+  if (selectedSettlement) {
+    const s = selectedSettlement;
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <PageHeader
+          title={`${s.user?.name || 'Unknown'} — Last Working Day: ${s.last_working_date || 'N/A'}`}
+          description="Full & Final Settlement"
+        />
+        <div className="p-6 max-w-7xl mx-auto space-y-6">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" iconLeft={<ArrowLeft className="h-4 w-4" />} onClick={() => setSelectedSettlement(null)}>
+              Back to List
+            </Button>
+            <StatusBadge tone={payrollStatusTone(s.status)}>{titleCase(s.status)}</StatusBadge>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Settlement Components */}
+            <SurfaceCard className="p-5">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <IndianRupee className="h-4 w-4 text-[#5D969D]" />
+                Settlement Components
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Pending Salary ({s.last_working_date || '1–15 Nov'})</span>
+                  <span className="font-medium text-slate-900">{formatPayrollAmount(s.current_month_salary || 0)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Leave Encashment</span>
+                  <span className="font-medium text-slate-900">{formatPayrollAmount(s.leave_encashment || 0)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Gratuity {Number(s.years_of_service || 0) < 5 ? '(not eligible — <5yrs)' : ''}</span>
+                  <span className={`font-medium ${Number(s.years_of_service || 0) < 5 ? 'text-slate-400' : 'text-slate-900'}`}>
+                    {formatPayrollAmount(s.gratuity_amount || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Loan Recovery</span>
+                  <span className="font-medium text-rose-600">-{formatPayrollAmount(s.loan_recovery || 0)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">Notice Period Shortfall {s.notice_period_days ? `(${s.notice_period_days} days)` : ''}</span>
+                  <span className="font-medium text-rose-600">-{formatPayrollAmount(s.notice_pay_recovery || 0)}</span>
+                </div>
+                <div className="border-t border-slate-200 mt-3 pt-3">
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-slate-900">Net Payable</span>
+                    <span className={`text-lg font-bold ${(s.net_settlement_amount || 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {formatPayrollAmount(s.net_settlement_amount || 0)}
+                    </span>
+                  </div>
+                  {(s.net_settlement_amount || 0) < 0 && (
+                    <p className="text-xs text-rose-500 mt-1">(recoverable from employee)</p>
+                  )}
+                </div>
+              </div>
+            </SurfaceCard>
+
+            {/* Clearance Checklist */}
+            <SurfaceCard className="p-5">
+              <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <FileText className="h-4 w-4 text-[#5D969D]" />
+                Clearance Checklist
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600">Assets returned</span>
+                  <span className="flex items-center gap-1.5">
+                    <Check className="h-4 w-4 text-emerald-500" />
+                    <span className="text-emerald-600 text-xs font-medium">Pass</span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600">Manager sign-off</span>
+                  <span className="flex items-center gap-1.5">
+                    <Check className="h-4 w-4 text-emerald-500" />
+                    <span className="text-emerald-600 text-xs font-medium">Pass</span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600">Finance recovery acknowledgement</span>
+                  <span className="flex items-center gap-1.5">
+                    <X className="h-4 w-4 text-rose-500" />
+                    <span className="text-rose-600 text-xs font-medium">Fail</span>
+                  </span>
+                </div>
+              </div>
+              <div className="mt-6 space-y-2">
+                <Button variant="primary" className="w-full" disabled>
+                  Finalize Settlement
+                </Button>
+                <Button variant="secondary" className="w-full" iconLeft={<FileText className="h-4 w-4" />}>
+                  Generate F&F Statement
+                </Button>
+              </div>
+            </SurfaceCard>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -203,7 +308,7 @@ export default function FnFSettlementsPage() {
                     .filter(s => !searchQuery ||
                       s.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()))
                     .map((settlement: any) => (
-                    <tr key={settlement.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={settlement.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelectedSettlement(settlement)}>
                       <td className="px-4 py-3">
                         <div className="font-medium text-slate-900">{settlement.user?.name || 'Unknown'}</div>
                         <div className="text-xs text-slate-500">{settlement.user?.email || ''}</div>
@@ -218,7 +323,7 @@ export default function FnFSettlementsPage() {
                       <td className="px-4 py-3 text-slate-900">{Number(settlement.years_of_service || 0).toFixed(1)}</td>
                       <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(settlement.gratuity_amount, { compact: true })}</td>
                       <td className="px-4 py-3">
-                        <span className="text-emerald-600 font-medium">{formatPayrollAmount(settlement.net_settlement, { compact: true })}</span>
+                        <span className="text-emerald-600 font-medium">{formatPayrollAmount(settlement.net_settlement_amount, { compact: true })}</span>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge tone={payrollStatusTone(settlement.status)}>{titleCase(settlement.status)}</StatusBadge>
@@ -251,7 +356,7 @@ export default function FnFSettlementsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              iconLeft={<DollarSign className="h-3 w-3 text-emerald-600" />}
+                              iconLeft={<IndianRupee className="h-3 w-3 text-emerald-600" />}
                               onClick={() => setProcessing({ id: settlement.id, name: settlement.user?.name || 'this settlement' })}
                               disabled={processPaymentMutation.isPending}
                             >

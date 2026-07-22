@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Search, CheckCircle, XCircle } from 'lucide-react';
+import { FileText, Search, CheckCircle, XCircle, Plus } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
-import { TextInput, SelectInput } from '@/components/ui/FormField';
+import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -15,12 +15,15 @@ import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
+import { useAuth } from '@/contexts/AuthContext';
 
 const STATUS_OPTIONS = ['draft', 'approved', 'rejected'];
 
 export default function LeaveEncashmentPage() {
   const queryClient = useQueryClient();
   const { show } = useToast();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('');
@@ -30,7 +33,7 @@ export default function LeaveEncashmentPage() {
 
   const { data: encashmentsData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['leave-encashments', statusFilter, userFilter],
-    queryFn: () => payrollApi.listLeaveEncashments({ status: statusFilter || undefined }).then(res => res.data?.data ?? res.data ?? []),
+    queryFn: () => payrollApi.listLeaveEncashments({ status: statusFilter || undefined, user_id: userFilter ? parseInt(userFilter) : undefined }).then(res => res.data?.data ?? res.data ?? []),
   });
 
   const { data: usersData } = useQuery({
@@ -106,7 +109,7 @@ export default function LeaveEncashmentPage() {
         <SurfaceCard className="p-5">
           <div className="flex flex-wrap gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+              <FieldLabel>Status</FieldLabel>
               <SelectInput
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -116,7 +119,7 @@ export default function LeaveEncashmentPage() {
               </SelectInput>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
+              <FieldLabel>Employee</FieldLabel>
               <SelectInput
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
@@ -126,7 +129,7 @@ export default function LeaveEncashmentPage() {
               </SelectInput>
             </div>
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Search</label>
+              <FieldLabel>Search</FieldLabel>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <TextInput
@@ -137,6 +140,11 @@ export default function LeaveEncashmentPage() {
                 />
               </div>
             </div>
+            {isAdmin && (
+              <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />}>
+                + Process Encashment
+              </Button>
+            )}
           </div>
         </SurfaceCard>
 
@@ -173,13 +181,12 @@ export default function LeaveEncashmentPage() {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Month</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Leave Type</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Eligible Days</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Encashed Days</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Amount</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Net Amount</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Leave Days</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Per-Day Rate</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Gross Amount</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Exempt (10(10AA))</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Taxable</th>
+                    <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                     <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
@@ -194,17 +201,12 @@ export default function LeaveEncashmentPage() {
                         <div className="font-medium text-slate-900">{enc.user?.name || 'Unknown'}</div>
                         <div className="text-xs text-slate-500">{enc.user?.email || ''}</div>
                       </td>
-                      <td className="px-4 py-3 text-slate-900">{enc.month_year || '-'}</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
-                          {titleCase(enc.leave_type)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">{enc.eligible_days || 0}</td>
-                      <td className="px-4 py-3 text-slate-900">{enc.encashed_days || 0}</td>
-                      <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(enc.total_amount, { compact: true })}</td>
-                      <td className="px-4 py-3 font-medium text-emerald-600">{formatPayrollAmount(enc.net_amount, { compact: true })}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-center text-slate-900">{enc.encashed_days || 0}</td>
+                      <td className="px-4 py-3 text-right text-slate-900">{formatPayrollAmount(enc.rate_per_day || 0, { compact: true })}</td>
+                      <td className="px-4 py-3 text-right text-slate-900">{formatPayrollAmount(enc.total_amount || 0, { compact: true })}</td>
+                      <td className="px-4 py-3 text-right text-emerald-600">{formatPayrollAmount((enc.total_amount || 0) - (enc.net_amount || 0), { compact: true })}</td>
+                      <td className="px-4 py-3 text-right font-medium text-rose-600">{formatPayrollAmount(enc.net_amount || 0, { compact: true })}</td>
+                      <td className="px-4 py-3 text-center">
                         <StatusBadge tone={payrollStatusTone(enc.status)}>{titleCase(enc.status)}</StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-right">

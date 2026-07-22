@@ -14,12 +14,12 @@ export default function FbpDashboard() {
 
   const { data: components } = useQuery({
     queryKey: ['fbp-components'],
-    queryFn: () => payrollApi.getFbpComponents(),
+    queryFn: () => payrollApi.getFbpComponents().then(r => r.data),
   });
 
   const { data: allocations } = useQuery({
     queryKey: ['fbp-allocations', selectedUserId],
-    queryFn: () => payrollApi.getFbpAllocations(selectedUserId!),
+    queryFn: () => payrollApi.getFbpAllocations(selectedUserId!).then(r => r.data),
     enabled: !!selectedUserId,
   });
 
@@ -32,8 +32,8 @@ export default function FbpDashboard() {
     },
   });
 
-  const compList = Array.isArray(components) ? components : [];
-  const allocList = Array.isArray(allocations) ? allocations : [];
+  const compList = Array.isArray(components) ? components : (components as any)?.components ?? [];
+  const allocList = Array.isArray(allocations) ? allocations : (allocations as any)?.allocations ?? [];
 
   return (
     <div className="space-y-6">

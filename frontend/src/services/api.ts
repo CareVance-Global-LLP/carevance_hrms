@@ -2252,8 +2252,12 @@ export const payrollApi = {
   // ===== Salary Revision Letters =====
   generateRevisionLetter: (data: { user_id: number; new_ctc: number; revision_type?: string; reason?: string; effective_date?: string; generate_arrears?: boolean }) =>
     api.post<any>('/payroll/revision-letters', data),
-  getRevisionLetters: (userId?: number) =>
-    api.get<any>(userId ? `/payroll/revision-letters/user/${userId}` : '/payroll/revision-letters'),
+  getRevisionLetters: (userId?: number, status?: string) => {
+    const params: Record<string, any> = {};
+    if (status) params.status = status;
+    if (userId) return api.get<any>(`/payroll/revision-letters/user/${userId}`, { params });
+    return api.get<any>('/payroll/revision-letters', { params: Object.keys(params).length ? params : undefined });
+  },
   acceptRevisionLetter: (id: number) =>
     api.post<any>(`/payroll/revision-letters/${id}/accept`),
   rejectRevisionLetter: (id: number) =>
@@ -2268,7 +2272,7 @@ export const payrollApi = {
     api.post<any>('/payroll/checklist/resolve', { check_id: checkId, resolution }),
 
   // ===== Arrears =====
-  listArrears: (params?: { status?: string }) =>
+  listArrears: (params?: { status?: string; user_id?: number }) =>
     api.get<{ data: any[] }>('/payroll/arrears', { params }),
   createArrear: (data: Record<string, any>) =>
     api.post<any>('/payroll/arrears', data),
@@ -2282,7 +2286,7 @@ export const payrollApi = {
     api.post<any>('/payroll/arrears/calculate', data),
 
   // ===== Leave Encashment =====
-  listLeaveEncashments: (params?: { status?: string }) =>
+  listLeaveEncashments: (params?: { status?: string; user_id?: number }) =>
     api.get<{ data: any[] }>('/payroll/leave-encashments', { params }),
   requestLeaveEncashment: (data: Record<string, any>) =>
     api.post<any>('/payroll/leave-encashments', data),
@@ -2292,7 +2296,7 @@ export const payrollApi = {
     api.post<any>(`/payroll/leave-encashments/${id}/reject`, { reason }),
 
   // ===== F&F Settlements =====
-  listFnFSettlements: (params?: { status?: string }) =>
+  listFnFSettlements: (params?: { status?: string; user_id?: number }) =>
     api.get<{ data: any[] }>('/payroll/fnf-settlements', { params }),
   createFnFSettlement: (data: Record<string, any>) =>
     api.post<any>('/payroll/fnf-settlements', data),

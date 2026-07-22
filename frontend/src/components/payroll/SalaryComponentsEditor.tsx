@@ -156,6 +156,16 @@ export default function SalaryComponentsEditor() {
                 >
                   + Deduction
                 </button>
+                <button
+                  onClick={() => {
+                    if (confirm(`Delete template "${structure.name}"? This cannot be undone.`)) {
+                      deleteMutation.mutate(structure.id);
+                    }
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-medium text-red-500 hover:text-red-600 transition-colors ml-auto"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           );

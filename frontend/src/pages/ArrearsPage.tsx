@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calculator, Search, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Calculator, Search, Loader2, CheckCircle, XCircle, Plus } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
@@ -30,7 +30,7 @@ export default function ArrearsPage() {
 
   const { data: arrearsData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['arrears', statusFilter, userFilter],
-    queryFn: () => payrollApi.listArrears({ status: statusFilter || undefined }).then((res) => res.data?.data ?? res.data ?? []),
+    queryFn: () => payrollApi.listArrears({ status: statusFilter || undefined, user_id: userFilter ? parseInt(userFilter) : undefined }).then((res) => res.data?.data ?? res.data ?? []),
   });
 
   const { data: usersData } = useQuery({
@@ -91,10 +91,12 @@ export default function ArrearsPage() {
       a.arrear_type?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const activeRunMonth = arrears.length > 0 ? (arrears[0]?.arrear_month || arrears[0]?.calculation_month || 'Current') : 'Current';
+
   return (
     <div className="min-h-screen bg-slate-50">
       <PageHeader
-        title="Arrears"
+        title={`Pending Arrears — ${activeRunMonth} Run`}
         description="Retroactive salary payments — for increments, promotions, or revisions applied after the effective date."
       />
 
@@ -156,6 +158,27 @@ export default function ArrearsPage() {
                 />
               </div>
             </div>
+            <Button
+              variant="primary"
+              size="sm"
+              iconLeft={<Plus className="h-4 w-4" />}
+              onClick={() => {
+                const user = users[0];
+                if (user) {
+                  createMutation.mutate({
+                    user_id: user.id,
+                    arrear_type: 'salary',
+                    reason: 'Manual arrear',
+                    gross_diff: 0,
+                    net_arrear: 0,
+                    status: 'draft',
+                  });
+                }
+              }}
+              disabled={createMutation.isPending || users.length === 0}
+            >
+              {createMutation.isPending ? 'Creating...' : '+ Manual Arrear'}
+            </Button>
           </div>
         </SurfaceCard>
 
@@ -193,12 +216,12 @@ export default function ArrearsPage() {
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50">
                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Arrear Month</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Calc Month</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Gross Diff</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Net Arrear</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Arrear Month</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Gross Diff</th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Net Arrear</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Reason</th>
+                    <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                     <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
@@ -209,16 +232,12 @@ export default function ArrearsPage() {
                         <div className="font-medium text-slate-900">{arrear.user?.name || 'Unknown'}</div>
                         <div className="text-xs text-slate-500">{arrear.user?.email || ''}</div>
                       </td>
+                      <td className="px-4 py-3 text-slate-900">{titleCase(arrear.arrear_type || 'salary')}</td>
                       <td className="px-4 py-3 text-slate-900">{arrear.arrear_month || '-'}</td>
-                      <td className="px-4 py-3 text-slate-900">{arrear.calculation_month || '-'}</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
-                          {titleCase(arrear.arrear_type)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(arrear.gross_difference, { compact: true })}</td>
-                      <td className="px-4 py-3 font-medium text-emerald-600">{formatPayrollAmount(arrear.net_arrear_amount, { compact: true })}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-right text-slate-900">{formatPayrollAmount(arrear.gross_difference || 0, { compact: true })}</td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-900">{formatPayrollAmount(arrear.net_arrear_amount || 0, { compact: true })}</td>
+                      <td className="px-4 py-3 text-slate-900 max-w-[200px] truncate">{arrear.reason || '-'}</td>
+                      <td className="px-4 py-3 text-center">
                         <StatusBadge tone={payrollStatusTone(arrear.status)}>{titleCase(arrear.status)}</StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-right">

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Briefcase, Plus, IndianRupee, Home, Car, GraduationCap, Wifi, Coffee } from 'lucide-react';
+import { Briefcase, Plus, IndianRupee, Home, Car, GraduationCap, Wifi, Coffee, Pencil } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
@@ -31,9 +31,9 @@ export default function PerquisitesPage() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     user_id: '',
-    type: 'car',
-    monthly_value: '',
-    details: '',
+    perquisite_type: 'car',
+    annual_value: '',
+    description: '',
   });
 
   const { data: usersData } = useQuery({
@@ -52,13 +52,13 @@ export default function PerquisitesPage() {
   const createMutation = useMutation({
     mutationFn: () => payrollApi.createPerquisite({
       user_id: parseInt(formData.user_id),
-      type: formData.type,
-      monthly_value: parseFloat(formData.monthly_value),
-      details: formData.details ? { notes: formData.details } : {},
+      perquisite_type: formData.perquisite_type,
+      annual_value: parseFloat(formData.annual_value),
+      description: formData.description || undefined,
     }),
     onSuccess: () => {
       setShowForm(false);
-      setFormData({ user_id: '', type: 'car', monthly_value: '', details: '' });
+      setFormData({ user_id: '', perquisite_type: 'car', annual_value: '', description: '' });
       queryClient.invalidateQueries({ queryKey: ['perquisites'] });
       show({ kind: 'success', message: 'Perquisite added.' });
     },
@@ -71,7 +71,7 @@ export default function PerquisitesPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <PageHeader
-        title="Perquisites"
+        title="Perquisites — Q3 FY 25-26"
         description="Track taxable non-cash benefits (rent-free house, company car, club membership) — added to TDS."
       />
 
@@ -145,24 +145,24 @@ export default function PerquisitesPage() {
               </div>
               <div>
                 <FieldLabel>Perquisite Type</FieldLabel>
-                <SelectInput value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })}>
+                <SelectInput value={formData.perquisite_type} onChange={(e) => setFormData({ ...formData, perquisite_type: e.target.value })}>
                   {PERQUISITE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </SelectInput>
               </div>
               <div>
-                <FieldLabel>Monthly Value (₹)</FieldLabel>
+                <FieldLabel>Annual Value (₹)</FieldLabel>
                 <TextInput
                   type="number"
-                  value={formData.monthly_value}
-                  onChange={(e) => setFormData({ ...formData, monthly_value: e.target.value })}
+                  value={formData.annual_value}
+                  onChange={(e) => setFormData({ ...formData, annual_value: e.target.value })}
                   placeholder="0"
                 />
               </div>
               <div>
-                <FieldLabel>Details (Optional)</FieldLabel>
+                <FieldLabel>Description (Optional)</FieldLabel>
                 <TextareaInput
-                  value={formData.details}
-                  onChange={(e) => setFormData({ ...formData, details: e.target.value })}
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Additional details..."
                   rows={1}
                 />
@@ -174,7 +174,7 @@ export default function PerquisitesPage() {
                 variant="primary"
                 iconLeft={<IndianRupee className="h-4 w-4" />}
                 onClick={() => createMutation.mutate()}
-                disabled={!formData.user_id || !formData.monthly_value || createMutation.isPending}
+                disabled={!formData.user_id || !formData.annual_value || createMutation.isPending}
               >
                 {createMutation.isPending ? 'Adding...' : 'Add Perquisite'}
               </Button>
@@ -208,25 +208,37 @@ export default function PerquisitesPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Monthly Value</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Annual Value</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Taxable Amount</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Description</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Taxable Value</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {perquisites.map((p: any, idx: number) => (
-                      <tr key={p.id || idx} className="hover:bg-slate-50">
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
-                            {PERQUISITE_TYPES.find(t => t.value === p.type)?.label || p.type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(p.monthly_value, { compact: true })}</td>
-                        <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(p.annual_value || (p.monthly_value * 12) || 0, { compact: true })}</td>
-                        <td className="px-4 py-3 font-medium text-rose-600">{formatPayrollAmount(p.taxable_amount || p.annual_value || 0, { compact: true })}</td>
-                      </tr>
-                    ))}
+                    {perquisites.map((p: any, idx: number) => {
+                      const emp = users.find((u: any) => String(u.id) === String(p.user_id));
+                      return (
+                        <tr key={p.id || idx} className="hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-900">{emp?.name || p.user?.name || 'Unknown'}</div>
+                            <div className="text-xs text-slate-500">{emp?.email || p.user?.email || ''}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                              {PERQUISITE_TYPES.find(t => t.value === p.perquisite_type)?.label || p.perquisite_type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{p.description || '-'}</td>
+                          <td className="px-4 py-3 font-medium text-rose-600">{formatPayrollAmount(p.taxable_value || p.annual_value || 0, { compact: true })}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Edit">
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -2100,6 +2100,32 @@ class PayrollFilingController extends Controller
         }
     }
 
+    public function listBatches(Request $request)
+    {
+        $orgId = auth()->user()->organization_id;
+
+        $batches = \App\Models\BankTransferBatch::where('organization_id', $orgId)
+            ->with('payrollRun')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($batch) {
+                return [
+                    'id' => $batch->id,
+                    'batch_reference' => $batch->batch_reference,
+                    'bank_name' => $batch->bank_name,
+                    'total_amount' => $batch->total_amount,
+                    'total_employees' => $batch->total_employees,
+                    'employee_count' => $batch->total_employees,
+                    'status' => $batch->status,
+                    'payroll_run_id' => $batch->payroll_run_id,
+                    'month_year' => $batch->payrollRun->month_year ?? null,
+                    'created_at' => $batch->created_at,
+                ];
+            });
+
+        return response()->json(['success' => true, 'data' => $batches]);
+    }
+
     public function processBatch(Request $request, $batchId)
     {
         try {

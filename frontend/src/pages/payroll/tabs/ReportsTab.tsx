@@ -137,8 +137,11 @@ export default function ReportsTab() {
       <div>
         {active === 'register' && <PayrollRegisterPanel />}
         {active === 'filings' && isStrictAdmin && <FilingsDashboard onBack={noop} />}
+        {active === 'filings' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Statutory Filings.</div>}
         {active === 'bank-payout' && isStrictAdmin && <BankPayoutDashboard />}
+        {active === 'bank-payout' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Bank Payout.</div>}
         {active === 'proof-documents' && isStrictAdmin && <ProofDocumentsCenter />}
+        {active === 'proof-documents' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Proof Documents.</div>}
       </div>
     </div>
   );
@@ -160,7 +163,7 @@ function PayrollRegisterPanel() {
 
   const { data: payrollRegister, isLoading: loadingPayroll } = useQuery({
     queryKey: ['payroll-register', monthYear],
-    queryFn: () => payrollApi.getPayrollRegister({ month_year: monthYear }),
+    queryFn: () => payrollApi.getPayrollRegister({ month_year: monthYear }).then(r => r.data),
     enabled: activeSubTab === 'summary',
   });
 
@@ -170,13 +173,13 @@ function PayrollRegisterPanel() {
       payrollApi.getStatutoryRegister({
         month_year: monthYear,
         type: activeSubTab === 'pf-esi' ? 'pf' : activeSubTab,
-      }),
+      }).then(r => r.data),
     enabled: activeSubTab === 'pf-esi' || activeSubTab === 'tds',
   });
 
   const { data: bankRecon, isLoading: loadingBank } = useQuery({
     queryKey: ['bank-reconciliation', monthYear],
-    queryFn: () => payrollApi.getBankReconciliation(monthYear),
+    queryFn: () => payrollApi.getBankReconciliation(monthYear).then(r => r.data),
     enabled: activeSubTab === 'bank-recon',
   });
 
@@ -188,9 +191,9 @@ function PayrollRegisterPanel() {
   const isLoading = loadingPayroll || loadingStatutory || loadingBank;
 
   const getRows = (): any[] => {
-    if (activeSubTab === 'summary') return registerData?.register ?? [];
-    if (activeSubTab === 'pf-esi' || activeSubTab === 'tds') return statRegData?.entries ?? [];
-    if (activeSubTab === 'bank-recon') return bankData?.entries ?? [];
+    if (activeSubTab === 'summary') return registerData?.register ?? registerData?.data?.register ?? [];
+    if (activeSubTab === 'pf-esi' || activeSubTab === 'tds') return statRegData?.entries ?? statRegData?.data?.entries ?? [];
+    if (activeSubTab === 'bank-recon') return bankData?.entries ?? bankData?.data?.entries ?? [];
     return [];
   };
 
@@ -336,7 +339,7 @@ function PayrollRegisterPanel() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((row: any, idx: number) => (
-                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                  <tr key={row.employee_id ?? row.id ?? idx} className="hover:bg-slate-50 transition-colors">
                     {columns.map((col) => (
                       <td
                         key={col.key}
