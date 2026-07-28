@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PayrollItem;
+use App\Models\PayrollMonthlyRun;
 use App\Models\PayrollTimeEntry;
 use App\Models\User;
 use App\Models\Organization;
@@ -570,14 +571,38 @@ class PayrollController extends Controller
             ->whereIn('role', ['employee', 'manager', 'admin'])
             ->count();
 
-        // Get total payroll amount (mock for now)
-        $totalPayroll = 0;
+        // Compute actual payroll totals from monthly runs
+        $runs = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('month_year', $month)
+            ->get();
+
+        $totalPayroll = $runs->sum('total_net_pay');
+        $totalGross = $runs->sum('total_gross');
+        $totalDeductions = $runs->sum('total_deductions');
+
+        // Determine overall status: if any run is disbursed, the month is disbursed;
+        // otherwise if any is approved, it's approved; otherwise if any is submitted, it's submitted;
+        // otherwise draft.
+        $statuses = $runs->pluck('status');
+        if ($statuses->contains('disbursed')) {
+            $overallStatus = 'disbursed';
+        } elseif ($statuses->contains('approved')) {
+            $overallStatus = 'approved';
+        } elseif ($statuses->contains('submitted')) {
+            $overallStatus = 'submitted';
+        } elseif ($statuses->contains('generated')) {
+            $overallStatus = 'generated';
+        } else {
+            $overallStatus = 'draft';
+        }
 
         return response()->json([
             'month' => $month,
             'employee_count' => $employeeCount,
             'total_payroll' => $totalPayroll,
-            'status' => 'draft',
+            'total_gross' => $totalGross,
+            'total_deductions' => $totalDeductions,
+            'status' => $overallStatus,
         ]);
     }
 

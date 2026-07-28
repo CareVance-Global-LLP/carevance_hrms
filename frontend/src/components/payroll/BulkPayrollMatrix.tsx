@@ -100,6 +100,11 @@ export default function BulkPayrollMatrix({
     return allEmployees.filter((e) => idSet.has(e.id));
   }, [allEmployees, selectedEmployeeIds]);
 
+  const tableMinHeight = useMemo(() => {
+    const count = employees.length;
+    return Math.max(400, Math.min(count * 25, 1000));
+  }, [employees.length]);
+
   const employeeMap = useMemo(() => {
     const map = new Map<number, any>();
     employees.forEach((e) => map.set(e.id, e));
@@ -163,32 +168,24 @@ export default function BulkPayrollMatrix({
       employees.forEach((emp) => {
         const existing = next.get(emp.id);
         const att = emp.attendance;
-        const ctc = emp.annual_ctc ?? 0;
-        const monthly = ctc / 12;
-        const basic = Math.round(monthly * 0.4);
-        const hra = Math.round(monthly * 0.2);
-        const special = Math.round(monthly * 0.35);
-        const conveyance = 1600;
-        const gross = basic + hra + special + conveyance;
-        const pf = Math.round(basic * 0.12);
         next.set(emp.id, {
           working_days: att?.working_days ?? existing?.working_days ?? 26,
           present_days: att?.present_days ?? existing?.present_days ?? 26,
           lop_days: att?.lop_days ?? existing?.lop_days ?? 0,
           paid_leave_days: att?.paid_leave_days ?? existing?.paid_leave_days ?? 0,
           overtime_hours: att?.overtime_hours ?? existing?.overtime_hours ?? 0,
-          annual_ctc: ctc,
-          basic,
-          hra,
-          special_allowance: special,
-          conveyance,
+          annual_ctc: emp.annual_ctc ?? existing?.annual_ctc ?? 0,
+          basic: existing?.basic ?? 0,
+          hra: existing?.hra ?? 0,
+          special_allowance: existing?.special_allowance ?? 0,
+          conveyance: existing?.conveyance ?? 1600,
           other_earnings: existing?.other_earnings ?? 0,
           overtime_pay_amount: existing?.overtime_pay_amount ?? 0,
           other_deduction: existing?.other_deduction ?? 0,
-          pf_employee: existing?.pf_employee ?? pf,
-          pf_employer: existing?.pf_employer ?? pf,
-          esi_employee: existing?.esi_employee ?? (gross <= 21000 ? Math.round(gross * 0.0075) : 0),
-          esi_employer: existing?.esi_employer ?? (gross <= 21000 ? Math.round(gross * 0.0325) : 0),
+          pf_employee: existing?.pf_employee ?? 0,
+          pf_employer: existing?.pf_employer ?? 0,
+          esi_employee: existing?.esi_employee ?? 0,
+          esi_employer: existing?.esi_employer ?? 0,
           pt: existing?.pt ?? 0,
           tds: existing?.tds ?? 0,
         });
@@ -368,7 +365,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
-        style={{ height: '100%', minHeight: 400 }}
+        style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200">
@@ -435,7 +432,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
-        style={{ height: '100%', minHeight: 400 }}
+        style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200">
@@ -503,7 +500,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
-        style={{ height: '100%', minHeight: 400 }}
+        style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200">
@@ -563,7 +560,7 @@ export default function BulkPayrollMatrix({
     });
     return (
       <TableVirtuoso
-        style={{ height: '100%', minHeight: 400 }}
+        style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200">
@@ -603,12 +600,35 @@ export default function BulkPayrollMatrix({
     );
   };
 
+  const loanRowEntries = useMemo(() => {
+    const entries: Array<{ empId: number; isFirst: boolean; loan: any }> = [];
+    employees.forEach((emp) => {
+      const loans = loansData?.[emp.id] ?? [];
+      if (loans.length === 0) {
+        entries.push({ empId: emp.id, isFirst: true, loan: null });
+      } else {
+        loans.forEach((loan: any, li: number) => {
+          entries.push({ empId: emp.id, isFirst: li === 0, loan });
+        });
+      }
+    });
+    return entries;
+  }, [employees, loansData]);
+
   const renderLoansStep = () => {
     let totalEmi = 0;
     let totalOutstanding = 0;
+    loanRowEntries.forEach((e) => {
+      if (e.loan) {
+        totalEmi += e.loan.emi;
+        totalOutstanding += e.loan.outstanding;
+      }
+    });
     return (
-      <table className="w-full border-collapse text-sm">
-        <thead>
+      <TableVirtuoso
+        style={{ height: '100%', minHeight: tableMinHeight }}
+        totalCount={loanRowEntries.length}
+        fixedHeaderContent={() => (
           <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <th className="px-3 py-3 text-left font-semibold text-slate-700 min-w-[80px]">Emp ID</th>
             <th className="px-4 py-3 text-left font-semibold text-slate-700 min-w-[180px]">Employee</th>
@@ -617,35 +637,8 @@ export default function BulkPayrollMatrix({
             <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[100px]">EMI Amount</th>
             <th className="px-3 py-3 text-right font-semibold text-slate-700 min-w-[120px]">Outstanding</th>
           </tr>
-        </thead>
-        <tbody>
-          {employees.map((emp) => {
-            const loans = loansData?.[emp.id] ?? [];
-            if (loans.length === 0) {
-              return (
-                <tr key={emp.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                  {renderEmployeeCell(emp)}
-                  <td className="px-3 py-2 text-sm text-slate-400 italic">No active loans</td>
-                  <td className="px-3 py-2 text-right text-sm text-slate-400">—</td>
-                  <td className="px-3 py-2 text-right text-sm text-slate-400">—</td>
-                </tr>
-              );
-            }
-            return loans.map((loan, li) => {
-              totalEmi += loan.emi;
-              totalOutstanding += loan.outstanding;
-              return (
-                <tr key={`${emp.id}-${li}`} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                  {li === 0 ? renderEmployeeCell(emp) : <td colSpan={3}></td>}
-                  <td className="px-3 py-2 text-sm text-slate-700">{loan.name}</td>
-                  <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(loan.emi)}</td>
-                  <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(loan.outstanding)}</td>
-                </tr>
-              );
-            });
-          })}
-        </tbody>
-        <tfoot>
+        )}
+        fixedFooterContent={() => (
           <tr className="bg-slate-50 border-t-2 border-slate-200 font-semibold sticky bottom-0">
             <td className="px-3 py-3 text-sm text-slate-700"></td>
             <td className="px-4 py-3 text-left text-sm text-slate-700">Total ({employees.length})</td>
@@ -654,8 +647,31 @@ export default function BulkPayrollMatrix({
             <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totalEmi)}</td>
             <td className="px-3 py-3 text-right text-sm text-slate-700">₹{fmt(totalOutstanding)}</td>
           </tr>
-        </tfoot>
-      </table>
+        )}
+        itemContent={(index) => {
+          const { empId, isFirst, loan } = loanRowEntries[index];
+          const emp = employeeMap.get(empId);
+          if (!emp) return null;
+          if (!loan) {
+            return (
+              <>
+                {renderEmployeeCell(emp)}
+                <td className="px-3 py-2 text-sm text-slate-400 italic">No active loans</td>
+                <td className="px-3 py-2 text-right text-sm text-slate-400">—</td>
+                <td className="px-3 py-2 text-right text-sm text-slate-400">—</td>
+              </>
+            );
+          }
+          return (
+            <>
+              {isFirst ? renderEmployeeCell(emp) : <td colSpan={3}></td>}
+              <td className="px-3 py-2 text-sm text-slate-700">{loan.name}</td>
+              <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(loan.emi)}</td>
+              <td className="px-3 py-2 text-right text-sm text-slate-700 tabular-nums">₹{fmt(loan.outstanding)}</td>
+            </>
+          );
+        }}
+      />
     );
   };
 
@@ -1033,10 +1049,7 @@ export default function BulkPayrollMatrix({
           ))}
         </div>
 
-        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200">
-          <Button variant="ghost" size="sm" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
-            ← Back
-          </Button>
+        <div className="flex items-center justify-end px-6 py-3 border-t border-slate-200">
           <Button
             size="sm"
             onClick={handleSaveAndNext}

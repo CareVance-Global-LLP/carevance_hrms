@@ -1,4 +1,4 @@
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasStrictAdminAccess } from '@/lib/permissions';
 import { cn } from '@/utils/cn';
@@ -39,10 +39,9 @@ const PAY_TYPES: PayTypeDef[] = [
   { id: 'dept-templates', label: 'Salary Templates', strictAdminOnly: true },
 ];
 
-const noop = () => {};
-
 export default function EmployeePayTab() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isStrictAdmin = hasStrictAdminAccess(user);
 
@@ -52,6 +51,8 @@ export default function EmployeePayTab() {
 
   const activeDef = PAY_TYPES.find((t) => t.id === active)!;
   const canView = !activeDef.strictAdminOnly || isStrictAdmin;
+
+  const handleBackToPayroll = () => navigate('/payroll');
 
   const selectType = (id: EmployeePayType) => {
     setSearchParams(
@@ -99,7 +100,7 @@ export default function EmployeePayTab() {
           {active === 'reimbursements' && <ReimbursementsPage />}
           {active === 'loans' && <Loans />}
           {active === 'arrears' && <ArrearsPage />}
-          {active === 'employee-cards' && <EmployeePayrollCards onBack={noop} />}
+          {active === 'employee-cards' && <EmployeePayrollCards onBack={handleBackToPayroll} />}
           {active === 'dept-templates' && <SalaryComponentsEditor />}
         </div>
       )}

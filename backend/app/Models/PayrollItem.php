@@ -15,7 +15,6 @@ class PayrollItem extends Model
         'department_id',
         'total_working_days',
         'days_present',
-        'days_absent',
         'days_leave',
         'lOP_days',
         'total_worked_seconds',
@@ -61,7 +60,6 @@ class PayrollItem extends Model
         'lwf',
         'medical_insurance',
         'life_insurance',
-        'lOP_deduction',
         'custom_deductions',
         'total_deductions',
         'pf_employer',
@@ -85,7 +83,6 @@ class PayrollItem extends Model
         'paid_at',
         'template_snapshot',
         'additional_components',
-        'is_payout_held',
         // Simplified attendance fields
         'present_days',
         'paid_leave_days',
@@ -94,9 +91,7 @@ class PayrollItem extends Model
         'half_day_absent',
         'absent_days',
         'total_payable_days',
-        'total_lop_days',
         'attendance_calculation_mode',
-        'is_payout_held',
     ];
 
     protected $casts = [
@@ -139,7 +134,6 @@ class PayrollItem extends Model
         'lwf' => 'decimal:2',
         'medical_insurance' => 'decimal:2',
         'life_insurance' => 'decimal:2',
-        'lOP_deduction' => 'decimal:2',
         'custom_deductions' => 'decimal:2',
         'total_deductions' => 'decimal:2',
         'pf_employer' => 'decimal:2',
@@ -159,8 +153,6 @@ class PayrollItem extends Model
         'paid_at' => 'datetime',
         'template_snapshot' => 'array',
         'additional_components' => 'array',
-        'is_payout_held' => 'boolean',
-        // Simplified attendance fields
         'present_days' => 'decimal:2',
         'paid_leave_days' => 'decimal:2',
         'unpaid_leave_days' => 'decimal:2',
@@ -168,8 +160,6 @@ class PayrollItem extends Model
         'half_day_absent' => 'decimal:2',
         'absent_days' => 'decimal:2',
         'total_payable_days' => 'decimal:2',
-        'total_lop_days' => 'decimal:2',
-        'is_payout_held' => 'boolean',
     ];
 
     /**
@@ -273,6 +263,37 @@ class PayrollItem extends Model
     {
         if ($this->total_working_days === 0) return 0;
         return round(($this->days_present / $this->total_working_days) * 100, 2);
+    }
+
+    /**
+     * days_absent is computed from total_working_days - days_present - days_leave.
+     * The stored column is kept for backward compatibility but the accessor
+     * ensures the value is always consistent with its source fields.
+     */
+    public function getDaysAbsentAttribute(): float
+    {
+        return max(0, $this->total_working_days - $this->days_present - $this->days_leave);
+    }
+
+    /**
+     * total_lop_days is an alias for lOP_days.
+     * The stored column is kept for backward compatibility but the accessor
+     * ensures consistency with the canonical lOP_days field.
+     */
+    public function getTotalLopDaysAttribute(): float
+    {
+        return (float) $this->lOP_days;
+    }
+
+    /**
+     * lOP_deduction is computed as (gross / workingDays) × lopDays.
+     * The stored column is kept for backward compatibility but the accessor
+     * ensures the value is always consistent with its source fields.
+     */
+    public function getLOPDeductionAttribute(): float
+    {
+        if ($this->total_working_days <= 0 || $this->lOP_days <= 0) return 0;
+        return round(($this->gross_salary / $this->total_working_days) * $this->lOP_days, 2);
     }
 
     public function scopePending($query)

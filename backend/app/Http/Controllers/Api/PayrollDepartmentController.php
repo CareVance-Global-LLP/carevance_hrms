@@ -277,60 +277,34 @@ class PayrollDepartmentController extends Controller
                         'tax_regime' => $template->tax_regime ?? 'new',
                         'is_metro_city' => (bool) ($template->is_metro_city ?? true),
                     ];
-                } catch (\Exception $e) {
-                    \Log::error("Error mapping user {$user->id}", [
-                        'user_id' => $user->id,
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString(),
-                    ]);
-                    
-                    // Return basic data if mapping fails (all numeric values as floats)
-                    return [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'email' => $user->email,
-                        'role' => $user->role,
-                        'avatar' => $user->avatar,
-                        'employee_code' => null,
-                        'designation' => null,
-                        'joining_date' => null,
-                        'time_tracking' => [
-                            'total_worked_seconds' => 0,
-                            'total_worked_hours' => 0.00,
-                            'total_productive_seconds' => 0,
-                            'total_productive_hours' => 0.00,
-                            'total_idle_seconds' => 0,
-                            'total_idle_hours' => 0.00,
-                            'total_unproductive_seconds' => 0,
-                            'total_unproductive_hours' => 0.00,
-                            'activity_percentage' => 0.00,
-                            'productivity_score' => 0.00,
-                            'entry_count' => 0,
-                            'payroll_tracked_seconds' => 0,
-                            'payroll_tracked_hours' => 0.00,
-                            'payroll_payable_hours' => 0.00,
-                            'payroll_attendance_days' => 0,
-                            'payroll_entry_count' => 0,
-                        ],
-                        'payroll_status' => [
-                            'is_processed' => false,
-                            'net_pay' => 0.00,
-                            'payment_status' => 'pending',
-                            'gross_salary' => 0.00,
-                            'total_deductions' => 0.00,
-                        ],
-                        'has_template' => false,
-                        'template_id' => null,
-                        'annual_ctc' => 0.00,
-                        'basic_percentage' => 40.00,
-                        'hra_percentage' => 50.00,
-                        'conveyance_allowance' => 1600.00,
-                        'pf_enabled' => true,
-                        'esi_enabled' => true,
-                        'pt_enabled' => true,
-                        'tds_enabled' => true,
-                    ];
-                }
+} catch (\Exception $e) {
+                     \Log::warning("Error mapping user {$user->id}: {$e->getMessage()}");
+
+                     return [
+                         'id' => $user->id,
+                         'name' => $user->name,
+                         'email' => $user->email,
+                         'role' => $user->role,
+                         'avatar' => $user->avatar,
+                         'employee_code' => null,
+                         'designation' => null,
+                         'joining_date' => null,
+                         'time_tracking' => null,
+                         'payroll_status' => null,
+                         'payroll_item_id' => null,
+                         'has_template' => false,
+                         'template_id' => null,
+                         'annual_ctc' => 0.00,
+                         'basic_percentage' => 0,
+                         'hra_percentage' => 0,
+                         'conveyance_allowance' => 0,
+                         'pf_enabled' => false,
+                         'esi_enabled' => false,
+                         'pt_enabled' => false,
+                         'tds_enabled' => false,
+                         'error' => true,
+                     ];
+                 }
             });
         } catch (\Exception $e) {
             \Log::error("Error in map function", [

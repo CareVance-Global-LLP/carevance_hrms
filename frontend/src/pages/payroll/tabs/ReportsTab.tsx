@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   BarChart3,
@@ -89,13 +89,13 @@ const BANK_RECON_COLUMNS = [
   { key: 'payment_status', label: 'Status' },
 ];
 
-const noop = () => {};
-
 export default function ReportsTab() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isStrictAdmin = hasStrictAdminAccess(user);
-  const { show } = useToast();
+
+  const handleBackToPayroll = () => navigate('/payroll');
 
   const requested = searchParams.get('panel') as PanelId | null;
   const active: PanelId =
@@ -136,7 +136,7 @@ export default function ReportsTab() {
 
       <div>
         {active === 'register' && <PayrollRegisterPanel />}
-        {active === 'filings' && isStrictAdmin && <FilingsDashboard onBack={noop} />}
+        {active === 'filings' && isStrictAdmin &&           <FilingsDashboard onBack={handleBackToPayroll} />}
         {active === 'filings' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Statutory Filings.</div>}
         {active === 'bank-payout' && isStrictAdmin && <BankPayoutDashboard />}
         {active === 'bank-payout' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Bank Payout.</div>}
@@ -183,7 +183,7 @@ function PayrollRegisterPanel() {
     enabled: activeSubTab === 'bank-recon',
   });
 
-  const bankBatches = undefined;
+  const batchList: any[] = [];
 
   const registerData = payrollRegister as any;
   const statRegData = statutoryRegister as any;
@@ -244,7 +244,6 @@ function PayrollRegisterPanel() {
     show({ kind: 'info', message: 'PDF export will be available soon.' });
   };
 
-  const batchList = Array.isArray(bankBatches) ? bankBatches : (bankBatches as any)?.data ?? [];
   const totalEmployees = rows.length;
   const totalNetPay = Number(totalRow.net_pay ?? 0);
   const pendingBatch = batchList.find((b: any) => b.status === 'pending' || b.status === 'processing');

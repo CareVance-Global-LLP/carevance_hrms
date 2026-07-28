@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Wallet,
   Clock,
-  CalendarClock,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
@@ -173,7 +172,7 @@ export default function PayrollDashboard({
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
       {/* Month timeline (Apr-Mar FY) */}
       <MonthTimeline
         selectedMonth={selectedMonth}
@@ -182,7 +181,7 @@ export default function PayrollDashboard({
       />
 
       {/* Quick Stats — 4 metric cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
           label="Total Payroll"
           value={formatCurrency(summaryStats.totalNetPay)}
@@ -226,7 +225,7 @@ export default function PayrollDashboard({
       <ComplianceStatusBoard monthYear={selectedMonth} onOpenFilings={onOpenFilings} />
 
       {/* Pay Groups + Recent Runs side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Pay Groups — Table format matching wireframe */}
         <div className="lg:col-span-2">
           <SurfaceCard className="p-0 overflow-hidden">
@@ -371,123 +370,4 @@ const COMPLIANCE_DEFAULTS = {
   tds: true,
   lwf: false,
 };
-
-function lastWorkingDay(year: number, month: number): Date {
-  // month is 1-indexed
-  const d = new Date(year, month, 0); // last day of month
-  const day = d.getDay();
-  if (day === 0) d.setDate(d.getDate() - 2); // Sunday -> Friday
-  else if (day === 6) d.setDate(d.getDate() - 1); // Saturday -> Friday
-  return d;
-}
-
-function addMonths(year: number, month: number, delta: number): { year: number; month: number } {
-  const total = year * 12 + (month - 1) + delta;
-  return { year: Math.floor(total / 12), month: (total % 12) + 1 };
-}
-
-interface DueDate {
-  key: string;
-  label: string;
-  due: Date;
-  frequency: 'monthly' | 'annual';
-}
-
-function computeDueDates(
-  compliance: Record<string, any>,
-  defaultState: string | undefined,
-  overrides: Record<string, any> | undefined,
-  selectedMonth: string,
-): DueDate[] {
-  const enabled: Record<string, boolean> = { ...COMPLIANCE_DEFAULTS, ...(compliance ?? {}) };
-  const [y, m] = (selectedMonth ?? '').split('-').map(Number);
-  if (!y || !m) return [];
-
-  // Payroll month M → filings are due in the following month.
-  const next = addMonths(y, m, 1);
-
-  const out: DueDate[] = [];
-
-  if (enabled.pf ?? COMPLIANCE_DEFAULTS.pf) {
-    out.push({ key: 'pf', label: 'PF', due: new Date(next.year, next.month - 1, 15), frequency: 'monthly' });
-    out.push({ key: 'esi', label: 'ESI', due: new Date(next.year, next.month - 1, 21), frequency: 'monthly' });
-  }
-  if (enabled.tds ?? COMPLIANCE_DEFAULTS.tds) {
-    out.push({ key: 'tds', label: 'TDS', due: new Date(next.year, next.month - 1, 7), frequency: 'monthly' });
-  }
-  if (enabled.pt ?? COMPLIANCE_DEFAULTS.pt) {
-    // PT is state-specific; default to the last working day of the following month.
-    out.push({ key: 'pt', label: `PT (${defaultState ?? 'state'})`, due: lastWorkingDay(next.year, next.month), frequency: 'monthly' });
-  }
-  if (enabled.lwf ?? COMPLIANCE_DEFAULTS.lwf) {
-    // LWF is annual — due by the last working day of the financial year (Mar 31).
-    out.push({ key: 'lwf', label: 'LWF', due: lastWorkingDay(y, 3), frequency: 'annual' });
-  }
-
-  // Apply org overrides when provided.
-  if (overrides) {
-    for (const d of out) {
-      const ov = overrides[d.key];
-      if (ov && typeof ov === 'string' && !Number.isNaN(Date.parse(ov))) {
-        d.due = new Date(ov);
-      }
-    }
-  }
-
-  return out.sort((a, b) => a.due.getTime() - b.due.getTime());
-}
-
-function ComplianceDueDateRail({
-  settings,
-  selectedMonth,
-}: {
-  settings: Record<string, any>;
-  selectedMonth: string;
-}) {
-  const compliance = (settings?.compliance ?? {}) as Record<string, any>;
-  const defaultState = settings?.defaultState as string | undefined;
-  const overrides = settings?.compliance_due_dates as Record<string, any> | undefined;
-
-  const dueDates = computeDueDates(compliance, defaultState, overrides, selectedMonth);
-  if (dueDates.length === 0) return null;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return (
-    <SurfaceCard className="p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <CalendarClock className="h-4 w-4 text-blue-600" />
-        <h3 className="text-sm font-semibold text-slate-900">Upcoming compliance due dates</h3>
-        <span className="text-xs text-slate-400">· filing deadlines for {selectedMonth}</span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {dueDates.map((d) => {
-          const days = Math.ceil((d.due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          const overdue = days < 0;
-          const tone = overdue
-            ? 'bg-rose-100 text-rose-700 border-rose-200'
-            : days <= 3
-              ? 'bg-rose-50 text-rose-700 border-rose-200'
-              : days <= 7
-                ? 'bg-amber-100 text-amber-700 border-amber-200'
-                : 'bg-slate-100 text-slate-700 border-slate-200';
-          const label = overdue
-            ? `${Math.abs(days)}d overdue`
-            : days === 0
-              ? 'Due today'
-              : `${days}d left`;
-          return (
-            <div key={d.key} className={`flex flex-col gap-0.5 rounded-lg border px-3 py-2 ${tone}`}>
-              <span className="text-sm font-semibold">{d.label}</span>
-              <span className="text-xs">
-                {d.due.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {label}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </SurfaceCard>
-  );
-}
 

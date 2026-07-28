@@ -75,7 +75,7 @@ class SalaryCalculationService
         $pfEnabled = $template->pf_enabled ?? true;
         $pfEe = $pfEnabled ? $pfBase * (($template->pf_employee_percentage ?? 12) / 100) : 0;
         $pfEr = $pfEnabled ? $pfBase * (($template->pf_employer_percentage ?? 12) / 100) : 0;
-        $edli = $pfEnabled ? $pfBase * 0.005 : 0;
+        $edli = $pfEnabled ? $pfBase * 0.0017 : 0;
         $adminCharges = $pfEnabled ? $pfBase * 0.005 : 0;
 
         // LOP deduction = lost wages for unpaid days
@@ -91,9 +91,9 @@ class SalaryCalculationService
         // ESI (on gross, if ≤ ₹21,000)
         $esiEnabled = $template->esi_enabled ?? true;
         $esiThreshold = $template->esi_threshold ?? 21000;
-        if ($esiEnabled && $lopAdjustedGross <= $esiThreshold) {
-            $esiEe = $lopAdjustedGross * (($template->esi_employee_percentage ?? 0.75) / 100);
-            $esiEr = $lopAdjustedGross * (($template->esi_employer_percentage ?? 3.25) / 100);
+        if ($esiEnabled && $totalEarnings <= $esiThreshold) {
+            $esiEe = $totalEarnings * (($template->esi_employee_percentage ?? 0.75) / 100);
+            $esiEr = $totalEarnings * (($template->esi_employer_percentage ?? 3.25) / 100);
         } else {
             $esiEe = 0;
             $esiEr = 0;

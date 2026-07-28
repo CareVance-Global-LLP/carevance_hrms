@@ -510,7 +510,7 @@ class PayrollFilingController extends Controller
             ->where('organization_id', auth()->user()->organization_id)
             ->firstOrFail();
 
-        if (! in_array($filing->status, ['generated'])) {
+        if (! in_array($filing->status, \App\Models\PayrollFiling::REVIEW_STATUSES)) {
             return response()->json(['success' => false, 'message' => 'This filing cannot be marked filed in its current state.'], 422);
         }
 
@@ -863,8 +863,9 @@ class PayrollFilingController extends Controller
         $hasOldMonth = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
             ->whereIn('user_id', $validUserIds)
             ->where(function ($q) use ($monthYear) {
-                $q->where('steps_month_year', '!=', $monthYear)
-                  ->orWhereNull('steps_month_year');
+                $q->whereNull('steps_month_year')
+                  ->orWhere('steps_month_year', '')
+                  ->orWhere('steps_month_year', '!=', $monthYear);
             })
             ->exists();
 

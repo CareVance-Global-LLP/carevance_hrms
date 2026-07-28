@@ -1221,6 +1221,8 @@ export interface PayrollSummary {
   month: string;
   employee_count: number;
   total_payroll: number;
+  total_gross: number;
+  total_deductions: number;
   status: string;
 }
 

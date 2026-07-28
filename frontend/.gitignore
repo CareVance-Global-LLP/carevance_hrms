@@ -43,3 +43,8 @@ logs
 .vite
 .stylelintcache
 .tsbuildinfo
+
+# Playwright
+playwright-report
+test-results
+tests/.auth

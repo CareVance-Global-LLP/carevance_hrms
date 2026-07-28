@@ -258,8 +258,7 @@ class PayrollAutoProcessService
                 ->sum('net_amount');
 
             if ($encashments > 0) {
-                $currentTotal = (float) ($item->custom_earnings ?? 0);
-                $item->update(['custom_earnings' => $currentTotal + (float) $encashments]);
+                $item->update(['custom_earnings' => DB::raw('COALESCE(custom_earnings, 0) + ' . (float) $encashments)]);
             }
         }
     }
@@ -289,8 +288,7 @@ class PayrollAutoProcessService
                         'status' => 'linked',
                     ]);
 
-                    $currentTotal = (float) ($item->custom_earnings ?? 0);
-                    $item->update(['custom_earnings' => $currentTotal + (float) $reimbursement->amount]);
+                    $item->update(['custom_earnings' => DB::raw('COALESCE(custom_earnings, 0) + ' . (float) $reimbursement->amount)]);
                 }
             }
         }
@@ -313,8 +311,7 @@ class PayrollAutoProcessService
 
             $totalFbp = $claims->sum('approved_amount');
             if ($totalFbp > 0) {
-                $currentTotal = (float) ($item->custom_earnings ?? 0);
-                $item->update(['custom_earnings' => $currentTotal + (float) $totalFbp]);
+                $item->update(['custom_earnings' => DB::raw('COALESCE(custom_earnings, 0) + ' . (float) $totalFbp)]);
             }
         }
     }
@@ -365,8 +362,7 @@ class PayrollAutoProcessService
 
             $totalPerkValue = $userPerks->sum('monthly_value');
             if ($totalPerkValue > 0) {
-                $currentTotal = (float) ($item->custom_earnings ?? 0);
-                $item->update(['custom_earnings' => $currentTotal + (float) $totalPerkValue]);
+                $item->update(['custom_earnings' => DB::raw('COALESCE(custom_earnings, 0) + ' . (float) $totalPerkValue)]);
             }
         }
     }

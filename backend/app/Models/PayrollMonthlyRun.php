@@ -173,7 +173,6 @@ class PayrollMonthlyRun extends Model
         return [
             'draft' => ['processing', 'locked'],
             'processing' => ['draft', 'locked'],
-            'processed' => ['draft', 'locked'],
             'locked' => ['approved', 'draft'],
             'approved' => ['released', 'locked'],
             'released' => ['disbursed', 'approved'],

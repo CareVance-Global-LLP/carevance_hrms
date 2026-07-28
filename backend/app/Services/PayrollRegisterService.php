@@ -8,23 +8,35 @@ use Illuminate\Support\Facades\DB;
 
 class PayrollRegisterService
 {
-    public function getPayrollRegister(int $orgId, string $monthYear, array $filters = []): array
+    public function getPayrollRegister(int $orgId, string $monthYear, array $filters = [], int $perPage = 0, int $page = 1): array
     {
-        $query = PayrollItem::with(['user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeBankAccounts', 'department'])
+        $baseQuery = PayrollItem::with(['user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeBankAccounts', 'department'])
             ->where('organization_id', $orgId)
             ->whereHas('payrollRun', fn($q) => $q->where('month_year', $monthYear));
 
         if (!empty($filters['department_id'])) {
-            $query->where('department_id', $filters['department_id']);
+            $baseQuery->where('department_id', $filters['department_id']);
         }
         if (!empty($filters['user_id'])) {
-            $query->where('user_id', $filters['user_id']);
+            $baseQuery->where('user_id', $filters['user_id']);
         }
         if (!empty($filters['payment_status'])) {
-            $query->where('payment_status', $filters['payment_status']);
+            $baseQuery->where('payment_status', $filters['payment_status']);
         }
 
-        $items = $query->get();
+        if ($perPage > 0) {
+            $paginator = $baseQuery->paginate($perPage, ['*'], 'page', $page);
+            $items = $paginator->items();
+            $paginationMeta = [
+                'total' => $paginator->total(),
+                'per_page' => $paginator->perPage(),
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+            ];
+        } else {
+            $items = $baseQuery->get();
+            $paginationMeta = null;
+        }
 
         $register = [];
         foreach ($items as $item) {
@@ -87,27 +99,52 @@ class PayrollRegisterService
             'total_employer_contributions' => collect($register)->sum('total_employer_contributions'),
         ];
 
-        return [
+        $result = [
             'register' => $register,
             'summary' => $summary,
             'month_year' => $monthYear,
         ];
+
+        if ($paginationMeta) {
+            $result['pagination'] = $paginationMeta;
+        }
+
+        return $result;
     }
 
-    public function getStatutoryRegister(int $orgId, string $monthYear, string $type): array
+    public function getStatutoryRegister(int $orgId, string $monthYear, string $type, int $perPage = 0, int $page = 1): array
     {
-        $items = PayrollItem::with(['user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentId'])
+        $baseQuery = PayrollItem::with(['user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentId'])
             ->where('organization_id', $orgId)
-            ->whereHas('payrollRun', fn($q) => $q->where('month_year', $monthYear))
-            ->get();
+            ->whereHas('payrollRun', fn($q) => $q->where('month_year', $monthYear));
 
-        return match ($type) {
+        if ($perPage > 0) {
+            $paginator = $baseQuery->paginate($perPage, ['*'], 'page', $page);
+            $items = $paginator->items();
+            $paginationMeta = [
+                'total' => $paginator->total(),
+                'per_page' => $paginator->perPage(),
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+            ];
+        } else {
+            $items = $baseQuery->get();
+            $paginationMeta = null;
+        }
+
+        $result = match ($type) {
             'pf' => $this->buildPfRegister($items),
             'esi' => $this->buildEsiRegister($items),
             'pt' => $this->buildPtRegister($items),
             'tds' => $this->buildTdsRegister($items),
             default => [],
         };
+
+        if ($paginationMeta) {
+            $result['pagination'] = $paginationMeta;
+        }
+
+        return $result;
     }
 
     private function buildPfRegister($items): array

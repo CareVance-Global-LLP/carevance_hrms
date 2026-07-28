@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   FileText,
@@ -21,7 +21,6 @@ import { cn } from '@/utils/cn';
 import { titleCase } from '@/utils/payrollStatus';
 import StatusBadge from '@/components/ui/StatusBadge';
 
-import TaxDeclarationPage from '@/pages/TaxDeclaration';
 import TaxSimulatorPage from '@/pages/TaxSimulatorPage';
 import TaxProofsReviewPage from '@/pages/TaxProofsReview';
 import LeaveEncashmentPage from '@/pages/LeaveEncashmentPage';
@@ -51,8 +50,6 @@ const PANELS: PanelDef[] = [
   { id: 'fnf', label: 'F&F Settlements', icon: UserMinus, strictAdminOnly: true },
   { id: 'filings', label: 'Statutory Filings', icon: Landmark, strictAdminOnly: true },
 ];
-
-const noop = () => {};
 
 const formatAmount = (n: number) =>
   n === 0 ? '—' : `₹${n.toLocaleString('en-IN')}`;
@@ -265,8 +262,11 @@ function TaxDeclarationsInline({ onOpenFull }: { onOpenFull: () => void }) {
 
 export default function TaxComplianceTab() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isStrictAdmin = hasStrictAdminAccess(user);
+
+  const handleBackToPayroll = () => navigate('/payroll');
 
   const requested = searchParams.get('panel') as PanelId | null;
   const active: PanelId =
@@ -335,7 +335,7 @@ export default function TaxComplianceTab() {
         {active === 'leave-encashment' && isStrictAdmin && <LeaveEncashmentPage />}
         {active === 'fnf' && isStrictAdmin && <FnFSettlementsPage />}
         {active === 'filings' && isStrictAdmin && (
-          <FilingsDashboard onBack={noop} />
+          <FilingsDashboard onBack={handleBackToPayroll} />
         )}
       </div>
     </div>

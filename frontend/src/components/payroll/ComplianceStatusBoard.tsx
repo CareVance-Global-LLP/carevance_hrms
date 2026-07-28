@@ -62,7 +62,7 @@ export default function ComplianceStatusBoard({ monthYear, onOpenFilings }: Comp
   const queryClient = useQueryClient();
   const { show } = useToast();
 
-  const [yearStr, monthStr] = monthYear.split('-');
+  const [yearStr, monthStr] = (monthYear || '').split('-');
   const year = Number(yearStr);
   const month = Number(monthStr);
 
@@ -243,7 +243,7 @@ export default function ComplianceStatusBoard({ monthYear, onOpenFilings }: Comp
 
                 <StatusBadge tone={tone}>{statusLabel}</StatusBadge>
 
-                <div className="flex w-[132px] shrink-0 justify-end">
+                <div className="flex justify-end whitespace-nowrap">
                   {canDownload ? (
                     <Button
                       variant="ghost"
