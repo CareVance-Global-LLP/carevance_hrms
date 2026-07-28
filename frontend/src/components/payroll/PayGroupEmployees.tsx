@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   ArrowLeft,
   Search,
@@ -18,6 +19,13 @@ import {
   X,
   IndianRupee,
   Loader2,
+  ShieldAlert,
+  AlertTriangle,
+  Info,
+  SkipForward,
+  CheckCircle,
+  XCircle,
+  PauseCircle,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -276,12 +284,12 @@ export default function PayGroupEmployees({
    const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
    const [sortBy, setSortBy] = useState<SortBy>('name');
    const [showFilters, setShowFilters] = useState(false);
-  const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
-  const [ctcModalEmployee, setCtcModalEmployee] = useState<any | null>(null);
-  const [ctcInput, setCtcInput] = useState('');
-  const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(null);
-  const queryClient = useQueryClient();
-  const { show } = useToast();
+   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
+   const [ctcModalEmployee, setCtcModalEmployee] = useState<any | null>(null);
+   const [ctcInput, setCtcInput] = useState('');
+const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(null);
+    const queryClient = useQueryClient();
+   const { show } = useToast();
 
   // Payslip PDF (same blob + open-in-new-tab pattern as DepartmentEmployees)
   const viewPayslipPdf = async (userId: number, monthYearArg: string, employeeName: string) => {
@@ -329,15 +337,17 @@ export default function PayGroupEmployees({
     }
   };
 
-  // Fetch pay group + members
-  const { data, isLoading } = useQuery({
-    queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear, searchQuery],
-    queryFn: () => payrollApi.getPayGroupEmployees(payGroupId, {
-      month_year: monthYear,
-    }).then((res) => res.data),
-  });
+   // Fetch pay group + members
+   const { data, isLoading } = useQuery({
+     queryKey: ['payroll', 'pay-group', payGroupId, 'employees', monthYear, searchQuery],
+     queryFn: () => payrollApi.getPayGroupEmployees(payGroupId, {
+       month_year: monthYear,
+     }).then((res) => res.data),
+});
 
-  const employees = data?.employees || [];
+    const [reviewStepVisible, setReviewStepVisible] = useState(true);
+
+   const employees = data?.employees || [];
   const payGroupName = data?.pay_group?.name ?? 'Pay Group';
 
   // Auto-deselect any employees that are already paid (prevents stale selection)
@@ -489,11 +499,21 @@ export default function PayGroupEmployees({
           >
             Settings
           </Button>
-        </div>
-      </div>
+         </div>
+       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-3">
+       {/* Review Step: New Joiners & Exits */}
+       {reviewStepVisible && (
+         <ReviewStep
+           payGroupId={payGroupId}
+           monthYear={monthYear}
+           onComplete={() => setReviewStepVisible(false)}
+           onSkip={() => setReviewStepVisible(false)}
+         />
+       )}
+
+       {/* Search */}
+       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <TextInput
@@ -829,6 +849,248 @@ function SetCtcModal({
             disabled={isSaving || !isValid}
           >
             {isSaving ? 'Saving…' : 'Set & Process'}
+          </Button>
+        </div>
+      </SurfaceCard>
+    </div>
+  );
+}
+
+function ReviewStep({
+  payGroupId,
+  monthYear,
+  onComplete,
+  onSkip,
+}: {
+  payGroupId: number;
+  monthYear: string;
+  onComplete: () => void;
+  onSkip: () => void;
+}) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const queryClient = useQueryClient();
+  const { show } = useToast();
+
+  const { data: reviewData, isLoading } = useQuery({
+    queryKey: ['payroll', 'run-review', payGroupId, monthYear],
+    queryFn: () =>
+      payrollApi
+        .getRunReviewData(0, { payGroupId, monthYear })
+        .then((r) => r.data),
+    enabled: true,
+  });
+
+  const [decisions, setDecisions] = useState<
+    Record<number, { action: string; comment: string }>
+  >({});
+  const [submitting, setSubmitting] = useState(false);
+
+  const newJoiners = (reviewData?.new_joiners ?? []) as any[];
+  const exits = (reviewData?.exits ?? []) as any[];
+  const outstandingFnf = (reviewData?.outstanding_fnf ?? []) as any[];
+
+  const totalReviewItems = newJoiners.length + exits.length;
+  const hasDecisions = Object.keys(decisions).length > 0;
+
+  const handleDecisionChange = (userId: number, field: string, value: string) => {
+    setDecisions((prev) => ({
+      ...prev,
+      [userId]: {
+        ...prev[userId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      const decisionList = Object.entries(decisions).map(([userId, decision]) => ({
+        user_id: Number(userId),
+        action: decision.action as 'process' | 'hold_processing' | 'hold_payout' | 'void',
+        comment: decision.comment || '',
+      }));
+
+      const response = await payrollApi.submitRunReviewDecisions(0, decisionList);
+      if (!response.data?.success) {
+        throw new Error(response.data?.message || 'Failed to submit review decisions.');
+      }
+      show({ kind: 'success', message: 'Review decisions submitted.' });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'run-review', payGroupId, monthYear] });
+      onComplete();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || getApiErrorMessage(err, 'Failed to submit review decisions.');
+      show({ kind: 'error', message: msg });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading review data…
+        </div>
+      </div>
+    );
+  }
+
+  if (totalReviewItems === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Info className="h-4 w-4" />
+            <span>No new joiners or exits this period.</span>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => onSkip()}>
+            <SkipForward className="h-4 w-4 mr-1" />
+            Skip &amp; Acknowledge
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <SurfaceCard className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-900">
+            Review New Joiners &amp; Exits — {monthYear}
+          </h3>
+          <span className="text-xs text-slate-500">
+            {totalReviewItems} employee{totalReviewItems === 1 ? '' : 's'} to review
+          </span>
+        </div>
+
+        {newJoiners.length > 0 && (
+          <div className="mb-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+              New Joiners This Period
+            </h4>
+            <div className="space-y-2">
+              {newJoiners.map((joiner) => (
+                <div
+                  key={`joiner-${joiner.id}`}
+                  className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900">{joiner.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {joiner.designation ?? ''}
+                      {joiner.joining_date ? ` · Joined ${joiner.joining_date}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={decisions[joiner.id]?.action ?? ''}
+                      onChange={(e) => handleDecisionChange(joiner.id, 'action', e.target.value)}
+                      className="h-8 rounded border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-blue-400"
+                    >
+                      <option value="">Action…</option>
+                      <option value="process">Process</option>
+                      <option value="hold_processing">Hold (Processing)</option>
+                      <option value="hold_payout">Hold (Payout)</option>
+                      <option value="void">Void</option>
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Comment (optional)"
+                      value={decisions[joiner.id]?.comment ?? ''}
+                      onChange={(e) => handleDecisionChange(joiner.id, 'comment', e.target.value)}
+                      className="h-8 rounded border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-blue-400 w-32"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {exits.length > 0 && (
+          <div className="mb-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+              Exits This Period
+            </h4>
+            <div className="space-y-2">
+              {exits.map((exit) => {
+                const hasFnf = outstandingFnf.some(
+                  (fnf) => fnf.user_id === exit.user_id || fnf.user_id === exit.id,
+                );
+                return (
+                  <div
+                    key={`exit-${exit.user_id ?? exit.id}`}
+                    className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-900">{exit.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {exit.last_working_date ? `Last working: ${exit.last_working_date}` : ''}
+                        {exit.reason ? ` · ${exit.reason}` : ''}
+                      </p>
+                      {hasFnf && (
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          <AlertTriangle className="h-3 w-3 inline mr-1" />
+                          Outstanding F&amp;F settlement —{' '}
+                          <a
+                            href="/payroll/tax-compliance?panel=fnf"
+                            className="underline hover:text-amber-800"
+                          >
+                            View F&amp;F flow
+                          </a>
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={decisions[exit.user_id ?? exit.id]?.action ?? ''}
+                        onChange={(e) =>
+                          handleDecisionChange(exit.user_id ?? exit.id, 'action', e.target.value)
+                        }
+                        className="h-8 rounded border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-blue-400"
+                      >
+                        <option value="">Action…</option>
+                        <option value="process">Process</option>
+                        <option value="hold_processing">Hold (Processing)</option>
+                        <option value="hold_payout">Hold (Payout)</option>
+                        <option value="void">Void</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Comment (optional)"
+                        value={decisions[exit.user_id ?? exit.id]?.comment ?? ''}
+                        onChange={(e) =>
+                          handleDecisionChange(exit.user_id ?? exit.id, 'comment', e.target.value)
+                        }
+                        className="h-8 rounded border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-blue-400 w-32"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <Button variant="ghost" size="sm" onClick={() => onSkip()}>
+            <SkipForward className="h-4 w-4 mr-1" />
+            Skip &amp; Acknowledge
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            iconLeft={
+              submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />
+            }
+            onClick={() => void handleSubmit()}
+            disabled={submitting || !hasDecisions}
+          >
+            {submitting ? 'Submitting…' : 'Apply Decisions & Proceed'}
           </Button>
         </div>
       </SurfaceCard>

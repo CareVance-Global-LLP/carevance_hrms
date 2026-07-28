@@ -1230,6 +1230,7 @@ export interface CalculatePayrollRequest {
   state?: string;
   tax_regime?: 'new' | 'old';
   is_metro_city?: boolean;
+  lOP_days?: number;
 }
 
 export interface ProcessPaymentRequest {

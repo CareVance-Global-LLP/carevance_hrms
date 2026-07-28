@@ -12,12 +12,13 @@ import type { PayGroupFilingDetail } from '@/types';
 
 import UploadForm16Modal from './UploadForm16Modal';
 
-type ComplianceStatus = 'ready' | 'reference_only' | 'not_configured' | 'source_data_only';
+type ComplianceStatus = 'ready' | 'reference_only' | 'needs_external_input' | 'not_configured' | 'source_data_only';
 
 const COMPLIANCE_BADGE: Record<ComplianceStatus, { label: string; className: string }> = {
   ready: { label: 'Filing-ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   reference_only: { label: 'Reference only — manual portal entry required', className: 'bg-amber-50 text-amber-700 border-amber-200' },
   source_data_only: { label: 'Source data only — needs NSDL RPU', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  needs_external_input: { label: 'Needs external input — incomplete without outside data', className: 'bg-orange-50 text-orange-700 border-orange-200' },
   not_configured: { label: 'Not configured for your state', className: 'bg-rose-50 text-rose-700 border-rose-200' },
 };
 
@@ -61,12 +62,12 @@ const FILING_CARDS: Array<{
   },
   {
     key: 'form_24q', label: 'TDS — 24Q', displayStatus: 'pending', periodInfo: 'Q2 · Due: 7 Nov', needsRun: true,
-    complianceStatus: 'source_data_only',
+    complianceStatus: 'reference_only',
     tooltip: 'Exports the underlying TDS data for this quarter. The actual e-TDS return must still be prepared using NSDL-approved return preparation software (RPU) or a TIN-FC, which validates it through the File Validation Utility (FVU) before filing with TDS-CPC. Due 15 days after quarter end.',
   },
   {
     key: 'form_16', label: 'Form 16', displayStatus: 'not_due', periodInfo: 'FY-end only · Jun 2026', needsRun: false,
-    complianceStatus: 'ready',
+    complianceStatus: 'needs_external_input',
     tooltip: 'Form 16 Part B (Salary Statement) — generated as a real PDF from the employee\'s aggregated FY payroll. Part A (with the TRACES certificate number) must be downloaded from TRACES after quarterly TDS filing and attached separately; this system cannot mint that number.',
   },
   {

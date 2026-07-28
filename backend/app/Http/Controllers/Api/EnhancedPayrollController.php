@@ -780,4 +780,200 @@ class EnhancedPayrollController extends Controller
             'data' => $settlement->fresh(),
         ]);
     }
+
+    public function compareTaxRegimes(Request $request): JsonResponse
+    {
+        $request->validate([
+            'annual_ctc' => 'required|numeric|min:0',
+            'exemptions' => 'nullable|array',
+            'is_metro' => 'boolean',
+        ]);
+
+        $calculator = app(PayrollCalculatorService::class);
+        $annualCtc = $request->annual_ctc;
+        $exemptions = $request->exemptions ?? [];
+        $isMetro = $request->boolean('is_metro', true);
+
+        $newRegime = $calculator->calculateNewRegimeTax($annualCtc, $exemptions);
+        $oldRegime = $calculator->calculateOldRegimeTax($annualCtc, $exemptions);
+
+        $standardDeductionOld = 50000;
+        $standardDeductionNew = 75000;
+
+        $taxableOld = max(0, $annualCtc - $standardDeductionOld);
+        $taxableNew = max(0, $annualCtc - $standardDeductionNew);
+
+        $oldTax = $oldRegime['total_tax'] ?? 0;
+        $newTax = $newRegime['total_tax'] ?? 0;
+
+        $savings = (float) $oldTax - (float) $newTax;
+        $recommended = $savings > 0 ? 'new' : 'old';
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'new_regime' => [
+                    'gross_income' => $annualCtc,
+                    'standard_deduction' => $standardDeductionNew,
+                    'taxable_income' => $taxableNew,
+                    'tax' => $newTax,
+                    'cess' => $newTax * 0.04,
+                    'total_tax' => $newTax * 1.04,
+                    'take_home' => $annualCtc - ($newTax * 1.04),
+                    'effective_rate' => $annualCtc > 0 ? round(($newTax * 1.04 / $annualCtc) * 100, 2) : 0,
+                ],
+                'old_regime' => [
+                    'gross_income' => $annualCtc,
+                    'standard_deduction' => $standardDeductionOld,
+                    'taxable_income' => $taxableOld,
+                    'tax' => $oldTax,
+                    'cess' => $oldTax * 0.04,
+                    'total_tax' => $oldTax * 1.04,
+                    'take_home' => $annualCtc - ($oldTax * 1.04),
+                    'effective_rate' => $annualCtc > 0 ? round(($oldTax * 1.04 / $annualCtc) * 100, 2) : 0,
+                ],
+                'recommended' => $recommended,
+                'savings' => round(abs($savings), 2),
+                'savings_pct' => $oldTax > 0 ? round(abs($savings) / $oldTax * 100, 1) : 0,
+                'difference' => round($savings, 2),
+            ],
+        ]);
+    }
+
+    public function taxSavingsRecommendation(Request $request): JsonResponse
+    {
+        $request->validate([
+            'financial_year' => 'nullable|string',
+        ]);
+
+        $userId = $request->user()->id;
+        $financialYear = $request->input('financial_year', $this->getCurrentFinancialYear());
+
+        $decl = EmployeeTaxDeclaration::with('items')
+            ->where('user_id', $userId)
+            ->where('financial_year', $financialYear)
+            ->where('status', 'approved')
+            ->first();
+
+        $annualGross = (float) ($decl->projected_annual_gross ?? 0);
+        if ($annualGross === 0) {
+            $emp = \App\Models\Employee::where('user_id', $userId)->first();
+            $annualGross = (float) ($emp->current_ctc ?? 0);
+        }
+
+        $calc = app(PayrollCalculatorService::class);
+        $currentTax = $calc->calculateMonthlyTDS($annualGross, 'old', $this->flattenDeclarations($decl))['annual_tax']['total_tax'] ?? 0;
+        $marginalRate = $this->marginalRateOldRegime($annualGross);
+
+        $recommendations = [
+            ['section' => '80C', 'cap' => 150000, 'remaining' => max(0, 150000 - (float) ($decl?->section_80c_total ?? 0)),
+             'advice' => 'PPF, ELSS, LIC, Home Loan Principal, Tuition Fees', 'potential_saving' => min(150000 - (float) ($decl?->section_80c_total ?? 0), 150000) * $marginalRate],
+            ['section' => '80CCD1B', 'cap' => 50000, 'remaining' => max(0, 50000 - (float) ($decl?->section_80ccd1b ?? 0)),
+             'advice' => 'NPS Tier-1 additional contribution (over and above 80C)', 'potential_saving' => max(0, 50000 - (float) ($decl?->section_80ccd1b ?? 0)) * $marginalRate],
+            ['section' => '80D', 'cap' => 25000, 'remaining' => max(0, 25000 - (float) ($decl?->section_80d ?? 0)),
+             'advice' => 'Health insurance premium (self + family); ₹50,000 cap if parents are senior citizens', 'potential_saving' => max(0, 25000 - (float) ($decl?->section_80d ?? 0)) * $marginalRate],
+            ['section' => '24B', 'cap' => 200000, 'remaining' => max(0, 200000 - (float) ($decl?->section_24b ?? 0)),
+             'advice' => 'Home loan interest (let-out property)', 'potential_saving' => max(0, 200000 - (float) ($decl?->section_24b ?? 0)) * $marginalRate],
+        ];
+
+        usort($recommendations, fn($a, $b) => $b['potential_saving'] <=> $a['potential_saving']);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'current_tax' => round($currentTax, 2),
+                'marginal_rate' => $marginalRate,
+                'recommendations' => $recommendations,
+                'total_potential_saving' => round(array_sum(array_column($recommendations, 'potential_saving')), 2),
+            ],
+        ]);
+    }
+
+    public function bulkUpdateTaxRegime(Request $request): JsonResponse
+    {
+        $request->validate([
+            'user_ids' => 'required|array|min:1',
+            'tax_regime' => 'required|in:new,old',
+            'financial_year' => 'nullable|string',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+        $taxRegime = $request->tax_regime;
+        $financialYear = $request->input('financial_year', $this->getCurrentFinancialYear());
+
+        $updated = 0;
+        foreach ($request->user_ids as $userId) {
+            $user = \App\Models\User::where('organization_id', $organizationId)->find($userId);
+            if (!$user) continue;
+
+            $profile = $user->employeePayrollTemplate;
+            if ($profile) {
+                $profile->update(['tax_regime' => $taxRegime]);
+                $updated++;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Updated {$updated} employee(s) to {$taxRegime} regime",
+            'updated_count' => $updated,
+        ]);
+    }
+
+    public function hraOptimization(Request $request): JsonResponse
+    {
+        $request->validate([
+            'basic_salary' => 'required|numeric|min:0',
+            'hra_received' => 'required|numeric|min:0',
+            'rent_paid' => 'required|numeric|min:0',
+            'is_metro' => 'boolean',
+        ]);
+
+        $calculator = app(PayrollCalculatorService::class);
+        $result = $calculator->calculateHraExemption(
+            $request->hra_received,
+            $request->basic_salary,
+            $request->rent_paid,
+            $request->boolean('is_metro', true)
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'hra_received' => $request->hra_received,
+                'basic_salary' => $request->basic_salary,
+                'rent_paid' => $request->rent_paid,
+                'is_metro' => $request->boolean('is_metro', true),
+                'hra_exemption' => $result,
+                'tax_saving' => $result * 0.30,
+            ],
+        ]);
+    }
+
+    protected function getCurrentFinancialYear(): string
+    {
+        $now = now();
+        $year = $now->month >= 4 ? $now->year : $now->year - 1;
+        return "{$year}-" . ($year + 1);
+    }
+
+    protected function flattenDeclarations(?\App\Models\EmployeeTaxDeclaration $decl): array
+    {
+        if (!$decl) return [];
+        $items = $decl->items ?? [];
+        $flat = [];
+        foreach ($items as $item) {
+            $section = $item->section ?? 'other';
+            $flat[$section] = (float) ($item->approved_amount ?? $item->declared_amount ?? 0);
+        }
+        return $flat;
+    }
+
+    protected function marginalRateOldRegime(float $annualGross): float
+    {
+        if ($annualGross <= 250000) return 0;
+        if ($annualGross <= 500000) return 0.05;
+        if ($annualGross <= 1000000) return 0.20;
+        return 0.30;
+    }
 }

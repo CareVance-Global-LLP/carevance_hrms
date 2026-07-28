@@ -53,7 +53,7 @@ describe('usePlan', () => {
     expect(hasFeature('payroll')).toBe(true);
   });
 
-  it('should not show payroll for any plan when payrollEnabled is false', () => {
+  it('should not show payroll for any plan when payrollEnabled is false', async () => {
     // Override the mock for this test
     vi.doMock('@/lib/runtimeConfig', () => ({
       payrollEnabled: false,
