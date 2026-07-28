@@ -23,6 +23,9 @@ yarn-error.log*
 desktop/release/
 desktop/release-*/
 
+# Desktop build artifacts
+desktop-build/
+
 # Laravel
 backend/vendor/
 backend/storage/*.key
@@ -32,6 +35,38 @@ backend/storage/framework/sessions/
 backend/storage/framework/views/
 backend/bootstrap/cache/*.php
 
+# Backend storage user data
+backend/storage/app/private/
+backend/storage/app/public/selfies/
+
 # Test/coverage
 coverage/
 
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# QA test output
+qa-report/
+qa-report-e2e/
+qa-report-flow/
+qa-report-payroll/
+
+# Temp directories
+temp-push/
+prompts/
+
+# Scratch files
+*.txt
+!README.md
+
+# Presentation artifacts
+*.pptx
+create_presentation.py
+
+# IDE tooling
+.kilo/

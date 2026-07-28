@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Calculator, TrendingUp, IndianRupee, Loader2, BarChart3, Info } from 'lucide-react';
+import { Calculator, TrendingUp, IndianRupee, Loader2, BarChart3, Info, Home } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
@@ -22,12 +22,19 @@ const EXEMPTION_FIELDS = [
   { key: 'standard_deduction', label: 'Standard Deduction', limit: 75000 },
 ];
 
+const HRA_FIELDS = [
+  { key: 'basic_salary', label: 'Basic Salary (₹)', placeholder: 'e.g. 25000' },
+  { key: 'hra_received', label: 'HRA Received (₹)', placeholder: 'e.g. 10000' },
+  { key: 'rent_paid', label: 'Rent Paid (₹)', placeholder: 'e.g. 15000' },
+];
+
 export default function TaxSimulatorPage() {
   const { show } = useToast();
   const [annualCtc, setAnnualCtc] = useState('');
   const [isMetro, setIsMetro] = useState('false');
   const [exemptions, setExemptions] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<'compare' | 'whatif' | 'takehome'>('compare');
+  const [activeTab, setActiveTab] = useState<'compare' | 'whatif' | 'takehome' | 'hra'>('compare');
+  const [hraInputs, setHraInputs] = useState<Record<string, string>>({});
 
   const compareMutation = useMutation({
     mutationFn: () => payrollApi.compareTaxRegimes({
@@ -63,13 +70,29 @@ export default function TaxSimulatorPage() {
     onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to run scenarios.') }),
   });
 
+  const hraMutation = useMutation({
+    mutationFn: () => payrollApi.hraOptimization({
+      basic_salary: parseFloat(hraInputs.basic_salary) || 0,
+      hra_received: parseFloat(hraInputs.hra_received) || 0,
+      rent_paid: parseFloat(hraInputs.rent_paid) || 0,
+      is_metro: isMetro === 'true',
+    }),
+    onSuccess: () => show({ kind: 'success', message: 'HRA optimization calculated.' }),
+    onError: (e: any) => show({ kind: 'error', message: getApiErrorMessage(e, 'Failed to calculate HRA optimization.') }),
+  });
+
   const handleExemptionChange = (key: string, value: string) => {
     setExemptions(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleHraInputChange = (key: string, value: string) => {
+    setHraInputs(prev => ({ ...prev, [key]: value }));
   };
 
   const compareResult = compareMutation.data?.data || compareMutation.data;
   const takeHomeResult = takeHomeMutation.data?.data || takeHomeMutation.data;
   const whatIfResult = whatIfMutation.data?.data || whatIfMutation.data;
+  const hraResult = hraMutation.data?.data || hraMutation.data;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -101,6 +124,14 @@ export default function TaxSimulatorPage() {
             onClick={() => setActiveTab('takehome')}
           >
             Monthly Take-Home
+          </Button>
+          <Button
+            variant={activeTab === 'hra' ? 'primary' : 'secondary'}
+            size="sm"
+            iconLeft={<Home className="h-4 w-4" />}
+            onClick={() => setActiveTab('hra')}
+          >
+            HRA Optimizer
           </Button>
         </div>
 
@@ -387,7 +418,66 @@ export default function TaxSimulatorPage() {
               </SurfaceCard>
             )}
 
-            {!compareMutation.isPending && !takeHomeMutation.isPending && !whatIfMutation.isPending && !compareResult && !takeHomeResult && !whatIfResult && (
+            {/* HRA Optimization Tab */}
+            {activeTab === 'hra' && (
+              <SurfaceCard className="p-5">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                  <Home className="h-5 w-5 text-[#5D969D]" />
+                  HRA Optimization Calculator
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  {HRA_FIELDS.map(field => (
+                    <div key={field.key}>
+                      <FieldLabel>{field.label}</FieldLabel>
+                      <TextInput
+                        type="number"
+                        value={hraInputs[field.key] || ''}
+                        onChange={(e) => handleHraInputChange(field.key, e.target.value)}
+                        placeholder={field.placeholder}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => hraMutation.mutate()}
+                  disabled={hraMutation.isPending}
+                >
+                  {hraMutation.isPending ? 'Calculating...' : 'Calculate HRA Exemption'}
+                </Button>
+                {hraResult && (
+                  <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <SurfaceCard className="p-4 bg-slate-50">
+                      <div className="text-sm text-slate-500">HRA Received</div>
+                      <div className="text-xl font-bold text-slate-900">{formatPayrollAmount(hraResult.hra_received)}</div>
+                    </SurfaceCard>
+                    <SurfaceCard className="p-4 bg-slate-50">
+                      <div className="text-sm text-slate-500">HRA Exemption (Tax Saving)</div>
+                      <div className="text-xl font-bold text-emerald-600">{formatPayrollAmount(hraResult.hra_exemption)}</div>
+                    </SurfaceCard>
+                    <SurfaceCard className="p-4 bg-slate-50">
+                      <div className="text-sm text-slate-500">Basic Salary</div>
+                      <div className="text-xl font-bold text-slate-900">{formatPayrollAmount(hraResult.basic_salary)}</div>
+                    </SurfaceCard>
+                    <SurfaceCard className="p-4 bg-slate-50">
+                      <div className="text-sm text-slate-500">Estimated Tax Saving</div>
+                      <div className="text-xl font-bold text-blue-600">{formatPayrollAmount(hraResult.tax_saving)}</div>
+                    </SurfaceCard>
+                  </div>
+                )}
+                <div className="mt-4 text-xs text-slate-500 space-y-1">
+                  <p>HRA exemption is the least of:</p>
+                  <ul className="list-disc list-inside ml-4 space-y-0.5">
+                    <li>Actual HRA received</li>
+                    <li>50% of Basic Salary (Metro) / 40% (Non-Metro)</li>
+                    <li>Rent paid minus 10% of Basic Salary</li>
+                  </ul>
+                </div>
+              </SurfaceCard>
+            )}
+
+            {!compareMutation.isPending && !takeHomeMutation.isPending && !whatIfMutation.isPending && !hraMutation.isPending && !compareResult && !takeHomeResult && !whatIfResult && !hraResult && (
               <SurfaceCard className="p-8 text-center">
                 <Calculator className="h-12 w-12 text-slate-300 mx-auto mb-3" />
                 <p className="text-slate-500">Enter your details and click calculate to see results</p>

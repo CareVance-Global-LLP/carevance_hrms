@@ -33,7 +33,7 @@ describe('resolveNotificationRoute', () => {
       is_read: false,
       created_at: '2026-05-11T00:00:00.000Z',
       meta: {},
-    } as any, { role: 'admin' } as any)).toBe('/approval-inbox?section=leave&view=pending&leave_window=today');
+    } as any, { role: 'admin' } as any)).toBe('/approval-inbox?section=leave&view=pending');
   });
 
   it('routes time edit approval notifications to the time edit section', () => {

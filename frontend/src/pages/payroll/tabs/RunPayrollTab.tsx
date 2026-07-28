@@ -137,8 +137,6 @@ export default function RunPayrollTab() {
           <PayGroupEmployees
             payGroupId={selectedPayGroupId}
             monthYear={monthYear}
-            // Wire the component's own "Back to Payroll" button to the
-            // real picker navigation instead of a noop.
             onBack={goToPicker}
             onSelectEmployee={(id) => setProcessingEmployeeId(id)}
             onOpenBulkPayroll={(ids) => {

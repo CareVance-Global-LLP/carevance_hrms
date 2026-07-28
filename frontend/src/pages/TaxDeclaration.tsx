@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Save, Send, CheckCircle, XCircle, Upload, Plus, Trash2, IndianRupee } from 'lucide-react';
+import { FileText, Save, Send, CheckCircle, XCircle, Upload, Plus, Trash2, IndianRupee, Lightbulb, Calculator, TrendingDown } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
@@ -22,10 +22,27 @@ export default function TaxDeclarationPage() {
   const [financialYear, setFinancialYear] = useState('2025-26');
   const [items, setItems] = useState<any[]>([]);
   const [activeSection, setActiveSection] = useState('80C');
+  const [showRegimeAdvice, setShowRegimeAdvice] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['tax-declaration', financialYear],
     queryFn: () => payrollApi.getMyTaxDeclaration({ financial_year: financialYear }).then(res => res.data),
+  });
+
+  const regimeQuery = useQuery({
+    queryKey: ['regime-recommendation', financialYear],
+    queryFn: () => payrollApi.compareTaxRegimes({
+      annual_ctc: 0,
+      exemptions: {},
+      is_metro: false,
+    }).then(res => res.data),
+    enabled: showRegimeAdvice,
+  });
+
+  const savingsQuery = useQuery({
+    queryKey: ['tax-savings-recommendation', financialYear],
+    queryFn: () => payrollApi.getTaxSavingsRecommendation({ financial_year: financialYear }).then(res => res.data),
+    enabled: showRegimeAdvice,
   });
 
   const sections = data?.sections || {};
@@ -129,6 +146,93 @@ export default function TaxDeclarationPage() {
             </StatusBadge>
           </div>
         </div>
+
+        {/* Regime Recommendation Widget */}
+        <SurfaceCard className="p-5 border-l-4 border-l-blue-500">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+              <Calculator className="h-4 w-4 text-blue-600" />
+              Tax Regime Recommendation
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowRegimeAdvice(!showRegimeAdvice)}
+            >
+              {showRegimeAdvice ? 'Hide' : 'Show Advice'}
+            </Button>
+          </div>
+          {showRegimeAdvice && (
+            <div className="space-y-4">
+              {regimeQuery.isLoading && (
+                <p className="text-sm text-slate-500">Analyzing your tax regime...</p>
+              )}
+              {regimeQuery.error && (
+                <p className="text-sm text-rose-600">Could not load regime recommendation.</p>
+              )}
+              {regimeQuery.data && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-lg border border-slate-200 bg-white">
+                    <div className="text-sm font-medium text-slate-500">Old Regime</div>
+                    <div className="text-xl font-bold text-slate-900 mt-1">
+                      {formatPayrollAmount(regimeQuery.data.old_regime?.total_tax || 0)}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Effective rate: {regimeQuery.data.old_regime?.effective_rate || 0}%
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-lg border border-slate-200 bg-white">
+                    <div className="text-sm font-medium text-slate-500">New Regime</div>
+                    <div className="text-xl font-bold text-slate-900 mt-1">
+                      {formatPayrollAmount(regimeQuery.data.new_regime?.total_tax || 0)}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Effective rate: {regimeQuery.data.new_regime?.effective_rate || 0}%
+                    </div>
+                  </div>
+                </div>
+              )}
+              {regimeQuery.data?.recommended && (
+                <div className={`p-3 rounded-lg text-sm font-medium ${
+                  regimeQuery.data.recommended === 'new'
+                    ? 'bg-green-50 text-green-800 border border-green-200'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}>
+                  <TrendingDown className="h-4 w-4 inline mr-1" />
+                  {regimeQuery.data.recommended === 'new'
+                    ? 'New regime is recommended — lower tax liability with simpler compliance.'
+                    : 'Old regime is recommended — your deductions save more than the new regime benefits.'}
+                  {regimeQuery.data.savings > 0 && (
+                    <span className="ml-2">
+                      You save {formatPayrollAmount(regimeQuery.data.savings)} annually.
+                    </span>
+                  )}
+                </div>
+              )}
+              {savingsQuery.data?.recommendations && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-slate-700">Tax-Saving Opportunities</div>
+                  {savingsQuery.data.recommendations.map((rec: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-slate-50 text-sm">
+                      <div>
+                        <span className="font-medium text-slate-900">Section {rec.section}</span>
+                        <span className="text-slate-500 ml-2">{rec.advice}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-emerald-600 font-medium">
+                          Save up to {formatPayrollAmount(rec.potential_saving)}
+                        </span>
+                        <div className="text-xs text-slate-500">
+                          {formatPayrollAmount(rec.remaining)} remaining
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </SurfaceCard>
 
         {/* Summary */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

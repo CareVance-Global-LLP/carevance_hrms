@@ -209,12 +209,10 @@ export default function EmployeePayrollWizard({
   // (while editing). Prevents the auto-save from persisting the
   // auto-fetched summary as a "draft" on first visit.
   const [attendanceEdited, setAttendanceEdited] = useState(false);
-  // Loads attendance from the server exactly ONCE per mount. Because the
-  // wizard is keyed by employeeId (remounts on every employee switch),
-  // a fresh mount re-loads cleanly. Within a single mount, later refetches
-  // (window focus / query invalidation) must NOT overwrite the user's
-  // local edits — hence we bail out after the first successful load.
-  const attendanceInitialized = useRef(false);
+  // Ref to track whether the draft has been saved for the current
+  // edit session. Prevents redundant localStorage writes while
+  // the user is still typing.
+  const draftSavedForEdit = useRef(false);
 
   // localStorage-based draft persistence (backend saveDrafts endpoint
   // does not exist). Keyed by employeeId+monthYear so edits survive
@@ -287,6 +285,59 @@ export default function EmployeePayrollWizard({
   const [calcError, setCalcError] = useState<string | null>(null);
   const [processedRunId, setProcessedRunId] = useState<number | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+
+  // ── Attendance-aware preview pro-ration ──
+  // The backend /payroll/calculate endpoint returns a base CTC breakdown
+  // without attendance-aware adjustments. Final pro-ration (LOP deduction)
+  // only happens in processEmployeePayroll. To make the wizard preview
+  // reflect manual attendance edits, we apply the same LOP formula here:
+  //   payableGross = baseGross - (baseGross / workingDays) * lopDays
+  // when the user has manually changed attendance from the auto-fetched
+  // summary.
+  const proRatedCalculation = useMemo(() => {
+    if (!calculation) return calculation;
+
+    const working = parseInt(workingDays, 10) || 26;
+    if (working <= 0) return calculation;
+    const lop = parseFloat(lOPDays) || 0;
+    const baseGross = Number(calculation.monthly.gross) || 0;
+
+    // Only adjust when there's something to adjust.
+    if (baseGross <= 0 || lop <= 0) return calculation;
+
+    const lopDeduction = (baseGross / working) * lop;
+    const adjustedGross = Math.max(0, baseGross - lopDeduction);
+
+    if (adjustedGross === baseGross) return calculation;
+
+    const scale = adjustedGross / baseGross;
+    const deductions = calculation.components.deductions;
+    const adjustedDeductions = {
+      pf_employee: Math.round((deductions.pf_employee || 0) * scale * 100) / 100,
+      esi_employee: Math.round((deductions.esi_employee || 0) * scale * 100) / 100,
+      pt: Math.round((deductions.pt || 0) * scale * 100) / 100,
+      tds: Math.round((deductions.tds || 0) * scale * 100) / 100,
+    };
+    const totalDeductions =
+      adjustedDeductions.pf_employee +
+      adjustedDeductions.esi_employee +
+      adjustedDeductions.pt +
+      adjustedDeductions.tds;
+
+    return {
+      ...calculation,
+      monthly: {
+        ...calculation.monthly,
+        gross: Math.round(adjustedGross * 100) / 100,
+        total_deductions: Math.round(totalDeductions * 100) / 100,
+        net: Math.round((adjustedGross - totalDeductions) * 100) / 100,
+      },
+      components: {
+        ...calculation.components,
+        deductions: adjustedDeductions,
+      },
+    };
+  }, [calculation, workingDays, lOPDays]);
 
   // Days Absent is purely derived — Working − Present − Paid Leave.
   // We don't keep it in state; it recalculates as the inputs change.
@@ -489,8 +540,12 @@ export default function EmployeePayrollWizard({
   //   1. Saved drafts in localStorage (survives employee-switch remounts)
   //   2. Auto-fetched attendance summary (fresh data from server)
   // Drafts take priority so manual edits survive employee-switch.
+  // The effect re-runs when data changes (e.g. navigating back to
+  // step 0) so fresh server data is picked up. It skips execution
+  // when the user has active edits (attendanceEdited=true) so
+  // in-progress edits are never overwritten by a refetch.
   useEffect(() => {
-    if (attendanceInitialized.current || !data) return;
+    if (!data || attendanceEdited) return;
 
     // 1. Try localStorage first
     const stored = loadDraftFromStorage();
@@ -503,9 +558,8 @@ export default function EmployeePayrollWizard({
       setOvertimePayAmount(String(stored.overtime_pay ?? 0));
       setStep2CustomEarnings(stored.custom_earnings ?? []);
       setStep2CustomDeductions(stored.custom_deductions ?? []);
-      attendanceInitialized.current = true;
       setDraftsLoaded(true);
-      setAttendanceEdited(false);
+      setAttendanceEdited(true);
       return;
     }
 
@@ -516,14 +570,14 @@ export default function EmployeePayrollWizard({
     setDaysPresent(String(Math.round(summary.present_days)));
     setLOPDays(String(Math.round(summary.total_lop_days ?? summary.legacy_lop_days ?? 0)));
     setPaidLeaveDays(String(Math.round(summary.paid_leave_days ?? 0)));
-    attendanceInitialized.current = true;
     setDraftsLoaded(true);
     setAttendanceEdited(false);
-  }, [data?.attendance_summary, data?.month_year, loadDraftFromStorage, monthYear]);
+  }, [data?.attendance_summary, data?.month_year, loadDraftFromStorage, monthYear, attendanceEdited]);
 
   // Auto-trigger calculation when CTC becomes a positive number (after template loads).
-  // The 500ms debounce lets the user finish typing before we hit the API.
-  // Intentionally not depending on `template` to avoid refire loops when template toggles change.
+  // Also re-run when any attendance field changes so the preview stays in sync
+  // with manual edits. The 500ms debounce lets the user finish typing before we hit
+  // the API.
   useEffect(() => {
     if (!template) return;
     const ctc = parseFloat(annualCtc);
@@ -532,7 +586,7 @@ export default function EmployeePayrollWizard({
       calculatePreview();
     }, 500);
     return () => clearTimeout(t);
-  }, [annualCtc]);  
+  }, [annualCtc, lOPDays, daysPresent, workingDays, paidLeaveDays, overtimeHours]);
 
   // Persist annual_ctc to the template so the bulk "Process All Employees"
   // handler can read it from EmployeePayrollTemplate.annual_ctc. Without
@@ -550,17 +604,18 @@ export default function EmployeePayrollWizard({
     return () => clearTimeout(t);
   }, [annualCtc, template?.annual_ctc]);
 
-  // Auto-save wizard drafts to localStorage on any Step 1 or Step 2 data
-  // change. Debounced at 800ms to avoid excessive writes while typing.
-  // handleContinue ALSO saves synchronously to guarantee persistence before
-  // employee switch.
+  // Persist wizard drafts to localStorage on any Step 1 or Step 2 data
+  // change. Debounced at 250ms so we don't thrash local storage
+  // while the user is typing, but we still catch intermediate edits
+  // (the original draftSavedForEdit flag prevented saves after the
+  // first keystroke, which meant later changes were lost on remount).
   useEffect(() => {
     if (!monthYear || !draftsLoaded || !attendanceEdited) return;
     const t = setTimeout(() => {
       saveDraftToStorage();
-    }, 800);
+    }, 250);
     return () => clearTimeout(t);
-  }, [workingDays, daysPresent, lOPDays, paidLeaveDays, overtimeHours, overtimePayAmount, step2CustomEarnings, step2CustomDeductions, monthYear, employeeId, draftsLoaded, attendanceEdited, saveDraftToStorage]);
+  }, [attendanceEdited, draftsLoaded, monthYear, employeeId, saveDraftToStorage]);
 
   // Calculate preview
   const calculatePreview = async () => {
@@ -575,6 +630,7 @@ export default function EmployeePayrollWizard({
         state: template.pt_state ?? 'maharashtra',
         tax_regime: template.tax_regime ?? 'new',
         is_metro_city: template.is_metro_city ?? true,
+        lOP_days: parseFloat(lOPDays) || 0,
       });
 
       // Apply template toggles
@@ -764,15 +820,20 @@ export default function EmployeePayrollWizard({
               </span>
             </h4>
             <button
-              onClick={() => {
-                const next = !isEditingAttendance;
-                setIsEditingAttendance(next);
-                // Commit edits to the employee's record when leaving edit mode,
-                // so they persist across the per-employee remount on navigation.
-                if (!next && attendanceEdited) {
-                  commitAttendanceDraft();
-                }
-              }}
+onClick={() => {
+                 const next = !isEditingAttendance;
+                 setIsEditingAttendance(next);
+                 // Reset the draft-saved flag when entering edit mode
+                 // so the immediate-save effect fires on the next edit.
+                 if (next) {
+                   draftSavedForEdit.current = false;
+                 }
+                 // Commit edits to the employee's record when leaving edit mode,
+                 // so they persist across the per-employee remount on navigation.
+                 if (!next && attendanceEdited) {
+                   commitAttendanceDraft();
+                 }
+               }}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
             >
               {isEditingAttendance ? 'Done Editing' : 'Edit Values'}
@@ -1806,7 +1867,7 @@ export default function EmployeePayrollWizard({
             </div>
             
             <SalaryBreakdown
-              calculation={calculation}
+              calculation={proRatedCalculation ?? calculation}
               template={template}
               overtimePay={parseFloat(overtimePayAmount) || 0}
               customEarnings={step2CustomEarnings}
@@ -2008,9 +2069,9 @@ export default function EmployeePayrollWizard({
                 <Wallet className="h-4 w-4 text-blue-600" />
                 <h3 className="text-sm font-semibold text-slate-900">Salary Breakdown</h3>
               </div>
-              {calculation ? (
+              {proRatedCalculation || calculation ? (
                 <SalaryBreakdown
-                  calculation={calculation}
+                  calculation={proRatedCalculation ?? calculation}
                   template={template}
                   overtimePay={parseFloat(overtimePayAmount) || 0}
                   customEarnings={step2CustomEarnings}

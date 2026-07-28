@@ -2019,6 +2019,113 @@ export const payrollApi = {
   releasePayrollRun: (runId: number, notes?: string) =>
     api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/release`, { notes }),
 
+  rejectPayrollRun: (runId: number, reason: string) =>
+    api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/reject`, { reason }),
+
+  releasePayout: (runId: number, itemId: number) =>
+    api.post<{ success: boolean; message: string; item: any }>(`/payroll/runs/${runId}/release-payout`, { item_id: itemId }),
+
+  getPayrollLockApprovals: (params?: { page?: number }) =>
+    api.get<{
+      success: boolean;
+      data: Array<{
+        id: number;
+        month_year: string;
+        pay_group_name: string;
+        locked_by_name: string;
+        locked_at: string;
+        lock_reason: string;
+        total_employees: number;
+        is_self_approval: boolean;
+      }>;
+      current_page: number;
+      last_page: number;
+      total: number;
+    }>('/payroll/approvals/payroll-locks', { params }),
+
+  // ===== Stop Payment Flags =====
+  listStopPaymentFlags: (params?: { page?: number }) =>
+    api.get<{
+      success: boolean;
+      data: Array<{
+        id: number;
+        user_id: number;
+        user_name: string;
+        user_email: string;
+        month_year: string;
+        hold_type: 'processing' | 'payout';
+        reason: string | null;
+        is_active: boolean;
+        created_at: string;
+      }>;
+    }>('/payroll/stop-payment-flags', { params }),
+
+  createStopPaymentFlag: (data: {
+    user_id: number;
+    month_year: string;
+    hold_type: 'processing' | 'payout';
+    reason?: string;
+  }) =>
+    api.post<{
+      success: boolean;
+      message: string;
+      flag: {
+        id: number;
+        user_id: number;
+        user_name: string;
+        month_year: string;
+        hold_type: string;
+        reason: string | null;
+        is_active: boolean;
+      };
+    }>('/payroll/stop-payment-flags', data),
+
+  updateStopPaymentFlag: (id: number, data: {
+    hold_type?: 'processing' | 'payout';
+    reason?: string;
+    resolve?: boolean;
+  }) =>
+    api.put<{
+      success: boolean;
+      message: string;
+      flag: { id: number; hold_type?: string; reason?: string | null; is_active: boolean };
+    }>(`/payroll/stop-payment-flags/${id}`, data),
+
+  resolveStopPaymentFlag: (id: number) =>
+    api.delete<{
+      success: boolean;
+      message: string;
+      flag: { id: number; is_active: false };
+    }>(`/payroll/stop-payment-flags/${id}`),
+
+  // ===== Run Review Data =====
+  getRunReviewData: (runId: number, params?: { payGroupId?: number; monthYear?: string }) => {
+    if (runId > 0) {
+      return api.get<{
+        success: boolean;
+        month_year: string;
+        new_joiners: Array<{ id: number; name: string; email: string; joining_date: string | null; exit_date: string | null; employment_status: string | null; designation: string | null; type: string }>;
+        exits: Array<{ id?: number; user_id: number; name: string; email: string; last_working_date: string | null; reason: string; type: string }>;
+        outstanding_fnf: Array<{ id: number; user_id: number; name: string; email: string; last_working_date: string | null; settlement_date: string | null; exit_type: string | null; exit_reason: string | null; status: string; type: string }>;
+      }>(`/payroll/runs/${runId}/review`, { params });
+    }
+    return api.get<{
+      success: boolean;
+      month_year: string;
+      new_joiners: Array<{ id: number; name: string; email: string; joining_date: string | null; exit_date: string | null; employment_status: string | null; designation: string | null; type: string }>;
+      exits: Array<{ id?: number; user_id: number; name: string; email: string; last_working_date: string | null; reason: string; type: string }>;
+      outstanding_fnf: Array<{ id: number; user_id: number; name: string; email: string; last_working_date: string | null; settlement_date: string | null; exit_type: string | null; exit_reason: string | null; status: string; type: string }>;
+    }>('/payroll/review-data', { params });
+  },
+
+  submitRunReviewDecisions: (runId: number, decisions: Array<{
+    user_id: number; action: 'process' | 'hold_processing' | 'hold_payout' | 'void'; comment?: string;
+  }>) =>
+    api.post<{
+      success: boolean; message: string;
+      counts: { processed: number; hold_processing: number; hold_payout: number; void: number };
+    }>(`/payroll/runs/${runId}/review`, { decisions }),
+
   processRunPayment: (runId: number, paymentMethod?: string, payDate?: string) =>
     api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/process-payment`, { payment_method: paymentMethod, pay_date: payDate }),
 
@@ -2248,6 +2355,12 @@ export const payrollApi = {
     api.post<any>('/payroll/tax-simulator/what-if', data),
   calculateMonthlyTakeHome: (data: { annual_ctc: number; regime?: string; exemptions?: Record<string, number> }) =>
     api.post<any>('/payroll/tax-simulator/monthly-take-home', data),
+  getTaxSavingsRecommendation: (params?: { financial_year?: string }) =>
+    api.get<any>('/payroll/tax-savings/recommendation', { params }),
+  bulkUpdateTaxRegime: (data: { user_ids: number[]; tax_regime: string; financial_year?: string }) =>
+    api.post<any>('/payroll/tax-regime/bulk-update', data),
+  hraOptimization: (data: { basic_salary: number; hra_received: number; rent_paid: number; is_metro?: boolean }) =>
+    api.post<any>('/payroll/hra-optimization', data),
 
   // ===== Salary Revision Letters =====
   generateRevisionLetter: (data: { user_id: number; new_ctc: number; revision_type?: string; reason?: string; effective_date?: string; generate_arrears?: boolean }) =>

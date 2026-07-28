@@ -161,33 +161,44 @@ export default function BulkPayrollMatrix({
     enabled: employees.length > 0 && currentStep >= 5,
   });
 
+  // Initialize matrix rows ONLY for new employees. Existing rows are
+  // left untouched so manual edits to Present / LOP / Paid Leave /
+  // Overtime / Salary components survive query refetches (e.g. the
+  // completeStepMutation onSuccess invalidates the employees list).
   useEffect(() => {
     if (employees.length === 0) return;
     setMatrixData((prev) => {
       const next = new Map(prev);
       employees.forEach((emp) => {
-        const existing = next.get(emp.id);
+        if (next.has(emp.id)) return; // preserve existing rows (manual edits)
         const att = emp.attendance;
+        const ctc = emp.annual_ctc ?? 0;
+        const basic = Math.round(ctc * 0.4 / 12);
+        const hra = Math.round(ctc * 0.2 / 12);
+        const special = Math.round(ctc * 0.25 / 12);
+        const conveyance = 1600;
+        const gross = basic + hra + special + conveyance;
+        const pf = Math.min(Math.round(basic * 0.12), 1800);
         next.set(emp.id, {
-          working_days: att?.working_days ?? existing?.working_days ?? 26,
-          present_days: att?.present_days ?? existing?.present_days ?? 26,
-          lop_days: att?.lop_days ?? existing?.lop_days ?? 0,
-          paid_leave_days: att?.paid_leave_days ?? existing?.paid_leave_days ?? 0,
-          overtime_hours: att?.overtime_hours ?? existing?.overtime_hours ?? 0,
-          annual_ctc: emp.annual_ctc ?? existing?.annual_ctc ?? 0,
-          basic: existing?.basic ?? 0,
-          hra: existing?.hra ?? 0,
-          special_allowance: existing?.special_allowance ?? 0,
-          conveyance: existing?.conveyance ?? 1600,
-          other_earnings: existing?.other_earnings ?? 0,
-          overtime_pay_amount: existing?.overtime_pay_amount ?? 0,
-          other_deduction: existing?.other_deduction ?? 0,
-          pf_employee: existing?.pf_employee ?? 0,
-          pf_employer: existing?.pf_employer ?? 0,
-          esi_employee: existing?.esi_employee ?? 0,
-          esi_employer: existing?.esi_employer ?? 0,
-          pt: existing?.pt ?? 0,
-          tds: existing?.tds ?? 0,
+          working_days: att?.working_days ?? 26,
+          present_days: att?.present_days ?? 26,
+          lop_days: att?.lop_days ?? 0,
+          paid_leave_days: att?.paid_leave_days ?? 0,
+          overtime_hours: att?.overtime_hours ?? 0,
+          annual_ctc: ctc,
+          basic,
+          hra,
+          special_allowance: special,
+          conveyance,
+          other_earnings: 0,
+          overtime_pay_amount: 0,
+          other_deduction: 0,
+          pf_employee: pf,
+          pf_employer: pf,
+          esi_employee: gross <= 21000 ? Math.round(gross * 0.0075) : 0,
+          esi_employer: gross <= 21000 ? Math.round(gross * 0.0325) : 0,
+          pt: 0,
+          tds: 0,
         });
       });
       return next;

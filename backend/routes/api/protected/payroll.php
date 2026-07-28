@@ -217,6 +217,12 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
     Route::post('/declarations/{declarationId}/review', [\App\Http\Controllers\Api\TaxDeclarationController::class, 'review']);
     Route::get('/declarations', [\App\Http\Controllers\Api\TaxDeclarationController::class, 'listDeclarations']);
 
+    // Tax Regime Comparison & Recommendations
+    Route::post('/tax-simulator/compare', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'compareTaxRegimes']);
+    Route::get('/tax-savings/recommendation', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'taxSavingsRecommendation']);
+    Route::post('/tax-regime/bulk-update', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'bulkUpdateTaxRegime']);
+    Route::post('/hra-optimization', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'hraOptimization']);
+
     // Loan / Advance Management
     Route::post('/loans/request', [\App\Http\Controllers\Api\LoanController::class, 'requestLoan']);
     Route::get('/my/loans', [\App\Http\Controllers\Api\LoanController::class, 'myLoans']);
