@@ -11,7 +11,7 @@ class PayrollFiling extends Model
 
     protected $fillable = [
         'organization_id', 'type', 'period_type', 'period_month', 'period_quarter',
-        'period_year', 'status', 'portal_status', 'file_path', 'original_filename',
+        'period_year', 'status', 'compliance_status', 'portal_status', 'file_path', 'original_filename',
         'acknowledgment_number', 'generated_at', 'submitted_at', 'approved_at',
         'filed_at', 'acknowledged_at', 'generated_by', 'submitted_by', 'approved_by',
         'filed_by', 'reviewer_user_id', 'review_note', 'meta_data', 'notes',
@@ -33,6 +33,15 @@ class PayrollFiling extends Model
 
     // Filing workflow: generated -> submitted -> approved -> filed -> acknowledged
     const STATUSES = ['draft', 'generated', 'submitted', 'approved', 'filed', 'acknowledged', 'error'];
+
+    // Compliance honesty classification for every filing type.
+    // See the master payroll roadmap §2 for the policy this enforces.
+    const COMPLIANCE_STATUSES = [
+        'ready'            => 'Filing-ready: matches the government portal upload format exactly.',
+        'reference_only'   => 'Reference-only: correct summary for HR records, not the legal upload format.',
+        'needs_external_input' => 'Requires external input: cannot be completed by this system alone.',
+        'not_configured'   => 'Not configured: no rates or rules set up for this filing yet.',
+    ];
 
     // Portal-side state for the semi-auto "upload to portal" flow.
     const PORTAL_STATUSES = ['pending_upload', 'uploaded', 'paid', 'error'];

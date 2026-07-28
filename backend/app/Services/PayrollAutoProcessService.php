@@ -146,12 +146,12 @@ class PayrollAutoProcessService
             ->get();
 
         foreach ($templates as $template) {
-            $hasHold = StopPaymentFlag::where('user_id', $template->user_id)
+            $hold = StopPaymentFlag::where('user_id', $template->user_id)
                 ->where('month_year', $run->month_year)
                 ->where('is_active', true)
-                ->exists();
+                ->first();
 
-            if ($hasHold) continue;
+            if ($hold && $hold->hold_type === 'processing') continue;
 
             $userId = $template->user_id;
 
@@ -167,6 +167,7 @@ class PayrollAutoProcessService
                     'department_id' => $template->user->employeeWorkInfo->department_id ?? $template->user->group_id,
                     'total_working_days' => 26,
                     'template_snapshot' => $template->toArray(),
+                    'is_payout_held' => $hold && $hold->hold_type === 'payout',
                 ]);
             }
         }
@@ -372,12 +373,13 @@ class PayrollAutoProcessService
 
     private function autoApplyHolds(PayrollMonthlyRun $run): void
     {
-        $holds = StopPaymentFlag::where('month_year', $run->month_year)
+        $processingHolds = StopPaymentFlag::where('month_year', $run->month_year)
             ->where('is_active', true)
+            ->where('hold_type', 'processing')
             ->pluck('user_id');
 
         PayrollItem::where('payroll_run_id', $run->id)
-            ->whereIn('user_id', $holds)
+            ->whereIn('user_id', $processingHolds)
             ->delete();
     }
 

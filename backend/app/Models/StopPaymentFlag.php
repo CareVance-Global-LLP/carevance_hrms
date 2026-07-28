@@ -9,9 +9,9 @@ class StopPaymentFlag extends Model
 {
     protected $table = 'stop_payment_flags';
 
-    protected $fillable = [
+protected $fillable = [
         'organization_id', 'user_id', 'month_year', 'reason', 'raised_by',
-        'is_active', 'resolved_at', 'resolved_by',
+        'is_active', 'resolved_at', 'resolved_by', 'hold_type',
     ];
 
     protected $casts = [

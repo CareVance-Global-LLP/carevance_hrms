@@ -2508,23 +2508,25 @@ class PayrollDepartmentController extends Controller
             $lockReason = "Partial run: {$completeness['processed_count']} of {$completeness['expected_count']} employees processed.";
         }
 
-        $run->update([
-            'status' => 'locked',
-            'locked_at' => now(),
-            'locked_by' => auth()->id(),
-            'lock_reason' => $lockReason !== '' ? $lockReason : null,
-            'notes' => $request->get('notes', $run->notes),
-        ]);
+        DB::transaction(function () use ($run, $lockReason, $request, $completeness) {
+            $run->update([
+                'status' => 'locked',
+                'locked_at' => now(),
+                'locked_by' => auth()->id(),
+                'lock_reason' => $lockReason !== '' ? $lockReason : null,
+                'notes' => $request->get('notes', $run->notes),
+            ]);
 
-        // Audit the lock for compliance review.
-        $this->writeRunAudit($run, 'locked', [
-            'expected_count' => $completeness['expected_count'],
-            'processed_count' => $completeness['processed_count'],
-            'missing_count' => $completeness['missing_count'],
-            'is_complete' => $completeness['is_complete'],
-            'reason' => $lockReason,
-            'locked_by' => auth()->id(),
-        ]);
+            // Audit the lock for compliance review.
+            $this->writeRunAudit($run, 'locked', [
+                'expected_count' => $completeness['expected_count'],
+                'processed_count' => $completeness['processed_count'],
+                'missing_count' => $completeness['missing_count'],
+                'is_complete' => $completeness['is_complete'],
+                'reason' => $lockReason,
+                'locked_by' => auth()->id(),
+            ]);
+        });
 
         return response()->json([
             'success' => true,
@@ -2827,21 +2829,123 @@ class PayrollDepartmentController extends Controller
             ], 422);
         }
 
-        $run->update([
-            'status' => 'approved',
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
-            'notes' => $request->get('notes', $run->notes),
-        ]);
+        DB::transaction(function () use ($run, $request) {
+            $run->update([
+                'status' => 'approved',
+                'approved_by' => auth()->id(),
+                'approved_at' => now(),
+                'notes' => $request->get('notes', $run->notes),
+            ]);
 
-        $this->writeRunAudit($run->fresh(), 'approved', [
-            'approved_by' => auth()->id(),
-            'notes' => $request->get('notes'),
-        ]);
+            $this->writeRunAudit($run->fresh(), 'approved', [
+                'approved_by' => auth()->id(),
+                'notes' => $request->get('notes'),
+            ]);
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Payroll run approved successfully',
+            'run' => $run->fresh(),
+        ]);
+    }
+
+    /**
+     * Get payroll runs locked and awaiting a second approver.
+     * Only returns runs where the organization requires a second
+     * approver (maker-checker). The locking admin cannot approve
+     * their own lock — those are surfaced as informational cards.
+     */
+    public function getPayrollLockApprovals(Request $request): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $runs = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('status', 'locked')
+            ->whereNull('approved_at')
+            ->with(['lockedBy:id,name', 'createdBy:id,name', 'items'])
+            ->orderByDesc('locked_at')
+            ->paginate(25);
+
+        $results = $runs->getCollection()->filter(function ($run) {
+            $org = $run->organization;
+            return $org && $this->shouldRequireSecondApprover($org);
+        })->map(function ($run) {
+            $payGroupNames = PayGroupAssignment::where('organization_id', $run->organization_id)
+                ->whereHas('payGroup', function ($q) use ($run) {
+                    $q->where('organization_id', $run->organization_id);
+                })
+                ->with('payGroup')
+                ->get()
+                ->pluck('payGroup.name')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            $payGroupName = $payGroupNames ? implode(', ', $payGroupNames) : 'General';
+
+            return [
+                'id' => $run->id,
+                'month_year' => $run->month_year,
+                'pay_group_name' => $payGroupName,
+                'locked_by_name' => $run->lockedBy?->name ?? 'Unknown',
+                'locked_at' => $run->locked_at,
+                'lock_reason' => $run->lock_reason,
+                'total_employees' => $run->items->count(),
+                'is_self_approval' => (int) $run->locked_by === (int) auth()->id(),
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'approvals' => $results,
+            'total' => $results->count(),
+        ]);
+    }
+
+    /**
+     * Reject a locked payroll run, returning it to draft status.
+     * The locking admin cannot reject their own lock (self-approval guard).
+     */
+    public function rejectPayrollRun(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        if ($run->status !== 'locked') {
+            return response()->json([
+                'success' => false,
+                'message' => "Cannot reject run in '{$run->status}' status. Only 'locked' runs can be rejected.",
+            ], 422);
+        }
+
+        if ((int) $run->locked_by === (int) auth()->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A different admin must reject this run.',
+            ], 422);
+        }
+
+        $run->update([
+            'status' => 'draft',
+            'locked_by' => null,
+            'locked_at' => null,
+            'lock_reason' => null,
+        ]);
+
+        $this->writeRunAudit($run->fresh(), 'rejected', [
+            'rejected_by' => auth()->id(),
+            'previous_status' => 'locked',
+            'to_status' => 'draft',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payroll run rejected and returned to draft.',
             'run' => $run->fresh(),
         ]);
     }
@@ -2898,17 +3002,19 @@ class PayrollDepartmentController extends Controller
             ->with(['user:id,name'])
             ->get();
 
-        $run->update([
-            'status' => 'released',
-            'released_at' => now(),
-            'released_by' => auth()->id(),
-            'notes' => $request->get('notes', $run->notes),
-        ]);
+        DB::transaction(function () use ($run, $request, $employeesMissingBankDetails) {
+            $run->update([
+                'status' => 'released',
+                'released_at' => now(),
+                'released_by' => auth()->id(),
+                'notes' => $request->get('notes', $run->notes),
+            ]);
 
-        $this->writeRunAudit($run->fresh(), 'released', [
-            'released_by' => auth()->id(),
-            'skipped_employees' => $employeesMissingBankDetails->pluck('user_id')->all(),
-        ]);
+            $this->writeRunAudit($run->fresh(), 'released', [
+                'released_by' => auth()->id(),
+                'skipped_employees' => $employeesMissingBankDetails->pluck('user_id')->all(),
+            ]);
+        });
 
         return response()->json([
             'success' => true,
@@ -2921,6 +3027,415 @@ class PayrollDepartmentController extends Controller
                 'name' => $item->user->name,
                 'reason' => 'no_bank_details',
             ])->values(),
+        ]);
+    }
+
+    /**
+     * Release a payout hold on a specific payroll item.
+     *
+     * Changes the item from payout-held to pending payment,
+     * so it will be included in the next bank file generation.
+     */
+    public function releasePayout(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        $data = $request->validate([
+            'item_id' => 'required|integer|exists:payroll_items,id',
+        ]);
+
+        $item = PayrollItem::where('id', $data['item_id'])
+            ->where('payroll_run_id', $run->id)
+            ->firstOrFail();
+
+        if (!$item->is_payout_held) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This payroll item is not payout-held.',
+            ], 422);
+        }
+
+        $item->update([
+            'is_payout_held' => false,
+            'payment_status' => 'pending',
+        ]);
+
+        $this->writeRunAudit($run, 'payout_released', [
+            'payroll_item_id' => $item->id,
+            'user_id' => $item->user_id,
+            'released_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payout released for payroll item.',
+            'item' => $item->fresh(),
+        ]);
+    }
+
+    /**
+     * Get new joiners, exits, and outstanding F&F settlements for a payroll run.
+     */
+    public function getRunReviewData(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        [$year, $month] = explode('-', $run->month_year);
+        $monthStart = sprintf('%04d-%02d-01', $year, $month);
+        $monthEnd = date('Y-m-t', strtotime($monthStart));
+
+        // New joiners: employees whose joining_date falls within the pay period month
+        // and have an active payroll template.
+        $newJoiners = DB::table('users as u')
+            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->join('employee_payroll_templates as t', 't.user_id', '=', 'u.id')
+            ->where('u.organization_id', $organizationId)
+            ->whereIn('u.role', ['employee', 'manager', 'admin'])
+            ->where('t.is_active', true)
+            ->whereNotNull('t.annual_ctc')
+            ->where('t.annual_ctc', '>', 0)
+            ->whereBetween('w.joining_date', [$monthStart, $monthEnd])
+            ->select(
+                'u.id as user_id',
+                'u.name',
+                'u.email',
+                'w.joining_date',
+                'w.exit_date',
+                'w.employment_status',
+                'w.designation',
+                'w.department_id',
+            )
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'user_id' => $row->user_id,
+                    'name' => $row->name,
+                    'email' => $row->email,
+                    'joining_date' => $row->joining_date,
+                    'exit_date' => $row->exit_date,
+                    'employment_status' => $row->employment_status,
+                    'designation' => $row->designation,
+                    'department_id' => $row->department_id,
+                ];
+            });
+
+        // Exits: approved resignations with last_working_date in the pay period,
+        // plus employees with exit_date in the pay period.
+        $exitResignations = DB::table('resignations as r')
+            ->join('users as u', 'u.id', '=', 'r.user_id')
+            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->where('u.organization_id', $organizationId)
+            ->where('r.status', 'approved')
+            ->whereBetween('r.last_working_date', [$monthStart, $monthEnd])
+            ->select(
+                'u.id as user_id',
+                'u.name',
+                'u.email',
+                'r.last_working_date',
+                'r.status as resignation_status',
+                'r.reason as resignation_reason',
+                'w.exit_date',
+            )
+            ->get();
+
+        $exitWorkInfo = DB::table('users as u')
+            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->where('u.organization_id', $organizationId)
+            ->whereNotNull('w.exit_date')
+            ->whereBetween('w.exit_date', [$monthStart, $monthEnd])
+            ->select(
+                'u.id as user_id',
+                'u.name',
+                'u.email',
+                'w.exit_date',
+                DB::raw("'work_info_exit' as resignation_status"),
+                DB::raw("null as resignation_reason"),
+                'w.exit_date',
+            )
+            ->get();
+
+        $exits = $exitResignations->merge($exitWorkInfo)->map(function ($row) {
+            return [
+                'user_id' => $row->user_id,
+                'name' => $row->name,
+                'email' => $row->email,
+                'last_working_date' => $row->last_working_date ?? $row->exit_date,
+                'status' => $row->resignation_status,
+                'reason' => $row->resignation_reason ?? null,
+            ];
+        });
+
+        // Outstanding F&F settlements (pending or draft).
+        $outstandingFnf = DB::table('full_and_final_settlements as f')
+            ->join('users as u', 'u.id', '=', 'f.user_id')
+            ->where('f.organization_id', $organizationId)
+            ->whereIn('f.status', ['draft', 'pending', 'approved'])
+            ->select(
+                'f.id as settlement_id',
+                'u.id as user_id',
+                'u.name',
+                'u.email',
+                'f.status as settlement_status',
+                'f.net_settlement_amount',
+                'f.last_working_date',
+            )
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'settlement_id' => $row->settlement_id,
+                    'user_id' => $row->user_id,
+                    'name' => $row->name,
+                    'email' => $row->email,
+                    'settlement_status' => $row->settlement_status,
+                    'net_settlement_amount' => $row->net_settlement_amount,
+                    'last_working_date' => $row->last_working_date,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'run_id' => $runId,
+            'month_year' => $run->month_year,
+            'new_joiners' => $newJoiners,
+            'exits' => $exits,
+            'outstanding_fnf' => $outstandingFnf,
+        ]);
+    }
+
+    /**
+     * Get new joiners, exits, and outstanding F&F settlements for a pay group
+     * and month, without requiring a payroll run to exist yet.
+     */
+    public function getReviewDataByPayGroup(Request $request): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $data = $request->validate([
+            'payGroupId' => 'required|integer|exists:pay_groups,id',
+            'monthYear' => 'required|string|regex:/^\d{4}-\d{2}$/',
+        ]);
+
+        $payGroupId = $data['payGroupId'];
+        $monthYear = $data['monthYear'];
+
+        [$year, $month] = explode('-', $monthYear);
+        $monthStart = sprintf('%04d-%02d-01', $year, $month);
+        $monthEnd = date('Y-m-t', strtotime($monthStart));
+
+        // Get employee IDs belonging to this pay group.
+        $payGroupEmployeeIds = DB::table('pay_group_employees')
+            ->where('pay_group_id', $payGroupId)
+            ->pluck('user_id')
+            ->toArray();
+
+        // New joiners: employees in this pay group whose joining_date falls within the month.
+        $newJoiners = DB::table('users as u')
+            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->join('employee_payroll_templates as t', 't.user_id', '=', 'u.id')
+            ->where('u.organization_id', $organizationId)
+            ->whereIn('u.id', $payGroupEmployeeIds)
+            ->whereIn('u.role', ['employee', 'manager', 'admin'])
+            ->where('t.is_active', true)
+            ->whereNotNull('t.annual_ctc')
+            ->where('t.annual_ctc', '>', 0)
+            ->whereBetween('w.joining_date', [$monthStart, $monthEnd])
+            ->select(
+                'u.id as user_id',
+                'u.name',
+                'u.email',
+                'w.joining_date',
+                'w.exit_date',
+                'w.employment_status',
+                'w.designation',
+                'w.department_id',
+            )
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'user_id' => $row->user_id,
+                    'name' => $row->name,
+                    'email' => $row->email,
+                    'joining_date' => $row->joining_date,
+                    'exit_date' => $row->exit_date,
+                    'employment_status' => $row->employment_status,
+                    'designation' => $row->designation,
+                    'department_id' => $row->department_id,
+                ];
+            });
+
+        // Exits: approved resignations with last_working_date in the month,
+        // plus employees with exit_date in the month.
+        $exitResignations = DB::table('resignations as r')
+            ->join('users as u', 'u.id', '=', 'r.user_id')
+            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->where('u.organization_id', $organizationId)
+            ->whereIn('u.id', $payGroupEmployeeIds)
+            ->where('r.status', 'approved')
+            ->whereBetween('r.last_working_date', [$monthStart, $monthEnd])
+            ->select(
+                'u.id as user_id',
+                'u.name',
+                'u.email',
+                'r.last_working_date',
+                'r.status as resignation_status',
+                'r.reason as resignation_reason',
+                'w.exit_date',
+            )
+            ->get();
+
+        $exitWorkInfo = DB::table('users as u')
+            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->where('u.organization_id', $organizationId)
+            ->whereIn('u.id', $payGroupEmployeeIds)
+            ->whereNotNull('w.exit_date')
+            ->whereBetween('w.exit_date', [$monthStart, $monthEnd])
+            ->select(
+                'u.id as user_id',
+                'u.name',
+                'u.email',
+                'w.exit_date',
+                'w.exit_reason',
+            )
+            ->get();
+
+        $exits = $exitResignations->merge($exitWorkInfo)->map(function ($row) {
+            return [
+                'user_id' => $row->user_id,
+                'name' => $row->name,
+                'email' => $row->email,
+                'last_working_date' => $row->last_working_date ?? $row->exit_date ?? null,
+                'reason' => $row->resignation_reason ?? $row->exit_reason ?? null,
+                'type' => $row->resignation_status ? 'resignation' : 'work_info_exit',
+            ];
+        });
+
+        // Outstanding F&F settlements for employees in this pay group.
+        $outstandingFnf = DB::table('fnf_settlements as f')
+            ->join('users as u', 'u.id', '=', 'f.user_id')
+            ->where('u.organization_id', $organizationId)
+            ->whereIn('u.id', $payGroupEmployeeIds)
+            ->where('f.status', 'pending')
+            ->select(
+                'f.id',
+                'f.user_id',
+                'u.name',
+                'u.email',
+                'f.last_working_date',
+                'f.settlement_date',
+                'f.exit_type',
+                'f.exit_reason',
+                'f.status',
+            )
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'id' => $row->id,
+                    'user_id' => $row->user_id,
+                    'name' => $row->name,
+                    'email' => $row->email,
+                    'last_working_date' => $row->last_working_date,
+                    'settlement_date' => $row->settlement_date,
+                    'exit_type' => $row->exit_type,
+                    'exit_reason' => $row->exit_reason,
+                    'status' => $row->status,
+                    'type' => 'fnf',
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'month_year' => $monthYear,
+            'new_joiners' => $newJoiners,
+            'exits' => $exits,
+            'outstanding_fnf' => $outstandingFnf,
+        ]);
+    }
+
+    /**
+     * Submit review decisions for new joiners and exits in a payroll run.
+     *
+     * Actions:
+     *   - process: ensure no StopPaymentFlag exists (clear any existing ones)
+     *   - hold_processing: create/update StopPaymentFlag with hold_type='processing'
+     *   - hold_payout: create/update StopPaymentFlag with hold_type='payout'
+     *   - void: create StopPaymentFlag with hold_type='processing' (excluded entirely)
+     */
+    public function submitRunReviewDecisions(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
+
+        $data = $request->validate([
+            'decisions' => 'required|array',
+            'decisions.*.user_id' => 'required|integer|exists:users,id',
+            'decisions.*.action' => 'required|in:process,hold_processing,hold_payout,void',
+            'decisions.*.comment' => 'nullable|string',
+        ]);
+
+        $monthYear = $run->month_year;
+        $processed = 0;
+
+        foreach ($data['decisions'] as $decision) {
+            $userId = $decision['user_id'];
+            $action = $decision['action'];
+            $comment = $decision['comment'] ?? null;
+
+            // Verify the user belongs to this organization.
+            $user = User::where('id', $userId)
+                ->where('organization_id', $organizationId)
+                ->firstOrFail();
+
+            if ($action === 'process') {
+                // Clear any existing stop payment flags for this user/month.
+                StopPaymentFlag::where('user_id', $userId)
+                    ->where('month_year', $monthYear)
+                    ->where('organization_id', $organizationId)
+                    ->delete();
+            } else {
+                $holdType = $action === 'hold_processing' || $action === 'void'
+                    ? 'processing'
+                    : 'payout';
+
+                StopPaymentFlag::updateOrCreate(
+                    [
+                        'user_id' => $userId,
+                        'month_year' => $monthYear,
+                        'organization_id' => $organizationId,
+                    ],
+                    [
+                        'reason' => $comment ?? "Hold from payroll review: {$action}",
+                        'raised_by' => auth()->id(),
+                        'is_active' => true,
+                        'hold_type' => $holdType,
+                        'resolved_at' => null,
+                        'resolved_by' => null,
+                    ]
+                );
+            }
+
+            $processed++;
+        }
+
+        $this->writeRunAudit($run, 'review_decisions', [
+            'decisions_count' => $processed,
+            'reviewed_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$processed} decision(s) submitted.",
+            'processed' => $processed,
         ]);
     }
 
@@ -3039,6 +3554,7 @@ class PayrollDepartmentController extends Controller
         $items = PayrollItem::where('payroll_run_id', $run->id)
             ->with(['user.employeeBankAccounts', 'user.employeeProfile'])
             ->where('payment_status', 'pending')
+            ->where('is_payout_held', false)
             ->get();
 
         if ($items->isEmpty()) {
@@ -3127,8 +3643,9 @@ class PayrollDepartmentController extends Controller
             ->firstOrFail();
 
         $items = PayrollItem::where('payroll_run_id', $run->id)
-            ->with(['user.employeeBankAccounts'])
+            ->with(['user.employeeBankAccounts', 'user.employeeProfile'])
             ->where('payment_status', 'pending')
+            ->where('is_payout_held', false)
             ->get();
 
         $missing = $items->filter(function ($item) {
@@ -3342,69 +3859,102 @@ class PayrollDepartmentController extends Controller
 
         $processed = 0;
         $skippedNoCtc = 0;
+        $awaitingSecondApprover = false;
+        $bankFile = null;
+        $summary = [];
 
-        foreach ($missingUserIds as $uid) {
-            $template = EmployeePayrollTemplate::where('user_id', $uid)
-                ->where('organization_id', $organizationId)
-                ->first();
-            if (! $template || ! $template->annual_ctc || $template->annual_ctc <= 0) {
-                $skippedNoCtc++;
-                continue;
-            }
-
-            $subRequest = Request::create(
-                '/payroll/employees/' . $uid . '/process',
-                'POST',
-                [
-                    'month_year' => $monthYear,
-                    'annual_ctc' => (float) $template->annual_ctc,
-                    'working_days' => $workingDays,
-                ]
-            );
-            $subRequest->setUserResolver(fn () => $request->user());
-
-            try {
-                $response = $this->processEmployeePayroll($subRequest, $uid);
-                if (($response->getData(true)['success'] ?? false) === true) {
-                    $processed++;
-                } else {
+        $result = DB::transaction(function () use (
+            $request, $data, $organizationId, $monthYear, $workingDays,
+            $expectedUserIds, $missingUserIds, &$processed, &$skippedNoCtc, &$run,
+            &$awaitingSecondApprover, &$bankFile, &$summary
+        ) {
+            foreach ($missingUserIds as $uid) {
+                $template = EmployeePayrollTemplate::where('user_id', $uid)
+                    ->where('organization_id', $organizationId)
+                    ->first();
+                if (! $template || ! $template->annual_ctc || $template->annual_ctc <= 0) {
                     $skippedNoCtc++;
+                    continue;
                 }
-            } catch (\Throwable $e) {
-                $skippedNoCtc++;
-                \Log::warning("processAndPay: failed to process user {$uid}", ['err' => $e->getMessage()]);
+
+                $subRequest = Request::create(
+                    '/payroll/employees/' . $uid . '/process',
+                    'POST',
+                    [
+                        'month_year' => $monthYear,
+                        'annual_ctc' => (float) $template->annual_ctc,
+                        'working_days' => $workingDays,
+                    ]
+                );
+                $subRequest->setUserResolver(fn () => $request->user());
+
+                try {
+                    $response = $this->processEmployeePayroll($subRequest, $uid);
+                    if (($response->getData(true)['success'] ?? false) === true) {
+                        $processed++;
+                    } else {
+                        $skippedNoCtc++;
+                    }
+                } catch (\Throwable $e) {
+                    $skippedNoCtc++;
+                    \Log::warning("processAndPay: failed to process user {$uid}", ['err' => $e->getMessage()]);
+                }
             }
-        }
 
-        $run = $run->fresh();
+            $run = $run->fresh();
 
-        // ── 3. Lock ────────────────────────────────────────────────────
-        $lockReq = Request::create('/payroll/runs/' . $run->id . '/lock', 'POST', [
-            'reason' => $data['lock_reason'] ?? null,
-        ]);
-        $lockReq->setUserResolver(fn () => $request->user());
-        $lockResp = $this->lockPayrollRun($lockReq, $run->id);
-        $lockData = $lockResp->getData(true);
-        if (! ($lockData['success'] ?? false)) {
-            return response()->json([
-                'success' => false,
-                'stage' => 'lock',
-                'message' => $lockData['message'] ?? 'Lock failed',
-                'run' => $run,
-            ], 422);
-        }
-        $run = $run->fresh();
+            // ── 3. Lock ────────────────────────────────────────────────────
+            $lockReq = Request::create('/payroll/runs/' . $run->id . '/lock', 'POST', [
+                'reason' => $data['lock_reason'] ?? null,
+            ]);
+            $lockReq->setUserResolver(fn () => $request->user());
+            $lockResp = $this->lockPayrollRun($lockReq, $run->id);
+            $lockData = $lockResp->getData(true);
+            if (! ($lockData['success'] ?? false)) {
+                throw new \RuntimeException($lockData['message'] ?? 'Lock failed');
+            }
+            $run = $run->fresh();
 
-        // ── 4. Approve (skipped when maker-checker requires a second
-        //     approver — a *different* admin must approve & release) ─────
-        $org = Organization::find($organizationId);
-        if ($org && $this->shouldRequireSecondApprover($org)) {
+            // ── 4. Approve (skipped when maker-checker requires a second
+            //     approver — a *different* admin must approve & release) ─────
+            $org = Organization::find($organizationId);
+            if ($org && $this->shouldRequireSecondApprover($org)) {
+                $awaitingSecondApprover = true;
+                $bankFile = $this->buildBankFilePayload($run);
+                $summary = [
+                    'employees_processed' => $processed,
+                    'employees_skipped_no_ctc' => $skippedNoCtc,
+                    'expected_count' => count($expectedUserIds),
+                    'processed_count' => count($expectedUserIds) - $skippedNoCtc,
+                ];
+                return; // Transaction commits; lock is persisted.
+            }
+
+            // ── 4. Approve ─────────────────────────────────────────────────
+            $approveReq = Request::create('/payroll/runs/' . $run->id . '/approve', 'POST');
+            $approveReq->setUserResolver(fn () => $request->user());
+            $approveResp = $this->approvePayrollRun($approveReq, $run->id);
+            if (! ($approveResp->getData(true)['success'] ?? false)) {
+                throw new \RuntimeException('Approval failed after lock');
+            }
+            $run = $run->fresh();
+
+            // ── 5. Release ─────────────────────────────────────────────────
+            $releaseReq = Request::create('/payroll/runs/' . $run->id . '/release', 'POST');
+            $releaseReq->setUserResolver(fn () => $request->user());
+            $releaseResp = $this->releasePayrollRun($releaseReq, $run->id);
+            $releaseData = $releaseResp->getData(true);
+            if (! ($releaseData['success'] ?? false)) {
+                throw new \RuntimeException($releaseData['message'] ?? 'Release failed');
+            }
+            $run = $run->fresh();
+
+            // Build the bank file inline so the UI can offer download immediately.
             $bankFile = $this->buildBankFilePayload($run);
 
-            return response()->json([
+            return [
                 'success' => true,
-                'awaiting_second_approver' => true,
-                'message' => 'Run locked. A different admin must approve and release this run before it can be disbursed.',
+                'message' => "Payroll for {$monthYear} processed and ready to disburse.",
                 'run' => $run,
                 'summary' => [
                     'employees_processed' => $processed,
@@ -3413,53 +3963,32 @@ class PayrollDepartmentController extends Controller
                     'processed_count' => count($expectedUserIds) - $skippedNoCtc,
                 ],
                 'bank_file' => $bankFile,
+            ];
+        });
+
+        if ($awaitingSecondApprover) {
+            $run = $run->fresh();
+            return response()->json([
+                'success' => true,
+                'awaiting_second_approver' => true,
+                'message' => 'Run locked. A different admin must approve and release this run before it can be disbursed.',
+                'run' => $run,
+                'summary' => $summary,
+                'bank_file' => $bankFile,
             ]);
         }
 
-        // ── 4. Approve ─────────────────────────────────────────────────
-        $approveReq = Request::create('/payroll/runs/' . $run->id . '/approve', 'POST');
-        $approveReq->setUserResolver(fn () => $request->user());
-        $approveResp = $this->approvePayrollRun($approveReq, $run->id);
-        if (! ($approveResp->getData(true)['success'] ?? false)) {
-            return response()->json([
-                'success' => false,
-                'stage' => 'approve',
-                'message' => 'Approval failed after lock',
-                'run' => $run,
-            ], 422);
-        }
-        $run = $run->fresh();
-
-        // ── 5. Release ─────────────────────────────────────────────────
-        $releaseReq = Request::create('/payroll/runs/' . $run->id . '/release', 'POST');
-        $releaseReq->setUserResolver(fn () => $request->user());
-        $releaseResp = $this->releasePayrollRun($releaseReq, $run->id);
-        $releaseData = $releaseResp->getData(true);
-        if (! ($releaseData['success'] ?? false)) {
-            return response()->json([
-                'success' => false,
-                'stage' => 'release',
-                'message' => $releaseData['message'] ?? 'Release failed',
-                'run' => $run,
-            ], 422);
-        }
-        $run = $run->fresh();
-
-        // Build the bank file inline so the UI can offer download immediately.
-        $bankFile = $this->buildBankFilePayload($run);
-
-        return response()->json([
+        return response()->json(array_merge([
             'success' => true,
             'message' => "Payroll for {$monthYear} processed and ready to disburse.",
-            'run' => $run,
+            'run' => $run->fresh(),
             'summary' => [
                 'employees_processed' => $processed,
                 'employees_skipped_no_ctc' => $skippedNoCtc,
                 'expected_count' => count($expectedUserIds),
                 'processed_count' => count($expectedUserIds) - $skippedNoCtc,
             ],
-            'bank_file' => $bankFile,
-        ]);
+        ], is_array($result) ? $result : []));
     }
 
     /**
@@ -3490,27 +4019,29 @@ class PayrollDepartmentController extends Controller
             ->where('payment_status', 'pending')
             ->get();
 
-        foreach ($pendingItems as $item) {
-            $item->update([
-                'payment_status' => 'paid',
-                'payment_method' => $paymentMethod,
-                'payment_reference' => 'PAY-' . strtoupper(substr(md5(random_bytes(6)), 0, 8)),
-                'paid_at' => now(),
+        DB::transaction(function () use ($run, $request, $paymentMethod) {
+            foreach ($pendingItems as $item) {
+                $item->update([
+                    'payment_status' => 'paid',
+                    'payment_method' => $paymentMethod,
+                    'payment_reference' => 'PAY-' . strtoupper(substr(md5(random_bytes(6)), 0, 8)),
+                    'paid_at' => now(),
+                ]);
+            }
+
+            $run->update([
+                'status' => 'disbursed',
+                'disbursed_at' => now(),
+                'disbursed_by' => auth()->id(),
+                'pay_date' => $request->get('pay_date', now()),
             ]);
-        }
 
-        $run->update([
-            'status' => 'disbursed',
-            'disbursed_at' => now(),
-            'disbursed_by' => auth()->id(),
-            'pay_date' => $request->get('pay_date', now()),
-        ]);
-
-        $this->writeRunAudit($run, 'disbursed', [
-            'paid_items_count' => $pendingItems->count(),
-            'payment_method' => $paymentMethod,
-            'disbursed_by' => auth()->id(),
-        ]);
+            $this->writeRunAudit($run, 'disbursed', [
+                'paid_items_count' => $pendingItems->count(),
+                'payment_method' => $paymentMethod,
+                'disbursed_by' => auth()->id(),
+            ]);
+        });
 
         // Notify every employee in the run that their payslip is ready.
         $notification = $this->notifyPayslips($run, auth()->id());
@@ -3749,6 +4280,7 @@ class PayrollDepartmentController extends Controller
         $items = PayrollItem::where('payroll_run_id', $run->id)
             ->with(['user.employeeBankAccounts', 'user.employeeProfile'])
             ->where('payment_status', 'pending')
+            ->where('is_payout_held', false)
             ->get();
 
         $entries = [];
@@ -3819,5 +4351,155 @@ class PayrollDepartmentController extends Controller
             'skipped_employees' => $skipped,
             'partial' => count($skipped) > 0,
         ];
+    }
+
+    /**
+     * List active stop payment flags for the organization.
+     */
+    public function listStopPaymentFlags(Request $request): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $flags = StopPaymentFlag::where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->with('user')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($flag) {
+                return [
+                    'id' => $flag->id,
+                    'user_id' => $flag->user_id,
+                    'user_name' => $flag->user?->name ?? 'Unknown',
+                    'user_email' => $flag->user?->email ?? '',
+                    'month_year' => $flag->month_year,
+                    'hold_type' => $flag->hold_type,
+                    'reason' => $flag->reason,
+                    'is_active' => $flag->is_active,
+                    'created_at' => $flag->created_at->toIso8601String(),
+                ];
+            });
+
+        return response()->json(['success' => true, 'data' => $flags]);
+    }
+
+    /**
+     * Create a new stop payment flag.
+     */
+    public function createStopPaymentFlag(Request $request): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $data = $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
+            'month_year' => 'required|string|regex:/^\d{4}-\d{2}$/',
+            'hold_type' => 'required|in:processing,payout',
+            'reason' => 'nullable|string',
+        ]);
+
+        $user = User::where('id', $data['user_id'])
+            ->where('organization_id', $organizationId)
+            ->firstOrFail();
+
+        $flag = StopPaymentFlag::updateOrCreate(
+            [
+                'user_id' => $data['user_id'],
+                'month_year' => $data['month_year'],
+                'organization_id' => $organizationId,
+            ],
+            [
+                'hold_type' => $data['hold_type'],
+                'reason' => $data['reason'] ?? null,
+                'raised_by' => $request->user()->id,
+                'is_active' => true,
+                'resolved_at' => null,
+                'resolved_by' => null,
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Stop payment flag created.',
+            'flag' => [
+                'id' => $flag->id,
+                'user_id' => $flag->user_id,
+                'user_name' => $user->name,
+                'month_year' => $flag->month_year,
+                'hold_type' => $flag->hold_type,
+                'reason' => $flag->reason,
+                'is_active' => $flag->is_active,
+            ],
+        ]);
+    }
+
+    /**
+     * Update a stop payment flag (e.g., change hold_type or resolve it).
+     */
+    public function updateStopPaymentFlag(Request $request, int $id): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $flag = StopPaymentFlag::where('id', $id)
+            ->where('organization_id', $organizationId)
+            ->firstOrFail();
+
+        $data = $request->validate([
+            'hold_type' => 'sometimes|in:processing,payout',
+            'reason' => 'nullable|string',
+            'resolve' => 'sometimes|boolean',
+        ]);
+
+        if (isset($data['resolve']) && $data['resolve']) {
+            $flag->update([
+                'is_active' => false,
+                'resolved_at' => now(),
+                'resolved_by' => $request->user()->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Stop payment flag resolved.',
+                'flag' => ['id' => $flag->id, 'is_active' => false],
+            ]);
+        }
+
+        $flag->update(array_filter([
+            'hold_type' => $data['hold_type'] ?? null,
+            'reason' => $data['reason'] ?? null,
+        ], fn ($v) => $v !== null));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Stop payment flag updated.',
+            'flag' => [
+                'id' => $flag->id,
+                'hold_type' => $flag->fresh()->hold_type,
+                'reason' => $flag->fresh()->reason,
+                'is_active' => $flag->fresh()->is_active,
+            ],
+        ]);
+    }
+
+    /**
+     * Resolve (clear) a stop payment flag.
+     */
+    public function resolveStopPaymentFlag(Request $request, int $id): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $flag = StopPaymentFlag::where('id', $id)
+            ->where('organization_id', $organizationId)
+            ->firstOrFail();
+
+        $flag->update([
+            'is_active' => false,
+            'resolved_at' => now(),
+            'resolved_by' => $request->user()->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Stop payment flag resolved.',
+            'flag' => ['id' => $flag->id, 'is_active' => false],
+        ]);
     }
 }
