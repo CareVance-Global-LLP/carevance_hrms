@@ -29,19 +29,39 @@ type StatutoryItem = {
   inlineGenerate?: boolean;
   // Requires extra input (state / employee / FY) — defer to full Filings view.
   deferToFilings?: boolean;
+  pattern: 'A' | 'B' | 'C';
+};
+
+const PATTERN_BADGE: Record<'A' | 'B' | 'C', { label: string; className: string }> = {
+  A: { label: 'A', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  B: { label: 'B', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  C: { label: 'C', className: 'bg-orange-50 text-orange-700 border-orange-200' },
 };
 
 // Statutory readiness items. Metadata mirrors FilingsDashboard's FILING_TYPES
 // and adds Form 16 (annual, per-employee). Filing `type` keys must match the
 // backend filing types so history lookups resolve.
 const STATUTORY_ITEMS: StatutoryItem[] = [
-  { key: 'pf_ecr', label: 'PF ECR', period: 'monthly', due: 'Due 15th of next month', tooltip: 'Electronic Challan cum Return — monthly PF contribution filing with EPFO.', inlineGenerate: true },
-  { key: 'esi_challan', label: 'ESI Challan', period: 'monthly', due: 'Due 15th of next month', tooltip: 'Monthly ESI contribution filing with ESIC.', inlineGenerate: true },
-  { key: 'pt_return', label: 'PT Return', period: 'monthly', due: 'Varies by state', tooltip: 'State-level Professional Tax return. Requires selecting a state — open Filings to generate.', deferToFilings: true },
-  { key: 'form_24q', label: 'Form 24Q', period: 'quarterly', due: '15 days after quarter end', tooltip: 'Quarterly TDS return on salary payments.', inlineGenerate: true },
-  { key: 'lwf_return', label: 'LWF Return', period: 'annual', due: 'State-dependent (annual)', tooltip: 'Annual Labour Welfare Fund contribution. Required only in some states.', inlineGenerate: true },
-  { key: 'form_12ba', label: 'Form 12BA', period: 'annual', due: 'By 15 June (annual)', tooltip: 'Annual statement of perquisites paid to employees.', inlineGenerate: true },
-  { key: 'form_16', label: 'Form 16', period: 'annual', due: 'By 15 June (annual)', tooltip: 'Annual TDS certificate — generated per employee. Open Filings to generate.', deferToFilings: true },
+  { key: 'pf_ecr', label: 'PF ECR', period: 'monthly', due: 'Due 15th of next month', tooltip: 'Electronic Challan cum Return — monthly PF contribution filing with EPFO.', inlineGenerate: true, pattern: 'A' },
+  { key: 'esi_challan', label: 'ESI Challan', period: 'monthly', due: 'Due 15th of next month', tooltip: 'Monthly ESI contribution filing with ESIC. Generated as an Excel (.xls) template matching the portal upload format.', inlineGenerate: true, pattern: 'A' },
+  { key: 'pt_return', label: 'PT Return', period: 'monthly', due: 'Varies by state', tooltip: 'State-level Professional Tax return. Requires selecting a state — open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'form_24q', label: 'Form 24Q', period: 'quarterly', due: '15 days after quarter end', tooltip: 'Quarterly TDS return generated in NSDL FVU format — a ^-delimited ASCII .txt file ready for TDS-CPC upload.', inlineGenerate: true, pattern: 'B' },
+  { key: 'lwf_return', label: 'LWF Return', period: 'annual', due: 'State-dependent (annual)', tooltip: 'Annual Labour Welfare Fund contribution. Required only in some states.', inlineGenerate: true, pattern: 'A' },
+  { key: 'form_12ba', label: 'Form 12BA', period: 'annual', due: 'By 15 June (annual)', tooltip: 'Annual statement of perquisites paid to employees.', inlineGenerate: true, pattern: 'B' },
+  { key: 'bonus_form_c', label: 'Bonus — Form C', period: 'annual', due: 'By 15 June (annual)', tooltip: 'Annual Return under the Payment of Bonus Act — Form C. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings.', inlineGenerate: true, pattern: 'B' },
+  { key: 'bonus_form_d', label: 'Bonus — Form D', period: 'annual', due: 'By 15 June (annual)', tooltip: 'Register of Bonus Paid/Claimable under the Payment of Bonus Act — Form D. A statutory record maintained by the employer.', inlineGenerate: true, pattern: 'B' },
+  { key: 'form_16', label: 'Form 16', period: 'annual', due: 'By 15 June (annual)', tooltip: 'Annual TDS certificate — generated per employee. Open Filings to generate.', deferToFilings: true, pattern: 'C' },
+  { key: 'form_19', label: 'Form 19', period: 'monthly', due: 'On termination', tooltip: 'Final Settlement statement for exiting employees. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'form_31', label: 'Form 31', period: 'monthly', due: 'On transfer', tooltip: 'Transfer Application form for employees changing departments. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'form_1', label: 'Form 1', period: 'monthly', due: 'On joining', tooltip: 'Employer Registration form with organization details. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'form_2', label: 'Form 2', period: 'monthly', due: 'Monthly', tooltip: 'Employee Registration form listing all active employees. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'form_6', label: 'Form 6', period: 'monthly', due: 'Monthly', tooltip: 'Monthly Return summarizing employee contributions (PF, ESI, TDS). Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'eshram_registration', label: 'e-SHRAM', period: 'monthly', due: 'On joining', tooltip: 'e-SHRAM registration details for employees. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'uan_activation', label: 'UAN Activation', period: 'monthly', due: 'On joining', tooltip: 'UAN activation status for employees. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'se_registration', label: 'S&E Registration', period: 'annual', due: 'Annual', tooltip: 'State & Employer registration details. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'shram_card_registration', label: 'Shram Card', period: 'monthly', due: 'On joining', tooltip: 'Shram Card registration details for employees. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'form_124', label: 'Form 124', period: 'monthly', due: 'Monthly', tooltip: 'Monthly statutory return with employee salary and TDS details. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
+  { key: 'full_ecr', label: 'Full ECR', period: 'monthly', due: 'Due 15th of next month', tooltip: 'Full Electronic Challan cum Return with extended employee details. Open Filings to generate.', deferToFilings: true, pattern: 'A' },
 ];
 
 type FilingRecord = {
@@ -136,17 +156,19 @@ export default function ComplianceStatusBoard({ monthYear, onOpenFilings }: Comp
      
   }, [filingsList, monthRun, month, year]);
 
-  const generateSingle = useMutation({
-    mutationFn: ({ type, runId }: { type: string; runId: number }) => {
-      switch (type) {
-        case 'pf_ecr': return payrollApi.generatePfEcr(runId);
-        case 'esi_challan': return payrollApi.generateEsiChallan(runId);
-        case 'form_24q': return payrollApi.generateForm24Q(runId);
-        case 'form_12ba': return payrollApi.generateForm12BA(runId);
-        case 'lwf_return': return payrollApi.generateLwfReturn(runId, '');
-        default: throw new Error('Unknown filing type');
-      }
-    },
+    const generateSingle = useMutation({
+      mutationFn: ({ type, runId }: { type: string; runId: number }) => {
+        switch (type) {
+          case 'pf_ecr': return payrollApi.generatePfEcr(runId);
+          case 'esi_challan': return payrollApi.generateEsiChallan(runId);
+          case 'form_24q': return payrollApi.generateForm24Q(runId);
+          case 'form_12ba': return payrollApi.generateForm12BA(runId);
+          case 'lwf_return': return payrollApi.generateLwfReturn(runId, '');
+          case 'bonus_form_c': return payrollApi.generateBonusFormC(runId, 8.33);
+          case 'bonus_form_d': return payrollApi.generateBonusFormD(runId, 8.33);
+          default: throw new Error('Unknown filing type');
+        }
+      },
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
       show({ kind: 'success', message: `${vars.type.replace(/_/g, ' ').toUpperCase()} generated`, durationMs: 4000 });
@@ -231,13 +253,16 @@ export default function ComplianceStatusBoard({ monthYear, onOpenFilings }: Comp
             return (
               <div key={item.key} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p className="truncate font-medium text-slate-900">{item.label}</p>
-                    <InfoTooltip content={item.tooltip} title={item.label} size="sm" />
-                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                      {item.period}
-                    </span>
-                  </div>
+              <div className="flex items-center gap-1.5">
+                     <p className="truncate font-medium text-slate-900">{item.label}</p>
+                     <InfoTooltip content={item.tooltip} title={item.label} size="sm" />
+                     <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                       {item.period}
+                     </span>
+                     <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${PATTERN_BADGE[item.pattern].className}`}>
+                       P{item.pattern}
+                     </span>
+                   </div>
                   <p className="mt-0.5 text-xs text-slate-500">{item.due}</p>
                 </div>
 

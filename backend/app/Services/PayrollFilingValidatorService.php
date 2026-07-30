@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\Organization;
 use App\Models\PayrollMonthlyRun;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 /**
  * Pre-flight validation for statutory filings.
@@ -34,6 +35,8 @@ class PayrollFilingValidatorService
             'pt_return' => $this->validatePt($run, $context['state'] ?? null),
             'lwf_return' => $this->validateLwf($run, $context['state'] ?? null),
             'bonus_form_c' => $this->validateBonus($context),
+            'bonus_form_d' => $this->validateBonus($context),
+            'bonus_form_e' => $this->validateBonus($context),
             default => ['ready' => false, 'errors' => [['code' => 'unknown_type', 'message' => "Unknown filing type: {$type}", 'type' => $type]], 'warnings' => []],
         };
     }
@@ -241,6 +244,126 @@ class PayrollFilingValidatorService
             $errors[] = ['code' => 'missing_bonus_percent', 'message' => 'Bonus percentage (8.33%–20%) is required.', 'type' => 'bonus_form_c'];
         } elseif ($percent < 8.33 || $percent > 20) {
             $errors[] = ['code' => 'invalid_bonus_percent', 'message' => 'Bonus percentage must be between 8.33% and 20% per the Payment of Bonus Act.', 'type' => 'bonus_form_c'];
+        }
+
+        return ['ready' => $errors === [], 'errors' => $errors, 'warnings' => $warnings];
+    }
+
+    /**
+     * Validate the structural integrity of an FVU file content.
+     * Checks ^-delimiter consistency, PAN format, date format (ddmmyyyy),
+     * and record type counts (exactly 1 FH, 1 BH per quarter, etc.).
+     * Does NOT validate cryptographic checksums or TDS amounts against
+     * actual returns — that is the job of NSDL's RPU/FVU software.
+     *
+     * @return array{ready:bool, errors:array<int,array{code:string,message:string,type:string}>, warnings:array<int,array{code:string,message:string,type:string}>}
+     */
+    public function validateFvu(string $content): array
+    {
+        $errors = [];
+        $warnings = [];
+        $lines = explode("\r\n", trim($content));
+
+        if (count($lines) < 3) {
+            $errors[] = ['code' => 'fvu_too_short', 'message' => 'FVU file must contain at least 3 records (FH, BH, CD).', 'type' => 'form_24q'];
+            return ['ready' => false, 'errors' => $errors, 'warnings' => $warnings];
+        }
+
+        $recordCounts = [];
+        foreach ($lines as $i => $line) {
+            if (empty(trim($line))) {
+                continue;
+            }
+            $fields = explode('^', $line);
+            $recordType = $fields[0] ?? '';
+            $recordCounts[$recordType] = ($recordCounts[$recordType] ?? 0) + 1;
+
+            // Validate date fields (ddmmyyyy) in records that contain dates
+            if (in_array($recordType, ['FH', 'BH', 'CD', 'DD'])) {
+                foreach ($fields as $fi => $field) {
+                    if (preg_match('/^\d{8}$/', $field) && $fi >= 6) {
+                        $day = (int) substr($field, 0, 2);
+                        $month = (int) substr($field, 2, 2);
+                        if ($day < 1 || $day > 31 || $month < 1 || $month > 12) {
+                            $errors[] = ['code' => 'invalid_date', 'message' => "Line " . ($i + 1) . ": Invalid date format in field {$fi}: {$field}", 'type' => 'form_24q'];
+                        }
+                    }
+                }
+            }
+
+            // Validate PAN format in FH and DD records
+            if (in_array($recordType, ['FH', 'DD'])) {
+                $panField = $fields[1] ?? '';
+                if (!preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]$/', $panField) && !str_starts_with($panField, 'PAN')) {
+                    $errors[] = ['code' => 'invalid_pan', 'message' => "Line " . ($i + 1) . ": Invalid PAN format in {$recordType} record: {$panField}", 'type' => 'form_24q'];
+                }
+            }
+        }
+
+        if (($recordCounts['FH'] ?? 0) !== 1) {
+            $errors[] = ['code' => 'missing_fh', 'message' => 'FVU must contain exactly 1 File Header (FH) record.', 'type' => 'form_24q'];
+        }
+        if (($recordCounts['BH'] ?? 0) !== 1) {
+            $errors[] = ['code' => 'missing_bh', 'message' => 'FVU must contain exactly 1 Batch Header (BH) record.', 'type' => 'form_24q'];
+        }
+        if (($recordCounts['CD'] ?? 0) < 1) {
+            $errors[] = ['code' => 'missing_cd', 'message' => 'FVU must contain at least 1 Challan Detail (CD) record.', 'type' => 'form_24q'];
+        }
+        if (($recordCounts['DD'] ?? 0) < 1) {
+            $errors[] = ['code' => 'missing_dd', 'message' => 'FVU must contain at least 1 Deductee Detail (DD) record.', 'type' => 'form_24q'];
+        }
+        if (($recordCounts['SD'] ?? 0) !== 1) {
+            $errors[] = ['code' => 'missing_sd', 'message' => 'FVU must contain exactly 1 Summary Detail (SD) record.', 'type' => 'form_24q'];
+        }
+        if (($recordCounts['FT'] ?? 0) !== 1) {
+            $errors[] = ['code' => 'missing_ft', 'message' => 'FVU must contain exactly 1 File Trailer (FT) record.', 'type' => 'form_24q'];
+        }
+
+        return ['ready' => $errors === [], 'errors' => $errors, 'warnings' => $warnings];
+    }
+
+    /**
+     * Validate an ESIC .xls template has the required columns.
+     * Checks that the first row contains the expected column headers:
+     * IP Number, IP Name, No of Days, Total Monthly Wages, Reason Code,
+     * Last Working Day.
+     *
+     * @return array{ready:bool, errors:array<int,array{code:string,message:string,type:string}>, warnings:array<int,array{code:string,message:string,type:string}>}
+     */
+    public function validateEsiTemplate(string $filePath): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        if (! file_exists($filePath)) {
+            $errors[] = ['code' => 'file_not_found', 'message' => 'ESIC template file not found.', 'type' => 'esi_challan'];
+            return ['ready' => false, 'errors' => $errors, 'warnings' => $warnings];
+        }
+
+        try {
+            $spreadsheet = IOFactory::load($filePath);
+            $sheet = $spreadsheet->getActiveSheet();
+            $headerRow = $sheet->rangeToArray('A1:F1', null, true, false)[0] ?? [];
+
+            $expectedHeaders = ['IP Number', 'IP Name', 'No of Days', 'Total Monthly Wages', 'Reason Code', 'Last Working Day'];
+            $missingHeaders = [];
+
+            foreach ($expectedHeaders as $index => $expected) {
+                $actual = $headerRow[$index] ?? '';
+                if (trim((string) $actual) !== $expected) {
+                    $missingHeaders[] = $expected;
+                }
+            }
+
+            if (! empty($missingHeaders)) {
+                $errors[] = [
+                    'code' => 'missing_columns',
+                    'message' => 'ESIC template is missing required columns: '.implode(', ', $missingHeaders).'. Expected: '.implode(', ', $expectedHeaders),
+                    'type' => 'esi_challan',
+                ];
+            }
+        } catch (\Exception $e) {
+            $errors[] = ['code' => 'file_read_error', 'message' => 'Failed to read ESIC template file: '.$e->getMessage(), 'type' => 'esi_challan'];
         }
 
         return ['ready' => $errors === [], 'errors' => $errors, 'warnings' => $warnings];

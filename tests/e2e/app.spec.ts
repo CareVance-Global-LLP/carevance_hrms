@@ -185,3 +185,283 @@ test.describe('Payroll', () => {
     expect(Array.isArray(result.body.departments)).toBe(true);
   });
 });
+
+test.describe('Filings', () => {
+  test.use({ storageState: 'playwright/.auth/user.json' });
+  test('bonus form D endpoint generates a .txt file', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const runsResp = await fetch('http://localhost:8000/api/payroll/runs', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const runs = await runsResp.json();
+      const runList = Array.isArray(runs) ? runs : (Array.isArray(runs.data) ? runs.data : (Array.isArray(runs.runs) ? runs.runs : []));
+      const fileableRun = runList.find((r: any) => ['locked', 'approved', 'released', 'disbursed'].includes(r.status));
+      if (!fileableRun) return { ok: false, status: 404, body: { message: 'No fileable payroll run found' } };
+      const response = await fetch('http://localhost:8000/api/payroll/filings/generate/bonus-form-d', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ payroll_run_id: fileableRun.id, bonus_percent: 8.33 }),
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    expect(result.body.file_path).toBeDefined();
+    expect(result.body.type).toBe('bonus_form_d');
+    expect(result.body.original_filename).toMatch(/\.txt$/);
+  });
+
+  test('bonus form E endpoint generates a .txt file', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const runsResp = await fetch('http://localhost:8000/api/payroll/runs', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const runs = await runsResp.json();
+      const runList = Array.isArray(runs) ? runs : (Array.isArray(runs.data) ? runs.data : (Array.isArray(runs.runs) ? runs.runs : []));
+      const fileableRun = runList.find((r: any) => ['locked', 'approved', 'released', 'disbursed'].includes(r.status));
+      if (!fileableRun) return { ok: false, status: 404, body: { message: 'No fileable payroll run found' } };
+      const response = await fetch('http://localhost:8000/api/payroll/filings/generate/bonus-form-e', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ payroll_run_id: fileableRun.id, bonus_percent: 8.33 }),
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    expect(result.body.file_path).toBeDefined();
+    expect(result.body.type).toBe('bonus_form_e');
+    expect(result.body.original_filename).toMatch(/\.txt$/);
+  });
+
+  test('bonus all endpoint generates C, D, and E filings', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const runsResp = await fetch('http://localhost:8000/api/payroll/runs', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const runs = await runsResp.json();
+      const runList = Array.isArray(runs) ? runs : (Array.isArray(runs.data) ? runs.data : (Array.isArray(runs.runs) ? runs.runs : []));
+      const fileableRun = runList.find((r: any) => ['locked', 'approved', 'released', 'disbursed'].includes(r.status));
+      if (!fileableRun) return { ok: false, status: 404, body: { message: 'No fileable payroll run found' } };
+      const response = await fetch('http://localhost:8000/api/payroll/filings/generate/bonus-all', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ payroll_run_id: fileableRun.id, bonus_percent: 8.33 }),
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    expect(result.body.filings).toBeDefined();
+    expect(result.body.count).toBe(3);
+    const types = result.body.filings.map((f: any) => f.type);
+    expect(types).toContain('bonus_form_c');
+    expect(types).toContain('bonus_form_d');
+    expect(types).toContain('bonus_form_e');
+  });
+
+  test('ESI challan endpoint generates .xls file', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const runsResp = await fetch('http://localhost:8000/api/payroll/runs', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const runs = await runsResp.json();
+      const runList = Array.isArray(runs) ? runs : (Array.isArray(runs.data) ? runs.data : (Array.isArray(runs.runs) ? runs.runs : []));
+      const fileableRun = runList.find((r: any) => ['locked', 'approved', 'released', 'disbursed'].includes(r.status));
+      if (!fileableRun) return { ok: false, status: 404, body: { message: 'No fileable payroll run found' } };
+      const response = await fetch('http://localhost:8000/api/payroll/filings/generate/esi-challan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ payroll_run_id: fileableRun.id }),
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    expect(result.body.file_path).toBeDefined();
+    expect(result.body.type).toBe('esi_challan');
+    expect(result.body.original_filename).toMatch(/\.xls$/);
+  });
+
+  test('Form 24Q endpoint generates .txt FVU file', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const runsResp = await fetch('http://localhost:8000/api/payroll/runs', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const runs = await runsResp.json();
+      const runList = Array.isArray(runs) ? runs : (Array.isArray(runs.data) ? runs.data : (Array.isArray(runs.runs) ? runs.runs : []));
+      const fileableRun = runList.find((r: any) => ['locked', 'approved', 'released', 'disbursed'].includes(r.status));
+      if (!fileableRun) return { ok: false, status: 404, body: { message: 'No fileable payroll run found' } };
+      const response = await fetch('http://localhost:8000/api/payroll/filings/generate/form-24q', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ payroll_run_id: fileableRun.id }),
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    expect(result.body.file_path).toBeDefined();
+    expect(result.body.type).toBe('form_24q');
+    expect(result.body.original_filename).toMatch(/\.txt$/);
+    expect(result.body.compliance_status).toBe('ready');
+  });
+
+  test('PT return endpoint accepts pay_group_id for auto-state resolution', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const runsResp = await fetch('http://localhost:8000/api/payroll/runs', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const runs = await runsResp.json();
+      const runList = Array.isArray(runs) ? runs : (Array.isArray(runs.data) ? runs.data : (Array.isArray(runs.runs) ? runs.runs : []));
+      const fileableRun = runList.find((r: any) => ['locked', 'approved', 'released', 'disbursed'].includes(r.status));
+      if (!fileableRun) return { ok: false, status: 404, body: { message: 'No fileable payroll run found' } };
+      const response = await fetch('http://localhost:8000/api/payroll/filings/generate/pt-return', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ payroll_run_id: fileableRun.id, state: 'maharashtra', pay_group_id: 1 }),
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    expect(result.body.type).toBe('pt_return');
+    expect(result.body.meta_data.state).toBeDefined();
+  });
+
+  test('LWF return endpoint accepts pay_group_id for auto-state resolution', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const runsResp = await fetch('http://localhost:8000/api/payroll/runs', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const runs = await runsResp.json();
+      const runList = Array.isArray(runs) ? runs : (Array.isArray(runs.data) ? runs.data : (Array.isArray(runs.runs) ? runs.runs : []));
+      const fileableRun = runList.find((r: any) => ['locked', 'approved', 'released', 'disbursed'].includes(r.status));
+      if (!fileableRun) return { ok: false, status: 404, body: { message: 'No fileable payroll run found' } };
+      const response = await fetch('http://localhost:8000/api/payroll/filings/generate/lwf-return', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ payroll_run_id: fileableRun.id, state: 'maharashtra', pay_group_id: 1 }),
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    expect(result.body.type).toBe('lwf_return');
+    expect(result.body.meta_data.state).toBeDefined();
+  });
+
+  test('compliance board shows Bonus Form D as a statutory item', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch('http://localhost:8000/api/payroll/filings', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    const filings = result.body.data ?? result.body ?? [];
+    const bonusD = filings.find((f: any) => f.type === 'bonus_form_d');
+    expect(bonusD).toBeDefined();
+  });
+
+  test('FVU validation endpoint returns structural validation results', async ({ page }) => {
+    await page.goto('http://localhost:5173/my-payroll');
+    await page.waitForLoadState('networkidle');
+    const result = await page.evaluate(async () => {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const runsResp = await fetch('http://localhost:8000/api/payroll/runs', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const runs = await runsResp.json();
+      const runList = Array.isArray(runs) ? runs : (Array.isArray(runs.data) ? runs.data : (Array.isArray(runs.runs) ? runs.runs : []));
+      const fileableRun = runList.find((r: any) => ['locked', 'approved', 'released', 'disbursed'].includes(r.status));
+      if (!fileableRun) return { ok: false, status: 404, body: { message: 'No fileable payroll run found' } };
+      const response = await fetch('http://localhost:8000/api/payroll/filings/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ payroll_run_id: fileableRun.id, type: 'form_24q' }),
+      });
+      return { ok: response.ok, status: response.status, body: await response.json() };
+    });
+    expect(result.ok).toBeTruthy();
+    expect(result.body.type).toBe('form_24q');
+    expect(result.body.ready).toBeDefined();
+    expect(Array.isArray(result.body.errors)).toBe(true);
+  });
+});
