@@ -28,7 +28,9 @@ class PayrollFiling extends Model
 
     const TYPES = [
         'pf_ecr', 'esi_challan', 'esi_return', 'form_24q', 'form_26q',
-        'form_16', 'form_12ba', 'pt_return', 'lwf_return', 'bonus_form_c', 'bonus_form_d',
+        'form_16', 'form_12ba', 'pt_return', 'lwf_return', 'bonus_form_c', 'bonus_form_d', 'bonus_form_e',
+        'form_19', 'form_31', 'form_1', 'form_2', 'form_6', 'eshram_registration',
+        'uan_activation', 'se_registration', 'shram_card_registration', 'form_124', 'full_ecr',
     ];
 
     // Filing workflow: generated -> submitted -> approved -> filed -> acknowledged

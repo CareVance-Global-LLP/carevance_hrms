@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, CalendarClock } from 'lucide-react';
+import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, CalendarClock, HelpCircle, Check } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import Button from '@/components/ui/Button';
@@ -28,6 +28,8 @@ const DUE_DATE_KEYS: Record<string, string> = {
   form_24q: 'tds',
   pt_return: 'pt',
   lwf_return: 'lwf',
+  bonus_form_c: 'bonus',
+  bonus_form_d: 'bonus',
 };
 
 type FilingDisplayStatus = 'generated' | 'filed' | 'pending' | 'not_due';
@@ -49,38 +51,371 @@ const FILING_CARDS: Array<{
   needsBonusPercent?: boolean;
   complianceStatus: ComplianceStatus;
   tooltip: string;
+  pattern: 'A' | 'B' | 'C';
+  nextAction: string;
+  deadlineRule: string;
 }> = [
   {
     key: 'pf_ecr', label: 'PF — ECR', displayStatus: 'generated', periodInfo: 'Oct 2025 · Due: 15 Nov', needsRun: true,
-    complianceStatus: 'ready',
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → Upload to EPFO portal → Mark Filed',
+    deadlineRule: '15th of the next month',
     tooltip: 'Electronic Challan cum Return — monthly PF contribution filing with EPFO. Generated in EPFO\'s actual ECR text format (UAN, wages, PF/EPS splits, 11-column ||-delimited). Upload-ready. Due by the 15th of the next month.',
   },
   {
     key: 'esi_challan', label: 'ESI — Challan', displayStatus: 'filed', periodInfo: 'Oct 2025 · Paid: 12 Nov', needsRun: true,
-    complianceStatus: 'reference_only',
-    tooltip: 'A portal-aligned CSV of ESIC-eligible employees for this month (Employer Code, IP Number, Name, Days, Wages, EE/ER contribution). Use it to pre-fill the ESIC employer portal monthly contribution; the actual challan is generated there. Due by the 15th of the next month.',
+    complianceStatus: 'reference_only', pattern: 'A',
+    nextAction: 'Download → Upload to ESIC portal → Mark Filed',
+    deadlineRule: '15th of the next month',
+    tooltip: 'An Excel (.xls) template matching the ESIC portal upload format with columns: IP Number, IP Name, No of Days, Total Monthly Wages, Reason Code, Last Working Day. Employer Code is entered separately on the portal.',
   },
   {
     key: 'form_24q', label: 'TDS — 24Q', displayStatus: 'pending', periodInfo: 'Q2 · Due: 7 Nov', needsRun: true,
-    complianceStatus: 'reference_only',
-    tooltip: 'Exports the underlying TDS data for this quarter. The actual e-TDS return must still be prepared using NSDL-approved return preparation software (RPU) or a TIN-FC, which validates it through the File Validation Utility (FVU) before filing with TDS-CPC. Due 15 days after quarter end.',
+    complianceStatus: 'reference_only', pattern: 'B',
+    nextAction: 'Download → Upload via NSDL RPU → Mark Filed',
+    deadlineRule: '15 days after quarter end',
+    tooltip: 'Generated in NSDL FVU format — a ^-delimited ASCII .txt file with \\r\\n line endings, containing FH/BH/CD/DD/SD record types. Ready for upload to TDS-CPC after validation.',
   },
   {
     key: 'form_16', label: 'Form 16', displayStatus: 'not_due', periodInfo: 'FY-end only · Jun 2026', needsRun: false,
-    complianceStatus: 'needs_external_input',
+    complianceStatus: 'needs_external_input', pattern: 'C',
+    nextAction: 'Generate Part B → Download TRACES Part A → Attach',
+    deadlineRule: '15 June (annual)',
     tooltip: 'Form 16 Part B (Salary Statement) — generated as a real PDF from the employee\'s aggregated FY payroll. Part A (with the TRACES certificate number) must be downloaded from TRACES after quarterly TDS filing and attached separately; this system cannot mint that number.',
   },
   {
     key: 'pt_return', label: 'PT', displayStatus: 'filed', periodInfo: 'Oct 2025 · Gujarat', needsRun: true, needsState: true,
-    complianceStatus: 'reference_only',
+    complianceStatus: 'reference_only', pattern: 'A',
+    nextAction: 'Download → Upload to state tax portal → Mark Filed',
+    deadlineRule: 'Varies by state',
     tooltip: 'State-level Professional Tax contribution summary for manual entry / reference. The actual PT payment/return is made on the state commercial tax department portal. Due dates vary by state.',
   },
   {
     key: 'lwf_return', label: 'LWF', displayStatus: 'not_due', periodInfo: 'Dec 2025 · Gujarat', needsRun: true, needsState: true,
-    complianceStatus: 'not_configured',
+    complianceStatus: 'not_configured', pattern: 'A',
+    nextAction: 'Select state → Download → Upload to state portal → Mark Filed',
+    deadlineRule: 'State-dependent',
     tooltip: 'Labour Welfare Fund is a state subject with no universal formula. Pick your state to generate; if your state\'s rate is not configured, you\'ll see a clear "Not configured" message instead of a wrong number. Periodicity varies (monthly / bi-annual) by state.',
   },
+  {
+    key: 'bonus_form_c', label: 'Bonus — Form C', displayStatus: 'not_due', periodInfo: 'Annual · FY-end', needsRun: true, needsBonusPercent: true,
+    complianceStatus: 'not_configured', pattern: 'B',
+    nextAction: 'Download → Upload to portal → Mark Filed',
+    deadlineRule: 'By 15 June (annual)',
+    tooltip: 'Annual Return under the Payment of Bonus Act — Form C. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings. Generated as a text summary of annual wages and bonus amounts.',
+  },
+  {
+    key: 'bonus_form_d', label: 'Bonus — Form D', displayStatus: 'not_due', periodInfo: 'Annual · FY-end', needsRun: true, needsBonusPercent: true,
+    complianceStatus: 'not_configured', pattern: 'B',
+    nextAction: 'Download → Maintain as employer record',
+    deadlineRule: 'By 15 June (annual)',
+    tooltip: 'Register of Bonus Paid/Claimable under the Payment of Bonus Act — Form D. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings. A statutory record maintained by the employer.',
+  },
+  {
+    key: 'form_19', label: 'Form 19', displayStatus: 'not_due', periodInfo: 'On termination', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → File with employer records',
+    deadlineRule: 'On termination',
+    tooltip: 'Final Settlement statement for employees who have left the organization. Includes settlement amount, gratuity, and exit details.',
+  },
+  {
+    key: 'form_31', label: 'Form 31', displayStatus: 'not_due', periodInfo: 'On transfer', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → File with employer records',
+    deadlineRule: 'On transfer',
+    tooltip: 'Transfer Application form for employees changing departments or locations. Includes transfer details and salary information.',
+  },
+  {
+    key: 'form_1', label: 'Form 1', displayStatus: 'not_due', periodInfo: 'On joining', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → File with employer records',
+    deadlineRule: 'On joining',
+    tooltip: 'Employer Registration form containing organization details, PAN, TAN, and statutory registration numbers.',
+  },
+  {
+    key: 'form_2', label: 'Form 2', displayStatus: 'not_due', periodInfo: 'Monthly', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → File with employer records',
+    deadlineRule: 'Monthly',
+    tooltip: 'Employee Registration form listing all active employees with their statutory details (PAN, UAN, ESI, joining date).',
+  },
+  {
+    key: 'form_6', label: 'Form 6', displayStatus: 'not_due', periodInfo: 'Monthly', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → File with employer records',
+    deadlineRule: 'Monthly',
+    tooltip: 'Monthly Return summarizing employee contributions (PF, ESI, TDS) for the payroll period.',
+  },
+  {
+    key: 'eshram_registration', label: 'e-SHRAM', displayStatus: 'not_due', periodInfo: 'On joining', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → Upload to e-SHRAM portal',
+    deadlineRule: 'On joining',
+    tooltip: 'e-SHRAM registration details for the organization and its employees, submitted to the ESIC portal.',
+  },
+  {
+    key: 'uan_activation', label: 'UAN Activation', displayStatus: 'not_due', periodInfo: 'On joining', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → Upload to UAN portal',
+    deadlineRule: 'On joining',
+    tooltip: 'UAN activation status for employees — tracks which employees have activated their Universal Account Numbers.',
+  },
+  {
+    key: 'se_registration', label: 'S&E Registration', displayStatus: 'not_due', periodInfo: 'Annual', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → File with employer records',
+    deadlineRule: 'Annual',
+    tooltip: 'State & Employer registration details for statutory compliance reporting.',
+  },
+  {
+    key: 'shram_card_registration', label: 'Shram Card', displayStatus: 'not_due', periodInfo: 'On joining', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → Upload to labour portal',
+    deadlineRule: 'On joining',
+    tooltip: 'Shram Card registration details for employees, submitted to the labour department portal.',
+  },
+  {
+    key: 'form_124', label: 'Form 124', displayStatus: 'not_due', periodInfo: 'Monthly', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → File with employer records',
+    deadlineRule: 'Monthly',
+    tooltip: 'Form 124 — monthly statutory return with employee salary and TDS details.',
+  },
+  {
+    key: 'full_ecr', label: 'Full ECR', displayStatus: 'not_due', periodInfo: 'Monthly', needsRun: true,
+    complianceStatus: 'ready', pattern: 'A',
+    nextAction: 'Download → Upload to EPFO portal → Mark Filed',
+    deadlineRule: '15th of the next month',
+    tooltip: 'Full Electronic Challan cum Return with extended employee details (UAN, bank account, designation). Generated in EPFO\'s ||-delimited text format.',
+  },
 ];
+
+const PATTERN_BADGE: Record<'A' | 'B' | 'C', { label: string; className: string; borderColor: string }> = {
+  A: { label: 'Pattern A: Upload-ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', borderColor: 'border-emerald-500' },
+  B: { label: 'Pattern B: Reference', className: 'bg-amber-50 text-amber-700 border-amber-200', borderColor: 'border-amber-500' },
+  C: { label: 'Pattern C: External input', className: 'bg-orange-50 text-orange-700 border-orange-200', borderColor: 'border-orange-500' },
+};
+
+type FilingGuidance = {
+  whatIsThis: string;
+  whenToUse: string[];
+  howItFlows: Array<{ step: number; label: string; desc?: string }>;
+  commonMistakes: string[];
+};
+
+const FILING_GUIDANCE: Record<string, FilingGuidance> = {
+  pf_ecr: {
+    whatIsThis: 'Electronic Challan cum Return — monthly PF contribution filing with EPFO. Generated in EPFO\'s exact ECR text format (UAN, wages, PF/EPS splits, 11-column ||-delimited). This file is upload-ready to the EPFO portal.',
+    whenToUse: ['Monthly, for the previous month', 'Due by the 15th of the next month', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create the ECR file' },
+      { step: 2, label: 'Download', desc: 'Download the .txt file' },
+      { step: 3, label: 'Upload to EPFO', desc: 'Log in to the EPFO portal and upload the file' },
+      { step: 4, label: 'Mark Filed', desc: 'Return here and click "Mark Filed" with the challan number' },
+    ],
+    commonMistakes: ['Generating from a draft run (must be locked first)', 'Missing UAN numbers for employees', 'Wrong wage type mapping'],
+  },
+  esi_challan: {
+    whatIsThis: 'Monthly ESI contribution filing with ESIC. Generated as an Excel (.xls) template matching the ESIC portal upload format with columns: IP Number, IP Name, No of Days, Total Monthly Wages, Reason Code, Last Working Day. Employer Code is entered separately on the portal.',
+    whenToUse: ['Monthly, for the previous month', 'Due by the 15th of the next month', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create the ESI template' },
+      { step: 2, label: 'Download', desc: 'Download the .xls file' },
+      { step: 3, label: 'Upload to ESIC', desc: 'Log in to the ESIC portal and upload the template' },
+      { step: 4, label: 'Mark Filed', desc: 'Return here and click "Mark Filed" with the challan number' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing ESI IP numbers for employees', 'Wrong employer code mapping'],
+  },
+  form_24q: {
+    whatIsThis: 'Quarterly TDS return generated in NSDL FVU format — a ^-delimited ASCII .txt file with \\r\\n line endings, containing FH/BH/CD/DD/SD record types. This is source data ready for TDS-CPC upload after validation.',
+    whenToUse: ['Quarterly (Q1: Apr–Jun, Q2: Jul–Sep, Q3: Oct–Dec, Q4: Jan–Mar)', 'Due 15 days after quarter end', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create the 24Q file' },
+      { step: 2, label: 'Validate', desc: 'Run through NSDL File Validation Utility (FVU)' },
+      { step: 3, label: 'Upload to TDS-CPC', desc: 'Log in to TDS-CPC and upload the validated file' },
+      { step: 4, label: 'Mark Filed', desc: 'Return here and click "Mark Filed" with the acknowledgment number' },
+    ],
+    commonMistakes: ['Treating the export as a ready-to-upload file (must be validated via FVU first)', 'Generating from a draft run', 'Wrong TAN or incorrect salary breakup'],
+  },
+  form_16: {
+    whatIsThis: 'Form 16 Part B (Salary Statement) — generated as a real PDF from the employee\'s aggregated FY payroll. Part A (with the TRACES certificate number) must be downloaded from TRACES after quarterly TDS filing and attached separately; this system cannot mint that number.',
+    whenToUse: ['Annually, after the financial year ends (Apr–Mar)', 'Due by 15 June following the FY', 'After all quarterly TDS returns are filed on TRACES'],
+    howItFlows: [
+      { step: 1, label: 'Generate Part B', desc: 'Select employee and FY, click Generate to create the PDF' },
+      { step: 2, label: 'Download Part A', desc: 'Log in to TRACES and download Form 16 Part A with the certificate number' },
+      { step: 3, label: 'Attach', desc: 'Combine Part A (TRACES) and Part B (this system) into one PDF' },
+      { step: 4, label: 'Distribute', desc: 'Provide the combined PDF to the employee' },
+    ],
+    commonMistakes: ['Believing a self-assigned Form 16 certificate number is valid (only TRACES issues it)', 'Generating before the FY is complete', 'Missing Part A attachment'],
+  },
+  pt_return: {
+    whatIsThis: 'State-level Professional Tax contribution summary for manual entry / reference. The actual PT payment/return is made on the state commercial tax department portal. Due dates vary by state.',
+    whenToUse: ['Monthly, for the previous month', 'Due dates vary by state (typically 10th–15th of next month)', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Select state', desc: 'Choose your state to get the correct PT rules' },
+      { step: 2, label: 'Generate', desc: 'Click Generate to create the PT summary' },
+      { step: 3, label: 'Download', desc: 'Download the summary file' },
+      { step: 4, label: 'Upload to portal', desc: 'Log in to your state tax portal and file the return' },
+      { step: 5, label: 'Mark Filed', desc: 'Return here and click "Mark Filed" with the challan number' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Using the wrong state', 'Missing the state-specific due date'],
+  },
+  lwf_return: {
+    whatIsThis: 'Labour Welfare Fund is a state subject with no universal formula. Pick your state to generate; if your state\'s rate is not configured, you\'ll see a clear "Not configured" message instead of a wrong number. Periodicity varies (monthly / bi-annual) by state.',
+    whenToUse: ['When due for your configured state(s)', 'Periodicity varies by state (monthly or bi-annual)', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Select state', desc: 'Choose your state to get the correct LWF rules' },
+      { step: 2, label: 'Generate', desc: 'Click Generate to create the LWF summary' },
+      { step: 3, label: 'Download', desc: 'Download the summary file' },
+      { step: 4, label: 'Upload to portal', desc: 'Log in to your state portal and file the return' },
+      { step: 5, label: 'Mark Filed', desc: 'Return here and click "Mark Filed" with the challan number' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Using the wrong state', 'Missing state configuration in PayGroupSettings'],
+  },
+  bonus_form_c: {
+    whatIsThis: 'Annual Return under the Payment of Bonus Act — Form C. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings. Generated as a text summary of annual wages and bonus amounts.',
+    whenToUse: ['Annually, after the financial year ends', 'Due by 15 June following the FY', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Configure bonus %', desc: 'Set the bonus percentage (8.33%–20%) in Payroll Settings' },
+      { step: 2, label: 'Generate', desc: 'Click Generate to create Form C' },
+      { step: 3, label: 'Download', desc: 'Download the file' },
+      { step: 4, label: 'Upload to portal', desc: 'File with the labour department portal' },
+      { step: 5, label: 'Mark Filed', desc: 'Return here and click "Mark Filed" with the challan number' },
+    ],
+    commonMistakes: ['Using the wrong bonus percentage', 'Generating from a draft run', 'Missing the annual deadline'],
+  },
+  bonus_form_d: {
+    whatIsThis: 'Register of Bonus Paid/Claimable under the Payment of Bonus Act — Form D. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings. A statutory record maintained by the employer.',
+    whenToUse: ['Annually, after the financial year ends', 'Due by 15 June following the FY', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Configure bonus %', desc: 'Set the bonus percentage (8.33%–20%) in Payroll Settings' },
+      { step: 2, label: 'Generate', desc: 'Click Generate to create Form D' },
+      { step: 3, label: 'Download', desc: 'Download the file and maintain as an employer record' },
+    ],
+    commonMistakes: ['Using the wrong bonus percentage', 'Generating from a draft run', 'Not maintaining the record for inspection'],
+  },
+  form_19: {
+    whatIsThis: 'Final Settlement statement for employees who have left the organization. Includes settlement amount, gratuity, and exit details.',
+    whenToUse: ['On employee termination/resignation', 'After the final payroll run for the employee', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create Form 19 for the terminated employee' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'File', desc: 'Maintain as an employer record for inspection' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing gratuity calculation', 'Not retaining for inspection'],
+  },
+  form_31: {
+    whatIsThis: 'Transfer Application form for employees changing departments or locations. Includes transfer details and salary information.',
+    whenToUse: ['On employee transfer within the organization', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create Form 31 for the transferred employee' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'File', desc: 'Maintain as an employer record' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing transfer date', 'Not retaining for inspection'],
+  },
+  form_1: {
+    whatIsThis: 'Employer Registration form containing organization details, PAN, TAN, and statutory registration numbers.',
+    whenToUse: ['On initial setup or when registration details change', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create Form 1' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'File', desc: 'Maintain as an employer record' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing statutory registration numbers', 'Not updating when details change'],
+  },
+  form_2: {
+    whatIsThis: 'Employee Registration form listing all active employees with their statutory details (PAN, UAN, ESI, joining date).',
+    whenToUse: ['Monthly, for all active employees', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create Form 2 for all active employees' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'File', desc: 'Maintain as an employer record' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing statutory details for employees', 'Including inactive employees'],
+  },
+  form_6: {
+    whatIsThis: 'Monthly Return summarizing employee contributions (PF, ESI, TDS) for the payroll period.',
+    whenToUse: ['Monthly, for the previous month', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create Form 6' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'File', desc: 'Maintain as an employer record' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing contribution amounts', 'Including inactive employees'],
+  },
+  eshram_registration: {
+    whatIsThis: 'e-SHRAM registration details for the organization and its employees, submitted to the ESIC portal.',
+    whenToUse: ['On employee joining', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create the e-SHRAM registration file' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'Upload to portal', desc: 'Submit to the e-SHRAM portal' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing employee details', 'Not uploading to the portal'],
+  },
+  uan_activation: {
+    whatIsThis: 'UAN activation status for employees — tracks which employees have activated their Universal Account Numbers.',
+    whenToUse: ['On employee joining', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create the UAN activation report' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'Verify', desc: 'Check which employees have activated their UANs' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing UAN numbers for employees', 'Not following up on inactive UANs'],
+  },
+  se_registration: {
+    whatIsThis: 'State & Employer registration details for statutory compliance reporting.',
+    whenToUse: ['Annually or when registration details change', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create the S&E registration file' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'File', desc: 'Maintain as an employer record' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing registration details', 'Not updating when details change'],
+  },
+  shram_card_registration: {
+    whatIsThis: 'Shram Card registration details for employees, submitted to the labour department portal.',
+    whenToUse: ['On employee joining', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create the Shram Card registration file' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'Upload to portal', desc: 'Submit to the labour department portal' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing employee details', 'Not uploading to the portal'],
+  },
+  form_124: {
+    whatIsThis: 'Form 124 — monthly statutory return with employee salary and TDS details.',
+    whenToUse: ['Monthly, for the previous month', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create Form 124' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'File', desc: 'Maintain as an employer record' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing salary details', 'Including inactive employees'],
+  },
+  full_ecr: {
+    whatIsThis: 'Full Electronic Challan cum Return with extended employee details (UAN, bank account, designation). Generated in EPFO\'s ||-delimited text format. Upload-ready to the EPFO portal.',
+    whenToUse: ['Monthly, for the previous month', 'Due by the 15th of the next month', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Click Generate to create the Full ECR file' },
+      { step: 2, label: 'Download', desc: 'Download the .txt file' },
+      { step: 3, label: 'Upload to EPFO', desc: 'Log in to the EPFO portal and upload the file' },
+      { step: 4, label: 'Mark Filed', desc: 'Return here and click "Mark Filed" with the challan number' },
+    ],
+    commonMistakes: ['Generating from a draft run (must be locked first)', 'Missing UAN numbers for employees', 'Missing bank account details'],
+  },
+  form_12ba: {
+    whatIsThis: 'Annual statement of perquisites paid to employees. Generated as a PDF from the employee\'s aggregated FY payroll data. Used alongside Form 16 for tax filing.',
+    whenToUse: ['Annually, after the financial year ends', 'Due by 15 June following the FY', 'After the payroll run is locked and approved'],
+    howItFlows: [
+      { step: 1, label: 'Generate', desc: 'Select employee and FY, click Generate to create the PDF' },
+      { step: 2, label: 'Download', desc: 'Download the file' },
+      { step: 3, label: 'File', desc: 'Maintain as an employer record for inspection' },
+    ],
+    commonMistakes: ['Generating from a draft run', 'Missing perquisite details', 'Not retaining for inspection'],
+  },
+};
 
 const STATES = [
   'maharashtra', 'karnataka', 'tamil_nadu', 'gujarat', 'west_bengal', 'delhi', 'haryana',
@@ -117,6 +452,8 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [markFiledFor, setMarkFiledFor] = useState<number | null>(null);
   const [ackInput, setAckInput] = useState<string>('');
+  const [useActualState, _setUseActualState] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<string | null>(null);
 
   const currentYear = new Date().getFullYear();
   const financialYears = Array.from({ length: 6 }, (_, i) => {
@@ -176,15 +513,28 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
 
   const generateSingleMutation = useMutation({
     mutationFn: async ({ type, runId }: { type: string; runId: number }) => {
+      const payGroupId = useActualState && selectedRunData?.pay_group_id ? selectedRunData.pay_group_id : null;
       const resp = (() => {
         switch (type) {
           case 'pf_ecr': return payrollApi.generatePfEcr(runId);
           case 'esi_challan': return payrollApi.generateEsiChallan(runId);
           case 'form_24q': return payrollApi.generateForm24Q(runId);
           case 'form_12ba': return payrollApi.generateForm12BA(runId);
-          case 'lwf_return': return payrollApi.generateLwfReturn(runId, lwfState);
+          case 'lwf_return': return payrollApi.generateLwfReturn(runId, lwfState, payGroupId);
           case 'bonus_form_c': return payrollApi.generateBonusFormC(runId, parseFloat(bonusPercent));
-          case 'pt_return': return payrollApi.generatePtReturn(runId, ptState);
+          case 'bonus_form_d': return payrollApi.generateBonusFormD(runId, parseFloat(bonusPercent));
+          case 'pt_return': return payrollApi.generatePtReturn(runId, ptState, payGroupId);
+          case 'form_19': return payrollApi.generateForm19(runId);
+          case 'form_31': return payrollApi.generateForm31(runId);
+          case 'form_1': return payrollApi.generateForm1(runId);
+          case 'form_2': return payrollApi.generateForm2(runId);
+          case 'form_6': return payrollApi.generateForm6(runId);
+          case 'eshram_registration': return payrollApi.generateEShramRegistration(runId);
+          case 'uan_activation': return payrollApi.generateUanActivation(runId);
+          case 'se_registration': return payrollApi.generateSeRegistration(runId);
+          case 'shram_card_registration': return payrollApi.generateShramCardRegistration(runId);
+          case 'form_124': return payrollApi.generateForm124(runId);
+          case 'full_ecr': return payrollApi.generateFullEcr(runId);
           default: throw new Error('Unknown filing type');
         }
       })();
@@ -203,16 +553,19 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
     },
   });
 
-  const generateAllMutation = useMutation({
-    mutationFn: (runId: number) => payrollApi.generateAllFilings(runId),
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
-      show({ kind: 'success', message: 'All filings generated.', durationMs: 4000 });
-    },
-    onError: (e: any) => {
-      show({ kind: 'error', message: e?.response?.data?.message || e?.message || 'Failed to generate filings', durationMs: 5000 });
-    },
-  });
+    const generateAllMutation = useMutation({
+      mutationFn: (runId: number) => {
+        const payGroupId = useActualState && selectedRunData?.pay_group_id ? selectedRunData.pay_group_id : null;
+        return payrollApi.generateAllFilings(runId, payGroupId);
+      },
+      onSuccess: (data: any) => {
+        queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
+        show({ kind: 'success', message: 'All filings generated.', durationMs: 4000 });
+      },
+      onError: (e: any) => {
+        show({ kind: 'error', message: e?.response?.data?.message || e?.message || 'Failed to generate filings', durationMs: 5000 });
+      },
+    });
 
   const generateForm16Mutation = useMutation({
     mutationFn: ({ userId, financialYear }: { userId: number; financialYear: string }) =>
@@ -297,6 +650,62 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   const isOverdue = (due: string) => {
     const d = new Date(due);
     return !isNaN(d.getTime()) && d < today;
+  };
+
+  const getDeadlineColor = (periodInfo: string): string => {
+    const match = periodInfo.match(/Due:\s*(.+)/);
+    if (!match) return 'text-slate-400';
+    const dateStr = match[1].trim();
+    const currentYear = new Date().getFullYear();
+    let deadline = new Date(dateStr + ' ' + currentYear);
+    if (isNaN(deadline.getTime())) return 'text-slate-400';
+    if (deadline < today) {
+      deadline = new Date(dateStr + ' ' + (currentYear + 1));
+      if (isNaN(deadline.getTime())) return 'text-slate-400';
+    }
+    const diffDays = Math.ceil((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return 'text-rose-600';
+    if (diffDays <= 7) return 'text-amber-600';
+    return 'text-emerald-600';
+  };
+
+  const getPrerequisites = (card: typeof FILING_CARDS[number]): Array<{ label: string; met: boolean }> => {
+    const prereqs: Array<{ label: string; met: boolean }> = [];
+    const runReady = runValidation?.ready === true || (selectedRunData?.status && ['locked', 'approved', 'processed'].includes(selectedRunData.status));
+    prereqs.push({ label: 'Payroll run locked/approved', met: !!runReady });
+
+    if (card.key === 'pf_ecr' || card.key === 'full_ecr') {
+      const total = employeesList.length;
+      const withUan = employeesList.filter((e: any) => e.uan_number || e.uan).length;
+      prereqs.push({ label: 'Employees have UAN numbers', met: total > 0 && withUan === total });
+    }
+
+    if (card.key === 'esi_challan') {
+      const total = employeesList.length;
+      const withEsi = employeesList.filter((e: any) => e.esi_ip_number).length;
+      prereqs.push({ label: 'Employees have ESI IP numbers', met: total > 0 && withEsi === total });
+      const esiCode = payGroup?.filing_details?.some((d: PayGroupFilingDetail) => d.esi_registration_number);
+      prereqs.push({ label: 'ESIC code configured', met: !!esiCode });
+    }
+
+    if (card.key === 'form_24q') {
+      const tanConfigured = (settings as any)?.tan_number || (settings as any)?.tan || payGroup?.filing_details?.some((d: PayGroupFilingDetail) => d.esi_registration_number);
+      prereqs.push({ label: 'TAN configured', met: !!tanConfigured });
+    }
+
+    if (card.key === 'pt_return') {
+      prereqs.push({ label: 'State selected', met: !!ptState });
+    }
+
+    if (card.key === 'lwf_return') {
+      prereqs.push({ label: 'State selected', met: !!lwfState });
+    }
+
+    if (card.key === 'bonus_form_c' || card.key === 'bonus_form_d') {
+      prereqs.push({ label: 'Bonus percentage configured', met: !!bonusPercent });
+    }
+
+    return prereqs;
   };
 
   return (
@@ -471,38 +880,51 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
           </SurfaceCard>
 
           {selectedRun && (
+            <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {FILING_CARDS.map((card) => {
                 const badge = FILING_DISPLAY[card.displayStatus];
-                const runBlocked = runValidation && !runValidation.ready;
+                const patternBadge = PATTERN_BADGE[card.pattern];
+                const runReady = runValidation?.ready === true || (selectedRunData?.status && ['locked', 'approved', 'processed'].includes(selectedRunData.status));
+                const runBlocked = !!selectedRun && !runReady;
                 const disabled = generateSingleMutation.isPending || !!runBlocked || card.displayStatus === 'not_due';
-                const isPrimaryAction = card.displayStatus === 'pending';
                 const canDownload = card.displayStatus === 'generated' || card.displayStatus === 'filed';
+                const existingFiling = filingsList.find((f: any) => f.type === card.key && (f.status === 'generated' || f.status === 'filed' || f.status === 'approved'));
+                const prereqs = getPrerequisites(card);
+                const allPrereqsMet = prereqs.every(p => p.met);
+                const generateDisabled = disabled || (card.needsRun && !allPrereqsMet);
 
                 return (
-                  <SurfaceCard key={card.key} className="p-4">
+                  <SurfaceCard key={card.key} className={`p-4 border-l-4 ${patternBadge.borderColor}`}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-1.5">
                         <h3 className="font-semibold text-slate-900 text-sm">{card.label}</h3>
                         <InfoTooltip content={card.tooltip} title={card.label} size="sm" />
                       </div>
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
-                        {badge.label}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${patternBadge.className}`}>
+                          {patternBadge.label}
+                        </span>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
+                          {badge.label}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500 mb-3">{card.periodInfo}</p>
-                    <div className="flex items-center gap-1.5">
-                      {canDownload && (
+                    <p className={`text-xs mb-1 flex items-center gap-1 ${getDeadlineColor(card.periodInfo)}`}>
+                      <CalendarClock className="h-3 w-3" />
+                      {card.periodInfo}
+                    </p>
+                    <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+                      <HelpCircle className="h-3 w-3" />
+                      {card.nextAction}
+                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {canDownload && existingFiling && (
                         <Button
                           variant="secondary"
                           size="sm"
                           iconLeft={<Download className="h-3.5 w-3.5" />}
-                          onClick={() => {
-                            const existingFiling = filingsList.find((f: any) => f.type === card.key && (f.status === 'generated' || f.status === 'filed' || f.status === 'approved'));
-                            if (existingFiling) {
-                              downloadMutation.mutate(existingFiling);
-                            }
-                          }}
+                          onClick={() => downloadMutation.mutate(existingFiling)}
                           disabled={downloadMutation.isPending}
                         >
                           {card.displayStatus === 'filed' ? 'Challan' : 'Download'}
@@ -513,7 +935,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                           variant="primary"
                           size="sm"
                           onClick={() => generateSingleMutation.mutate({ type: card.key, runId: selectedRun })}
-                          disabled={disabled}
+                          disabled={generateDisabled}
                           iconLeft={generateSingleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : undefined}
                         >
                           Generate →
@@ -528,7 +950,31 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                           Generate
                         </Button>
                       )}
-                      {(card.displayStatus === 'generated' || card.displayStatus === 'filed') && (
+                      {canDownload && existingFiling && existingFiling.status !== 'filed' && existingFiling.status !== 'acknowledged' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-blue-600"
+                          iconLeft={<Upload className="h-3.5 w-3.5" />}
+                          onClick={() => portalInfoMutation.mutate(existingFiling.id)}
+                          disabled={portalInfoMutation.isPending}
+                          title="Open the government portal to upload/pre-fill"
+                        >
+                          Upload to portal
+                        </Button>
+                      )}
+                      {canDownload && existingFiling && existingFiling.status === 'generated' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-emerald-600"
+                          iconLeft={<Send className="h-3.5 w-3.5" />}
+                          onClick={() => setMarkFiledFor(existingFiling.id)}
+                        >
+                          Mark Filed
+                        </Button>
+                      )}
+                      {canDownload && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -538,6 +984,22 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                         </Button>
                       )}
                     </div>
+                    {card.needsRun && (
+                      <div className="mt-3 space-y-1">
+                        {prereqs.map((p, i) => (
+                          <div key={i} className="flex items-center gap-1.5 text-xs">
+                            {p.met ? (
+                              <Check className="h-3 w-3 text-emerald-600" />
+                            ) : (
+                              <span className="h-3 w-3 rounded-full bg-rose-200 flex-shrink-0" />
+                            )}
+                            <span className={p.met ? 'text-emerald-700' : 'text-rose-600'}>
+                              {p.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {card.needsState && card.key === 'lwf_return' && !lwfState && (
                       <p className="text-[10px] text-rose-600 mt-2">Select your state to enable (some states unsupported).</p>
                     )}
@@ -556,10 +1018,29 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                         </select>
                       </div>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 w-full text-xs"
+                      onClick={() => setSelectedCard(selectedCard === card.key ? null : card.key)}
+                    >
+                      {selectedCard === card.key ? 'Hide details' : 'Details'}
+                    </Button>
                   </SurfaceCard>
                 );
               })}
             </div>
+            {selectedCard && FILING_GUIDANCE[selectedCard] && (
+              <HowItWorksCard
+                title={`How ${FILING_CARDS.find(c => c.key === selectedCard)?.label} works`}
+                whatIsThis={FILING_GUIDANCE[selectedCard].whatIsThis}
+                whenToUse={FILING_GUIDANCE[selectedCard].whenToUse}
+                howItFlows={FILING_GUIDANCE[selectedCard].howItFlows}
+                commonMistakes={FILING_GUIDANCE[selectedCard].commonMistakes}
+                defaultOpen={true}
+              />
+            )}
+            </>
           )}
         </>
       ) : activeTab === 'form16' ? (

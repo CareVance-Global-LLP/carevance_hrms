@@ -41,6 +41,28 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
         // Bonus Form C (annual, configurable %)
         Route::post('/generate/bonus-form-c', [PayrollFilingController::class, 'generateBonusFormC']);
 
+        // Bonus Form D (register of bonus paid)
+        Route::post('/generate/bonus-form-d', [PayrollFilingController::class, 'generateBonusFormD']);
+
+        // Bonus Form E (Labour Commissioner summary)
+        Route::post('/generate/bonus-form-e', [PayrollFilingController::class, 'generateBonusFormE']);
+
+        // Bonus All (C + D + E)
+        Route::post('/generate/bonus-all', [PayrollFilingController::class, 'generateBonusAll']);
+
+        // Declaration Forms (Pattern A — generate here, human uploads to portal)
+        Route::post('/generate/form-19', [PayrollFilingController::class, 'generateForm19']);
+        Route::post('/generate/form-31', [PayrollFilingController::class, 'generateForm31']);
+        Route::post('/generate/form-1', [PayrollFilingController::class, 'generateForm1']);
+        Route::post('/generate/form-2', [PayrollFilingController::class, 'generateForm2']);
+        Route::post('/generate/form-6', [PayrollFilingController::class, 'generateForm6']);
+        Route::post('/generate/eshram-registration', [PayrollFilingController::class, 'generateEShramRegistration']);
+        Route::post('/generate/uan-activation', [PayrollFilingController::class, 'generateUanActivation']);
+        Route::post('/generate/se-registration', [PayrollFilingController::class, 'generateSeRegistration']);
+        Route::post('/generate/shram-card-registration', [PayrollFilingController::class, 'generateShramCardRegistration']);
+        Route::post('/generate/form-124', [PayrollFilingController::class, 'generateForm124']);
+        Route::post('/generate/full-ecr', [PayrollFilingController::class, 'generateFullEcr']);
+
         // Generate All
         Route::post('/generate/all', [PayrollFilingController::class, 'generateAllFilings']);
         // Mark filed

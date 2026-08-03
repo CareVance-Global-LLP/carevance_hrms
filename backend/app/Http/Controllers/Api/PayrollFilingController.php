@@ -295,13 +295,14 @@ class PayrollFilingController extends Controller
 
     public function generatePtReturn(Request $request, PayrollFilingService $filingService)
     {
-        $request->validate([
+        $data = $request->validate([
             'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
             'state' => 'required|string',
+            'pay_group_id' => 'nullable|integer|exists:pay_groups,id',
         ]);
-        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
         $this->assertRunFileable($run);
-        $filing = $filingService->generatePtReturn($run, $request->state, auth()->user()->organization_id, auth()->id());
+        $filing = $filingService->generatePtReturn($run, $data['state'], auth()->user()->organization_id, auth()->id(), $data['pay_group_id'] ?? null);
 
         return response()->json($filing);
     }
@@ -311,11 +312,12 @@ class PayrollFilingController extends Controller
         $data = $request->validate([
             'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
             'state' => 'required|string',
+            'pay_group_id' => 'nullable|integer|exists:pay_groups,id',
         ]);
         $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
         $this->assertRunFileable($run);
         try {
-            $filing = $filingService->generateLwfReturn($run, $data['state'], auth()->user()->organization_id, auth()->id());
+            $filing = $filingService->generateLwfReturn($run, $data['state'], auth()->user()->organization_id, auth()->id(), $data['pay_group_id'] ?? null);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
@@ -347,12 +349,186 @@ class PayrollFilingController extends Controller
         return response()->json($filing);
     }
 
-    public function generateAllFilings(Request $request, PayrollFilingService $filingService)
+    public function generateBonusFormD(Request $request, PayrollFilingService $filingService)
+    {
+        $data = $request->validate([
+            'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
+            'bonus_percent' => 'required|numeric|min:8.33|max:20',
+            'financial_year' => 'nullable|string|regex:/^\d{4}-\d{4}$/',
+        ]);
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
+        $this->assertRunFileable($run);
+        try {
+            $filing = $filingService->generateBonusFormD(
+                $run,
+                auth()->user()->organization_id,
+                auth()->id(),
+                (float) $data['bonus_percent'],
+                $data['financial_year'] ?? null
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($filing);
+    }
+
+    public function generateBonusFormE(Request $request, PayrollFilingService $filingService)
+    {
+        $data = $request->validate([
+            'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
+            'bonus_percent' => 'required|numeric|min:8.33|max:20',
+            'financial_year' => 'nullable|string|regex:/^\d{4}-\d{4}$/',
+        ]);
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
+        $this->assertRunFileable($run);
+        try {
+            $filing = $filingService->generateBonusFormE(
+                $run,
+                auth()->user()->organization_id,
+                auth()->id(),
+                (float) $data['bonus_percent'],
+                $data['financial_year'] ?? null
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($filing);
+    }
+
+    public function generateBonusAll(Request $request, PayrollFilingService $filingService)
+    {
+        $data = $request->validate([
+            'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
+            'bonus_percent' => 'required|numeric|min:8.33|max:20',
+            'financial_year' => 'nullable|string|regex:/^\d{4}-\d{4}$/',
+        ]);
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
+        $this->assertRunFileable($run);
+        try {
+            $filings = $filingService->generateBonusAll(
+                $run,
+                auth()->user()->organization_id,
+                auth()->id(),
+                (float) $data['bonus_percent'],
+                $data['financial_year'] ?? null
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['filings' => $filings, 'count' => count($filings)]);
+    }
+
+    public function generateForm19(Request $request, PayrollFilingService $filingService)
     {
         $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
         $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
         $this->assertRunFileable($run);
-        $filings = $filingService->generateAllFilings($run, auth()->user()->organization_id, auth()->id());
+        $filing = $filingService->generateForm19($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateForm31(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateForm31($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateForm1(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateForm1($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateForm2(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateForm2($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateForm6(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateForm6($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateEShramRegistration(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateEShramRegistration($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateUanActivation(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateUanActivation($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateSeRegistration(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateSeRegistration($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateShramCardRegistration(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateShramCardRegistration($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateForm124(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateForm124($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateFullEcr(Request $request, PayrollFilingService $filingService)
+    {
+        $request->validate(['payroll_run_id' => 'required|exists:payroll_monthly_runs,id']);
+        $run = PayrollMonthlyRun::findOrFail($request->payroll_run_id);
+        $this->assertRunFileable($run);
+        $filing = $filingService->generateFullEcr($run, auth()->user()->organization_id, auth()->id());
+        return response()->json($filing);
+    }
+
+    public function generateAllFilings(Request $request, PayrollFilingService $filingService)
+    {
+        $data = $request->validate([
+            'payroll_run_id' => 'required|exists:payroll_monthly_runs,id',
+            'pay_group_id' => 'nullable|integer|exists:pay_groups,id',
+        ]);
+        $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
+        $this->assertRunFileable($run);
+        $filings = $filingService->generateAllFilings($run, auth()->user()->organization_id, auth()->id(), $data['pay_group_id'] ?? null);
 
         return response()->json([
             'filings' => $filings,

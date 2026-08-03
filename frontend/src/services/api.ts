@@ -2316,18 +2316,58 @@ export const payrollApi = {
    },
    generateForm12BA: (payrollRunId: number) =>
     api.post<any>('/payroll/filings/generate/form-12ba', { payroll_run_id: payrollRunId }),
-  generatePtReturn: (payrollRunId: number, state: string) =>
-    api.post<any>('/payroll/filings/generate/pt-return', { payroll_run_id: payrollRunId, state }),
-  generateLwfReturn: (payrollRunId: number, state: string) =>
-    api.post<any>('/payroll/filings/generate/lwf-return', { payroll_run_id: payrollRunId, state }),
+  generatePtReturn: (payrollRunId: number, state: string, payGroupId?: number) =>
+    api.post<any>('/payroll/filings/generate/pt-return', { payroll_run_id: payrollRunId, state, pay_group_id: payGroupId }),
+  generateLwfReturn: (payrollRunId: number, state: string, payGroupId?: number) =>
+    api.post<any>('/payroll/filings/generate/lwf-return', { payroll_run_id: payrollRunId, state, pay_group_id: payGroupId }),
   generateBonusFormC: (payrollRunId: number, bonusPercent: number, financialYear?: string) =>
     api.post<any>('/payroll/filings/generate/bonus-form-c', {
       payroll_run_id: payrollRunId,
       bonus_percent: bonusPercent,
       financial_year: financialYear,
     }),
-  generateAllFilings: (payrollRunId: number) =>
-    api.post<any>('/payroll/filings/generate/all', { payroll_run_id: payrollRunId }),
+  generateBonusFormD: (payrollRunId: number, bonusPercent: number, financialYear?: string) =>
+    api.post<any>('/payroll/filings/generate/bonus-form-d', {
+      payroll_run_id: payrollRunId,
+      bonus_percent: bonusPercent,
+      financial_year: financialYear,
+    }),
+  generateBonusFormE: (payrollRunId: number, bonusPercent: number, financialYear?: string) =>
+    api.post<any>('/payroll/filings/generate/bonus-form-e', {
+      payroll_run_id: payrollRunId,
+      bonus_percent: bonusPercent,
+      financial_year: financialYear,
+    }),
+  generateBonusAll: (payrollRunId: number, bonusPercent: number, financialYear?: string) =>
+    api.post<any>('/payroll/filings/generate/bonus-all', {
+      payroll_run_id: payrollRunId,
+      bonus_percent: bonusPercent,
+      financial_year: financialYear,
+    }),
+  generateForm19: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/form-19', { payroll_run_id: payrollRunId }),
+  generateForm31: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/form-31', { payroll_run_id: payrollRunId }),
+  generateForm1: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/form-1', { payroll_run_id: payrollRunId }),
+  generateForm2: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/form-2', { payroll_run_id: payrollRunId }),
+  generateForm6: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/form-6', { payroll_run_id: payrollRunId }),
+  generateEShramRegistration: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/eshram-registration', { payroll_run_id: payrollRunId }),
+  generateUanActivation: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/uan-activation', { payroll_run_id: payrollRunId }),
+  generateSeRegistration: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/se-registration', { payroll_run_id: payrollRunId }),
+  generateShramCardRegistration: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/shram-card-registration', { payroll_run_id: payrollRunId }),
+  generateForm124: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/form-124', { payroll_run_id: payrollRunId }),
+  generateFullEcr: (payrollRunId: number) =>
+    api.post<any>('/payroll/filings/generate/full-ecr', { payroll_run_id: payrollRunId }),
+  generateAllFilings: (payrollRunId: number, payGroupId?: number) =>
+    api.post<any>('/payroll/filings/generate/all', { payroll_run_id: payrollRunId, pay_group_id: payGroupId }),
 
   // ===== E-Filing review workflow (semi-auto) =====
   validateFiling: (payrollRunId: number, type: string, opts?: { state?: string; bonusPercent?: number }) =>
