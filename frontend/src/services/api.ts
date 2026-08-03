@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosRequestConfig } from 'axios';
+import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { clearAuthStorage, getStoredAuthValue } from '@/lib/authStorage';
 import type { 
   LoginRequest, 
@@ -108,13 +108,39 @@ const getCsrfToken = (): string | null => {
   return match ? decodeURIComponent(match[1]) : null;
 };
 
-// Check if request is retryable
-const isRetryableError = (error: AxiosError): boolean => {
+// HTTP methods that are safe to replay. A request that timed out may well
+// have SUCCEEDED on the server — the response just never came back. Replaying
+// a POST in that situation duplicates the write, which for this API means
+// duplicate payroll runs, duplicate check-ins and duplicate payments.
+const IDEMPOTENT_METHODS = ['get', 'head', 'options', 'put', 'delete'];
+
+const isIdempotentRequest = (config?: InternalAxiosRequestConfig): boolean => {
+  const method = (config?.method || 'get').toLowerCase();
+
+  // The method allowlist is the ONLY thing that makes a request replayable.
+  //
+  // There was previously an escape hatch here that treated any POST carrying
+  // an `Idempotency-Key` header as safe — while the request interceptor
+  // stamped that header onto every POST. The two together made every POST
+  // retryable again, which is the exact bug this guard exists to prevent, and
+  // no server-side handler for the header exists. Do not reintroduce an
+  // exemption until the API actually resolves duplicate keys to the original
+  // record.
+  return IDEMPOTENT_METHODS.includes(method);
+};
+
+// Check if request is retryable.
+// Exported for tests: this guard is what stops a timed-out payroll run or
+// payment POST from being silently fired again.
+export const isRetryableError = (error: AxiosError): boolean => {
   if (!error.config) return false;
   // Don't retry if max retries reached
   const retryCount = (error.config as any)._retryCount || 0;
   if (retryCount >= 3) return false;
-  
+
+  // Never replay a non-idempotent write.
+  if (!isIdempotentRequest(error.config)) return false;
+
   // Retry on network errors or 5xx errors
   return !error.response || (error.response.status >= 500 && error.response.status < 600);
 };
@@ -124,10 +150,13 @@ const getRetryDelay = (retryCount: number): number => {
   return Math.min(1000 * Math.pow(2, retryCount), 30000); // Max 30s
 };
 
-// Check if browser is online
+// Check if browser is online.
+// Treated as a hint only (used to avoid pointless retry attempts), never as a
+// hard gate on outbound requests — see the request interceptor.
 const isOnline = (): boolean => {
   return typeof navigator !== 'undefined' && navigator.onLine !== false;
 };
+
 
 const api = axios.create({
   baseURL: apiUrl,
@@ -145,11 +174,12 @@ const api = axios.create({
 
 // Request interceptor to add auth token and CSRF token
 api.interceptors.request.use((config) => {
-  // Check if online
-  if (!isOnline()) {
-    return Promise.reject(new Error('No internet connection. Please check your network.'));
-  }
-  
+  // NOTE: we deliberately do NOT hard-reject here when navigator.onLine is
+  // false. That flag reports link-layer state, not reachability — it is false
+  // on some VPNs and true behind captive portals — so gating on it blocked
+  // requests that would have succeeded. Let the request go out and let a real
+  // network error be the signal.
+
   const token = getStoredAuthValue('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -169,7 +199,13 @@ api.interceptors.request.use((config) => {
   
   // Track retry count
   (config as any)._retryCount = (config as any)._retryCount || 0;
-  
+
+  // NOTE: no `Idempotency-Key` header is sent. Stamping one implied a
+  // server-side dedupe contract that does not exist (nothing in the API reads
+  // it), and it was being used to justify retrying POSTs. Offline sync has its
+  // own working idempotency mechanism via local_id/device_id — see the
+  // IdempotentSync middleware.
+
   return config;
 }, (error) => {
   return Promise.reject(error);
@@ -177,18 +213,9 @@ api.interceptors.request.use((config) => {
 
 // Response interceptor to handle errors
 api.interceptors.response.use(
-  (response) => {
-    const status = Number(response?.status || 0);
-    const errorCode = (response?.data as ApiErrorResponse)?.error_code;
-
-    if (status === 401 || errorCode === 'UNAUTHORIZED') {
-      clearAuthStorage();
-      window.dispatchEvent(new Event('app:auth-cleared'));
-      return Promise.reject(new Error((response?.data as ApiErrorResponse)?.message || 'Unauthorized'));
-    }
-
-    return response;
-  },
+  // Only 2xx reaches here (see validateStatus above), so there is no 401 to
+  // handle in this branch — the check that used to live here was unreachable.
+  (response) => response,
   async (error: AxiosError) => {
     const status = error.response?.status;
     const errorCode = (error.response?.data as ApiErrorResponse)?.error_code;
@@ -228,43 +255,43 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
     
-    // Handle server errors
+    const isNetworkError = !error.response
+      || error.code === 'ECONNABORTED'
+      || Boolean(error.message?.includes('Network Error'));
+
+    if (isNetworkError && typeof window !== 'undefined') {
+      // Dispatch offline detection event for real-time UI updates
+      window.dispatchEvent(new Event('app:offline-detected'));
+    }
+
+    // Retry transient failures — network errors AND 5xx. The 5xx case used to
+    // be unreachable: an early `return Promise.reject(error)` for status >= 500
+    // ran before the retry block ever saw it.
+    const config = error.config;
+    if (config && isRetryableError(error)) {
+      const retryCount = ((config as any)._retryCount || 0) + 1;
+      (config as any)._retryCount = retryCount;
+
+      console.warn(`Request failed, retrying (${retryCount}/3): ${config.url}`);
+
+      await new Promise(resolve => setTimeout(resolve, getRetryDelay(retryCount)));
+
+      // Skip a retry we already know will fail.
+      if (!isOnline()) {
+        return Promise.reject(new Error('No internet connection. Please check your network.'));
+      }
+
+      return api(config);
+    }
+
     if (status && status >= 500) {
       console.error('Server error. Please try again later.');
       const requestId = (error.response?.data as ApiErrorResponse)?.request_id;
       if (requestId) {
         console.error('Request ID:', requestId);
       }
-      return Promise.reject(error);
     }
-    
-    // Handle network errors (ECONNABORTED, NETWORK_ERROR, etc.) with retry
-    if (!error.response || error.code === 'ECONNABORTED' || error.message?.includes('Network Error')) {
-      // Dispatch offline detection event for real-time UI updates
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('app:offline-detected'));
-      }
 
-      const config = error.config;
-      if (config && isRetryableError(error)) {
-        const retryCount = ((config as any)._retryCount || 0) + 1;
-        (config as any)._retryCount = retryCount;
-        
-        console.warn(`Request failed, retrying (${retryCount}/3): ${config.url}`);
-        
-        // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, getRetryDelay(retryCount)));
-        
-        // Check if still online before retrying
-        if (!isOnline()) {
-          return Promise.reject(new Error('No internet connection. Please check your network.'));
-        }
-        
-        // Retry the request
-        return api(config);
-      }
-    }
-    
     return Promise.reject(error);
   }
 );
@@ -2728,16 +2755,31 @@ export const payrollApi = {
     api.put<{ success: boolean; message: string; statutory_rules: any }>(`/payroll/pay-group-settings/${id}/statutory-rules`, data),
 
   // Payslip Management
-  generatePayslips: (data: { pay_group_id: number; pay_month: number; pay_year: number }) =>
-    api.post<{ success: boolean; message: string; data: any }>('/payroll/payslips/generate', data),
-  listPayslips: (params: { pay_group_id: number; pay_month: number; pay_year: number }) =>
+  // Scope is the acting user's organization — pay_group_id is no longer
+  // accepted, since it let any caller target another tenant's pay group.
+  generatePayslips: (data: { pay_month: number; pay_year: number }) =>
+    api.post<{
+      success: boolean;
+      message: string;
+      data: {
+        generated: number;
+        skipped: number;
+        failed: number;
+        total_employees: number;
+        errors: Array<{ employee_id: number; message: string }>;
+      };
+    }>('/payroll/payslips/generate', data),
+  listPayslips: (params: { pay_month: number; pay_year: number }) =>
     api.get<{ success: boolean; data: any[] }>('/payroll/payslips', { params }),
   getPayslip: (id: number) =>
     api.get<{ success: boolean; data: any }>(`/payroll/payslips/${id}`),
   downloadPayslipPdfById: (id: number) =>
     api.get<{ success: boolean; url: string }>(`/payroll/payslips/${id}/pdf`),
   getPayslipYtd: (id: number, payYear: number) =>
-    api.get<{ success: boolean; data: any[] }>(`/payroll/payslips/${id}/ytd`, { params: { pay_year: payYear } }),
+    api.get<{ success: boolean; data: any[]; totals: Record<string, number> }>(
+      `/payroll/payslips/${id}/ytd`,
+      { params: { pay_year: payYear } },
+    ),
   updatePayGroupFilingDetails: (id: number, data: UpdateFilingDetailsPayload) =>
     api.put<{ success: boolean; message: string; pay_group: PayGroupSettings }>(`/payroll/pay-group-settings/${id}/filing-details`, data),
   getPayGroups: (params?: { is_active?: boolean }) =>

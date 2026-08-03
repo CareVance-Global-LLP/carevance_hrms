@@ -735,7 +735,8 @@ class PayrollDepartmentController extends Controller
         $payrollPreview = null;
 
         if ($annualCtc) {
-            $taxExemptions = $this->calculator->getApprovedTaxDeductions($userId);
+            // Per-section map, not a flat sum (which would cap everything at 1.5L).
+            $taxExemptions = $this->calculator->getApprovedTaxDeductionMap($userId);
 
             $payrollPreview = $this->calculator->calculatePayroll(
                 annualCtc: (float) $annualCtc,
@@ -1054,7 +1055,8 @@ class PayrollDepartmentController extends Controller
             ->value('group_id');
 
         // Calculate payroll using template percentages
-        $taxExemptions = $this->calculator->getApprovedTaxDeductions($userId);
+        // Per-section map, not a flat sum (which would cap everything at 1.5L).
+        $taxExemptions = $this->calculator->getApprovedTaxDeductionMap($userId);
 
         $calculation = $this->calculator->calculatePayroll(
             annualCtc: (float) $request->annual_ctc,
@@ -1089,13 +1091,20 @@ class PayrollDepartmentController extends Controller
         // Apply deductions based on template settings (use custom percentages from template)
         // PF: calculateEmployeePF already applies the rate, so don't multiply again
         $pfAmount = $template->pf_enabled
-            ? $this->calculator->calculateEmployeePF($template->pf_above_cap ? PHP_FLOAT_MAX : $payableBasic)
+            ? $this->calculator->calculateEmployeePF(
+                $payableBasic,
+                0,
+                (bool) $template->pf_above_cap
+            )
             : 0;
         $esiAmount = $template->esi_enabled && $payableGross <= ($template->esi_threshold ?? 21000)
             ? $payableGross * ($template->esi_employee_percentage / 100)
             : 0;
+        // Month drives special-month PT instalments (e.g. Maharashtra
+        // February). Omitting it under-collects PT across the year.
+        $ptMonth = (int) (explode('-', (string) $request->month_year)[1] ?? 0) ?: null;
         $ptAmount = $template->pt_enabled
-            ? \App\Services\PTStateService::calculate($template->pt_state ?? 'maharashtra', $payableGross)
+            ? \App\Services\PTStateService::calculate($template->pt_state ?? 'maharashtra', $payableGross, $ptMonth)
             : 0;
         $tdsAmount = $template->tds_enabled
             ? $calculation['components']['deductions']['tds']
@@ -1117,28 +1126,53 @@ class PayrollDepartmentController extends Controller
         // no loan EMI was already deducted for this employee+run.
         $loanEmiAmount = 0;
         $loanDetails = null;
-        $alreadyHasLoanEmi = \App\Models\PayrollItem::where('payroll_run_id', $payrollRun->id)
+        $activeLoan = \App\Models\EmployeeLoan::where('organization_id', $organizationId)
             ->where('user_id', $userId)
-            ->where('custom_deductions', '>', 0)
-            ->exists();
-        $activeLoan = \App\Models\EmployeeLoan::where('user_id', $userId)
             ->where('status', 'approved')
             ->where('remaining_amount', '>', 0)
             ->first();
+
         if ($activeLoan) {
             $loanEmiAmount = (float) $activeLoan->emi_amount;
-            if (!$alreadyHasLoanEmi) {
+
+            // Idempotency comes from the payroll_loan_recoveries ledger, NOT
+            // from `custom_deductions > 0`. That column also carries
+            // wizard-submitted deductions, so an employee with any unrelated
+            // custom deduction looked like their EMI was already taken: the
+            // deduction kept appearing on the payslip while the loan balance
+            // was never reduced, and the loan never closed.
+            $recovery = \App\Models\PayrollLoanRecovery::firstOrCreate(
+                [
+                    'payroll_run_id' => $payrollRun->id,
+                    'employee_loan_id' => $activeLoan->id,
+                ],
+                [
+                    'organization_id' => $organizationId,
+                    'user_id' => $userId,
+                    'amount' => $loanEmiAmount,
+                    'recovered_at' => now(),
+                ]
+            );
+
+            if ($recovery->wasRecentlyCreated) {
                 $activeLoan->increment('paid_installments');
                 $activeLoan->decrement('remaining_amount', $loanEmiAmount);
+                $activeLoan->refresh();
+
                 if ($activeLoan->remaining_amount <= 0) {
                     $activeLoan->update(['remaining_amount' => 0, 'status' => 'closed']);
                 }
+            } else {
+                // Already recovered in this run — keep the payslip line
+                // consistent with what was actually taken.
+                $loanEmiAmount = (float) $recovery->amount;
             }
+
             $loanDetails = [
                 'loan_id' => $activeLoan->id,
                 'loan_type' => $activeLoan->loan_type,
                 'emi' => $loanEmiAmount,
-                'remaining' => max(0, $activeLoan->remaining_amount),
+                'remaining' => max(0, (float) $activeLoan->remaining_amount),
             ];
         }
 
@@ -1199,9 +1233,24 @@ class PayrollDepartmentController extends Controller
             }
         }
 
-        $fbpAllocationsTotal = (float) FbpAllocation::where('user_id', $userId)
+        // FBP allocations are an ANNUAL entitlement per financial year — the
+        // table is uniquely keyed on (user_id, fbp_component_id,
+        // financial_year). This query previously had no organization filter,
+        // no financial-year filter, and no proration, so it added the
+        // employee's whole yearly entitlement to EVERY month's gross (a 12x
+        // overstatement) and could pick up another tenant's rows.
+        $fbpFinancialYear = $this->financialYearForMonth((string) $request->month_year);
+        $fbpAnnualTotal = (float) FbpAllocation::where('organization_id', $organizationId)
+            ->where('user_id', $userId)
             ->where('status', 'active')
+            ->where(function ($q) use ($fbpFinancialYear) {
+                // financial_year is nullable on legacy rows; treat those as
+                // belonging to the current year rather than dropping them.
+                $q->where('financial_year', $fbpFinancialYear)
+                    ->orWhereNull('financial_year');
+            })
             ->sum('allocated_amount');
+        $fbpAllocationsTotal = $fbpAnnualTotal / 12;
         $additionalEarnings = $approvedReimbursementsTotal + $fbpAllocationsTotal;
 
         // `custom_earnings` is a decimal(12,2) column — write the SUM of
@@ -1219,6 +1268,18 @@ class PayrollDepartmentController extends Controller
         $formulaEarnings = 0;
         $formulaDeductions = 0;
         $formulaComponents = [];
+
+        // Net pay genuinely depends on the formula components, and a formula
+        // may itself reference [NetPay] — so the value handed to the engine
+        // must be the PRE-formula net. This was previously `$netPay`, which is
+        // not assigned until after this block, so every [NetPay] reference
+        // silently evaluated against 0 (an undefined-variable warning swallowed
+        // by the catch below).
+        $provisionalNetPay = max(
+            0,
+            ($calculation['monthly']['gross'] + $overtimePay + $additionalEarnings) - $totalDeductions
+        );
+
         try {
             $formulaResults = $this->calculator->resolveSalaryFormula(
                 $organizationId,
@@ -1236,7 +1297,7 @@ class PayrollDepartmentController extends Controller
                     'esi'              => $esiAmount,
                     'pt'               => $ptAmount,
                     'tds'              => $tdsAmount,
-                    'net_pay'          => $netPay,
+                    'net_pay'          => $provisionalNetPay,
                     'lop_days'         => $lOPDays,
                     'working_days'     => $workingDays,
                     'days_present'     => $daysPresent,
@@ -1255,8 +1316,29 @@ class PayrollDepartmentController extends Controller
             \Log::warning('Formula component resolution failed: ' . $e->getMessage());
         }
 
-        $grossWithOT = $calculation['monthly']['gross'] + $overtimePay + $additionalEarnings + $formulaEarnings;
-        $totalDeductions += $formulaDeductions;
+        // Fold approved arrears back in as an INPUT to this recomputation.
+        //
+        // Arrears are applied to the payroll_item by approveArrear(), but this
+        // method rewrites the row via updateOrCreate — so without this block,
+        // re-processing an employee silently erased every approved arrear from
+        // gross/net while leaving the `arrears` column populated, and the
+        // payslip stopped agreeing with the run totals.
+        $approvedArrears = \App\Models\ArrearPayment::where('organization_id', $organizationId)
+            ->where('user_id', $userId)
+            ->where('payroll_run_id', $payrollRun->id)
+            ->where('status', 'approved')
+            ->get();
+
+        $arrearsGross = (float) $approvedArrears->sum('gross_difference');
+        $arrearsPf = (float) $approvedArrears->sum('pf_on_arrear');
+        $arrearsEsi = (float) $approvedArrears->sum('esi_on_arrear');
+        $arrearsPt = (float) $approvedArrears->sum('pt_on_arrear');
+        $arrearsTds = (float) $approvedArrears->sum('tds_on_arrear');
+        $arrearsDeductions = $arrearsPf + $arrearsEsi + $arrearsPt + $arrearsTds;
+
+        $grossWithOT = $calculation['monthly']['gross'] + $overtimePay + $additionalEarnings
+            + $formulaEarnings + $arrearsGross;
+        $totalDeductions += $formulaDeductions + $arrearsDeductions;
         $netPay = max(0, $grossWithOT - $totalDeductions);
 
         // Create or update payroll item
@@ -1269,6 +1351,10 @@ class PayrollDepartmentController extends Controller
                 'month_year' => $request->month_year,
                 'organization_id' => $organizationId,
                 'department_id' => $departmentId,
+                // Stamps which calculation engine produced this row, so
+                // pre-correction numbers stay distinguishable from corrected
+                // ones (see the engine_version migration).
+                'engine_version' => 'v2',
                 'total_working_days' => $workingDays,
                 'days_present' => $daysPresent,
                 'days_absent' => $daysAbsent,
@@ -1286,10 +1372,16 @@ class PayrollDepartmentController extends Controller
                 'conveyance' => $calculation['components']['earnings']['conveyance'],
                 'special_allowance' => $calculation['components']['earnings']['special_allowance'],
                 'gross_salary' => $grossWithOT,
-                'pf_employee' => $pfAmount,
-                'esi_employee' => $esiAmount,
-                'pt' => $ptAmount,
-                'tds' => $tdsAmount,
+                // Statutory columns include the arrear portion so the row
+                // satisfies net = gross - deductions, and so the PF ECR / ESI
+                // challan report the arrear contributions rather than omitting
+                // them.
+                'pf_employee' => $pfAmount + $arrearsPf,
+                'esi_employee' => $esiAmount + $arrearsEsi,
+                'pt' => $ptAmount + $arrearsPt,
+                'tds' => $tdsAmount + $arrearsTds,
+                'arrears' => $arrearsGross,
+                'arrears_pf' => $arrearsPf,
                 'lOP_deduction' => $lOPDeduction,
                 'custom_deductions' => $loanEmiAmount + $customDeductionsTotal,
                 'custom_earnings' => $customEarningsTotal,
@@ -2751,6 +2843,28 @@ class PayrollDepartmentController extends Controller
      * (Earlier versions used actor_id / auditable_type / auditable_id / meta
      * which don't exist on this table — the insert was silently failing.)
      */
+    /**
+     * Indian financial year (Apr-Mar) for a 'Y-m' payroll month, in the same
+     * 'YYYY-YY' form as PayrollCalculatorService::getCurrentFinancialYear().
+     *
+     * Derived from the payroll month rather than from now(), so re-running an
+     * old month resolves the financial year that month actually belonged to.
+     */
+    private function financialYearForMonth(string $monthYear): string
+    {
+        $parts = explode('-', $monthYear);
+        $year = (int) ($parts[0] ?? 0);
+        $month = (int) ($parts[1] ?? 0);
+
+        if ($year <= 0 || $month < 1 || $month > 12) {
+            return $this->calculator->getCurrentFinancialYear();
+        }
+
+        $startYear = $month < 4 ? $year - 1 : $year;
+
+        return $startYear . '-' . substr((string) ($startYear + 1), -2);
+    }
+
     private function writeRunAudit(PayrollMonthlyRun $run, string $action, array $meta = []): void
     {
         try {
@@ -3993,11 +4107,17 @@ class PayrollDepartmentController extends Controller
             ->where('payment_status', 'pending')
             ->get();
 
-        DB::transaction(function () use ($run, $request, $paymentMethod) {
+        // $pendingItems MUST be captured here. It previously was not, so the
+        // foreach below iterated an undefined variable: the run flipped to
+        // 'disbursed' while every single payroll item stayed 'pending', and
+        // the audit log recorded a paid count of zero.
+        DB::transaction(function () use ($run, $request, $paymentMethod, $pendingItems) {
             foreach ($pendingItems as $item) {
                 $item->update([
                     'payment_status' => 'paid',
                     'payment_method' => $paymentMethod,
+                    // Per-item reference is deliberate: reconciliation against
+                    // the bank statement matches on it line by line.
                     'payment_reference' => 'PAY-' . strtoupper(substr(md5(random_bytes(6)), 0, 8)),
                     'paid_at' => now(),
                 ]);

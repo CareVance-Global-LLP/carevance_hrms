@@ -28,6 +28,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'sanitize' => \App\Http\Middleware\SanitizeInput::class,
             'payroll.enabled' => \App\Http\Middleware\PayrollEnabled::class,
             'plan.payroll' => \App\Http\Middleware\CheckPayrollPlan::class,
+            // Offline-sync deduplication. The middleware existed but had no
+            // alias and was attached to no route, so replayed syncs from the
+            // desktop/mobile clients created duplicate rows despite the
+            // (local_id, device_id) unique indexes being in place.
+            'idempotent.sync' => \App\Http\Middleware\IdempotentSync::class,
         ]);
 
         // Apply sanitize middleware to API routes

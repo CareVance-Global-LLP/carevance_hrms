@@ -18,6 +18,11 @@ class AttendancePunch extends Model
         'punch_in_longitude',
         'punch_out_latitude',
         'punch_out_longitude',
+        // Offline-sync idempotency keys. Missing from $fillable, so the values
+        // merged in by IdempotentSync were dropped on create and the
+        // (local_id, device_id) unique index never had anything to match on.
+        'local_id',
+        'device_id',
     ];
 
     protected function casts(): array

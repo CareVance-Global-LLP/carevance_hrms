@@ -43,6 +43,7 @@ class PayrollItem extends Model
         'variable_pay',
         'performance_bonus',
         'retention_bonus',
+        'engine_version',
         'arrears',
         'arrears_pf',
         'leave_encashment',

@@ -209,7 +209,11 @@ class EnhancedPayrollController extends Controller
             $totalAmount = $ratePerDay * $request->encashed_days;
 
             $pfDeduction = $template->pf_enabled
-                ? $this->calculator->calculateEmployeePF($template->pf_above_cap ? PHP_FLOAT_MAX : $monthlyGross)
+                ? $this->calculator->calculateEmployeePF(
+                    $monthlyGross,
+                    0,
+                    (bool) $template->pf_above_cap
+                )
                 : 0;
             $taxDeduction = 0;
 
@@ -473,18 +477,35 @@ class EnhancedPayrollController extends Controller
             ], 422);
         }
 
-        // Apply: add the net arrear to the payroll_item.arrears column, increase net_pay by the
-        // pre-tax gross difference, and recompute the run's totals.
+        // Apply the arrear as a consistent adjustment across gross, deductions
+        // and net.
+        //
+        // Previously only `arrears` and `net_pay` moved: gross_salary and the
+        // statutory deduction columns were left alone, so the row no longer
+        // satisfied net = gross - deductions. Run totals then reported
+        // total_net_pay > total_gross - total_deductions, the PF ECR
+        // under-reported arrear PF, and the bank file paid money the payroll
+        // register did not show.
         \DB::transaction(function () use ($arrear, $item) {
-            $newArrears = (float) $item->arrears + (float) $arrear->gross_difference;
-            $newNetPay = (float) $item->net_pay + (float) $arrear->gross_difference
-                - (float) $arrear->pf_on_arrear - (float) $arrear->esi_on_arrear
-                - (float) $arrear->pt_on_arrear - (float) $arrear->tds_on_arrear;
+            $grossDifference = (float) $arrear->gross_difference;
+            $pfOnArrear = (float) $arrear->pf_on_arrear;
+            $esiOnArrear = (float) $arrear->esi_on_arrear;
+            $ptOnArrear = (float) $arrear->pt_on_arrear;
+            $tdsOnArrear = (float) $arrear->tds_on_arrear;
+            $arrearDeductions = $pfOnArrear + $esiOnArrear + $ptOnArrear + $tdsOnArrear;
 
             $item->update([
-                'arrears' => $newArrears,
-                'arrears_pf' => (float) $item->arrears_pf + (float) $arrear->pf_on_arrear,
-                'net_pay' => max(0, $newNetPay),
+                'arrears' => (float) $item->arrears + $grossDifference,
+                'arrears_pf' => (float) $item->arrears_pf + $pfOnArrear,
+
+                'gross_salary' => (float) $item->gross_salary + $grossDifference,
+                'pf_employee' => (float) $item->pf_employee + $pfOnArrear,
+                'esi_employee' => (float) $item->esi_employee + $esiOnArrear,
+                'pt' => (float) $item->pt + $ptOnArrear,
+                'tds' => (float) $item->tds + $tdsOnArrear,
+                'total_deductions' => (float) $item->total_deductions + $arrearDeductions,
+
+                'net_pay' => max(0, (float) $item->net_pay + $grossDifference - $arrearDeductions),
             ]);
 
             $arrear->update([
@@ -809,28 +830,37 @@ class EnhancedPayrollController extends Controller
         $savings = (float) $oldTax - (float) $newTax;
         $recommended = $savings > 0 ? 'new' : 'old';
 
+        // `total_tax` from both engines ALREADY includes the 4% health &
+        // education cess (and surcharge, and the 87A rebate). This block used
+        // to multiply it by 1.04 again and synthesise `cess` as total x 0.04,
+        // overstating both regimes by 4% — enough to flip the recommendation.
+        // Read the engine's own breakdown instead of re-deriving it.
         return response()->json([
             'success' => true,
             'data' => [
                 'new_regime' => [
                     'gross_income' => $annualCtc,
                     'standard_deduction' => $standardDeductionNew,
-                    'taxable_income' => $taxableNew,
-                    'tax' => $newTax,
-                    'cess' => $newTax * 0.04,
-                    'total_tax' => $newTax * 1.04,
-                    'take_home' => $annualCtc - ($newTax * 1.04),
-                    'effective_rate' => $annualCtc > 0 ? round(($newTax * 1.04 / $annualCtc) * 100, 2) : 0,
+                    'taxable_income' => $newRegime['taxable_income'] ?? $taxableNew,
+                    'tax' => $newRegime['tax_before_cess'] ?? 0,
+                    'rebate_87a' => $newRegime['rebate_87a'] ?? 0,
+                    'surcharge' => $newRegime['surcharge'] ?? 0,
+                    'cess' => $newRegime['cess'] ?? 0,
+                    'total_tax' => $newTax,
+                    'take_home' => $annualCtc - $newTax,
+                    'effective_rate' => $newRegime['effective_rate'] ?? 0,
                 ],
                 'old_regime' => [
                     'gross_income' => $annualCtc,
                     'standard_deduction' => $standardDeductionOld,
-                    'taxable_income' => $taxableOld,
-                    'tax' => $oldTax,
-                    'cess' => $oldTax * 0.04,
-                    'total_tax' => $oldTax * 1.04,
-                    'take_home' => $annualCtc - ($oldTax * 1.04),
-                    'effective_rate' => $annualCtc > 0 ? round(($oldTax * 1.04 / $annualCtc) * 100, 2) : 0,
+                    'taxable_income' => $oldRegime['taxable_income'] ?? $taxableOld,
+                    'tax' => $oldRegime['tax_before_cess'] ?? 0,
+                    'rebate_87a' => $oldRegime['rebate_87a'] ?? 0,
+                    'surcharge' => $oldRegime['surcharge'] ?? 0,
+                    'cess' => $oldRegime['cess'] ?? 0,
+                    'total_tax' => $oldTax,
+                    'take_home' => $annualCtc - $oldTax,
+                    'effective_rate' => $oldRegime['effective_rate'] ?? 0,
                 ],
                 'recommended' => $recommended,
                 'savings' => round(abs($savings), 2),

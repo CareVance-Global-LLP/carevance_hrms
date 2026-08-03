@@ -10,6 +10,8 @@ import FAQSection from '@/components/landing/FAQSection';
 import CTA from '@/components/landing/CTA';
 import Footer from '@/components/landing/Footer';
 import LandingPageChatBubble from '@/components/LandingPageChatBubble';
+import ScrollProgress from '@/components/landing/ScrollProgress';
+import MagneticCursor from '@/components/landing/MagneticCursor';
 
 const Screenshots = lazy(() => import('@/components/landing/Screenshots'));
 
@@ -32,24 +34,71 @@ function ScreenshotsFallback() {
   );
 }
 
+const schemaData = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'SoftwareApplication',
+      name: 'Carevance',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Windows, Web',
+      description: 'All-in-one workforce management platform for time tracking, employee monitoring, attendance, payroll, and HR operations.',
+      url: 'https://carevance.com',
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+        description: 'Free for up to 5 users',
+      },
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: '4.8',
+        ratingCount: '150',
+      },
+    },
+    {
+      '@type': 'Organization',
+      name: 'Carevance',
+      url: 'https://carevance.com',
+      logo: 'https://carevance.com/logo.png',
+      sameAs: [],
+    },
+    {
+      '@type': 'WebSite',
+      name: 'Carevance',
+      url: 'https://carevance.com',
+    },
+  ],
+};
+
 export default function LandingPage() {
   return (
-    <div className="text-slate-950">
-      <Navbar />
-      <Hero />
-      <DemoSection />
-      <Features />
-      <Workflow />
-      <Benefits />
-      <Suspense fallback={<ScreenshotsFallback />}>
-        <Screenshots />
-      </Suspense>
-      <Security />
-      <div className="h-px bg-slate-200" />
-      <FAQSection />
-      <CTA />
-      <Footer />
-      <LandingPageChatBubble />
-    </div>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schemaData) }}
+      />
+      <div className="text-slate-950">
+        <ScrollProgress />
+        <MagneticCursor />
+        <Navbar />
+        <main>
+          <Hero />
+          <DemoSection />
+          <Features />
+          <Workflow />
+          <Benefits />
+          <Suspense fallback={<ScreenshotsFallback />}>
+            <Screenshots />
+          </Suspense>
+          <Security />
+          <div className="h-px bg-slate-200" />
+          <FAQSection />
+          <CTA />
+        </main>
+        <Footer />
+        <LandingPageChatBubble />
+      </div>
+    </>
   );
 }

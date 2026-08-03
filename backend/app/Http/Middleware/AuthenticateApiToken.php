@@ -3,6 +3,8 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -63,20 +65,58 @@ class AuthenticateApiToken
         $request->setUserResolver(fn () => $user);
         $request->attributes->set('access_token', $tokenRecord);
 
-        DB::table('personal_access_tokens')
-            ->where('id', $tokenRecord->id)
-            ->update([
-                'last_used_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-        DB::table('users')
-            ->where('id', $user->id)
-            ->update([
-                'last_seen_at' => now(),
-            ]);
+        $this->touchActivity($tokenRecord, $user);
 
         return $next($request);
+    }
+
+    /**
+     * Record token/user activity, at most once per minute.
+     *
+     * These two writes previously ran on EVERY authenticated request, so a
+     * read-only API call still cost two row updates. At any real request rate
+     * that is the first thing to saturate the primary. Minute granularity is
+     * all `last_used_at` / `last_seen_at` are ever displayed at.
+     */
+    private function touchActivity(object $tokenRecord, User $user): void
+    {
+        $now = now();
+        $staleAfter = $now->copy()->subMinute();
+
+        // The token row comes from the query builder, so timestamps arrive as
+        // raw strings rather than Carbon instances — parse before comparing.
+        if ($this->isStale($tokenRecord->last_used_at ?? null, $staleAfter)) {
+            DB::table('personal_access_tokens')
+                ->where('id', $tokenRecord->id)
+                ->update([
+                    'last_used_at' => $now,
+                    'updated_at' => $now,
+                ]);
+        }
+
+        if ($this->isStale($user->last_seen_at, $staleAfter)) {
+            DB::table('users')
+                ->where('id', $user->id)
+                ->update(['last_seen_at' => $now]);
+        }
+    }
+
+    /**
+     * True when $value is absent, unparseable, or older than $threshold.
+     * Unparseable values fall through to "stale" so a malformed timestamp
+     * gets corrected rather than freezing updates forever.
+     */
+    private function isStale(mixed $value, CarbonInterface $threshold): bool
+    {
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse($value)->lessThan($threshold);
+        } catch (\Throwable) {
+            return true;
+        }
     }
 
     private function extractToken(Request $request): ?string

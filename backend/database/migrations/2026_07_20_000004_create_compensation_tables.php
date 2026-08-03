@@ -21,6 +21,16 @@ return new class extends Migration
             $table->index(['organization_id', 'is_active']);
         });
 
+        // SUPERSEDED: daily_wage_structures is owned by
+        // 2026_06_11_000009_create_custom_reports_and_gl_tables, whose columns
+        // (code, daily_wage, working_days_per_month, overtime_rate_multiplier,
+        // allowances, pf_applicable, esi_applicable) are what the
+        // DailyWageStructure model actually reads. The definition below used
+        // daily_rate/monthly_equivalent, which no code consumes.
+        if (Schema::hasTable('daily_wage_structures')) {
+            return;
+        }
+
         Schema::create('daily_wage_structures', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();

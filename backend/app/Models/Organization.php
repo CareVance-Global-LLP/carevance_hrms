@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,6 +12,10 @@ use App\Models\OrganizationStats;
 
 class Organization extends Model
 {
+    // Tests call Organization::factory(); without this trait every one of them
+    // died with "Call to undefined method Organization::factory()".
+    use HasFactory;
+
     public const SYSTEM_ROLE_HIERARCHY_LEVELS = [
         'admin' => 10,
         'manager' => 50,

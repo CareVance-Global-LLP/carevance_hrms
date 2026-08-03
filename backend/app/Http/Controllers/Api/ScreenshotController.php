@@ -193,9 +193,45 @@ class ScreenshotController extends Controller
     /**
      * Store a newly created resource in storage.
      */
+    /**
+     * Translate an offline `time_entry_local_id` into the server `time_entry_id`.
+     *
+     * The desktop client queues screenshots against the time entry's local id
+     * while offline. Scoped to the acting user so one device cannot attach
+     * screenshots to another account's timer by guessing a local id.
+     */
+    private function resolveTimeEntryFromLocalId(Request $request): void
+    {
+        if ($request->filled('time_entry_id')) {
+            return;
+        }
+
+        $localId = $request->input('time_entry_local_id');
+        if (!$localId) {
+            return;
+        }
+
+        $query = TimeEntry::query()->where('local_id', $localId);
+
+        if ($deviceId = $request->input('device_id')) {
+            $query->where('device_id', $deviceId);
+        }
+
+        $timeEntry = $query->where('user_id', $request->user()?->id)->first();
+
+        if ($timeEntry) {
+            $request->merge(['time_entry_id' => $timeEntry->id]);
+        }
+    }
+
     public function store(Request $request)
     {
         try {
+            // Offline clients may not know the server-side time entry id yet:
+            // when the timer was started while offline they only hold their own
+            // local_id. Accept either, and resolve the local one below.
+            $this->resolveTimeEntryFromLocalId($request);
+
             $validated = $request->validate([
                 'time_entry_id' => 'required|exists:time_entries,id',
                 'image' => [

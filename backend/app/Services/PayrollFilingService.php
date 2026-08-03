@@ -351,11 +351,14 @@ class PayrollFilingService
 
         // Recompute annual tax via the canonical service so the certificate matches
         // what we actually deducted, rather than echoing the sum.
-        $annualExemptions = $this->calculator->getApprovedTaxDeductions($employeeUserId, $financialYear);
+        // Per-section map: collapsing every section into section_80c caps the
+        // lot at 1.5L, which would understate Chapter VI-A relief on the
+        // Form 16 Part B certificate itself.
+        $annualExemptions = $this->calculator->getApprovedTaxDeductionMap($employeeUserId, $financialYear);
         $annualizedTds = $this->calculator->calculateMonthlyTDS(
             annualGross: $totals['gross'],
             taxRegime: $taxRegime,
-            exemptions: ['section_80c' => $annualExemptions]
+            exemptions: $annualExemptions
         );
 
         // No fabricated certificate number: a real one only exists after TRACES

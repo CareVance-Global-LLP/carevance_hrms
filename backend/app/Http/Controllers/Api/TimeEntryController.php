@@ -208,6 +208,39 @@ class TimeEntryController extends Controller
         return response()->json(['message' => 'Time entry deleted']);
     }
 
+    /**
+     * Resolve the timer start time.
+     *
+     * Defaults to the server clock. A client-supplied `started_at` is honoured
+     * whenever it is not in the future — a skewed device clock must not create
+     * a timer that has not begun yet.
+     *
+     * Deliberately no staleness cap: silently re-stamping a long-buffered
+     * offline entry as "now" would file the work into the wrong pay period,
+     * which is a worse failure than recording an old timestamp honestly.
+     */
+    private function resolveStartedAt(Request $request): \Illuminate\Support\Carbon
+    {
+        $now = now();
+        $raw = $request->input('started_at');
+
+        if (!$raw) {
+            return $now;
+        }
+
+        try {
+            // Clients send an absolute instant (typically ISO-8601 with a Z
+            // suffix). Convert it into the app timezone before storage so it
+            // lands on the correct calendar day for attendance and payroll.
+            $startedAt = \Illuminate\Support\Carbon::parse($raw)
+                ->setTimezone(config('app.timezone', 'UTC'));
+        } catch (\Throwable) {
+            return $now;
+        }
+
+        return $startedAt->greaterThan($now) ? $now : $startedAt;
+    }
+
     public function start(Request $request)
     {
         $request->validate([
@@ -218,6 +251,14 @@ class TimeEntryController extends Controller
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
             'accuracy' => 'nullable|numeric|min:0',
+            // Offline sync: the client posts the original click-time so a
+            // session buffered offline is recorded when it actually started
+            // rather than when it happened to reach the server. Mirrors the
+            // 'ended_at' handling in stop().
+            'started_at' => 'nullable|date',
+            // Offline-sync idempotency keys (see IdempotentSync middleware).
+            'local_id' => 'nullable|string|max:191',
+            'device_id' => 'nullable|string|max:191',
         ]);
 
         $user = $request->user();
@@ -250,7 +291,7 @@ class TimeEntryController extends Controller
 
         $this->logGeofenceAction($user, 'timer_start', $request);
 
-        $startedAt = now();
+        $startedAt = $this->resolveStartedAt($request);
         $runningEntries = $this->runningEntriesQuery((int) $user->id, $slot)
             ->orderByDesc('start_time')
             ->get();
@@ -263,6 +304,11 @@ class TimeEntryController extends Controller
             'start_time' => $startedAt,
             'user_id' => $user->id,
             'timer_slot' => $slot,
+            // Persist the idempotency keys so a replayed sync is recognised
+            // by the (local_id, device_id) unique index instead of inserting
+            // a duplicate timer.
+            'local_id' => $request->input('local_id'),
+            'device_id' => $request->input('device_id'),
         ]);
 
         $this->syncTaskStatusForTimer($taskId, $user);

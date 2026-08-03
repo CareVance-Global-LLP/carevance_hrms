@@ -124,9 +124,16 @@ class PayrollCalculatorGoldenMasterTest extends TestCase
             '87A full rebate at 12L: monthly TDS must be 0');
     }
 
-    public function test_tds_new_regime_tax_above_12L_threshold(): void
+    public function test_tds_new_regime_still_rebated_when_gross_exceeds_12L_but_taxable_does_not(): void
     {
-        // CTC = 13L → annual gross > 12,00,000 → 87A no longer applies.
+        // CTC = 13L → annual gross 12,53,388 → taxable 11,78,388 after the
+        // 75,000 standard deduction. Sec 87A tests TOTAL (taxable) income, not
+        // gross, so the full rebate still applies and TDS is nil.
+        //
+        // This test previously asserted 5012.7/month, which encoded the bug
+        // where the rebate was compared against GROSS income — it denied the
+        // rebate to employees who were legally entitled to it and over-deducted
+        // roughly 60,000 a year.
         $r = $this->calc->calculatePayroll(
             annualCtc: 1_300_000,
             stateCode: 'maharashtra',
@@ -134,11 +141,26 @@ class PayrollCalculatorGoldenMasterTest extends TestCase
             taxRegime: 'new',
         );
 
+        $this->assertEqualsWithDelta(0.0, $r['components']['deductions']['tds'], 0.5,
+            'Taxable income below 12L must attract no TDS even when gross exceeds it');
+    }
+
+    public function test_tds_new_regime_tax_above_12L_taxable_threshold(): void
+    {
+        // CTC = 14L → annual gross 13,51,464 → taxable 12,76,464, genuinely
+        // past the 12L threshold, so 87A no longer applies.
+        $r = $this->calc->calculatePayroll(
+            annualCtc: 1_400_000,
+            stateCode: 'maharashtra',
+            isMetroCity: true,
+            taxRegime: 'new',
+        );
+
         $this->assertGreaterThan(0.0, $r['components']['deductions']['tds'],
             'TDS must be > 0 above the 12L 87A threshold');
-        // Golden value: 5012.7
-        $this->assertEqualsWithDelta(5012.7, $r['components']['deductions']['tds'], 0.5,
-            'Monthly TDS at CTC 13L new regime');
+        // Golden value: 6194.03
+        $this->assertEqualsWithDelta(6194.03, $r['components']['deductions']['tds'], 0.5,
+            'Monthly TDS at CTC 14L new regime');
     }
 
     public function test_tds_old_regime_with_80c_150k(): void

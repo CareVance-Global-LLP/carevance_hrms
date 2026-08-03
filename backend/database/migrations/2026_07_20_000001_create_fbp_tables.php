@@ -8,6 +8,20 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // SUPERSEDED: the FBP tables are owned by
+        // 2026_06_11_000003_create_fbp_tables. That schema
+        // (category, max_exempt_limit, requires_proof, is_taxable) is what
+        // FbpService and PayrollDepartmentController actually read; the
+        // definitions below (max_annual_amount, amount, reviewer_id) are used
+        // by no business logic.
+        //
+        // Creating them unconditionally aborted every fresh migration run with
+        // "table fbp_components already exists", which took the whole Feature
+        // suite down with it.
+        if (Schema::hasTable('fbp_components')) {
+            return;
+        }
+
         Schema::create('fbp_components', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();

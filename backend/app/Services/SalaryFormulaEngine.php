@@ -91,23 +91,100 @@ class SalaryFormulaEngine
         return $this->evaluate($expression);
     }
 
+    /**
+     * Substitute variables in both `[Name]` and bare `Name` form.
+     *
+     * Bare names previously were NOT substituted, so a formula written the way
+     * the docs describe it — `CTC * 0.08` — resolved `CTC` to (float)"CTC" = 0
+     * and the component silently paid nothing. Longest names are replaced
+     * first so `MonthlyCTC` is not clobbered by `CTC`.
+     */
     private function replaceVariables(string $expression): string
     {
-        foreach ($this->variables as $name => $value) {
-            $expression = preg_replace('/\[' . preg_quote($name, '/') . '\]/', (string) $value, $expression);
+        $names = array_keys($this->variables);
+        usort($names, static fn ($a, $b) => strlen($b) <=> strlen($a));
+
+        foreach ($names as $name) {
+            $value = (string) $this->variables[$name];
+            $quoted = preg_quote($name, '/');
+
+            // Bracketed form first.
+            $expression = preg_replace('/\[' . $quoted . '\]/i', $value, $expression);
+            // Then the bare form, on word boundaries only.
+            $expression = preg_replace('/\b' . $quoted . '\b/i', $value, $expression);
         }
+
         return $expression;
     }
 
+    /**
+     * Resolve function calls, innermost first.
+     *
+     * Only IF() was ever substituted here. MAX/MIN/ROUND/ABS/FLOOR/CEIL were
+     * registered in registerBuiltinFunctions() and advertised by
+     * getAvailableFunctions(), but never replaced — so `MAX(Basic, 15000)`
+     * fell through to evaluateSimple("MAX1") and returned 0.0 while
+     * validateFormula() still reported the formula as valid.
+     */
     private function replaceFunctions(string $expression): string
     {
-        return preg_replace_callback('/IF\s*\(([^,]+),([^,]+),([^)]+)\)/i', function ($m) {
-            $condition = trim($m[1]);
-            $trueVal = trim($m[2]);
-            $falseVal = trim($m[3]);
-            $condResult = $this->evaluateCondition($condition);
-            return $condResult ? $trueVal : $falseVal;
-        }, $expression);
+        $names = array_merge(['IF'], array_keys($this->functions));
+        $pattern = '/\b(' . implode('|', array_map(
+            static fn ($n) => preg_quote($n, '/'),
+            $names
+        )) . ')\s*\(([^()]*)\)/i';
+
+        // Innermost-first so nested calls such as MAX(MIN(a,b),c) resolve.
+        // Bounded to avoid spinning on a pathological expression.
+        for ($guard = 0; $guard < 100; $guard++) {
+            $replaced = preg_replace_callback($pattern, function (array $m): string {
+                $name = strtoupper($m[1]);
+                $args = $this->splitArguments($m[2]);
+
+                if ($name === 'IF') {
+                    if (count($args) !== 3) {
+                        throw new \RuntimeException('IF() expects 3 arguments, got ' . count($args));
+                    }
+
+                    return $this->evaluateCondition($args[0]) ? $args[1] : $args[2];
+                }
+
+                $fn = $this->functions[$name] ?? null;
+                if ($fn === null) {
+                    throw new \RuntimeException("Unknown function {$name}()");
+                }
+
+                // Arguments are themselves expressions.
+                $values = array_map(fn (string $arg) => $this->parseExpression($arg), $args);
+
+                return (string) $fn(...$values);
+            }, $expression);
+
+            if ($replaced === null) {
+                throw new \RuntimeException('Formula could not be parsed');
+            }
+            if ($replaced === $expression) {
+                return $replaced;
+            }
+
+            $expression = $replaced;
+        }
+
+        throw new \RuntimeException('Formula nesting too deep');
+    }
+
+    /**
+     * Split a function argument list on top-level commas.
+     *
+     * @return array<int,string>
+     */
+    private function splitArguments(string $args): array
+    {
+        if (trim($args) === '') {
+            return [];
+        }
+
+        return array_map('trim', explode(',', $args));
     }
 
     private function evaluateCondition(string $condition): bool
@@ -148,17 +225,36 @@ class SalaryFormulaEngine
 
     private function evaluateSimple(string $expr): float
     {
+        $expr = trim($expr);
+        if ($expr === '') {
+            return 0;
+        }
+
+        // Any leftover alphabetic text at this point is an unresolved variable
+        // or function name. It used to be cast to (float) — yielding 0 — so a
+        // typo'd or unsupported formula silently paid nothing and still passed
+        // validateFormula(). Fail loudly instead.
+        if (preg_match('/[A-Za-z_\[\]]/', $expr)) {
+            throw new \RuntimeException("Unresolved token in formula fragment '{$expr}'");
+        }
+
         $tokens = preg_split('/([+\-*\/])/', $expr, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
-        if (count($tokens) === 0) return 0;
-        if (count($tokens) === 1) return (float) $tokens[0];
+        if ($tokens === false || count($tokens) === 0) return 0;
+
+        // Fold unary +/- into the following number so "-5" or "3*-2" parse.
+        $tokens = $this->foldUnarySigns($tokens);
+
+        if (count($tokens) === 1) {
+            return $this->toNumber($tokens[0]);
+        }
 
         $operators = ['*', '/'];
         foreach ($operators as $op) {
             $i = 1;
             while ($i < count($tokens)) {
                 if ($tokens[$i] === $op) {
-                    $left = (float) $tokens[$i - 1];
-                    $right = (float) $tokens[$i + 1];
+                    $left = $this->toNumber($tokens[$i - 1]);
+                    $right = $this->toNumber($tokens[$i + 1]);
                     $result = $op === '*' ? $left * $right : ($right != 0 ? $left / $right : 0);
                     array_splice($tokens, $i - 1, 3, [$result]);
                     $i = 1;
@@ -168,14 +264,57 @@ class SalaryFormulaEngine
             }
         }
 
-        $result = (float) $tokens[0];
+        $result = $this->toNumber($tokens[0]);
         for ($i = 1; $i < count($tokens); $i += 2) {
             $op = $tokens[$i];
-            $right = (float) $tokens[$i + 1];
+            $right = $this->toNumber($tokens[$i + 1] ?? '0');
             $result = $op === '+' ? $result + $right : $result - $right;
         }
 
         return $result;
+    }
+
+    /**
+     * Merge a leading or post-operator +/- into the numeric token it signs,
+     * so "-5" and "3*-2" evaluate correctly instead of splitting into a bare
+     * operator token.
+     *
+     * @param  array<int,string|float>  $tokens
+     * @return array<int,string|float>
+     */
+    private function foldUnarySigns(array $tokens): array
+    {
+        $out = [];
+        foreach ($tokens as $token) {
+            $isSign = $token === '-' || $token === '+';
+            $prev = $out === [] ? null : $out[count($out) - 1];
+            $prevIsOperator = $prev !== null && in_array($prev, ['+', '-', '*', '/'], true);
+
+            if ($isSign && ($out === [] || $prevIsOperator)) {
+                $out[] = $token === '-' ? '-1' : '1';
+                $out[] = '*';
+                continue;
+            }
+
+            $out[] = $token;
+        }
+
+        return $out;
+    }
+
+    /** Strict numeric cast — anything non-numeric is a formula error. */
+    private function toNumber(string|float|int $token): float
+    {
+        if (is_float($token) || is_int($token)) {
+            return (float) $token;
+        }
+
+        $trimmed = trim($token);
+        if (!is_numeric($trimmed)) {
+            throw new \RuntimeException("Non-numeric token '{$token}' in formula");
+        }
+
+        return (float) $trimmed;
     }
 
     private function registerBuiltinFunctions(): void

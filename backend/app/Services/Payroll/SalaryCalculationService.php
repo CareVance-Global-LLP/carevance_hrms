@@ -2,29 +2,50 @@
 
 namespace App\Services\Payroll;
 
-use App\Models\Employee;
 use App\Models\EmployeePayrollTemplate;
-use App\Models\PayGroup;
-use App\Models\Payslip;
 use App\Models\PayslipYtdHistory;
+use App\Models\User;
+use App\Services\PTStateService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class SalaryCalculationService
 {
     /**
-     * Calculate salary for a single employee for a given month
+     * Calculate salary for a single employee for a given month.
+     *
+     * @throws RuntimeException when the employee or their payroll template is
+     *         missing. This deliberately throws rather than defaulting: a
+     *         payslip computed from absent configuration is silently wrong,
+     *         which is worse than a failed run.
      */
     public function calculateSalary(int $employeeId, int $payMonth, int $payYear): array
     {
-        $employee = Employee::with(['employeePayrollTemplate', 'payGroup'])->find($employeeId);
+        // Employees are users — there is no separate Employee model/table.
+        $employee = User::with(['employeePayrollTemplate', 'employeeWorkInfo'])->find($employeeId);
         if (!$employee) {
-            throw new \Exception("Employee not found: {$employeeId}");
+            throw new RuntimeException("Employee not found: {$employeeId}");
         }
 
+        /** @var EmployeePayrollTemplate|null $template */
         $template = $employee->employeePayrollTemplate;
-        $payGroup = $employee->payGroup;
-        $stateCode = $employee->pt_state ?? 'maharashtra';
+        if (!$template) {
+            throw new RuntimeException(
+                "No payroll template configured for employee {$employeeId}. "
+                . 'Assign a salary structure before running payroll.'
+            );
+        }
+
+        $annualCtc = (float) ($template->annual_ctc ?? 0);
+        if ($annualCtc <= 0) {
+            throw new RuntimeException(
+                "Employee {$employeeId} has no annual CTC on their payroll template."
+            );
+        }
+
+        $stateCode = $template->pt_state ?: 'maharashtra';
+        $basicPercentage = (float) ($template->basic_percentage ?? 40);
 
         // 1. Get attendance
         $attendance = $this->getAttendance($employeeId, $payMonth, $payYear);
@@ -41,9 +62,9 @@ class SalaryCalculationService
 
         // Compute monthly values from annual CTC
         $monthlyCtc = $annualCtc / 12;
-        $basic = $monthlyCtc * ($template->basic_percentage / 100);
-        $hra = $basic * (($template->hra_percentage ?? 50) / 100);
-        $da = $monthlyCtc * (($template->da_percentage ?? 0) / 100);
+        $basic = $monthlyCtc * ($basicPercentage / 100);
+        $hra = $basic * (((float) ($template->hra_percentage ?? 50)) / 100);
+        $da = $monthlyCtc * (((float) ($template->da_percentage ?? 0)) / 100);
 
         // Apply pro-rata for days worked
         $basic *= $proRataFactor;
@@ -51,27 +72,35 @@ class SalaryCalculationService
         $da *= $proRataFactor;
 
         // Conveyance, medical, special allowance are fixed (not pro-rated)
-        $conveyance = min($template->conveyance_allowance ?? 1600, 1600);
-        $medical = min($template->medical_allowance ?? 0, 1250);
-        $specialAllowance = max(0, $monthlyCtc - ($monthlyCtc * ($template->basic_percentage / 100)) - $hra - $da - $conveyance - $medical);
+        $conveyance = min((float) ($template->conveyance_allowance ?? 1600), 1600);
+        $medical = min((float) ($template->medical_allowance ?? 0), 1250);
+        $specialAllowance = max(0, $monthlyCtc - ($monthlyCtc * ($basicPercentage / 100)) - $hra - $da - $conveyance - $medical);
         $statutoryBonus = $this->calculateStatutoryBonus($basic, $payMonth, $payYear);
-        $foodAllowance = $template->food_allowance ?? 0;
+        $foodAllowance = (float) ($template->meal_allowance ?? 0);
         $overtimePay = $this->calculateOvertime($basic, $overtimeHours);
 
         // Pro-rata for mid-month joiners (override attendance-based pro-rata)
-        if ($employee->doj && $employee->doj->format('n') == $payMonth && $employee->doj->format('Y') == $payYear) {
-            $daysWorked = $totalDays - $employee->doj->format('j') + 1;
+        $joiningDate = $employee->employeeWorkInfo?->joining_date;
+        if ($joiningDate
+            && (int) $joiningDate->format('n') === $payMonth
+            && (int) $joiningDate->format('Y') === $payYear
+        ) {
+            $daysWorked = $totalDays - (int) $joiningDate->format('j') + 1;
             $proRataFactor = $totalDays > 0 ? $daysWorked / $totalDays : 1;
-            $basic = ($annualCtc / 12) * ($template->basic_percentage / 100) * $proRataFactor;
-            $hra = $basic * (($template->hra_percentage ?? 50) / 100);
-            $da = ($annualCtc / 12) * (($template->da_percentage ?? 0) / 100) * $proRataFactor;
+            $basic = $monthlyCtc * ($basicPercentage / 100) * $proRataFactor;
+            $hra = $basic * (((float) ($template->hra_percentage ?? 50)) / 100);
+            $da = $monthlyCtc * (((float) ($template->da_percentage ?? 0)) / 100) * $proRataFactor;
         }
 
         $totalEarnings = $basic + $hra + $da + $specialAllowance + $conveyance + $medical + $statutoryBonus + $foodAllowance + $overtimePay;
 
         // 3. Calculate deductions
-        // PF (on basic + DA, capped at ₹15,000) — PF is earned on days worked
-        $pfBase = min($basic + $da, $template->pf_wage_cap ?? 15000);
+        // PF (on basic + DA, capped at ₹15,000 unless the employer has opted
+        // in to contributing above the statutory wage cap).
+        $pfWages = $basic + $da;
+        $pfBase = ($template->pf_above_cap ?? false)
+            ? $pfWages
+            : min($pfWages, (float) ($template->pf_wage_cap ?? 15000));
         $pfEnabled = $template->pf_enabled ?? true;
         $pfEe = $pfEnabled ? $pfBase * (($template->pf_employee_percentage ?? 12) / 100) : 0;
         $pfEr = $pfEnabled ? $pfBase * (($template->pf_employer_percentage ?? 12) / 100) : 0;
@@ -99,8 +128,13 @@ class SalaryCalculationService
             $esiEr = 0;
         }
 
-        // Professional Tax (state-wise) — applied to LOP-adjusted gross
-        $ptAmount = $this->calculateProfessionalTax($stateCode, $lopAdjustedGross);
+        // Professional Tax (state-wise) — applied to LOP-adjusted gross.
+        // Delegated to PTStateService so there is a single source of truth for
+        // state slabs; the local copy that used to live here had drifted and
+        // carried off-by-one gaps between slab boundaries.
+        $ptAmount = ($template->pt_enabled ?? true)
+            ? PTStateService::calculate($stateCode, $lopAdjustedGross, $payMonth)
+            : 0.0;
 
         // LWF (state-wise)
         $lwfAmount = $this->calculateLwf($stateCode, $payMonth);
@@ -113,7 +147,11 @@ class SalaryCalculationService
         $advanceRecovery = $this->getAdvanceRecovery($employeeId);
         $latePenalty = $this->calculateLatePenalty($attendance);
 
-        $totalDeductions = $pfEe + $esiEe + $ptAmount + $lwfAmount + $tds + $loanEmi + $advanceRecovery + $latePenalty;
+        // $lopDeduction was previously computed and then dropped on the floor,
+        // so loss-of-pay days were never actually withheld. It belongs in the
+        // deduction total alongside the statutory items.
+        $totalDeductions = $lopDeduction + $pfEe + $esiEe + $ptAmount + $lwfAmount
+            + $tds + $loanEmi + $advanceRecovery + $latePenalty;
 
         // 4. Net pay
         $netPayable = round($totalEarnings - $totalDeductions, 2);
@@ -152,6 +190,7 @@ class SalaryCalculationService
                 'overtime' => round($overtimePay, 2),
             ],
             'deductions' => [
+                'lop' => round($lopDeduction, 2),
                 'pf_ee' => round($pfEe, 2),
                 'esi_ee' => round($esiEe, 2),
                 'pt' => round($ptAmount, 2),
@@ -179,110 +218,6 @@ class SalaryCalculationService
             'employer_contribution' => $employerContribution,
             'ytd' => $ytd,
         ];
-    }
-
-    /**
-     * Calculate professional tax based on state and gross salary
-     */
-    private function calculateProfessionalTax(string $stateCode, float $grossSalary): float
-    {
-        $slabs = $this->getPtSlabs($stateCode);
-        foreach ($slabs as $slab) {
-            $min = $slab['min'] ?? 0;
-            $max = $slab['max'] ?? PHP_INT_MAX;
-            if ($grossSalary >= $min && $grossSalary <= $max) {
-                return $slab['tax'] ?? 0;
-            }
-        }
-        return 0;
-    }
-
-    /**
-     * Get PT slabs for a state
-     */
-    private function getPtSlabs(string $stateCode): array
-    {
-        $slabs = [
-            'maharashtra' => [
-                ['min' => 0, 'max' => 7500, 'tax' => 0],
-                ['min' => 7501, 'max' => 10000, 'tax' => 175],
-                ['min' => 10001, 'max' => null, 'tax' => 200],
-            ],
-            'karnataka' => [
-                ['min' => 0, 'max' => 15000, 'tax' => 0],
-                ['min' => 15001, 'max' => null, 'tax' => 200],
-            ],
-            'gujarat' => [
-                ['min' => 0, 'max' => 12000, 'tax' => 0],
-                ['min' => 12001, 'max' => 15000, 'tax' => 150],
-                ['min' => 15001, 'max' => null, 'tax' => 200],
-            ],
-            'tamil_nadu' => [
-                ['min' => 0, 'max' => 21000, 'tax' => 0],
-                ['min' => 21001, 'max' => null, 'tax' => 200],
-            ],
-            'telangana' => [
-                ['min' => 0, 'max' => 15000, 'tax' => 0],
-                ['min' => 15001, 'max' => 20000, 'tax' => 150],
-                ['min' => 20001, 'max' => null, 'tax' => 200],
-            ],
-            'west_bengal' => [
-                ['min' => 0, 'max' => 10000, 'tax' => 0],
-                ['min' => 10001, 'max' => 15000, 'tax' => 110],
-                ['min' => 15001, 'max' => 25000, 'tax' => 130],
-                ['min' => 25001, 'max' => null, 'tax' => 200],
-            ],
-            'delhi' => [
-                ['min' => 0, 'max' => 15000, 'tax' => 0],
-                ['min' => 15001, 'max' => 25000, 'tax' => 150],
-                ['min' => 25001, 'max' => null, 'tax' => 200],
-            ],
-            'kerala' => [
-                ['min' => 0, 'max' => 12000, 'tax' => 0],
-                ['min' => 12001, 'max' => 20000, 'tax' => 120],
-                ['min' => 20001, 'max' => null, 'tax' => 200],
-            ],
-            'andhra_pradesh' => [
-                ['min' => 0, 'max' => 15000, 'tax' => 0],
-                ['min' => 15001, 'max' => 20000, 'tax' => 150],
-                ['min' => 20001, 'max' => null, 'tax' => 200],
-            ],
-            'rajasthan' => [
-                ['min' => 0, 'max' => 25000, 'tax' => 0],
-                ['min' => 25001, 'max' => null, 'tax' => 200],
-            ],
-            'uttar_pradesh' => [
-                ['min' => 0, 'max' => 21000, 'tax' => 0],
-                ['min' => 21001, 'max' => null, 'tax' => 200],
-            ],
-            'madhya_pradesh' => [
-                ['min' => 0, 'max' => 25000, 'tax' => 0],
-                ['min' => 25001, 'max' => null, 'tax' => 200],
-            ],
-            'bihar' => [
-                ['min' => 0, 'max' => 15000, 'tax' => 0],
-                ['min' => 15001, 'max' => null, 'tax' => 200],
-            ],
-            'goa' => [
-                ['min' => 0, 'max' => 15000, 'tax' => 0],
-                ['min' => 15001, 'max' => 25000, 'tax' => 150],
-                ['min' => 25001, 'max' => 40000, 'tax' => 200],
-                ['min' => 40001, 'max' => null, 'tax' => 300],
-            ],
-            'assam' => [
-                ['min' => 0, 'max' => 10000, 'tax' => 0],
-                ['min' => 10001, 'max' => 15000, 'tax' => 150],
-                ['min' => 15001, 'max' => 25000, 'tax' => 180],
-                ['min' => 25001, 'max' => null, 'tax' => 200],
-            ],
-            'himachal_pradesh' => [],
-            'manipur' => [],
-            'nagaland' => [],
-            'sikkim' => [],
-            'arunachal_pradesh' => [],
-        ];
-
-        return $slabs[$stateCode] ?? [['min' => 0, 'max' => null, 'tax' => 200]];
     }
 
     /**
@@ -424,30 +359,50 @@ class SalaryCalculationService
             'Seventeen', 'Eighteen', 'Nineteen'];
         $tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
 
-        function convertBelow1000($n, $ones, $tens) {
-            if ($n == 0) return '';
-            if ($n < 20) return $ones[$n];
-            if ($n < 100) return $tens[intdiv($n, 10)] . ($n % 10 ? ' ' . $ones[$n % 10] : '');
-            return $ones[intdiv($n, 100)] . ' Hundred' . ($n % 100 ? ' ' . convertBelow1000($n % 100, $ones, $tens) : '');
-        }
-
         $parts = [];
         if ($amount >= 10000000) {
-            $parts[] = convertBelow1000(intdiv($amount, 10000000), $ones, $tens) . ' Crore';
+            $parts[] = $this->convertBelow1000(intdiv($amount, 10000000), $ones, $tens) . ' Crore';
             $amount %= 10000000;
         }
         if ($amount >= 100000) {
-            $parts[] = convertBelow1000(intdiv($amount, 100000), $ones, $tens) . ' Lakh';
+            $parts[] = $this->convertBelow1000(intdiv($amount, 100000), $ones, $tens) . ' Lakh';
             $amount %= 100000;
         }
         if ($amount >= 1000) {
-            $parts[] = convertBelow1000(intdiv($amount, 1000), $ones, $tens) . ' Thousand';
+            $parts[] = $this->convertBelow1000(intdiv($amount, 1000), $ones, $tens) . ' Thousand';
             $amount %= 1000;
         }
         if ($amount > 0) {
-            $parts[] = convertBelow1000($amount, $ones, $tens);
+            $parts[] = $this->convertBelow1000($amount, $ones, $tens);
         }
 
         return implode(' ', $parts) . ' Rupees Only';
+    }
+
+    /**
+     * Spell out a value below 1000.
+     *
+     * This used to be declared as a plain `function` inside numberToWords(),
+     * which defines it in the global namespace on first call and then fatals
+     * with "Cannot redeclare convertBelow1000()" on the second — so any payroll
+     * run covering more than one employee died partway through.
+     *
+     * @param  array<int,string>  $ones
+     * @param  array<int,string>  $tens
+     */
+    private function convertBelow1000(int $n, array $ones, array $tens): string
+    {
+        if ($n === 0) {
+            return '';
+        }
+        if ($n < 20) {
+            return $ones[$n];
+        }
+        if ($n < 100) {
+            return $tens[intdiv($n, 10)] . ($n % 10 ? ' ' . $ones[$n % 10] : '');
+        }
+
+        return $ones[intdiv($n, 100)] . ' Hundred'
+            . ($n % 100 ? ' ' . $this->convertBelow1000($n % 100, $ones, $tens) : '');
     }
 }

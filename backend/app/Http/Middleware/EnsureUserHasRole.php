@@ -29,13 +29,18 @@ class EnsureUserHasRole
             ], 403);
         }
 
+        // Lower hierarchy level == more privilege (super_admin = 0).
+        // Each case is "at least this privileged", so a route open to
+        // employees is also open to their managers and admins. The previous
+        // `'employee' => $userLevel >= 100` inverted that one case and locked
+        // admins out of every employee-scoped route.
         $userLevel = $user->getHierarchyLevel();
         $hasAccess = $normalizedAllowedRoles->some(function (string $allowedRole) use ($userLevel) {
             return match ($allowedRole) {
                 'super_admin' => $userLevel === 0,
                 'admin' => $userLevel <= 10,
                 'manager' => $userLevel < 100,
-                'employee' => $userLevel >= 100,
+                'employee' => true,
                 default => false,
             };
         });

@@ -40,21 +40,34 @@ class PayrollCalculatorService
     const SECTION_80C_CAP = 150000;
     const SECTION_80CCD1B_CAP = 50000;
     const HEALTH_EDUCATION_CESS = 0.04;
-    // Surcharge slabs (FY 2024-25)
+    // Surcharge slabs (FY 2024-25).
+    //
+    // Boundaries are contiguous and half-open (min, max]. The previous table
+    // used min values of 10000001 / 20000001 / 50000001, which left gaps: an
+    // income of ₹1,00,00,000.50 matched no slab at all and attracted zero
+    // surcharge instead of 15%.
+    //
+    // 'new_rate' is the Sec 115BAC cap — the new regime tops out at 25%,
+    // whereas the old regime goes to 37% above ₹5Cr.
     const SURCHARGE_SLABS = [
-        ['min' => 5000000,  'max' => 10000000, 'rate' => 0.10],
-        ['min' => 10000001, 'max' => 20000000, 'rate' => 0.15],
-        ['min' => 20000001, 'max' => 50000000, 'rate' => 0.25],
-        ['min' => 50000001, 'max' => PHP_FLOAT_MAX, 'rate' => 0.25, 'capped' => 'old'],
+        ['min' => 5000000,  'max' => 10000000,      'rate' => 0.10, 'new_rate' => 0.10],
+        ['min' => 10000000, 'max' => 20000000,      'rate' => 0.15, 'new_rate' => 0.15],
+        ['min' => 20000000, 'max' => 50000000,      'rate' => 0.25, 'new_rate' => 0.25],
+        ['min' => 50000000, 'max' => PHP_FLOAT_MAX, 'rate' => 0.37, 'new_rate' => 0.25],
     ];
 
+    /**
+     * @param  float|array<string,float>  $annualTaxExemptions
+     *         Prefer the per-section map from getApprovedTaxDeductionMap().
+     *         A bare float is treated as 80C only and will be capped at 1.5L.
+     */
     public function calculatePayroll(
         float $annualCtc,
         string $stateCode = 'maharashtra',
         bool $isMetroCity = false,
         string $taxRegime = 'new',
         array $customConfig = [],
-        float $annualTaxExemptions = 0
+        float|array $annualTaxExemptions = 0
     ): array {
         $config = array_merge([
             'basic_percentage' => 0.40,
@@ -151,23 +164,39 @@ class PayrollCalculatorService
         ];
     }
 
+    /**
+     * @param  float|array<string,float>  $annualTaxExemptions
+     *         Either a per-section map (preferred, from
+     *         getApprovedTaxDeductionMap()) or a bare float, which is treated
+     *         as an 80C-only figure.
+     */
     protected function calculateEmployeeDeductions(
         float $basic,
         float $gross,
         string $stateCode,
         float $annualCtc,
         string $taxRegime,
-        float $annualTaxExemptions = 0
+        float|array $annualTaxExemptions = 0
     ): array {
         // TDS must be calculated on GROSS SALARY (CTC - employer PF - gratuity)
         // not on CTC, because employer-side contributions are not the employee's
         // taxable income. Both regimes use the same gross definition.
-        $employerPfMonthly = $this->calculateEmployerPF($basic);
-        $gratuityMonthly   = $this->calculateGratuityProvision($basic);
-        $annualGross       = max(0, ($gross) * 12);
+        $annualGross = max(0, $gross * 12);
 
-        // Exemptions only used for OLD regime. For NEW regime, only standard deduction applies.
-        $exemptions = $taxRegime === 'old' ? ['section_80c' => $annualTaxExemptions] : [];
+        // Exemptions only used for OLD regime. For NEW regime, only standard
+        // deduction applies.
+        //
+        // A bare float lands entirely in section_80c, which calculateOldRegimeTax
+        // then caps at 1.5L. Callers that pass the SUM of every section that way
+        // silently lose everything above the 80C cap — an employee with 1.5L of
+        // 80C plus 2L of home-loan interest got 1.5L of relief instead of 3.5L,
+        // roughly 60,000/yr of excess TDS. Pass the per-section map instead.
+        $exemptions = [];
+        if ($taxRegime === 'old') {
+            $exemptions = is_array($annualTaxExemptions)
+                ? $annualTaxExemptions
+                : ['section_80c' => $annualTaxExemptions];
+        }
 
         $tds = $this->calculateMonthlyTDS($annualGross, $taxRegime, $exemptions);
 
@@ -193,14 +222,31 @@ class PayrollCalculatorService
         ];
     }
 
-    public function calculateEmployeePF(float $basic): float
+    /**
+     * PF wages = basic + DA, capped at the statutory wage ceiling unless the
+     * employer has opted in to contributing above it.
+     *
+     * Callers must pass $aboveCap explicitly. They previously signalled
+     * "above the cap" by passing PHP_FLOAT_MAX as $basic, which the min()
+     * below then clamped straight back to the ceiling — so opting in produced
+     * a flat 1,800/month for everyone, and over-deducted from anyone whose
+     * basic was under 15,000.
+     */
+    public function pfWages(float $basic, float $dearnessAllowance = 0, bool $aboveCap = false): float
     {
-        return min($basic, self::PF_WAGE_CAP) * self::EMPLOYEE_PF_RATE;
+        $wages = max(0, $basic + $dearnessAllowance);
+
+        return $aboveCap ? $wages : min($wages, self::PF_WAGE_CAP);
     }
 
-    public function calculateEmployerPF(float $basic): float
+    public function calculateEmployeePF(float $basic, float $dearnessAllowance = 0, bool $aboveCap = false): float
     {
-        return min($basic, self::PF_WAGE_CAP) * self::EMPLOYER_PF_RATE;
+        return $this->pfWages($basic, $dearnessAllowance, $aboveCap) * self::EMPLOYEE_PF_RATE;
+    }
+
+    public function calculateEmployerPF(float $basic, float $dearnessAllowance = 0, bool $aboveCap = false): float
+    {
+        return $this->pfWages($basic, $dearnessAllowance, $aboveCap) * self::EMPLOYER_PF_RATE;
     }
 
     public function calculateEmployeeESI(float $gross): float
@@ -275,36 +321,130 @@ class PayrollCalculatorService
      * New regime (Sec 115BAC) surcharge capped at 25%.
      * Old regime surcharge goes up to 30% for income > ₹5Cr but marginal relief applies.
      */
+    /**
+     * Surcharge on tax for high-income individuals (FY 2024-25).
+     *
+     * $totalIncome must be TOTAL income — i.e. income after Chapter VI-A
+     * deductions and the standard deduction — not gross salary. Passing gross
+     * here overstates surcharge for anyone with meaningful deductions.
+     *
+     * Marginal relief is applied: the surcharge is capped so that the increase
+     * in total tax never exceeds the income in excess of the threshold. Without
+     * it there is a cliff at each boundary where earning ₹1 more costs lakhs.
+     */
     protected function calculateSurcharge(float $taxBeforeSurcharge, float $totalIncome, string $regime): float
     {
-        if ($totalIncome <= 5000000) return 0.0;
+        if ($totalIncome <= 5000000) {
+            return 0.0;
+        }
 
         $surchargeRate = 0.0;
-        $capped = false;
+        $threshold = 0.0;
         foreach (self::SURCHARGE_SLABS as $slab) {
             if ($totalIncome > $slab['min'] && $totalIncome <= $slab['max']) {
-                $surchargeRate = $slab['rate'];
-                $capped = ($regime === 'new' || ($slab['capped'] ?? false) === 'old');
+                $surchargeRate = $regime === 'new' ? $slab['new_rate'] : $slab['rate'];
+                $threshold = (float) $slab['min'];
                 break;
             }
         }
 
-        // New regime surcharge cap: 25% (Sec 115BAC)
-        if ($regime === 'new' && $surchargeRate > 0.25) {
-            $surchargeRate = 0.25;
+        if ($surchargeRate <= 0.0) {
+            return 0.0;
         }
 
-        return $taxBeforeSurcharge * $surchargeRate;
+        $surcharge = $taxBeforeSurcharge * $surchargeRate;
+
+        // Marginal relief: total tax may not rise by more than the excess
+        // income over the slab threshold.
+        $taxAtThreshold = $this->taxOnIncome($threshold, $regime);
+        $excessIncome = $totalIncome - $threshold;
+        $maxPayable = $taxAtThreshold + $excessIncome;
+
+        if (($taxBeforeSurcharge + $surcharge) > $maxPayable) {
+            $surcharge = max(0.0, $maxPayable - $taxBeforeSurcharge);
+        }
+
+        return $surcharge;
     }
 
+    /**
+     * Slab tax on a given TAXABLE income, before rebate/surcharge/cess.
+     * Used by the marginal-relief calculation above.
+     */
+    protected function taxOnIncome(float $taxableIncome, string $regime): float
+    {
+        $slabs = $regime === 'new' ? self::newRegimeSlabs() : self::oldRegimeSlabs();
+
+        return $this->applySlabs($taxableIncome, $slabs);
+    }
+
+    /**
+     * Walk a contiguous slab table and total the tax.
+     *
+     * @param  array<int,array{min:float|int,max:float|int,rate:float}>  $slabs
+     */
+    protected function applySlabs(float $taxableIncome, array $slabs): float
+    {
+        $tax = 0.0;
+        foreach ($slabs as $slab) {
+            if ($taxableIncome > $slab['min']) {
+                $taxableInSlab = min($taxableIncome, $slab['max']) - $slab['min'];
+                if ($taxableInSlab > 0) {
+                    $tax += $taxableInSlab * $slab['rate'];
+                }
+            }
+        }
+
+        return $tax;
+    }
+
+    /** New regime slabs (Sec 115BAC), FY 2024-25 — contiguous boundaries. */
+    protected static function newRegimeSlabs(): array
+    {
+        return [
+            ['min' => 0,       'max' => 400000,        'rate' => 0],
+            ['min' => 400000,  'max' => 800000,        'rate' => 0.05],
+            ['min' => 800000,  'max' => 1200000,       'rate' => 0.10],
+            ['min' => 1200000, 'max' => 1600000,       'rate' => 0.15],
+            ['min' => 1600000, 'max' => 2000000,       'rate' => 0.20],
+            ['min' => 2000000, 'max' => 2400000,       'rate' => 0.25],
+            ['min' => 2400000, 'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
+        ];
+    }
+
+    /** Old regime slabs, FY 2024-25 — contiguous boundaries. */
+    protected static function oldRegimeSlabs(): array
+    {
+        return [
+            ['min' => 0,       'max' => 250000,        'rate' => 0],
+            ['min' => 250000,  'max' => 500000,        'rate' => 0.05],
+            ['min' => 500000,  'max' => 1000000,       'rate' => 0.20],
+            ['min' => 1000000, 'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
+        ];
+    }
+
+    /**
+     * Loss-of-pay deduction. Guards the divisor — callers pass working-day
+     * counts derived from calendars and a zero there used to surface as an
+     * uncaught DivisionByZeroError (HTTP 500) mid pay run.
+     */
     public function calculateLOP(float $monthlyGross, int $lopDays, int $workingDays = 26): float
     {
-        return ($monthlyGross / $workingDays) * $lopDays;
+        if ($workingDays <= 0 || $lopDays <= 0) {
+            return 0.0;
+        }
+
+        // Never withhold more than the full month's gross.
+        return min($monthlyGross, ($monthlyGross / $workingDays) * $lopDays);
     }
 
     public function calculateProRatedSalary(float $monthlyGross, int $daysWorked, int $totalDays = 30): float
     {
-        return ($monthlyGross / $totalDays) * $daysWorked;
+        if ($totalDays <= 0 || $daysWorked <= 0) {
+            return 0.0;
+        }
+
+        return min($monthlyGross, ($monthlyGross / $totalDays) * $daysWorked);
     }
 
     public function getApprovedTaxDeductions(int $userId, ?string $financialYear = null): float
@@ -348,7 +488,13 @@ class PayrollCalculatorService
                     $totalDeductions += $amount;
                     break;
                 case '80G':
-                    $totalDeductions += min($amount, $amount * 0.50);
+                    // 80G is 50% or 100% deductible depending on the donee.
+                    // `min($amount, $amount * 0.50)` was always just half, and
+                    // the min() made the intent look like a cap when it wasn't.
+                    // Default to the conservative 50% band; a 100% band needs
+                    // the donee category, which the declaration item does not
+                    // currently carry.
+                    $totalDeductions += $amount * 0.50;
                     break;
                 case '80GG':
                     $totalDeductions += min($amount, 60000);
@@ -389,17 +535,33 @@ class PayrollCalculatorService
 
         $items = $declaration->items()->where('status', 'approved')->get();
 
+        // Keys MUST match what calculateOldRegimeTax() reads, i.e. the
+        // 'section_80c' form. This previously emitted bare '80c' keys while
+        // the calculator looked up 'section_80c', so every approved
+        // declaration silently evaluated to zero and employees were taxed as
+        // though they had declared nothing.
         $bySection = [];
         foreach ($items as $item) {
             $amount = (float) $item->approved_amount;
             if ($amount <= 0) continue;
-            // Lower-cased section key so callers can do
-            // $map['section_80c'] or $map['80c'] interchangeably.
-            $key = strtolower((string) $item->section);
+
+            $key = self::exemptionKey((string) $item->section);
             $bySection[$key] = ($bySection[$key] ?? 0) + $amount;
         }
 
         return $bySection;
+    }
+
+    /**
+     * Normalise a declaration section code ('80C', '80c', '24B', 'section_80c')
+     * to the single canonical key the tax calculators read: 'section_80c'.
+     */
+    public static function exemptionKey(string $section): string
+    {
+        $normalized = strtolower(trim($section));
+        $normalized = preg_replace('/^section[_\s-]*/', '', $normalized) ?? $normalized;
+
+        return 'section_' . $normalized;
     }
 
     public function getCurrentFinancialYear(): string
@@ -426,9 +588,13 @@ class PayrollCalculatorService
      * surface stable. The previously-hardcoded slabs for 3 states were
      * removed because they had drifted from the official rates.
      */
-    public function calculatePT(float $gross, string $state = 'maharashtra'): float
+    public function calculatePT(float $gross, string $state = 'maharashtra', ?int $month = null): float
     {
-        return PTStateService::calculate($state, $gross);
+        // $month must be threaded through for states with a special-month
+        // instalment (Maharashtra's higher February PT). Omitting it silently
+        // under-collects: 12 x 200 = 2,400 against the 2,500 statutory annual
+        // figure, leaving a shortfall plus interest on the PT return.
+        return PTStateService::calculate($state, $gross, $month);
     }
 
     public function calculateNewRegimeTax(float $annualIncome, array $exemptions = []): array
@@ -437,35 +603,27 @@ class PayrollCalculatorService
         // No HRA, LTA, 80C, 80D, 24(b) etc. exemptions.
         $taxableIncome = max(0, $annualIncome - self::STANDARD_DEDUCTION_NEW);
 
-        // New regime slabs (Sec 115BAC) — FY 2024-25, contiguous boundaries.
-        // The rebate u/s 87A is on TOTAL income (annualIncome), not on taxable income.
-        $slabs = [
-            ['min' => 0,         'max' => 400000,    'rate' => 0],
-            ['min' => 400000,    'max' => 800000,    'rate' => 0.05],
-            ['min' => 800000,    'max' => 1200000,   'rate' => 0.10],
-            ['min' => 1200000,   'max' => 1600000,   'rate' => 0.15],
-            ['min' => 1600000,   'max' => 2000000,   'rate' => 0.20],
-            ['min' => 2000000,   'max' => 2400000,   'rate' => 0.25],
-            ['min' => 2400000,   'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
-        ];
+        $tax = $this->applySlabs($taxableIncome, self::newRegimeSlabs());
 
-        $tax = 0;
-        foreach ($slabs as $slab) {
-            if ($taxableIncome > $slab['min']) {
-                $taxableInSlab = min($taxableIncome, $slab['max']) - $slab['min'];
-                if ($taxableInSlab > 0) {
-                    $tax += $taxableInSlab * $slab['rate'];
-                }
-            }
+        // 87A rebate: full rebate when TOTAL income <= ₹12L.
+        //
+        // "Total income" in Sec 87A is the income chargeable to tax — i.e.
+        // income AFTER the standard deduction — not gross salary. This
+        // previously compared against gross, so an employee on ₹12.5L gross
+        // (₹11.75L taxable, legally nil tax) was charged roughly ₹70,000.
+        //
+        // Marginal relief also applies just above the threshold: tax may not
+        // exceed the amount by which taxable income overshoots ₹12L.
+        if ($taxableIncome <= self::REBATE_LIMIT_NEW) {
+            $rebate = $tax;
+        } else {
+            $excess = $taxableIncome - self::REBATE_LIMIT_NEW;
+            $rebate = $tax > $excess ? $tax - $excess : 0.0;
         }
-
-        // 87A rebate: full tax rebate if TOTAL income (annualIncome) <= ₹12L.
-        // Sec 87A reads "total income of the assessee ... does not exceed ₹12,00,000".
-        $rebate = ($annualIncome <= self::REBATE_LIMIT_NEW) ? $tax : 0;
         $taxAfterRebate = max(0, $tax - $rebate);
 
-        // Surcharge for income > ₹50L (capped at 25% for new regime)
-        $surcharge = $this->calculateSurcharge($taxAfterRebate, $annualIncome, 'new');
+        // Surcharge for income > ₹50L, assessed on total (taxable) income.
+        $surcharge = $this->calculateSurcharge($taxAfterRebate, $taxableIncome, 'new');
         $taxWithSurcharge = $taxAfterRebate + $surcharge;
 
         // Health & Education Cess: 4% on (tax + surcharge)
@@ -495,43 +653,35 @@ class PayrollCalculatorService
         $section80g = $exemptions['section_80g'] ?? 0;
         $section80gg = min($exemptions['section_80gg'] ?? 0, 60000);
         $section80tta = min($exemptions['section_80tta'] ?? 0, 10000);
+        $section80ttb = min($exemptions['section_80ttb'] ?? 0, 50000);
         $section24b = min($exemptions['section_24b'] ?? 0, 200000);
-        $npsDeduction = min($exemptions['section_80ccd'] ?? 0, 50000);
+        // Declarations may arrive under either the 80CCD(1B) code or the
+        // shorter 80CCD form; both mean the additional NPS deduction.
+        $npsDeduction = min(
+            ($exemptions['section_80ccd1b'] ?? 0) ?: ($exemptions['section_80ccd'] ?? 0),
+            self::SECTION_80CCD1B_CAP
+        );
         $hraExemption = min($exemptions['hra_exemption'] ?? 0, $annualIncome); // computed externally
 
         $standardDeduction = self::STANDARD_DEDUCTION_OLD;
         $totalDeductions = $standardDeduction
             + $section80c + $section80d + $section80dd + $section80ddb
-            + $section80e + $section80g + $section80gg + $section80tta
+            + $section80e + $section80g + $section80gg + $section80tta + $section80ttb
             + $section24b + $npsDeduction + $hraExemption;
         $taxableIncome = max(0, $annualIncome - $totalDeductions);
 
-        // Old regime slabs — FY 2024-25, contiguous boundaries (the old
-        // "+1" offsets caused fractional-rupee under-charges at slab edges).
-        $slabs = [
-            ['min' => 0,        'max' => 250000,     'rate' => 0],
-            ['min' => 250000,   'max' => 500000,     'rate' => 0.05],
-            ['min' => 500000,   'max' => 1000000,    'rate' => 0.20],
-            ['min' => 1000000,  'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
-        ];
+        $tax = $this->applySlabs($taxableIncome, self::oldRegimeSlabs());
 
-        $tax = 0;
-        foreach ($slabs as $slab) {
-            if ($taxableIncome > $slab['min']) {
-                $taxableInSlab = min($taxableIncome, $slab['max']) - $slab['min'];
-                if ($taxableInSlab > 0) {
-                    $tax += $taxableInSlab * $slab['rate'];
-                }
-            }
-        }
-
-        // 87A rebate: max ₹12,500 if TOTAL income (annualIncome) <= ₹5L.
-        // Sec 87A reads "total income of the assessee ... does not exceed ₹5,00,000".
-        $rebate = ($annualIncome <= self::REBATE_LIMIT_OLD) ? min($tax, self::REBATE_MAX_OLD) : 0;
+        // 87A rebate: up to ₹12,500 when TOTAL income <= ₹5L. As in the new
+        // regime, "total income" means income after deductions, not gross.
+        $rebate = ($taxableIncome <= self::REBATE_LIMIT_OLD)
+            ? min($tax, self::REBATE_MAX_OLD)
+            : 0;
         $taxAfterRebate = max(0, $tax - $rebate);
 
-        // Surcharge (up to 30% for income > ₹5Cr in old regime; capped at 25% for > ₹2Cr)
-        $surcharge = $this->calculateSurcharge($taxAfterRebate, $annualIncome, 'old');
+        // Surcharge (up to 37% above ₹5Cr in the old regime), assessed on
+        // total (taxable) income with marginal relief.
+        $surcharge = $this->calculateSurcharge($taxAfterRebate, $taxableIncome, 'old');
         $taxWithSurcharge = $taxAfterRebate + $surcharge;
 
         // Health & Education Cess: 4% on (tax + surcharge)
@@ -557,6 +707,7 @@ class PayrollCalculatorService
                 '80g' => $section80g,
                 '80gg' => $section80gg,
                 '80tta' => $section80tta,
+                '80ttb' => $section80ttb,
                 '24b' => $section24b,
                 '80ccd_nps' => $npsDeduction,
                 'hra_exemption' => $hraExemption,
@@ -668,8 +819,16 @@ class PayrollCalculatorService
                     'value'    => round($value, 2),
                 ];
             } catch (\Throwable $e) {
-                // Log but don't fail the entire payroll run
-                \Log::warning("Salary formula evaluation failed for component {$component->code}: " . $e->getMessage());
+                // A component that fails to evaluate must not be silently
+                // dropped — that yields a payslip missing a salary line with
+                // nobody aware of it. Surface it so the run stops and the
+                // formula gets fixed.
+                throw new \RuntimeException(
+                    "Salary formula for component {$component->code} could not be evaluated: "
+                    . $e->getMessage(),
+                    0,
+                    $e
+                );
             }
         }
 

@@ -27,27 +27,31 @@ return new class extends Migration
             $table->unique(['organization_id', 'bank_name']);
         });
 
+        // Canonical bank_transfer_batches schema — this matches the
+        // BankTransferBatch model (batch_name, total_employees). A second,
+        // conflicting definition of this table lived in
+        // 2026_07_20_000003_create_bank_transfer_batches and aborted the
+        // migration run with "table already exists"; that one is now a guarded
+        // no-op and this is the single owner.
+        //
+        // The table is defined here rather than in the later migration because
+        // bank_transfer_items (created below) carries a foreign key to it.
         Schema::create('bank_transfer_batches', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
             $table->foreignId('payroll_run_id')->nullable()->constrained('payroll_monthly_runs')->nullOnDelete();
-            $table->string('batch_reference')->unique();
-            $table->string('bank_name');
+            $table->string('batch_name', 255);
+            $table->string('bank_name', 255);
             $table->decimal('total_amount', 14, 2)->default(0);
-            $table->integer('total_transactions')->default(0);
-            $table->integer('success_count')->default(0);
-            $table->integer('failure_count')->default(0);
-            $table->string('status')->default('pending'); // pending, processing, completed, failed, partially_completed
-            $table->string('file_format')->default('csv'); // csv, xml
-            $table->string('file_path')->nullable();
-            $table->json('api_response')->nullable();
-            $table->string('error_message')->nullable();
+            $table->integer('total_employees')->default(0);
+            $table->string('status', 20)->default('pending');
+            $table->string('file_path', 255)->nullable();
             $table->timestamp('processed_at')->nullable();
-            $table->timestamp('completed_at')->nullable();
-            $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
 
             $table->index(['organization_id', 'status']);
+            $table->index(['organization_id', 'payroll_run_id']);
             $table->index(['payroll_run_id']);
         });
 

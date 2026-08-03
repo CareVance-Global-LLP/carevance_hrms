@@ -3,359 +3,317 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Employee;
 use App\Models\Payslip;
 use App\Models\PayslipYtdHistory;
+use App\Models\User;
 use App\Services\Payroll\SalaryCalculationService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
+/**
+ * Payslip endpoints.
+ *
+ * Every query here is tenant-scoped. Payslip carries the
+ * BelongsToOrganization trait, so the global scope constrains reads to the
+ * acting user's organization automatically; the explicit ownership checks
+ * below add the second layer (an employee may only read their own payslip,
+ * while payroll staff may read any within their organization).
+ */
 class PayslipController extends Controller
 {
-    protected SalaryCalculationService $calculationService;
+    /** Roles permitted to see payslips belonging to other employees. */
+    private const PAYROLL_ROLES = ['super_admin', 'admin', 'hr', 'payroll_manager'];
 
-    public function __construct(SalaryCalculationService $calculationService)
-    {
-        $this->calculationService = $calculationService;
+    public function __construct(
+        private readonly SalaryCalculationService $calculationService,
+    ) {
     }
 
     /**
-     * Generate payslips for all employees in a pay group for a given month
+     * Generate payslips for every active employee in the organization for a
+     * given month.
      */
     public function generate(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'pay_group_id' => 'required|integer|exists:pay_groups,id',
             'pay_month' => 'required|integer|between:1,12',
-            'pay_year' => 'required|integer|between:2020,2030',
+            'pay_year' => 'required|integer|between:2020,2100',
         ]);
 
-        $payGroupId = $validated['pay_group_id'];
-        $payMonth = $validated['pay_month'];
-        $payYear = $validated['pay_year'];
-
-        // Check for existing payslips
-        $existing = Payslip::where('pay_group_id', $payGroupId)
-            ->where('pay_month', $payMonth)
-            ->where('pay_year', $payYear)
-            ->exists();
-
-        if ($existing) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Payslips already generated for this pay group and month.',
-            ], 422);
+        $actor = $request->user();
+        if (!$this->canManagePayroll($actor)) {
+            return $this->forbidden();
         }
 
-        // Get all active employees in this pay group
-        $employees = Employee::where('pay_group_id', $payGroupId)
-            ->where('is_active', true)
-            ->get();
+        $organizationId = (int) $actor->organization_id;
+        $payMonth = (int) $validated['pay_month'];
+        $payYear = (int) $validated['pay_year'];
+        $periodMonth = Payslip::periodMonth($payMonth, $payYear);
+
+        // Payroll eligibility is "has an active payroll template", not
+        // User::is_active — that accessor is hardcoded to true and filters
+        // nothing. An employee without a template cannot be calculated at all
+        // (SalaryCalculationService throws), so this is the real gate.
+        $employees = User::query()
+            ->where('organization_id', $organizationId)
+            ->whereHas('employeePayrollTemplate', fn ($q) => $q->where('is_active', true))
+            ->pluck('id');
 
         if ($employees->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'message' => 'No active employees found in this pay group.',
+                'message' => 'No employees with an active payroll template were found.',
             ], 422);
         }
 
         $generated = 0;
+        $skipped = 0;
         $errors = [];
 
-        DB::beginTransaction();
-        try {
-            foreach ($employees as $employee) {
-                try {
-                    $result = $this->calculationService->calculateSalary($employee->id, $payMonth, $payYear);
+        foreach ($employees as $employeeId) {
+            // Each employee is its own transaction. A single misconfigured
+            // employee rolls back only their own rows instead of poisoning
+            // — or silently half-committing — the whole run, which is what
+            // the previous single outer transaction plus swallowed inner
+            // catch actually did.
+            try {
+                DB::transaction(function () use ($employeeId, $organizationId, $payMonth, $payYear, $periodMonth, $actor, &$generated, &$skipped) {
+                    $exists = Payslip::query()
+                        ->where('user_id', $employeeId)
+                        ->where('period_month', $periodMonth)
+                        ->lockForUpdate()
+                        ->exists();
 
-                    $payslipNumber = Payslip::generateNumber($payMonth, $payYear);
+                    if ($exists) {
+                        $skipped++;
+                        return;
+                    }
 
-                    $payslip = Payslip::create([
-                        'pay_group_id' => $payGroupId,
-                        'user_id' => $employee->id,
-                        'employee_id' => $employee->id,
-                        'pay_month' => $payMonth,
-                        'pay_year' => $payYear,
-                        'payslip_number' => $payslipNumber,
-                        'status' => 'generated',
-                        'total_days' => $result['attendance']['total_days'],
-                        'days_present' => $result['attendance']['days_present'],
-                        'paid_leave' => $result['attendance']['paid_leave'],
-                        'lop_days' => $result['attendance']['lop_days'],
-                        'half_days' => $result['attendance']['half_days'],
-                        'overtime_hours' => $result['attendance']['overtime_hours'],
-                        'earnings' => $result['earnings'],
-                        'total_earnings' => $result['total_earnings'],
-                        'deductions' => $result['deductions'],
-                        'total_deductions' => $result['total_deductions'],
-                        'net_payable' => $result['net_payable'],
-                        'net_pay_words' => $result['net_pay_words'],
-                        'pf_ee' => $result['statutory']['pf_ee'],
-                        'pf_er' => $result['statutory']['pf_er'],
-                        'edli' => $result['statutory']['edli'],
-                        'admin_charges' => $result['statutory']['admin_charges'],
-                        'esi_ee' => $result['statutory']['esi_ee'],
-                        'esi_er' => $result['statutory']['esi_er'],
-                        'pt_amount' => $result['statutory']['pt'],
-                        'lwf_ee' => $result['statutory']['lwf'],
-                        'lwf_er' => $result['statutory']['lwf'],
-                        'tds' => $result['statutory']['tds'],
-                        'loan_emi' => $result['deductions']['loan_emi'],
-                        'advance_recovery' => $result['deductions']['advance_recovery'],
-                        'late_penalty' => $result['deductions']['late_penalty'],
-                        'employer_contribution' => $result['employer_contribution'],
-                        'total_employer_contribution' => $result['employer_contribution']['total'],
-                        'ytd_gross' => $result['ytd']['gross'],
-                        'ytd_deductions' => $result['ytd']['deductions'],
-                        'ytd_net' => $result['ytd']['net'],
-                        'ytd_pf_ee' => $result['ytd']['pf_ee'],
-                        'ytd_esi_ee' => $result['ytd']['esi_ee'],
-                        'ytd_pt' => $result['ytd']['pt'],
-                        'ytd_lwf' => $result['ytd']['lwf'],
+                    $result = $this->calculationService->calculateSalary($employeeId, $payMonth, $payYear);
+
+                    Payslip::create([
+                        'organization_id' => $organizationId,
+                        'user_id' => $employeeId,
+                        'period_month' => $periodMonth,
+                        'currency' => 'INR',
+                        'basic_salary' => $result['earnings']['basic'] ?? 0,
+                        'total_allowances' => max(0, ($result['total_earnings'] ?? 0) - ($result['earnings']['basic'] ?? 0)),
+                        'total_deductions' => $result['total_deductions'] ?? 0,
+                        'net_salary' => $result['net_payable'] ?? 0,
+                        'allowances' => $result['earnings'] ?? [],
+                        'deductions' => $result['deductions'] ?? [],
+                        'generated_by' => $actor->id,
+                        'generated_at' => now(),
+                        'payment_status' => 'pending',
                     ]);
 
-                    // Save YTD history
                     PayslipYtdHistory::updateOrCreate(
                         [
-                            'employee_id' => $employee->id,
+                            'employee_id' => $employeeId,
                             'pay_month' => $payMonth,
                             'pay_year' => $payYear,
                         ],
                         [
-                            'gross' => $result['total_earnings'],
-                            'deductions' => $result['total_deductions'],
-                            'net' => $result['net_payable'],
-                            'pf_ee' => $result['statutory']['pf_ee'],
-                            'esi_ee' => $result['statutory']['esi_ee'],
-                            'pt' => $result['statutory']['pt'],
-                            'lwf' => $result['statutory']['lwf'],
+                            'gross' => $result['total_earnings'] ?? 0,
+                            'deductions' => $result['total_deductions'] ?? 0,
+                            'net' => $result['net_payable'] ?? 0,
+                            'pf_ee' => $result['statutory']['pf_ee'] ?? 0,
+                            'esi_ee' => $result['statutory']['esi_ee'] ?? 0,
+                            'pt' => $result['statutory']['pt'] ?? 0,
+                            'lwf' => $result['statutory']['lwf'] ?? 0,
                         ]
                     );
 
                     $generated++;
-                } catch (\Exception $e) {
-                    $errors[] = "Employee {$employee->id}: " . $e->getMessage();
-                    Log::error("Payslip generation failed for employee {$employee->id}", ['error' => $e->getMessage()]);
+                });
+            } catch (QueryException $e) {
+                // Unique violation on (organization_id, user_id, period_month)
+                // means a concurrent run won the race — that is a skip, not a
+                // failure.
+                if ($this->isUniqueViolation($e)) {
+                    $skipped++;
+                    continue;
                 }
+                $errors[] = ['employee_id' => $employeeId, 'message' => 'Database error.'];
+                Log::error('Payslip generation DB error', [
+                    'employee_id' => $employeeId,
+                    'period' => $periodMonth,
+                    'error' => $e->getMessage(),
+                ]);
+            } catch (Throwable $e) {
+                $errors[] = ['employee_id' => $employeeId, 'message' => $e->getMessage()];
+                Log::error('Payslip generation failed', [
+                    'employee_id' => $employeeId,
+                    'period' => $periodMonth,
+                    'error' => $e->getMessage(),
+                ]);
             }
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => "{$generated} payslips generated successfully.",
-                'data' => [
-                    'generated' => $generated,
-                    'total_employees' => $employees->count(),
-                    'errors' => $errors,
-                ],
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to generate payslips: ' . $e->getMessage(),
-            ], 500);
         }
+
+        // Report failure honestly: if nothing was generated and something went
+        // wrong, this is not a success.
+        $success = $generated > 0 || empty($errors);
+
+        return response()->json([
+            'success' => $success,
+            'message' => sprintf(
+                '%d payslip(s) generated, %d skipped, %d failed.',
+                $generated,
+                $skipped,
+                count($errors)
+            ),
+            'data' => [
+                'generated' => $generated,
+                'skipped' => $skipped,
+                'failed' => count($errors),
+                'total_employees' => $employees->count(),
+                'errors' => $errors,
+            ],
+        ], $success ? 200 : 422);
     }
 
     /**
-     * List payslips for a pay group/month
+     * List payslips for a month within the acting user's organization.
      */
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'pay_group_id' => 'required|integer',
             'pay_month' => 'required|integer|between:1,12',
-            'pay_year' => 'required|integer',
+            'pay_year' => 'required|integer|between:2020,2100',
         ]);
 
-        $payslips = Payslip::with(['employee'])
-            ->where('pay_group_id', $validated['pay_group_id'])
-            ->where('pay_month', $validated['pay_month'])
-            ->where('pay_year', $validated['pay_year'])
-            ->orderBy('payslip_number')
-            ->get()
-            ->map(function ($payslip) {
-                return [
-                    'id' => $payslip->id,
-                    'payslip_number' => $payslip->payslip_number,
-                    'employee_name' => $payslip->employee?->name ?? 'N/A',
-                    'employee_code' => $payslip->employee?->employee_code ?? 'N/A',
-                    'designation' => $payslip->employee?->designation ?? 'N/A',
-                    'department' => $payslip->employee?->department?->name ?? 'N/A',
-                    'net_payable' => $payslip->net_payable,
-                    'status' => $payslip->status,
-                    'has_pdf' => !empty($payslip->pdf_path),
-                ];
-            });
+        $actor = $request->user();
+        $periodMonth = Payslip::periodMonth((int) $validated['pay_month'], (int) $validated['pay_year']);
 
-        return response()->json([
-            'success' => true,
-            'data' => $payslips,
+        $query = Payslip::query()
+            ->with(['user:id,name,email'])
+            ->where('period_month', $periodMonth);
+
+        // Employees see only their own row; payroll staff see the whole org.
+        if (!$this->canManagePayroll($actor)) {
+            $query->where('user_id', $actor->id);
+        }
+
+        $payslips = $query->orderBy('id')->get()->map(fn (Payslip $payslip) => [
+            'id' => $payslip->id,
+            'payslip_number' => $payslip->payslip_number,
+            'employee_name' => $payslip->user?->name ?? 'N/A',
+            'employee_email' => $payslip->user?->email ?? 'N/A',
+            'period_month' => $payslip->period_month,
+            'net_payable' => $payslip->net_salary,
+            'payment_status' => $payslip->payment_status,
         ]);
+
+        return response()->json(['success' => true, 'data' => $payslips]);
     }
 
     /**
-     * Get single payslip details
+     * Show a single payslip.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
-        $payslip = Payslip::with(['employee.organization', 'payGroup'])->find($id);
+        $payslip = Payslip::with(['user', 'organization'])->find($id);
 
         if (!$payslip) {
             return response()->json(['success' => false, 'message' => 'Payslip not found.'], 404);
         }
 
-        $employee = $payslip->employee;
-        $org = $employee?->organization;
-
-        $companyAddress = null;
-        if ($org) {
-            $addressParts = array_filter([
-                $org->address_line,
-                trim(($org->city ?? '') . ', ' . ($org->state ?? '') . ' ' . ($org->postal_code ?? '')),
-                $org->country,
-            ]);
-            $companyAddress = implode(', ', $addressParts) ?: null;
+        if (!$this->canView($request->user(), $payslip)) {
+            return $this->forbidden();
         }
 
-        $logoUrl = null;
-        if ($org) {
-            $logoUrl = $org->settings['branding']['logo_url'] ?? null;
-        }
+        $employee = $payslip->user;
+        $org = $payslip->organization;
 
         return response()->json([
             'success' => true,
             'data' => [
                 'id' => $payslip->id,
                 'payslip_number' => $payslip->payslip_number,
+                'period_month' => $payslip->period_month,
                 'pay_month' => $payslip->pay_month,
                 'pay_year' => $payslip->pay_year,
-                'status' => $payslip->status,
-                'attendance' => [
-                    'total_days' => $payslip->total_days,
-                    'days_present' => $payslip->days_present,
-                    'paid_leave' => $payslip->paid_leave,
-                    'lop_days' => $payslip->lop_days,
-                    'half_days' => $payslip->half_days,
-                    'overtime_hours' => $payslip->overtime_hours,
-                ],
-                'earnings' => $payslip->earnings,
-                'deductions' => $payslip->deductions,
-                'total_earnings' => $payslip->total_earnings,
+                'currency' => $payslip->currency,
+                'basic_salary' => $payslip->basic_salary,
+                'total_allowances' => $payslip->total_allowances,
                 'total_deductions' => $payslip->total_deductions,
-                'net_payable' => $payslip->net_payable,
-                'net_pay_words' => $payslip->net_pay_words,
-                'statutory' => [
-                    'pf_ee' => $payslip->pf_ee,
-                    'pf_er' => $payslip->pf_er,
-                    'esi_ee' => $payslip->esi_ee,
-                    'esi_er' => $payslip->esi_er,
-                    'pt' => $payslip->pt_amount,
-                    'lwf' => $payslip->lwf_ee,
-                    'tds' => $payslip->tds,
-                ],
-                'employer_contribution' => $payslip->employer_contribution,
-                'ytd' => [
-                    'gross' => $payslip->ytd_gross,
-                    'deductions' => $payslip->ytd_deductions,
-                    'net' => $payslip->ytd_net,
-                    'pf_ee' => $payslip->ytd_pf_ee,
-                    'esi_ee' => $payslip->ytd_esi_ee,
-                    'pt' => $payslip->ytd_pt,
-                    'lwf' => $payslip->ytd_lwf,
-                ],
+                'net_payable' => $payslip->net_salary,
+                'earnings' => $payslip->allowances ?? [],
+                'deductions' => $payslip->deductions ?? [],
+                'payment_status' => $payslip->payment_status,
+                'paid_at' => $payslip->paid_at?->toIso8601String(),
                 'employee' => $employee ? [
                     'id' => $employee->id,
                     'name' => $employee->name,
-                    'employee_code' => $employee->employee_code ?? '',
-                    'designation' => $employee->designation ?? '',
-                    'department' => $employee->department?->name ?? '',
-                    'date_of_joining' => $employee->doj?->format('d-M-Y') ?? '',
-                    'pan' => $employee->pan_number ?? '',
-                    'uan' => $employee->uan_number ?? '',
-                    'pf_account' => $employee->pf_account ?? '',
-                    'bank_account' => $employee->bank_account ?? '',
-                    'ifsc' => $employee->ifsc ?? '',
-                    'pt_state' => $employee->pt_state ?? '',
+                    'email' => $employee->email,
                 ] : null,
                 'organization' => $org ? [
                     'name' => $org->name,
-                    'logo_url' => $logoUrl,
-                    'address' => $companyAddress,
-                    'pan' => $org->pan ?? null,
+                    'logo_url' => $org->settings['branding']['logo_url'] ?? null,
                 ] : null,
-                'has_pdf' => !empty($payslip->pdf_path),
-                'pdf_url' => $payslip->pdf_path ? Storage::url($payslip->pdf_path) : null,
-                'created_at' => $payslip->created_at->format('d-M-Y H:i'),
+                'generated_at' => $payslip->generated_at?->toIso8601String(),
+                'created_at' => $payslip->created_at?->toIso8601String(),
             ],
         ]);
     }
 
     /**
-     * Download payslip PDF — always regenerates fresh to avoid stale cached PDFs.
+     * Return a download URL for the payslip PDF.
      */
-    public function downloadPdf(int $id): JsonResponse
+    public function downloadPdf(Request $request, int $id): JsonResponse
     {
-        $payslip = Payslip::with(['user.payrollItems.payrollRun'])->find($id);
+        $payslip = Payslip::with(['user', 'organization'])->find($id);
 
         if (!$payslip) {
             return response()->json(['success' => false, 'message' => 'Payslip not found.'], 404);
         }
 
-        // Find the PayrollItem matching this payslip's user + month
-        $monthYear = sprintf('%d-%02d', $payslip->pay_year, $payslip->pay_month);
-        $payrollItem = $payslip->user?->payrollItems?->first(function ($item) use ($monthYear) {
-            return $item->payrollRun?->month_year === $monthYear;
-        });
-
-        if (!$payrollItem) {
-            // Fallback: try loading PayrollItem directly
-            $payrollItem = \App\Models\PayrollItem::where('user_id', $payslip->user_id)
-                ->whereHas('payrollRun', function ($q) use ($monthYear) {
-                    $q->where('month_year', $monthYear);
-                })
-                ->first();
+        if (!$this->canView($request->user(), $payslip)) {
+            return $this->forbidden();
         }
 
-        if (!$payrollItem) {
-            return response()->json(['success' => false, 'message' => 'Payroll data not found for this payslip.'], 404);
+        $path = sprintf('payslips/%d/%s.pdf', $payslip->user_id, $payslip->period_month);
+
+        if (!Storage::exists($path)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payslip PDF has not been generated yet.',
+            ], 404);
         }
-
-        // Generate fresh PDF using the same service PayrollController uses
-        $pdfService = new \App\Services\PayrollPdfService();
-        $pdf = $pdfService->generatePayslip($payrollItem);
-
-        // Store the fresh PDF
-        $pdfContent = $pdf->output();
-        $pdfPath = "payslips/{$payslip->user_id}/{$monthYear}.pdf";
-        Storage::put($pdfPath, $pdfContent);
-
-        // Update payslip record with fresh path and timestamp
-        $payslip->update([
-            'pdf_path' => $pdfPath,
-            'pdf_generated_at' => now(),
-            'status' => 'downloaded',
-        ]);
 
         return response()->json([
             'success' => true,
-            'url' => Storage::url($pdfPath),
+            'url' => Storage::url($path),
         ]);
     }
 
     /**
-     * Get YTD data for an employee
+     * Year-to-date history for an employee.
      */
-    public function ytd(int $employeeId, Request $request): JsonResponse
+    public function ytd(Request $request, int $id): JsonResponse
     {
-        $payYear = $request->get('pay_year', date('Y'));
+        $validated = $request->validate([
+            'pay_year' => 'nullable|integer|between:2020,2100',
+        ]);
 
-        $history = PayslipYtdHistory::where('employee_id', $employeeId)
+        $payslip = Payslip::find($id);
+        if (!$payslip) {
+            return response()->json(['success' => false, 'message' => 'Payslip not found.'], 404);
+        }
+
+        if (!$this->canView($request->user(), $payslip)) {
+            return $this->forbidden();
+        }
+
+        $payYear = (int) ($validated['pay_year'] ?? $payslip->pay_year);
+
+        $history = PayslipYtdHistory::query()
+            ->where('employee_id', $payslip->user_id)
             ->where('pay_year', $payYear)
             ->orderBy('pay_month')
             ->get();
@@ -363,6 +321,52 @@ class PayslipController extends Controller
         return response()->json([
             'success' => true,
             'data' => $history,
+            'totals' => PayslipYtdHistory::totalsFor($payslip->user_id, $payYear, 12),
         ]);
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private function canManagePayroll(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        return in_array(strtolower((string) $user->role), self::PAYROLL_ROLES, true);
+    }
+
+    /**
+     * An employee may read their own payslip; payroll staff may read any
+     * payslip inside their own organization. The global tenant scope has
+     * already excluded other organizations before this runs.
+     */
+    private function canView(?User $user, Payslip $payslip): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ((int) $payslip->user_id === (int) $user->id) {
+            return true;
+        }
+
+        return $this->canManagePayroll($user)
+            && (int) $payslip->organization_id === (int) $user->organization_id;
+    }
+
+    private function forbidden(): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'Forbidden',
+            'error_code' => 'FORBIDDEN',
+        ], 403);
+    }
+
+    private function isUniqueViolation(QueryException $e): bool
+    {
+        // 23000/23505 cover MySQL and PostgreSQL integrity constraint violations.
+        return in_array((string) $e->getCode(), ['23000', '23505'], true);
     }
 }

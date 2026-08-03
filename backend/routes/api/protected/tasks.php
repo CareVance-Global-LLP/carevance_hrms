@@ -37,7 +37,10 @@ Route::put('/tasks/recurrence/{recurrence}', [TaskController::class, 'updateRecu
 Route::delete('/tasks/recurrence/{recurrence}', [TaskController::class, 'destroyRecurrence']);
 
 Route::patch('/tasks/{task}/remind', [TaskController::class, 'updateReminder']);
-Route::post('/time-entries/start', [TimeEntryController::class, 'start']);
+// Offline clients replay this on reconnect, so it must be idempotent on
+// (local_id, device_id) — otherwise a retried start creates a second timer.
+Route::post('/time-entries/start', [TimeEntryController::class, 'start'])
+    ->middleware('idempotent.sync:TimeEntry');
 Route::post('/time-entries/stop', [TimeEntryController::class, 'stop']);
 Route::get('/time-entries/active', [TimeEntryController::class, 'active']);
 Route::get('/time-entries/today', [TimeEntryController::class, 'today']);

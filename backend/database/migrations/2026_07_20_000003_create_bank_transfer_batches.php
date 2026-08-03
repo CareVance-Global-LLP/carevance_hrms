@@ -8,6 +8,14 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // SUPERSEDED: bank_transfer_batches is owned by
+        // 2026_06_11_000008_create_bank_integration_tables, which defines the
+        // same (canonical) schema and is referenced by bank_transfer_items.
+        // Guarded so this migration is inert instead of aborting the run.
+        if (Schema::hasTable('bank_transfer_batches')) {
+            return;
+        }
+
         Schema::create('bank_transfer_batches', function (Blueprint $table) {
             $table->id();
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();

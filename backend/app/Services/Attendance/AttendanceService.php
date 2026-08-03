@@ -123,8 +123,45 @@ class AttendanceService
         ];
     }
 
-    public function checkIn(?User $user, ?float $latitude = null, ?float $longitude = null): array
+    /**
+     * Resolve an offline-supplied punch timestamp.
+     *
+     * Mirrors the timer's started_at handling: a client timestamp is honoured
+     * whenever it is not in the future (skewed device clock), with no staleness
+     * cap — re-stamping a buffered punch as "now" would file it into the wrong
+     * attendance day.
+     */
+    private function resolveSyncTimestamp(?string $raw): Carbon
     {
+        $now = now();
+
+        if (!$raw) {
+            return $now;
+        }
+
+        try {
+            // Normalise to the app timezone so a buffered punch is filed on
+            // the calendar day it actually happened.
+            $parsed = Carbon::parse($raw)->setTimezone(config('app.timezone', 'UTC'));
+        } catch (\Throwable) {
+            return $now;
+        }
+
+        return $parsed->greaterThan($now) ? $now : $parsed;
+    }
+
+    /**
+     * @param  array{local_id?:string|null,device_id?:string|null,punch_at?:string|null}  $syncContext
+     *        Offline-sync metadata. `punch_at` is the original click-time from
+     *        a buffered offline punch; local_id/device_id are the idempotency
+     *        keys persisted on the punch row.
+     */
+    public function checkIn(
+        ?User $user,
+        ?float $latitude = null,
+        ?float $longitude = null,
+        array $syncContext = [],
+    ): array {
         if (!$user || !$user->organization_id) {
             return ['status' => 422, 'payload' => ['message' => 'Organization is required.']];
         }
@@ -134,7 +171,7 @@ class AttendanceService
             return ['status' => 422, 'payload' => ['message' => 'You are on approved leave today. Punch in is blocked.']];
         }
 
-        $checkInAt = now();
+        $checkInAt = $this->resolveSyncTimestamp($syncContext['punch_at'] ?? null);
         $record = AttendanceRecord::firstOrNew([
             'user_id' => $user->id,
             'attendance_date' => $today,
@@ -196,6 +233,8 @@ class AttendanceService
             'punch_in_at' => $checkInAt,
             'punch_in_latitude' => $latitude,
             'punch_in_longitude' => $longitude,
+            'local_id' => $syncContext['local_id'] ?? null,
+            'device_id' => $syncContext['device_id'] ?? null,
         ]);
 
         $this->closeRunningPrimaryTimers((int) $user->id, $checkInAt);

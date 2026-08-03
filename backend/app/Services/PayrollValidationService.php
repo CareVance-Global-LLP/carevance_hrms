@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Models\PayrollMonthlyRun;
 use App\Models\PayrollItem;
 use App\Models\EmployeePayrollTemplate;
-use App\Models\BankIntegration;
+use App\Models\EmployeeProfile;
 
 class PayrollValidationService
 {
@@ -107,7 +107,19 @@ class PayrollValidationService
         $checks['bank_accounts'] = ['name' => 'Employees with bank accounts', 'passed' => $templatesWithoutBank === 0, 'value' => $templatesWithoutBank];
         $templatesWithoutBank === 0 ? $passed++ : $failed++;
 
-        $duplicatePan = 0;
+        // Real duplicate-PAN detection. This was hardcoded to 0 and always
+        // reported green — while a duplicate PAN is exactly the condition that
+        // gets a Form 24Q filing rejected, so the check that existed to catch
+        // it could never fire.
+        $duplicatePan = EmployeeProfile::query()
+            ->where('organization_id', $orgId)
+            ->whereNotNull('pan_number')
+            ->where('pan_number', '!=', '')
+            ->whereHas('user.employeePayrollTemplate', fn ($q) => $q->where('is_active', true))
+            ->groupBy('pan_number')
+            ->havingRaw('COUNT(*) > 1')
+            ->pluck('pan_number')
+            ->count();
         $checks['duplicate_pan'] = ['name' => 'Duplicate PAN checks', 'passed' => $duplicatePan === 0, 'value' => $duplicatePan];
         $duplicatePan === 0 ? $passed++ : $failed++;
 

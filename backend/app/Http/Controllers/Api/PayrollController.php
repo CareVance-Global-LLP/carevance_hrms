@@ -191,7 +191,9 @@ class PayrollController extends Controller
         $taxRegime = $request->get('tax_regime') ?? $profile?->tax_regime ?? 'new';
         $isMetro = $request->get('is_metro_city') ?? $profile?->is_metro_city ?? false;
 
-        $taxExemptions = $this->calculator->getApprovedTaxDeductions($user->id);
+        // Per-section map, not a flat sum: a bare total lands entirely in
+        // 80C and is capped at 1.5L, discarding 24B/80D/80CCD(1B) relief.
+        $taxExemptions = $this->calculator->getApprovedTaxDeductionMap($user->id);
 
         $calculation = $this->calculator->calculatePayroll(
             annualCtc: $request->annual_ctc,
@@ -623,7 +625,8 @@ class PayrollController extends Controller
         $isMetro = $request->get('is_metro_city', false);
 
         foreach ($request->employees as $employee) {
-            $taxExemptions = $this->calculator->getApprovedTaxDeductions($employee['user_id']);
+            // Per-section map — see note in calculate().
+            $taxExemptions = $this->calculator->getApprovedTaxDeductionMap($employee['user_id']);
 
             $calculation = $this->calculator->calculatePayroll(
                 annualCtc: $employee['annual_ctc'],

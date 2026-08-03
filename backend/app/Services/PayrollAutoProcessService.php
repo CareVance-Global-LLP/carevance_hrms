@@ -297,7 +297,11 @@ class PayrollAutoProcessService
     private function autoSyncFbp(PayrollMonthlyRun $run): void
     {
         $monthYear = $run->month_year;
-        $approvedClaims = FbpClaim::where('status', 'approved')
+        // Org scope is mandatory: without it this pulls in every tenant's
+        // approved claims and attaches them to whichever local user_id
+        // happens to collide.
+        $approvedClaims = FbpClaim::where('organization_id', $run->organization_id)
+            ->where('status', 'approved')
             ->where('month_year', $monthYear)
             ->get()
             ->groupBy('user_id');
@@ -318,7 +322,9 @@ class PayrollAutoProcessService
 
     private function autoSyncVariablePay(PayrollMonthlyRun $run): void
     {
+        // Org scope is mandatory — see autoSyncFbp().
         $assignments = VariablePayAssignment::with('rule')
+            ->where('organization_id', $run->organization_id)
             ->whereHas('rule', fn($q) => $q->where('is_active', true))
             ->where('is_active', true)
             ->get()
@@ -351,7 +357,11 @@ class PayrollAutoProcessService
 
     private function autoSyncPerquisites(PayrollMonthlyRun $run): void
     {
-        $perquisites = PerquisiteRecord::where('is_active', true)->get()->groupBy('user_id');
+        // Org scope is mandatory — see autoSyncFbp().
+        $perquisites = PerquisiteRecord::where('organization_id', $run->organization_id)
+            ->where('is_active', true)
+            ->get()
+            ->groupBy('user_id');
 
         foreach ($perquisites as $userId => $userPerks) {
             $item = PayrollItem::where('payroll_run_id', $run->id)
@@ -369,7 +379,10 @@ class PayrollAutoProcessService
 
     private function autoApplyHolds(PayrollMonthlyRun $run): void
     {
-        $processingHolds = StopPaymentFlag::where('month_year', $run->month_year)
+        // Org scope is mandatory — a hold flagged in another tenant must not
+        // silently delete this run's payroll items.
+        $processingHolds = StopPaymentFlag::where('organization_id', $run->organization_id)
+            ->where('month_year', $run->month_year)
             ->where('is_active', true)
             ->where('hold_type', 'processing')
             ->pluck('user_id');
@@ -382,6 +395,10 @@ class PayrollAutoProcessService
     private function calculateAllItems(PayrollMonthlyRun $run): void
     {
         $items = PayrollItem::with('user.employeePayrollTemplate')->where('payroll_run_id', $run->id)->get();
+
+        // Calendar month of the run, used for special-month PT instalments.
+        $ptMonth = (int) (explode('-', $run->month_year)[1] ?? 0) ?: null;
+
         $totals = [
             'total_gross' => 0, 'total_deductions' => 0, 'total_net_pay' => 0,
             'total_employer_contributions' => 0, 'total_pf_employee' => 0, 'total_pf_employer' => 0,
@@ -452,8 +469,10 @@ class PayrollAutoProcessService
             $esiEmployee = $esiApplicable ? round($payableGross * 0.0075, 2) : 0;
             $esiEmployer = $esiApplicable ? round($payableGross * 0.0325, 2) : 0;
 
-            // PT on payable gross — applied to actual earned wages (after LOP)
-            $pt = $this->calculator->calculatePT($payableGross, $state);
+            // PT on payable gross — applied to actual earned wages (after LOP).
+            // The month drives special-month instalments (e.g. Maharashtra
+            // February); omitting it under-collects PT for the year.
+            $pt = $this->calculator->calculatePT($payableGross, $state, $ptMonth);
 
             $tds = 0;
             if ($template->tds_enabled) {

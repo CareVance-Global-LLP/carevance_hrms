@@ -14,6 +14,42 @@ const navItems = [
   { label: 'FAQ', href: '#faq' },
 ];
 
+function smoothScrollToHash(href: string) {
+  const id = href.replace('#', '');
+  const el = document.getElementById(id);
+  if (!el) return;
+  const navHeight = 80;
+  const y = el.getBoundingClientRect().top + window.scrollY - navHeight;
+  window.scrollTo({ top: y, behavior: 'smooth' });
+}
+
+function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+  const location = useLocation();
+  const isAnchor = href.startsWith('#');
+  const path = location.pathname === '/' ? href : `/${href}`;
+
+  const className = 'group relative px-1 py-1 text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900';
+
+  return isAnchor ? (
+    <a
+      href={path}
+      onClick={(e) => {
+        e.preventDefault();
+        smoothScrollToHash(href);
+      }}
+      className={className}
+    >
+      {children}
+      <span className="absolute bottom-0 left-0 h-[2px] w-full origin-left scale-x-0 bg-blue-600 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-x-100" />
+    </a>
+  ) : (
+    <Link to={href} className={className}>
+      {children}
+      <span className="absolute bottom-0 left-0 h-[2px] w-full origin-left scale-x-0 bg-blue-600 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-x-100" />
+    </Link>
+  );
+}
+
 type NavbarMode = 'marketing' | 'desktop-auth';
 
 interface NavbarProps {
@@ -34,7 +70,7 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
       const scrollDelta = currentScrollY - lastScrollY;
       const scrollingUp = scrollDelta < 0;
       setIsScrolled(currentScrollY > 12);
-      if (isOpen) return; // never auto-hide while menu is open
+      if (isOpen) return;
       if (currentScrollY < 24) {
         setIsVisible(true);
       } else if (scrollingUp) {
@@ -57,6 +93,8 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
     }
   };
 
+  const glassOpacity = isScrolled ? 0.95 : 0.8;
+
   return (
     <header
       className={`sticky top-0 z-50 px-4 pt-4 transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:px-6 lg:px-8 ${
@@ -64,11 +102,13 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
       }`}
     >
       <div
-        className={`mx-auto max-w-7xl rounded-lg border transition-all duration-300 ${
-          isScrolled
-            ? 'border-slate-200 bg-white shadow-md'
-            : 'border-slate-200 bg-white shadow-sm'
-        }`}
+        className="mx-auto max-w-7xl rounded-lg border border-slate-200/80 backdrop-blur-xl transition-all duration-500"
+        style={{
+          backgroundColor: `rgba(255, 255, 255, ${glassOpacity})`,
+          boxShadow: isScrolled
+            ? '0 4px 24px -4px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04)'
+            : '0 1px 3px rgba(15, 23, 42, 0.04)',
+        }}
       >
         <div className="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-3.5 lg:px-6">
           <Link to="/" onClick={handleBrandClick} className="flex min-w-0 items-center">
@@ -76,27 +116,12 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
           </Link>
 
           {!isDesktopAuthMode && (
-            <nav className="hidden items-center gap-6 lg:flex">
-              {navItems.map((item) => {
-                const isAnchor = item.href.startsWith('#');
-                return isAnchor ? (
-                  <a
-                    key={item.label}
-                    href={location.pathname === '/' ? item.href : `/${item.href}`}
-                    className="text-sm font-semibold text-slate-600 transition hover:text-slate-900"
-                  >
-                    {item.label}
-                  </a>
-                ) : (
-                  <Link
-                    key={item.label}
-                    to={item.href}
-                    className="text-sm font-semibold text-slate-600 transition hover:text-slate-900"
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
+            <nav className="hidden items-center gap-7 lg:flex">
+              {navItems.map((item) => (
+                <NavLink key={item.label} href={item.href}>
+                  {item.label}
+                </NavLink>
+              ))}
             </nav>
           )}
 
@@ -105,20 +130,20 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
               <a
                 href={desktopDownloadUrl}
                 target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md"
               >
                 <Download className="h-3.5 w-3.5" />
                 Download
               </a>
             )}
-            <Link to="/login" className="rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:text-slate-900">
+            <Link to="/login" className="rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900">
               Login
             </Link>
             {!isDesktopAuthMode && (
               <Link
                 to="/contact-sales"
                 onClick={() => analytics.trackEvent('book_demo_clicked', { location: 'navbar' })}
-                className="rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:text-slate-900"
+                className="rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900"
               >
                 Book Demo
               </Link>
@@ -126,7 +151,7 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
             <Link
               to="/start-trial"
               onClick={() => analytics.trackEvent('start_trial_clicked', { location: 'navbar' })}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 hover:shadow-md"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-700 hover:shadow-md"
             >
               Start Free Trial
             </Link>
@@ -148,65 +173,90 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
               className="overflow-hidden border-t border-slate-200 lg:hidden"
             >
-              <div className="space-y-1 px-5 py-4">
+              <motion.div
+                className="space-y-1 px-5 py-4"
+                initial="hidden"
+                animate="visible"
+                variants={{
+                  hidden: {},
+                  visible: { transition: { staggerChildren: 0.04, delayChildren: 0.1 } },
+                }}
+              >
                 {desktopDownloadUrl && !isDesktopAuthMode && (
-                  <a
+                  <motion.a
                     href={desktopDownloadUrl}
                     target="_blank" rel="noreferrer"
+                    variants={{ hidden: { opacity: 0, x: -16 }, visible: { opacity: 1, x: 0 } }}
                     className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3.5 text-sm font-medium text-slate-700 shadow-sm"
                   >
                     <Download className="h-4 w-4" />
                     Download Desktop App
-                  </a>
+                  </motion.a>
                 )}
                 {!isDesktopAuthMode && navItems.map((item) => {
                   const isAnchor = item.href.startsWith('#');
                   return isAnchor ? (
-                    <a
+                    <motion.a
                       key={item.label}
                       href={location.pathname === '/' ? item.href : `/${item.href}`}
-                      onClick={() => setIsOpen(false)}
-                      className="block rounded-lg px-3 py-3.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setIsOpen(false);
+                        smoothScrollToHash(item.href);
+                      }}
+                      variants={{ hidden: { opacity: 0, x: -16 }, visible: { opacity: 1, x: 0 } }}
+                      className="block rounded-lg px-3 py-3.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
                     >
                       {item.label}
-                    </a>
+                    </motion.a>
                   ) : (
-                    <Link
+                    <motion.div
                       key={item.label}
-                      to={item.href}
-                      onClick={() => setIsOpen(false)}
-                      className="block rounded-lg px-3 py-3.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                      variants={{ hidden: { opacity: 0, x: -16 }, visible: { opacity: 1, x: 0 } }}
                     >
-                      {item.label}
-                    </Link>
+                      <Link
+                        to={item.href}
+                        onClick={() => setIsOpen(false)}
+                        className="block rounded-lg px-3 py-3.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                      >
+                        {item.label}
+                      </Link>
+                    </motion.div>
                   );
                 })}
                 {!isDesktopAuthMode && (
+                  <motion.div variants={{ hidden: { opacity: 0, x: -16 }, visible: { opacity: 1, x: 0 } }}>
+                    <Link
+                      to="/contact-sales"
+                      onClick={() => { analytics.trackEvent('book_demo_clicked', { location: 'navbar-mobile' }); setIsOpen(false); }}
+                      className="block rounded-lg border border-slate-200 px-4 py-3.5 text-center text-sm font-semibold text-slate-700"
+                    >
+                      Book Demo
+                    </Link>
+                  </motion.div>
+                )}
+                <motion.div variants={{ hidden: { opacity: 0, x: -16 }, visible: { opacity: 1, x: 0 } }}>
                   <Link
-                    to="/contact-sales"
-                    onClick={() => { analytics.trackEvent('book_demo_clicked', { location: 'navbar-mobile' }); setIsOpen(false); }}
+                    to="/login"
+                    onClick={() => setIsOpen(false)}
                     className="block rounded-lg border border-slate-200 px-4 py-3.5 text-center text-sm font-semibold text-slate-700"
                   >
-                    Book Demo
+                    Login
                   </Link>
-                )}
-                <Link
-                  to="/login"
-                  onClick={() => setIsOpen(false)}
-                  className="block rounded-lg border border-slate-200 px-4 py-3.5 text-center text-sm font-semibold text-slate-700"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/start-trial"
-                  onClick={() => { analytics.trackEvent('start_trial_clicked', { location: 'navbar-mobile' }); setIsOpen(false); }}
-                  className="block rounded-lg bg-blue-600 px-4 py-3.5 text-center text-sm font-semibold text-white shadow-sm"
-                >
-                  Start Free Trial
-                </Link>
-              </div>
+                </motion.div>
+                <motion.div variants={{ hidden: { opacity: 0, x: -16 }, visible: { opacity: 1, x: 0 } }}>
+                  <Link
+                    to="/start-trial"
+                    onClick={() => { analytics.trackEvent('start_trial_clicked', { location: 'navbar-mobile' }); setIsOpen(false); }}
+                    className="block rounded-lg bg-blue-600 px-4 py-3.5 text-center text-sm font-semibold text-white shadow-sm"
+                  >
+                    Start Free Trial
+                  </Link>
+                </motion.div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>

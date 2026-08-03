@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Github, Linkedin, Twitter } from 'lucide-react';
+import { motion, type Variants } from 'framer-motion';
 import BrandLogo from '@/components/branding/BrandLogo';
 import { useConsent } from '@/contexts/ConsentContext';
 
@@ -22,14 +23,30 @@ const groups = [
   ] },
 ];
 
+const stagger: Variants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
+};
+
+const fadeUp: Variants = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } },
+};
+
 export default function Footer() {
   const { openPreferences } = useConsent();
 
   return (
     <footer className="bg-[#f3f6fb] px-4 pb-8 pt-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl rounded-lg border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-8 sm:py-10">
-        <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr]">
-          <div>
+      <div className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-8 sm:py-10">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          variants={stagger}
+          className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr]"
+        >
+          <motion.div variants={fadeUp}>
             <Link to="/" className="inline-flex w-full max-w-[14rem] items-center">
               <BrandLogo variant="full" size="sm" className="max-w-full" />
             </Link>
@@ -41,37 +58,37 @@ export default function Footer() {
                 <a
                   key={Icon.displayName || Icon.name}
                   href="/"
-                  className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 transition hover:border-slate-300 hover:text-slate-700"
+                  className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 transition-all duration-200 hover:border-slate-300 hover:text-slate-700 hover:shadow-sm"
                   aria-label={Icon.name}
                 >
                   <Icon className="h-4 w-4" />
                 </a>
               ))}
             </div>
-          </div>
+          </motion.div>
 
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
-            {groups.map((group) => (
-              <div key={group.title}>
+            {groups.map((group, gi) => (
+              <motion.div key={group.title} variants={fadeUp}>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{group.title}</p>
                 <div className="mt-3 space-y-2.5">
                   {group.links.map((link) => (
-                    <Link key={link.label} to={link.to} className="block text-sm text-slate-500 transition hover:text-slate-900">
+                    <Link key={link.label} to={link.to} className="block text-sm text-slate-500 transition-colors duration-200 hover:text-slate-900">
                       {link.label}
                     </Link>
                   ))}
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
-        </div>
+        </motion.div>
 
         <div className="mt-8 flex flex-col gap-3 border-t border-slate-200 pt-5 text-sm sm:flex-row sm:items-center sm:justify-between">
           <p className="text-slate-400">&copy; {new Date().getFullYear()} CareVance. All rights reserved.</p>
           <button
             type="button"
             onClick={openPreferences}
-            className="w-fit font-semibold text-blue-600 underline-offset-4 transition hover:text-slate-900 hover:underline"
+            className="w-fit font-semibold text-blue-600 underline-offset-4 transition-colors duration-200 hover:text-slate-900 hover:underline"
           >
             Cookie Preferences
           </button>

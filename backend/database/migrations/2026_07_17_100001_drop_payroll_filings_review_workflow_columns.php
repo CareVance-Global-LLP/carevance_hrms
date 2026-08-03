@@ -8,18 +8,47 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('payroll_filings', function (Blueprint $table) {
-            $table->dropForeign(['submitted_by']);
-            $table->dropForeign(['approved_by']);
-            $table->dropColumn([
-                'submitted_at',
-                'submitted_by',
-                'approved_at',
-                'approved_by',
-                'review_note',
-                'reviewer_user_id',
-                'portal_status',
-            ]);
+        if (!Schema::hasTable('payroll_filings')) {
+            return;
+        }
+
+        // Drop only what is actually present. This migration previously
+        // dropped all seven columns and both foreign keys unconditionally,
+        // which threw "no such column: submitted_at" on any database where the
+        // review workflow had never been created — including the SQLite
+        // in-memory database used by the test suite, where it aborted the
+        // migration run and took every Feature test down with it.
+        foreach (['submitted_by', 'approved_by'] as $foreignKey) {
+            if (!Schema::hasColumn('payroll_filings', $foreignKey)) {
+                continue;
+            }
+
+            try {
+                Schema::table('payroll_filings', function (Blueprint $table) use ($foreignKey) {
+                    $table->dropForeign([$foreignKey]);
+                });
+            } catch (\Throwable) {
+                // No matching foreign key on this connection (SQLite reports
+                // none); the column drop below is still valid.
+            }
+        }
+
+        $columns = array_values(array_filter([
+            'submitted_at',
+            'submitted_by',
+            'approved_at',
+            'approved_by',
+            'review_note',
+            'reviewer_user_id',
+            'portal_status',
+        ], fn (string $column) => Schema::hasColumn('payroll_filings', $column)));
+
+        if ($columns === []) {
+            return;
+        }
+
+        Schema::table('payroll_filings', function (Blueprint $table) use ($columns) {
+            $table->dropColumn($columns);
         });
     }
 

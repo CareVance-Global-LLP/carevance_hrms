@@ -33,10 +33,24 @@ class AttendanceController extends Controller
 
     public function checkIn(Request $request)
     {
+        $request->validate([
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            // Offline-sync metadata (see IdempotentSync middleware).
+            'local_id' => 'nullable|string|max:191',
+            'device_id' => 'nullable|string|max:191',
+            'punch_at' => 'nullable|date',
+        ]);
+
         $result = $this->attendanceService->checkIn(
             $request->user(),
             $request->filled('latitude') ? (float) $request->latitude : null,
             $request->filled('longitude') ? (float) $request->longitude : null,
+            [
+                'local_id' => $request->input('local_id'),
+                'device_id' => $request->input('device_id'),
+                'punch_at' => $request->input('punch_at'),
+            ],
         );
 
         return response()->json($result['payload'], $result['status']);

@@ -510,3 +510,87 @@ input:focus, select:focus, textarea:focus {
   animation: bar-grow 0.8s ease-out forwards;
   animation-delay: var(--bar-delay, 0.4s);
 }
+
+/* ── Landing page typography utilities ──────────────────────────────── */
+
+.landing-heading {
+  font-family: 'Space Grotesk', 'Manrope', sans-serif;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+}
+
+.landing-body {
+  font-family: 'Manrope', sans-serif;
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+/* ── Gradient animation for CTA section ─────────────────────────────── */
+
+@keyframes gradientShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
+}
+
+/* ── Shimmer effect for CTA buttons ─────────────────────────────────── */
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* ── Cursor blink for typewriter ────────────────────────────────────── */
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-bar-grow,
+  .animate-pulse-slow,
+  .animate-bounce-x,
+  .animate-wiggle,
+  .animate-shimmer,
+  .animate-blink,
+  .animate-gradient {
+    animation: none !important;
+  }
+
+  /* Marquee */
+  .flex[style*="animation"] {
+    animation: none !important;
+  }
+}

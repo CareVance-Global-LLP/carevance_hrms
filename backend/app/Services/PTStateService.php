@@ -397,29 +397,78 @@ class PTStateService
             return 0; // Unknown state, no PT
         }
 
-        // Check for special month rates (e.g., Maharashtra February)
+        $amount = self::resolveSlabAmount($config['monthly'] ?? [], $monthlyGross);
+
+        // Special month rates (e.g. Maharashtra's higher February instalment).
+        //
+        // This applies ONLY to the top band. The rule exists so that the top
+        // band totals the statutory annual cap (11 x 200 + 300 = 2,500); an
+        // employee in a lower band is already under the cap and must keep
+        // paying their normal rate. The previous implementation returned the
+        // special amount for ANY non-zero band, so a 9,000 earner in
+        // Maharashtra was charged 300 in February instead of 175.
         if ($month !== null && isset($config['special'])) {
             $monthName = strtolower(date('F', mktime(0, 0, 0, $month, 1)));
-            if (isset($config['special'][$monthName])) {
-                // Check if special rate applies based on gross
-                foreach ($config['monthly'] as $slab) {
-                    if ($monthlyGross >= $slab['min'] && ($slab['max'] === null || $monthlyGross <= $slab['max'])) {
-                        if ($slab['amount'] > 0) {
-                            return $config['special'][$monthName];
-                        }
-                    }
-                }
+            $special = $config['special'][$monthName] ?? null;
+
+            if ($special !== null && $amount > 0 && $amount >= self::topBandAmount($config['monthly'] ?? [])) {
+                return (float) $special;
             }
         }
 
-        // Regular calculation
-        foreach ($config['monthly'] as $slab) {
-            if ($monthlyGross >= $slab['min'] && ($slab['max'] === null || $monthlyGross <= $slab['max'])) {
-                return $slab['amount'];
+        return $amount;
+    }
+
+    /**
+     * Resolve the PT amount for a monthly gross.
+     *
+     * Matching is on the UPPER bound only, taking the first band whose max is
+     * at or above the gross. The declared `min` values are one rupee above the
+     * previous `max` (7500 then 7501, ...), so the original
+     * `gross >= min && gross <= max` test left a hole at every boundary: a
+     * gross of 7,500.50 matched no band at all and fell through to zero PT.
+     * Since LOP-adjusted gross is fractional by construction, that fired
+     * routinely and under-collected PT.
+     *
+     * @param  array<int,array{min:int|float,max:int|float|null,amount:int|float}>  $slabs
+     */
+    private static function resolveSlabAmount(array $slabs, float $monthlyGross): float
+    {
+        if ($slabs === [] || $monthlyGross <= 0) {
+            return 0.0;
+        }
+
+        // Defensive ordering: ascending by upper bound, unbounded band last.
+        usort($slabs, function (array $a, array $b) {
+            if ($a['max'] === null) {
+                return 1;
+            }
+            if ($b['max'] === null) {
+                return -1;
+            }
+
+            return $a['max'] <=> $b['max'];
+        });
+
+        foreach ($slabs as $slab) {
+            if ($slab['max'] === null || $monthlyGross <= $slab['max']) {
+                return (float) $slab['amount'];
             }
         }
 
-        return 0;
+        return 0.0;
+    }
+
+    /**
+     * Highest PT amount in a state's table.
+     *
+     * @param  array<int,array{min:int|float,max:int|float|null,amount:int|float}>  $slabs
+     */
+    private static function topBandAmount(array $slabs): float
+    {
+        $amounts = array_map(static fn (array $slab) => (float) $slab['amount'], $slabs);
+
+        return $amounts === [] ? 0.0 : max($amounts);
     }
 
     /**

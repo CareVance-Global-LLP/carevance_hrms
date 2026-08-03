@@ -1,3 +1,5 @@
+import TextReveal from './TextReveal';
+
 interface SectionHeadingProps {
   eyebrow?: string;
   title: string;
@@ -15,9 +17,11 @@ export default function SectionHeading({ eyebrow, title, description, align = 'c
           {eyebrow}
         </span>
       )}
-      <h2 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-        {title}
-      </h2>
+      <TextReveal
+        text={title}
+        as="h2"
+        className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl"
+      />
       {description && (
         <p className="max-w-2xl text-base leading-7 text-slate-500">
           {description}
