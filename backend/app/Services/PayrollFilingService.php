@@ -64,6 +64,35 @@ class PayrollFilingService
      * converged and one set dropped; until then this is the single place that
      * decides which to trust.
      */
+    /**
+     * Basic actually earned this month — full-month basic less the loss-of-pay
+     * share, on the divisor the item was computed with.
+     *
+     * The ECR declared EPF wages must agree with the contribution that was
+     * actually deducted. Declaring the full-month basic while the engine
+     * computed PF on the LOP-reduced basic makes the employee contribution
+     * fall short of 12% of the declared wage, which EPFO's edit check rejects
+     * outright — and where it is accepted it reads as an under-remittance,
+     * with s.7Q interest and s.14B damages on the difference.
+     */
+    private static function payableBasic(object $item): float
+    {
+        $basic = (float) ($item->basic ?? 0);
+        $lopDays = (float) ($item->lOP_days ?? 0);
+
+        if ($basic <= 0 || $lopDays <= 0) {
+            return max(0.0, $basic);
+        }
+
+        $divisor = app(\App\Services\Payroll\PayrollDayBasisResolver::class)->forStoredItem($item);
+
+        if ($divisor <= 0) {
+            return $basic;
+        }
+
+        return max(0.0, $basic * max(0.0, $divisor - $lopDays) / $divisor);
+    }
+
     private static function contributoryDays(object $item): float
     {
         $present = (float) ($item->days_present ?? 0) + (float) ($item->days_leave ?? 0);
@@ -127,10 +156,12 @@ class PayrollFilingService
             $profile = $item->user->employeeProfile;   // may be null
             $workInfo = $item->user->employeeWorkInfo; // may be null
 
-            // PF wages are capped at the statutory ceiling.
-            $epfWages = min((float) $item->basic, $pfCap);
+            // PF wages are the basic actually EARNED, capped at the statutory
+            // ceiling — the same base the contribution below was computed on.
+            $payableBasic = self::payableBasic($item);
+            $epfWages = min($payableBasic, $pfCap);
             $grossWages = (float) $item->gross_salary;
-            $edliWages = min((float) $item->basic, $pfCap);
+            $edliWages = min($payableBasic, $pfCap);
 
             // EPF EE contribution (capped-wage based).
             $epfEe = (float) $item->pf_employee;
@@ -142,11 +173,23 @@ class PayrollFilingService
             $totalEpfWages += $epfWages;
             $totalEpf += $epfEe;
 
-            // NCP days = non-contributory paid days. We derive from attendance:
-            // working days minus actually paid/contributory days.
-            $workingDays = (float) ($item->total_working_days ?? 0);
-            $contributoryDays = self::contributoryDays($item);
-            $ncpDays = $workingDays > 0 ? max(0, round($workingDays - $contributoryDays, 2)) : 0;
+            /*
+             * NCP = non-contributory period days, the days of the month no
+             * wages were payable for. It must sit on the same basis as the
+             * wages declared beside it: EPFO reads the two together, and a
+             * gross reduced on a calendar divisor next to an NCP count derived
+             * from working days does not reconcile.
+             *
+             * lOP_days is that figure directly. The attendance subtraction is
+             * kept only for rows written before LOP was recorded.
+             */
+            $ncpDays = (float) ($item->lOP_days ?? 0);
+            if ($ncpDays <= 0) {
+                $workingDays = (float) ($item->total_working_days ?? 0);
+                $contributoryDays = self::contributoryDays($item);
+                $ncpDays = $workingDays > 0 ? max(0, round($workingDays - $contributoryDays, 2)) : 0;
+            }
+            $ncpDays = round($ncpDays, 2);
 
             $lines[] = implode('||', [
                 // Column 1 of the ECR. EPFO rejects the upload if it is blank.
@@ -1814,8 +1857,14 @@ class PayrollFilingService
         foreach ($items as $item) {
             $profile = $item->user->employeeProfile;
             $workInfo = $item->user->employeeWorkInfo;
-            $epfWages = min((float) $item->basic, 15000);
+            // Earned basic, capped — must match the contribution deducted.
+            $epfWages = min(self::payableBasic($item), 15000);
             $grossWages = (float) $item->gross_salary;
+            // NCP on the same basis as the wages beside it; see generatePfEcr.
+            $ncpDays = (float) ($item->lOP_days ?? 0);
+            if ($ncpDays <= 0) {
+                $ncpDays = max(0, (float) ($item->total_working_days ?? 0) - self::contributoryDays($item));
+            }
 
             $lines[] = implode('||', [
                 // Column 1 of the ECR. EPFO rejects the upload if it is blank.
@@ -1828,7 +1877,7 @@ class PayrollFilingService
                 number_format((float) $item->pf_employee, 2, '.', ''),
                 number_format((float) $item->eps, 2, '.', ''),
                 number_format((float) $item->pf_employer, 2, '.', ''),
-                number_format(max(0, (float) ($item->total_working_days ?? 0) - self::contributoryDays($item)), 2, '.', ''),
+                number_format($ncpDays, 2, '.', ''),
                 '0.00',
                 $workInfo->employee_code ?? '',
                 $workInfo->designation ?? '',
