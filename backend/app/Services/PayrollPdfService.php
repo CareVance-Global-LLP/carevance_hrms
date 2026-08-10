@@ -102,10 +102,21 @@ class PayrollPdfService
             'bankAccount'           => $user->employeeBankAccounts->first()?->account_number,
             'bankIfsc'              => $user->employeeBankAccounts->first()?->ifsc_code,
             'workingDays'           => $item->total_working_days ?? 0,
-            'paidDays'              => $item->days_present ?? 0,
-            'lopDays'               => (float) ($item->lOP_days ?? 0),
+            /*
+             * Paid days is the wage period less loss of pay, so the header
+             * reconciles: paidDays + lopDays = totalDays. It used to be
+             * days_present — an attendance count on a different basis to the
+             * divisor the salary was actually spread across, so the two never
+             * added up and neither matched the ECR's NCP days.
+             */
+            'totalDays'             => $payDays = (float) app(\App\Services\Payroll\PayrollDayBasisResolver::class)->forStoredItem($item),
+            'lopDays'               => $lopDays = (float) ($item->lOP_days ?? 0),
+            'paidDays'              => max(0.0, round($payDays - $lopDays, 2)),
             'basic'                 => (float) ($item->basic ?? 0),
+            // Earned gross, and what a full month would have paid.
             'grossSalary'           => (float) ($item->gross_salary ?? 0),
+            'grossFullMonth'        => (float) ($item->gross_full_month ?: $item->gross_salary),
+            'lopAmount'             => (float) $item->lOP_deduction,
             'totalDeductions'       => (float) ($item->total_deductions ?? 0),
             'netPay'                => (float) ($item->net_pay ?? 0),
             'netPayWords'           => $this->numberToWords($item->net_pay ?? 0),

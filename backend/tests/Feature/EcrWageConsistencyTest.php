@@ -120,17 +120,57 @@ class EcrWageConsistencyTest extends TestCase
         );
     }
 
-    public function test_declared_wages_are_below_the_full_month_basic_when_there_is_lop(): void
+    public function test_a_month_with_lop_declares_less_than_full_attendance_would(): void
     {
+        // A colleague on the identical salary who missed nothing, so the only
+        // difference between the two declared wages is the loss of pay.
+        $colleague = User::factory()->create([
+            'organization_id' => $this->organization->id,
+            'role' => 'employee',
+        ]);
+        EmployeePayrollTemplate::create([
+            'organization_id' => $this->organization->id,
+            'user_id' => $colleague->id,
+            'annual_ctc' => 300000,
+            'basic_percentage' => 40,
+            'hra_percentage' => 50,
+            'conveyance_allowance' => 1600,
+            'pf_enabled' => true,
+            'esi_enabled' => false,
+            'pt_enabled' => false,
+            'tds_enabled' => false,
+            'tax_regime' => 'new',
+            'pt_state' => '',
+        ]);
+
+        $date = Carbon::parse($this->monthYear.'-01')->startOfDay();
+        $end = $date->copy()->endOfMonth();
+        for (; $date->lessThanOrEqualTo($end); $date->addDay()) {
+            if ($date->isWeekend()) {
+                continue;
+            }
+            AttendanceRecord::create([
+                'organization_id' => $this->organization->id,
+                'user_id' => $colleague->id,
+                'attendance_date' => $date->toDateString(),
+                'check_in_at' => $date->copy()->setTime(9, 30),
+                'check_out_at' => $date->copy()->setTime(18, 30),
+                'worked_seconds' => 8 * 3600,
+                'late_minutes' => 0,
+                'status' => 'present',
+            ]);
+        }
+
         $item = $this->runPayrollWithOneLopDay();
+        $colleagueItem = PayrollItem::where('user_id', $colleague->id)->firstOrFail();
 
         $method = new \ReflectionMethod(\App\Services\PayrollFilingService::class, 'payableBasic');
         $method->setAccessible(true);
 
         $this->assertLessThan(
-            (float) $item->basic,
+            (float) $method->invoke(null, $colleagueItem),
             (float) $method->invoke(null, $item),
-            'A month with loss of pay declares less than the full-month basic.'
+            'A month with loss of pay declares less EPF wage than full attendance on the same salary.'
         );
     }
 

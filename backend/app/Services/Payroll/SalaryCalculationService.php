@@ -179,11 +179,18 @@ class SalaryCalculationService
         $advanceRecovery = $this->getAdvanceRecovery($employeeId);
         $latePenalty = $this->calculateLatePenalty($attendance);
 
-        // $lopDeduction was previously computed and then dropped on the floor,
-        // so loss-of-pay days were never actually withheld. It belongs in the
-        // deduction total alongside the statutory items.
-        $totalDeductions = $lopDeduction + $pfEe + $esiEe + $ptAmount + $lwfAmount
+        /*
+         * Loss of pay reduces earnings; it is not a deduction. Payment of
+         * Wages Act s.7(2) lists permitted deductions exhaustively and absence
+         * is s.9 — a proportionate reduction in wages payable, because wages
+         * for a day not worked were never earned. Net pay is unchanged either
+         * way: full - (lop + rest) == (full - lop) - rest.
+         */
+        $totalDeductions = $pfEe + $esiEe + $ptAmount + $lwfAmount
             + $tds + $loanEmi + $advanceRecovery + $latePenalty;
+
+        $grossFullMonth = $totalEarnings;
+        $totalEarnings = max(0, $totalEarnings - $lopDeduction);
 
         // 4. Net pay
         $netPayable = round($totalEarnings - $totalDeductions, 2);
@@ -222,6 +229,9 @@ class SalaryCalculationService
                 'overtime' => round($overtimePay, 2),
             ],
             'deductions' => [
+                // Retained for callers that still read it, but it is NOT part
+                // of total_deductions — see the note above the total. It is a
+                // memo of wages not earned, not money withheld.
                 'lop' => round($lopDeduction, 2),
                 'pf_ee' => round($pfEe, 2),
                 'esi_ee' => round($esiEe, 2),
@@ -233,6 +243,9 @@ class SalaryCalculationService
                 'late_penalty' => round($latePenalty, 2),
             ],
             'total_earnings' => round($totalEarnings, 2),
+            // What the month would have paid at full attendance, for the
+            // payslip's optional "actual" column.
+            'gross_full_month' => round($grossFullMonth, 2),
             'total_deductions' => round($totalDeductions, 2),
             'net_payable' => $netPayable,
             'net_pay_words' => $netPayWords,

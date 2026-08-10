@@ -55,6 +55,9 @@ class PayrollItem extends Model
         'notice_pay_addition',
         'custom_earnings',
         'gross_salary',
+        // The contracted monthly rate. gross_salary is what was earned after
+        // loss of pay; this is what it would have been at full attendance.
+        'gross_full_month',
         'pf_employee',
         'esi_employee',
         'pt',
@@ -133,6 +136,7 @@ class PayrollItem extends Model
         'notice_pay_addition' => 'decimal:2',
         'custom_earnings' => 'decimal:2',
         'gross_salary' => 'decimal:2',
+        'gross_full_month' => 'decimal:2',
         'pf_employee' => 'decimal:2',
         'esi_employee' => 'decimal:2',
         'pt' => 'decimal:2',
@@ -319,11 +323,15 @@ class PayrollItem extends Model
             return 0;
         }
 
-        // Never more than the month's gross, however bad the day count is.
-        return round(min(
-            ((float) $this->gross_salary / $divisor) * (float) $this->lOP_days,
-            (float) $this->gross_salary
-        ), 2);
+        /*
+         * Derived from the CONTRACTED month, not from gross_salary — the
+         * latter is now the earned figure, which already has this amount
+         * taken out of it. Dividing the earned gross would understate the
+         * loss and never reconcile back to the full month.
+         */
+        $fullMonth = (float) ($this->gross_full_month ?: $this->gross_salary);
+
+        return round(min(($fullMonth / $divisor) * (float) $this->lOP_days, $fullMonth), 2);
     }
 
     public function scopePending($query)

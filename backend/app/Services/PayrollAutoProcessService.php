@@ -586,7 +586,33 @@ class PayrollAutoProcessService
                 ? $this->lwf->forMonth((string) $state, $ptMonth)
                 : 0.0;
 
-            $totalDeductions = $pfEmployee + $esiEmployee + $pt + $tds + $lwf + $lopDeduction;
+            /*
+             * Loss of pay is NOT a deduction. Payment of Wages Act s.7(2) is an
+             * exhaustive list of permitted deductions and absence is dealt with
+             * by s.9, which authorises a proportionate REDUCTION IN WAGES
+             * PAYABLE — wages for a day not worked were never earned, so there
+             * is nothing to deduct them from.
+             *
+             * It therefore comes out of earnings, not deductions. Every
+             * statutory return this feeds (ECR gross wages, ESI monthly wages,
+             * 24Q gross total income, Form 16) is an earned-wage return, and a
+             * full-month gross beside a positive NCP day count contradicts
+             * itself on the face of the filing. Keeping LOP in the deduction
+             * block also pushed printed deductions past 50% of printed gross on
+             * a heavy-LOP month, which reads to an inspector as a s.7(3) breach
+             * that never actually occurred.
+             *
+             * Net pay is unchanged: full - (lop + rest) == (full - lop) - rest.
+             */
+            $totalDeductions = $pfEmployee + $esiEmployee + $pt + $tds + $lwf;
+
+            // Earnings reduced to what the paid days actually earned.
+            $proration = $gross > 0 ? max(0.0, $payableGross / $gross) : 0.0;
+            $earnedBasic = round($basic * $proration, 2);
+            $earnedHra = round($hra * $proration, 2);
+            $earnedConveyance = round($conveyance * $proration, 2);
+            $earnedMedical = round($medical * $proration, 2);
+            $earnedSpecial = round(max($specialAllowance, 0) * $proration, 2);
             // Stored signed, deliberately. Clamping with max(0, …) hid the one
             // case that most needs to stop a run: deductions overrunning gross,
             // which happens with a large recovery or a full month of unpaid
@@ -594,18 +620,21 @@ class PayrollAutoProcessService
             // see the problem if the real number survives to be looked at, and
             // a silent 0 reads as "this person is owed nothing" rather than
             // "this figure is wrong".
-            $netPay = round($gross - $totalDeductions, 2);
+            $netPay = round($payableGross - $totalDeductions, 2);
 
             $gratuity = round($basic * 0.0481, 2);
             $totalEmployerContributions = $pfEmployer + $esiEmployer + $gratuity;
 
             $item->update([
-                'basic' => $basic,
-                'hra' => $hra,
-                'conveyance' => $conveyance,
-                'medical' => $medical,
-                'special_allowance' => max($specialAllowance, 0),
-                'gross_salary' => round($gross, 2),
+                'basic' => $earnedBasic,
+                'hra' => $earnedHra,
+                'conveyance' => $earnedConveyance,
+                'medical' => $earnedMedical,
+                'special_allowance' => $earnedSpecial,
+                // Earned wages. The contracted rate is kept alongside so the
+                // payslip can show both and arrears have something to work from.
+                'gross_salary' => round($payableGross, 2),
+                'gross_full_month' => round($gross, 2),
                 'pf_employee' => $pfEmployee,
                 'esi_employee' => $esiEmployee,
                 'pt' => $pt,

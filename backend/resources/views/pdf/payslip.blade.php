@@ -181,22 +181,39 @@
 </table>
 
 <!-- ════════════ MONTHLY SALARY ════════════ -->
+{{--
+  The contracted monthly rate, not this month's earnings. $grossSalary is the
+  gross actually earned after loss of pay and is shown as Total Earnings (A)
+  below; printing it here made one number carry two meanings.
+--}}
 <div class="salary-row">
   <div class="label">Monthly Salary</div>
-  <div class="value">₹ {{ number_format($grossSalary, 2) }}</div>
+  <div class="value">₹ {{ number_format($grossFullMonth, 2) }}</div>
 </div>
+@if ($lopAmount > 0)
+  <div class="salary-row">
+    <div class="label">Less: Loss Of Pay ({{ $lopDays }} day{{ $lopDays == 1 ? '' : 's' }})</div>
+    <div class="value">₹ {{ number_format($lopAmount, 2) }}</div>
+  </div>
+@endif
 <div class="hr-thin"></div>
 
 <!-- ════════════ SALARY DETAILS ════════════ -->
 <div class="section-title">Salary Details</div>
 <table class="salary-details">
   <tr>
+    {{--
+      Four distinct facts that reconcile: Paid Days + Loss Of Pay Days =
+      Days In Wage Period. "Actual Payable Days" and "Days Payable" were two
+      labels bound to the same value, and neither agreed with the working-day
+      count beside them.
+    --}}
     <td>
-      <div class="label">Actual Payable Days</div>
-      <div class="value">{{ $paidDays }}</div>
+      <div class="label">Days In Wage Period</div>
+      <div class="value">{{ $totalDays }}</div>
     </td>
     <td>
-      <div class="label">Total Working Days</div>
+      <div class="label">Scheduled Working Days</div>
       <div class="value">{{ $workingDays }}</div>
     </td>
     <td>
@@ -204,7 +221,7 @@
       <div class="value">{{ $lopDays }}</div>
     </td>
     <td>
-      <div class="label">Days Payable</div>
+      <div class="label">Paid Days</div>
       <div class="value">{{ $paidDays }}</div>
     </td>
   </tr>

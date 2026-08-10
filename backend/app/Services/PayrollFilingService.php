@@ -84,6 +84,19 @@ class PayrollFilingService
             return max(0.0, $basic);
         }
 
+        /*
+         * Rows written since earnings became earned already carry the reduced
+         * basic — reducing again would understate the declared wage and swing
+         * the mismatch the other way. Such a row is recognisable by its earned
+         * gross differing from its contracted gross.
+         */
+        $contracted = (float) ($item->gross_full_month ?? 0);
+        $earned = (float) ($item->gross_salary ?? 0);
+        if ($contracted > 0 && $earned > 0 && abs($contracted - $earned) > 0.01) {
+            return $basic;
+        }
+
+        // Legacy row: basic is the full month, so take the LOP share off here.
         $divisor = app(\App\Services\Payroll\PayrollDayBasisResolver::class)->forStoredItem($item);
 
         if ($divisor <= 0) {

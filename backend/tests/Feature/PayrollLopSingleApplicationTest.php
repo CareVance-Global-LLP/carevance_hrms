@@ -128,11 +128,21 @@ class PayrollLopSingleApplicationTest extends TestCase
         $absentItem = PayrollItem::where('user_id', $absent->id)->firstOrFail();
 
         $this->assertSame(1.0, (float) $absentItem->lOP_days, 'One missed working day is one LOP day.');
+
+        // The CONTRACTED month is identical for both — that is the figure a
+        // raise would move. What differs is the gross actually earned, because
+        // loss of pay reduces wages payable rather than being deducted from
+        // them (Payment of Wages Act s.9, not s.7).
         $this->assertEqualsWithDelta(
+            (float) $presentItem->gross_full_month,
+            (float) $absentItem->gross_full_month,
+            0.01,
+            'Both are on the same salary.'
+        );
+        $this->assertLessThan(
             (float) $presentItem->gross_salary,
             (float) $absentItem->gross_salary,
-            0.01,
-            'Gross is the full month for both; LOP is a deduction, not a pro-ration of gross.'
+            'A month with loss of pay earns less gross — every statutory return reads this field.'
         );
     }
 
@@ -151,11 +161,19 @@ class PayrollLopSingleApplicationTest extends TestCase
         $this->assertSame('calendar', $item->salary_day_basis);
         $this->assertSame(30.0, (float) $item->salary_divisor_days);
 
+        // Measured against the contracted month: the earned gross already has
+        // this amount taken out of it.
         $this->assertEqualsWithDelta(
-            (float) $item->gross_salary / 30,
+            (float) $item->gross_full_month / 30,
             (float) $item->lOP_deduction,
             0.02,
             'One LOP day costs exactly one calendar day of gross — charged once, not twice.'
+        );
+        $this->assertEqualsWithDelta(
+            (float) $item->gross_full_month - (float) $item->lOP_deduction,
+            (float) $item->gross_salary,
+            0.02,
+            'Earned gross is the contracted month less the loss of pay.'
         );
     }
 

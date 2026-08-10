@@ -1404,6 +1404,18 @@ class PayrollDepartmentController extends Controller
         $grossWithOT = $calculation['monthly']['gross'] + $overtimePay + $additionalEarnings
             + $formulaEarnings + $arrearsGross;
         $totalDeductions += $formulaDeductions + $arrearsDeductions;
+
+        /*
+         * Loss of pay leaves the deduction block and reduces earnings instead.
+         * Payment of Wages Act s.7(2) lists permitted deductions exhaustively;
+         * absence is s.9, a proportionate reduction in wages PAYABLE, because
+         * wages for a day not worked were never earned. Every statutory return
+         * fed by gross_salary is an earned-wage return.
+         *
+         * Net pay is unchanged: full - (lop + rest) == (full - lop) - rest.
+         */
+        $totalDeductions -= $lOPDeduction;
+        $earnedGross = max(0.0, $grossWithOT - $lOPDeduction);
         /*
          * Signed, deliberately — never max(0, ...). Clamping hid the one case
          * that most needs to stop a run: deductions overrunning gross, from a
@@ -1412,7 +1424,7 @@ class PayrollDepartmentController extends Controller
          * the real number survives, and a silent 0 reads as "owed nothing"
          * rather than "this figure is wrong".
          */
-        $netPay = round($grossWithOT - $totalDeductions, 2);
+        $netPay = round($earnedGross - $totalDeductions, 2);
 
         // Create or update payroll item
         $payrollItem = PayrollItem::updateOrCreate(
@@ -1448,7 +1460,9 @@ class PayrollDepartmentController extends Controller
                 'hra' => $calculation['components']['earnings']['hra'],
                 'conveyance' => $calculation['components']['earnings']['conveyance'],
                 'special_allowance' => $calculation['components']['earnings']['special_allowance'],
-                'gross_salary' => $grossWithOT,
+                // Earned wages; the contracted month is kept alongside it.
+                'gross_salary' => $earnedGross,
+                'gross_full_month' => $grossWithOT,
                 // Statutory columns include the arrear portion so the row
                 // satisfies net = gross - deductions, and so the PF ECR / ESI
                 // challan report the arrear contributions rather than omitting

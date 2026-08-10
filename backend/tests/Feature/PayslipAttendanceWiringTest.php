@@ -149,12 +149,20 @@ class PayslipAttendanceWiringTest extends TestCase
         $result = $this->calculate();
 
         // June 2026 has 30 calendar days. The divisor is the wage period, not
-        // the working-day count — s.9(2) caps a day's deduction at 1/30.
+        // the working-day count — s.9(2) caps a day's deduction at 1/30 — and
+        // it is measured against the contracted month, since total_earnings
+        // has already had the loss of pay taken out of it.
         $this->assertEqualsWithDelta(
-            (float) $result['total_earnings'] / 30,
+            (float) $result['gross_full_month'] / 30,
             (float) $result['deductions']['lop'],
             0.02,
             'One LOP day costs one calendar day of earnings — not pro-rated and deducted twice.'
+        );
+        $this->assertEqualsWithDelta(
+            (float) $result['gross_full_month'] - (float) $result['deductions']['lop'],
+            (float) $result['total_earnings'],
+            0.02,
+            'Earnings are the contracted month less the loss of pay.'
         );
     }
 
