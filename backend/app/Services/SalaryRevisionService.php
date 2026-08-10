@@ -27,18 +27,28 @@ class SalaryRevisionService
         $oldCtc = (float) $template->annual_ctc;
         $revisionPercentage = $oldCtc > 0 ? round(($newCtc - $oldCtc) / $oldCtc * 100, 2) : 0;
 
+        // The template stores percentages as whole numbers (40 = 40%); the
+        // calculator's config takes fractions.
+        $config = [
+            'basic_percentage' => (float) ($template->basic_percentage ?? 40) / 100,
+            'hra_percentage_of_basic' => (float) ($template->hra_percentage ?? 50) / 100,
+            'conveyance_allowance' => (float) ($template->conveyance_allowance ?? 1600),
+        ];
+
         $oldBreakdown = $this->calculator->calculatePayroll(
             annualCtc: $oldCtc,
-            state: $template->pt_state ?: '',
-            isMetro: $template->is_metro_city ?? true,
+            stateCode: $template->pt_state ?: '',
+            isMetroCity: $template->is_metro_city ?? true,
             taxRegime: $template->tax_regime ?? 'new',
+            customConfig: $config,
         );
 
         $newBreakdown = $this->calculator->calculatePayroll(
             annualCtc: $newCtc,
-            state: $template->pt_state ?: '',
-            isMetro: $template->is_metro_city ?? true,
+            stateCode: $template->pt_state ?: '',
+            isMetroCity: $template->is_metro_city ?? true,
             taxRegime: $template->tax_regime ?? 'new',
+            customConfig: $config,
         );
 
         $letter = SalaryRevisionLetter::create([

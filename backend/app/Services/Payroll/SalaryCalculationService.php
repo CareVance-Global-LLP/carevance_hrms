@@ -5,6 +5,7 @@ namespace App\Services\Payroll;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\PayslipYtdHistory;
 use App\Models\User;
+use App\Services\Attendance\AttendanceService;
 use App\Services\PTStateService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -47,18 +48,23 @@ class SalaryCalculationService
         $stateCode = $template->pt_state ?: '';
         $basicPercentage = (float) ($template->basic_percentage ?? 40);
 
-        // 1. Get attendance
+        // 1. Attendance, from the same monthly summary the payroll run uses.
         $attendance = $this->getAttendance($employeeId, $payMonth, $payYear);
+        // Calendar days are only used for mid-month joiner pro-ration below,
+        // which is day-of-month arithmetic. Everything else works on the
+        // working-day basis so it agrees with the payroll run.
         $totalDays = $this->getMonthDays($payMonth, $payYear);
-        $daysPresent = $attendance['present'] ?? $totalDays;
-        $paidLeave = $attendance['paid_leave'] ?? 0;
-        $workingDays = $daysPresent + $paidLeave; // actual days worked + paid leave
-        $lopDays = max(0, $totalDays - $workingDays);
-        $halfDays = $attendance['half_days'] ?? 0;
-        $overtimeHours = $attendance['overtime_hours'] ?? 0;
+        $workingDays = (float) ($attendance['working_days'] ?? 0);
+        $daysPresent = (float) ($attendance['present'] ?? 0);
+        $paidLeave = (float) ($attendance['paid_leave'] ?? 0);
+        $lopDays = (float) ($attendance['lop_days'] ?? 0);
+        $halfDays = (float) ($attendance['half_days'] ?? 0);
+        $overtimeHours = (float) ($attendance['overtime_hours'] ?? 0);
 
-        // 2. Calculate earnings — pro-rata based on days actually worked
-        $proRataFactor = $totalDays > 0 ? $workingDays / $totalDays : 1;
+        // 2. Earnings are the FULL month. Loss of pay is withheld exactly once,
+        // as the explicit lopDeduction below. Pro-rating earnings here as well
+        // would charge every absent day twice.
+        $proRataFactor = 1.0;
 
         // Compute monthly values from annual CTC
         $monthlyCtc = $annualCtc / 12;
@@ -79,7 +85,7 @@ class SalaryCalculationService
         $foodAllowance = (float) ($template->meal_allowance ?? 0);
         $overtimePay = $this->calculateOvertime($basic, $overtimeHours);
 
-        // Pro-rata for mid-month joiners (override attendance-based pro-rata)
+        // Pro-rata for mid-month joiners.
         $joiningDate = $employee->employeeWorkInfo?->joining_date;
         if ($joiningDate
             && (int) $joiningDate->format('n') === $payMonth
@@ -90,6 +96,14 @@ class SalaryCalculationService
             $basic = $monthlyCtc * ($basicPercentage / 100) * $proRataFactor;
             $hra = $basic * (((float) ($template->hra_percentage ?? 50)) / 100);
             $da = $monthlyCtc * (((float) ($template->da_percentage ?? 0)) / 100) * $proRataFactor;
+
+            /*
+             * Days before the joining date are not loss of pay — the person was
+             * not employed yet. The attendance summary has no concept of a
+             * joining date and counts them absent, so charging that LOP on top
+             * of the pro-ration above would deduct the same days twice.
+             */
+            $lopDays = max(0.0, $lopDays - $this->workingDaysBefore($joiningDate, $payMonth, $payYear));
         }
 
         $totalEarnings = $basic + $hra + $da + $specialAllowance + $conveyance + $medical + $statutoryBonus + $foodAllowance + $overtimePay;
@@ -107,11 +121,13 @@ class SalaryCalculationService
         $edli = $pfEnabled ? $pfBase * 0.0017 : 0;
         $adminCharges = $pfEnabled ? $pfBase * 0.005 : 0;
 
-        // LOP deduction = lost wages for unpaid days
+        // LOP deduction = lost wages for unpaid days, on the working-day
+        // divisor so it matches the payroll run. Capped at earnings so a bad
+        // lopDays cannot invent wages to claw back.
         $lopDeduction = 0;
-        if ($lopDays > 0 && $totalDays > 0) {
-            $dailyWage = $totalEarnings / $totalDays;
-            $lopDeduction = round($dailyWage * $lopDays, 2);
+        if ($lopDays > 0 && $workingDays > 0) {
+            $dailyWage = $totalEarnings / $workingDays;
+            $lopDeduction = min(round($dailyWage * $lopDays, 2), round($totalEarnings, 2));
         }
 
         // LOP-adjusted gross for ESI/PT (these apply to payable wages)
@@ -329,21 +345,55 @@ class SalaryCalculationService
         return 0; // Placeholder — would calculate based on late marks
     }
 
+    /**
+     * Attendance for the pay month, from the same summary the payroll run
+     * consumes so a payslip can never disagree with what was actually paid.
+     *
+     * This used to be a placeholder returning "present every calendar day",
+     * which forced lopDays to zero and made loss of pay impossible to show.
+     */
     private function getAttendance(int $employeeId, int $payMonth, int $payYear): array
     {
-        // Placeholder — in real app would fetch from attendance module
-        $totalDays = $this->getMonthDays($payMonth, $payYear);
+        $employee = User::find($employeeId);
+        if (! $employee) {
+            return ['working_days' => 0, 'present' => 0, 'paid_leave' => 0, 'lop_days' => 0, 'half_days' => 0, 'overtime_hours' => 0];
+        }
+
+        $summary = app(AttendanceService::class)
+            ->monthlyAttendanceSummary($employee, sprintf('%04d-%02d', $payYear, $payMonth));
+
         return [
-            'present' => $totalDays,
-            'paid_leave' => 0,
-            'half_days' => 0,
-            'overtime_hours' => 0,
+            'working_days' => (float) ($summary['working_days'] ?? 0),
+            'present' => (float) ($summary['present_days'] ?? 0),
+            'paid_leave' => (float) ($summary['paid_leave_days'] ?? 0),
+            'lop_days' => (float) ($summary['total_lop_days'] ?? 0),
+            'half_days' => (float) ($summary['half_day_present'] ?? 0) + (float) ($summary['half_day_absent'] ?? 0),
+            'overtime_hours' => round(((float) ($summary['overtime_seconds'] ?? 0)) / 3600, 2),
         ];
     }
 
     private function getMonthDays(int $month, int $year): int
     {
         return cal_days_in_month(CAL_GREGORIAN, $month, $year);
+    }
+
+    /**
+     * Working days in the pay month that fall before $date — the days a
+     * mid-month joiner was not yet employed for.
+     */
+    private function workingDaysBefore(\DateTimeInterface $date, int $payMonth, int $payYear): float
+    {
+        $cursor = \Carbon\Carbon::create($payYear, $payMonth, 1)->startOfDay();
+        $joining = \Carbon\Carbon::parse($date)->startOfDay();
+        $count = 0.0;
+
+        for (; $cursor->lessThan($joining) && (int) $cursor->format('n') === $payMonth; $cursor->addDay()) {
+            if (! $cursor->isWeekend()) {
+                $count += 1.0;
+            }
+        }
+
+        return $count;
     }
 
     /**

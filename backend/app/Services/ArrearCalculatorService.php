@@ -28,7 +28,10 @@ class ArrearCalculatorService
 
         $arrears = [];
         $currentCtc = (float) $currentTemplate->annual_ctc;
-        $currentMonth = Carbon::createFromFormat('Y-m', $currentMonthYear);
+        // startOfMonth matters: createFromFormat('Y-m') leaves the day as today,
+        // so running this on the 31st walks back over months that have no 31st
+        // and skips them.
+        $currentMonth = Carbon::createFromFormat('Y-m', $currentMonthYear)->startOfMonth();
 
         for ($i = 1; $i <= 6; $i++) {
             $pastMonth = $currentMonth->copy()->subMonths($i);
@@ -56,14 +59,16 @@ class ArrearCalculatorService
 
                 $calculation = $this->calculator->calculatePayroll(
                     annualCtc: $currentCtc,
-                    state: $currentTemplate->pt_state ?: '',
-                    isMetro: $currentTemplate->is_metro_city ?? true,
+                    stateCode: $currentTemplate->pt_state ?: '',
+                    isMetroCity: $currentTemplate->is_metro_city ?? true,
                     taxRegime: $currentTemplate->tax_regime ?? 'new',
-                    config: [
-                        'basic_percentage' => $currentTemplate->basic_percentage ?? 40,
-                        'hra_percentage' => $currentTemplate->hra_percentage ?? 50,
-                        'pf_enabled' => $currentTemplate->pf_enabled,
-                        'esi_enabled' => $currentTemplate->esi_enabled,
+                    // Percentages are stored whole (40 = 40%) and consumed as
+                    // fractions. pf_enabled/esi_enabled are template flags
+                    // applied at the run, not calculator config.
+                    customConfig: [
+                        'basic_percentage' => (float) ($currentTemplate->basic_percentage ?? 40) / 100,
+                        'hra_percentage_of_basic' => (float) ($currentTemplate->hra_percentage ?? 50) / 100,
+                        'conveyance_allowance' => (float) ($currentTemplate->conveyance_allowance ?? 1600),
                     ],
                 );
 
