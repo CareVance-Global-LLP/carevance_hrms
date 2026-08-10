@@ -597,10 +597,38 @@ export interface BillingSnapshot {
     max_seats?: number;
     used_seats?: number;
     users_count?: number;
+    price_per_seat?: number;
+    renewal_amount?: number;
     pending_plan_code?: string | null;
     pending_billing_cycle?: 'monthly' | 'yearly' | null;
     pending_seats?: number | null;
     pending_upgrade_amount?: number | string | null;
+  } | null;
+  /**
+   * Seat figures computed server-side. Read these rather than deriving a cap
+   * from the cached organization — the two disagreed, and the stale one used to
+   * win the denominator on the billing page.
+   */
+  seats?: {
+    used: number;
+    max: number;
+    remaining: number;
+    is_over_cap: boolean;
+    over_by: number;
+    min_allowed: number;
+  } | null;
+  cycle?: {
+    state: SubscriptionState;
+    is_read_only: boolean;
+    period_start?: string | null;
+    period_end?: string | null;
+    cycle_length_days?: number | null;
+    days_remaining?: number | null;
+    grace_ends_at?: string | null;
+    grace_days_left?: number | null;
+    auto_renew: boolean;
+    has_mandate: boolean;
+    reminder_stages: number[];
   } | null;
   workspace?: {
     id: number;
@@ -609,6 +637,14 @@ export interface BillingSnapshot {
     owner_user_id?: number | null;
   } | null;
 }
+
+export type SubscriptionState =
+  | 'trial'
+  | 'active'
+  | 'past_due'
+  | 'expired'
+  | 'cancelled'
+  | 'inactive';
 
 export interface BugReportRequest {
   name?: string;

@@ -11,6 +11,7 @@ Route::post('/billing/add-seats', [BillingController::class, 'addSeats']);
 Route::post('/billing/confirm-add-seats', [BillingController::class, 'confirmAddSeats']);
 Route::post('/billing/reduce-seats', [BillingController::class, 'reduceSeats']);
 Route::post('/billing/confirm-reduce-seats', [BillingController::class, 'confirmReduceSeats']);
+Route::post('/billing/auto-renew', [BillingController::class, 'setAutoRenew']);
 Route::post('/billing/cancel-plan', [BillingController::class, 'cancelPlan']);
 Route::post('/billing/cancel-pending-upgrade', [BillingController::class, 'cancelPendingUpgrade']);
 

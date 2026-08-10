@@ -22,6 +22,9 @@ yarn-error.log*
 .worktrees/
 desktop/release/
 desktop/release-*/
+# Bundled copy of the built web UI, produced by desktop/scripts/prepare-renderer.cjs
+# so the shell can serve the real app when the deployed one is unreachable.
+desktop/renderer/
 
 # Desktop build artifacts
 desktop-build/

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, userApi } from '@/services/api';
+import { checkInOfflineAware, checkOutOfflineAware } from '@/services/offlineApiWrapper';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlan } from '@/hooks/usePlan';
 import { canReviewApprovalRequest, hasAdminAccess, resolveUserHierarchyLevel, resolveUserRoleLabel } from '@/lib/permissions';
@@ -629,12 +630,32 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
+  /*
+   * Punches go through the offline-aware wrappers on the desktop shell.
+   *
+   * A punch is the one action an employee cannot simply retry later — the time
+   * it happened IS the record. Calling the API directly meant a disconnected
+   * tracker just failed the punch, even though the desktop already carries a
+   * durable local queue that replays on reconnect. On the web these wrappers
+   * are a straight pass-through: they only fall back when `isDesktopApp()`.
+   *
+   * A queued punch has no server record to render yet, so the refetches are
+   * skipped and the feedback says so rather than claiming a clean check-in.
+   */
   const doCheckIn = async () => {
     setIsPunchLoading(true);
     setPunchFeedback();
     try {
-      const res = await attendanceApi.checkIn();
-      const payload = res.data as any;
+      const result = await checkInOfflineAware();
+      if (!result.success) {
+        setPunchFeedback('', result.error || 'Check-in failed');
+        return;
+      }
+      if (result.offline) {
+        setPunchFeedback('Checked in offline — it will sync when you reconnect');
+        return;
+      }
+      const payload = result.data as any;
       if (payload?.record) setTodayRecord(payload.record);
       await Promise.all([fetchAttendance(), fetchCalendar(), fetchToday()]);
       setPunchFeedback('Checked in successfully');
@@ -650,8 +671,16 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     setIsPunchLoading(true);
     setPunchFeedback();
     try {
-      const res = await attendanceApi.checkOut();
-      const payload = res.data as any;
+      const result = await checkOutOfflineAware();
+      if (!result.success) {
+        setPunchFeedback('', result.error || 'Check-out failed');
+        return;
+      }
+      if (result.offline) {
+        setPunchFeedback('Checked out offline — it will sync when you reconnect');
+        return;
+      }
+      const payload = result.data as any;
       if (payload?.record) setTodayRecord(payload.record);
       await Promise.all([fetchAttendance(), fetchCalendar(), fetchToday()]);
       setPunchFeedback('Checked out successfully');

@@ -13,6 +13,11 @@ class Activity extends Model
         'user_id',
         'time_entry_id',
         'session_key',
+        // Offline-sync idempotency key. The desktop tracker retries a queued
+        // record until the server acknowledges it, so a response lost after the
+        // write would otherwise duplicate the row on the next attempt.
+        'local_id',
+        'device_id',
         'type',
         'name',
         'app_name',
@@ -31,6 +36,10 @@ class Activity extends Model
         'classification_reason',
         'classified_at',
         'classifier_version',
+        // How the person answered the idle prompt: 'kept', 'discarded', or
+        // null while the question is still outstanding.
+        'idle_resolution',
+        'idle_resolved_at',
     ];
 
     protected $casts = [
@@ -39,6 +48,7 @@ class Activity extends Model
         'last_seen_at' => 'datetime',
         'ended_at' => 'datetime',
         'classified_at' => 'datetime',
+        'idle_resolved_at' => 'datetime',
     ];
 
     protected static function booted(): void

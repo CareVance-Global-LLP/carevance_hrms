@@ -23,8 +23,41 @@ class ScreenshotController extends Controller
     private const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
     private const MAX_DATA_URL_CHARS = 14 * 1024 * 1024;
 
-    public function __construct(private readonly AuditLogService $auditLogService)
+    public function __construct(
+        private readonly AuditLogService $auditLogService,
+        private readonly \App\Services\Monitoring\TrackerPolicyResolver $trackerPolicy,
+        private readonly \App\Services\Monitoring\ScreenshotDeletionService $screenshotDeletion,
+    ) {
+    }
+
+    /**
+     * May this user delete this particular screenshot?
+     *
+     * Two separate rights, deliberately not merged. Admins delete on behalf of
+     * the organization. An employee may withdraw their OWN capture, but only
+     * where the organization has enabled it — and the minutes it covered go
+     * with it, so this can never be used to drop the evidence and keep the pay.
+     */
+    private function canDeleteThisScreenshot(?User $user, Screenshot $screenshot): bool
     {
+        if (! $user) {
+            return false;
+        }
+
+        if ($this->canDeleteScreenshots($user)) {
+            return true;
+        }
+
+        $screenshot->loadMissing('timeEntry.user');
+        $owner = $screenshot->timeEntry?->user;
+        if (! $owner || (int) $owner->id !== (int) $user->id) {
+            return false;
+        }
+
+        // Visibility is a precondition: nobody may destroy a record they were
+        // never permitted to see.
+        return $this->trackerPolicy->employeeActivityVisibleForOrganization($user->organization)
+            && $this->trackerPolicy->employeeDeleteEnabledForOrganization($user->organization);
     }
 
     private function canViewAll(?User $user): bool
@@ -60,6 +93,19 @@ class ScreenshotController extends Controller
             $user = $request->user();
             if (!$user) {
                 return response()->json(['data' => []]);
+            }
+
+            /*
+             * Self-view is opt-in per organization.
+             *
+             * canViewAll() marks a supervisor; anyone below that can only ever
+             * see their own captures, and whether they may see even those is
+             * the organization's call. Enforced here rather than only in the
+             * UI, because hiding a menu item is not access control.
+             */
+            if (!$this->canViewAll($user)
+                && !$this->trackerPolicy->employeeActivityVisibleForOrganization($user->organization)) {
+                return response()->json(['message' => 'Forbidden'], 403);
             }
 
             // Limit per_page to prevent memory issues
@@ -552,7 +598,9 @@ class ScreenshotController extends Controller
     public function destroy(Screenshot $screenshot)
     {
         try {
-            if (!$this->canDeleteScreenshots(request()->user())) {
+            $actor = request()->user();
+
+            if (!$this->canDeleteThisScreenshot($actor, $screenshot)) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
 
@@ -561,14 +609,28 @@ class ScreenshotController extends Controller
             }
 
             $screenshot->loadMissing('timeEntry.user');
+            $isOwnDeletion = (int) ($screenshot->timeEntry?->user_id ?? 0) === (int) $actor->id
+                && !$this->canDeleteScreenshots($actor);
+
+            // The time goes with the image. Deducted BEFORE the row is removed,
+            // because the span is measured against the neighbouring captures on
+            // the same entry and this row is one of them.
+            $secondsRemoved = $isOwnDeletion
+                ? $this->screenshotDeletion->deductFromTimeEntry($screenshot)
+                : 0;
+
             $this->auditLogService->log(
                 action: 'screenshot.deleted',
-                actor: request()->user(),
+                actor: $actor,
                 target: $screenshot,
                 metadata: [
                     'time_entry_id' => $screenshot->time_entry_id,
                     'user_id' => $screenshot->timeEntry?->user_id,
                     'recorded_at' => (string) $screenshot->created_at,
+                    // Recorded so a manager can see that time was withdrawn and
+                    // how much, without the image itself being recoverable.
+                    'deleted_by_subject' => $isOwnDeletion,
+                    'tracked_seconds_removed' => $secondsRemoved,
                 ],
                 request: request()
             );
@@ -576,7 +638,10 @@ class ScreenshotController extends Controller
             Storage::disk('screenshots')->delete(basename((string) $screenshot->filename));
             $screenshot->delete();
 
-            return response()->json(['message' => 'Screenshot deleted successfully']);
+            return response()->json([
+                'message' => 'Screenshot deleted successfully',
+                'tracked_seconds_removed' => $secondsRemoved,
+            ]);
         } catch (Throwable $e) {
             Log::error('Screenshot delete error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to delete screenshot', 'error' => 'Server error'], 500);

@@ -235,6 +235,13 @@ class UserController extends Controller
         $selectedRole = $validated['role'] ?? 'employee';
         $this->organizationRoleService->assertCanAssignRole($currentUser, $selectedRole);
 
+        // The seat cap, enforced. It existed as a column and a price for a long
+        // time without anything checking it before creating a user, which is how
+        // workspaces ended up well past what they pay for. Enforcement is
+        // forward-only: nobody already here is affected.
+        app(\App\Services\Billing\SeatGuard::class)
+            ->assertCanAdd($currentUser->organization, 1);
+
         $normalizedSettings = array_key_exists('settings', $validated)
             ? $this->normalizeUserSettings($validated['settings'] ?? [], $selectedRole)
             : null;

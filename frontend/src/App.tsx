@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccess, hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { usePlan } from '@/hooks/usePlan';
+import { resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isLikelyMobile } from '@/lib/mobile';
 
 const lazyWithChunkRetry = <T extends { default: React.ComponentType<any> }>(
@@ -50,6 +51,7 @@ const VerifyEmailPage = lazyWithChunkRetry(() => import('@/pages/VerifyEmailPage
 const ProfileOnboardingPage = lazyWithChunkRetry(() => import('@/pages/ProfileOnboardingPage'));
 const Dashboard = lazyWithChunkRetry(() => import('@/pages/Dashboard'));
 const MyTeam = lazyWithChunkRetry(() => import('@/pages/MyTeam'));
+const MyActivity = lazyWithChunkRetry(() => import('@/pages/MyActivity'));
 const OrganizationTree = lazyWithChunkRetry(() => import('@/pages/OrganizationTree'));
 const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
@@ -356,6 +358,31 @@ function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNo
   return <>{children}</>;
 }
 
+/**
+ * Gate for a person's own tracker record.
+ *
+ * Supervisors always reach it; everyone else only where the organization has
+ * enabled self-view. The API refuses independently — this exists so a direct
+ * URL lands somewhere sensible instead of on an empty page.
+ */
+export function SelfActivityRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!resolveTrackerPolicy(user as any).can_view_own_activity) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 export function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
@@ -575,6 +602,9 @@ function App() {
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
             <Route path="my-team" element={<EmployeeRoute><MyTeam /></EmployeeRoute>} />
+            {/* Self-view is an organization opt-in, so a direct URL has to be
+                turned away as well as the nav entry hidden. */}
+            <Route path="my-activity" element={<SelfActivityRoute><MyActivity /></SelfActivityRoute>} />
             <Route path="organization-tree" element={<OrganizationTree />} />
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<PlanFeatureRoute feature="project_tracking"><Projects /></PlanFeatureRoute>} />

@@ -11,6 +11,15 @@ export function OfflineStatusIndicator() {
     offline: 'bg-red-500',
   };
 
+  // Tint classes, not an inline backgroundColor: the tint steps are theme
+  // tokens that darken in the dark theme, whereas a literal hex stayed a pale
+  // pastel and left the (inverted, light) label text unreadable on top of it.
+  const statusTints = {
+    online: 'bg-emerald-50',
+    syncing: 'bg-amber-50',
+    offline: 'bg-red-50',
+  };
+
   const statusLabels = {
     online: 'Online',
     syncing: 'Syncing...',
@@ -47,9 +56,7 @@ export function OfflineStatusIndicator() {
   })();
 
   return (
-    <div className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs"
-      style={{ backgroundColor: status === 'offline' ? '#FEF2F2' : status === 'syncing' ? '#FFFBEB' : '#F0FDF4' }}
-    >
+    <div className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs ${statusTints[status]}`}>
       <div className="flex items-center gap-1.5">
         <div className={`w-2 h-2 rounded-full ${statusColors[status]} ${isSyncing ? 'animate-pulse' : ''}`} />
         <span className={`font-medium ${

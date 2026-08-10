@@ -1,6 +1,8 @@
 import { reportSilentError } from '@/lib/reportSilentError';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import WorkspaceRenewalBanner from '@/features/billing/WorkspaceRenewalBanner';
+import { resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
@@ -14,6 +16,7 @@ import type { AppNotificationItem } from '@/types';
 import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound } from '@/lib/desktopNotifications';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
+import IdleReturnPrompt from '@/components/desktop/IdleReturnPrompt';
 import AIHelpBubble from '@/components/AIHelpBubble';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -83,6 +86,9 @@ export default function Layout() {
   const canAccessAttendance = isAdminView || user?.settings?.attendance_monitoring !== false;
   const canAccessEditTime = isAdminView || user?.settings?.can_edit_time !== false;
   const isDesktopShell = Boolean(window.desktopTracker) && !isSuperAdminView;
+  // Self-view is an organization opt-in, so the nav entry is gated on the
+  // server-resolved policy rather than on a role.
+  const trackerPolicy = resolveTrackerPolicy(user as any);
   const webAppBaseUrl = webAppUrl.replace(/\/+$/, '');
   const organizationName = organization?.name || '';
   const organizationLogoUrl = resolveMediaUrl((organization?.settings as any)?.branding?.logo_url);
@@ -236,6 +242,7 @@ export default function Layout() {
         .map((group) => {
           let filteredItems = group.items?.filter((item) => {
             if (item.planFeature && !hasFeature(item.planFeature)) return false;
+            if (item.trackerPolicyFlag && !trackerPolicy[item.trackerPolicyFlag]) return false;
             if (item.permission && !canAccess(user, item.permission)) return false;
             if (item.to === '/attendance' && !canAccessAttendance) return false;
             if (item.to === '/edit-time' && !canAccessEditTime) return false;
@@ -901,17 +908,25 @@ export default function Layout() {
           </div>
 
           <div className="space-y-5">
+            <WorkspaceRenewalBanner />
             <Outlet />
           </div>
         </main>
         <AIHelpBubble userRole={user?.role} />
         {commandBar}
+        <IdleReturnPrompt />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f8fbff_0%,#eef5ff_45%,#f8fafc_100%)]">
+    // Same `bg-surface-base` token as the web shell above. This used to be a
+    // literal `linear-gradient(#f8fbff…#f8fafc)`, which no theme rule can
+    // repaint — so the desktop shell kept a white page under the dark cards
+    // and showed it wherever a route did not paint its own full background.
+    // The radial wash stays: it is translucent, so it composites over either
+    // theme rather than replacing it.
+    <div className="min-h-screen bg-surface-base">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[320px] bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.2),transparent_60%)]" />
       <div className="relative">
         <DashboardTopbar
@@ -1071,10 +1086,12 @@ export default function Layout() {
         />
 
         <main className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-12 animate-fade-in">
+          <WorkspaceRenewalBanner />
           <Outlet />
         </main>
         <AIHelpBubble />
         {commandBar}
+        <IdleReturnPrompt />
 
         {isDesktopShell && updatePanelOpen ? (
           <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/28 px-4 py-20 backdrop-blur-sm sm:px-6">

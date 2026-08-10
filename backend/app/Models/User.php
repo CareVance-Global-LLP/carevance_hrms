@@ -298,6 +298,18 @@ class User extends Authenticatable
         ];
     }
 
+    /*
+     * `tracker_policy` is deliberately NOT appended.
+     *
+     * Resolving it reads the user's organization, so appending it globally
+     * made every roster and report endpoint issue one extra query per row —
+     * an N+1 on lists that are already the hottest queries in the app. It is
+     * also meaningless for anyone but the authenticated user: a manager
+     * looking at a team list has no use for each member's idle threshold.
+     *
+     * Attach it explicitly where a tracker actually needs it (see
+     * AuthController::me).
+     */
     protected $appends = ['is_active', 'is_online', 'effective_monitoring_interval_minutes'];
 
     public function inviter(): BelongsTo
@@ -397,6 +409,21 @@ class User extends Authenticatable
     public function getEffectiveMonitoringIntervalMinutesAttribute(): int
     {
         return app(\App\Services\Monitoring\MonitoringSettingsResolver::class)->resolveForUser($this);
+    }
+
+    /**
+     * The desktop tracker's policy for this user.
+     *
+     * Shipped with the user payload so the client never carries its own
+     * opinion about idle thresholds — the two used to be configured
+     * independently, and a client that disagreed with the server either burned
+     * its retry cap on rejected stops or left the cron as the real rule.
+     *
+     * @return array<string, mixed>
+     */
+    public function getTrackerPolicyAttribute(): array
+    {
+        return app(\App\Services\Monitoring\TrackerPolicyResolver::class)->resolveForUser($this);
     }
 
     public function hasVerifiedEmail(): bool

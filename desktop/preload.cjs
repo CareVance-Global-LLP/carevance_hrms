@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   downloadUpdate: () => ipcRenderer.invoke('desktop:download-update'),
   installUpdate: () => ipcRenderer.invoke('desktop:install-update'),
   getDesktopDeviceIdentity: () => ipcRenderer.invoke('desktop:get-device-identity'),
+  // Lets the shell paint its window background and its native fallback screens
+  // in whatever theme the web app resolved to.
+  setTheme: (payload) => ipcRenderer.invoke('desktop:set-theme', payload),
   getBrowserTrackingState: () => ipcRenderer.invoke('desktop:get-browser-tracking-state'),
   openBrowserTrackingInstall: (payload) => ipcRenderer.invoke('desktop:open-browser-tracking-install', payload),
   openBrowserTrackingGuide: (payload) => ipcRenderer.invoke('desktop:open-browser-tracking-guide', payload),

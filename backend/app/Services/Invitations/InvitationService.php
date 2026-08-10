@@ -217,6 +217,16 @@ class InvitationService
             throw new HttpException(422, 'An account with this email already exists.');
         }
 
+        // A pending invitation does not hold a seat; accepting one does. The cap
+        // is checked here rather than at send time so an invite issued while a
+        // seat was free still fails honestly if the seat went to someone else.
+        // Organization carries no tenant scope (it is the tenant), so a plain
+        // find is correct and greppable here.
+        $invitedOrganization = \App\Models\Organization::find($invitation->organization_id);
+        if ($invitedOrganization) {
+            app(\App\Services\Billing\SeatGuard::class)->assertCanAdd($invitedOrganization, 1);
+        }
+
         return DB::transaction(function () use ($invitation, $payload) {
             $userSettings = is_array($invitation->settings) ? $invitation->settings : [];
             if (!empty($payload['timezone'])) {

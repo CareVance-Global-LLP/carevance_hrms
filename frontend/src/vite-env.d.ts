@@ -108,6 +108,10 @@ declare global {
     downloadUpdate?: () => Promise<DesktopUpdateState>;
     installUpdate?: () => Promise<boolean>;
     getDesktopDeviceIdentity?: () => Promise<DesktopDeviceIdentity | null>;
+    setTheme?: (payload: { theme: 'light' | 'dark' | 'system' }) => Promise<{
+      theme: 'light' | 'dark' | 'system';
+      dark: boolean;
+    }>;
     getBrowserTrackingState?: () => Promise<BrowserTrackingState | null>;
     openBrowserTrackingInstall?: (payload: { browser_name: string }) => Promise<boolean>;
     openBrowserTrackingGuide?: (payload: { browser_name: string }) => Promise<boolean>;

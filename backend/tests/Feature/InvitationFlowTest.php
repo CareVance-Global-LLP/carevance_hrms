@@ -252,7 +252,7 @@ class InvitationFlowTest extends TestCase
             'role' => 'employee',
             'delivery' => 'link',
             'settings' => [
-                'monitoring_interval_minutes' => 1,
+                'monitoring_interval_minutes' => 15,
                 'can_edit_time' => true,
                 'attendance_monitoring' => true,
                 'payroll_visibility' => true,
@@ -266,7 +266,7 @@ class InvitationFlowTest extends TestCase
             ->assertJsonPath('invitations.0.role', 'employee');
 
         $invitation = Invitation::query()->where('email', 'settings-user@example.com')->firstOrFail();
-        $this->assertSame(1, $invitation->settings['monitoring_interval_minutes']);
+        $this->assertSame(15, $invitation->settings['monitoring_interval_minutes']);
         $this->assertTrue($invitation->settings['can_edit_time']);
         $this->assertFalse($invitation->settings['payroll_visibility']);
 
@@ -280,7 +280,7 @@ class InvitationFlowTest extends TestCase
 
         $accepted = User::query()->where('email', 'settings-user@example.com')->firstOrFail();
         $this->assertSame($organization->id, $accepted->organization_id);
-        $this->assertSame(1, $accepted->settings['monitoring_interval_minutes']);
+        $this->assertSame(15, $accepted->settings['monitoring_interval_minutes']);
         $this->assertTrue($accepted->settings['can_edit_time']);
         $this->assertFalse($accepted->settings['payroll_visibility']);
     }
@@ -294,7 +294,7 @@ class InvitationFlowTest extends TestCase
             'role' => 'employee',
             'delivery' => 'link',
             'settings' => [
-                'monitoring_interval_minutes' => 1,
+                'monitoring_interval_minutes' => 15,
                 'can_edit_time' => false,
                 'attendance_monitoring' => true,
                 'task_assignment_access' => true,
@@ -330,7 +330,7 @@ class InvitationFlowTest extends TestCase
         $secondEmployee = User::query()->where('email', 'employee-two@example.com')->firstOrFail();
 
         $this->assertSame($organization->id, $firstEmployee->organization_id);
-        $this->assertSame(1, $firstEmployee->settings['monitoring_interval_minutes']);
+        $this->assertSame(15, $firstEmployee->settings['monitoring_interval_minutes']);
         $this->assertFalse($firstEmployee->settings['can_edit_time']);
 
         $this->assertSame($organization->id, $secondEmployee->organization_id);

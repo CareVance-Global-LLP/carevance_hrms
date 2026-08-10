@@ -10,6 +10,7 @@ import {
   Coffee,
 
   DoorOpen,
+  Eye,
   FileClock,
   Fingerprint,
   FolderKanban,
@@ -45,6 +46,8 @@ export type NavLinkItem = {
   employeeOnly?: boolean;
   planFeature?: string;
   permission?: string;
+  /** Hidden unless this flag is true on the server-resolved tracker policy. */
+  trackerPolicyFlag?: 'can_view_own_activity';
   external?: boolean;
   externalPath?: string;
 };
@@ -86,6 +89,8 @@ export const condensedNavigation: NavGroup[] = [
       { label: 'New Hires', to: '/new-hires', icon: UserPlus, adminOnly: true },
       { label: 'Exits', to: '/exits', icon: DoorOpen, adminOnly: true },
       { label: 'My Team', to: '/my-team', icon: Share2, employeeOnly: true },
+      // Shown only where the organization has switched self-view on.
+      { label: 'My Activity', to: '/my-activity', icon: Eye, trackerPolicyFlag: 'can_view_own_activity' },
     ],
   },
   {

@@ -7,10 +7,11 @@
   "main": "main.cjs",
   "scripts": {
     "prepare:app-config": "node scripts/write-app-config.cjs",
+    "prepare:renderer": "node scripts/prepare-renderer.cjs",
     "prepare:browser-extension": "node scripts/sync-browser-extension.cjs",
     "start": "npm run prepare:app-config && npm run prepare:browser-extension && node scripts/run-electron.cjs .",
-    "pack": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --dir --config.directories.output=release-v%npm_package_version%",
-    "dist:win": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win nsis --config.directories.output=release-v%npm_package_version%",
+    "pack": "node scripts/write-app-config.cjs --require-remote && npm run prepare:browser-extension && npm run prepare:renderer && electron-builder --dir --config.directories.output=release-v%npm_package_version%",
+    "dist:win": "node scripts/write-app-config.cjs --require-remote && npm run prepare:browser-extension && npm run prepare:renderer && electron-builder --win nsis --config.directories.output=release-v%npm_package_version%",
     "dist:portable": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win portable --config.directories.output=release-v%npm_package_version%",
     "test": "node --test \"tests/*.test.cjs\""
   },
@@ -26,6 +27,7 @@
       "browser-tracking-install-guide.cjs",
       "app-config.json",
       "offline/**/*",
+      "renderer/**/*",
       "scripts/**/*",
       "assets/**/*",
       "package.json"

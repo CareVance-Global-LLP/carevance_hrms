@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\InteractsWithApiResponses;
 use App\Http\Controllers\Controller;
 use App\Services\Billing\PlanService;
+use App\Services\Billing\SeatGuard;
+use App\Services\Billing\SubscriptionCycleService;
 use App\Services\Billing\WorkspaceBillingService;
 use Illuminate\Http\Request;
 
@@ -12,8 +14,11 @@ class BillingController extends Controller
 {
     use InteractsWithApiResponses;
 
-    public function __construct(private readonly WorkspaceBillingService $workspaceBillingService)
-    {
+    public function __construct(
+        private readonly WorkspaceBillingService $workspaceBillingService,
+        private readonly SubscriptionCycleService $cycles,
+        private readonly SeatGuard $seatGuard,
+    ) {
     }
 
     public function current(Request $request)
@@ -43,16 +48,14 @@ class BillingController extends Controller
             return $this->errorResponse('Payment is not required for this subscription.', 400);
         }
 
-        $organization->update([
-            'subscription_status' => 'active',
-            'subscription_expires_at' => $organization->billing_cycle === 'yearly'
-                ? now()->addYear()->toDateString()
-                : now()->addMonth()->toDateString(),
-        ]);
+        // markRenewed measures the next period from the previous end date rather
+        // than from today, so paying three days late does not silently cost
+        // three days and the renewal stays on the same day of the month.
+        $this->cycles->markRenewed($organization);
 
         return $this->successResponse([
             'subscription_status' => 'active',
-            'subscription_expires_at' => $organization->subscription_expires_at,
+            'subscription_expires_at' => $organization->subscription_expires_at?->toDateString(),
         ], 'Payment successful. Your workspace is now active.');
     }
 
@@ -249,6 +252,17 @@ class BillingController extends Controller
             return $this->errorResponse('New seat count must be greater than current seats.', 400);
         }
 
+        // The client sends an absolute total. It used to compute that total from
+        // a stale cap held in auth context, which meant an admin adding one seat
+        // to a workspace of 86 people could ask the server for a total of 6.
+        $usedSeats = $this->seatGuard->usedSeats($organization);
+        if ($requestedSeats < $usedSeats) {
+            return $this->errorResponse(
+                "This workspace already has {$usedSeats} people in it, so the seat total cannot be {$requestedSeats}.",
+                422
+            );
+        }
+
         $plans = config('carevance.plans', []);
         $currentPlanCode = $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking');
         $currentPlanConfig = $plans[$currentPlanCode] ?? [];
@@ -324,15 +338,19 @@ class BillingController extends Controller
             return $this->errorResponse('New seat count must be less than current seats.', 400);
         }
 
-        // Minimum seats based on plan type
-        $plans = config('carevance.plans', []);
-        $currentPlanCode = $organization->plan_code ?? 'basic_tracking';
-        $currentPlanConfig = $plans[$currentPlanCode] ?? [];
-        $isPayrollPlan = PlanService::isPayrollPlan($currentPlanCode);
-        $minSeats = $isPayrollPlan ? ($currentPlanConfig['max_seats'] ?? 50) : 10;
+        // The floor is the plan minimum *or* the people already in the workspace,
+        // whichever is higher. This only checked the plan minimum, so a
+        // workspace of 86 people could set its cap to 10 and the call succeeded.
+        $minSeats = $this->seatGuard->minimumAllowedSeats($organization);
+        $usedSeats = $this->seatGuard->usedSeats($organization);
 
         if ($requestedSeats < $minSeats) {
-            return $this->errorResponse("Minimum {$minSeats} seats required for your plan.", 400);
+            return $this->errorResponse(
+                $minSeats === $usedSeats
+                    ? "You cannot go below {$usedSeats} seats while {$usedSeats} people are in this workspace. Remove people first, then reduce."
+                    : "Minimum {$minSeats} seats required for your plan.",
+                422
+            );
         }
 
         // Schedule seat reduction for next billing cycle (no refund)
@@ -350,6 +368,43 @@ class BillingController extends Controller
             'message' => 'Seat reduction scheduled. Will take effect at next billing cycle with no refund.',
             'effective_date' => $organization->subscription_expires_at?->toDateString(),
         ]);
+    }
+
+    /**
+     * Turn auto-renew on or off.
+     *
+     * Turning it on records the intent and reports whether a mandate is in
+     * place. Without one the renewal still has to be paid by hand — the
+     * response says so rather than letting the switch imply a charge that
+     * cannot happen. See razorpay_mandate_id and the Subscriptions activation
+     * noted in the billing proposal.
+     */
+    public function setAutoRenew(Request $request)
+    {
+        $user = $request->user();
+        $organization = $user?->organization;
+
+        if (!$organization) {
+            return $this->errorResponse('No organization found.', 404);
+        }
+
+        $validated = $request->validate([
+            'auto_renew' => 'required|boolean',
+        ]);
+
+        $organization->update(['auto_renew' => $validated['auto_renew']]);
+
+        $hasMandate = (bool) $organization->razorpay_mandate_id;
+
+        return $this->successResponse([
+            'auto_renew' => (bool) $organization->auto_renew,
+            'has_mandate' => $hasMandate,
+            'requires_mandate' => $validated['auto_renew'] && !$hasMandate,
+        ], $validated['auto_renew']
+            ? ($hasMandate
+                ? 'Auto-renew is on. We will charge your saved mandate on each renewal.'
+                : 'Auto-renew is on. Set up a payment mandate to let us charge automatically — until then we will remind you to pay.')
+            : 'Auto-renew is off. We will remind you before each renewal.');
     }
 
     public function confirmReduceSeats(Request $request)

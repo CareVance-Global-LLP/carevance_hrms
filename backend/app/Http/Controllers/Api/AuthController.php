@@ -292,6 +292,10 @@ class AuthController extends Controller
         $data['permissions'] = $this->getUserPermissions($user);
         $data['role_name'] = $user->customRole?->name ?? ucfirst($user->role ?? 'employee');
         $data['hierarchy_level'] = $user->getHierarchyLevel();
+        // Attached here rather than appended on the model: resolving it reads
+        // the organization, and this is the one endpoint where a tracker
+        // actually needs it. The organization is already loaded above.
+        $data['tracker_policy'] = $user->tracker_policy;
 
         return $this->successResponse($data);
     }

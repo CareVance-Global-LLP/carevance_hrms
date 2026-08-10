@@ -44,6 +44,15 @@ const applyTheme = (theme: ResolvedTheme) => {
   const root = document.documentElement;
   root.setAttribute('data-theme', theme);
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLORS[theme]);
+
+  // The Electron shell paints the window background and its own fallback
+  // screens (load error, offline) outside this document, so they cannot see
+  // the token layer. Push the *resolved* theme rather than the choice: the
+  // shell then matches what is actually on screen, and 'system' flips arrive
+  // here as a new resolved value anyway.
+  void window.desktopTracker?.setTheme?.({ theme })?.catch?.(() => {
+    // The shell keeps its last known theme; the web UI is already correct.
+  });
 };
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
