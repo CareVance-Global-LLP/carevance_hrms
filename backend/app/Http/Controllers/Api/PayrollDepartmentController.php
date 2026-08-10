@@ -4220,8 +4220,34 @@ class PayrollDepartmentController extends Controller
             ->latest('id')
             ->value('batch_reference');
 
-        DB::transaction(function () use ($run, $request, $paymentMethod, $pendingItems, $batchReference) {
-            foreach ($pendingItems as $item) {
+        /*
+         * Apply exactly the test the bank file applies. Marking every pending
+         * item paid recorded people as having received money no instruction
+         * ever covered: someone with no bank account is not in the file, and a
+         * zero or negative net should have stopped the run rather than being
+         * settled. They are returned as named exclusions, never silently
+         * dropped and never silently "paid".
+         */
+        $disbursement = app(\App\Services\Payroll\PayrollDisbursementService::class);
+        $excluded = [];
+        $payableItems = $pendingItems->filter(function (PayrollItem $item) use ($disbursement, &$excluded) {
+            $item->loadMissing('user');
+            $reason = $disbursement->cannotPay($item);
+            if ($reason !== null) {
+                $excluded[] = [
+                    'user_id' => (int) $item->user_id,
+                    'name' => $item->user?->name,
+                    'reason' => $reason,
+                ];
+
+                return false;
+            }
+
+            return true;
+        })->values();
+
+        DB::transaction(function () use ($run, $request, $paymentMethod, $payableItems, $batchReference, $excluded) {
+            foreach ($payableItems as $item) {
                 $item->update([
                     'payment_status' => 'paid',
                     'payment_method' => $paymentMethod,
@@ -4235,10 +4261,15 @@ class PayrollDepartmentController extends Controller
                      * This still records an *instruction*, not a confirmation —
                      * the bank's UTR replaces it when the results come back
                      * through PayrollDisbursementService::recordResults().
+                     *
+                     * Null rather than a locally invented 'PAY-xxxxxxxx' when
+                     * no batch exists: a random string looks like a reference
+                     * while matching nothing on any statement, which is worse
+                     * than an honestly empty field.
                      */
                     'payment_reference' => $batchReference
                         ? $batchReference.'/'.$item->user_id
-                        : 'PAY-'.strtoupper(substr(md5(random_bytes(6)), 0, 8)),
+                        : null,
                     'paid_at' => now(),
                 ]);
             }
@@ -4251,7 +4282,8 @@ class PayrollDepartmentController extends Controller
             ]);
 
             $this->writeRunAudit($run, 'disbursed', [
-                'paid_items_count' => $pendingItems->count(),
+                'paid_items_count' => $payableItems->count(),
+                'excluded_count' => count($excluded),
                 'payment_method' => $paymentMethod,
                 'disbursed_by' => auth()->id(),
             ]);
@@ -4260,10 +4292,19 @@ class PayrollDepartmentController extends Controller
         // Notify every employee in the run that their payslip is ready.
         $notification = $this->notifyPayslips($run, auth()->id());
 
+        $message = "Payroll disbursed. Run is now immutable for compliance.";
+        if ($excluded !== []) {
+            $message .= ' '.count($excluded).' employee(s) were excluded and remain unpaid.';
+        }
+
         return response()->json([
             'success' => true,
-            'message' => "Payroll disbursed. Run is now immutable for compliance.",
+            'message' => $message,
             'run' => $run->fresh(),
+            'paid_count' => $payableItems->count(),
+            // Named, so the operator can act on them. Silently dropping an
+            // unpayable person is how someone goes a month without salary.
+            'excluded' => $excluded,
             'payslip_notification' => $notification,
         ]);
     }

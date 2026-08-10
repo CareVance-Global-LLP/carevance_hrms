@@ -184,8 +184,16 @@ class PayrollDisbursementService
         });
     }
 
-    /** Why this line cannot be paid, or null when it can. */
-    private function cannotPay(PayrollItem $item): ?string
+    /**
+     * Why this line cannot be paid, or null when it can.
+     *
+     * Public so the disburse endpoint applies exactly the same test the bank
+     * file does. It previously marked every pending item paid regardless, so
+     * people with no bank account — or with a zero or negative net that should
+     * have stopped the run — were recorded as having been paid money that no
+     * bank instruction ever covered.
+     */
+    public function cannotPay(PayrollItem $item): ?string
     {
         // Already settled. Re-instructing a paid line is how somebody gets paid
         // twice, so it is excluded before anything else is considered.
