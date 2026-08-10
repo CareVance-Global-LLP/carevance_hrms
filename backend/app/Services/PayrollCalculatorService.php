@@ -36,6 +36,13 @@ class PayrollCalculatorService
     const GRATUITY_MIN_YEARS = 5;
     /** Statutory ceiling on a gratuity payout. */
     const GRATUITY_MAX_PAYOUT = 2000000;
+    /*
+     * FY 2025-26 figures. These were commented as FY 2024-25 while carrying
+     * 2025-26 values — the ₹4L exemption, the ₹12L rebate limit and the 25%
+     * band are all 2025-26. A label that disagrees with the numbers under it
+     * is worse than none: the next person to apply a Finance Act trusts it and
+     * edits the wrong year. Slabs are keyed by FY in TAX_SLABS_BY_FY below.
+     */
     const STANDARD_DEDUCTION_NEW = 75000;
     const STANDARD_DEDUCTION_OLD = 50000;
     const REBATE_LIMIT_NEW = 1200000;
@@ -619,29 +626,80 @@ class PayrollCalculatorService
         return $tax;
     }
 
-    /** New regime slabs (Sec 115BAC), FY 2024-25 — contiguous boundaries. */
-    protected static function newRegimeSlabs(): array
+    /**
+     * Financial year (start year) covering a calendar date.
+     *
+     * The Indian FY runs 1 April to 31 March, so January to March belong to
+     * the year before: March 2026 is FY 2025-26.
+     */
+    public static function financialYearFor(?\DateTimeInterface $date = null): int
     {
-        return [
-            ['min' => 0,       'max' => 400000,        'rate' => 0],
-            ['min' => 400000,  'max' => 800000,        'rate' => 0.05],
-            ['min' => 800000,  'max' => 1200000,       'rate' => 0.10],
-            ['min' => 1200000, 'max' => 1600000,       'rate' => 0.15],
-            ['min' => 1600000, 'max' => 2000000,       'rate' => 0.20],
-            ['min' => 2000000, 'max' => 2400000,       'rate' => 0.25],
-            ['min' => 2400000, 'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
-        ];
+        $date = $date ? \Carbon\Carbon::parse($date) : now();
+
+        return (int) ($date->month >= 4 ? $date->year : $date->year - 1);
     }
 
-    /** Old regime slabs, FY 2024-25 — contiguous boundaries. */
-    protected static function oldRegimeSlabs(): array
+    /**
+     * Slabs by financial year, keyed by FY start year: 2025 is FY 2025-26.
+     *
+     * Adding next year's rates is a new entry here. Boundaries are contiguous
+     * and half-open (min, max] — the earlier table used min values of
+     * 400001 / 800001 and so on, which left an income landing exactly on a
+     * boundary matching no slab at all.
+     */
+    private const TAX_SLABS_BY_FY = [
+        2025 => [
+            // Sec 115BAC. ₹4,00,000 exemption and the 25% band are FY 2025-26.
+            'new' => [
+                ['min' => 0,       'max' => 400000,        'rate' => 0],
+                ['min' => 400000,  'max' => 800000,        'rate' => 0.05],
+                ['min' => 800000,  'max' => 1200000,       'rate' => 0.10],
+                ['min' => 1200000, 'max' => 1600000,       'rate' => 0.15],
+                ['min' => 1600000, 'max' => 2000000,       'rate' => 0.20],
+                ['min' => 2000000, 'max' => 2400000,       'rate' => 0.25],
+                ['min' => 2400000, 'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
+            ],
+            'old' => [
+                ['min' => 0,       'max' => 250000,        'rate' => 0],
+                ['min' => 250000,  'max' => 500000,        'rate' => 0.05],
+                ['min' => 500000,  'max' => 1000000,       'rate' => 0.20],
+                ['min' => 1000000, 'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
+            ],
+        ],
+    ];
+
+    /** The most recent year we hold rates for. */
+    private static function latestKnownFinancialYear(): int
     {
-        return [
-            ['min' => 0,       'max' => 250000,        'rate' => 0],
-            ['min' => 250000,  'max' => 500000,        'rate' => 0.05],
-            ['min' => 500000,  'max' => 1000000,       'rate' => 0.20],
-            ['min' => 1000000, 'max' => PHP_FLOAT_MAX, 'rate' => 0.30],
-        ];
+        return max(array_keys(self::TAX_SLABS_BY_FY));
+    }
+
+    /**
+     * Slabs for a regime and financial year.
+     *
+     * An unknown year falls back to the latest rates we hold rather than
+     * returning nothing, so a run in a future FY still taxes at plausible
+     * rates instead of silently deducting zero. Update TAX_SLABS_BY_FY each
+     * Finance Act.
+     */
+    protected static function slabsFor(string $regime, ?int $financialYear = null): array
+    {
+        $year = $financialYear ?? self::financialYearFor();
+        $table = self::TAX_SLABS_BY_FY[$year] ?? self::TAX_SLABS_BY_FY[self::latestKnownFinancialYear()];
+
+        return $table[$regime];
+    }
+
+    /** New regime slabs (Sec 115BAC) — contiguous boundaries. */
+    protected static function newRegimeSlabs(?int $financialYear = null): array
+    {
+        return self::slabsFor('new', $financialYear);
+    }
+
+    /** Old regime slabs — contiguous boundaries. */
+    protected static function oldRegimeSlabs(?int $financialYear = null): array
+    {
+        return self::slabsFor('old', $financialYear);
     }
 
     /**
