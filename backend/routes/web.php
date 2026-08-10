@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\Auth\VerifyEmailController;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -16,22 +15,12 @@ Route::get('/email/verify/{id}/{hash}', [VerifyEmailController::class, 'verify']
     ->whereNumber('id')
     ->name('verification.verify');
 
-// Temporary route for verifying SMTP delivery locally. Remove once SMTP is confirmed.
-Route::get('/test-mail', function () {
-    if (!app()->isLocal()) {
-        abort(404);
-    }
-
-    try {
-        Mail::raw('CareVance SMTP test email.', function ($message) {
-            $message->to((string) env('MAIL_FROM_ADDRESS', 'hello@example.com'))
-                ->subject('CareVance SMTP Test');
-        });
-
-        return response('Test email sent.', 200);
-    } catch (\Throwable $exception) {
-        report($exception);
-
-        return response('Failed to send test email.', 500);
-    }
-});
+/*
+ * A local-only /test-mail route lived here, marked "remove once SMTP is
+ * confirmed". SMTP is confirmed, so it is gone.
+ *
+ * To check mail delivery, use `php artisan tinker` on the machine in question.
+ * Do not add a route for it — an earlier unauthenticated version of exactly this
+ * idea was an open mail relay through the production SMTP credentials. See the
+ * note in routes/api/public.php.
+ */
