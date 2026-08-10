@@ -77,3 +77,13 @@ create_presentation.py
 
 # IDE tooling
 .kilo/
+
+# Local SQLite databases. backend/timetrackpro was committed as a tracked
+# database — the app uses PostgreSQL, so it was only ever local scratch.
+backend/timetrackpro
+*.sqlite
+*.sqlite3
+
+# Local scratch that has a habit of appearing at the repo root.
+cookies.txt
+debug.log
