@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Organization;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Authorization\RoleService;
@@ -29,8 +30,21 @@ class RoleController extends Controller
             $org = $user->organization;
             $roles = $this->roleService->listRoles($org);
 
+            // Every employee can list roles because the organization tree needs
+            // their names, colours and headcounts. The permission keys behind a
+            // role are a different thing — those stay with admins and managers,
+            // who are the only ones who can act on them.
+            $canSeePermissions = $user->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'];
+
             return response()->json([
-                'data' => $roles->map(fn(Role $role) => $this->serializeRole($role)),
+                'data' => $roles->map(function (Role $role) use ($canSeePermissions) {
+                    $payload = $this->serializeRole($role);
+                    if (!$canSeePermissions) {
+                        $payload['permissions'] = [];
+                    }
+
+                    return $payload;
+                }),
             ]);
         } catch (Throwable $e) {
             Log::error('Role list failed', ['message' => $e->getMessage()]);

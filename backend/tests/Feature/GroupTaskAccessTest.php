@@ -395,6 +395,51 @@ class GroupTaskAccessTest extends TestCase
         $this->assertSame([$group->id], collect($employeeRow['groups'] ?? [])->pluck('id')->all());
     }
 
+    public function test_users_index_directory_returns_the_whole_roster_to_an_employee(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-directory-users']);
+
+        $admin = $this->createUser($organization, 'Admin', 'admin-directory@carevance.test', 'admin');
+        $manager = $this->createUser($organization, 'Manager', 'manager-directory@carevance.test', 'manager');
+        $employee = $this->createUser($organization, 'Employee', 'employee-directory@carevance.test', 'employee');
+
+        // Without the flag an employee is narrowed to themselves, which is what
+        // used to leave the organization tree with a single card.
+        $narrowed = $this->getJson('/api/users?simple=1', $this->apiHeadersFor($employee))->assertOk();
+        $this->assertSame([$employee->id], collect($narrowed->json())->pluck('id')->all());
+
+        $response = $this->getJson('/api/users?simple=1&directory=1', $this->apiHeadersFor($employee))
+            ->assertOk();
+
+        $ids = collect($response->json())->pluck('id')->all();
+        $this->assertContains($admin->id, $ids);
+        $this->assertContains($manager->id, $ids);
+        $this->assertContains($employee->id, $ids);
+
+        // `directory` forces the simple payload — it must never widen the
+        // audience for the detailed roster.
+        $adminRow = collect($response->json())->firstWhere('id', $admin->id);
+        $this->assertArrayNotHasKey('total_duration', $adminRow);
+        $this->assertArrayNotHasKey('profile_completeness', $adminRow);
+    }
+
+    public function test_roles_index_is_readable_by_an_employee_without_permission_keys(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-directory-roles']);
+
+        $admin = $this->createUser($organization, 'Admin', 'admin-roles-directory@carevance.test', 'admin');
+        $employee = $this->createUser($organization, 'Employee', 'employee-roles-directory@carevance.test', 'employee');
+
+        $employeeView = $this->getJson('/api/roles', $this->apiHeadersFor($employee))->assertOk();
+        $this->assertNotEmpty($employeeView->json('data'));
+        foreach ($employeeView->json('data') as $role) {
+            $this->assertSame([], $role['permissions']);
+        }
+
+        // An admin still sees the permission keys the roles page needs.
+        $this->getJson('/api/roles', $this->apiHeadersFor($admin))->assertOk();
+    }
+
     public function test_report_groups_index_supports_lightweight_simple_payload(): void
     {
         $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance-simple-groups']);

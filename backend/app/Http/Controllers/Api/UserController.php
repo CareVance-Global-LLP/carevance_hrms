@@ -54,6 +54,7 @@ class UserController extends Controller
             'end_date' => 'nullable|date',
             'country' => 'nullable|string|max:64',
             'simple' => 'nullable',
+            'directory' => 'nullable',
         ]);
 
         $currentUser = $request->user();
@@ -62,6 +63,17 @@ class UserController extends Controller
         }
 
         $simple = $request->boolean('simple');
+
+        // The organization tree is a company-wide directory: everyone from an
+        // employee up to an admin sees the whole reporting structure, not just
+        // the slice their hierarchy level normally exposes. It is forced onto
+        // the `simple` payload so widening the audience can never leak the
+        // detailed roster (government IDs, bank accounts, profile completeness)
+        // that the unfiltered list carries.
+        $directory = $request->boolean('directory');
+        if ($directory) {
+            $simple = true;
+        }
 
         $users = User::where('organization_id', $currentUser->organization_id)
             ->with([
@@ -78,7 +90,7 @@ class UserController extends Controller
                 'employeeGovernmentIds:id,user_id,id_type,id_number',
                 'employeeBankAccounts:id,user_id',
             ])
-            ->when($currentUser->getHierarchyLevel() > Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'] && $currentUser->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], function ($query) use ($currentUser) {
+            ->when(!$directory && $currentUser->getHierarchyLevel() > Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'] && $currentUser->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], function ($query) use ($currentUser) {
                 $visibleGroupIds = $this->groupIdsForUser($currentUser);
                 $userLevel = $currentUser->getHierarchyLevel();
 
@@ -100,7 +112,7 @@ class UserController extends Controller
                         });
                 });
             })
-            ->when($currentUser->getHierarchyLevel() >= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], fn ($query) => $query->where('id', $currentUser->id))
+            ->when(!$directory && $currentUser->getHierarchyLevel() >= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], fn ($query) => $query->where('id', $currentUser->id))
             ->orderBy('created_at', 'desc')
             ->get();
 

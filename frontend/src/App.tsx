@@ -575,7 +575,7 @@ function App() {
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
             <Route path="my-team" element={<EmployeeRoute><MyTeam /></EmployeeRoute>} />
-            <Route path="organization-tree" element={<AdminRoute><OrganizationTree /></AdminRoute>} />
+            <Route path="organization-tree" element={<OrganizationTree />} />
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<PlanFeatureRoute feature="project_tracking"><Projects /></PlanFeatureRoute>} />
             <Route path="tasks" element={<PlanFeatureRoute feature="task_tracking"><Tasks /></PlanFeatureRoute>} />

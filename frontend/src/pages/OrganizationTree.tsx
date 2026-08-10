@@ -722,7 +722,10 @@ export default function OrganizationTree() {
   const { data: raw = [], isLoading, isError, refetch } = useQuery<OrgUser[]>({
     queryKey: ['organization-tree', isAuthenticated],
     queryFn: async () => {
-      const res: any = await userApi.getAll({ simple: 1, is_active: true });
+      // `directory` is what makes this page work for everyone: without it the
+      // API narrows the roster to the people the caller manages, so an employee
+      // would see a tree containing only themselves.
+      const res: any = await userApi.getAll({ simple: 1, directory: 1, is_active: true });
       const list: any[] = res?.data ?? (Array.isArray(res) ? res : []);
 
       const mapped = list.map((u: any) => ({

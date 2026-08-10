@@ -77,7 +77,6 @@ export const condensedNavigation: NavGroup[] = [
     label: 'Organization',
     to: '/organization-tree',
     icon: Network,
-    adminOnly: true,
   },
   {
     label: 'People',

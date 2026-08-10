@@ -526,6 +526,10 @@ export const userApi = {
       is_active?: boolean; 
       period?: 'today' | 'week' | 'all';
       simple?: boolean | number;
+      // Company-wide directory read (the organization tree). Returns the whole
+      // roster in `simple` shape regardless of the caller's hierarchy level,
+      // instead of the slice they can otherwise manage.
+      directory?: boolean | number;
       country?: string;
       timezone?: string;
       start_date?: string;

@@ -96,9 +96,11 @@ const ROLES = [
     key: 'employee', level: 100,
     email: process.env.TEST_EMPLOYEE_EMAIL || 'test1@gmail.com',
     password: process.env.TEST_EMPLOYEE_PASSWORD || '12345678',
-    // AdminRoute (level<100) blocked; ProtectedRoute allowed
-    expectAllowed: ['/dashboard', '/attendance', '/leave', '/my-payroll', '/tasks', '/projects', '/chat', '/notifications', '/settings'],
-    expectBlocked: ['/super-admin', '/employees', '/payroll', '/organization-tree', '/audit-logs', '/approval-inbox', '/monitoring/productive-time', '/reports', '/analytics', '/settings/billing', '/settings/roles', '/invoices', '/assets'],
+    // AdminRoute (level<100) blocked; ProtectedRoute allowed.
+    // /organization-tree is deliberately ProtectedRoute, not AdminRoute — the
+    // company hierarchy is readable by everyone.
+    expectAllowed: ['/dashboard', '/attendance', '/leave', '/my-payroll', '/tasks', '/projects', '/chat', '/notifications', '/settings', '/organization-tree'],
+    expectBlocked: ['/super-admin', '/employees', '/payroll', '/audit-logs', '/approval-inbox', '/monitoring/productive-time', '/reports', '/analytics', '/settings/billing', '/settings/roles', '/invoices', '/assets'],
   },
   {
     key: 'super_admin', level: 0,
@@ -115,8 +117,8 @@ const ROLES = [
     // role=employee (level 100) => AdminRoute blocks admin pages (route guard uses
     // role hierarchy, NOT the custom permission array). ProtectedRoute pages render.
     // /assets is PermissionRoute(assets.view) and this role does NOT have it -> blocked.
-    expectAllowed: ['/dashboard', '/attendance', '/leave', '/time-tracker', '/tasks', '/projects', '/chat', '/notifications', '/settings', '/my-payroll'],
-    expectBlocked: ['/super-admin', '/super-admin/companies', '/employees', '/payroll', '/organization-tree', '/audit-logs', '/approval-inbox', '/reports', '/analytics', '/monitoring/productive-time', '/settings/billing', '/settings/roles', '/invoices', '/assets'],
+    expectAllowed: ['/dashboard', '/attendance', '/leave', '/time-tracker', '/tasks', '/projects', '/chat', '/notifications', '/settings', '/my-payroll', '/organization-tree'],
+    expectBlocked: ['/super-admin', '/super-admin/companies', '/employees', '/payroll', '/audit-logs', '/approval-inbox', '/reports', '/analytics', '/monitoring/productive-time', '/settings/billing', '/settings/roles', '/invoices', '/assets'],
   },
 ];
 

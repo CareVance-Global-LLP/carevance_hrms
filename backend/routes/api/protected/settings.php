@@ -20,7 +20,10 @@ Route::put('/settings/productivity/classifications/{classification}', [Productiv
 Route::delete('/settings/productivity/classifications/{classification}', [ProductivityClassificationController::class, 'destroy'])->middleware('role:admin');
 Route::post('/settings/productivity/classifications/batch', [ProductivityClassificationController::class, 'batchUpdate'])->middleware('role:admin');
 
-Route::get('/roles', [\App\Http\Controllers\Api\RoleController::class, 'index'])->middleware('role:admin,manager');
+// Readable by every authenticated member — the organization tree renders role
+// names and headcounts. RoleController::index withholds the permission keys
+// from anyone below manager; every mutating route below stays gated.
+Route::get('/roles', [\App\Http\Controllers\Api\RoleController::class, 'index']);
 Route::post('/roles', [\App\Http\Controllers\Api\RoleController::class, 'store'])->middleware('role:admin');
 Route::post('/roles/assign-user', [\App\Http\Controllers\Api\RoleController::class, 'assignUser'])->middleware('role:admin,manager');
 Route::get('/roles/{role}', [\App\Http\Controllers\Api\RoleController::class, 'show'])->middleware('role:admin,manager');

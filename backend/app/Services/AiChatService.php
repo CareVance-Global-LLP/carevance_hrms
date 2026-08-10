@@ -499,7 +499,7 @@ class AiChatService
             . "- Help & support: Settings → Help tab.\n\n"
             . "APP NAVIGATION (route => what it is, access):\n"
             . "- Dashboard (/dashboard): org overview and today's stats.\n"
-            . "- Organization (/organization-tree, admin): company hierarchy.\n"
+            . "- Organization (/organization-tree, everyone): company hierarchy.\n"
             . "- People: Employees (/employees, admin), New Hires (/new-hires, admin), Resignations (/resignations, admin), My Team (/my-team, employee).\n"
             . "- Roles & Permissions (admin): Roles (/employees/roles), Department (/employees/teams).\n"
             . "- Attendance: Attendance (/attendance), Leave (/leave), Approval Inbox (/approval-inbox, admin — approve leave & time edits), Overtime (/edit-time), Breaks (/breaks), Shifts (/shifts).\n"

@@ -33,7 +33,7 @@ export function getQuickActionsForRole(role: string | undefined): string[] {
 export const APP_KNOWLEDGE = {
   navigation: [
     { name: 'Dashboard', route: '/dashboard', description: 'Organization overview with today\'s stats.' },
-    { name: 'Organization Tree', route: '/organization-tree', description: 'View company hierarchy.', adminOnly: true },
+    { name: 'Organization Tree', route: '/organization-tree', description: 'View company hierarchy.' },
     { name: 'Employees', route: '/employees', description: 'Browse and manage people.', adminOnly: true },
     { name: 'New Hires', route: '/new-hires', description: 'Recently onboarded employees.', adminOnly: true },
     { name: 'Exits', route: '/exits', description: 'Employee exits: notice, clearance, settlement.', adminOnly: true },
