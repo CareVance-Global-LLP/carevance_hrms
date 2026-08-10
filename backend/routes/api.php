@@ -13,7 +13,6 @@ Route::middleware('api.token')->group(function () {
     require base_path('routes/api/protected/chat.php');
     require base_path('routes/api/protected/invoices.php');
     require base_path('routes/api/protected/invitations.php');
-    require base_path('routes/api/protected/invites.php');
     require base_path('routes/api/protected/notifications.php');
     require base_path('routes/api/protected/settings.php');
     require base_path('routes/api/protected/billing.php');

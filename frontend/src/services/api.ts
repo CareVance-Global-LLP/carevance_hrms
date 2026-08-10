@@ -44,7 +44,6 @@ import type {
   InvitationSummary,
   InvitationListResponse,
   InvitationCreateResponse,
-  InviteValidationResponse,
   BillingSnapshot,
   BugReportRequest,
   BugReportResponse,
@@ -508,15 +507,6 @@ export const invitationApi = {
 
   accept: (token: string, data: { name: string; password: string; password_confirmation: string; timezone?: string }) =>
     api.post<AuthResponse>(`/invitations/${token}/accept`, data),
-};
-
-export const inviteApi = {
-  send: (data: { email: string; role?: string | null }) =>
-    api.post('/invites/send', data),
-  validate: (token: string) =>
-    api.get<InviteValidationResponse>('/invites/validate', { params: { token } }),
-  accept: (data: { token: string; name: string; password: string; password_confirmation: string }) =>
-    api.post<AuthResponse>('/invites/accept', data),
 };
 
 // User API

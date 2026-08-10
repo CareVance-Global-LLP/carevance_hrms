@@ -573,15 +573,6 @@ export interface InvitationCreateResponse {
   invited_count: number;
 }
 
-export interface InviteValidationResponse {
-  valid: boolean;
-  email?: string;
-  role?: string | null;
-  expires_at?: string | null;
-  organization?: Pick<Organization, 'id' | 'name' | 'slug'> | null;
-  message?: string;
-}
-
 export interface BillingSnapshot {
   plan: {
     code?: string | null;

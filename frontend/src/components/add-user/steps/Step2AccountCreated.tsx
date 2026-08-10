@@ -35,7 +35,7 @@ export function Step2AccountCreated({ form }: Step2Props) {
       <div className="space-y-3 text-sm text-gray-600 w-full max-w-sm">
         <div className="flex items-center gap-2 justify-center">
           <Mail className="h-4 w-4 text-gray-400" />
-          <span>Account created for <strong className="text-gray-900">{form.email}</strong></span>
+          <span>Setting up <strong className="text-gray-900">{form.email}</strong></span>
         </div>
 
         <div className="flex items-center gap-2 justify-center bg-gray-50 rounded-lg px-4 py-2">
@@ -59,9 +59,10 @@ export function Step2AccountCreated({ form }: Step2Props) {
       <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3 flex items-start gap-3 text-left max-w-sm">
         <ShieldCheck className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
         <div>
-          <p className="text-sm font-medium text-emerald-800">Account will be created after setup</p>
+          <p className="text-sm font-medium text-emerald-800">Account is created in the next step</p>
           <p className="text-xs text-emerald-700 mt-1">
-            Once you complete the profile in the next step, the account for <strong>{form.email}</strong> will be created and an invitation email will be sent with login instructions.
+            Continue to create the account for <strong>{form.email}</strong>. No email is sent on this
+            path — you'll get their sign-in details at the end to pass on directly.
           </p>
         </div>
       </div>
