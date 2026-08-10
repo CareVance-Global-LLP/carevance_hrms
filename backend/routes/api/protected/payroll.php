@@ -61,6 +61,25 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::post('/tax-proofs', [TaxProofUploadController::class, 'store']);
 
     Route::post('/leave-encashments', [EnhancedPayrollController::class, 'requestLeaveEncashment']);
+
+    /*
+     * These three sat in the administrative group below, which meant the only
+     * people who reach them — ordinary employees, from MyPayroll, Loans and
+     * TaxDeclaration — got a 403 on their own data. All three resolve their
+     * subject from $request->user() (hraOptimization is a pure calculator over
+     * values the caller supplies), so they satisfy this group's rule.
+     */
+    Route::post('/loans/request', [\App\Http\Controllers\Api\LoanController::class, 'requestLoan']);
+    Route::get('/tax-savings/recommendation', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'taxSavingsRecommendation']);
+    Route::post('/hra-optimization', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'hraOptimization']);
+
+    /*
+     * Payslip PDFs are the exception: they take a {userId} rather than
+     * resolving it from the caller, so the controller enforces that a
+     * non-privileged caller may only ask for their own.
+     */
+    Route::get('/payslip/{userId}/{monthYear}/download', [PayrollController::class, 'downloadPayslipPdf']);
+    Route::get('/payslip/{userId}/{monthYear}/view', [PayrollController::class, 'viewPayslipPdf']);
 });
 
 /**
@@ -254,9 +273,9 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
     
     // Payslips
     Route::post('/generate-payslip', [PayrollController::class, 'generatePayslip']);
-    Route::get('/payslip/{userId}/{monthYear}/download', [PayrollController::class, 'downloadPayslipPdf']);
-    Route::get('/payslip/{userId}/{monthYear}/view', [PayrollController::class, 'viewPayslipPdf']);
-    
+    // payslip/{userId}/{monthYear}/download|view are registered in the
+    // self-service group above; the controller enforces ownership.
+
     // Employee Self-Service
 
     // Tax Declarations (Form 12BB)
@@ -270,12 +289,11 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
 
     // Tax Regime Comparison & Recommendations
     Route::post('/tax-simulator/compare', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'compareTaxRegimes']);
-    Route::get('/tax-savings/recommendation', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'taxSavingsRecommendation']);
+    // tax-savings/recommendation and hra-optimization are self-service; see the
+    // group above.
     Route::post('/tax-regime/bulk-update', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'bulkUpdateTaxRegime']);
-    Route::post('/hra-optimization', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'hraOptimization']);
 
-    // Loan / Advance Management
-    Route::post('/loans/request', [\App\Http\Controllers\Api\LoanController::class, 'requestLoan']);
+    // Loan / Advance Management (loans/request is self-service, above)
     Route::get('/my/loans', [\App\Http\Controllers\Api\LoanController::class, 'myLoans']);
     Route::get('/loans', [\App\Http\Controllers\Api\LoanController::class, 'listLoans']);
     Route::post('/loans/{loanId}/approve', [\App\Http\Controllers\Api\LoanController::class, 'approveLoan']);

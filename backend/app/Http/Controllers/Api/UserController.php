@@ -372,10 +372,18 @@ class UserController extends Controller
         // Filter by department name if provided
         $departmentFilter = $request->input('department');
         if ($departmentFilter && $departmentFilter !== 'All departments') {
-            $query->whereHas('employeeWorkInfo.department', function ($q) use ($departmentFilter) {
-                $q->where('name', $departmentFilter);
-            })->orWhereHas('groups', function ($q) use ($departmentFilter) {
-                $q->where('name', $departmentFilter);
+            /*
+             * The two whereHas clauses must be wrapped. Left unwrapped, the
+             * orWhereHas ORs against the whole builder — including the
+             * organization_id constraint above — so filtering by a department
+             * name returned matching users from *other* organizations.
+             */
+            $query->where(function ($outer) use ($departmentFilter) {
+                $outer->whereHas('employeeWorkInfo.department', function ($q) use ($departmentFilter) {
+                    $q->where('name', $departmentFilter);
+                })->orWhereHas('groups', function ($q) use ($departmentFilter) {
+                    $q->where('name', $departmentFilter);
+                });
             });
         }
 

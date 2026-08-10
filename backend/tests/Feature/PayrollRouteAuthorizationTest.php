@@ -53,6 +53,20 @@ class PayrollRouteAuthorizationTest extends TestCase
         'api/payroll/tax-simulator/compare',
         'api/payroll/tax-simulator/what-if',
         'api/payroll/tax-simulator/monthly-take-home',
+        // Moved out of the administrative group: these are reached from
+        // MyPayroll, Loans and TaxDeclaration, so gating them to admin/manager
+        // 403'd the only people who use them. requestLoan and
+        // taxSavingsRecommendation resolve the subject from $request->user();
+        // hraOptimization is a pure calculator over values the caller supplies.
+        'api/payroll/loans/request',
+        'api/payroll/tax-savings/recommendation',
+        'api/payroll/hra-optimization',
+        // These two take a {userId} rather than resolving it from the caller,
+        // so PayrollController::denyForeignPayslip enforces that an employee
+        // may only fetch their own. Covered by
+        // PayrollSelfServiceAuthorizationTest.
+        'api/payroll/payslip/{userId}/{monthYear}/download',
+        'api/payroll/payslip/{userId}/{monthYear}/view',
     ];
 
     /** @return array<int, \Illuminate\Routing\Route> */

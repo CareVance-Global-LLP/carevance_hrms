@@ -464,10 +464,46 @@ class PayrollController extends Controller
     }
 
     /**
+     * Payslip PDF routes take a {userId} instead of resolving the subject from
+     * the caller, so they cannot rely on the self-service group's guarantee.
+     *
+     * An employee may only ask for their own; anyone with payroll privilege
+     * (hierarchy level below employee) may ask for anyone in their org, which
+     * the model's organization scope already bounds.
+     *
+     * @return \Illuminate\Http\JsonResponse|null null when the caller may proceed
+     */
+    private function denyForeignPayslip(Request $request, int $userId): ?\Illuminate\Http\JsonResponse
+    {
+        $caller = $request->user();
+
+        if (! $caller) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
+
+        if ($caller->id === $userId || $caller->getHierarchyLevel() < 100) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Forbidden',
+            'error_code' => 'FORBIDDEN',
+        ], 403);
+    }
+
+    /**
      * Generate and download payslip as PDF.
      */
     public function downloadPayslipPdf(Request $request, int $userId, string $monthYear)
     {
+        if ($denied = $this->denyForeignPayslip($request, $userId)) {
+            return $denied;
+        }
+
         $payrollItem = PayrollItem::where('user_id', $userId)
             ->whereHas('payrollRun', function ($q) use ($monthYear) {
                 $q->where('month_year', $monthYear);
@@ -499,6 +535,10 @@ class PayrollController extends Controller
      */
     public function viewPayslipPdf(Request $request, int $userId, string $monthYear)
     {
+        if ($denied = $this->denyForeignPayslip($request, $userId)) {
+            return $denied;
+        }
+
         $payrollItem = PayrollItem::where('user_id', $userId)
             ->whereHas('payrollRun', function ($q) use ($monthYear) {
                 $q->where('month_year', $monthYear);
