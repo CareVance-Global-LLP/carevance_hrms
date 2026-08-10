@@ -126,7 +126,9 @@ class PayrollRouteAuthorizationTest extends TestCase
             'api/payroll/runs/{runId}/bank-file',
             'api/payroll/bank/create-batch',
             'api/payroll/employees/{userId}/ctc',
-            'api/payroll/quick-fix',
+            // api/payroll/quick-fix was removed rather than gated. It had no
+            // client caller and inserted a fabricated PAN and a ₹6,00,000 CTC
+            // template for the calling user.
         ];
 
         $byUri = [];

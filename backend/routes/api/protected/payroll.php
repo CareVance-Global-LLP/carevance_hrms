@@ -96,17 +96,23 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
  * The gate belongs here, once, where it cannot be forgotten.
  */
 Route::prefix('payroll')->middleware(['plan.payroll', 'role:admin,manager'])->group(function () {
-    // Diagnostics. Kept for support use, but admin-only: quickFix used to be
-    // reachable by anyone and would insert the caller into the payroll
-    // population at a ₹6,00,000 CTC with a fabricated PAN.
-    Route::get('/debug', [\App\Http\Controllers\Api\PayrollDebugController::class, 'debugDepartments']);
-    Route::get('/diagnose', [PayrollDiagnosticController::class, 'diagnose']);
-    Route::post('/quick-fix', [PayrollDiagnosticController::class, 'quickFix']);
-    Route::get('/test-departments/{departmentId}/employees', [PayrollDiagnosticController::class, 'testDepartmentEmployees']);
-    
-    // Test endpoints
-    Route::get('/test-response/{departmentId}', [\App\Http\Controllers\Api\PayrollTestController::class, 'testResponse']);
-    Route::get('/test-raw/{departmentId}', [\App\Http\Controllers\Api\PayrollTestController::class, 'rawData']);
+    /*
+     * The diagnostic and test endpoints that used to live here are gone.
+     *
+     * They had no client caller anywhere — web, mobile, desktop or extension —
+     * and were not read-only despite three of them being GETs:
+     *   - POST /quick-fix inserted an employee_profiles row with a FABRICATED
+     *     PAN, an invented joining date and a ₹6,00,000 CTC template, letting
+     *     any manager put themselves into the payroll population.
+     *   - GET /test-response called getOrCreateForUser() inside a map(), so a
+     *     GET silently created payroll templates for a whole department.
+     *   - GET /diagnose, /debug, /test-raw and /test-departments dumped every
+     *     user's name, email and PAN to any manager, and /test-raw returned
+     *     unfiltered User models.
+     *
+     * Support diagnostics belong in an artisan command, not on the HTTP
+     * surface where they are reachable with a session cookie.
+     */
 
     // Onboarding (first-time user guidance)
     Route::get('/onboarding-status', [PayrollOnboardingController::class, 'status']);
