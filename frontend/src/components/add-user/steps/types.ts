@@ -18,6 +18,11 @@ export interface AddUserWizardForm {
   firstName: string;
   lastName: string;
   email: string;
+  // Set by the admin, handed to the joiner directly. This is what separates
+  // "Create User" from the three invite tabs: the account is usable the moment
+  // it exists, so the address is treated as verified on create rather than
+  // waiting on an email the joiner may never receive.
+  password: string;
   phone: string;
   role: 'employee' | 'manager' | 'admin';
   departmentIds: number[];
@@ -68,6 +73,7 @@ export const defaultForm: AddUserWizardForm = {
   firstName: '',
   lastName: '',
   email: '',
+  password: '',
   phone: '',
   role: 'employee',
   departmentIds: [],

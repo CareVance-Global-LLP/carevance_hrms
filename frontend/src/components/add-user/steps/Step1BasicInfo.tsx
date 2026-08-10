@@ -1,6 +1,6 @@
 import {useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Hash, AlertTriangle, XCircle, IndianRupee, Users, FileStack } from 'lucide-react';
+import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Hash, AlertTriangle, XCircle, IndianRupee, Users, FileStack, Lock } from 'lucide-react';
 import { groupApi, payrollApi } from '../../../services/api';
 import api from '../../../services/api';
 import CustomSelect from '../../../components/ui/CustomSelect';
@@ -139,6 +139,11 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
     if (field === 'phone' && form.phone && !/^[+]?[\d\s-]{10,}$/.test(form.phone)) {
       newErrors.phone = 'Please enter a valid phone number (10+ digits)';
     }
+    // Mirrors the API rule (min:8). Caught here so the admin fixes it before
+    // reaching step 2, where the account has already been created.
+    if (field === 'password' && form.password && form.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters';
+    }
     // Kept in step with the `max` on the date input below, so the picker and
     // the validation agree on what a plausible joining date is.
     //
@@ -250,6 +255,34 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
                 </div>
               </div>
             </div>
+          )}
+        </div>
+        <div>
+          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+            <Lock className="h-3.5 w-3.5 text-gray-400" />
+            Temporary Password <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            value={form.password}
+            onChange={(e) => {
+              setForm((p) => ({ ...p, password: e.target.value }));
+              if (errors.password) setErrors((p) => ({ ...p, password: undefined }));
+            }}
+            onBlur={() => handleBlur('password')}
+            className={inputClass('password')}
+            placeholder="At least 8 characters"
+            autoComplete="new-password"
+          />
+          {errors.password ? (
+            <p className="mt-1 text-xs text-red-500">{errors.password}</p>
+          ) : (
+            // Deliberately not masked: the admin has to read this back to the
+            // joiner, and a dot-filled box they cannot check is how the wrong
+            // password gets handed over.
+            <p className="mt-1 text-xs text-gray-500">
+              Share this with the employee — they can change it from Settings after signing in.
+            </p>
           )}
         </div>
         <div>

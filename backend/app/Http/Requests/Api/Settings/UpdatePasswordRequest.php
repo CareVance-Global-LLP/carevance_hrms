@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\Settings;
 
 use App\Http\Requests\Api\ApiFormRequest;
+use Illuminate\Validation\Rules\Password;
 
 class UpdatePasswordRequest extends ApiFormRequest
 {
@@ -10,7 +11,7 @@ class UpdatePasswordRequest extends ApiFormRequest
     {
         return [
             'current_password' => 'required|string',
-            'new_password' => 'required|string|min:8|confirmed',
+            'new_password' => ['required', 'string', 'confirmed', Password::defaults()],
         ];
     }
 }

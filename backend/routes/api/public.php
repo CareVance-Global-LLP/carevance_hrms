@@ -4,7 +4,6 @@ use App\Http\Controllers\Api\AiChatController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DesktopDownloadController;
 use App\Http\Controllers\Api\HealthCheckController;
-use App\Http\Controllers\Api\InviteController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\OAuthController;
 use App\Http\Controllers\Api\SettingsController;
@@ -30,8 +29,27 @@ Route::get('/auth/reset-password/validate', [PasswordResetController::class, 'va
 Route::post('/auth/reset-password', [PasswordResetController::class, 'update'])->middleware('throttle:auth.password.reset');
 Route::get('/invitations/{token}', [InvitationController::class, 'show']);
 Route::post('/invitations/{token}/accept', [InvitationController::class, 'accept'])->middleware('throttle:invitations.accept');
-Route::get('/invites/validate', [InviteController::class, 'validateInvite'])->middleware('throttle:invitations.validate');
-Route::post('/invites/accept', [InviteController::class, 'acceptInvite'])->middleware('throttle:invitations.accept');
+/*
+ * The legacy `invites` system used to live here, alongside POST /invites/send.
+ *
+ * It was a second, parallel invite implementation with none of the guarantees of
+ * `invitations`: the token was stored in plaintext, the table had no
+ * organization_id at all, and /invites/send had no role gate and validated role
+ * as `nullable|string` — so any authenticated user could invite any address with
+ * any role.
+ *
+ * The accept path resolved the invited email with a bare `User::query()`. `User`
+ * is deliberately excluded from the tenant scope, so that matched across *every*
+ * organization, and an invite for an address that already had an account
+ * overwrote that account's password. Verified: a plain employee in one
+ * organization could mint an admin-role invite targeting another organization's
+ * admin, and accepting an invite for an existing address replaced its password
+ * and returned a live session token.
+ *
+ * That is a cross-tenant password reset that bypasses PasswordResetController,
+ * which is properly throttled and binds its token to the user. Do not put this
+ * back. Invitations go through routes/api/protected/invitations.php.
+ */
 Route::get('/downloads/desktop/windows', [DesktopDownloadController::class, 'windows'])->middleware('throttle:desktop.download');
 Route::get('/media/public/{path}', [SettingsController::class, 'publicMedia'])->where('path', '.*');
 // NOTE: screenshots.file deliberately lives in routes/api/protected/monitoring.php.

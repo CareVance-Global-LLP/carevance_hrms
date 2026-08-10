@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rules\Password;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -28,6 +29,40 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        /*
+         * The password policy, in one place.
+         *
+         * Every password-setting endpoint validated `min:8` and nothing else,
+         * which is how an admin account came to have the password "12345678".
+         * For a system holding PAN numbers, bank accounts and salary data that
+         * is below the floor.
+         *
+         * `uncompromised()` checks the address against the Have I Been Pwned
+         * k-anonymity API, so it is a network call — it belongs in production
+         * and nowhere near the test suite, which must run offline and fast.
+         * The relaxed non-production rule is deliberate for the same reason:
+         * the suite creates users with passwords like "password123" in dozens
+         * of places, and rewriting all of them buys nothing.
+         *
+         * Consequence worth knowing: the strict rule is not exercised by the
+         * tests. If you change it, verify it by hand against a real request.
+         *
+         * Existing weak passwords keep working — login only checks the hash.
+         * This gates what can be *set* from here on.
+         */
+        Password::defaults(function () {
+            if (! $this->app->isProduction()) {
+                return Password::min(8);
+            }
+
+            return Password::min(12)
+                ->letters()
+                ->mixedCase()
+                ->numbers()
+                ->symbols()
+                ->uncompromised();
+        });
+
         RateLimiter::for('auth.login', function (Request $request) {
             $email = Str::lower((string) $request->input('email', 'guest'));
             $userAgent = Str::lower((string) $request->userAgent());

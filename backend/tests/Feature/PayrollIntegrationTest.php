@@ -147,14 +147,35 @@ class PayrollIntegrationTest extends TestCase
         }
     }
 
+    /**
+     * Give a user a CTC on their payroll template.
+     *
+     * Several payroll operations refuse to run without one — leave encashment
+     * and F&F both compute from it, and both return 422 rather than settling
+     * against a zero salary. `createEmployeeProfiles()` sets up the profile,
+     * work info and bank account but no template, so anything money-shaped has
+     * to ask for this explicitly.
+     */
+    private function giveCtc(User $user, float $annualCtc = 1200000): void
+    {
+        EmployeePayrollTemplate::getOrCreateForUser($user->id, $this->organization->id);
+
+        \DB::table('employee_payroll_templates')
+            ->where('user_id', $user->id)
+            ->update(['annual_ctc' => $annualCtc]);
+    }
+
     // ==================== EMPLOYEE SELF-SERVICE ====================
 
     /**
-     * Test: Employee can view their payroll template
+     * `payroll/employees/{id}` is an HR/admin view, not self-service — employees
+     * reach their own figures through `payroll/my/*` (see the allow-list in
+     * PayrollRouteAuthorizationTest). This asserted an employee could read it
+     * and had been failing on the 403 that correctly refuses them.
      */
-    public function test_employee_can_view_payroll_template(): void
+    public function test_hr_can_view_employee_payroll_record(): void
     {
-        $this->actingAs($this->employee);
+        $this->actingAs($this->hr);
 
         $response = $this->getJson("/api/payroll/employees/{$this->employee->id}");
 
@@ -381,6 +402,10 @@ class PayrollIntegrationTest extends TestCase
      */
     public function test_leave_encashment_workflow(): void
     {
+        // Encashment values the leave against the employee's CTC and refuses to
+        // run without one.
+        $this->giveCtc($this->employee);
+
         // HR creates encashment request
         $this->actingAs($this->hr);
 
@@ -453,13 +478,41 @@ class PayrollIntegrationTest extends TestCase
         $this->assertEquals(5000, $arrear->basic_difference); // 45000 - 40000
         $this->assertEquals(7500, $arrear->gross_difference); // 67500 - 60000
 
-        // Admin approves
+        // Approval applies the arrear to the employee's payroll_item in the run
+        // for its calculation_month, so both the run and the item have to exist.
+        // Approving without them returns 422 naming which is missing — the
+        // arrear has to land on a real payable line, not float free.
+        $this->giveCtc($this->employee);
         $this->actingAs($this->admin);
+        $this->postJson("/api/payroll/employees/{$this->employee->id}/process", [
+            'month_year' => '2026-06',
+            'annual_ctc' => 1200000,
+            'working_days' => 26,
+            'days_present' => 26,
+        ])->assertOk();
+
+        $item = PayrollItem::whereHas('payrollRun', fn ($q) => $q->where('month_year', '2026-06'))
+            ->where('user_id', $this->employee->id)
+            ->firstOrFail();
+        $grossBefore = (float) $item->gross_salary;
+
+        // Admin approves
         $response = $this->postJson("/api/payroll/arrears/{$arrear->id}/approve");
         $response->assertStatus(200);
 
         $arrear->refresh();
         $this->assertEquals('approved', $arrear->status);
+
+        // The arrear must move gross, not just the `arrears` column — an earlier
+        // bug left gross_salary alone, so net no longer equalled gross minus
+        // deductions and the bank file paid money the register did not show.
+        $item->refresh();
+        $this->assertEquals(
+            $grossBefore + 7500,
+            (float) $item->gross_salary,
+            'Approving an arrear must add the gross difference to the payroll item'
+        );
+        $this->assertEquals(7500, (float) $item->arrears);
     }
 
     // ==================== F&F SETTLEMENT WORKFLOW ====================
@@ -469,6 +522,10 @@ class PayrollIntegrationTest extends TestCase
      */
     public function test_fnf_settlement_workflow(): void
     {
+        // Every figure in a settlement — notice pay, leave encashment, gratuity
+        // — derives from the CTC, so the endpoint refuses to draft one without.
+        $this->giveCtc($this->employee);
+
         // HR creates F&F settlement
         $this->actingAs($this->hr);
 
@@ -641,15 +698,8 @@ class PayrollIntegrationTest extends TestCase
 
         // Create and process payroll run
         $monthYear = now()->format('Y-m');
-        
-        EmployeePayrollTemplate::getOrCreateForUser(
-            $this->employee->id,
-            $this->organization->id
-        );
-        
-        \DB::table('employee_payroll_templates')
-            ->where('user_id', $this->employee->id)
-            ->update(['annual_ctc' => 1200000]);
+
+        $this->giveCtc($this->employee);
 
         $this->postJson("/api/payroll/employees/{$this->employee->id}/process", [
             'month_year' => $monthYear,
@@ -661,9 +711,18 @@ class PayrollIntegrationTest extends TestCase
         $payrollRun = PayrollMonthlyRun::first();
         $this->assertNotNull($payrollRun);
 
+        // A bank file is an instruction to move money, so the run has to have
+        // cleared review first: draft -> locked -> approved. Asking for one on a
+        // draft run returns 422 naming the current status, which is the guard
+        // working rather than a defect — this test used to stop here.
+        $this->postJson("/api/payroll/runs/{$payrollRun->id}/lock")->assertOk();
+        $this->postJson("/api/payroll/runs/{$payrollRun->id}/approve")->assertOk();
+
+        $this->assertSame('approved', $payrollRun->fresh()->status);
+
         // Generate bank file
         $response = $this->getJson("/api/payroll/runs/{$payrollRun->id}/bank-file");
-        
+
         $response->assertStatus(200)
             ->assertJsonStructure([
                 'success',

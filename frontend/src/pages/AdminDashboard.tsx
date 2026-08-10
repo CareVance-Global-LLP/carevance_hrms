@@ -46,6 +46,7 @@ import { SelectInput } from '@/components/ui/FormField';
 import PendingApprovalsCard from '@/components/dashboard/PendingApprovalsCard';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
+import { greetUser } from '@/lib/greeting';
 type DashboardEmployee = {
   id: number;
   name: string;
@@ -1819,7 +1820,7 @@ export default function AdminDashboard() {
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
-          <p className="mt-3 text-sm font-medium text-slate-900">Good morning, {user?.name?.split(' ')[0] || 'there'}!</p>
+          <p className="mt-3 text-sm font-medium text-slate-900">{greetUser(user?.name)}!</p>
           <p className="mt-1 text-xs text-slate-500">Here&apos;s what&apos;s happening in your organization for the selected date range.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

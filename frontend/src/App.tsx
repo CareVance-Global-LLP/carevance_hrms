@@ -35,7 +35,6 @@ const PrivacyPolicyPage = lazyWithChunkRetry(() => import('@/pages/PrivacyPolicy
 const TermsPage = lazyWithChunkRetry(() => import('@/pages/TermsPage'));
 const PaymentPage = lazyWithChunkRetry(() => import('@/pages/PaymentPage'));
 const OwnerSignupPage = lazyWithChunkRetry(() => import('@/pages/OwnerSignupPage'));
-const InviteSignupPage = lazyWithChunkRetry(() => import('@/pages/InviteSignupPage'));
 const ContactSalesPage = lazyWithChunkRetry(() => import('@/pages/ContactSalesPage'));
 const SupportPage = lazyWithChunkRetry(() => import('@/pages/SupportPage'));
 const AcceptInvitePage = lazyWithChunkRetry(() => import('@/pages/AcceptInvitePage'));
@@ -560,14 +559,14 @@ function App() {
               </PublicRoute>
             }
           />
-          <Route
-            path="/signup"
-            element={
-              <PublicRoute>
-                <InviteSignupPage />
-              </PublicRoute>
-            }
-          />
+          {/*
+            /signup served InviteSignupPage, the landing page for the legacy
+            `invites` system. That system has been removed (see the note in
+            backend routes/api/public.php), so there is nothing here to accept.
+            Redirected rather than dropped because the URL was mailed out and
+            may still be bookmarked. Modern invitations land on /accept-invite.
+          */}
+          <Route path="/signup" element={<Navigate to="/login" replace />} />
           <Route
             path="/signup-owner"
             element={

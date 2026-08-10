@@ -95,16 +95,26 @@ const canProceedFromStep1 = (form: AddUserWizardForm, incompleteUser: Incomplete
   if (incompleteUser?.exists && !incompleteUser?.incomplete) {
     return false;
   }
+  // Kept deliberately in step with validateStep1 below. The two used to
+  // disagree about joining dates — this gate refused anything later than today
+  // while validateStep1 allowed up to two years out — so the Next button stayed
+  // disabled for every pre-boarding hire even though nothing was reported as
+  // invalid. Pre-boarding is the normal path, and the onboarding checklist
+  // schedules work from day -14, so a future date has to be accepted here too.
+  const twoYearsOut = new Date();
+  twoYearsOut.setFullYear(twoYearsOut.getFullYear() + 2);
+
   return (
     form.firstName.trim() !== '' &&
     form.email.trim() !== '' &&
     isValidEmail(form.email) &&
+    form.password.length >= 8 &&
     form.phone.trim() !== '' &&
     isValidPhone(form.phone) &&
     form.departmentIds.length > 0 &&
     form.designation.trim() !== '' &&
     form.joiningDate !== '' &&
-    new Date(form.joiningDate) <= new Date()
+    new Date(form.joiningDate) <= twoYearsOut
   );
 };
 
@@ -118,6 +128,11 @@ const validateStep1 = (form: AddUserWizardForm): Partial<Record<keyof AddUserWiz
     errors.email = 'Email is required';
   } else if (!isValidEmail(form.email)) {
     errors.email = 'Please enter a valid email';
+  }
+  if (!form.password) {
+    errors.password = 'Password is required';
+  } else if (form.password.length < 8) {
+    errors.password = 'Password must be at least 8 characters';
   }
   if (!form.phone.trim()) {
     errors.phone = 'Phone number is required';
@@ -227,8 +242,6 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [incompleteUser, setIncompleteUser] = useState<IncompleteUserCheck | null>(null);
-  const [inviteSent, setInviteSent] = useState<boolean | null>(null);
-  const [inviteFailedMessage, setInviteFailedMessage] = useState<string>('');
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
 
@@ -288,6 +301,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
       const userResponse = await api.post('/users', {
         name: fullName || formData.email.split('@')[0],
         email: formData.email,
+        // The admin sets this and hands it over directly, which is what makes
+        // the account usable on create. Without it the API mints a random
+        // password nobody knows, and the joiner has no way in at all.
+        password: formData.password,
         phone: formData.phone,
         role: formData.role,
         group_ids: formData.departmentIds,
@@ -461,33 +478,20 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
     return { failures };
   };
 
-  // ── Send / resend invitation email ────────────────────────
-
-  const sendInvite = async (userId?: number) => {
-    const id = userId || form.userId;
-    if (!id || !form.email) return;
-    try {
-      await api.post('/invites/send', {
-        email: form.email,
-        role: form.role,
-        first_name: form.firstName,
-        last_name: form.lastName,
-        employee_code: form.employeeCode,
-        is_new_user: true,
-      });
-      setInviteSent(true);
-      setInviteFailedMessage('');
-    } catch (inviteError: any) {
-      setInviteSent(false);
-      setInviteFailedMessage(
-        inviteError?.response?.data?.message || 'Failed to send invitation email.'
-      );
-    }
-  };
-
-  const handleResendInvite = async () => {
-    await sendInvite(form.userId ?? undefined);
-  };
+  /*
+   * This wizard used to POST /invites/send here, on top of creating the user.
+   *
+   * That endpoint belonged to the legacy `invites` system, which has been
+   * removed: its accept path looked the invited address up across every
+   * organization and overwrote the password of any account that already held
+   * it. See the note in backend routes/api/public.php.
+   *
+   * There is nothing to send in its place. This tab creates a usable account —
+   * the admin sets the password and the address is verified on create — so the
+   * joiner signs in with the credentials the admin hands them. The three invite
+   * tabs are the path for "let the recipient set their own password", and they
+   * use `invitations`, which is unaffected.
+   */
 
   // ── Navigation handlers ───────────────────────────────────
 
@@ -525,12 +529,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
           if (failures > 0) {
             setFeedback({
               type: 'error',
-              message: `${failures} profile item(s) could not be saved, but the invitation was sent.`,
+              message: `${failures} profile item(s) could not be saved. The account itself was created.`,
             });
           }
         }
-
-        await sendInvite(form.userId);
 
         setCompletedSteps((prev) => new Set(prev).add(3));
         setCurrentStep('completed');
@@ -558,8 +560,6 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
     setCompletedSteps(new Set());
     setErrors({});
     setFeedback(null);
-    setInviteSent(null);
-    setInviteFailedMessage('');
     onCancel?.();
   };
 
@@ -572,8 +572,6 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
       setIsSubmitting(true);
       try {
-        await sendInvite(form.userId);
-
         setCompletedSteps((prev) => new Set(prev).add(3));
         setCurrentStep('completed');
         clearWizardState();
@@ -699,10 +697,8 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
               <div>
                 <h3 className="text-lg font-semibold text-emerald-900">User Created Successfully!</h3>
                 <p className="text-sm text-emerald-700">
-                  {form.firstName} {form.lastName} ({form.employeeCode || 'No code'}) has been added.{' '}
-                  {inviteSent === false
-                    ? 'However, the invitation email could not be sent.'
-                    : `Invitation email sent to ${form.email}.`}
+                  {form.firstName} {form.lastName} ({form.employeeCode || 'No code'}) has been added
+                  and can sign in straight away.
                 </p>
               </div>
             </div>
@@ -713,20 +709,26 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
               + Add Another
             </button>
           </div>
-          {inviteSent === false && (
-            <div className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-start gap-2 text-sm bg-amber-50 text-amber-800 border border-amber-200">
-              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p>{inviteFailedMessage || 'Failed to send invitation email.'}</p>
-                <button
-                  onClick={handleResendInvite}
-                  className="mt-2 px-3 py-1.5 text-sm font-medium text-amber-800 bg-white border border-amber-300 rounded-lg hover:bg-amber-50 transition-colors"
-                >
-                  Resend Invitation
-                </button>
-              </div>
+          {/*
+            No email is sent on this path, so the credentials only exist here.
+            Showing them once, at the only moment they are known, is what stops
+            the admin from creating an account nobody can get into.
+          */}
+          <div className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-start gap-2 text-sm bg-sky-50 text-sky-900 border border-sky-200">
+            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-medium">Share these sign-in details with {form.firstName}</p>
+              <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 font-mono text-[13px]">
+                <dt className="text-sky-700">Email</dt>
+                <dd className="break-all">{form.email}</dd>
+                <dt className="text-sky-700">Password</dt>
+                <dd className="break-all">{form.password}</dd>
+              </dl>
+              <p className="mt-2 text-[13px] text-sky-800">
+                This password is not shown again. They can change it from Settings after signing in.
+              </p>
             </div>
-          )}
+          </div>
           {form.userId && (
             <div className="p-4">
               <EmployeeDetailsSection
