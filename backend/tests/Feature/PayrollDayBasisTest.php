@@ -79,6 +79,35 @@ class PayrollDayBasisTest extends TestCase
         $this->assertSame(PayrollDayBasisResolver::BASIS_CALENDAR, $this->resolver->basisFor($org));
     }
 
+    public function test_the_setting_round_trips_through_the_payroll_settings_api(): void
+    {
+        // A setting nothing can write is decorative; a setting nothing reads is
+        // worse. This proves the write half — the read half is proven by the
+        // deduction tests below and in PayrollLopSingleApplicationTest.
+        $org = $this->orgWith(null);
+        $admin = \App\Models\User::factory()->create([
+            'organization_id' => $org->id,
+            'role' => 'admin',
+        ]);
+
+        $this->putJson('/api/payroll/settings', ['dayBasis' => 'fixed_30'], $this->apiHeadersFor($admin))
+            ->assertOk();
+
+        $this->assertSame('fixed_30', $this->resolver->basisFor($org->fresh()));
+    }
+
+    public function test_an_unsupported_basis_is_rejected_by_the_api(): void
+    {
+        $org = $this->orgWith(null);
+        $admin = \App\Models\User::factory()->create([
+            'organization_id' => $org->id,
+            'role' => 'admin',
+        ]);
+
+        $this->putJson('/api/payroll/settings', ['dayBasis' => 'working_days'], $this->apiHeadersFor($admin))
+            ->assertStatus(422);
+    }
+
     public function test_one_absent_day_never_costs_more_than_one_thirtieth(): void
     {
         // The s.9(2) invariant, stated as arithmetic: on a 30-day month the

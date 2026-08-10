@@ -20,6 +20,19 @@ class PayrollSettingsController extends Controller
         'pfWageCap' => 15000,
         'esiThreshold' => 21000,
         'workingDaysPerMonth' => 26,
+        /*
+         * The divisor a monthly salary is spread across for loss of pay and
+         * pro-ration: 'calendar' (actual days in the month), 'fixed_30' or
+         * 'fixed_26'.
+         *
+         * Calendar is the default because Payment of Wages Act s.9(2) caps a
+         * deduction for absence at the proportion the absent period bears to
+         * the wage period, and it is what comparable products default to.
+         * `workingDaysPerMonth` above is a different number for a different
+         * job — the Minimum Wages daily rate used by overtime, gratuity and
+         * leave encashment — and must not be used as the LOP divisor.
+         */
+        'dayBasis' => \App\Services\Payroll\PayrollDayBasisResolver::DEFAULT_BASIS,
         'pfEmployeePercentage' => 12,
         'pfEmployerPercentage' => 12,
         'esiEmployeePercentage' => 0.75,
@@ -75,6 +88,7 @@ class PayrollSettingsController extends Controller
             'pfWageCap' => 'nullable|numeric|min:0',
             'esiThreshold' => 'nullable|numeric|min:0',
             'workingDaysPerMonth' => 'nullable|integer|min:1|max:31',
+            'dayBasis' => 'nullable|string|in:'.implode(',', \App\Services\Payroll\PayrollDayBasisResolver::SELECTABLE),
             'pfEmployeePercentage' => 'nullable|numeric|min:0|max:100',
             'pfEmployerPercentage' => 'nullable|numeric|min:0|max:100',
             'esiEmployeePercentage' => 'nullable|numeric|min:0|max:100',
@@ -138,6 +152,7 @@ class PayrollSettingsController extends Controller
                 'pfWageCap',
                 'esiThreshold',
                 'workingDaysPerMonth',
+                'dayBasis',
                 'pfEmployeePercentage',
                 'pfEmployerPercentage',
                 'esiEmployeePercentage',
