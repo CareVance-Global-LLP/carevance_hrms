@@ -5,7 +5,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
 import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
@@ -63,24 +62,23 @@ export default function SalaryRevisionPage() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader
-        title="Salary Revisions"
-        description="Record CTC changes — increments, promotions, corrections. Auto-detects arrears for back-dated revisions."
-      />
-
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-slate-900">Salary Revisions — SalaryRevisionPage</h1>
-          <Button
-            variant="primary"
-            size="sm"
-            iconLeft={<Plus className="h-4 w-4" />}
-            onClick={() => setShowForm(!showForm)}
-          >
-            {showForm ? 'Cancel' : '+ New Revision'}
-          </Button>
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">Salary Revisions</h2>
+          <p className="text-sm text-slate-500 mt-1">
+            Record CTC changes — increments, promotions, corrections. Auto-detects arrears for back-dated revisions.
+          </p>
         </div>
+        <Button
+          variant="primary"
+          size="sm"
+          iconLeft={<Plus className="h-4 w-4" />}
+          onClick={() => setShowForm(!showForm)}
+        >
+          {showForm ? 'Cancel' : '+ New Revision'}
+        </Button>
+      </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SurfaceCard className="overflow-hidden">
@@ -230,6 +228,5 @@ export default function SalaryRevisionPage() {
           )}
         </div>
       </div>
-    </div>
   );
 }

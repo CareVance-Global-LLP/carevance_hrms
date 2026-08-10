@@ -27,10 +27,21 @@ import type {
   ScreenshotCaptureHealth,
   TimeEntry,
 } from '@/types';
+import { reportSilentError } from '@/lib/reportSilentError';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 1000;
-const DEFAULT_SCREENSHOT_INTERVAL_MINUTES = 3;
+// Matches the server's system default (config/screenshots.php). This is only a
+// last-resort fallback now: the server resolves the effective interval
+// (per-user override -> org default -> system default) and sends it down.
+const FALLBACK_SCREENSHOT_INTERVAL_MINUTES = 10;
 const ALLOWED_SCREENSHOT_INTERVAL_MINUTES = [1, 3, 5, 10, 15, 30] as const;
+// Capture cadence is jittered by up to +/- this fraction so screenshots are not
+// perfectly periodic (and so a whole fleet on the same setting does not fire in
+// lockstep).
+const SCREENSHOT_INTERVAL_JITTER_RATIO = 0.1;
+// How long capture may continue against a cached active entry while the server
+// is unreachable, before pausing until the timer is confirmed again.
+const SCREENSHOT_OFFLINE_GRACE_MS = 10 * 60 * 1000;
 const SCREENSHOT_CAPTURE_TIMEOUT_MS = 15 * 1000;
 const SCREENSHOT_UPLOAD_TIMEOUT_MS = 30 * 1000;
 // After this many consecutive capture failures we surface a real notification
@@ -48,6 +59,14 @@ const IDLE_STOP_API_TIMEOUT_MS = 15 * 1000;
 const IDLE_STOP_MIN_INTERVAL_MS = 5 * 1000;
 const IDLE_STOP_MAX_ATTEMPTS_PER_ENTRY = 3;
 const RELIABLE_CONTEXT_REUSE_WINDOW_MS = 30000;
+// Much shorter than the window above, and deliberately so. That one covers the
+// user clicking into the tracker's own window, where continuing to attribute
+// time to what they were just doing is correct. This one covers the browser
+// sitting on a generic surface ("New Tab"), where continuing to bill the last
+// known site is only a guess — and a guess that goes stale almost immediately.
+// Reusing it for a full 30s attributed half a minute of Instagram to someone
+// staring at a blank tab.
+const GENERIC_BROWSER_CONTEXT_REUSE_WINDOW_MS = 2000;
 const MAX_PENDING_TRACKED_SECONDS = Math.max(1, Math.round(ACTIVITY_TRACK_INTERVAL_MS / 1000));
 const EXACT_BROWSER_TRACKING_HEALTH_WINDOW_MS = 45 * 1000;
 const BROWSER_TRACKING_HEALTH_SYNC_DEBOUNCE_MS = 5 * 1000;
@@ -121,15 +140,47 @@ const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
 
 let desktopTrackerRunSequence = 0;
 
-const resolveScreenshotIntervalMs = (settings?: Record<string, any> | null) => {
-  const rawInterval = Number(settings?.monitoring_interval_minutes);
-  const intervalMinutes = ALLOWED_SCREENSHOT_INTERVAL_MINUTES.includes(
-    rawInterval as (typeof ALLOWED_SCREENSHOT_INTERVAL_MINUTES)[number]
+const isAllowedScreenshotInterval = (value: number) => (
+  ALLOWED_SCREENSHOT_INTERVAL_MINUTES.includes(
+    value as (typeof ALLOWED_SCREENSHOT_INTERVAL_MINUTES)[number]
   )
-    ? rawInterval
-    : DEFAULT_SCREENSHOT_INTERVAL_MINUTES;
+);
 
-  return intervalMinutes * 60 * 1000;
+/**
+ * Resolve the capture interval for a user.
+ *
+ * The server now resolves this (per-user override -> org default -> system
+ * default) and serialises it as effective_monitoring_interval_minutes, so the
+ * client no longer carries its own opinion. The raw per-user setting is still
+ * read as a fallback because AuthContext hydrates `user` from localStorage and
+ * from the offline store before /auth/me returns, and those cached payloads can
+ * predate the resolved field.
+ */
+const resolveScreenshotIntervalMs = (
+  user?: { settings?: Record<string, any> | null; effective_monitoring_interval_minutes?: number | null } | null
+) => {
+  const resolved = Number(user?.effective_monitoring_interval_minutes);
+  if (isAllowedScreenshotInterval(resolved)) {
+    return resolved * 60 * 1000;
+  }
+
+  const legacy = Number(user?.settings?.monitoring_interval_minutes);
+  if (isAllowedScreenshotInterval(legacy)) {
+    return legacy * 60 * 1000;
+  }
+
+  return FALLBACK_SCREENSHOT_INTERVAL_MINUTES * 60 * 1000;
+};
+
+/**
+ * Spread captures around the configured period so they are not perfectly
+ * predictable. Kept small so the long-run capture rate still matches the
+ * configured interval.
+ */
+const jitteredScreenshotDelayMs = (intervalMs: number) => {
+  const spread = intervalMs * SCREENSHOT_INTERVAL_JITTER_RATIO;
+
+  return Math.max(1000, Math.round(intervalMs + (Math.random() * 2 - 1) * spread));
 };
 
 type ActiveSegment = {
@@ -339,7 +390,12 @@ export const useDesktopTracker = () => {
   const activeEntryRef = useRef<TimeEntry | null>(null);
   const activityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const idleGuardIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const screenshotIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Holds a setTimeout handle: the capture chain re-arms itself each period so
+  // every period can carry its own jitter.
+  const screenshotIntervalRef = useRef<number | null>(null);
+  // When the last screenshot actually landed, used to suppress the
+  // capture-on-restart burst.
+  const lastScreenshotCaptureAtRef = useRef(0);
   const dedicatedIdleStopIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
@@ -352,6 +408,9 @@ export const useDesktopTracker = () => {
   const screenshotPermissionNotifiedRef = useRef(false);
   const idleStopInFlightRef = useRef(false);
   const idleStopBlockedUntilMsRef = useRef(0);
+  // Which entry the current back-off belongs to, so reloading the SAME entry
+  // does not discard a back-off the server just asked us to honour.
+  const idleStopBlockedForEntryIdRef = useRef<number | null>(null);
   const idleStopAttemptsPerEntryRef = useRef<Map<number, number>>(new Map());
   const lastIdleStopAttemptMsRef = useRef(0);
   const lastReliableTrackingContextRef = useRef<ReliableTrackingContext | null>(null);
@@ -380,7 +439,7 @@ export const useDesktopTracker = () => {
     }
 
     if (screenshotIntervalRef.current !== null) {
-      clearInterval(screenshotIntervalRef.current);
+      clearTimeout(screenshotIntervalRef.current);
       screenshotIntervalRef.current = null;
     }
 
@@ -438,7 +497,7 @@ export const useDesktopTracker = () => {
       userId: user?.id ?? null,
       hasDesktopBridge: Boolean(desktopApi),
       canCaptureScreenshots: typeof desktopApi?.captureScreenshot === 'function',
-      monitoringIntervalMinutes: Number(user?.settings?.monitoring_interval_minutes) || null,
+      monitoringIntervalMinutes: Number(user?.effective_monitoring_interval_minutes) || Number(user?.settings?.monitoring_interval_minutes) || null,
     });
     if (!isAuthenticated || !isTrackedUser) {
       clearTrackerIntervals();
@@ -476,9 +535,15 @@ export const useDesktopTracker = () => {
     const runId = ++desktopTrackerRunSequence;
     const isCurrentRun = () => desktopTrackerRunSequence === runId;
     const hasForegroundWindowBridge = typeof desktopApi?.onForegroundWindowChange === 'function';
-    const screenshotIntervalMs = resolveScreenshotIntervalMs(user?.settings);
+    const screenshotIntervalMs = resolveScreenshotIntervalMs(user);
     let inFlight = false;
     let screenshotInFlight = false;
+    // How long we may keep capturing against a CACHED active entry after the
+    // server stopped confirming it. Without a bound, a network outage let the
+    // tracker keep taking screenshots indefinitely — including after the timer
+    // had been stopped server-side or from another device — and queue them all
+    // for upload against an already-closed entry.
+    let lastConfirmedActiveEntryAt = Date.now();
     clearTrackerIntervals();
     lastTickAtRef.current = Date.now();
     lastInputRef.current = Date.now();
@@ -515,7 +580,7 @@ export const useDesktopTracker = () => {
       }
 
       if (screenshotIntervalRef.current !== null) {
-        clearInterval(screenshotIntervalRef.current);
+        clearTimeout(screenshotIntervalRef.current);
         screenshotIntervalRef.current = null;
       }
 
@@ -546,16 +611,42 @@ export const useDesktopTracker = () => {
         intervalMs: screenshotIntervalMs,
       });
 
-      screenshotIntervalRef.current = setInterval(() => {
-        void captureScreenshotOnInterval();
-      }, screenshotIntervalMs);
+      // setTimeout rather than setInterval so each period can carry its own
+      // jitter. A fixed setInterval produced a perfectly predictable cadence,
+      // identical across every device on the same setting.
+      const scheduleNextCapture = () => {
+        screenshotIntervalRef.current = setTimeout(() => {
+          void captureScreenshotOnInterval().finally(() => {
+            // Only keep the chain alive while this entry is still the one the
+            // interval belongs to; syncScreenshotInterval(null) must stop it.
+            if (activeScreenshotEntryIdRef.current === timeEntryId) {
+              scheduleNextCapture();
+            }
+          });
+        }, jitteredScreenshotDelayMs(screenshotIntervalMs)) as unknown as number;
+      };
+
+      scheduleNextCapture();
 
       // Capture once immediately on (re)start. Timers can be short-lived or
       // restart before the first interval tick fires, so relying solely on the
       // interval means a session may produce zero screenshots. The capture
       // function is idempotent-guarded (screenshotInFlight) so this cannot
       // overlap with an interval tick.
-      void captureScreenshotOnInterval();
+      //
+      // Suppressed when a capture already landed within the current period:
+      // restarts (timer restart, snapshot restore, id mismatch) rebuild this
+      // interval, and firing the immediate shot every time produced bursts well
+      // above the configured rate.
+      const msSinceLastCapture = Date.now() - lastScreenshotCaptureAtRef.current;
+      if (msSinceLastCapture >= screenshotIntervalMs) {
+        void captureScreenshotOnInterval();
+      } else {
+        console.info('[desktop-tracker] immediate capture suppressed; one already landed this period', {
+          timeEntryId,
+          msSinceLastCapture,
+        });
+      }
     };
 
     const clearTrackedActivitySegment = () => {
@@ -599,7 +690,16 @@ export const useDesktopTracker = () => {
         idleStopAttemptsPerEntryRef.current.delete(previousEntryId);
       }
       lastAutoStoppedEntryIdRef.current = null;
-      idleStopBlockedUntilMsRef.current = 0;
+
+      // Only clear the back-off when this is genuinely a DIFFERENT timer.
+      // Clearing it unconditionally meant that after the server answered 409
+      // "recent activity, retry in N seconds", the very next tick reloaded the
+      // same entry, wiped the back-off, and immediately retried — so the client
+      // hammered stop in a loop instead of waiting as instructed.
+      if (idleStopBlockedForEntryIdRef.current !== activeEntry.id) {
+        idleStopBlockedUntilMsRef.current = 0;
+        idleStopBlockedForEntryIdRef.current = null;
+      }
 
       return activeEntry;
     };
@@ -617,7 +717,8 @@ export const useDesktopTracker = () => {
         ? Math.max(activeDesktopSession.startedAtMs, parsedEndedAtMs)
         : Date.now();
       const resolvedEndedAt = new Date(endedAtMs).toISOString();
-      const durationSeconds = Math.max(1, Math.round((endedAtMs - activeDesktopSession.startedAtMs) / 1000));
+      // max(0), not max(1) — see closeActiveBrowserSession.
+      const durationSeconds = Math.max(0, Math.round((endedAtMs - activeDesktopSession.startedAtMs) / 1000));
 
       try {
         await activitySessionApi.update(activeDesktopSession.sessionId, {
@@ -754,7 +855,10 @@ export const useDesktopTracker = () => {
         ? Math.max(activeBrowserSession.startedAtMs, parsedEndedAtMs)
         : Date.now();
       const resolvedEndedAt = new Date(endedAtMs).toISOString();
-      const durationSeconds = Math.max(1, Math.round((endedAtMs - activeBrowserSession.startedAtMs) / 1000));
+      // max(0), not max(1): a session closed at its own start instant genuinely
+      // lasted zero seconds. Flooring at 1 fabricated a second of browser
+      // activity every time a session was closed because the user went idle.
+      const durationSeconds = Math.max(0, Math.round((endedAtMs - activeBrowserSession.startedAtMs) / 1000));
 
       try {
         await activitySessionApi.update(activeBrowserSession.sessionId, {
@@ -895,7 +999,7 @@ export const useDesktopTracker = () => {
             // relevant settings/help forward for the user.
             try {
               void desktopApi.revealWindow();
-            } catch {}
+            } catch (error) { reportSilentError('desktop-tracker', error); }
           }
         }
       }
@@ -922,6 +1026,10 @@ export const useDesktopTracker = () => {
     };
 
     const reportScreenshotCaptureSuccess = () => {
+      // Recorded unconditionally: syncScreenshotInterval uses it to suppress the
+      // capture-on-restart burst, and that must work even when nothing had failed.
+      lastScreenshotCaptureAtRef.current = Date.now();
+
       if (screenshotFailureCountRef.current === 0) {
         return;
       }
@@ -1241,6 +1349,46 @@ export const useDesktopTracker = () => {
       };
     };
 
+    /**
+     * Tell the user their timer was stopped for idle.
+     *
+     * Shared so every stop path says the same thing. forceStopTimerForLock (the
+     * dedicated 15s idle check and the lock-screen timeout) had no notification
+     * at all — the only path it touched was gated on
+     * document.visibilityState === 'visible', which is never true when the
+     * screen is locked. That is why timers sometimes just stopped with no
+     * explanation.
+     */
+    const notifyIdleAutoStop = async (idleSeconds: number) => {
+      const idleDurationLabel = formatIdleDurationLabel(idleSeconds);
+
+      if (typeof desktopApi?.showNotification === 'function') {
+        try {
+          await desktopApi.showNotification({
+            id: Date.now(),
+            title: 'Timer Stopped - Idle Detected',
+            body: `You were idle for ${idleDurationLabel}. Your timer has been stopped.`,
+            route: '/dashboard',
+            type: 'idle_stop',
+          });
+        } catch (notificationError) {
+          console.warn('[desktop-tracker] failed to show idle-stop notification:', notificationError);
+        }
+        return;
+      }
+
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('Timer Stopped - Idle Detected', {
+            body: `You were idle for ${idleDurationLabel}. Your timer has been stopped.`,
+            tag: 'idle-auto-stop',
+          });
+        } catch (notificationError) {
+          console.warn('[desktop-tracker] failed to show browser idle-stop notification:', notificationError);
+        }
+      }
+    };
+
     const attemptIdleAutoStop = async (
       activeEntry: TimeEntry,
       idleSeconds: number,
@@ -1340,6 +1488,7 @@ export const useDesktopTracker = () => {
             ? Math.max(1, Math.floor(retryAfterSecondsRaw))
             : 15;
           idleStopBlockedUntilMsRef.current = Date.now() + (retryAfterSeconds * 1000);
+          idleStopBlockedForEntryIdRef.current = activeEntry.id;
 
           // Reset attempt counter on 409 — the backend said "try again later",
           // not "permanently denied". Without this, the client permanently gives
@@ -1378,30 +1527,7 @@ export const useDesktopTracker = () => {
 
       cleanupAfterIdleStop();
 
-      const idleDurationLabel = formatIdleDurationLabel(idleSeconds);
-
-      if (typeof desktopApi?.showNotification === 'function') {
-        try {
-          await desktopApi.showNotification({
-            id: Date.now(),
-            title: 'Timer Stopped - Idle Detected',
-            body: `You were idle for ${idleDurationLabel}. Your timer has been stopped.`,
-            route: '/dashboard',
-            type: 'idle_stop',
-          });
-        } catch (notificationError) {
-          console.warn('[desktop-tracker] failed to show idle-stop notification:', notificationError);
-        }
-      } else if ('Notification' in window && Notification.permission === 'granted') {
-        try {
-          new Notification('Timer Stopped - Idle Detected', {
-            body: `You were idle for ${idleDurationLabel}. Your timer has been stopped.`,
-            tag: 'idle-auto-stop',
-          });
-        } catch (notificationError) {
-          console.warn('[desktop-tracker] failed to show browser idle-stop notification:', notificationError);
-        }
-      }
+      await notifyIdleAutoStop(idleSeconds);
 
       if (userId) {
         try {
@@ -1423,7 +1549,7 @@ export const useDesktopTracker = () => {
           try {
             const lockState = await desktopApi.getSystemLockState();
             isCurrentlyLocked = Boolean(lockState?.locked || lockState?.state === 'locked' || lockState?.state === 'suspended');
-          } catch {}
+          } catch (error) { reportSilentError('desktop-tracker', error); }
         }
         if (isCurrentlyLocked) {
           lockScreenAutoStopRevealPendingRef.current = true;
@@ -1573,6 +1699,9 @@ export const useDesktopTracker = () => {
           && (now - lastReliableTrackingContextRef.current.capturedAtMs) <= RELIABLE_CONTEXT_REUSE_WINDOW_MS
             ? lastReliableTrackingContextRef.current
             : null;
+        const contextAgeMs = lastReliableTrackingContextRef.current
+          ? now - lastReliableTrackingContextRef.current.capturedAtMs
+          : Number.POSITIVE_INFINITY;
         const compatibleReliableTrackingContext = !hasReliableDesktopContext
           && recentReliableTrackingContext
           && (
@@ -1582,6 +1711,8 @@ export const useDesktopTracker = () => {
               && recentReliableTrackingContext.appFamily
               && rawAppFamily === recentReliableTrackingContext.appFamily
               && isGenericBrowserSurface
+              // Generic browser surfaces get the short window, not the 30s one.
+              && contextAgeMs < GENERIC_BROWSER_CONTEXT_REUSE_WINDOW_MS
             )
           )
             ? recentReliableTrackingContext
@@ -1602,7 +1733,13 @@ export const useDesktopTracker = () => {
               activityType: rawActivityType,
             }
           : fallbackTrackingContext;
-        const contextName = resolvedTrackingContext?.contextName || fallbackTitle || 'Active Input';
+        // Deliberately NOT falling back to `fallbackTitle` (document.title).
+        // When no reliable external context is available, that is the tracker's
+        // OWN window, so the row claimed the user was working in the HRMS app
+        // when we in fact had no idea what they were doing. "Active Input" is
+        // the honest label: input was detected, the application was not
+        // identified.
+        const contextName = resolvedTrackingContext?.contextName || 'Active Input';
         const activityType: 'app' | 'url' = resolvedTrackingContext?.activityType || 'app';
         const currentForegroundPayload: DesktopForegroundWindowPayload = {
           app: rawAppName || null,
@@ -1781,12 +1918,46 @@ export const useDesktopTracker = () => {
       if (idleStopInFlightRef.current) {
         return false;
       }
+
+      // Honour the server's back-off. attemptIdleAutoStop sets this when the
+      // backend answers 409 "recent activity detected, retry in N seconds", but
+      // this path ignored it — so the 15s dedicated check and the lock-screen
+      // timeout kept hammering stop while the server was actively asking them
+      // not to, producing several stop requests for a single idle event.
+      if (Date.now() < idleStopBlockedUntilMsRef.current) {
+        return false;
+      }
+
       idleStopInFlightRef.current = true;
       try {
         console.info('[desktop-tracker] force stop timer for lock', {
           session_id: activeEntry.id,
           idle_seconds: idleSeconds,
         });
+
+        // Flush the final idle figure BEFORE stopping.
+        //
+        // The idle activity row is a rolling record that the 1-second tick keeps
+        // updating (180 -> 181 -> ... -> 300). This path is reached by the 15s
+        // dedicated check and the lock-screen timeout — neither of which runs
+        // that tick, and the OS throttles it hard once the machine is genuinely
+        // idle. So the row used to be left frozen at whatever it was created
+        // with, typically 180, and reports showed 3 minutes of idle for a
+        // 5-minute absence with the remainder silently counted as work.
+        try {
+          await syncIdleActivitySnapshot(
+            activeEntry,
+            idleSeconds,
+            lastActivityAtMs,
+            recordedAt,
+            activeSegmentRef.current?.contextName || 'Active Input',
+          );
+        } catch (idleSyncError) {
+          // Never block the stop on this: an inaccurate idle figure is far less
+          // damaging than a timer that keeps running.
+          console.warn('[desktop-tracker] failed to flush final idle snapshot before stop:', idleSyncError);
+        }
+
         const stopPromise = timeEntryApi.stop({
           timer_slot: 'primary',
           auto_stopped_for_idle: true,
@@ -1799,6 +1970,9 @@ export const useDesktopTracker = () => {
         await Promise.race([stopPromise, timeoutPromise]);
         lastAutoStoppedEntryIdRef.current = activeEntry.id;
         cleanupAfterIdleStop();
+        // Same notice attemptIdleAutoStop raises. Without it this path stopped
+        // the timer silently.
+        await notifyIdleAutoStop(idleSeconds);
         console.info('[desktop-tracker] force stop succeeded', { session_id: activeEntry.id });
         return true;
       } catch (error: any) {
@@ -1816,6 +1990,18 @@ export const useDesktopTracker = () => {
           cleanupAfterIdleStop();
           return true;
         }
+
+        // Same 409 back-off contract attemptIdleAutoStop implements: the server
+        // is telling us it saw recent activity and to retry in N seconds.
+        if (errorStatus === 409) {
+          const retryAfterSecondsRaw = Number((errorBody as any)?.retry_after_seconds);
+          const retryAfterSeconds = Number.isFinite(retryAfterSecondsRaw)
+            ? Math.max(1, Math.floor(retryAfterSecondsRaw))
+            : 15;
+          idleStopBlockedUntilMsRef.current = Date.now() + (retryAfterSeconds * 1000);
+          idleStopBlockedForEntryIdRef.current = activeEntry.id;
+        }
+
         return false;
       } finally {
         idleStopInFlightRef.current = false;
@@ -1968,10 +2154,35 @@ export const useDesktopTracker = () => {
           activeEntry = active.data;
           if (activeEntry?.id) {
             activeEntryRef.current = activeEntry;
+            lastConfirmedActiveEntryAt = Date.now();
           }
-        } catch {
-          // Offline — use cached active entry if available.
-          // Don't stop the screenshot interval — we don't know the real state.
+        } catch (error: any) {
+          const status = Number(error?.response?.status || 0);
+
+          // An auth failure is not "offline". The session is gone, so the
+          // cached entry proves nothing and we must not keep capturing the
+          // user's screen against it.
+          if (status === 401 || status === 403) {
+            console.warn('[Tracker] Screenshot capture stopped: session rejected.');
+            syncScreenshotInterval(null);
+            return;
+          }
+
+          // Any other explicit 4xx is a definite answer from the server too.
+          if (status >= 400 && status < 500) {
+            console.warn('[Tracker] Screenshot capture skipped: server rejected the active-entry check.', status);
+            return;
+          }
+
+          // Genuine network/5xx failure: fall back to the cached entry, but only
+          // for a bounded grace window. Don't tear down the interval — a single
+          // transient failure must not reset the cadence — just stop capturing
+          // once we have gone too long without confirmation.
+          if (Date.now() - lastConfirmedActiveEntryAt > SCREENSHOT_OFFLINE_GRACE_MS) {
+            console.warn('[Tracker] Screenshot capture paused: no active-entry confirmation within the grace window.');
+            return;
+          }
+
           activeEntry = activeEntryRef.current;
         }
         if (!activeEntry?.id) {
@@ -2116,7 +2327,7 @@ export const useDesktopTracker = () => {
             void applySystemLockState(state);
           }
         }).catch(() => undefined);
-      } catch {}
+      } catch (error) { reportSilentError('desktop-tracker', error); }
     }
 
     activityIntervalRef.current = setInterval(() => {
@@ -2128,6 +2339,11 @@ export const useDesktopTracker = () => {
 
     const dedicatedIdleStopCheck = async () => {
       if (!isCurrentRun()) return;
+      // Take the SAME lock tick() and runIdleGuard() use. This check only held
+      // idleStopInFlightRef, so it could run concurrently with them and race to
+      // stop the same timer.
+      if (inFlight) return;
+      inFlight = true;
       try {
         if (idleStopInFlightRef.current) return;
         const now = Date.now();
@@ -2173,6 +2389,8 @@ export const useDesktopTracker = () => {
         }
       } catch (error) {
         console.warn('[desktop-tracker] dedicated idle stop check failed:', error);
+      } finally {
+        inFlight = false;
       }
     };
     const dedicatedIdleStopIntervalRef_current = setInterval(() => {
@@ -2249,12 +2467,25 @@ export const useDesktopTracker = () => {
           const snapshot = localStorage.getItem('active_timer_snapshot');
           if (snapshot) {
             const parsed = JSON.parse(snapshot) as TimeEntry;
-            if (parsed?.id) {
+
+            // Freshness check. This snapshot used to be trusted unconditionally,
+            // so a stale one started capturing the user's screen on app launch —
+            // including the immediate one-shot — before the server had confirmed
+            // any timer was running. A snapshot whose start is older than the
+            // idle auto-stop threshold cannot describe a live timer.
+            const startedAtMs = parsed?.start_time ? new Date(parsed.start_time).getTime() : NaN;
+            const isFresh = Number.isFinite(startedAtMs)
+              && Date.now() - startedAtMs < IDLE_AUTO_STOP_THRESHOLD_SECONDS * 1000;
+
+            if (parsed?.id && isFresh) {
               activeEntryRef.current = parsed;
               syncScreenshotInterval(parsed.id);
+            } else if (parsed?.id) {
+              console.info('[desktop-tracker] ignoring stale active_timer_snapshot; awaiting server confirmation');
+              localStorage.removeItem('active_timer_snapshot');
             }
           }
-        } catch {}
+        } catch (error) { reportSilentError('desktop-tracker', error); }
       }
     });
 

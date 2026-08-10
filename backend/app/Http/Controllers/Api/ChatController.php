@@ -67,6 +67,15 @@ class ChatController extends Controller
         return response()->json($result['payload'], $result['status']);
     }
 
+    public function searchMessages(Request $request)
+    {
+        $request->validate(['q' => 'required|string|min:2|max:120']);
+
+        return response()->json([
+            'data' => $this->chatService->searchMessages($request->user(), (string) $request->q),
+        ]);
+    }
+
     public function sendMessage(SendChatMessageRequest $request, int $conversationId)
     {
         $result = $this->chatService->sendMessage($request, $request->user(), $conversationId);

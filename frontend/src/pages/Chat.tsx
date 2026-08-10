@@ -69,6 +69,8 @@ export default function Chat() {
   const shouldStickToBottomRef = useRef(true);
   const pendingThreadRef = useRef<ThreadSelection>(null);
   const activeThreadKeyRef = useRef('');
+  /** Newest message id held for the open thread — the cursor for incremental polling. */
+  const latestMessageIdRef = useRef(0);
   const openDirectRequestRef = useRef(0);
   const previewUrlsRef = useRef<Map<File, string>>(new Map());
 
@@ -168,8 +170,28 @@ export default function Chat() {
       if (!sinceId) {
         setMessages(incoming);
       } else if (incoming.length > 0) {
-        setMessages((prev) => [...prev, ...incoming]);
+        setMessages((prev) => {
+          // A full sync can overlap an in-flight incremental fetch, so drop
+          // anything already held rather than showing it twice.
+          const seen = new Set(prev.map((message) => `${isGroupMessage(message) ? 'g' : 'd'}:${message.id}`));
+          const fresh = incoming.filter(
+            (message) => !seen.has(`${isGroupMessage(message) ? 'g' : 'd'}:${message.id}`)
+          );
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+        });
       }
+
+      if (incoming.length > 0) {
+        latestMessageIdRef.current = Math.max(
+          latestMessageIdRef.current,
+          ...incoming.map((message) => Number(message.id) || 0)
+        );
+      }
+
+      // Only tell the server we have read the thread when we opened it or when
+      // something new actually arrived. This used to fire on every poll, so an
+      // open conversation issued a write request every 2.5 seconds.
+      if (sinceId && incoming.length === 0) return;
 
       if (thread.type === 'direct') {
         await chatApi.markRead(thread.id);
@@ -328,11 +350,28 @@ export default function Chat() {
     setIsSavingEdit(false);
     setError('');
 
+    latestMessageIdRef.current = 0;
     loadMessages(selectedThread);
     loadTyping(selectedThread);
 
+    // The timer used to call loadMessages with no `since_id`, so every tick
+    // re-downloaded the thread's entire history — 24 times a minute, whether or
+    // not anything had changed. It passes the newest id it holds now.
+    //
+    // Every FULL_SYNC_EVERY ticks it still does a complete fetch, because edits
+    // and deletions to older messages cannot arrive through an incremental one.
+    let tick = 0;
+    const FULL_SYNC_EVERY = 12; // ~30s
+
     const interval = setInterval(() => {
-      loadMessages(selectedThread);
+      // Nothing to poll for a conversation nobody is looking at.
+      if (typeof document !== 'undefined' && document.hidden) return;
+
+      tick += 1;
+      const wantsFullSync = tick % FULL_SYNC_EVERY === 0;
+      const sinceId = wantsFullSync ? undefined : latestMessageIdRef.current || undefined;
+
+      loadMessages(selectedThread, sinceId);
       loadTyping(selectedThread);
     }, 2500);
 

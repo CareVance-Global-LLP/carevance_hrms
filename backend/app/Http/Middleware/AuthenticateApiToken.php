@@ -37,6 +37,17 @@ class AuthenticateApiToken
             return $this->unauthorizedResponse();
         }
 
+        // A deactivated account is refused even if it still presents a valid
+        // bearer. Deleting tokens at revocation is not enough on its own —
+        // anything that mints a new one later would hand access straight back.
+        if ($user->deactivated_at !== null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This account is no longer active.',
+                'error_code' => 'ACCOUNT_DEACTIVATED',
+            ], 403);
+        }
+
         // Enforce trial expiry on every API call
         $organization = $user->organization;
         if ($organization && $organization->subscription_status === 'trial' && $user->isTrialExpired()) {

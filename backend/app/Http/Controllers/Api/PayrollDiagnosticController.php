@@ -75,7 +75,9 @@ class PayrollDiagnosticController extends Controller
                 'group_user.group_id',
                 'groups.name as group_name',
                 DB::raw('count(*) as user_count'),
-                DB::raw('GROUP_CONCAT(group_user.user_id) as user_ids')
+                // string_agg is the PostgreSQL equivalent of MySQL's GROUP_CONCAT;
+                // user_id is a bigint, so it needs an explicit cast to text first.
+                DB::raw("string_agg(group_user.user_id::text, ',') as user_ids")
             )
             ->groupBy('group_user.group_id', 'groups.name')
             ->get()

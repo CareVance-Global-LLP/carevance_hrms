@@ -44,7 +44,7 @@ class SalaryCalculationService
             );
         }
 
-        $stateCode = $template->pt_state ?: 'maharashtra';
+        $stateCode = $template->pt_state ?: '';
         $basicPercentage = (float) ($template->basic_percentage ?? 40);
 
         // 1. Get attendance

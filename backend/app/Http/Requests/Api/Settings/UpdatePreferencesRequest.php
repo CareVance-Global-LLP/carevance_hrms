@@ -11,6 +11,9 @@ class UpdatePreferencesRequest extends ApiFormRequest
     {
         return [
             'timezone' => ['nullable', 'string', 'max:64', new ValidTimezone],
+            // 'system' defers to the device setting; the client still stores the
+            // choice locally so it can apply before this response arrives.
+            'theme' => ['nullable', 'string', 'in:light,dark,system'],
             'notifications' => 'nullable|array',
             'notifications.email' => 'nullable|boolean',
             'notifications.in_app' => 'nullable|boolean',

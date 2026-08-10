@@ -84,6 +84,44 @@ class EmployeeWorkspaceController extends Controller
             'work_mode' => 'nullable|in:office,remote,hybrid',
         ]);
 
+        // Setting the manager by hand marks the line explicit, so no later group
+        // or department save silently recomputes it away.
+        if (array_key_exists('reporting_manager_id', $data)) {
+            $resolver = app(\App\Services\Organization\ReportingManagerResolver::class);
+            $proposedManagerId = $data['reporting_manager_id'] === null
+                ? null
+                : (int) $data['reporting_manager_id'];
+
+            if ($resolver->wouldCreateCycle((int) $employee->id, $proposedManagerId)) {
+                return response()->json([
+                    'message' => 'That reporting manager would create a reporting loop.',
+                    'error_code' => 'REPORTING_CYCLE',
+                ], 422);
+            }
+
+            if ($proposedManagerId !== null) {
+                $proposedManager = \App\Models\User::query()
+                    ->with('customRole')
+                    ->where('organization_id', $employee->organization_id)
+                    ->find($proposedManagerId);
+
+                if (! $proposedManager) {
+                    return response()->json(['message' => 'Reporting manager must be in the same organization.'], 422);
+                }
+
+                // Authority, not department. A manager may report to another
+                // manager or to an admin; nobody may report to a peer or junior.
+                if (! $resolver->canManage($proposedManager, $employee->loadMissing('customRole'))) {
+                    return response()->json([
+                        'message' => 'A reporting manager must hold more authority than the person reporting to them.',
+                        'error_code' => 'INVALID_REPORTING_LINE',
+                    ], 422);
+                }
+            }
+
+            $data['reporting_manager_source'] = \App\Services\Organization\ReportingManagerResolver::SOURCE_EXPLICIT;
+        }
+
         try {
             $workInfo = $this->employeeWorkspaceService->upsertWorkInfo($employee, $data);
         } catch (\InvalidArgumentException $e) {

@@ -152,8 +152,12 @@ class PayrollAccuracyTest extends TestCase
     {
         $basic = 40000;
         $expectedPf = 4800; // 12% of 40000
-        
-        $pf = $this->calculator->calculateEmployeePF($basic);
+
+        // The uncapped opt-in has to be requested explicitly. Without the flag
+        // this asked for the DEFAULT behaviour — which is capped at the ₹15,000
+        // statutory wage ceiling — and then asserted the uncapped figure, so it
+        // directly contradicted test_pf_employee_calculation_capped below.
+        $pf = $this->calculator->calculateEmployeePF($basic, 0, true);
         
         $this->assertEqualsWithDelta(
             $expectedPf,
@@ -317,8 +321,13 @@ class PayrollAccuracyTest extends TestCase
      */
     public function test_tds_new_regime_calculation(): void
     {
-        $annualCtc = 1200000;
-        
+        // Deliberately well above the rebate threshold. At ₹12,00,000 CTC the
+        // new regime's 87A rebate (REBATE_LIMIT_NEW = ₹12,00,000, per Budget
+        // 2025) wipes the liability out entirely, so asserting "TDS > 0" there
+        // was asserting against current law rather than against a bug. This
+        // keeps the test's intent — TDS is computed when tax is genuinely due.
+        $annualCtc = 2400000;
+
         $result = $this->calculator->calculatePayroll(
             annualCtc: $annualCtc,
             taxRegime: 'new'
@@ -777,7 +786,9 @@ class PayrollAccuracyTest extends TestCase
         
         // Verify deductions
         $deductions = $result['components']['deductions'];
-        $this->assertArrayHasKey('pf', $deductions);
+        // pf_employee, mirroring pf_employer on the contributions side. A bare
+        // 'pf' would be ambiguous about whose contribution it is.
+        $this->assertArrayHasKey('pf_employee', $deductions);
         $this->assertArrayHasKey('tds', $deductions);
         
         // Verify employer contributions

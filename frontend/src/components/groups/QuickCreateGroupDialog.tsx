@@ -65,7 +65,7 @@ export default function QuickCreateGroupDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-sm sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>

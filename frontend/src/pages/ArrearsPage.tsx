@@ -5,7 +5,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
@@ -94,13 +93,13 @@ export default function ArrearsPage() {
   const activeRunMonth = arrears.length > 0 ? (arrears[0]?.arrear_month || arrears[0]?.calculation_month || 'Current') : 'Current';
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader
-        title={`Pending Arrears — ${activeRunMonth} Run`}
-        description="Retroactive salary payments — for increments, promotions, or revisions applied after the effective date."
-      />
-
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Pending Arrears — {activeRunMonth} Run</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Retroactive salary payments — for increments, promotions, or revisions applied after the effective date.
+        </p>
+      </div>
         <HowItWorksCard
           whatIsThis="Salary paid for past months when something changed retrospectively — e.g. an increment approved in October but effective from April. The system calculates the differential for each affected month and pays the total in the current run."
           whenToUse={[
@@ -273,7 +272,6 @@ export default function ArrearsPage() {
             </div>
           )}
         </SurfaceCard>
-      </div>
 
       <RejectReasonModal
         isOpen={rejecting !== null}
@@ -300,7 +298,7 @@ export default function ArrearsPage() {
 
       {createMutation.isPending && (
         <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
-          <Loader2 className="h-4 w-4 animate-spin text-[#5D969D]" />
+          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
           Saving…
         </div>
       )}

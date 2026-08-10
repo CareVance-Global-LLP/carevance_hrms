@@ -5,15 +5,18 @@ import { cn } from '@/utils/cn';
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
+// `on-brand` flips with the theme: white on the teal fill in light mode, and
+// near-black on the lightened teal used in dark mode, where white would only
+// reach 2.3:1. The literal hexes these replaced could not follow the theme.
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-[#5D969D] text-white shadow-sm hover:bg-[#5D969D] active:bg-[#3D656B]',
+    'bg-blue-600 text-on-brand shadow-sm hover:bg-blue-500 active:bg-blue-700',
   secondary:
-    'border border-[rgba(155,148,152,0.3)] bg-white text-slate-700 shadow-sm hover:border-[rgba(93,150,157,0.4)] hover:bg-[rgba(93,150,157,0.04)]',
+    'border border-slate-300 bg-surface-card text-slate-700 shadow-sm hover:border-blue-400/60 hover:bg-blue-50/60',
   ghost:
-    'text-slate-600 hover:bg-[rgba(93,150,157,0.06)] hover:text-slate-950',
+    'text-slate-600 hover:bg-blue-50/70 hover:text-slate-950',
   danger:
-    'bg-red-600 text-white shadow-sm hover:bg-red-700',
+    'bg-red-600 text-white shadow-sm hover:bg-red-500',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {

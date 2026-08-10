@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
+@import './styles/theme.css';
 
 @tailwind base;
 @tailwind components;
@@ -40,6 +41,22 @@
   --sidebar-active: #5D969D;
   --sidebar-text: rgba(255,255,255,0.7);
   --sidebar-text-active: #ffffff;
+  /* Unread badges on the rail. The general --danger is tuned for page
+     surfaces and only reaches 3.8:1 with white text against this rail; the
+     rail is dark in both themes, so this one value serves both. */
+  --sidebar-badge: #B3392E;
+
+  /* Collapsed-group flyout. Fixed rather than theme-dependent for the same
+     reason as everything else here: the rail and its panels are dark in both
+     themes, so a value that shifts would only shift out of tune. */
+  --sidebar-flyout-bg: #131B21;
+  --sidebar-flyout-line: rgba(255, 255, 255, 0.09);
+  --sidebar-flyout-border: rgba(255, 255, 255, 0.10);
+  /* Brand gold, matching --accent-400. Teal already means "the page you are
+     on"; gold is what you are pointing at, so the two never compete. */
+  --sidebar-accent: #E3A842;
+  --sidebar-accent-soft: rgba(227, 168, 66, 0.16);
+  --sidebar-accent-wash: rgba(227, 168, 66, 0.12);
 }
 
 * {
@@ -52,12 +69,19 @@ body {
   font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #F5F7F8;
+  background-color: rgb(var(--app-bg));
   background-image:
     radial-gradient(circle at 20% -10%, rgba(93, 150, 157, 0.08), transparent 30%),
     radial-gradient(circle at 80% -20%, rgba(227, 168, 66, 0.05), transparent 35%);
   color: var(--text-primary);
   text-rendering: optimizeLegibility;
+}
+
+/* The brand wash reads as smoke on a dark page — drop it to a faint cool glow. */
+:root[data-theme="dark"] body {
+  background-image:
+    radial-gradient(circle at 20% -10%, rgba(127, 182, 189, 0.06), transparent 32%),
+    radial-gradient(circle at 80% -20%, rgba(235, 184, 97, 0.03), transparent 36%);
 }
 
 html {
@@ -99,6 +123,34 @@ code {
   }
   to {
     opacity: 1;
+  }
+}
+
+/*
+ * Sidebar flyout. The panel scales from the point where it meets the rail
+ * (transform-origin is set inline from the trigger's centre), so it reads as
+ * emerging from the icon rather than appearing next to it. Rows then arrive in
+ * sequence, sliding in from the same edge.
+ */
+@keyframes flyoutIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes flyoutRowIn {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -241,6 +293,57 @@ code {
 
 .recharts-active-dot {
   animation: pulseGlow 1.5s ease-in-out infinite;
+}
+
+/*
+ * Chart chrome in dark mode.
+ *
+ * Recharts takes colours as SVG props, so the seven chart files hardcode values
+ * like stroke="#f1f5f9" for the grid and fill="#475569" for tick labels — a
+ * near-white grid and near-black labels, both unusable on a dark card. CSS
+ * `stroke`/`fill` outrank SVG presentation attributes, so restyling the chrome
+ * here reaches every chart without editing each call site. Series colours are
+ * deliberately left alone: they are saturated enough to read on both grounds.
+ */
+:root[data-theme="dark"] .recharts-cartesian-grid line,
+:root[data-theme="dark"] .recharts-cartesian-grid-horizontal line,
+:root[data-theme="dark"] .recharts-cartesian-grid-vertical line {
+  stroke: rgb(var(--n-200));
+}
+
+:root[data-theme="dark"] .recharts-cartesian-axis-line,
+:root[data-theme="dark"] .recharts-cartesian-axis-tick-line {
+  stroke: rgb(var(--n-300));
+}
+
+:root[data-theme="dark"] .recharts-cartesian-axis-tick text,
+:root[data-theme="dark"] .recharts-label,
+:root[data-theme="dark"] .recharts-legend-item-text,
+:root[data-theme="dark"] .recharts-polar-angle-axis-tick text,
+:root[data-theme="dark"] .recharts-text.recharts-label {
+  fill: rgb(var(--n-600));
+}
+
+/* Recharts' built-in tooltip is styled inline, so this has to outrank it. */
+:root[data-theme="dark"] .recharts-default-tooltip {
+  background-color: rgb(var(--surface-raised)) !important;
+  border-color: rgb(var(--n-300)) !important;
+  color: rgb(var(--n-900)) !important;
+}
+:root[data-theme="dark"] .recharts-tooltip-item,
+:root[data-theme="dark"] .recharts-tooltip-label {
+  color: rgb(var(--n-900)) !important;
+}
+
+/* The white halo drawn around active dots must match the card, not the page. */
+:root[data-theme="dark"] .recharts-active-dot circle[stroke="#fff"],
+:root[data-theme="dark"] .recharts-active-dot circle[stroke="#ffffff"] {
+  stroke: rgb(var(--surface-card));
+}
+
+/* Brightening a dark bar barely registers; lift it toward the light instead. */
+:root[data-theme="dark"] .recharts-bar-rectangle:hover {
+  filter: brightness(1.25) saturate(1.05);
 }
 
 /* Timer display */

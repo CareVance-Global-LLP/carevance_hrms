@@ -414,13 +414,22 @@ const DepartmentWorkIdleChart = ({ data }: { data: Array<{ department: string; w
   );
 };
 
-const KpiCard = ({ label, value, hint, icon: Icon, tint, to, onClick }: { label: string; value: string | number; hint: string; icon: any; tint: string; to?: string; onClick?: () => void }) => {
+const KpiCard = ({ label, value, hint, icon: Icon, tint, to, onClick, loading }: { label: string; value: string | number; hint: string; icon: any; tint: string; to?: string; onClick?: () => void; loading?: boolean }) => {
   const content = (
     <div className="flex h-full items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
         <p className="min-h-8 text-xs leading-4 text-slate-500">{label}</p>
-        <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
-        <p className="mt-2 text-[11px] text-slate-500">{hint}</p>
+        {/*
+          A real-looking 0 during load reads as fact: the dashboard opened on
+          "Total Employees 0" for an organization of 85 while the fetch was
+          still in flight. A placeholder says "not yet known" instead.
+        */}
+        {loading ? (
+          <div className="mt-3 h-8 w-16 animate-pulse rounded bg-slate-200" aria-label={`${label} loading`} />
+        ) : (
+          <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+        )}
+        <p className="mt-2 text-[11px] text-slate-500">{loading ? ' ' : hint}</p>
       </div>
       <div className={`flex h-10 w-10 items-center justify-center rounded-full ${tint}`}>
         <Icon className="h-5 w-5" />
@@ -1806,7 +1815,7 @@ export default function AdminDashboard() {
 
 
   return (
-    <div className="w-full space-y-5 bg-[#f5f7fb] pt-4 text-slate-900">
+    <div className="w-full space-y-5 bg-slate-50 pt-4 text-slate-900">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
@@ -1948,8 +1957,9 @@ export default function AdminDashboard() {
       </Card>
 
       <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-7">
-        <KpiCard to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600" />
-        <KpiCard
+        <KpiCard loading={isDashboardInitialLoading} to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600"
+        />
+        <KpiCard loading={isDashboardInitialLoading}
           label="Present"
           value={totalPresentInRange}
           hint={`${presentPercent}% of total`}
@@ -1961,7 +1971,7 @@ export default function AdminDashboard() {
             scrollToDashboardSection('current-work-status');
           }}
         />
-        <KpiCard
+        <KpiCard loading={isDashboardInitialLoading}
           label="On Leave"
           value={onLeave}
           hint={`${leavePercent}% of total`}
@@ -1973,7 +1983,7 @@ export default function AdminDashboard() {
             scrollToDashboardSection('current-work-status');
           }}
         />
-        <KpiCard
+        <KpiCard loading={isDashboardInitialLoading}
           label="Absent"
           value={absentCount}
           hint={`${absentPercent}% of total`}
@@ -1985,7 +1995,7 @@ export default function AdminDashboard() {
             scrollToDashboardSection('current-work-status');
           }}
         />
-        <KpiCard
+        <KpiCard loading={isDashboardInitialLoading}
           label="Present Late"
           value={finalPresentLateInRange}
           hint={`${presentLatePercent}% of total`}
@@ -1997,22 +2007,22 @@ export default function AdminDashboard() {
             scrollToDashboardSection('current-work-status');
           }}
         />
-         <KpiCard 
+         <KpiCard loading={isDashboardInitialLoading}
            to="/new-hires"
            label="New Hires" 
-           value={String(newHires).padStart(2, '0')} 
+           value={newHires}
            hint="Joined in range" 
            icon={UserPlus} 
-           tint="bg-violet-50 text-violet-600" 
-         />
-         <KpiCard 
+           tint="bg-violet-50 text-violet-600"
+        />
+         <KpiCard loading={isDashboardInitialLoading}
            to="/resignations"
            label="Resignations" 
-           value={String(resignations).padStart(2, '0')} 
+           value={resignations}
            hint="Exited in range" 
            icon={UserMinus} 
-           tint="bg-slate-100 text-slate-600" 
-         />
+           tint="bg-slate-100 text-slate-600"
+        />
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)]">

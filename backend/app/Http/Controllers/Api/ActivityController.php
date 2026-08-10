@@ -63,8 +63,12 @@ class ActivityController extends Controller
                 }
             }
 
+            $isProcessed = $request->boolean('processed') || $request->boolean('normalized');
+            // Processed timeline rows are assembled in memory and sliced, so a
+            // larger page is free — it lets the swimlane view load a person-day
+            // in one request. Raw feed pagination keeps the tight cap.
             $perPage = (int) $request->get('per_page', 10);
-            $perPage = max(1, min($perPage, 10));
+            $perPage = max(1, min($perPage, $isProcessed ? 200 : 10));
             $page = max(1, (int) $request->get('page', 1));
 
             $scopedUserIds = User::query()

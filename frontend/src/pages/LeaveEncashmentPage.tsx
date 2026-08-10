@@ -5,7 +5,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
@@ -78,13 +77,13 @@ export default function LeaveEncashmentPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader
-        title="Leave Encashment"
-        description="Pay out unused earned/privilege leaves — typically at exit, or annually per company policy."
-      />
-
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Leave Encashment</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Pay out unused earned/privilege leaves — typically at exit, or annually per company policy.
+        </p>
+      </div>
         <HowItWorksCard
           whatIsThis="Converts unused earned leaves into cash. Per-day rate = (Monthly Basic ÷ Working Days). Tax-free up to ₹25 lakh for non-government employees at exit."
           whenToUse={[
@@ -244,7 +243,6 @@ export default function LeaveEncashmentPage() {
             </div>
           )}
         </SurfaceCard>
-      </div>
 
       <RejectReasonModal
         isOpen={rejecting !== null}

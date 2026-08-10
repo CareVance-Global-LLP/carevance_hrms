@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PerformanceReview extends Model
 {
+    use BelongsToOrganization;
     use HasFactory;
 
     protected $fillable = [
@@ -15,6 +17,7 @@ class PerformanceReview extends Model
         'employee_id',
         'reviewer_id',
         'goal_id',
+        'review_cycle_id',
         'review_type',
         'review_period_start',
         'review_period_end',
@@ -55,6 +58,16 @@ class PerformanceReview extends Model
     public function goal(): BelongsTo
     {
         return $this->belongsTo(PerformanceGoal::class, 'goal_id');
+    }
+
+    public function cycle(): BelongsTo
+    {
+        return $this->belongsTo(ReviewCycle::class, 'review_cycle_id');
+    }
+
+    public function competencyRatings()
+    {
+        return $this->hasMany(ReviewCompetencyRating::class, 'review_id');
     }
 
     public function scopeCompleted($query)

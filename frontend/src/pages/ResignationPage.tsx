@@ -14,6 +14,7 @@ export default function ResignationPage() {
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [resignationReason, setResignationReason] = useState('');
   const [resignationLastDate, setResignationLastDate] = useState('');
+  const [approvalDestination, setApprovalDestination] = useState<string | null>(null);
   const [isSubmittingResignation, setIsSubmittingResignation] = useState(false);
   const [resignationStatus, setResignationStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
   const [showResignationConfirm, setShowResignationConfirm] = useState(false);
@@ -35,6 +36,7 @@ export default function ResignationPage() {
           setResignationStatus(data.resignation.status || 'none');
           setResignationLastDate(data.resignation.last_working_date || '');
           setResignationReason(data.resignation.reason || '');
+          setApprovalDestination(data.resignation.approval_destination || null);
         }
       } catch {
         // No active resignation found, keep status as 'none'
@@ -50,10 +52,15 @@ export default function ResignationPage() {
     setIsSubmittingResignation(true);
 
     try {
-      await resignationApi.submit({
+      const response = await resignationApi.submit({
         last_working_date: resignationLastDate,
         reason: resignationReason,
       });
+
+      const data = response.data as any;
+      if (data && data.resignation) {
+        setApprovalDestination(data.resignation.approval_destination || null);
+      }
 
       setResignationStatus('pending');
       setShowResignationConfirm(false);
@@ -155,6 +162,9 @@ export default function ResignationPage() {
                   <div className="mt-4 rounded-lg border border-amber-200 bg-white p-4 text-left max-w-md mx-auto">
                     <p className="text-sm"><strong>Last Working Date:</strong> {resignationLastDate}</p>
                     <p className="mt-1 text-sm"><strong>Status:</strong> <span className="text-amber-600">Pending Approval</span></p>
+                    {approvalDestination && (
+                      <p className="mt-1 text-sm"><strong>Approval Routing:</strong> <span className="text-amber-800">{approvalDestination}</span></p>
+                    )}
                   </div>
                 </div>
               )}

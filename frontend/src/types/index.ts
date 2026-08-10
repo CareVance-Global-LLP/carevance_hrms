@@ -19,6 +19,12 @@ export interface User {
   total_duration?: number;
   total_elapsed_duration?: number;
   settings?: Record<string, any>;
+  /**
+   * Server-resolved capture interval: per-user override -> organization default
+   * -> system default. Read-only; write the per-user override through
+   * settings.monitoring_interval_minutes (null there means "inherit").
+   */
+  effective_monitoring_interval_minutes?: number;
   employee_profile?: EmployeeProfileDetails | null;
   groups?: Group[];
   permissions?: string[];
@@ -82,6 +88,11 @@ export interface Project {
   created_at: string;
   updated_at: string;
   group?: Group | null;
+  /** Rolled up by the projects index: time logged against the project or its tasks. */
+  tracked_seconds?: number;
+  estimated_minutes?: number;
+  tasks_count?: number;
+  tasks_done_count?: number;
 }
 
 // Task Types
@@ -708,6 +719,9 @@ export interface ChatGroupMessage {
     name: string;
     email: string;
   };
+  /** Members who opened the group after this was posted, excluding the sender. */
+  read_by_count?: number;
+  audience_count?: number;
 }
 
 export interface ChatTypingUser {
@@ -720,6 +734,17 @@ export interface ChatUnreadSummary {
   unread_messages: number;
   unread_conversations: number;
   unread_senders: number;
+}
+
+/** One message-body hit from /chat/search. */
+export interface ChatMessageSearchHit {
+  message_id: number;
+  thread_type: 'direct' | 'group';
+  thread_id: number;
+  thread_name: string;
+  sender_name?: string | null;
+  body: string;
+  created_at: string;
 }
 
 export interface PollOptionItem {
@@ -757,6 +782,8 @@ export interface AppNotificationItem {
     [key: string]: any;
   } | null;
   poll?: PollItem;
+  /** Groups every row written by one publish, so the sender can be shown a read count. */
+  broadcast_id?: string | null;
 }
 
 export interface PollResultsResponse {

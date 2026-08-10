@@ -24,6 +24,19 @@ window.__APP_CONFIG__ = window.__APP_CONFIG__ || {};
 })(window.__APP_CONFIG__);
 
 // ── Feature toggles (edit per-deployment, no rebuild needed) ──────────
-// Set to "true" to enable payroll on this deployment.
-// For localhost: set to "false" to hide payroll for non-payroll plans
-window.__APP_CONFIG__.VITE_PAYROLL_ENABLED = "false";
+//
+// Anything set here WINS over the build-time value from .env — runtimeConfig
+// reads the runtime value first and only falls back to the build value when it
+// is empty. So leave these commented out unless a specific deployment really
+// has to override its build.
+//
+// This file previously ended with an unconditional
+//     window.__APP_CONFIG__.VITE_PAYROLL_ENABLED = "false";
+// placed outside the localhost guard above, which meant every environment —
+// production included — hid payroll regardless of what the build or the
+// customer's plan said. Payroll entitlement is decided by the plan
+// (`usePlan().isPayrollPlan`) plus VITE_PAYROLL_ENABLED from .env; this file
+// should not have an opinion by default.
+//
+// To force payroll off for one deployment, uncomment:
+// window.__APP_CONFIG__.VITE_PAYROLL_ENABLED = "false";

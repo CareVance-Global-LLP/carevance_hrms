@@ -10,6 +10,7 @@ use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\BrowserTrackingConnection;
 use App\Models\BreakTime;
+use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Project;
 use App\Models\ReportGroup;
@@ -17,6 +18,7 @@ use App\Models\Screenshot;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Services\Authorization\GroupAccessService;
 use App\Services\Monitoring\ActivityFeedService;
 use App\Services\Reports\ActivityProductivityService;
 use App\Services\Reports\DashboardSummaryService;
@@ -131,6 +133,7 @@ class ReportController extends Controller
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly UsageProcessingService $usageProcessingService,
         private readonly ActivityFeedService $activityFeedService,
+        private readonly GroupAccessService $groupAccessService,
     ) {
     }
 
@@ -534,7 +537,7 @@ class ReportController extends Controller
         ];
     }
 
-    private function limitToolBreakdown(array $toolBreakdown, int $limit = 10): array
+    private function limitToolBreakdown(array $toolBreakdown, int $limit = 25): array
     {
         return [
             'productive' => collect($toolBreakdown['productive'] ?? [])->take($limit)->values()->all(),
@@ -934,6 +937,7 @@ class ReportController extends Controller
                     ] + $this->timeBreakdownService->build(0, 0),
                     'by_user' => [],
                     'by_day' => [],
+                    'by_user_day' => [],
                 ]);
             }
 
@@ -952,6 +956,14 @@ class ReportController extends Controller
             ? $allUsers->slice(($page - 1) * $perPage, $perPage)->values()
             : $allUsers;
         $calendarDaysCount = max(1, CarbonPeriod::create($startDate->toDateString(), $endDate->toDateString())->count());
+        // Overtime is measured against working days, not calendar days — a
+        // Mon–Sun range owes 5 days of work, not 7. The client used to look for
+        // these two keys on every row, but this report never sent them, so its
+        // day count silently fell back to 1 and it reported nearly all tracked
+        // time as overtime.
+        $workingDaysCount = max(1, collect(CarbonPeriod::create($startDate->copy()->startOfDay(), $endDate->copy()->startOfDay()))
+            ->reject(fn (Carbon $date) => $date->isWeekend())
+            ->count());
         if ($users->isEmpty()) {
             $emptyResponse = [
                 'start_date' => $startDate->toDateString(),
@@ -962,6 +974,7 @@ class ReportController extends Controller
                 ] + $this->timeBreakdownService->build(0, 0),
                 'by_user' => [],
                 'by_day' => [],
+                'by_user_day' => [],
             ];
 
             if ($shouldPaginateUsers) {
@@ -986,16 +999,23 @@ class ReportController extends Controller
             ->whereBetween('attendance_date', [$startDate->toDateString(), $endDate->toDateString()])
             ->get(['id', 'user_id', 'attendance_date', 'check_in_at', 'check_out_at', 'manual_adjustment_seconds']);
 
+        // is_break excluded: an open break entry is not "working". Without this
+        // the reports and AttendanceService (which does filter) disagreed about
+        // the same person at the same moment.
         $activeUserIds = TimeEntry::whereIn('user_id', $userIds)
             ->whereNull('end_time')
+            ->where('is_break', false)
             ->distinct()
             ->pluck('user_id')
             ->map(fn ($id) => (int) $id);
 
+        // Date-scoped: an orphaned open break_times row from a previous day
+        // otherwise reported the user as on-break forever.
         $onBreakUserIds = $userIds->isEmpty()
             ? collect()
             : BreakTime::whereIn('user_id', $userIds)
                 ->whereNull('end_at')
+                ->whereDate('break_date', now()->toDateString())
                 ->pluck('user_id')
                 ->map(fn ($id) => (int) $id)
                 ->unique();
@@ -1035,7 +1055,7 @@ class ReportController extends Controller
 
         $resolvedNow = now();
 
-        $byUser = $users->map(function ($user) use ($entriesByUser, $breakEntriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $onBreakUserIds, $resolvedNow, $calendarDaysCount) {
+        $byUser = $users->map(function ($user) use ($entriesByUser, $breakEntriesByUser, $adjustmentsByUser, $idleDurationByUser, $lastActivityByUser, $activeUserIds, $onBreakUserIds, $resolvedNow, $calendarDaysCount, $workingDaysCount) {
             $userEntries = $entriesByUser->get($user->id, collect());
             $userBreakSeconds = $this->totalBreakSeconds($breakEntriesByUser->get($user->id, collect()), $resolvedNow);
             $userAttendanceRecords = $adjustmentsByUser->get($user->id, collect());
@@ -1056,6 +1076,8 @@ class ReportController extends Controller
                 'is_on_break' => $onBreakUserIds->contains((int) $user->id),
                 'break_seconds' => $userBreakSeconds,
                 'break_hours' => round($userBreakSeconds / 3600, 2),
+                'calendar_days_in_range' => $calendarDaysCount,
+                'working_days_in_range' => $workingDaysCount,
             ] + $timeBreakdown + $attendanceSummary;
         })->values();
 
@@ -1108,6 +1130,25 @@ class ReportController extends Controller
             $dayUserBuckets[$key]['idle_duration'] = (int) $idleDuration;
         }
 
+        // The per-user-per-day matrix used to be built here and then collapsed
+        // away by the groupBy below, so nothing downstream could ever show that
+        // someone logged fourteen hours on Tuesday and none on Wednesday. It is
+        // returned as `by_user_day` now; `by_day` keeps its existing shape.
+        $byUserDay = collect($dayUserBuckets)
+            ->map(function (array $bucket, $key) {
+                [$userId] = explode('|', (string) $key, 2);
+
+                return [
+                    'user_id' => (int) $userId,
+                    'date' => $bucket['date'],
+                ] + $this->timeBreakdownService->build(
+                    (int) ($bucket['total_duration'] ?? 0),
+                    (int) ($bucket['idle_duration'] ?? 0)
+                );
+            })
+            ->sortBy(fn (array $row) => $row['user_id'].'|'.$row['date'])
+            ->values();
+
         $byDay = collect($dayUserBuckets)
             ->map(function (array $bucket) {
                 return [
@@ -1147,6 +1188,7 @@ class ReportController extends Controller
             'users' => $users,
             'by_user' => $byUser,
             'by_day' => $byDay,
+            'by_user_day' => $byUserDay,
         ];
 
         if ($shouldPaginateUsers) {
@@ -1178,6 +1220,7 @@ class ReportController extends Controller
                 'users' => [],
                 'by_user' => [],
                 'by_day' => [],
+                'by_user_day' => [],
             ];
 
             if ($request->has('page') || $request->has('per_page')) {
@@ -1213,10 +1256,13 @@ class ReportController extends Controller
             ->map(fn ($id) => (int) $id)
             ->filter(fn ($id) => $id > 0)
             ->values();
+        // Date-scoped: an orphaned open break_times row from a previous day
+        // otherwise reported the user as on-break forever.
         $onBreakUserIds = $userIds->isEmpty()
             ? collect()
             : BreakTime::whereIn('user_id', $userIds)
                 ->whereNull('end_at')
+                ->whereDate('break_date', now()->toDateString())
                 ->pluck('user_id')
                 ->map(fn ($id) => (int) $id)
                 ->unique();
@@ -3051,12 +3097,24 @@ class ReportController extends Controller
         $calendarDaysCount = max(1, $allDatesInRange->count());
         $workingDaysCount = max(1, $workingDates->count());
         $userIds = $users->pluck('id')->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->values();
+        // is_break excluded — an open break entry is not "working".
         $activeTimeEntryUserIds = $userIds->isEmpty()
             ? collect()
             : TimeEntry::query()
                 ->whereIn('user_id', $userIds)
                 ->whereNull('end_time')
+                ->where('is_break', false)
                 ->distinct()
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique();
+
+        $onBreakUserIdsForStatus = $userIds->isEmpty()
+            ? collect()
+            : BreakTime::query()
+                ->whereIn('user_id', $userIds)
+                ->whereNull('end_at')
+                ->whereDate('break_date', now()->toDateString())
                 ->pluck('user_id')
                 ->map(fn ($id) => (int) $id)
                 ->unique();
@@ -3107,6 +3165,7 @@ class ReportController extends Controller
             $workingDates,
             $weekendDates,
             $activeTimeEntryUserIds,
+            $onBreakUserIdsForStatus,
             $openAttendanceUserIds,
             $recordsByUser,
             $leavesByUser,
@@ -3166,6 +3225,9 @@ class ReportController extends Controller
                 'worked_seconds' => $workedSeconds,
                 'worked_hours' => round($workedSeconds / 3600, 2),
                 'is_working' => $isWorking,
+                // This payload had no on-break key at all, so someone on a break
+                // was reported purely as Working.
+                'is_on_break' => $onBreakUserIdsForStatus->contains((int) $user->id),
                 'present_dates' => $presentDates,
                 'leave_dates' => $approvedLeaveDates,
                 'absent_dates' => $absentDates,
@@ -3529,10 +3591,12 @@ class ReportController extends Controller
             (int) collect($perUserScore)->sum('idle_duration'),
         );
 
+        // is_break excluded — an open break entry is not "working".
         $activeTimeEntryUserIds = $analyticsUserIds->isEmpty()
             ? collect()
             : TimeEntry::whereIn('user_id', $analyticsUserIds)
                 ->whereNull('end_time')
+                ->where('is_break', false)
                 ->pluck('user_id')
                 ->map(fn ($id) => (int) $id)
                 ->unique();
@@ -3553,10 +3617,13 @@ class ReportController extends Controller
                 ->map(fn ($id) => (int) $id)
                 ->unique();
 
+        // Date-scoped: an orphaned open break_times row from a previous day
+        // otherwise reported the user as on-break forever.
         $onBreakUserIds = $analyticsUserIds->isEmpty()
             ? collect()
             : BreakTime::whereIn('user_id', $analyticsUserIds)
                 ->whereNull('end_at')
+                ->whereDate('break_date', now()->toDateString())
                 ->pluck('user_id')
                 ->map(fn ($id) => (int) $id)
                 ->unique();
@@ -3715,10 +3782,10 @@ class ReportController extends Controller
             'activity_breakdown' => $activityBreakdown,
             'selected_user_tools' => $selectedToolBreakdown,
             'organization_tools' => [
-                'productive' => $productiveTools->take(10)->values(),
-                'unproductive' => $unproductiveTools->take(10)->values(),
-                'neutral' => $neutralTools->take(10)->values(),
-                'context_dependent' => $contextDependentTools->take(10)->values(),
+                'productive' => $productiveTools->take(25)->values(),
+                'unproductive' => $unproductiveTools->take(25)->values(),
+                'neutral' => $neutralTools->take(25)->values(),
+                'context_dependent' => $contextDependentTools->take(25)->values(),
             ],
             'organization_summary' => [
                 'tracked_duration' => (int) ($orgTimeBreakdown['total_duration'] ?? 0),
@@ -3740,8 +3807,8 @@ class ReportController extends Controller
             'employee_rankings' => [
                 'most_productive' => $mostProductiveEmployee,
                 'most_unproductive' => $mostUnproductiveEmployee,
-                'by_productive_duration' => $employeeScores->sortByDesc('productive_duration')->take(10)->values(),
-                'by_unproductive_duration' => $employeeScores->sortByDesc('unproductive_duration')->take(10)->values(),
+                'by_productive_duration' => $employeeScores->sortByDesc('productive_duration')->take(100)->values(),
+                'by_unproductive_duration' => $employeeScores->sortByDesc('unproductive_duration')->take(100)->values(),
             ],
             'team_rankings' => [
                 'by_efficiency' => $teamEfficiencyRanked->take(10)->values(),
@@ -3750,6 +3817,21 @@ class ReportController extends Controller
             ],
             'live_monitoring' => [
                 'selected_user' => $selectedUserLive,
+                // True totals — the arrays below are capped at 10 rows for
+                // payload weight, so tiles must count from here, not ->length.
+                'counts' => [
+                    'all' => $employeeLiveRows->count(),
+                    'active' => $employeeLiveRows->where('work_status', 'active')->count(),
+                    'idle' => $employeeLiveRows->where('work_status', 'idle')->count(),
+                    'on_break' => $employeeLiveRows->where('work_status', 'on_break')->count(),
+                    'on_leave' => $employeeLiveRows->where('work_status', 'on_leave')->count(),
+                    'inactive' => $employeeLiveRows->where('work_status', 'inactive')->count(),
+                    'working_now' => $liveMonitoringRows->where('is_working', true)->count(),
+                ],
+                // Full presence map (user_id => work_status) so the UI can
+                // filter any roster by live status without heavy rows.
+                'status_by_user' => $employeeLiveRows
+                    ->mapWithKeys(fn ($row) => [(string) $row['user']['id'] => $row['work_status']]),
                 'working_now' => $liveMonitoringRows->where('is_working', true)->take(10)->values(),
                 'all_users' => $liveMonitoringRows->take(10)->values(),
                 'employees_active' => $employeeLiveRows->where('work_status', 'active')->take(10)->values(),
@@ -3877,14 +3959,19 @@ class ReportController extends Controller
             $idleDuration,
             $nonIdleActivityDuration
         );
+        // is_break excluded — an open break entry is not "working".
         $isWorking = TimeEntry::query()
             ->where('user_id', $selectedUser->id)
             ->whereNull('end_time')
+            ->where('is_break', false)
             ->exists();
 
+        // Date-scoped: an orphaned open break_times row from a previous day
+        // otherwise reported the user as on-break forever.
         $isOnBreak = BreakTime::query()
             ->where('user_id', $selectedUser->id)
             ->whereNull('end_at')
+            ->whereDate('break_date', now()->toDateString())
             ->exists();
 
         $hasRecentNonIdleActivity = false;
@@ -4040,5 +4127,175 @@ class ReportController extends Controller
     private function workedEntries(Collection $entries): Collection
     {
         return $entries->where('is_break', false)->values();
+    }
+
+    /**
+     * Headline figure, movement and a short sparkline for each module on the
+     * reports hub.
+     *
+     * The hub used to be five link tiles with no data on them, so the only way
+     * to find out whether a report was worth opening was to open it. Rendering
+     * a menu must not cost five full report queries, so this is a handful of
+     * aggregates rather than a call into the report builders — and every module
+     * is independently wrapped, so one failure degrades that tile to a plain
+     * link instead of taking the page down.
+     */
+    public function hubSummary(Request $request)
+    {
+        $user = $request->user();
+        if (!$user || !$user->organization_id) {
+            return response()->json(['data' => []]);
+        }
+
+        $orgId = (int) $user->organization_id;
+        $end = Carbon::now()->endOfDay();
+        $start = Carbon::now()->subDays(6)->startOfDay();
+        $previousStart = (clone $start)->subDays(7);
+        $previousEnd = (clone $start)->subSecond();
+
+        $days = collect(CarbonPeriod::create($start->copy()->startOfDay(), $end->copy()->startOfDay()))
+            ->map(fn (Carbon $date) => $date->toDateString())
+            ->values();
+
+        $userIds = User::where('organization_id', $orgId)->pluck('id');
+        $groupIds = Group::where('organization_id', $orgId)->pluck('id');
+
+        $modules = [];
+
+        $modules['attendance'] = $this->safeSummary(function () use ($orgId, $start, $end, $previousStart, $previousEnd, $days, $userIds) {
+            $headcount = max(1, $userIds->count());
+
+            $presentByDay = AttendanceRecord::query()
+                ->where('organization_id', $orgId)
+                ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+                ->whereNotNull('check_in_at')
+                ->selectRaw('attendance_date, COUNT(DISTINCT user_id) as present')
+                ->groupBy('attendance_date')
+                ->pluck('present', 'attendance_date');
+
+            $workingDays = $days->reject(fn (string $date) => Carbon::parse($date)->isWeekend());
+            $presentTotal = $workingDays->sum(fn (string $date) => (int) ($presentByDay[$date] ?? 0));
+            $rate = $workingDays->isEmpty() ? 0 : ($presentTotal / ($workingDays->count() * $headcount)) * 100;
+
+            $previousDays = collect(CarbonPeriod::create($previousStart->copy()->startOfDay(), $previousEnd->copy()->startOfDay()))
+                ->map(fn (Carbon $date) => $date->toDateString())
+                ->reject(fn (string $date) => Carbon::parse($date)->isWeekend());
+
+            $previousByDay = AttendanceRecord::query()
+                ->where('organization_id', $orgId)
+                ->whereBetween('attendance_date', [$previousStart->toDateString(), $previousEnd->toDateString()])
+                ->whereNotNull('check_in_at')
+                ->selectRaw('attendance_date, COUNT(DISTINCT user_id) as present')
+                ->groupBy('attendance_date')
+                ->pluck('present', 'attendance_date');
+
+            $previousPresent = $previousDays->sum(fn (string $date) => (int) ($previousByDay[$date] ?? 0));
+            $previousRate = $previousDays->isEmpty() ? 0 : ($previousPresent / ($previousDays->count() * $headcount)) * 100;
+
+            return [
+                'value' => round($rate, 1),
+                'unit' => '%',
+                'delta' => round($rate - $previousRate, 1),
+                'delta_direction' => $rate >= $previousRate ? 'up' : 'down',
+                'sparkline' => $days->map(fn (string $date) => (int) ($presentByDay[$date] ?? 0))->all(),
+                'hint' => $headcount.' people in scope',
+            ];
+        });
+
+        $modules['hours-tracked'] = $this->safeSummary(function () use ($start, $end, $previousStart, $previousEnd, $days, $userIds) {
+            if ($userIds->isEmpty()) {
+                return null;
+            }
+
+            $byDay = TimeEntry::query()
+                ->whereIn('user_id', $userIds)
+                ->where('is_break', false)
+                ->whereBetween('start_time', [$start, $end])
+                ->selectRaw('DATE(start_time) as day, SUM(duration) as total')
+                ->groupBy('day')
+                ->pluck('total', 'day');
+
+            $total = (int) $byDay->sum();
+            $previous = (int) TimeEntry::query()
+                ->whereIn('user_id', $userIds)
+                ->where('is_break', false)
+                ->whereBetween('start_time', [$previousStart, $previousEnd])
+                ->sum('duration');
+
+            return [
+                'value' => round($total / 3600, 1),
+                'unit' => 'h',
+                'delta' => round(($total - $previous) / 3600, 1),
+                'delta_direction' => $total >= $previous ? 'up' : 'down',
+                'sparkline' => $days->map(fn (string $date) => (int) round(((int) ($byDay[$date] ?? 0)) / 3600))->all(),
+                'hint' => 'tracked in the last 7 days',
+            ];
+        });
+
+        $modules['projects-tasks'] = $this->safeSummary(function () use ($user, $groupIds) {
+            // Scope through the same service the task pages use. Counting by
+            // `group_id` alone missed every task that hangs off a project
+            // instead of a department — which, on real data, is all of them.
+            $scoped = fn () => $this->groupAccessService->applyTaskVisibilityScope(Task::query(), $user);
+
+            $open = (int) $scoped()->where('status', '!=', 'done')->count();
+            $overdue = (int) $scoped()
+                ->where('status', '!=', 'done')
+                ->whereNotNull('due_date')
+                ->whereDate('due_date', '<', Carbon::now()->toDateString())
+                ->count();
+
+            return [
+                'value' => $open,
+                'unit' => '',
+                'delta' => $overdue,
+                'delta_direction' => $overdue > 0 ? 'down' : 'up',
+                'delta_label' => $overdue > 0 ? $overdue.' overdue' : 'none overdue',
+                'sparkline' => [],
+                'hint' => 'open across '.$groupIds->count().' departments',
+            ];
+        });
+
+        $modules['timeline'] = $this->safeSummary(function () use ($start, $end, $previousStart, $previousEnd, $userIds) {
+            if ($userIds->isEmpty()) {
+                return null;
+            }
+
+            $count = (int) Activity::whereIn('user_id', $userIds)->whereBetween('recorded_at', [$start, $end])->count();
+            $previous = (int) Activity::whereIn('user_id', $userIds)
+                ->whereBetween('recorded_at', [$previousStart, $previousEnd])
+                ->count();
+
+            return [
+                'value' => $count,
+                'unit' => '',
+                'delta' => $count - $previous,
+                'delta_direction' => $count >= $previous ? 'up' : 'down',
+                'delta_label' => 'events',
+                'sparkline' => [],
+                'hint' => 'app, site and idle activity',
+            ];
+        });
+
+        return response()->json([
+            'start_date' => $start->toDateString(),
+            'end_date' => $end->toDateString(),
+            'data' => array_filter($modules, fn ($module) => $module !== null),
+        ]);
+    }
+
+    /**
+     * Runs one module's aggregate, returning null rather than throwing — a
+     * broken tile should fall back to the plain link, not break the hub.
+     */
+    private function safeSummary(callable $builder): ?array
+    {
+        try {
+            return $builder();
+        } catch (Throwable $exception) {
+            Log::warning('Reports hub summary module failed.', ['error' => $exception->getMessage()]);
+
+            return null;
+        }
     }
 }

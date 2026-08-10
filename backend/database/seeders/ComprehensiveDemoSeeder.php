@@ -543,14 +543,33 @@ class ComprehensiveDemoSeeder extends Seeder
                 for ($b = 0; $b < $breakCount; $b++) {
                     $start = $date->copy()->setTime(rand(10, 16), rand(0, 59));
                     $dur = rand(10, 60) * 60;
+                    $end = $start->copy()->addSeconds($dur);
+                    $reason = $reasons[array_rand($reasons)];
+
+                    // A break is TWO rows. Seeding only the break_times half is
+                    // why seeded breaks showed on the break page but read as 0
+                    // everywhere that derives break time from is_break entries
+                    // (AttendanceService, reports, payroll, dashboards).
+                    $breakEntry = TimeEntry::create([
+                        'user_id' => $emp['id'],
+                        'timer_slot' => 'break',
+                        'start_time' => $start->format('Y-m-d H:i:s'),
+                        'end_time' => $end->format('Y-m-d H:i:s'),
+                        'duration' => $dur,
+                        'is_break' => true,
+                        'billable' => false,
+                        'description' => "Break — {$reason}",
+                    ]);
+
                     BreakTime::create([
                         'organization_id' => $this->org->id,
                         'user_id' => $emp['id'],
+                        'time_entry_id' => $breakEntry->id,
                         'break_date' => $dateStr,
                         'start_at' => $start->format('Y-m-d H:i:s'),
-                        'end_at' => $start->copy()->addSeconds($dur)->format('Y-m-d H:i:s'),
+                        'end_at' => $end->format('Y-m-d H:i:s'),
                         'duration_seconds' => $dur,
-                        'reason' => $reasons[array_rand($reasons)],
+                        'reason' => $reason,
                     ]);
                     $count++;
                 }

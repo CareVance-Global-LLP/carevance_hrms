@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeBankAccount extends Model
 {
+    use BelongsToOrganization;
     use HasFactory;
 
     protected $fillable = [
@@ -35,6 +37,25 @@ class EmployeeBankAccount extends Model
             'is_default' => 'boolean',
             'meta' => 'array',
         ];
+    }
+
+    /**
+     * Alias for `ifsc_swift`, the column that actually holds the code.
+     *
+     * Four places read `->ifsc_code` — the bank transfer file
+     * (BankIntegrationService), the payslip PDF, and the payroll register in
+     * two spots. There is no such column, so Eloquent returned null and each
+     * one quietly emitted a blank IFSC. A NEFT line with no IFSC is rejected by
+     * the bank, and nothing in the app said why.
+     *
+     * Aliasing rather than renaming the four call sites: the same mistake is
+     * easy to make again, and the column name (ifsc_swift — it holds a SWIFT
+     * code for foreign accounts) is not what anyone reaching for an IFSC will
+     * guess.
+     */
+    public function getIfscCodeAttribute(): ?string
+    {
+        return $this->attributes['ifsc_swift'] ?? null;
     }
 
     public function organization(): BelongsTo

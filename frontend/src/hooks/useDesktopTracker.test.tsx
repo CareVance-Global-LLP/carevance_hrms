@@ -106,6 +106,13 @@ let browserTrackingListeners: Array<(payload: {
   recorded_at: string;
 }) => void> = [];
 
+/**
+ * Capture cadence is jittered by +/-10% so screenshots are not perfectly
+ * predictable, which means a period is somewhere in [0.9x, 1.1x]. Advancing by
+ * the maximum guarantees exactly one tick fired: two would need 1.8x.
+ */
+const oneCapturePeriod = (intervalMs: number) => Math.ceil(intervalMs * 1.1);
+
 describe('useDesktopTracker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -380,16 +387,16 @@ describe('useDesktopTracker', () => {
     expect(mocks.stopMock).toHaveBeenCalledTimes(2);
   });
 
-  it('captures screenshots on the single 3 minute interval while the timer is running', async () => {
+  it('captures screenshots on the default 10 minute interval while the timer is running', async () => {
     mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
 
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(oneCapturePeriod(10 * 60 * 1000));
     });
 
-    // One immediate capture when the interval starts, plus one at the 3 min tick.
+    // One immediate capture when the interval starts, plus one at the tick.
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenNthCalledWith(
@@ -412,12 +419,32 @@ describe('useDesktopTracker', () => {
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(60 * 1000);
+      await vi.advanceTimersByTimeAsync(oneCapturePeriod(60 * 1000));
     });
 
     // Immediate capture on start + one at the 60s tick.
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('prefers the server-resolved effective interval over the raw per-user setting', async () => {
+    mocks.authUser = {
+      ...mocks.authUser,
+      settings: {
+        // Stale cached override; the server-resolved value wins.
+        monitoring_interval_minutes: 30,
+      },
+      effective_monitoring_interval_minutes: 1,
+    };
+    mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(oneCapturePeriod(60 * 1000));
+    });
+
+    expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a separate 5 minute screenshot interval for another invited user', async () => {
@@ -441,7 +468,7 @@ describe('useDesktopTracker', () => {
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(oneCapturePeriod(5 * 60 * 1000) - 60 * 1000);
     });
 
     // Immediate capture + first 5 min tick.
@@ -451,16 +478,23 @@ describe('useDesktopTracker', () => {
 
   it('continues screenshot capture when the user is idle at the screenshot interval', async () => {
     const idleSince = Date.now();
+    // A 1 minute interval keeps the whole window inside the idle auto-stop
+    // threshold, so this test measures "capture continues while idle" and not
+    // "the timer got auto-stopped for idle".
+    mocks.authUser = {
+      ...mocks.authUser,
+      effective_monitoring_interval_minutes: 1,
+    };
     mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
     mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
 
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(oneCapturePeriod(60 * 1000));
     });
 
-    // Immediate capture + 3 min tick.
+    // Immediate capture + one tick. Capture deliberately continues while idle.
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenNthCalledWith(
@@ -480,10 +514,10 @@ describe('useDesktopTracker', () => {
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(oneCapturePeriod(10 * 60 * 1000));
     });
 
-    // After remount: a single immediate capture + one 3 min tick (no duplicate
+    // After remount: a single immediate capture + one tick (no duplicate
     // interval left over from the unmounted render).
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(2);
@@ -505,17 +539,17 @@ describe('useDesktopTracker', () => {
     render(<TrackerHarness />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(oneCapturePeriod(10 * 60 * 1000));
     });
 
     // The immediate capture hangs but times out after 15s, releasing the
-    // in-flight guard; the 3 min interval tick then captures and uploads
+    // in-flight guard; the interval tick then captures and uploads
     // successfully. So two capture attempts and one successful upload.
     expect(mocks.captureScreenshotMock).toHaveBeenCalledTimes(2);
     expect(mocks.uploadScreenshotMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(oneCapturePeriod(10 * 60 * 1000));
     });
 
     // A further interval tick keeps capturing and uploading normally.

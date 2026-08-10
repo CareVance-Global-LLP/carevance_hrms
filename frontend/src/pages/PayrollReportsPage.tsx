@@ -285,12 +285,12 @@ export default function PayrollReportsPage() {
                 <SurfaceCard
                   key={report.key}
                   className={`p-5 transition-all ${
-                    isActive ? 'ring-2 ring-[#5D969D] border-[#5D969D]' : 'hover:shadow-md hover:border-[rgba(93,150,157,0.4)]'
+                    isActive ? 'ring-2 ring-[#5D969D] border-blue-600' : 'hover:shadow-md hover:border-blue-500/40'
                   }`}
                 >
                   {/* Header: Icon + Status */}
                   <div className="flex items-start justify-between mb-3">
-                    <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-[rgba(93,150,157,0.1)] text-[#5D969D] shrink-0">
+                    <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-600 shrink-0">
                       <Icon className="h-5 w-5" />
                     </div>
                     <StatusBadge status={status} />

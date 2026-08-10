@@ -292,7 +292,32 @@ OfflineDatabase.prototype._persist = function () {
     const data = this.db.export();
     const dir = path.dirname(this.dbPath);
     ensureDirectory(dir);
-    fs.writeFileSync(this.dbPath, Buffer.from(data));
+
+    // Write to a temporary file and rename over the target, rather than
+    // truncating the real file and writing into it.
+    //
+    // The whole database is rewritten on every flush. A crash, a forced quit
+    // or a battery death partway through used to leave a half-written file
+    // where the database should be — and this file is the offline queue, so
+    // losing it loses every unsynced time entry and screenshot the user
+    // captured while disconnected. rename() is atomic within a filesystem, so
+    // the target is either the old database or the new one, never a fragment.
+    const tempPath = `${this.dbPath}.tmp`;
+    fs.writeFileSync(tempPath, Buffer.from(data));
+
+    try {
+      fs.renameSync(tempPath, this.dbPath);
+    } catch (renameErr) {
+      // Windows refuses rename onto an open handle. Fall back to replacing,
+      // and clean the temp file up so it cannot be mistaken for a database.
+      try {
+        fs.rmSync(this.dbPath, { force: true });
+        fs.renameSync(tempPath, this.dbPath);
+      } catch (fallbackErr) {
+        try { fs.rmSync(tempPath, { force: true }); } catch { /* best effort */ }
+        throw fallbackErr;
+      }
+    }
   } catch (err) {
     console.error('[offline-db] Failed to persist database:', err.message);
   }

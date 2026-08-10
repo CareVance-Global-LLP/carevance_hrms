@@ -23,13 +23,16 @@ export default function ParallaxSection({
   });
 
   const factor = speed * 80;
-  const y = useTransform(scrollYProgress, [0, 1], [factor, -factor]);
-  const x = direction === 'x' ? useTransform(scrollYProgress, [0, 1], [factor, -factor]) : undefined;
+  // Both transforms are created unconditionally — calling useTransform inside a
+  // ternary changed the hook order between renders whenever `direction` did,
+  // which React relies on being stable. Choosing between the two results is
+  // free; conditionally creating them is not.
+  const offset = useTransform(scrollYProgress, [0, 1], [factor, -factor]);
 
   const Tag = motion[as] as typeof motion.div;
 
   return (
-    <Tag ref={ref} className={className} style={direction === 'y' ? { y } : { x: x! }}>
+    <Tag ref={ref} className={className} style={direction === 'x' ? { x: offset } : { y: offset }}>
       {children}
     </Tag>
   );

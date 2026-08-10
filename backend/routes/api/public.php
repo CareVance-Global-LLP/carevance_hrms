@@ -9,7 +9,6 @@ use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\OAuthController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Auth\VerifyEmailController;
-use App\Http\Controllers\Api\ScreenshotController;
 use App\Http\Controllers\Api\SupportController;
 use App\Http\Controllers\Api\PasswordResetController;
 use Illuminate\Support\Facades\Route;
@@ -35,9 +34,11 @@ Route::get('/invites/validate', [InviteController::class, 'validateInvite'])->mi
 Route::post('/invites/accept', [InviteController::class, 'acceptInvite'])->middleware('throttle:invitations.accept');
 Route::get('/downloads/desktop/windows', [DesktopDownloadController::class, 'windows'])->middleware('throttle:desktop.download');
 Route::get('/media/public/{path}', [SettingsController::class, 'publicMedia'])->where('path', '.*');
-Route::get('/screenshots/{screenshot}/file', [ScreenshotController::class, 'file'])
-    ->middleware('signed:relative')
-    ->name('screenshots.file');
+// NOTE: screenshots.file deliberately lives in routes/api/protected/monitoring.php.
+// It used to sit here, where `signed:relative` was its only guard — a signature
+// proves the link was not forged, it does not prove the caller may view the
+// image. Anyone holding the URL could read any employee's screen bytes
+// unauthenticated. Do not move it back.
 Route::post('/support/bug-reports', [SupportController::class, 'storeBugReport'])->middleware('throttle:support.bug-report');
 
 // AI assistant — available to both logged-in users and public landing-page visitors.
@@ -51,52 +52,27 @@ Route::post('/auth/google/login', [OAuthController::class, 'verifyGoogleToken'])
 // Razorpay webhook (public endpoint for payment callbacks)
 Route::post('/webhooks/razorpay', [\App\Http\Controllers\Api\BillingController::class, 'razorpayWebhook']);
 
-// Test email route for debugging
-Route::post('/test/email', function (\Illuminate\Http\Request $request) {
-    $email = $request->input('email', 'test@example.com');
-    $name = $request->input('name', 'Test User');
-    
-    try {
-        \Illuminate\Support\Facades\Mail::raw('Test email from CareVance at ' . now(), function ($message) use ($email) {
-            $message->to($email)
-                    ->subject('Test Email');
-        });
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Test email sent. Check your logs at: storage/logs/laravel.log',
-            'mail_driver' => config('mail.default'),
-            'to' => $email,
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'error' => $e->getMessage(),
-            'mail_driver' => config('mail.default'),
-        ], 500);
-    }
-});
+/*
+ * An unauthenticated open mail relay used to live here.
+ *
+ * POST /api/test/email took an arbitrary `email` from the request body and sent
+ * through the production SMTP credentials — no authentication, no rate limit.
+ * Anyone on the internet could send mail from this domain, which is both an
+ * abuse vector and a fast way to get the sending domain blacklisted.
+ *
+ * To check mail delivery, use `php artisan tinker` on the server, or add a
+ * route behind api.token + role:admin. Do not put this back.
+ */
 
-// Check email log - show last email
-Route::get('/test/email-log', function () {
-    $logFile = storage_path('logs/laravel.log');
-    
-    if (!file_exists($logFile)) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Log file not found',
-        ]);
-    }
-    
-    $content = file_get_contents($logFile);
-    
-    // Find email-related log entries
-    preg_match_all('/\[.*?\].*?(?:To:|From:|Subject:|Mail|email).*?(?=\n\[|$)/is', $content, $matches);
-    
-    return response()->json([
-        'success' => true,
-        'mail_driver' => config('mail.default'),
-        'log_file' => $logFile,
-        'recent_emails' => array_slice($matches[0], -5), // Last 5 email-related entries
-    ]);
-});
+/*
+ * An unauthenticated log-disclosure endpoint used to live here.
+ *
+ * GET /api/test/email-log read storage/logs/laravel.log into memory with
+ * file_get_contents and returned matching lines as JSON, with no auth. It was
+ * verified returning HTTP 200 with real log content on a running server.
+ *
+ * Laravel logs carry signed email-verification URLs, stack traces, request
+ * payloads and occasionally credentials, so this disclosed far more than mail
+ * status — and reading the whole file into memory made it a denial-of-service
+ * lever once the log grew. Do not put this back.
+ */

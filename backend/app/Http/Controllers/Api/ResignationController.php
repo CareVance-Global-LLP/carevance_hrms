@@ -6,16 +6,23 @@ use App\Http\Controllers\Controller;
 use App\Models\Resignation;
 use App\Models\User;
 use App\Services\Approvals\ApprovalRoutingService;
+use App\Services\Lifecycle\ExitService;
+use App\Services\Lifecycle\NoticePeriodService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Throwable;
 
 class ResignationController extends Controller
 {
     public function __construct(
         private readonly ApprovalRoutingService $approvalRoutingService,
+        private readonly ExitService $exitService,
+        private readonly NoticePeriodService $noticePeriodService,
     ) {
     }
 
@@ -31,25 +38,42 @@ class ResignationController extends Controller
 
         $user = Auth::user();
 
-        // Check if user already has a pending resignation
+        // One live resignation per person. Checking only for 'pending' let an
+        // employee whose resignation had already been approved file another,
+        // and another — leaving several approved exits for the same person with
+        // no single answer for which one drives F&F, notice recovery or the
+        // exit date. 'rejected' and 'cancelled' are terminal and do not block.
         $existingResignation = Resignation::where('user_id', $user->id)
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'approved'])
+            ->latest('id')
             ->first();
 
         if ($existingResignation) {
             return response()->json([
-                'message' => 'You already have a pending resignation request.',
+                'message' => $existingResignation->status === 'approved'
+                    ? 'Your resignation has already been approved. Ask HR to cancel it before filing a new one.'
+                    : 'You already have a pending resignation request.',
                 'resignation' => $existingResignation,
             ], 422);
         }
 
-        // Create resignation
+        // Record the notice policy as it stands right now, and how short this
+        // date falls. Stored rather than recomputed so a later policy change
+        // cannot retroactively put somebody in shortfall, and so the employee
+        // and payroll are looking at the same number.
+        $notice = $this->noticePeriodService->evaluate(
+            $user,
+            Carbon::parse($validated['last_working_date'])
+        );
+
         $resignation = Resignation::create([
             'user_id' => $user->id,
             'organization_id' => $user->organization_id,
             'last_working_date' => $validated['last_working_date'],
             'reason' => $validated['reason'] ?? null,
             'status' => 'pending',
+            'notice_period_days' => $notice['required'],
+            'shortfall_days' => $notice['shortfall'],
         ]);
 
         // Notify manager and HR
@@ -57,7 +81,7 @@ class ResignationController extends Controller
 
         return response()->json([
             'message' => 'Resignation submitted successfully.',
-            'resignation' => $resignation->load('user'),
+            'resignation' => $this->withApprovalDestination($resignation->load(['user', 'escalatedTo'])),
         ], 201);
     }
 
@@ -70,11 +94,11 @@ class ResignationController extends Controller
 
         $resignation = Resignation::where('user_id', $user->id)
             ->whereIn('status', ['pending', 'approved'])
-            ->with(['user', 'approver'])
+            ->with(['user', 'approver', 'escalatedTo'])
             ->first();
 
         return response()->json([
-            'resignation' => $resignation,
+            'resignation' => $resignation ? $this->withApprovalDestination($resignation) : null,
         ]);
     }
 
@@ -86,12 +110,12 @@ class ResignationController extends Controller
         $user = Auth::user();
 
         $resignations = Resignation::where('user_id', $user->id)
-            ->with(['user', 'approver'])
+            ->with(['user', 'approver', 'escalatedTo'])
             ->orderBy('created_at', 'desc')
             ->get();
 
         return response()->json([
-            'resignations' => $resignations,
+            'resignations' => $resignations->map(fn (Resignation $r) => $this->withApprovalDestination($r)),
         ]);
     }
 
@@ -126,18 +150,8 @@ class ResignationController extends Controller
 
         $resignations = $query->orderBy('created_at', 'desc')->get();
 
-        foreach ($resignations as $resignation) {
-            $resignation->setAttribute(
-                'current_reviewer_ids',
-                $this->approvalRoutingService
-                    ->currentReviewerIds($resignation->user, $resignation->escalated_to_user_id)
-                    ->values()
-                    ->all()
-            );
-        }
-
         return response()->json([
-            'data' => $resignations,
+            'data' => $resignations->map(fn (Resignation $r) => $this->withApprovalDestination($r)),
         ]);
     }
 
@@ -166,12 +180,34 @@ class ResignationController extends Controller
 
         $resignation->approve($user->id);
 
+        /*
+         * Approval is the moment the exit process starts: clearance is
+         * generated, outstanding assets become blocking items, and the notice
+         * arithmetic is fixed. Previously approval wrote three columns and
+         * nothing else happened at all.
+         *
+         * It is deliberately not fatal. If the exit cannot be opened the
+         * approval still stands — refusing a decision the manager has already
+         * made, because a checklist failed to build, would be the wrong
+         * trade-off. The failure is logged and the exit can be opened by hand.
+         */
+        $exit = null;
+        try {
+            $exit = $this->exitService->openFromResignation($resignation->fresh(['user']), $user);
+        } catch (Throwable $error) {
+            Log::error('Could not open exit for approved resignation', [
+                'resignation_id' => $resignation->id,
+                'error' => $error->getMessage(),
+            ]);
+        }
+
         // Notify employee
         $this->notifyEmployee($resignation, 'approved');
 
         return response()->json([
             'message' => 'Resignation approved successfully.',
-            'resignation' => $resignation->fresh(['user', 'approver']),
+            'resignation' => $this->withApprovalDestination($resignation->fresh(['user', 'approver', 'escalatedTo'])),
+            'employee_exit' => $exit?->load('checklistItems'),
         ]);
     }
 
@@ -209,7 +245,7 @@ class ResignationController extends Controller
 
         return response()->json([
             'message' => 'Resignation rejected successfully.',
-            'resignation' => $resignation->fresh(['user', 'approver']),
+            'resignation' => $this->withApprovalDestination($resignation->fresh(['user', 'approver', 'escalatedTo'])),
         ]);
     }
 
@@ -296,7 +332,7 @@ class ResignationController extends Controller
 
         return response()->json([
             'message' => 'Resignation request transferred to the next hierarchy level.',
-            'resignation' => $resignation->fresh(['user', 'approver', 'escalatedTo']),
+            'resignation' => $this->withApprovalDestination($resignation->fresh(['user', 'approver', 'escalatedTo'])),
         ]);
     }
 
@@ -395,5 +431,68 @@ class ResignationController extends Controller
             'user_name' => $user->name,
             'status' => $status,
         ]);
+    }
+
+    /**
+     * Enrich a resignation with who the approval is routed to.
+     * Shows the specific person who currently holds the approval (the
+     * nearest non-super_admin reviewer by hierarchy level), or the
+     * forwarded-to recipient once escalated. Super admins are excluded
+     * from the reviewer set since they only observe the company.
+     */
+    private function withApprovalDestination(Resignation $resignation): Resignation
+    {
+        $resignation->loadMissing('user.employeeWorkInfo');
+
+        $allReviewerIds = $this->approvalRoutingService
+            ->reviewerUserIds($resignation->user);
+
+        // Exclude super_admins — they only observe the company, they don't
+        // approve resignations. Pick the nearest reviewer from the rest.
+        $eligibleReviewerIds = $allReviewerIds->filter(function (int $id) {
+            $reviewer = User::query()
+                ->where('id', $id)
+                ->with('customRole')
+                ->first(['id', 'role', 'role_id']);
+            return $reviewer && $reviewer->role !== 'super_admin';
+        })->values();
+
+        if ($resignation->escalated_to_user_id && $resignation->escalatedTo) {
+            $resignation->setAttribute('approval_destination', 'Forwarded to '.$resignation->escalatedTo->name);
+            $currentReviewerIds = collect([(int) $resignation->escalated_to_user_id]);
+        } elseif ($eligibleReviewerIds->isNotEmpty()) {
+            $reviewerUsers = User::query()
+                ->whereIn('id', $eligibleReviewerIds)
+                ->with('customRole')
+                ->get(['id', 'name', 'role', 'role_id']);
+
+            $nearestLevel = $reviewerUsers
+                ->map(fn (User $u) => $this->approvalRoutingService->hierarchyLevel($u))
+                ->min();
+
+            $currentReviewerIds = $reviewerUsers
+                ->filter(fn (User $u) => $this->approvalRoutingService->hierarchyLevel($u) === $nearestLevel)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values();
+
+            $reviewerNames = $currentReviewerIds->map(function (int $id) use ($reviewerUsers) {
+                return trim((string) $reviewerUsers->firstWhere('id', $id)?->name);
+            })->filter()->values();
+
+            $resignation->setAttribute(
+                'approval_destination',
+                $reviewerNames->isEmpty() ? 'Sent to reviewer' : 'Sent to '.$reviewerNames->implode(', ')
+            );
+        } else {
+            $resignation->setAttribute('approval_destination', 'Sent to reviewer');
+            $currentReviewerIds = collect();
+        }
+
+        $resignation->setAttribute('escalated_to', $resignation->escalatedTo?->only(['id', 'name']));
+        $resignation->setAttribute('escalation_history', $resignation->escalation_history ?? []);
+        $resignation->setAttribute('current_reviewer_ids', $currentReviewerIds->all());
+
+        return $resignation;
     }
 }

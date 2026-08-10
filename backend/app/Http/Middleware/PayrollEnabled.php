@@ -23,7 +23,10 @@ class PayrollEnabled
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $payrollDevMode = (bool) env('PAYROLL_DEV_MODE', false);
+        // config(), not env(): env() returns its default once a deploy has run
+        // `php artisan config:cache`, so reading the flag directly here made it
+        // silently stop working in production.
+        $payrollDevMode = (bool) config('payroll.dev_mode', false);
 
         // Dev mode bypasses feature gating.
         if (! $payrollDevMode && ! PlanService::hasFeature($organization, 'payroll')) {

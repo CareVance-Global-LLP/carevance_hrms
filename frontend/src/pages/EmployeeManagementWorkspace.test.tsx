@@ -8,6 +8,8 @@ const apiMocks = vi.hoisted(() => ({
   getGroups: vi.fn(),
   getMembers: vi.fn(),
   getProfile360: vi.fn(),
+  updateUser: vi.fn().mockResolvedValue({ data: {} }),
+  listRoles: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -25,6 +27,11 @@ vi.mock('@/services/api', async () => {
       ...actual.userApi,
       getAll: apiMocks.getAllUsers,
       getProfile360: apiMocks.getProfile360,
+      update: apiMocks.updateUser,
+    },
+    roleApi: {
+      ...actual.roleApi,
+      list: apiMocks.listRoles,
     },
     reportGroupApi: {
       ...actual.reportGroupApi,
@@ -43,12 +50,22 @@ describe('EmployeeManagementWorkspace', () => {
 
     apiMocks.getAllUsers.mockResolvedValue({
       data: [
-        { id: 11, name: 'Zara Khan', email: 'zara@example.com', role: 'employee', department: 'Design', is_working: false, total_duration: 600 },
-        { id: 12, name: 'Ayush Temp', email: 'ayush@example.com', role: 'employee', department: 'Engineering', is_working: true, total_duration: 7200 },
-        { id: 13, name: 'Mit Gujarati', email: 'mit@example.com', role: 'manager', department: 'Engineering', is_working: true, total_duration: 3600 },
+        { id: 11, name: 'Zara Khan', email: 'zara@example.com', role: 'employee', department: 'Design', is_working: false, total_duration: 600, groups: [{ id: 7, name: 'Design' }] },
+        { id: 12, name: 'Ayush Temp', email: 'ayush@example.com', role: 'employee', department: 'Engineering', is_working: true, total_duration: 7200, groups: [{ id: 9, name: 'Engineering' }] },
+        { id: 13, name: 'Mit Gujarati', email: 'mit@example.com', role: 'manager', department: 'Engineering', is_working: true, total_duration: 3600, groups: [{ id: 9, name: 'Engineering' }] },
       ],
     });
-    apiMocks.getGroups.mockResolvedValue({ data: { data: [] } });
+    apiMocks.listRoles.mockResolvedValue({
+      data: {
+        data: [
+          { id: 1, name: 'Admin', slug: 'admin', hierarchy_level: 10, is_system: true, is_active: true, users_count: 0, permissions: [], description: null, color: 'slate' },
+          { id: 2, name: 'Manager', slug: 'manager', hierarchy_level: 50, is_system: true, is_active: true, users_count: 1, permissions: [], description: null, color: 'slate' },
+        ],
+      },
+    });
+    apiMocks.getGroups.mockResolvedValue({
+      data: { data: [{ id: 9, name: 'Engineering', users: [] }, { id: 7, name: 'Design', users: [] }] },
+    });
     apiMocks.getMembers.mockResolvedValue({ data: [] });
     apiMocks.getProfile360.mockResolvedValue({
       data: {
@@ -63,14 +80,12 @@ describe('EmployeeManagementWorkspace', () => {
     });
   });
 
-  it('filters the employee directory to a specific employee from the dropdown', async () => {
+  it('narrows the employee directory to a specific person from the search box', async () => {
     renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
 
     expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('Specific employee filter'));
-    const employeeListbox = await screen.findByRole('listbox');
-    fireEvent.click(within(employeeListbox).getByRole('option', { name: /Ayush Temp/i }));
+    fireEvent.change(screen.getByLabelText('Search employees'), { target: { value: 'ayush' } });
 
     await waitFor(() => {
       const directoryTable = screen.getAllByRole('table')[0];
@@ -85,7 +100,7 @@ describe('EmployeeManagementWorkspace', () => {
 
     expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('Employee directory sort'));
+    fireEvent.click(screen.getByRole('button', { name: 'Sort' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Tracked time high to low' }));
 
     const directoryTable = screen.getAllByRole('table')[0];
@@ -100,7 +115,7 @@ describe('EmployeeManagementWorkspace', () => {
 
     expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText('Employee department filter'));
+    fireEvent.click(screen.getByRole('button', { name: 'Department' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Engineering' }));
 
     await waitFor(() => {
@@ -110,12 +125,76 @@ describe('EmployeeManagementWorkspace', () => {
     });
   });
 
+  it('segments the directory to people who are working right now', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Working now/ }));
+
+    await waitFor(() => {
+      const directoryTable = screen.getAllByRole('table')[0];
+      expect(within(directoryTable).getByRole('link', { name: 'Ayush Temp' })).toBeInTheDocument();
+      expect(within(directoryTable).getByRole('link', { name: 'Mit Gujarati' })).toBeInTheDocument();
+      // Zara Khan has is_working: false.
+      expect(within(directoryTable).queryByRole('link', { name: 'Zara Khan' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('assigns a role to every selected person in one action', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Select Zara Khan'));
+    fireEvent.click(screen.getByLabelText('Select Ayush Temp'));
+    expect(await screen.findByText('2 selected')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Assign role/ }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Manager' }));
+
+    // One write per person — there is no bulk endpoint behind this.
+    await waitFor(() => expect(apiMocks.updateUser).toHaveBeenCalledTimes(2));
+    expect(apiMocks.updateUser).toHaveBeenCalledWith(11, { role: 'manager' });
+    expect(apiMocks.updateUser).toHaveBeenCalledWith(12, { role: 'manager' });
+  });
+
+  it('adds selected people to a department without dropping their other departments', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Select Zara Khan'));
+    fireEvent.click(screen.getByRole('button', { name: /Add to department/ }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Engineering' }));
+
+    await waitFor(() => expect(apiMocks.updateUser).toHaveBeenCalledTimes(1));
+    // Zara already sits in group 7; the new department is added, not swapped in.
+    expect(apiMocks.updateUser).toHaveBeenCalledWith(11, { group_ids: [7, 9] });
+  });
+
+  it('opens employee settings in a drawer instead of a panel below the table', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Zara Khan' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Settings/ }));
+
+    const drawer = await screen.findByRole('dialog');
+    expect(within(drawer).getByRole('heading', { name: 'Zara Khan' })).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Save settings' })).toBeInTheDocument();
+
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('filters role assignments with the roles search box', async () => {
     renderWithProviders(<EmployeeManagementWorkspace mode="roles" />, { route: '/employees/roles' });
 
     expect(await screen.findByRole('heading', { name: 'Roles / Permissions' })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText('Search name, email, role, or department'), {
+    fireEvent.change(screen.getByLabelText('Search people'), {
       target: { value: 'engineering' },
     });
 

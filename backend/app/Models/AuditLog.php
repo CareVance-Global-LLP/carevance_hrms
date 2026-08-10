@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AuditLog extends Model
 {
+    use BelongsToOrganization;
+
     protected $fillable = [
         'organization_id',
         'actor_user_id',

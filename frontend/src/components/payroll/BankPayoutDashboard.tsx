@@ -92,8 +92,8 @@ export default function BankPayoutDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <SurfaceCard className="p-5">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[rgba(93,150,157,0.1)] rounded-lg">
-              <IndianRupee className="h-5 w-5 text-[#5D969D]" />
+            <div className="p-2 bg-blue-500/10 rounded-lg">
+              <IndianRupee className="h-5 w-5 text-blue-600" />
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900">{formatPayrollAmount(totalPayout || 1840000, { compact: true })}</p>
@@ -103,8 +103,8 @@ export default function BankPayoutDashboard() {
         </SurfaceCard>
         <SurfaceCard className="p-5">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[rgba(93,150,157,0.1)] rounded-lg">
-              <Users className="h-5 w-5 text-[#5D969D]" />
+            <div className="p-2 bg-blue-500/10 rounded-lg">
+              <Users className="h-5 w-5 text-blue-600" />
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900">{totalEmployees || 15}</p>
@@ -112,7 +112,7 @@ export default function BankPayoutDashboard() {
             </div>
           </div>
         </SurfaceCard>
-        <div className="rounded-xl border border-[#5D969D]/30 bg-gradient-to-br from-[#5D969D] to-[#4A7E84] p-5">
+        <div className="rounded-xl border border-blue-600/30 bg-gradient-to-br from-[#5D969D] to-[#4A7E84] p-5">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-white/20 rounded-lg">
               <Clock className="h-5 w-5 text-white" />
@@ -169,7 +169,7 @@ export default function BankPayoutDashboard() {
                       batch.status === 'completed' ? 'bg-emerald-50 text-emerald-700' :
                       batch.status === 'processing' ? 'bg-amber-50 text-amber-700' :
                       batch.status === 'failed' ? 'bg-rose-50 text-rose-700' :
-                      'bg-[rgba(93,150,157,0.1)] text-[#5D969D]'
+                      'bg-blue-500/10 text-blue-600'
                     }`}>
                       {batch.status === 'pending' ? 'Ready' : batch.status === 'failed' ? 'Missing Bank Details' : batch.status}
                     </span>

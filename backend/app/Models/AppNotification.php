@@ -2,15 +2,19 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AppNotification extends Model
 {
+    use BelongsToOrganization;
+
     protected $fillable = [
         'organization_id',
         'user_id',
         'sender_id',
+        'broadcast_id',
         'poll_id',
         'type',
         'title',

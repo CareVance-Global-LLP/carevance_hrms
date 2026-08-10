@@ -17,27 +17,30 @@ use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\Organization;
 use App\Models\User;
+use App\Models\OnboardingJourney;
 use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Lifecycle\OnboardingService;
 use App\Services\Reports\TimeBreakdownService;
 use App\Services\Reports\UsageProcessingService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
-    private const ALLOWED_MONITORING_INTERVALS = [1, 3, 5, 10, 15, 30];
-
     public function __construct(
         private readonly AuditLogService $auditLogService,
         private readonly TimeBreakdownService $timeBreakdownService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly OrganizationRoleService $organizationRoleService,
         private readonly UsageProcessingService $usageProcessingService,
+        private readonly \App\Services\Monitoring\MonitoringSettingsResolver $monitoringSettingsResolver,
+        private readonly OnboardingService $onboardingService,
     )
     {
     }
@@ -68,6 +71,12 @@ class UserController extends Controller
                 'customRole',
                 'departmentTeamMemberships:id,name,department_id',
                 'departmentTeamManagerships:id,name,department_id',
+                // Profile completeness counts PAN and a bank account among its
+                // required fields, so the roster cannot tell who is actually
+                // incomplete unless these two ship with the list. Columns are
+                // narrowed to what completeness needs — no account numbers.
+                'employeeGovernmentIds:id,user_id,id_type,id_number',
+                'employeeBankAccounts:id,user_id',
             ])
             ->when($currentUser->getHierarchyLevel() > Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'] && $currentUser->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], function ($query) use ($currentUser) {
                 $visibleGroupIds = $this->groupIdsForUser($currentUser);
@@ -200,6 +209,15 @@ class UserController extends Controller
             'settings.task_assignment_access' => 'nullable|boolean',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
+            // Onboarding context. Optional, because a user can be created by
+            // routes that know nothing about hiring, but supplying the joining
+            // date is what lets the checklist anchor on the right day rather
+            // than on whenever the record happened to be typed in.
+            'joining_date' => 'nullable|date',
+            'designation' => 'nullable|string|max:255',
+            'manager_id' => 'nullable|integer|exists:users,id',
+            'buddy_id' => 'nullable|integer|exists:users,id',
+            'skip_onboarding_journey' => 'nullable|boolean',
         ]);
 
         $selectedRole = $validated['role'] ?? 'employee';
@@ -242,6 +260,8 @@ class UserController extends Controller
             $currentUser->id
         );
 
+        $journey = $this->openOnboardingJourney($user, $currentUser, $validated);
+
         $this->auditLogService->log(
             action: 'user.created',
             actor: $currentUser,
@@ -250,11 +270,64 @@ class UserController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'role' => $user->role,
+                'onboarding_journey_id' => $journey?->id,
             ],
             request: $request
         );
 
-        return response()->json($user->load('groups:id,name,slug'), 201);
+        $payload = $user->load('groups:id,name,slug')->toArray();
+        $payload['onboarding_journey_id'] = $journey?->id;
+
+        return response()->json($payload, 201);
+    }
+
+    /**
+     * Start the new joiner's onboarding checklist.
+     *
+     * Hiring someone is the event that should open their journey — the document
+     * collection and equipment provisioning that decide whether Day 1 works are
+     * scheduled relative to the joining date, several of them before it. Doing
+     * this here rather than in the client means every route that creates an
+     * employee gets a journey, not just the one wizard that remembers to ask.
+     *
+     * Never allowed to fail the hire: an employee who exists without a checklist
+     * is recoverable, a checklist without an employee is not.
+     */
+    private function openOnboardingJourney(User $user, User $creator, array $validated): ?OnboardingJourney
+    {
+        if ($validated['skip_onboarding_journey'] ?? false) {
+            return null;
+        }
+
+        // Clients are not employees and have nothing to onboard.
+        if (($user->role ?? 'employee') === 'client') {
+            return null;
+        }
+
+        try {
+            // Shared with the invite, link and CSV paths. Idempotency lives in
+            // ensureForUser(), so a second call for the same person cannot
+            // produce a second checklist.
+            return $this->onboardingService->ensureForUser(
+                user: $user,
+                creator: $creator,
+                attributes: [
+                    'job_title' => $validated['designation'] ?? null,
+                    'group_id' => $user->groups()->first()?->id,
+                    'manager_id' => $validated['manager_id'] ?? $user->employeeWorkInfo?->reporting_manager_id,
+                    'buddy_id' => $validated['buddy_id'] ?? null,
+                ],
+                joiningDate: Carbon::parse($validated['joining_date'] ?? now()),
+            );
+        } catch (\Throwable $e) {
+            Log::error('Could not open onboarding journey for new hire', [
+                'user_id' => $user->id,
+                'organization_id' => $user->organization_id,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     public function export(Request $request)
@@ -910,13 +983,13 @@ class UserController extends Controller
      */
     private function normalizeUserSettings(array $settings, string $role): array
     {
-        $interval = (int) ($settings['monitoring_interval_minutes'] ?? 10);
-        if (! in_array($interval, self::ALLOWED_MONITORING_INTERVALS, true)) {
-            $interval = 10;
-        }
+        // The monitoring interval is now an OVERRIDE, not a stamped value.
+        // Absence of the key means "inherit the organization default", and this
+        // method used to make that state unreachable by forcing a concrete
+        // number on every single save.
+        $settings = $this->monitoringSettingsResolver->normalizeUserOverride($settings);
 
         return array_merge($settings, [
-            'monitoring_interval_minutes' => $interval,
             'attendance_monitoring' => array_key_exists('attendance_monitoring', $settings)
                 ? filter_var($settings['attendance_monitoring'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false
                 : true,
@@ -939,20 +1012,18 @@ class UserController extends Controller
     private function syncPrimaryGroup(User $user, array $groupIds, array $previousGroupIds = []): void
     {
         $primaryGroupId = $groupIds[0] ?? null;
-        $reportingManagerId = $user->getHierarchyLevel() >= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee']
-            ? $this->resolveGroupManagerId($user->organization_id, $primaryGroupId)
-            : null;
+        $resolver = app(\App\Services\Organization\ReportingManagerResolver::class);
 
-        EmployeeWorkInfo::query()->updateOrCreate(
-            [
-                'organization_id' => $user->organization_id,
-                'user_id' => $user->id,
-            ],
-            [
-                'report_group_id' => $primaryGroupId,
-                'reporting_manager_id' => $reportingManagerId,
-            ]
-        );
+        if ($user->getHierarchyLevel() >= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee']) {
+            // Derived only — and only when nobody has set the line by hand.
+            $resolver->applyDerivedManager((int) $user->organization_id, (int) $user->id, $primaryGroupId);
+        } else {
+            // Managers and admins carry no reporting line from group membership.
+            EmployeeWorkInfo::query()->updateOrCreate(
+                ['organization_id' => $user->organization_id, 'user_id' => $user->id],
+                ['report_group_id' => $primaryGroupId],
+            );
+        }
 
         if ($user->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee']) {
             collect(array_merge($previousGroupIds, $groupIds))
@@ -994,32 +1065,18 @@ class UserController extends Controller
 
     private function resolveGroupManagerId(?int $organizationId, ?int $groupId): ?int
     {
-        if (!$organizationId || !$groupId) {
-            return null;
-        }
-
-        return User::query()
-            ->where('organization_id', $organizationId)
-            ->where(function ($q) {
-                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<', 100)->where('hierarchy_level', '>', 10))
-                    ->orWhere('role', 'manager');
-            })
-            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
-            ->orderBy('name')
-            ->value('id');
+        // Shared with ReportGroupController — the two used to be separate
+        // implementations that disagreed about whether an admin could be a
+        // reporting manager.
+        return app(\App\Services\Organization\ReportingManagerResolver::class)
+            ->forGroup($organizationId, $groupId);
     }
 
     private function syncEmployeesForGroup(int $organizationId, int $groupId): void
     {
-        $managerId = $this->resolveGroupManagerId($organizationId, $groupId);
-        $employeeIds = User::query()
-            ->where('organization_id', $organizationId)
-            ->where(function ($q) {
-                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '>=', 100))
-                    ->orWhere('role', 'employee');
-            })
-            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
-            ->pluck('id');
+        $resolver = app(\App\Services\Organization\ReportingManagerResolver::class);
+        $managerId = $resolver->forGroup($organizationId, $groupId);
+        $employeeIds = $resolver->reportingMemberIds($organizationId, $groupId);
 
         foreach ($employeeIds as $employeeId) {
             EmployeeWorkInfo::query()->updateOrCreate(
@@ -1120,21 +1177,33 @@ class UserController extends Controller
      *
      * DELETE /api/users/{id}/incomplete
      */
-    public function deleteIncomplete($id)
+    public function deleteIncomplete(Request $request, $id)
     {
-        $user = User::find($id);
+        // This method previously took only $id and had no route middleware, so
+        // it could not check who was calling or which tenant they belonged to.
+        // `User` is deliberately outside the organisation global scope, which
+        // made `User::find($id)` a cross-tenant lookup — any authenticated user
+        // could enumerate ids and delete accounts in other organisations.
+        $currentUser = $request->user();
+
+        if (! $currentUser) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $user = User::where('organization_id', $currentUser->organization_id)->find($id);
 
         if (! $user) {
             return response()->json(['message' => 'User not found'], 404);
         }
 
-        // Only delete if incomplete (match checkIncomplete logic)
-        $hasProfile = false;
-
-        try {
-            $hasProfile = method_exists($user, 'employeeProfile')
-                && $user->employeeProfile()->exists();
-        } catch (\Exception $e) {}
+        // Only delete if incomplete (match checkIncomplete logic).
+        //
+        // The profile lookup is org-scoped by BelongsToOrganization, so for a
+        // user in another tenant it used to return nothing, leaving $hasProfile
+        // false and letting the delete proceed. Scoping the lookup above closes
+        // that; the exception is no longer swallowed, because "we could not tell
+        // whether this user has a profile" must never read as "safe to delete".
+        $hasProfile = $user->employeeProfile()->exists();
 
         if ($hasProfile) {
             return response()->json([
@@ -1143,11 +1212,9 @@ class UserController extends Controller
         }
 
         // Delete orphan work_info records too
-        try {
-            if (method_exists($user, 'employeeWorkInfo') && $user->employeeWorkInfo) {
-                $user->employeeWorkInfo()->delete();
-            }
-        } catch (\Exception $e) {}
+        if ($user->employeeWorkInfo) {
+            $user->employeeWorkInfo()->delete();
+        }
 
         // Delete the orphan user
         $user->delete();

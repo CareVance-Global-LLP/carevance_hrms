@@ -32,6 +32,19 @@ const tabOptions: Array<{ id: AddUserTab; label: string; description: string }> 
   { id: 'csv', label: 'Add by CSV', description: 'Bulk import employees, managers, or admins.' },
 ];
 
+/**
+ * What actually happens, per mode. All four now open an onboarding journey —
+ * directly on create, and on acceptance for the three invite routes.
+ */
+const ADD_USER_INTRO: Record<AddUserTab, string> = {
+  custom:
+    'You set the password and the account is ready straight away. Onboarding starts immediately, anchored on the joining date.',
+  email:
+    'An invitation email goes out. The recipient sets their own password, and onboarding starts once they accept.',
+  link: 'You get a single-use link to share yourself — useful when email is unreliable. Onboarding starts once the link is used.',
+  csv: 'Every row is invited at once. Each person sets their own password, and onboarding starts as they accept.',
+};
+
 const extractInviteError = (error: any, fallback: string) => {
   const fieldErrors = error?.response?.data?.errors;
   const firstFieldError = fieldErrors
@@ -44,7 +57,8 @@ const extractInviteError = (error: any, fallback: string) => {
 const browserTimezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
 
 const defaultSettings: AdditionalInviteSettings = {
-  monitoringInterval: 10,
+  // Inherit the organization default unless the inviter explicitly picks one.
+  monitoringInterval: null,
   canEditTime: false,
   attendanceMonitoring: true,
   payrollVisibility: false,
@@ -53,6 +67,7 @@ const defaultSettings: AdditionalInviteSettings = {
 };
 
 const monitoringIntervalOptions: Array<{ value: AdditionalInviteSettings['monitoringInterval']; label: string }> = [
+  { value: null, label: 'Inherit from organization' },
   { value: 1, label: 'Every 1 minute' },
   { value: 3, label: 'Every 3 minutes' },
   { value: 5, label: 'Every 5 minutes' },
@@ -360,7 +375,7 @@ export default function AddUserDrawer({
   return (
     <div className={presentation === 'modal' ? 'fixed inset-0 z-50' : 'relative z-0'}>
       {presentation === 'modal' ? (
-        <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm" onClick={onClose} />
+        <div className="absolute inset-0 bg-black/35 backdrop-blur-sm" onClick={onClose} />
       ) : null}
       <aside className={presentation === 'modal' ? 'absolute inset-0 flex items-start justify-center overflow-y-auto p-4 sm:p-6 lg:p-8' : 'relative'}>
         <div className={`flex w-full flex-col gap-6 ${
@@ -376,8 +391,12 @@ export default function AddUserDrawer({
                 Back to Employees
               </Link>
               <h2 className="text-2xl font-bold tracking-[-0.05em] text-slate-950">Add User</h2>
-              <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                An invitation email will be sent. The user creates their own account and automatically receives the assigned access level.
+              {/* Was a single line claiming an invitation email would be sent —
+                  shown even on "Create User", where the admin sets the password
+                  and no email goes out. It described one of the four modes and
+                  contradicted the other three. */}
+              <p className="mt-1 max-w-2xl text-sm text-slate-600">
+                {ADD_USER_INTRO[activeTab]}
               </p>
             </div>
           </div>
@@ -495,14 +514,18 @@ export default function AddUserDrawer({
                   <div>
                     <FieldLabel>Monitoring Interval</FieldLabel>
                     <SelectInput
-                      value={settings.monitoringInterval}
+                      value={settings.monitoringInterval === null ? '' : settings.monitoringInterval}
                       onChange={(event) => setSettings((current) => ({
                         ...current,
-                        monitoringInterval: Number(event.target.value) as AdditionalInviteSettings['monitoringInterval'],
+                        // '' is the inherit option: send null so the server
+                        // resolves the organization default instead of pinning.
+                        monitoringInterval: event.target.value === ''
+                          ? null
+                          : Number(event.target.value) as AdditionalInviteSettings['monitoringInterval'],
                       }))}
                     >
                       {monitoringIntervalOptions.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
+                        <option key={option.value ?? 'inherit'} value={option.value ?? ''}>{option.label}</option>
                       ))}
                     </SelectInput>
                   </div>

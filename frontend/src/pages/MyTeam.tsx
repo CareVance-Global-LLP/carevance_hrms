@@ -45,7 +45,16 @@ function HierarchyNode({
     <div className="flex flex-col items-center">
       <div
         data-node-id={member.id}
-        className={`relative flex w-[210px] flex-col items-center gap-2 rounded-xl border-2 bg-white p-3 shadow-sm transition-all hover:shadow-md ${
+        /*
+          transition-shadow, NOT transition-all. transition-all animates every
+          animatable property including layout ones, and combined with a growing
+          shadow inside the overflow-auto tree container it produced a feedback
+          loop: the shadow widened the paint box, a scrollbar appeared, the
+          layout shifted, the cursor fell off the card, the shadow collapsed,
+          the scrollbar vanished — repeatedly. That is the jitter. Only the
+          shadow changes on hover, so only the shadow animates.
+        */
+        className={`relative flex w-[210px] flex-col items-center gap-2 rounded-xl border-2 bg-white p-3 shadow-sm transition-shadow hover:shadow-md ${
           isSelf ? 'border-sky-400 ring-2 ring-sky-300' : 'border-slate-200'
         } ${!matched ? 'opacity-40' : ''}`}
       >
@@ -85,7 +94,19 @@ function HierarchyNode({
       </div>
 
       {showChildren ? (
-        <div className="mt-3 flex flex-wrap items-start justify-center gap-6">
+        /*
+          flex-nowrap, not flex-wrap.
+
+          A tree must not wrap: wrapped children land on a second row visually
+          detached from their parent, and — the actual bug — with flex-wrap plus
+          justify-center inside an overflow-auto container, siblings sitting on
+          a wrap boundary flip between rows on any repaint. Hovering triggers a
+          repaint, the row re-wraps, every card below jumps, the cursor lands
+          somewhere else and it repaints again. That is the cards shifting
+          position. The tree now keeps its natural width and the container
+          scrolls horizontally instead.
+        */
+        <div className="mt-3 flex w-max flex-nowrap items-start justify-center gap-6">
           {children.map((child) => (
             <div key={child.id} className="flex flex-col items-center">
               <ArrowDown className="mb-1 h-4 w-4 text-slate-300" />
@@ -382,9 +403,19 @@ export default function MyTeam() {
             <div
               ref={treeWrapperRef}
               className="relative overflow-auto rounded-xl border border-slate-200 bg-slate-50/40 p-6"
-              style={{ minHeight: '320px' }}
+              /*
+                scrollbarGutter reserves the scrollbar's space permanently, so a
+                hover shadow that nudges content past the edge can no longer make
+                a scrollbar appear and disappear in a loop. Belt and braces
+                alongside the transition-shadow fix on the node itself.
+              */
+              style={{ minHeight: '320px', scrollbarGutter: 'stable' }}
             >
-              <div className="flex flex-wrap items-start justify-center gap-8">
+              {/* Natural width + mx-auto: centred when it fits, scrolled when it
+                  does not. justify-center on an OVERFLOWING flex container
+                  overflows equally both ways and makes the left edge
+                  unreachable, which browsers resolve inconsistently and jumpily. */}
+              <div className="mx-auto flex w-max flex-nowrap items-start justify-center gap-8">
                 {tree.roots.map((root) => (
                   <HierarchyNode
                     key={`root-${root.id}`}

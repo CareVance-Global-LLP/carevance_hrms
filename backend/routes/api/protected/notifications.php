@@ -7,6 +7,7 @@ Route::get('/notifications', [NotificationController::class, 'index']);
 Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
 Route::post('/notifications/publish', [NotificationController::class, 'publish'])->middleware(['role:admin,manager', 'throttle:notifications.publish']);
+Route::post('/notifications/delivery-stats', [NotificationController::class, 'deliveryStats'])->middleware('role:admin,manager');
 Route::post('/notifications/register-device', [NotificationController::class, 'registerDevice']);
 Route::post('/polls/{pollId}/vote', [NotificationController::class, 'vote']);
 Route::get('/polls/{pollId}/results', [NotificationController::class, 'results']);

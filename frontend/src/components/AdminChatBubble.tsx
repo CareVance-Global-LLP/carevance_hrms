@@ -212,7 +212,7 @@ export default function AdminChatBubble() {
               : { left: panelPos?.left, top: panelPos?.top, maxHeight: 'min(480px, calc(100vh - 40px))' }
           }
         >
-          <div className="flex items-center justify-between bg-[#5D969D] px-4 py-3 text-white">
+          <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
             <div className="flex items-center gap-2.5">
               <SparkleIcon size={30} />
               <div>
@@ -232,7 +232,7 @@ export default function AdminChatBubble() {
                 <div
                   className={`max-w-[75%] rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
                     msg.role === 'user'
-                      ? 'bg-[#5D969D] text-white'
+                      ? 'bg-blue-600 text-white'
                       : 'bg-white text-slate-700 border border-slate-100 shadow-sm'
                   }`}
                 >
@@ -244,9 +244,9 @@ export default function AdminChatBubble() {
               <div className="flex justify-start">
                 <DefaultBotAvatar className="mr-1.5 mt-0.5" />
                 <div className="flex items-center gap-1 rounded-xl border border-slate-100 bg-white px-3 py-2.5">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#5D969D]" style={{ animationDelay: '0s' }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#5D969D]" style={{ animationDelay: '0.15s' }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#5D969D]" style={{ animationDelay: '0.3s' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '0s' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '0.15s' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '0.3s' }} />
                 </div>
               </div>
             )}
@@ -262,7 +262,7 @@ export default function AdminChatBubble() {
                     type="button"
                     disabled={isLoading}
                     onClick={() => void send(q)}
-                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-[#085041] transition hover:border-[#5D969D] hover:bg-[#5D969D]/10 hover:text-[#085041] disabled:opacity-50"
+                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-blue-600 hover:bg-blue-600/10 hover:text-emerald-700 disabled:opacity-50"
                   >
                     {q}
                   </button>
@@ -279,7 +279,7 @@ export default function AdminChatBubble() {
                     key={q}
                     type="button"
                     onClick={() => void send(q)}
-                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-[#085041] transition hover:border-[#5D969D] hover:bg-[#5D969D]/10 hover:text-[#085041]"
+                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-blue-600 hover:bg-blue-600/10 hover:text-emerald-700"
                   >
                     {q}
                   </button>
@@ -302,13 +302,13 @@ export default function AdminChatBubble() {
                   }
                 }}
                 placeholder="Ask anything..."
-                className="min-h-[2rem] flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none transition focus:border-[#5D969D] focus:bg-white"
+                className="min-h-[2rem] flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none transition focus:border-blue-600 focus:bg-white"
               />
               <button
                 type="button"
                 onClick={() => void send(input)}
                 disabled={isLoading || !input.trim()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#5D969D] text-white disabled:opacity-50"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white disabled:opacity-50"
               >
                 <Send className="h-3.5 w-3.5" />
               </button>

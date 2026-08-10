@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SalaryRevisionLetter extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'salary_revision_letters';
 
     protected $fillable = [

@@ -51,7 +51,13 @@ class FbpService
     {
         $claim = FbpClaim::create($data);
 
-        $allocation = FbpClaim::find($claim->fbp_allocation_id);
+        // Looked the allocation up as `FbpClaim::find($claim->fbp_allocation_id)`
+        // — a claim fetched by an allocation id. That either found nothing, so
+        // the allocation's claimed_amount never moved and the employee could
+        // claim the same benefit repeatedly, or it found an unrelated claim that
+        // happened to share the id and incremented that instead. approveClaim()
+        // below already uses the relation; match it.
+        $allocation = $claim->allocation;
         if ($allocation) {
             $allocation->increment('claimed_amount', $data['claimed_amount']);
         }

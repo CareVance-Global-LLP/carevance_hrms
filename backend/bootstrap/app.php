@@ -28,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'sanitize' => \App\Http\Middleware\SanitizeInput::class,
             'payroll.enabled' => \App\Http\Middleware\PayrollEnabled::class,
             'plan.payroll' => \App\Http\Middleware\CheckPayrollPlan::class,
+            'plan.performance' => \App\Http\Middleware\CheckPerformancePlan::class,
             // Offline-sync deduplication. The middleware existed but had no
             // alias and was attached to no route, so replayed syncs from the
             // desktop/mobile clients created duplicate rows despite the

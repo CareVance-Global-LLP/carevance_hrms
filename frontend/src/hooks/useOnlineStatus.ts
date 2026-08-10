@@ -5,6 +5,7 @@ import {
   isDesktopApp,
   OfflineState,
 } from '@/services/offlineService';
+import { reportSilentError } from '@/lib/reportSilentError';
 
 const initialState: OfflineState = {
   status: 'online',
@@ -26,7 +27,7 @@ export function useOnlineStatus() {
     try {
       const status = await getOfflineStatus();
       setState(status);
-    } catch {}
+    } catch (error) { reportSilentError('online-status', error); }
   }, []);
 
   useEffect(() => {

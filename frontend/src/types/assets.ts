@@ -46,6 +46,22 @@ export interface AssetFilters {
   status?: AssetStatus | '';
   category?: string;
   search?: string;
+  page?: number;
+  per_page?: number;
+}
+
+export interface AssetListMeta {
+  current_page: number;
+  per_page: number;
+  total: number;
+  last_page: number;
+}
+
+export interface AssetListResponse {
+  data: Asset[];
+  /** Every category the organization owns, not just those in the current page. */
+  categories: string[];
+  meta: AssetListMeta;
 }
 
 export interface CreateAssetPayload {

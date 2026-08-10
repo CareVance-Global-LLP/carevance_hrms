@@ -3,7 +3,33 @@
 use App\Http\Controllers\Api\PayrollFilingController;
 use Illuminate\Support\Facades\Route;
 
+/**
+ * Employee self-service slice of the filings file.
+ *
+ * Registered first, and deliberately tiny. Everything else in this file —
+ * statutory filings, the bank batch and file endpoints, FBP approvals,
+ * perquisites, revision-letter generation — is administrative and is gated
+ * below. Before this split the whole file sat behind `plan.payroll` alone,
+ * which checks the organisation's subscription and not the caller, so an
+ * ordinary employee could generate a PF ECR or create and download a bank
+ * transfer batch.
+ */
 Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
+    // Submitting a claim and accepting or declining your own salary revision
+    // are things the employee is the correct actor for.
+    Route::post('/fbp/claims', [PayrollFilingController::class, 'submitFbpClaim']);
+    Route::post('/revision-letters/{id}/accept', [PayrollFilingController::class, 'acceptRevisionLetter']);
+    Route::post('/revision-letters/{id}/reject', [PayrollFilingController::class, 'rejectRevisionLetter']);
+
+    // Modelling your own take-home. Reads nothing it is not given.
+    Route::prefix('tax-simulator')->group(function () {
+        Route::post('/compare', [PayrollFilingController::class, 'compareTaxRegimes']);
+        Route::post('/what-if', [PayrollFilingController::class, 'taxWhatIf']);
+        Route::post('/monthly-take-home', [PayrollFilingController::class, 'calculateMonthlyTakeHome']);
+    });
+});
+
+Route::prefix('payroll')->middleware(['plan.payroll', 'role:admin,manager'])->group(function () {
 
     // ===== Statutory Filings =====
     Route::prefix('filings')->group(function () {
@@ -74,7 +100,6 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
         Route::get('/components', [PayrollFilingController::class, 'getFbpComponents']);
         Route::get('/allocations/{userId}', [PayrollFilingController::class, 'getFbpAllocation']);
         Route::post('/allocate', [PayrollFilingController::class, 'allocateFbp']);
-        Route::post('/claims', [PayrollFilingController::class, 'submitFbpClaim']);
         Route::post('/claims/{id}/approve', [PayrollFilingController::class, 'approveFbpClaim']);
         Route::post('/claims/{id}/reject', [PayrollFilingController::class, 'rejectFbpClaim']);
     });
@@ -85,20 +110,13 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
         Route::get('/user/{userId}', [PayrollFilingController::class, 'getUserPerquisites']);
     });
 
-    // ===== Tax Simulator =====
-    Route::prefix('tax-simulator')->group(function () {
-        Route::post('/compare', [PayrollFilingController::class, 'compareTaxRegimes']);
-        Route::post('/what-if', [PayrollFilingController::class, 'taxWhatIf']);
-        Route::post('/monthly-take-home', [PayrollFilingController::class, 'calculateMonthlyTakeHome']);
-    });
+    // Tax simulator lives in the self-service group at the top of this file.
 
     // ===== Salary Revision Letters =====
     Route::prefix('revision-letters')->group(function () {
         Route::post('/', [PayrollFilingController::class, 'generateRevisionLetter']);
         Route::get('/', [PayrollFilingController::class, 'getRevisionLetters']);
         Route::get('/user/{userId}', [PayrollFilingController::class, 'getRevisionLetters']);
-        Route::post('/{id}/accept', [PayrollFilingController::class, 'acceptRevisionLetter']);
-        Route::post('/{id}/reject', [PayrollFilingController::class, 'rejectRevisionLetter']);
     });
 
     // ===== Payroll Checklist / Validation =====

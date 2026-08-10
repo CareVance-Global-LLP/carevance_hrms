@@ -37,7 +37,6 @@ vi.mock('@/pages/AdminDashboard', () => ({ default: () => <div>Admin Dashboard P
 vi.mock('@/pages/DesktopTimerDashboard', () => ({ default: () => <div>Desktop Timer Page</div> }));
 vi.mock('@/pages/Projects', () => ({ default: () => <div>Projects Page</div> }));
 vi.mock('@/pages/Tasks', () => ({ default: () => <div>Tasks Page</div> }));
-vi.mock('@/pages/Reports', () => ({ default: () => <div>Reports Page</div> }));
 vi.mock('@/pages/ReportsWorkspace', () => ({
   default: ({ mode }: { mode: string }) => <div>Reports Workspace {mode}</div>,
 }));

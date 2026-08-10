@@ -282,6 +282,10 @@ describe('ReportsWorkspace timeline navigation', () => {
 
     renderWithProviders(<ReportsWorkspace mode="timeline" />);
 
+    // Zoom into the person's day — the hour list names each block.
+    const personButton = await screen.findByRole('button', { name: /Irbaz Mavli/ });
+    personButton.click();
+
     expect(await screen.findByText('Codex')).toBeInTheDocument();
     expect(screen.queryByText(/^vscode$/i)).not.toBeInTheDocument();
   });
@@ -307,6 +311,10 @@ describe('ReportsWorkspace timeline navigation', () => {
     ]);
 
     renderWithProviders(<ReportsWorkspace mode="timeline" />);
+
+    // Zoom into the person's day — the hour list names each block.
+    const personButton = await screen.findByRole('button', { name: /Irbaz Mavli/ });
+    personButton.click();
 
     expect(await screen.findByText('This PC')).toBeInTheDocument();
     expect(screen.queryByText(/^Windows Explorer$/i)).not.toBeInTheDocument();

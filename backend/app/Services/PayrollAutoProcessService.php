@@ -274,8 +274,17 @@ class PayrollAutoProcessService
                 ->get();
 
             foreach ($approvedReimbursements as $reimbursement) {
+                // The link must still point at a live payroll item to count as
+                // already paid. Re-processing a draft run wipes its items but
+                // leaves these rows behind, so a link orphaned by the previous
+                // pass used to satisfy this check and the reimbursement was
+                // silently dropped from the payslip — while the claim still
+                // read "approved" to the employee. Re-processing a draft is the
+                // normal flow, so this hit real people.
                 $existingLink = ReimbursementPayrollLink::where('reimbursement_id', $reimbursement->id)
                     ->where('status', 'linked')
+                    ->whereNotNull('payroll_item_id')
+                    ->whereHas('payrollItem')
                     ->first();
 
                 if (!$existingLink) {
@@ -416,7 +425,14 @@ class PayrollAutoProcessService
             $basicPct = (float) ($template->basic_percentage ?? 40) / 100;
             $hraPct = (float) ($template->hra_percentage ?? 50) / 100;
             $isMetro = $template->is_metro_city ?? true;
-            $state = $template->pt_state ?? 'maharashtra';
+            // No default state. Professional tax is levied by the state the
+            // employee works in, and several — Delhi, Haryana, Uttar Pradesh —
+            // do not levy it at all. Falling back to 'maharashtra' meant an
+            // unconfigured organization deducted ₹200 a month from everyone,
+            // including people who owe nothing. An empty state yields ₹0 from
+            // PTStateService, so an unconfigured setup under-deducts (which is
+            // correctable) rather than taking money that was never owed.
+            $state = $template->pt_state ?: '';
             $pfEnabled = $template->pf_enabled;
             $esiEnabled = $template->esi_enabled;
 
@@ -494,7 +510,14 @@ class PayrollAutoProcessService
             }
 
             $totalDeductions = $pfEmployee + $esiEmployee + $pt + $tds + $lopDeduction;
-            $netPay = max(0, $gross - $totalDeductions);
+            // Stored signed, deliberately. Clamping with max(0, …) hid the one
+            // case that most needs to stop a run: deductions overrunning gross,
+            // which happens with a large recovery or a full month of unpaid
+            // leave. The validation that is supposed to halt the run can only
+            // see the problem if the real number survives to be looked at, and
+            // a silent 0 reads as "this person is owed nothing" rather than
+            // "this figure is wrong".
+            $netPay = round($gross - $totalDeductions, 2);
 
             $gratuity = round($basic * 0.0481, 2);
             $totalEmployerContributions = $pfEmployer + $esiEmployer + $gratuity;

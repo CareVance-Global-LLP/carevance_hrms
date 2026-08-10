@@ -25,7 +25,21 @@ class AssetController extends Controller
             'status' => ['nullable', Rule::in([Asset::STATUS_AVAILABLE, Asset::STATUS_ASSIGNED])],
             'category' => ['nullable', 'string', 'max:255'],
             'search' => ['nullable', 'string', 'max:255'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
         ]);
+
+        // Every category the organization owns, independent of the filters
+        // applied below. The client used to derive its dropdown options from
+        // the rows it had just filtered, so picking "Laptop" left "Laptop" as
+        // the only option and there was no way back without clearing.
+        $categories = Asset::forOrganization((int) $user->organization_id)
+            ->select('category')
+            ->distinct()
+            ->orderBy('category')
+            ->pluck('category')
+            ->filter()
+            ->values();
 
         $query = Asset::forOrganization((int) $user->organization_id)
             ->with(['currentAssignment.user:id,name,email'])
@@ -41,9 +55,22 @@ class AssetController extends Controller
             })
             ->orderByDesc('created_at');
 
-        $assets = $query->get()->map(fn (Asset $asset) => $this->transformAsset($asset));
+        // Paginated — this used to return every asset an organization owned in
+        // one response, and the page rendered all of them.
+        $perPage = (int) ($request->integer('per_page') ?: 25);
+        $page = max(1, (int) $request->integer('page', 1));
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
 
-        return response()->json(['data' => $assets]);
+        return response()->json([
+            'data' => collect($paginator->items())->map(fn (Asset $asset) => $this->transformAsset($asset))->values(),
+            'categories' => $categories,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'last_page' => $paginator->lastPage(),
+            ],
+        ]);
     }
 
     public function store(Request $request): JsonResponse

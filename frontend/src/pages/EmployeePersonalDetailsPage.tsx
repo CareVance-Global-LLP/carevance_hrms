@@ -10,6 +10,8 @@ import { canAccess } from '@/lib/permissions';
 import { employeeWorkspaceApi } from '@/services/api';
 import { assetsApi } from '@/services/assetsApi';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
+import { formatCalendarDate, formatTenure } from '@/lib/employeeDates';
+import PayrollReadinessCard from '@/components/employees/PayrollReadinessCard';
 import { usePlan } from '@/hooks/usePlan';
 
 const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -244,7 +246,10 @@ export default function EmployeePersonalDetailsPage() {
     { label: 'First Name', value: data.about?.first_name },
     { label: 'Last Name', value: data.about?.last_name },
     { label: 'Gender', value: data.about?.gender },
-    { label: 'Date of Birth', value: data.about?.date_of_birth },
+    // Rendered raw, this printed the serialised value verbatim —
+    // "1996-08-23T18:30:00.000000Z" — which was both unreadable and, thanks to
+    // a plain `date` cast on the model, a day earlier than the real birthday.
+    { label: 'Date of Birth', value: formatCalendarDate(data.about?.date_of_birth) },
     { label: 'Phone', value: data.about?.phone },
     { label: 'Personal Email', value: data.about?.personal_email },
     { label: 'Address Line', value: data.about?.address_line },
@@ -260,6 +265,13 @@ export default function EmployeePersonalDetailsPage() {
     { label: 'Employee Code', value: data.work_info?.employee_code },
     { label: 'Designation', value: data.work_info?.designation },
     { label: 'Department', value: data.work_info?.department?.name },
+    // Joining date is collected as a required field in step 1 of Add User and
+    // was then shown nowhere. It anchors the onboarding checklist, the
+    // 30/60/90 probation reviews, mid-month payroll proration and the
+    // five-year gratuity floor — so being unable to read it off the employee's
+    // own page made every one of those unverifiable.
+    { label: 'Joining Date', value: formatCalendarDate(data.work_info?.joining_date) },
+    { label: 'Tenure', value: formatTenure(data.work_info?.joining_date) },
     { label: 'Employment Type', value: data.work_info?.employment_type },
     { label: 'Work Location', value: data.work_info?.work_location },
     { label: 'Expected Start Time', value: data.work_info?.expected_start_time ? `${data.work_info.expected_start_time} (${data.work_info?.expected_timezone || 'Org timezone'})` : 'Not set (using org default)' },
@@ -275,6 +287,10 @@ export default function EmployeePersonalDetailsPage() {
       </div>
 
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
+
+      {/* Placed above the detail sections on purpose: if this person will not
+          be paid, that is the most important thing on the page. */}
+      <PayrollReadinessCard readiness={(data as any)?.payroll_readiness} />
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Employee Details</p>

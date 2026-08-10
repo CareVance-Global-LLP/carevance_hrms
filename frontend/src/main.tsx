@@ -6,6 +6,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google'
 import App from './App'
 import { AuthProvider } from './contexts/AuthContext'
 import { ConsentProvider } from './contexts/ConsentContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 import AppMetadataManager from './components/seo/AppMetadataManager'
 import AnalyticsRouteTracker from './components/analytics/AnalyticsRouteTracker'
 import CookieConsentBanner from './components/public/CookieConsentBanner'
@@ -137,21 +138,23 @@ installDesktopTrackerCompatibilityMarkers()
 
 function AppProviders({ children }: { children: React.ReactNode }) {
   const appContent = (
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <BrowserRouter future={routerFuture}>
-          <ConsentProvider>
-            <AuthProvider>
-              <RouteViewportManager />
-              <AppMetadataManager />
-              <AnalyticsRouteTracker />
-              <CookieConsentBanner />
-              {children}
-            </AuthProvider>
-          </ConsentProvider>
-        </BrowserRouter>
-      </ToastProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <BrowserRouter future={routerFuture}>
+            <ConsentProvider>
+              <AuthProvider>
+                <RouteViewportManager />
+                <AppMetadataManager />
+                <AnalyticsRouteTracker />
+                <CookieConsentBanner />
+                {children}
+              </AuthProvider>
+            </ConsentProvider>
+          </BrowserRouter>
+        </ToastProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   )
 
   // Wrap with GoogleOAuthProvider only if enabled and configured

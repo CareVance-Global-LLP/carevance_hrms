@@ -1,4 +1,5 @@
 import { getStoredAuthValue } from '@/lib/authStorage';
+import { reportSilentError } from '@/lib/reportSilentError';
 
 export type OfflineStatus = 'online' | 'offline' | 'syncing';
 
@@ -28,7 +29,7 @@ export const isOfflineAvailable = async (): Promise<boolean> => {
     if (api?.isOfflineAvailable) {
       return api.isOfflineAvailable();
     }
-  } catch {}
+  } catch (error) { reportSilentError('offline-service', error); }
   return false;
 };
 
@@ -238,7 +239,7 @@ export const triggerSync = async (): Promise<void> => {
   if (api?.triggerSync) {
     try {
       await api.triggerSync();
-    } catch {}
+    } catch (error) { reportSilentError('offline-service', error); }
   }
 };
 
@@ -246,7 +247,7 @@ export const setOfflineCredentials = async (authToken: string, userId: number, a
   if (api?.setOfflineCredentials) {
     try {
       return api.setOfflineCredentials({ auth_token: authToken, user_id: userId, api_url: apiUrl });
-    } catch {}
+    } catch (error) { reportSilentError('offline-service', error); }
   }
   return false;
 };
@@ -255,7 +256,7 @@ export const getPendingCount = async (): Promise<number> => {
   if (api?.getPendingCountOffline) {
     try {
       return api.getPendingCountOffline();
-    } catch {}
+    } catch (error) { reportSilentError('offline-service', error); }
   }
   return 0;
 };

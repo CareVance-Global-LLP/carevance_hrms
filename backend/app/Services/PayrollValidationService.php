@@ -30,8 +30,22 @@ class PayrollValidationService
         $checks['deductions_valid'] = ['name' => 'Deductions valid', 'passed' => $emptyDeductions === 0, 'value' => $emptyDeductions];
         $emptyDeductions === 0 ? $passed++ : $failed++;
 
-        $negativeNetPay = $run->items->filter(fn($i) => ($i->net_pay ?? -1) < 0)->count();
-        $checks['no_negative_salary'] = ['name' => 'No negative salaries', 'passed' => $negativeNetPay === 0, 'value' => $negativeNetPay];
+        // Deductions overtaking gross is the specific failure worth naming: the
+        // generic "net pay not calculated" reading sends whoever is checking
+        // the run off looking for a calculation that never ran, when in fact it
+        // ran and produced a shortfall. Report the worst amount so the message
+        // points at the person and the number.
+        $overDeducted = $run->items->filter(fn($i) => ($i->net_pay ?? 0) < 0);
+        $negativeNetPay = $overDeducted->count();
+        $worstShortfall = $negativeNetPay > 0 ? abs((float) $overDeducted->min('net_pay')) : 0.0;
+        $checks['no_negative_salary'] = [
+            'name' => 'No negative salaries',
+            'passed' => $negativeNetPay === 0,
+            'value' => $negativeNetPay,
+            'detail' => $negativeNetPay > 0
+                ? "$negativeNetPay employee(s) have deductions exceeding gross pay; largest shortfall ₹" . number_format($worstShortfall, 2)
+                : null,
+        ];
         $negativeNetPay === 0 ? $passed++ : $failed++;
 
         $zeroGross = $run->items->filter(fn($i) => ($i->gross_salary ?? 1) == 0)->count();
@@ -41,6 +55,29 @@ class PayrollValidationService
         $missingBank = $run->items->filter(fn($i) => empty($i->user?->employeeBankAccounts?->first()))->count();
         $checks['bank_accounts'] = ['name' => 'Bank accounts present', 'passed' => $missingBank === 0, 'value' => $missingBank];
         $missingBank === 0 ? $passed++ : $failed++;
+
+        // Professional tax is state-levied, so an unset state is a
+        // configuration gap rather than "no PT due". Without this check the run
+        // simply deducts nothing and nobody finds out until a state authority
+        // asks why. Surfaced as a warning, not a hard failure: several states
+        // genuinely levy no PT, and a run should not be blocked for them.
+        // Read the same field the calculation reads. The employee profile also
+        // carries a pt_state, but payroll computes from the payroll template —
+        // checking the profile reported "no PT state" for employees whose
+        // template had one and who were being charged correctly.
+        $missingPtState = $run->items->filter(
+            fn ($i) => blank($i->user?->employeePayrollTemplate?->pt_state)
+        )->count();
+        $checks['pt_state_configured'] = [
+            'name' => 'Professional tax state set',
+            'passed' => $missingPtState === 0,
+            'value' => $missingPtState,
+            'warning_only' => true,
+            'detail' => $missingPtState > 0
+                ? "$missingPtState employee(s) have no PT state — no professional tax will be deducted for them"
+                : null,
+        ];
+        $missingPtState === 0 ? $passed++ : $failed++;
 
         $totalChecks = count($checks);
         $valid = $failed === 0;

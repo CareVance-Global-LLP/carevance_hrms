@@ -93,14 +93,14 @@ export default function PayrollRunCard({
         <div className="flex items-center gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); onViewDetails?.(run.id); }}
-            className="inline-flex items-center gap-1 text-sm font-medium text-[#5D969D] hover:underline"
+            className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
           >
             View Details <ChevronRight className="h-4 w-4" />
           </button>
           {run.status === 'released' && onDisburse && (
             <button
               onClick={(e) => { e.stopPropagation(); onDisburse(run.id); }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-[#5D969D] rounded-lg hover:bg-[#4A7A80] transition-colors"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-[#4A7A80] transition-colors"
             >
               Disburse
             </button>

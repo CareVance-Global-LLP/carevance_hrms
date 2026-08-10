@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TaxProofSubmission extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'tax_proof_submissions';
 
     protected $fillable = [

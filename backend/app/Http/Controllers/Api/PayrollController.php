@@ -187,7 +187,10 @@ class PayrollController extends Controller
         
         // Get employee profile data
         $profile = $user->employeeProfile;
-        $state = $request->get('state') ?? $profile?->pt_state ?? 'maharashtra';
+        // Empty rather than a fallback state: professional tax is state-levied
+        // and several states charge none, so an unconfigured employee must
+        // yield ₹0 instead of inheriting another state's slab.
+        $state = $request->get('state') ?: ($profile?->pt_state ?: '');
         $taxRegime = $request->get('tax_regime') ?? $profile?->tax_regime ?? 'new';
         $isMetro = $request->get('is_metro_city') ?? $profile?->is_metro_city ?? false;
 
@@ -247,15 +250,37 @@ class PayrollController extends Controller
     /**
      * Get organization employees for payroll.
      */
+    /**
+     * Payroll roster with statutory and bank identifiers.
+     *
+     * Organization scoping alone was the only check here, which meant any
+     * signed-in employee could read every colleague's PAN, UAN and full bank
+     * account number. Two things now stand in the way: the caller has to be
+     * able to run payroll, and account numbers are masked to the last four
+     * digits — a roster exists to confirm details are present, not to reprint
+     * them.
+     */
     public function getEmployees(Request $request): JsonResponse
     {
-        $organizationId = $request->user()->organization_id;
-        
+        $currentUser = $request->user();
+        $organizationId = $currentUser->organization_id;
+
+        $isPayrollStaff = $currentUser->getHierarchyLevel() <= Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['manager']
+            || (bool) ($currentUser->settings['payroll_visibility'] ?? false);
+
+        if (! $isPayrollStaff) {
+            return response()->json([
+                'message' => 'You do not have access to payroll records.',
+            ], 403);
+        }
+
         $employees = User::where('organization_id', $organizationId)
             ->whereIn('role', ['employee', 'manager', 'admin'])
             ->with(['employeeProfile', 'employeeBankAccounts'])
             ->get()
             ->map(function ($user) {
+                $account = $user->employeeBankAccounts->first()?->account_number;
+
                 return [
                     'id' => $user->id,
                     'name' => $user->name,
@@ -263,7 +288,12 @@ class PayrollController extends Controller
                     'role' => $user->role,
                     'pan_number' => $user->employeeProfile?->pan_number,
                     'uan_number' => $user->employeeProfile?->uan_number,
-                    'bank_account' => $user->employeeBankAccounts->first()?->account_number ?? null,
+                    // Masked in place rather than removed, so existing callers
+                    // keep their field. A roster needs to show that an account
+                    // is on file, never to reprint the number.
+                    'bank_account' => $account ? '••••'.substr($account, -4) : null,
+                    'bank_account_last4' => $account ? substr($account, -4) : null,
+                    'has_bank_account' => filled($account),
                     'bank_ifsc' => $user->employeeBankAccounts->first()?->ifsc_swift ?? null,
                 ];
             });
@@ -396,7 +426,14 @@ class PayrollController extends Controller
             'payroll_data' => 'required|array',
         ]);
 
+        // `exists:users,id` above only proves the row exists somewhere — it does
+        // not confine it to the caller's organisation, and User is deliberately
+        // outside the tenant global scope, so findOrFail() reached across
+        // tenants. The response below carries name, email, PAN, UAN and a bank
+        // account number, so this returned another company's employee data to
+        // anyone who could guess an id.
         $user = User::with(['employeeProfile', 'employeeBankAccounts', 'organization'])
+            ->where('organization_id', $request->user()->organization_id)
             ->findOrFail($request->user_id);
 
         // Generate payslip data

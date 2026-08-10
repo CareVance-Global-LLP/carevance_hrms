@@ -2,7 +2,12 @@ import type { HTMLAttributes } from 'react';
 import { cn } from '@/utils/cn';
 
 interface BrandLogoProps extends HTMLAttributes<HTMLDivElement> {
-  variant?: 'full' | 'icon';
+  /**
+   * `full` is the wordmark, `mark` is the circle on its own — what the sidebar
+   * shows once it collapses. `icon` is kept as an alias for `mark` so existing
+   * call sites keep working.
+   */
+  variant?: 'full' | 'mark' | 'icon';
   size?: 'sm' | 'md' | 'lg';
   alt?: string;
 }
@@ -13,16 +18,29 @@ const wrapperSizeMap = {
     md: 'h-15',
     lg: 'h-[4.25rem]',
   },
-  icon: {
+  mark: {
     sm: 'h-11 w-11',
     md: 'h-[3.25rem] w-[3.25rem]',
     lg: 'h-16 w-16',
   },
 } as const;
 
+/*
+ * PNG, deliberately — do not "optimise" these to the SVGs sitting beside them
+ * in public/.
+ *
+ * The SVGs are 572 and 1,027 bytes against the PNGs' 78,074 and 12,152, which
+ * makes them look like an obvious win. They are not the same artwork: their
+ * monogram is a rough approximation — a solid blob with a stray notch, where
+ * the real mark is a C and a V locked together. The favicon points at the PNG,
+ * so switching only the app made the two disagree on screen.
+ *
+ * Replacing these with proper vectors is worth doing, but it needs the real
+ * source from whoever owns the brand, not a redraw.
+ */
 const assetMap = {
   full: '/carevance-logo-full.png',
-  icon: '/carevance-logo-icon.png',
+  mark: '/carevance-logo-icon.png',
 } as const;
 
 export default function BrandLogo({
@@ -32,22 +50,24 @@ export default function BrandLogo({
   className,
   ...props
 }: BrandLogoProps) {
+  const resolved = variant === 'icon' ? 'mark' : variant;
+
   return (
     <div
       className={cn(
         'inline-flex shrink-0 items-center justify-start overflow-hidden align-middle',
-        wrapperSizeMap[variant][size],
-        variant === 'full' ? 'w-full' : '',
+        wrapperSizeMap[resolved][size],
+        resolved === 'full' ? 'w-full' : '',
         className
       )}
       {...props}
     >
       <img
-        src={assetMap[variant]}
+        src={assetMap[resolved]}
         alt={alt}
         className={cn(
           'block max-w-full object-contain',
-          variant === 'full' ? 'h-full w-auto' : 'h-full w-full'
+          resolved === 'full' ? 'h-full w-auto' : 'h-full w-full'
         )}
       />
     </div>

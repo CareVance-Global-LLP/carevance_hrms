@@ -101,6 +101,48 @@ services:
         reservations:
           memory: 128M
 
+  # Laravel's scheduler. Without this container nothing ever calls
+  # `schedule:run`, so every command in routes/console.php silently never fires:
+  # timers left open by a crashed desktop client are never closed, departing
+  # employees keep access past their last working day, onboarding journeys never
+  # advance out of pre-boarding, and no task reminder, overdue notice or
+  # recurring task has ever been generated. All of it reads as working in the
+  # code and does nothing in the deployment.
+  #
+  # `schedule:work` is the container-native form of the usual
+  # `* * * * * php artisan schedule:run` cron line — it stays in the foreground
+  # and ticks once a minute, so it needs no crond in the image.
+  scheduler:
+    image: ghcr.io/${GITHUB_OWNER:-your-org}/carevance-backend:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_PERSISTENT_CONNECTIONS: "true"
+      PHP_MEMORY_LIMIT: "256M"
+      CACHE_DRIVER: "file"
+      SESSION_DRIVER: "file"
+      QUEUE_CONNECTION: "database"
+    command: ["sh", "-lc", "php artisan schedule:work"]
+    depends_on:
+      - db
+      - backend
+    volumes:
+      - backend_storage:/var/www/html/storage
+    networks:
+      - carevance
+    # Exactly one replica. Two schedulers means every scheduled command runs
+    # twice — including the ones that close timers and revoke access.
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
   frontend:
     image: ghcr.io/${GITHUB_OWNER:-your-org}/carevance-frontend:latest
     restart: unless-stopped

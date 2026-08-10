@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PayGroup extends Model
 {
+    use BelongsToOrganization;
+
     protected $fillable = [
         'organization_id', 'name', 'code', 'description', 'pay_frequency',
         'pay_day', 'pay_day_type', 'statutory_rules', 'salary_template_id', 'is_active',

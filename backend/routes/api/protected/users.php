@@ -12,7 +12,10 @@ Route::post('/users', [UserController::class, 'store'])->middleware('role:admin'
 
 // ⚠️ MUST be BEFORE /users/{user} — otherwise Laravel matches "check-incomplete" as a {user} ID
 Route::get('/users/check-incomplete', [UserController::class, 'checkIncomplete']);
-Route::delete('/users/{id}/incomplete', [UserController::class, 'deleteIncomplete']);
+// Deleting an account is an admin action. This route had no role middleware
+// while the general /users/{user} delete eight lines below always has, so the
+// cleanup path was a way around the gate on the real one.
+Route::delete('/users/{id}/incomplete', [UserController::class, 'deleteIncomplete'])->middleware('role:admin');
 
 // ⚠️ MUST be BEFORE /users/{user} — otherwise Laravel matches "export" as a {user} ID
 Route::get('/users/export', [UserController::class, 'export']);

@@ -19,6 +19,7 @@ interface ResignationData {
   rejected_at?: string;
   rejection_reason?: string;
   cancelled_at?: string;
+  approval_destination?: string | null;
 }
 
 export default function MyResignationStatusPage() {
@@ -227,22 +228,27 @@ export default function MyResignationStatusPage() {
                     </div>
                   )}
 
-                  {currentResignation.status === 'pending' && (
-                    <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-600" />
-                        <div>
-                          <p className="font-medium text-amber-900">What happens next?</p>
-                          <ul className="mt-2 list-inside list-disc text-sm text-amber-700">
-                            <li>HR will review your resignation request</li>
-                            <li>You may be contacted for an exit interview</li>
-                            <li>Handover process will be coordinated</li>
-                            <li>Exit formalities will be scheduled</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                   {currentResignation.status === 'pending' && (
+                     <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                       <div className="flex items-start gap-3">
+                         <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-600" />
+                         <div>
+                           <p className="font-medium text-amber-900">What happens next?</p>
+                           <ul className="mt-2 list-inside list-disc text-sm text-amber-700">
+                             <li>HR will review your resignation request</li>
+                             <li>You may be contacted for an exit interview</li>
+                             <li>Handover process will be coordinated</li>
+                             <li>Exit formalities will be scheduled</li>
+                           </ul>
+                           {currentResignation.approval_destination && (
+                             <p className="mt-2 text-sm font-medium text-amber-900">
+                               {currentResignation.approval_destination}
+                             </p>
+                           )}
+                         </div>
+                       </div>
+                     </div>
+                   )}
                 </>
               ) : (
                 <div className="py-12 text-center">
@@ -283,10 +289,15 @@ export default function MyResignationStatusPage() {
                             </span>
                           </div>
                           {resignation.reason && (
-                            <p className="mt-1 text-xs text-slate-600 line-clamp-1">
-                              Reason: {resignation.reason}
-                            </p>
-                          )}
+                             <p className="mt-1 text-xs text-slate-600 line-clamp-1">
+                               Reason: {resignation.reason}
+                             </p>
+                           )}
+                           {resignation.status === 'pending' && resignation.approval_destination && (
+                             <p className="mt-1 text-xs font-medium text-sky-700">
+                               {resignation.approval_destination}
+                             </p>
+                           )}
                         </div>
                       </div>
 

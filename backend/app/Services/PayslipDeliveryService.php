@@ -60,7 +60,17 @@ class PayslipDeliveryService
     protected function sendEmail(Payslip $payslip, $employee, string $pdfPath): array
     {
         try {
-            Mail::send('emails.payslip', ['payslip' => $payslip, 'employee' => $employee], function ($m) use ($employee, $payslip, $pdfPath) {
+            // The template renders {{ $monthLabel }} and it was never passed —
+            // under Blade's default error handling that surfaces as an
+            // undefined-variable error, so the payslip email failed for every
+            // employee and was logged as a delivery failure rather than a bug.
+            $viewData = [
+                'payslip' => $payslip,
+                'employee' => $employee,
+                'monthLabel' => $payslip->payroll_period_label,
+            ];
+
+            Mail::send('emails.payslip', $viewData, function ($m) use ($employee, $payslip, $pdfPath) {
                 $m->to($employee->email)
                   ->subject("Payslip for " . $payslip->payroll_period_label)
                   ->attach(Storage::path($pdfPath), ['as' => 'payslip.pdf', 'mime' => 'application/pdf']);
@@ -130,17 +140,31 @@ class PayslipDeliveryService
     protected function sendInApp(Payslip $payslip, $employee): array
     {
         try {
-            if (class_exists(\App\Models\Notification::class)) {
-                \App\Models\Notification::create([
-                    'user_id' => $employee->id,
-                    'type' => 'payslip.published',
-                    'title' => 'Payslip ready',
-                    'body' => "Your payslip for {$payslip->payroll_period_label} is now available",
-                    'data' => ['payslip_id' => $payslip->id],
-                ]);
-            }
+            // Guarded on App\Models\Notification, which does not exist in this
+            // codebase — the in-app notification model is AppNotification. The
+            // branch therefore never ran, no row was ever written, and the
+            // method still reported 'sent'. Payroll's delivery summary told
+            // admins the employee had been notified in-app when nothing had.
+            app(\App\Services\AppNotificationService::class)->sendToUsers(
+                organizationId: (int) $payslip->organization_id,
+                userIds: collect([$employee->id]),
+                senderId: null,
+                type: 'payslip.published',
+                title: 'Payslip ready',
+                message: "Your payslip for {$payslip->payroll_period_label} is now available",
+                meta: [
+                    'route' => '/my-payroll',
+                    'payslip_id' => $payslip->id,
+                ],
+            );
+
             return ['status' => 'sent', 'channel' => 'in_app'];
         } catch (\Throwable $e) {
+            Log::error('Payslip in-app notification failed', [
+                'payslip' => $payslip->id,
+                'err' => $e->getMessage(),
+            ]);
+
             return ['status' => 'failed', 'channel' => 'in_app', 'error' => $e->getMessage()];
         }
     }

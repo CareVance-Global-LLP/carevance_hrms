@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use App\Services\Payroll\PayrollCalculatorService;
+use App\Services\PayrollCalculatorService;
 use PHPUnit\Framework\TestCase;
 
 class PayrollCalculatorServiceTest extends TestCase

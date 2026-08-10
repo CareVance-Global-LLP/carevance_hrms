@@ -141,7 +141,7 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-[#3D656B]" />
+        <Loader2 className="h-8 w-8 animate-spin text-blue-700" />
         <span className="ml-2 text-gray-600">Loading payslip...</span>
       </div>
     );
@@ -184,7 +184,7 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
         <button
           onClick={() => downloadMutation.mutate()}
           disabled={downloadMutation.isPending}
-          className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-[#233B40] rounded-lg hover:bg-[#16262B] disabled:opacity-50 transition-colors"
+          className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-[#233B40] rounded-lg hover:bg-blue-950 disabled:opacity-50 transition-colors"
         >
           {downloadMutation.isPending ? (
             <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
@@ -198,7 +198,7 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
       {/* Payslip Document */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {/* Dark Header */}
-        <div className="bg-[#16262B] text-white px-6 py-5 flex justify-between items-start">
+        <div className="bg-blue-950 text-white px-6 py-5 flex justify-between items-start">
           <div>
             <h1 className="text-lg font-bold">{org?.name || 'Company'}</h1>
             <p className="text-xs opacity-70 mt-1">
@@ -275,13 +275,13 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
         <div className="px-6 py-4 bg-[#D9EBED]">
           <div className="flex justify-between items-center">
             <div>
-              <p className="text-[10px] text-[#3D656B] uppercase tracking-wide font-semibold">Net Payable</p>
-              <p className="text-2xl font-bold text-[#16262B] mt-0.5">₹ {formatCurrencyShort(payslip.net_payable)}</p>
+              <p className="text-[10px] text-blue-700 uppercase tracking-wide font-semibold">Net Payable</p>
+              <p className="text-2xl font-bold text-blue-950 mt-0.5">₹ {formatCurrencyShort(payslip.net_payable)}</p>
             </div>
             {payslip.net_pay_words && (
               <div className="text-right max-w-xs">
-                <p className="text-[10px] text-[#3D656B] uppercase tracking-wide font-semibold">In Words</p>
-                <p className="text-xs text-[#233B40] mt-0.5">{payslip.net_pay_words}</p>
+                <p className="text-[10px] text-blue-700 uppercase tracking-wide font-semibold">In Words</p>
+                <p className="text-xs text-blue-900 mt-0.5">{payslip.net_pay_words}</p>
               </div>
             )}
           </div>

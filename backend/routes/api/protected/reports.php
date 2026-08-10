@@ -14,6 +14,7 @@ Route::get('/reports/export', [ReportController::class, 'export']);
 Route::get('/reports/attendance/export', [ReportController::class, 'exportAttendanceSimple']);
 
 Route::middleware('role:admin,manager')->group(function () {
+    Route::get('/reports/hub-summary', [ReportController::class, 'hubSummary']);
     Route::get('/reports/team', [ReportController::class, 'team']);
     Route::get('/reports/employee-insights', [ReportController::class, 'employeeInsights']);
     Route::get('/reports/overall', [ReportController::class, 'overall']);

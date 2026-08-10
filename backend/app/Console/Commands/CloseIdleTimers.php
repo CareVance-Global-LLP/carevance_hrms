@@ -27,9 +27,16 @@ class CloseIdleTimers extends Command
 
         $this->line("Checking running timers idle since before {$cutoff->toIso8601String()} ({$idleMinutes} min threshold)");
 
-        // Get all currently running timers
+        // Get all currently running timers.
+        //
+        // is_break is excluded deliberately. A break has no activity rows, so it
+        // always looked maximally idle and got force-closed and stamped
+        // auto_stopped_for_idle — while the paired break_times row, which this
+        // command knows nothing about, stayed open forever and permanently 409'd
+        // the user out of break tracking.
         $runningTimers = TimeEntry::query()
             ->whereNull('end_time')
+            ->where('is_break', false)
             ->where('start_time', '<', $cutoff)
             ->orderBy('start_time')
             ->get(['id', 'user_id', 'start_time']);
@@ -41,14 +48,30 @@ class CloseIdleTimers extends Command
 
         $this->line("Found {$runningTimers->count()} running timer(s) to evaluate.");
 
-        // Batch-fetch latest non-idle activity time per user
         $userIds = $runningTimers->pluck('user_id')->unique()->values()->all();
-        $latestActivityByUser = DB::table('activities')
-            ->selectRaw('user_id, MAX(recorded_at) as last_active_at')
-            ->whereIn('user_id', $userIds)
+        $entryIds = $runningTimers->pluck('id')->all();
+
+        // Batch-fetch the latest non-idle activity PER TIME ENTRY, not per user.
+        // Keyed by user, activity belonging to a different (earlier) entry kept
+        // a stale entry alive and, conversely, anchored the wrong instant.
+        // TimeEntryController::closeIdleRunningEntry already scopes per entry;
+        // this now matches it.
+        $latestActivityByEntry = DB::table('activities')
+            ->selectRaw('time_entry_id, MAX(recorded_at) as last_active_at')
+            ->whereIn('time_entry_id', $entryIds)
             ->where('type', '!=', 'idle')
-            ->groupBy('user_id')
-            ->pluck('last_active_at', 'user_id')
+            ->groupBy('time_entry_id')
+            ->pluck('last_active_at', 'time_entry_id')
+            ->all();
+
+        // The Electron foreground-window bridge writes activity_sessions and no
+        // activities row at all, so this second ledger has to be consulted or a
+        // real working session anchors on start_time and closes with duration 0.
+        $latestSessionByEntry = DB::table('activity_sessions')
+            ->selectRaw('time_entry_id, MAX(COALESCE(ended_at, started_at)) as last_active_at')
+            ->whereIn('time_entry_id', $entryIds)
+            ->groupBy('time_entry_id')
+            ->pluck('last_active_at', 'time_entry_id')
             ->all();
 
         // Also batch-fetch latest idle activity per user (for logging)
@@ -64,9 +87,14 @@ class CloseIdleTimers extends Command
         $closed = 0;
 
         foreach ($runningTimers as $entry) {
-            $lastActiveAt = isset($latestActivityByUser[$entry->user_id])
-                ? Carbon::parse($latestActivityByUser[$entry->user_id])
-                : Carbon::parse($entry->start_time);
+            $startTime = Carbon::parse($entry->start_time);
+            $lastActiveAt = $startTime;
+
+            foreach ([$latestActivityByEntry[$entry->id] ?? null, $latestSessionByEntry[$entry->id] ?? null] as $candidate) {
+                if ($candidate && Carbon::parse($candidate)->gt($lastActiveAt)) {
+                    $lastActiveAt = Carbon::parse($candidate);
+                }
+            }
 
             $idleSeconds = (int) $lastActiveAt->diffInSeconds($now);
 
@@ -86,29 +114,41 @@ class CloseIdleTimers extends Command
                 continue;
             }
 
-            $startTime = Carbon::parse($entry->start_time);
-            $duration = (int) max(0, $startTime->diffInSeconds($now));
+            // End the entry AT the last activity so the idle tail is excluded,
+            // matching TimeEntryController::closeIdleRunningEntry. This used to
+            // bill start->now, so the same idle period was charged by the cron
+            // and excluded by the in-request fallback depending on which fired.
+            $endTime = $lastActiveAt->lt($startTime) ? $startTime->copy() : $lastActiveAt->copy();
+            $duration = (int) max(0, $startTime->diffInSeconds($endTime));
+            $trailingIdleSeconds = (int) max(0, $endTime->diffInSeconds($now));
 
             $entry->timestamps = false;
             $entry->update([
-                'end_time' => $now,
+                'end_time' => $endTime,
                 'duration' => $duration,
                 'auto_stopped_for_idle' => true,
+                'stop_reason' => TimeEntry::STOP_IDLE_CRON,
+                'last_activity_at' => $lastActiveAt,
+                'trailing_idle_seconds' => $trailingIdleSeconds,
+                'duration_reconciled_at' => $now,
             ]);
 
-            $this->closeOpenAttendancePunches((int) $entry->user_id, $now);
+            $this->closeOpenAttendancePunches((int) $entry->user_id, $endTime);
 
             $idleInfo = $latestIdleByUser->get($entry->user_id);
             Log::info('Running timer auto-stopped by idle check', [
                 'time_entry_id' => $entry->id,
                 'user_id' => $entry->user_id,
                 'start_time' => $entry->start_time->toIso8601String(),
-                'end_time' => $now->toIso8601String(),
+                'end_time' => $endTime->toIso8601String(),
+                'worked_seconds' => $duration,
                 'idle_seconds' => $idleSeconds,
+                'trailing_idle_seconds' => $trailingIdleSeconds,
                 'threshold_seconds' => $idleThresholdSeconds,
                 'last_activity_at' => $lastActiveAt->toIso8601String(),
                 'last_idle_duration' => (int) ($idleInfo->max_idle_duration ?? 0),
                 'auto_stopped_for_idle' => true,
+                'stop_reason' => TimeEntry::STOP_IDLE_CRON,
             ]);
 
             $closed++;
@@ -135,16 +175,30 @@ class CloseIdleTimers extends Command
             ->whereNull('punch_out_at')
             ->get();
 
+        // worked_seconds has to be written here, not just punch_out_at. Closing
+        // the punch without it left the session at 0 and never recomputed the
+        // record total, so a cron-closed day silently reported no work.
         foreach ($openPunches as $punch) {
             DB::table('attendance_punches')
                 ->where('id', $punch->id)
-                ->update(['punch_out_at' => $cutoff]);
+                ->update([
+                    'punch_out_at' => $cutoff,
+                    'worked_seconds' => (int) max(0, Carbon::parse($punch->punch_in_at)->diffInSeconds($cutoff)),
+                ]);
         }
 
         if ($openPunches->isNotEmpty()) {
+            $closedWorked = (int) DB::table('attendance_punches')
+                ->where('attendance_record_id', $record->id)
+                ->whereNotNull('punch_out_at')
+                ->sum('worked_seconds');
+
             DB::table('attendance_records')
                 ->where('id', $record->id)
-                ->update(['check_out_at' => $cutoff]);
+                ->update([
+                    'check_out_at' => $cutoff,
+                    'worked_seconds' => $closedWorked,
+                ]);
         }
     }
 }

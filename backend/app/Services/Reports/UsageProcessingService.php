@@ -238,6 +238,21 @@ class UsageProcessingService
         $cacheTtl = (int) config('usage_processing.cache.ttl_seconds', 300);
         $cacheTtl = max(30, min($cacheTtl, 600));
 
+        // Never serve a cached figure for a range that is still accumulating.
+        //
+        // Idle for today changes every second a timer runs, so a 5-minute TTL
+        // meant the live worked-time read a stale idle value and then snapped
+        // when the entry expired — which is exactly what made the Shift
+        // Remaining countdown jump backwards on refresh. bustIdleCacheForUser()
+        // cannot rescue this: the key is an md5 of the whole user SET, so a
+        // single-user bust never matches the org-wide keys reports write under.
+        //
+        // Ranges wholly in the past are settled and still cached, which keeps
+        // the performance win this cache exists for.
+        if ($endDate->gte(now()->startOfDay())) {
+            return $this->computeIdleDurationsFastForUsers($ids, $startDate, $endDate);
+        }
+
         return Cache::remember($cacheKey, $cacheTtl, function () use ($ids, $startDate, $endDate) {
             return $this->computeIdleDurationsFastForUsers($ids, $startDate, $endDate);
         });
@@ -270,6 +285,99 @@ class UsageProcessingService
             );
             Cache::forget($cacheKey);
         }
+    }
+
+    /**
+     * Merged [startTs, endTs] windows of each user's time entries in range.
+     * Open entries are treated as running to the end of the range.
+     *
+     * @return array<int, array<int, array{0:int,1:int}>>
+     */
+    private function entryWindowsForUsers(Collection $ids, Carbon $startDate, Carbon $endDate): array
+    {
+        $rows = DB::table('time_entries')
+            ->select(['user_id', 'start_time', 'end_time'])
+            ->whereIn('user_id', $ids->all())
+            ->where('is_break', false)
+            ->where('start_time', '<=', $endDate)
+            ->where(function ($query) use ($startDate) {
+                $query->whereNull('end_time')->orWhere('end_time', '>=', $startDate);
+            })
+            ->orderBy('user_id')
+            ->orderBy('start_time')
+            ->get();
+
+        $windows = [];
+        foreach ($rows as $row) {
+            $userId = (int) ($row->user_id ?? 0);
+            if ($userId <= 0) {
+                continue;
+            }
+
+            $start = Carbon::parse($row->start_time)->getTimestamp();
+            $end = $row->end_time
+                ? Carbon::parse($row->end_time)->getTimestamp()
+                : $endDate->getTimestamp();
+
+            if ($end <= $start) {
+                continue;
+            }
+
+            $windows[$userId][] = [$start, $end];
+        }
+
+        foreach ($windows as $userId => $userWindows) {
+            usort($userWindows, fn ($a, $b) => $a[0] <=> $b[0]);
+
+            $merged = [];
+            foreach ($userWindows as [$start, $end]) {
+                if (empty($merged) || $start > $merged[count($merged) - 1][1]) {
+                    $merged[] = [$start, $end];
+                } else {
+                    $merged[count($merged) - 1][1] = max($merged[count($merged) - 1][1], $end);
+                }
+            }
+
+            $windows[$userId] = $merged;
+        }
+
+        return $windows;
+    }
+
+    /**
+     * Intersect merged idle intervals with merged entry windows. Both inputs are
+     * sorted and non-overlapping, so a single pass is enough.
+     *
+     * @param array<int, array{0:int,1:int}> $intervals
+     * @param array<int, array{0:int,1:int}> $windows
+     * @return array<int, array{0:int,1:int}>
+     */
+    private function clipIntervalsToWindows(array $intervals, array $windows): array
+    {
+        if ($windows === []) {
+            return [];
+        }
+
+        $clipped = [];
+        foreach ($intervals as [$start, $end]) {
+            foreach ($windows as [$windowStart, $windowEnd]) {
+                if ($windowStart >= $end) {
+                    break;
+                }
+                if ($windowEnd <= $start) {
+                    continue;
+                }
+
+                $overlapStart = max($start, $windowStart);
+                $overlapEnd = min($end, $windowEnd);
+
+                if ($overlapEnd > $overlapStart) {
+                    $clipped[] = [$overlapStart, $overlapEnd];
+                }
+            }
+        }
+
+        return $clipped;
     }
 
     private function computeIdleDurationsFastForUsers(Collection $ids, Carbon $startDate, Carbon $endDate): array
@@ -312,6 +420,16 @@ class UsageProcessingService
         $totalIdle = 0;
         $totalSegments = 0;
 
+        // Idle is subtracted from tracked time downstream (working = track - idle),
+        // and tracked time only ever counts what lies inside a time entry. Idle
+        // recorded OUTSIDE any entry window therefore has nothing to subtract
+        // from — and since every idle auto-stop now rewinds end_time to the last
+        // keypress, the whole idle tail falls outside the entry it belongs to.
+        // Counting it anyway subtracted that tail twice: once by the rewind and
+        // again here. Clip to the entry windows so each idle second is removed
+        // exactly once.
+        $entryWindowsByUser = $this->entryWindowsForUsers($ids, $startDate, $endDate);
+
         foreach ($intervalsByUser as $userId => $intervals) {
             // Sort by interval start time
             usort($intervals, fn ($a, $b) => $a[0] <=> $b[0]);
@@ -325,6 +443,8 @@ class UsageProcessingService
                     $merged[count($merged) - 1][1] = max($merged[count($merged) - 1][1], $end);
                 }
             }
+
+            $merged = $this->clipIntervalsToWindows($merged, $entryWindowsByUser[(int) $userId] ?? []);
 
             $userTotal = 0;
             foreach ($merged as [$start, $end]) {

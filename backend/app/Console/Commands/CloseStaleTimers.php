@@ -28,8 +28,13 @@ class CloseStaleTimers extends Command
         $this->line("Closing running timers started before {$cutoff->toIso8601String()} (max {$maxMinutes} minutes)");
         $this->line("Mode: " . ($dryRun ? 'dry-run' : 'apply'));
 
+        // is_break is excluded deliberately — see CloseIdleTimers. Force-closing
+        // the is_break entry orphans the paired break_times row, which this
+        // command cannot close, and that orphan permanently locks the user out
+        // of break tracking once the date rolls over.
         $staleEntries = TimeEntry::query()
             ->whereNull('end_time')
+            ->where('is_break', false)
             ->where('start_time', '<', $cutoff)
             ->orderBy('start_time')
             ->get();
@@ -58,6 +63,9 @@ class CloseStaleTimers extends Command
             $entry->update([
                 'end_time' => $now,
                 'duration' => $duration,
+                // Without this these rows are indistinguishable from a real
+                // manual stop, even though the user never stopped anything.
+                'stop_reason' => TimeEntry::STOP_STALE_CLOSE,
             ]);
 
             $this->closeOpenAttendancePunches((int) $entry->user_id, $now);
@@ -93,17 +101,26 @@ class CloseStaleTimers extends Command
             ->whereNull('punch_out_at')
             ->get();
 
+        // worked_seconds has to be written here, not just punch_out_at. Closing
+        // the punch without it left the session at 0 and never recomputed the
+        // record total, so a cron-closed day silently reported no work.
         foreach ($openPunches as $punch) {
             $punch->timestamps = false;
             $punch->update([
                 'punch_out_at' => $cutoff,
+                'worked_seconds' => (int) max(0, Carbon::parse($punch->punch_in_at)->diffInSeconds($cutoff)),
             ]);
         }
 
         if ($openPunches->isNotEmpty()) {
+            $closedWorked = (int) AttendancePunch::where('attendance_record_id', $todayRecord->id)
+                ->whereNotNull('punch_out_at')
+                ->sum('worked_seconds');
+
             $todayRecord->timestamps = false;
             $todayRecord->update([
                 'check_out_at' => $cutoff,
+                'worked_seconds' => $closedWorked,
             ]);
         }
     }

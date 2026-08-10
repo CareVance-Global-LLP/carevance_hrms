@@ -6,6 +6,7 @@ import {
   saveTimeEntryOffline,
   isDesktopApp,
 } from './offlineService';
+import { reportSilentError } from '@/lib/reportSilentError';
 
 const isNetworkError = (error: any): boolean => {
   if (!error) return false;
@@ -28,7 +29,7 @@ const getUserId = (): number => {
       const user = JSON.parse(userStr);
       return user.id || 0;
     }
-  } catch {}
+  } catch (error) { reportSilentError('offline-api', error); }
   return 0;
 };
 

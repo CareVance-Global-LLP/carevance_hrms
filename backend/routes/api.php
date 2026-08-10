@@ -24,10 +24,13 @@ Route::middleware('api.token')->group(function () {
     require base_path('routes/api/protected/organizations.php');
     require base_path('routes/api/protected/super-admin.php');
     require base_path('routes/api/protected/resignations.php');
+    require base_path('routes/api/protected/lifecycle.php');
     require base_path('routes/api/protected/geofence.php');
     require base_path('routes/api/protected/team.php');
     require base_path('routes/api/protected/payroll.php');
+    require base_path('routes/api/protected/performance.php');
     require base_path('routes/api/protected/payroll_filings.php');
     require base_path('routes/api/protected/compoff.php');
     require base_path('routes/api/protected/assets.php');
+    require base_path('routes/api/protected/search.php');
 });

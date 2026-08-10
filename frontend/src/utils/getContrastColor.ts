@@ -116,3 +116,27 @@ export function getContrastTone(backgroundColor?: string | null, fallback: Contr
 export function getContrastColor(backgroundColor?: string | null, fallback: ContrastTone = 'light') {
   return getContrastTone(backgroundColor, fallback) === 'dark' ? '#f8fafc' : '#020617';
 }
+
+const LIGHT_TEXT = '#f8fafc';
+const DARK_TEXT = '#020617';
+
+/**
+ * Text colour that maximises contrast against an arbitrary background.
+ *
+ * Distinct from `getContrastColor`, which classifies a surface as light or dark
+ * against a 0.42 threshold. That threshold is right for choosing a *tone*, but
+ * wrong for choosing readable text: between roughly 0.18 and 0.42 luminance it
+ * returns white where black actually reads better. Use this for user-chosen
+ * colours — label chips, category swatches — where neither is known in advance.
+ */
+export function getReadableTextColor(backgroundColor?: string | null, fallback = DARK_TEXT): string {
+  const luminance = getRelativeLuminance(backgroundColor);
+  if (luminance === null) {
+    return fallback;
+  }
+
+  const againstLight = 1.05 / (luminance + 0.05);
+  const againstDark = (luminance + 0.05) / 0.05;
+
+  return againstLight >= againstDark ? LIGHT_TEXT : DARK_TEXT;
+}

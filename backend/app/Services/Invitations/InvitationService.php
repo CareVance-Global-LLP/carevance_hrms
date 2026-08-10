@@ -10,6 +10,8 @@ use App\Models\Organization;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Authorization\OrganizationRoleService;
+use App\Services\Lifecycle\OnboardingService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -21,6 +23,8 @@ class InvitationService
     public function __construct(
         private readonly OrganizationRoleService $organizationRoleService,
         private readonly InvitationUrlService $invitationUrlService,
+        private readonly \App\Services\Monitoring\MonitoringSettingsResolver $monitoringSettingsResolver,
+        private readonly OnboardingService $onboardingService,
     ) {
     }
 
@@ -290,8 +294,50 @@ class InvitationService
                 'accepted_by_user_id' => $user->id,
             ])->save();
 
+            // Every route that produces an employee opens a journey. Before
+            // this, only UserController::store did — so anyone who arrived by
+            // invite, link or CSV import got an account and no onboarding at
+            // all. Idempotent: if the invitation already carries a journey
+            // (raised at invite time when a joining date was supplied), this
+            // binds the new account to it instead of opening a second one.
+            $joiningDate = $this->resolveJoiningDate($invitation);
+
+            $this->onboardingService->ensureForUser(
+                user: $user,
+                creator: $invitation->invited_by ? User::find($invitation->invited_by) : null,
+                attributes: [
+                    'invitation_id' => $invitation->id,
+                    'job_title' => $jobTitle !== '' ? $jobTitle : null,
+                    'group_id' => $allowedGroupIds[0] ?? null,
+                ],
+                joiningDate: $joiningDate,
+            );
+
             return $user;
         });
+    }
+
+    /**
+     * The joining date an invited employee's checklist anchors on.
+     *
+     * Invites do not always carry one — the email and link forms ask for a role,
+     * not a start date — so fall back to the day the invitation is accepted.
+     * That is the truthful anchor: whatever the plan was, this is the day the
+     * person actually entered the system.
+     */
+    private function resolveJoiningDate(Invitation $invitation): Carbon
+    {
+        $raw = $invitation->metadata['joining_date'] ?? null;
+
+        if (filled($raw)) {
+            try {
+                return Carbon::parse((string) $raw)->startOfDay();
+            } catch (\Throwable) {
+                // A malformed date in metadata must not block someone joining.
+            }
+        }
+
+        return Carbon::now()->startOfDay();
     }
 
     private function createSingle(User $actor, Organization $organization, string $email, array $payload): array
@@ -396,10 +442,15 @@ class InvitationService
         }
 
         $normalized = [];
-        $interval = (int) ($settings['monitoring_interval_minutes'] ?? 10);
-        $normalized['monitoring_interval_minutes'] = in_array($interval, [1, 3, 5, 10, 15, 30], true)
-            ? $interval
-            : 10;
+
+        // An OVERRIDE, not a stamped value: when the inviter did not pick an
+        // interval the key is omitted and the invited user inherits the
+        // organization default. Hardcoding 10 here made every invited user a
+        // hard override and put the org default permanently out of reach.
+        $interval = $this->monitoringSettingsResolver->sanitize($settings['monitoring_interval_minutes'] ?? null);
+        if ($interval !== null) {
+            $normalized['monitoring_interval_minutes'] = $interval;
+        }
 
         foreach ([
             'can_edit_time',

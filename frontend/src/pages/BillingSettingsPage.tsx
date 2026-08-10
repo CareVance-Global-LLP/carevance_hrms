@@ -359,7 +359,7 @@ export default function BillingSettingsPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-2xl bg-slate-950 px-5 py-4 text-white">
+              <div className="flex items-center justify-between rounded-2xl bg-surface-inverse px-5 py-4 text-on-inverse">
                 <span className="text-sm font-semibold">Total amount due</span>
                 <span className="text-xl font-bold tabular-nums">₹{addSeatsCost.toLocaleString('en-IN')}</span>
               </div>

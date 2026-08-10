@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DepartmentPayrollTemplate extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'department_payroll_templates';
 
     protected $fillable = [

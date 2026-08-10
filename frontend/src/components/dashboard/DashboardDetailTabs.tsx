@@ -39,7 +39,7 @@ export default function DashboardDetailTabs({
                 onClick={() => setActiveTabId(tab.id)}
                 className={`rounded-full px-3.5 py-2 text-sm font-medium transition ${
                   activeTab?.id === tab.id
-                    ? 'bg-slate-900 text-white'
+                    ? 'bg-surface-inverse text-on-inverse'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >

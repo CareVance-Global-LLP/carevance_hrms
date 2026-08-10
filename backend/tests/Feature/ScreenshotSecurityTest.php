@@ -134,7 +134,10 @@ class ScreenshotSecurityTest extends TestCase
 
             Carbon::setTestNow(now()->addMinutes(2));
 
-            $this->get($signedUrl)
+            // Authenticated, but the link has expired: the caller is allowed to
+            // see this screenshot, so they get the helpful expiry message rather
+            // than a bare 401.
+            $this->get($signedUrl, $this->apiHeadersFor($user))
                 ->assertForbidden()
                 ->assertJsonPath('message', 'Screenshot link expired. Refresh screenshots and try again.')
                 ->assertJsonPath('error_code', 'FORBIDDEN');
@@ -184,7 +187,189 @@ class ScreenshotSecurityTest extends TestCase
         $this->assertStringContainsString('/api/screenshots/'.$screenshot->id.'/file', $signedUrl);
         $this->assertStringContainsString('signature=', $signedUrl);
 
-        $this->get($signedUrl)->assertOk();
+        $this->get($signedUrl, $this->apiHeadersFor($user))->assertOk();
+    }
+
+    public function test_signed_screenshot_file_url_is_useless_without_authentication(): void
+    {
+        Storage::fake('screenshots');
+
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $employee = User::create([
+            'name' => 'Employee User',
+            'email' => 'employee-unauth-file@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $response = $this->post('/api/screenshots', [
+            'time_entry_id' => $timeEntry->id,
+            'image' => UploadedFile::fake()->create('capture.png', 64, 'image/png'),
+        ], $this->apiHeadersFor($employee));
+
+        $signedUrl = (string) $response->assertCreated()->json('path');
+
+        // The signature proves the link was not forged. It does not prove the
+        // caller may look at the image, so an anonymous request must not get bytes.
+        $this->get($signedUrl)->assertUnauthorized();
+    }
+
+    public function test_signed_screenshot_file_url_cannot_be_replayed_by_a_different_viewer(): void
+    {
+        Storage::fake('screenshots');
+
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $admin = User::create([
+            'name' => 'Admin User',
+            'email' => 'admin-replay@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $employee = User::create([
+            'name' => 'Employee User',
+            'email' => 'employee-replay@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $employee->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        $this->post('/api/screenshots', [
+            'time_entry_id' => $timeEntry->id,
+            'image' => UploadedFile::fake()->create('capture.png', 64, 'image/png'),
+        ], $this->apiHeadersFor($employee))->assertCreated();
+
+        $screenshot = Screenshot::query()->latest('id')->firstOrFail();
+
+        // Minted for the admin, in the admin's session.
+        $adminUrl = (string) $this->getJson("/api/screenshots/{$screenshot->id}", $this->apiHeadersFor($admin))
+            ->assertOk()
+            ->json('path');
+
+        $this->assertStringContainsString('viewer='.$admin->id, $adminUrl);
+        $this->get($adminUrl, $this->apiHeadersFor($admin))->assertOk();
+
+        // The employee could see their own screenshot via a link minted for
+        // them, but a link minted for someone else must not work even so.
+        $this->get($adminUrl, $this->apiHeadersFor($employee))->assertForbidden();
+    }
+
+    public function test_manager_cannot_upload_a_screenshot_onto_an_out_of_group_employee(): void
+    {
+        Storage::fake('screenshots');
+
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager User',
+            'email' => 'manager-forge@example.com',
+            'password' => 'password123',
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $managerGroup = Group::create([
+            'name' => 'Manager Group',
+            'slug' => 'manager-group-forge',
+            'organization_id' => $organization->id,
+        ]);
+        $manager->groups()->attach($managerGroup->id);
+
+        $otherGroup = Group::create([
+            'name' => 'Other Group',
+            'slug' => 'other-group-forge',
+            'organization_id' => $organization->id,
+        ]);
+
+        $otherEmployee = User::create([
+            'name' => 'Other Employee',
+            'email' => 'other-employee-forge@example.com',
+            'password' => 'password123',
+            'role' => 'employee',
+            'organization_id' => $organization->id,
+        ]);
+        $otherEmployee->groups()->attach($otherGroup->id);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $otherEmployee->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        // Same org, but outside the manager's groups. Upload authority now
+        // matches read authority, so this must be refused.
+        $this->post('/api/screenshots', [
+            'time_entry_id' => $timeEntry->id,
+            'image' => UploadedFile::fake()->create('forged.png', 64, 'image/png'),
+        ], $this->apiHeadersFor($manager))->assertForbidden();
+
+        $this->assertDatabaseMissing('screenshots', ['time_entry_id' => $timeEntry->id]);
+    }
+
+    public function test_manager_can_still_upload_and_read_their_own_screenshots(): void
+    {
+        Storage::fake('screenshots');
+
+        $organization = Organization::create([
+            'name' => 'CareVance',
+            'slug' => 'carevance',
+        ]);
+
+        $manager = User::create([
+            'name' => 'Manager User',
+            'email' => 'manager-self-capture@example.com',
+            'password' => 'password123',
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
+
+        $timeEntry = TimeEntry::create([
+            'user_id' => $manager->id,
+            'start_time' => now()->subHour(),
+            'end_time' => now(),
+            'duration' => 3600,
+            'billable' => true,
+        ]);
+
+        // canMonitorUser() rejects a subject at or above the viewer's own level,
+        // which would otherwise lock a manager out of their own captures.
+        $path = (string) $this->post('/api/screenshots', [
+            'time_entry_id' => $timeEntry->id,
+            'image' => UploadedFile::fake()->create('own.png', 64, 'image/png'),
+        ], $this->apiHeadersFor($manager))->assertCreated()->json('path');
+
+        $this->get($path, $this->apiHeadersFor($manager))->assertOk();
     }
 
     public function test_desktop_style_png_upload_with_generic_client_mime_is_still_accepted(): void

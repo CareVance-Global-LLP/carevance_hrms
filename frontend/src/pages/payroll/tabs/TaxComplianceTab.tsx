@@ -124,7 +124,7 @@ function TaxDeclarationsInline({ onOpenFull }: { onOpenFull: () => void }) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search employee…"
-              className="h-8 w-48 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-[#5D969D] focus:outline-none focus:ring-1 focus:ring-[#5D969D]"
+              className="h-8 w-48 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-[#5D969D]"
             />
           </div>
           <button
@@ -307,7 +307,7 @@ export default function TaxComplianceTab() {
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                 isActive
-                  ? 'border-[#5D969D] bg-[rgba(93,150,157,0.1)] text-[#5D969D]'
+                  ? 'border-blue-600 bg-blue-500/10 text-blue-600'
                   : isLocked
                     ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
                     : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',

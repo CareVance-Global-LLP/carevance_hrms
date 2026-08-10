@@ -5,7 +5,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
 import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
@@ -69,13 +68,13 @@ export default function PerquisitesPage() {
   const perquisites = Array.isArray(perquisitesData) ? perquisitesData : (perquisitesData as any)?.records ?? [];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader
-        title="Perquisites — Q3 FY 25-26"
-        description="Track taxable non-cash benefits (rent-free house, company car, club membership) — added to TDS."
-      />
-
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Perquisites</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Track taxable non-cash benefits (rent-free house, company car, club membership) — added to TDS.
+        </p>
+      </div>
         <HowItWorksCard
           whatIsThis="Non-cash benefits provided to employees that have a taxable value per Income Tax Rules. Perquisite value is added to employee\'s taxable income, increasing TDS for the year."
           whenToUse={[
@@ -123,7 +122,7 @@ export default function PerquisitesPage() {
               const Icon = type.icon;
               return (
                 <div key={type.value} className="p-3 bg-slate-50 rounded-lg text-center">
-                  <Icon className="h-5 w-5 text-[#5D969D] mx-auto mb-1" />
+                  <Icon className="h-5 w-5 text-blue-600 mx-auto mb-1" />
                   <p className="text-xs text-slate-700">{type.label}</p>
                 </div>
               );
@@ -225,7 +224,7 @@ export default function PerquisitesPage() {
                             <div className="text-xs text-slate-500">{emp?.email || p.user?.email || ''}</div>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                            <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-blue-500/10 text-blue-600">
                               {PERQUISITE_TYPES.find(t => t.value === p.perquisite_type)?.label || p.perquisite_type}
                             </span>
                           </td>
@@ -252,6 +251,5 @@ export default function PerquisitesPage() {
           <p className="mt-1">Perquisites are benefits provided by the employer in addition to salary. They are taxable under the head "Income from Salaries" and are reported in Form 12BA. The taxable value is calculated based on Income Tax Rules.</p>
         </div>
       </div>
-    </div>
   );
 }

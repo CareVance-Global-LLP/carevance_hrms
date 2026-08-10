@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class VariablePayRule extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'variable_pay_rules';
 
     protected $fillable = [

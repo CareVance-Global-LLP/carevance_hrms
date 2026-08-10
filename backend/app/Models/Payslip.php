@@ -117,6 +117,25 @@ class Payslip extends Model
     }
 
     /**
+     * The pay period as a person would say it — "July 2026".
+     *
+     * PayslipDeliveryService already read `payroll_period_label` for the email
+     * subject and the in-app message, but nothing defined it, so both rendered
+     * with an empty period: "Payslip for ". Derived from period_month rather
+     * than stored, so it cannot drift from the period it names.
+     */
+    public function getPayrollPeriodLabelAttribute(): string
+    {
+        [$year, $month] = self::splitPeriod((string) $this->period_month);
+
+        if ($year <= 0 || $month < 1 || $month > 12) {
+            return (string) $this->period_month;
+        }
+
+        return \Carbon\Carbon::create($year, $month, 1)->format('F Y');
+    }
+
+    /**
      * Human-facing reference. Derived, not stored — the previous
      * generateNumber() did an unlocked `max + 1` scan that was both racy
      * (duplicate numbers under concurrency) and unscoped by organization

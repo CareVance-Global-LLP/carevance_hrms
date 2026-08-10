@@ -25,6 +25,7 @@ class SettingsController extends Controller
     public function __construct(
         private readonly AuditLogService $auditLogService,
         private readonly WorkspaceBillingService $workspaceBillingService,
+        private readonly \App\Services\Monitoring\MonitoringSettingsResolver $monitoringSettingsResolver,
     )
     {
     }
@@ -244,6 +245,7 @@ class SettingsController extends Controller
         $existing = is_array($user->settings) ? $user->settings : [];
         $user->settings = array_merge($existing, [
             'timezone' => $validated['timezone'] ?? ($existing['timezone'] ?? config('app.timezone')),
+            'theme' => $validated['theme'] ?? ($existing['theme'] ?? 'system'),
             'notifications' => array_merge(
                 [
                     'email' => true,
@@ -266,6 +268,7 @@ class SettingsController extends Controller
             target: $user,
             metadata: [
                 'timezone' => $user->settings['timezone'] ?? config('app.timezone'),
+                'theme' => $user->settings['theme'] ?? 'system',
                 'notification_keys' => array_keys($user->settings['notifications'] ?? []),
             ],
             request: $request
@@ -351,6 +354,24 @@ class SettingsController extends Controller
 
         if (array_key_exists('timezone', $validated)) {
             $existingSettings['timezone'] = $validated['timezone'];
+        }
+
+        // Admin-only, mirroring the leave-policy guard above. The capture
+        // interval is a surveillance-intensity control: dropping it org-wide
+        // from 30 to 1 multiplies screenshot capture thirtyfold for every
+        // employee at once, which is a very different blast radius from
+        // late_after_time.
+        if (array_key_exists('monitoring_interval_minutes', $validated)) {
+            if ($user->getHierarchyLevel() > 10) {
+                return response()->json(['message' => 'Only admins can update monitoring settings.'], 403);
+            }
+
+            $existingSettings = $this->monitoringSettingsResolver->withOrgDefault(
+                $existingSettings,
+                $validated['monitoring_interval_minutes'] === null || $validated['monitoring_interval_minutes'] === ''
+                    ? null
+                    : (int) $validated['monitoring_interval_minutes']
+            );
         }
 
         $updatedSettings = array_merge($existingSettings, [

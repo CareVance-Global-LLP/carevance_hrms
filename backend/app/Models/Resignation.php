@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Resignation extends Model
 {
+    use BelongsToOrganization;
     use HasFactory;
 
     protected $fillable = [
@@ -23,6 +25,8 @@ class Resignation extends Model
         'cancelled_at',
         'escalated_to_user_id',
         'escalation_history',
+        'notice_period_days',
+        'shortfall_days',
     ];
 
     protected $casts = [
@@ -32,6 +36,13 @@ class Resignation extends Model
         'cancelled_at' => 'datetime',
         'escalation_history' => 'array',
     ];
+
+    protected $appends = ['submitted_at'];
+
+    public function getSubmittedAtAttribute(): ?string
+    {
+        return $this->created_at?->toIso8601String();
+    }
 
     /**
      * Get the user who submitted the resignation.

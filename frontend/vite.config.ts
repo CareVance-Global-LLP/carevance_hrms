@@ -11,6 +11,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Listen on every interface, not just loopback. Without this Vite binds to
+    // ::1 only, so a phone or a second laptop on the same network cannot open
+    // the app at all — which makes testing the mobile client impossible even
+    // though the mobile client itself works.
+    host: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
@@ -57,5 +62,10 @@ export default defineConfig({
     environment: 'happy-dom',
     setupFiles: './src/test/setup.ts',
     globals: false,
+    // Without an explicit include, vitest's default glob also matched
+    // tests/smoke/*.spec.ts — those are Playwright specs that import
+    // @playwright/test, so vitest collected them and failed four files on
+    // every run for reasons that had nothing to do with the code.
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
 })

@@ -5,7 +5,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
@@ -15,8 +14,17 @@ import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
+import { formatDate } from '@/lib/dateTime';
 
 const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected', 'paid'];
+
+/*
+ * Settlement dates arrive as full ISO timestamps at IST midnight
+ * (…T18:30:00.000000Z). Printed raw they read as machine output on a screen
+ * showing gratuity and net pay, and rendered in UTC they land a day early.
+ * formatDate resolves them in the display timezone.
+ */
+const settlementDate = (value?: string | null) => (value ? formatDate(value) : '-');
 
 export default function FnFSettlementsPage() {
   const queryClient = useQueryClient();
@@ -103,13 +111,14 @@ export default function FnFSettlementsPage() {
   if (selectedSettlement) {
     const s = selectedSettlement;
     return (
-      <div className="min-h-screen bg-slate-50">
-        <PageHeader
-          title={`${s.user?.name || 'Unknown'} — Last Working Day: ${s.last_working_date || 'N/A'}`}
-          description="Full & Final Settlement"
-        />
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
-          <div className="flex items-center gap-3">
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">
+            {s.user?.name || 'Unknown'} — Last Working Day: {s.last_working_date || 'N/A'}
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">Full & Final Settlement</p>
+        </div>
+        <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" iconLeft={<ArrowLeft className="h-4 w-4" />} onClick={() => setSelectedSettlement(null)}>
               Back to List
             </Button>
@@ -120,7 +129,7 @@ export default function FnFSettlementsPage() {
             {/* Settlement Components */}
             <SurfaceCard className="p-5">
               <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <IndianRupee className="h-4 w-4 text-[#5D969D]" />
+                <IndianRupee className="h-4 w-4 text-blue-600" />
                 Settlement Components
               </h3>
               <div className="space-y-3">
@@ -163,7 +172,7 @@ export default function FnFSettlementsPage() {
             {/* Clearance Checklist */}
             <SurfaceCard className="p-5">
               <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <FileText className="h-4 w-4 text-[#5D969D]" />
+                <FileText className="h-4 w-4 text-blue-600" />
                 Clearance Checklist
               </h3>
               <div className="space-y-3">
@@ -230,19 +239,18 @@ export default function FnFSettlementsPage() {
               </div>
             </SurfaceCard>
           </div>
-        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader
-        title="Full & Final Settlements"
-        description="Used when an employee exits — calculates final dues (unpaid salary, leave encashment, gratuity) minus outstanding loans."
-      />
-
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Full & Final Settlements</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Used when an employee exits — calculates final dues (unpaid salary, leave encashment, gratuity) minus outstanding loans.
+        </p>
+      </div>
         <HowItWorksCard
           whatIsThis="A one-time final payment to an exiting employee. Covers salary for days worked in the last month, encashment of unused earned leaves, and gratuity (if eligible) — minus any outstanding loans or advances."
           whenToUse={[
@@ -345,12 +353,12 @@ export default function FnFSettlementsPage() {
                         <div className="text-xs text-slate-500">{settlement.user?.email || ''}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                        <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] bg-blue-500/10 text-blue-600">
                           {titleCase(settlement.exit_type)}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-900">{settlement.resignation_date || '-'}</td>
-                      <td className="px-4 py-3 text-slate-900">{settlement.last_working_date || '-'}</td>
+                      <td className="px-4 py-3 text-slate-900">{settlementDate(settlement.resignation_date)}</td>
+                      <td className="px-4 py-3 text-slate-900">{settlementDate(settlement.last_working_date)}</td>
                       <td className="px-4 py-3 text-slate-900">{Number(settlement.years_of_service || 0).toFixed(1)}</td>
                       <td className="px-4 py-3 text-slate-900">{formatPayrollAmount(settlement.gratuity_amount, { compact: true })}</td>
                       <td className="px-4 py-3">
@@ -403,7 +411,6 @@ export default function FnFSettlementsPage() {
             </div>
           )}
         </SurfaceCard>
-      </div>
 
       <RejectReasonModal
         isOpen={rejecting !== null}
@@ -442,7 +449,7 @@ export default function FnFSettlementsPage() {
 
       {createMutation.isPending && (
         <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-md">
-          <Loader2 className="h-4 w-4 animate-spin text-[#5D969D]" />
+          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
           Saving…
         </div>
       )}

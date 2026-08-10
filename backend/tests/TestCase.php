@@ -38,4 +38,25 @@ abstract class TestCase extends BaseTestCase
             'Accept' => 'application/json',
         ];
     }
+
+    /**
+     * Make actingAs() work against the API as well as the session guard.
+     *
+     * Every /api route is behind the custom `api.token` middleware, which reads
+     * a Bearer token and ignores the session guard entirely. So a test that
+     * called actingAs($user) and then hit an API route got a 401 — the user was
+     * "logged in" in a way the API could not see. Issuing a token here and
+     * pinning it as a default header makes the two agree, which is what anyone
+     * writing actingAs() in an API test already assumes.
+     */
+    public function actingAs(\Illuminate\Contracts\Auth\Authenticatable $user, $guard = null)
+    {
+        parent::actingAs($user, $guard);
+
+        if ($user instanceof User) {
+            $this->withHeaders($this->apiHeadersFor($user));
+        }
+
+        return $this;
+    }
 }

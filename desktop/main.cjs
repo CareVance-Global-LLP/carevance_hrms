@@ -85,6 +85,54 @@ const isAllowedAppUrl = (value) => {
   return ['localhost', '127.0.0.1'].includes(hostName);
 };
 
+/**
+ * True only for a genuine Google sign-in endpoint.
+ *
+ * Hostname is compared exactly, or as a dot-suffix, so `evilaccounts.google.com`
+ * and `accounts.google.com.evil.test` both fail where a substring test passed.
+ */
+const isGoogleSignInUrl = (value) => {
+  let parsed;
+  try {
+    parsed = new URL(String(value || '').trim());
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'https:') {
+    return false;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host === 'accounts.google.com') {
+    return true;
+  }
+
+  // The OAuth consent screens live on google.com itself under fixed paths.
+  const isGoogleHost = host === 'google.com' || host.endsWith('.google.com');
+  return isGoogleHost
+    && (parsed.pathname.startsWith('/signin') || parsed.pathname.startsWith('/o/oauth2'));
+};
+
+/**
+ * True when a URL belongs to the app itself — the origin the renderer is
+ * allowed to stay on. Local file navigation (the offline fallback page) counts.
+ */
+const isSameOriginAsApp = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+
+  if (raw.startsWith('file://')) {
+    return true;
+  }
+
+  try {
+    return new URL(raw).origin === new URL(APP_URL).origin;
+  } catch {
+    return false;
+  }
+};
+
 const isAllowedExternalUrl = (value, options = {}) => {
   const rawValue = String(value || '').trim();
   if (!rawValue) {
@@ -1000,6 +1048,14 @@ const createWindow = async () => {
     }
   }, 5000);
 
+  // The timer outlived the window it serves. Every re-created window started
+  // another one, and each survivor kept calling reloadRemoteUrl() against a
+  // destroyed webContents — so the leak was not only a wasted tick but a
+  // growing pile of throwing callbacks.
+  mainWindow.on('closed', () => {
+    clearInterval(networkCheckTimer);
+  });
+
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[desktop] renderer process exited', {
       appUrl: APP_URL,
@@ -1064,10 +1120,43 @@ const createWindow = async () => {
     }
   });
 
+  /*
+   * The renderer loads a remote origin while holding a preload API that can
+   * read the auth token and capture the screen. Nothing constrained where it
+   * could navigate: a redirect, a compromised CDN or an injected link could
+   * move the window to an attacker's origin and that origin would inherit the
+   * whole preload surface. Pin navigation to the app origin and to Google
+   * sign-in; anything else opens in the user's real browser instead.
+   */
+  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    if (isSameOriginAsApp(targetUrl) || isGoogleSignInUrl(targetUrl)) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (isAllowedExternalUrl(targetUrl, { allowLocalHttp: true })) {
+      void openExternalUrl(targetUrl, { allowLocalHttp: true }).catch(() => {});
+    }
+  });
+
+  // A remote page could otherwise prompt for camera, microphone, geolocation or
+  // notifications through the desktop shell, where the prompt carries the app's
+  // name and looks endorsed by it. Screen capture is driven by our own IPC, not
+  // by the web permission API, so denying everything here costs nothing.
+  mainWindow.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(false);
+  });
+
   // Allow GIS popups (Google Identity Services) for sign-in
   // Popup inherits parent webPreferences (no sandbox) so window.opener.postMessage works
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.includes('accounts.google.com') || url.includes('google.com/signin') || url.includes('google.com/o/oauth2')) {
+    // Matched with url.includes() until now, which is a substring test on the
+    // whole URL rather than a check of the host. Any address merely CONTAINING
+    // the string passed — https://evil.example/?next=accounts.google.com — and
+    // the window it opened inherits this window's webPreferences, preload and
+    // all. Compare the parsed hostname instead.
+    if (isGoogleSignInUrl(url)) {
       return { action: 'allow' };
     }
 

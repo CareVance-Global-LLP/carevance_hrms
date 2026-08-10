@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi } from '@/services/api';
-import { breakTrackingApi } from '@/services/breakTrackingApi';
+import { breakTrackingApi, type BreakType } from '@/services/breakTrackingApi';
 import { startTimerOfflineAware, stopTimerOfflineAware } from '@/services/offlineApiWrapper';
 import {
   ACTIVE_TIMER_KEY,
@@ -240,6 +240,17 @@ export default function DesktopTimerDashboard() {
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
   const [shiftTargetSeconds, setShiftTargetSeconds] = useState(8 * 3600);
   const [workedBaseSeconds, setWorkedBaseSeconds] = useState(0);
+  const [showBreakTypePicker, setShowBreakTypePicker] = useState(false);
+  const [breakTypes, setBreakTypes] = useState<BreakType[]>([]);
+  // The server's authoritative worked-time block. When present it wins outright
+  // — the client must not recombine it with any other source.
+  const [serverWorkedTime, setServerWorkedTime] = useState<{
+    workedSeconds: number;
+    billedSeconds: number;
+    remainingSeconds: number;
+    overtimeSeconds: number;
+    shiftTargetSeconds: number;
+  } | null>(null);
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(0);
   const [isSubmittingOvertime, setIsSubmittingOvertime] = useState(false);
   const [isUpdatingTimerContext, setIsUpdatingTimerContext] = useState(false);
@@ -766,10 +777,43 @@ export default function DesktopTimerDashboard() {
         setTotalBreakSeconds(Number(breakPayload.total_break_seconds ?? 0));
       }
 
+      // Break types carry today's per-type usage, so they refresh with the rest
+      // of the dashboard rather than being fetched once at mount.
+      void breakTrackingApi
+        .getTypes()
+        .then(setBreakTypes)
+        .catch(() => {
+          // Non-fatal: the button falls back to starting an untyped break.
+        });
+
+      // The server is the single authority on worked time. This used to be
+      // max(attendanceWorkedSeconds, todayElapsedSeconds, persistedWorkedSeconds)
+      // — the largest of three sources that disagree, none of which was the
+      // idle-netted figure. Taking the biggest of several disagreeing numbers
+      // produces a value nobody computed and that flips depending on which
+      // source happens to lead, which is why Shift Remaining jumped on refresh.
+      const workedTime = (data as any)?.worked_time ?? null;
       const attendanceWorkedSeconds = Number(attendanceRecord?.worked_seconds || 0);
       const persistedWorkedSeconds = getWorkedBaselineSnapshot(userId, attendanceDate);
-      const resolvedWorkedSeconds = Math.max(attendanceWorkedSeconds, todayElapsedSeconds, persistedWorkedSeconds);
-      setTodayTotal(Math.max(todayElapsedSeconds, persistedWorkedSeconds, attendanceWorkedSeconds));
+
+      // billed_seconds is the server's high-water figure that the countdown is
+      // derived from, so it can never regress. The legacy max() is retained only
+      // as a fallback for a server that predates the field.
+      const resolvedWorkedSeconds = workedTime
+        ? Number(workedTime.billed_seconds ?? workedTime.worked_seconds ?? 0)
+        : Math.max(attendanceWorkedSeconds, todayElapsedSeconds, persistedWorkedSeconds);
+
+      if (workedTime) {
+        setServerWorkedTime({
+          workedSeconds: Number(workedTime.worked_seconds ?? 0),
+          billedSeconds: Number(workedTime.billed_seconds ?? workedTime.worked_seconds ?? 0),
+          remainingSeconds: Number(workedTime.remaining_seconds ?? 0),
+          overtimeSeconds: Number(workedTime.overtime_seconds ?? 0),
+          shiftTargetSeconds: Number(workedTime.shift_target_seconds ?? 8 * 3600),
+        });
+      }
+
+      setTodayTotal(resolvedWorkedSeconds);
       setWorkedBaseSeconds(resolvedWorkedSeconds);
       if (dashboardSucceeded) {
         setTimerBaseSeconds(Number(activeFromApi?.duration || 0));
@@ -1251,7 +1295,7 @@ export default function DesktopTimerDashboard() {
     }
   };
 
-  const handleStartBreak = async (reason?: string) => {
+  const handleStartBreak = async (breakTypeId?: number) => {
     if (isBreakStarting) {
       return;
     }
@@ -1266,10 +1310,15 @@ export default function DesktopTimerDashboard() {
       if (activeTimer) {
         await handleStopTimer();
       }
-      const result = await breakTrackingApi.startBreak(reason || undefined);
+      const result = await breakTrackingApi.startBreak(breakTypeId ? { breakTypeId } : undefined);
       setActiveBreak(result.break ?? null);
       setBreakElapsed(0);
-      setNotice('Break started. Your work timer is paused.');
+      setShowBreakTypePicker(false);
+      setNotice(
+        result.break?.break_type
+          ? `${result.break.break_type.name} started${result.break.break_type.is_paid ? ' (paid)' : ''}. Your work timer is paused.`
+          : 'Break started. Your work timer is paused.'
+      );
       // Re-sync so the is_break TimeEntry row appears in "Today's Time Entries".
       void fetchData();
     } catch (error: any) {
@@ -1550,8 +1599,25 @@ export default function DesktopTimerDashboard() {
   const todayDisplaySeconds = effectiveWorkedSeconds;
   latestWorkedSecondsRef.current = todayDisplaySeconds;
   const timerDisplaySeconds = activeTimer ? liveDuration : 0;
-  const remainingShiftSeconds = Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
-  const overtimeSeconds = Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
+
+  // Shift Remaining and Overtime come straight from the server, which derives
+  // both from one high-water worked figure. They are NOT recomputed from
+  // effectiveWorkedSeconds: that value is a max() over client-extrapolated
+  // wall-clock, which climbs through idle periods and then snaps back on the
+  // next fetch — the countdown was observed going 07:53 -> 07:54 on refresh.
+  //
+  // Interpolated locally between polls so the countdown still ticks, but never
+  // upward: Math.min against the last server value keeps it monotonic.
+  const remainingShiftSeconds = serverWorkedTime
+    ? Math.max(0, Math.min(
+        serverWorkedTime.remainingSeconds,
+        serverWorkedTime.remainingSeconds - Math.max(0, liveDuration - timerBaseSeconds),
+      ))
+    : Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
+
+  const overtimeSeconds = serverWorkedTime
+    ? serverWorkedTime.overtimeSeconds
+    : Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
 
   useEffect(() => {
     if (!activeBreak?.start_at) {
@@ -1691,16 +1757,62 @@ export default function DesktopTimerDashboard() {
                     {isBreakEnding ? 'Ending…' : 'End Break'}
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    aria-label="Start break"
-                    onClick={() => void handleStartBreak()}
-                    disabled={isBreakStarting || isUpdatingTimerContext}
-                    className="inline-flex h-11 min-w-36 items-center justify-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-5 text-base font-semibold text-amber-700 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Coffee className="h-5 w-5" />
-                    {isBreakStarting ? 'Starting…' : 'Start Break'}
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      aria-label="Start break"
+                      aria-expanded={showBreakTypePicker}
+                      onClick={() => {
+                        // With no types configured, keep the old one-click
+                        // behaviour rather than opening an empty menu.
+                        if (breakTypes.length === 0) {
+                          void handleStartBreak();
+                          return;
+                        }
+                        setShowBreakTypePicker((open) => !open);
+                      }}
+                      disabled={isBreakStarting || isUpdatingTimerContext}
+                      className="inline-flex h-11 min-w-36 items-center justify-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-5 text-base font-semibold text-amber-700 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Coffee className="h-5 w-5" />
+                      {isBreakStarting ? 'Starting…' : 'Start Break'}
+                    </button>
+
+                    {showBreakTypePicker && breakTypes.length > 0 && (
+                      <div className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg">
+                        {breakTypes.map((type) => {
+                          const allowanceSeconds = type.max_minutes_per_day ? type.max_minutes_per_day * 60 : null;
+                          const overAllowance = allowanceSeconds !== null && type.used_seconds_today > allowanceSeconds;
+
+                          return (
+                            <button
+                              key={type.id}
+                              type="button"
+                              onClick={() => void handleStartBreak(type.id)}
+                              disabled={isBreakStarting}
+                              className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left transition hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium text-slate-900">{type.name}</span>
+                                <span className={`block text-[11px] ${overAllowance ? 'text-amber-700' : 'text-slate-500'}`}>
+                                  {allowanceSeconds !== null
+                                    ? `${Math.round(type.used_seconds_today / 60)}/${type.max_minutes_per_day}m used${overAllowance ? ' · over' : ''}`
+                                    : 'No daily limit'}
+                                </span>
+                              </span>
+                              <span
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                  type.is_paid ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {type.is_paid ? 'Paid' : 'Unpaid'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

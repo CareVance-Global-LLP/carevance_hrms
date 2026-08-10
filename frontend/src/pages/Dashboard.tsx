@@ -7,6 +7,7 @@ import { isLikelyMobile } from '@/lib/mobile';
 import { isEmployeeUser } from '@/lib/permissions';
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
+import MyOnboardingCard from '@/components/onboarding/MyOnboardingCard';
 import { formatDate as formatDateForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
 import { formatDuration, formatTimerClock } from '@/lib/formatters';
 import {
@@ -314,7 +315,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 text-slate-900 animate-fade-in">
+    <div className="w-full space-y-5 bg-slate-50 pb-8 text-slate-900 animate-fade-in">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
@@ -333,6 +334,14 @@ export default function Dashboard() {
           </Link>
         </div>
       </header>
+
+      {/*
+        Above the time-tracking tiles on purpose. For someone in their first
+        fortnight, "upload your PAN before payroll runs" matters more than
+        today's idle minutes — and the card removes itself once they have no
+        open journey, so it costs established staff nothing.
+      */}
+      <MyOnboardingCard />
 
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <KpiCard label="Track Time" value={formatDuration(effectiveTrackSeconds)} hint="Tracked time today" icon={Clock} tint="bg-blue-50 text-blue-600" />

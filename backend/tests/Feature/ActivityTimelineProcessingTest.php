@@ -294,4 +294,54 @@ class ActivityTimelineProcessingTest extends TestCase
                 'duration' => 30,
             ]);
     }
+
+    public function test_processed_timeline_allows_large_pages_while_raw_feed_stays_capped(): void
+    {
+        $organization = Organization::create(['name' => 'CareVance Labs', 'slug' => 'carevance-labs']);
+        $user = User::create([
+            'name' => 'Admin User',
+            'email' => 'admin@example.com',
+            'password' => 'password123',
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]);
+
+        $entry = TimeEntry::create([
+            'user_id' => $user->id,
+            'start_time' => '2026-04-21 09:00:00',
+            'end_time' => '2026-04-21 12:00:00',
+            'duration' => 10800,
+            'billable' => true,
+        ]);
+
+        foreach (range(1, 15) as $index) {
+            Activity::create([
+                'user_id' => $user->id,
+                'time_entry_id' => $entry->id,
+                'type' => 'app',
+                'name' => "Distinct Tool {$index}",
+                'app_name' => "Distinct Tool {$index}",
+                'window_title' => "Distinct Tool {$index}",
+                'duration' => 60,
+                'recorded_at' => Carbon::parse('2026-04-21 09:00:00')->addMinutes($index * 5),
+            ]);
+        }
+
+        $processed = $this->getJson('/api/activities?processed=1&per_page=200', $this->apiHeadersFor($user));
+
+        $processed->assertOk()
+            ->assertJsonPath('per_page', 200)
+            ->assertJsonPath('has_more', false);
+
+        // The processor may interleave idle-gap rows between the 15 tools; the
+        // point here is that one request now returns the whole day (> the old
+        // cap of 10) on a single page.
+        $total = (int) $processed->json('total');
+        $this->assertGreaterThan(10, $total);
+        $this->assertCount($total, $processed->json('data'));
+
+        $raw = $this->getJson('/api/activities?per_page=200', $this->apiHeadersFor($user));
+
+        $raw->assertOk()->assertJsonPath('per_page', 10);
+    }
 }

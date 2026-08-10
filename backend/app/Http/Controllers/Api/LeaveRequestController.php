@@ -93,8 +93,18 @@ class LeaveRequestController extends Controller
 
         $limit = (int) $request->input('limit', 10);
 
+        // The default cap of 10 is fine, but returning the page with no idea of
+        // how large the set is meant an approval badge counting this array
+        // reported "10 pending" against 28 real requests — and clearing the
+        // badge left the rest invisible. `total` is the count before limiting,
+        // so callers can show a true figure and know when they are truncated.
+        $total = (clone $query)->count();
+
         return response()->json([
             'data' => $query->limit($limit)->get()->map(fn (LeaveRequest $leave) => $this->withApprovalDestination($leave)),
+            'total' => $total,
+            'limit' => $limit,
+            'truncated' => $total > $limit,
         ]);
     }
 

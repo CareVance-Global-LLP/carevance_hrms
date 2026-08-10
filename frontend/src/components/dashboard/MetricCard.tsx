@@ -15,12 +15,12 @@ interface MetricCardProps {
 }
 
 const accentClasses: Record<NonNullable<MetricCardProps['accent']>, string> = {
-  sky: 'bg-[rgba(93,150,157,0.1)] text-[#5D969D]',
+  sky: 'bg-blue-500/10 text-blue-600',
   emerald: 'bg-emerald-50 text-emerald-600',
-  violet: 'bg-[rgba(227,168,66,0.12)] text-[#E3A842]',
+  violet: 'bg-[rgba(227,168,66,0.12)] text-accent-400',
   amber: 'bg-amber-50 text-amber-600',
   rose: 'bg-rose-50 text-rose-600',
-  slate: 'bg-[rgba(155,148,152,0.12)] text-[#9B9498]',
+  slate: 'bg-slate-400/[0.12] text-slate-500',
 };
 
 export default function MetricCard({

@@ -16,8 +16,11 @@ import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import useFloatingDropdown from '@/components/ui/useFloatingDropdown';
 
+// Every input, select and textarea in the app renders from this one string.
+// `border-strong` rather than `border-slate-200` because a control boundary has
+// to clear 3:1 against its surface, which a hairline divider colour does not.
 const baseControlClassName =
-  'w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
+  'w-full rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-300/30 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-slate-400';
 
 export function FieldLabel({
   children,
@@ -135,7 +138,7 @@ export function SelectInput({
         className={cn(
           baseControlClassName,
           'flex items-center justify-between gap-3 text-left',
-          open && 'border-sky-300 bg-white ring-2 ring-sky-300/25',
+          open && 'border-sky-400 ring-2 ring-sky-300/30',
           className
         )}
       >
@@ -149,7 +152,7 @@ export function SelectInput({
           style={panelStyle}
           role="listbox"
           aria-label={ariaLabel}
-          className="max-h-72 overflow-auto rounded-lg border border-slate-200 bg-white p-2 shadow-sm"
+          className="max-h-72 overflow-auto rounded-lg border border-slate-200 bg-surface-raised p-2 shadow-modal"
         >
           {options.map((option) => {
             const isSelected = option.value === controlledValue;

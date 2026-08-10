@@ -214,7 +214,7 @@ export default function ComplianceStatusBoard({ monthYear, onOpenFilings }: Comp
     <SurfaceCard className="p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div>

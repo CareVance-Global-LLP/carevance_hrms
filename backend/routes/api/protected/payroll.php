@@ -6,8 +6,6 @@ use App\Http\Controllers\Api\PayrollDiagnosticController;
 use App\Http\Controllers\Api\PayslipController;
 use App\Http\Controllers\Api\PayrollFilingController;
 use App\Http\Controllers\Api\PayrollOnboardingController;
-use App\Http\Controllers\Api\PerformanceGoalController;
-use App\Http\Controllers\Api\PerformanceReviewController;
 use App\Http\Controllers\Api\ReimbursementController;
 use App\Http\Controllers\Api\EnhancedPayrollController;
 use App\Http\Controllers\Api\TaxProofUploadController;
@@ -25,9 +23,63 @@ use Illuminate\Support\Facades\Route;
  * All routes are protected by api.token middleware
  */
 
-// Department-based Payroll Management
+/**
+ * Employee self-service.
+ *
+ * These routes act on the caller's OWN payroll data and are therefore the only
+ * ones in this file that an ordinary employee may reach. They are registered
+ * before the administrative group both so the role gate below cannot
+ * accidentally cover them, and so literal segments like `/my/payslips` and
+ * `/tax-proofs/mine` continue to match ahead of `/{id}` patterns.
+ *
+ * Anything added here must resolve its subject from $request->user(), never
+ * from a route parameter.
+ */
 Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
-    // Debug endpoints
+    Route::get('/my/payslips', [PayrollController::class, 'myPayslips']);
+
+    Route::get('/my/declaration', [\App\Http\Controllers\Api\TaxDeclarationController::class, 'myDeclaration']);
+    Route::post('/my/declaration/items', [\App\Http\Controllers\Api\TaxDeclarationController::class, 'saveItems']);
+    Route::post('/my/declaration/{declarationId}/submit', [\App\Http\Controllers\Api\TaxDeclarationController::class, 'submit']);
+
+    Route::get('/my/loans', [\App\Http\Controllers\Api\LoanController::class, 'myLoans']);
+
+    Route::get('/reimbursements/mine', [ReimbursementController::class, 'myReimbursements']);
+    Route::post('/reimbursements', [ReimbursementController::class, 'store']);
+    // Sidebar badge counts. Both resolve the subject from $request->user() and
+    // branch on role internally — an employee sees their own counts, a manager
+    // sees their direct reports' — so they are safe outside the admin gate and
+    // an employee needs them for their own navigation to render.
+    Route::get('/reimbursements/inbox-count', [ReimbursementController::class, 'inboxCount']);
+    Route::get('/reimbursements/summary', [ReimbursementController::class, 'getSummary']);
+    // destroy() checks $reimbursement->user_id against the caller and 403s
+    // otherwise, so it is safe to expose; update() does not, and stays admin-only.
+    Route::delete('/reimbursements/{id}', [ReimbursementController::class, 'destroy']);
+
+    Route::get('/tax-proofs/mine', [TaxProofUploadController::class, 'myProofs']);
+    Route::get('/tax-proofs/my-12bb/{financialYear}', [TaxProofUploadController::class, 'downloadMy12BB']);
+    Route::post('/tax-proofs', [TaxProofUploadController::class, 'store']);
+
+    Route::post('/leave-encashments', [EnhancedPayrollController::class, 'requestLeaveEncashment']);
+});
+
+/**
+ * Administrative payroll.
+ *
+ * `plan.payroll` is CheckPayrollPlan — it verifies the ORGANISATION's
+ * subscription, not the person, and contains no role logic at all. For a long
+ * time it was the only middleware on this group, which meant every route below
+ * was authenticated but not authorised: any employee could drive a run through
+ * lock → approve → release → disburse, download the NEFT file containing every
+ * colleague's account number, read anyone's payslip and rewrite anyone's CTC.
+ * Authorisation was left to ~60 controller methods checking inline, and two did.
+ *
+ * The gate belongs here, once, where it cannot be forgotten.
+ */
+Route::prefix('payroll')->middleware(['plan.payroll', 'role:admin,manager'])->group(function () {
+    // Diagnostics. Kept for support use, but admin-only: quickFix used to be
+    // reachable by anyone and would insert the caller into the payroll
+    // population at a ₹6,00,000 CTC with a fabricated PAN.
     Route::get('/debug', [\App\Http\Controllers\Api\PayrollDebugController::class, 'debugDepartments']);
     Route::get('/diagnose', [PayrollDiagnosticController::class, 'diagnose']);
     Route::post('/quick-fix', [PayrollDiagnosticController::class, 'quickFix']);
@@ -206,7 +258,6 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
     Route::get('/payslip/{userId}/{monthYear}/view', [PayrollController::class, 'viewPayslipPdf']);
     
     // Employee Self-Service
-    Route::get('/my/payslips', [PayrollController::class, 'myPayslips']);
 
     // Tax Declarations (Form 12BB)
     Route::get('/tax-sections', [\App\Http\Controllers\Api\TaxDeclarationController::class, 'getSections']);
@@ -232,7 +283,6 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
     Route::post('/loans/{loanId}/close', [\App\Http\Controllers\Api\LoanController::class, 'closeLoan']);
     
     // Leave Encashment (NEW)
-    Route::post('/leave-encashments', [EnhancedPayrollController::class, 'requestLeaveEncashment']);
     Route::get('/leave-encashments', [EnhancedPayrollController::class, 'listLeaveEncashments']);
     Route::post('/leave-encashments/{id}/approve', [EnhancedPayrollController::class, 'approveLeaveEncashment']);
     Route::post('/leave-encashments/{id}/reject', [EnhancedPayrollController::class, 'rejectLeaveEncashment']);
@@ -264,21 +314,10 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
     Route::put('/employees/{userId}/profile', [PayrollController::class, 'updateEmployeeProfile']);
     Route::get('/summary', [PayrollController::class, 'getSummary']);
     
-    // Performance Management
-    Route::get('/performance-goals', [PerformanceGoalController::class, 'index']);
-    Route::post('/performance-goals', [PerformanceGoalController::class, 'store']);
-    Route::get('/performance-goals/{id}', [PerformanceGoalController::class, 'show']);
-    Route::put('/performance-goals/{id}', [PerformanceGoalController::class, 'update']);
-    Route::delete('/performance-goals/{id}', [PerformanceGoalController::class, 'destroy']);
-    
-    Route::get('/performance-reviews', [PerformanceReviewController::class, 'index']);
-    Route::post('/performance-reviews', [PerformanceReviewController::class, 'store']);
-    Route::get('/performance-reviews/{id}', [PerformanceReviewController::class, 'show']);
-    Route::put('/performance-reviews/{id}', [PerformanceReviewController::class, 'update']);
-    Route::delete('/performance-reviews/{id}', [PerformanceReviewController::class, 'destroy']);
-    Route::get('/performance-reviews/employee/{employeeId}', [PerformanceReviewController::class, 'getEmployeeReviews']);
-    Route::get('/performance-reviews/summary', [PerformanceReviewController::class, 'getSummary']);
-    
+    // Performance Management moved to routes/api/protected/performance.php
+    // (/api/performance/*, gated on the performance_management plan feature)
+
+
     // Automated Payroll Processing (Keka/GreytHR-style)
     Route::prefix('auto')->group(function () {
         Route::post('/quick-process', [PayrollAutoProcessController::class, 'quickProcess']);
@@ -300,17 +339,12 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
 
     // Reimbursements (two-level approval: manager → admin)
     Route::get('/reimbursements', [ReimbursementController::class, 'index']);
-    Route::get('/reimbursements/mine', [ReimbursementController::class, 'myReimbursements']);
     Route::get('/reimbursements/inbox/manager', [ReimbursementController::class, 'managerInbox']);
     Route::get('/reimbursements/inbox/admin', [ReimbursementController::class, 'adminInbox']);
-    Route::get('/reimbursements/inbox-count', [ReimbursementController::class, 'inboxCount']);
-    Route::get('/reimbursements/summary', [ReimbursementController::class, 'getSummary']);
     Route::get('/reimbursements/pending-payments', [ReimbursementController::class, 'pendingPayments']);
     Route::get('/reimbursements/{id}', [ReimbursementController::class, 'show']);
     Route::post('/reimbursements/upload-receipt', [ReimbursementController::class, 'uploadReceipt']);
-    Route::post('/reimbursements', [ReimbursementController::class, 'store']);
     Route::put('/reimbursements/{id}', [ReimbursementController::class, 'update']);
-    Route::delete('/reimbursements/{id}', [ReimbursementController::class, 'destroy']);
     Route::post('/reimbursements/{id}/manager-approve', [ReimbursementController::class, 'managerApprove']);
     Route::post('/reimbursements/{id}/manager-reject', [ReimbursementController::class, 'managerReject']);
     Route::post('/reimbursements/{id}/mark-read', [ReimbursementController::class, 'markInboxRead']);
@@ -325,11 +359,8 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
 
     // Tax-Proof Submissions (Form 12BB attachments)
     // Employee endpoints
-    Route::get('/tax-proofs/mine', [TaxProofUploadController::class, 'myProofs']);
     Route::get('/tax-proofs/summary', [TaxProofUploadController::class, 'complianceSummary']);
-    Route::get('/tax-proofs/my-12bb/{financialYear}', [TaxProofUploadController::class, 'downloadMy12BB']);
     Route::get('/tax-proofs', [TaxProofUploadController::class, 'index']);
-    Route::post('/tax-proofs', [TaxProofUploadController::class, 'store']);
     Route::get('/tax-proofs/{id}', [TaxProofUploadController::class, 'show']);
     Route::get('/tax-proofs/{id}/download', [TaxProofUploadController::class, 'download']);
     Route::delete('/tax-proofs/{id}', [TaxProofUploadController::class, 'destroy']);
@@ -337,9 +368,12 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
     // Payslip Management
     Route::post('/payslips/generate', [PayslipController::class, 'generate']);
     Route::get('/payslips', [PayslipController::class, 'index']);
-    Route::get('/payslips/{id}', [PayslipController::class, 'show']);
-    Route::get('/payslips/{id}/pdf', [PayslipController::class, 'downloadPdf']);
-    Route::get('/payslips/{id}/ytd', [PayslipController::class, 'ytd']);
+    // Numeric ids only. Without the constraint any unmatched word under
+    // /payslips lands here — /payslips/my was being dispatched as id="my" and
+    // fataling on the int type hint, returning a 500 where a 404 belongs.
+    Route::get('/payslips/{id}', [PayslipController::class, 'show'])->whereNumber('id');
+    Route::get('/payslips/{id}/pdf', [PayslipController::class, 'downloadPdf'])->whereNumber('id');
+    Route::get('/payslips/{id}/ytd', [PayslipController::class, 'ytd'])->whereNumber('id');
 
     // Admin-only endpoints
     Route::post('/tax-proofs/bulk-approve', [TaxProofUploadController::class, 'bulkApprove']);

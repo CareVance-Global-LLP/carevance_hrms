@@ -123,7 +123,7 @@ export default function ReportsTab() {
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                 isActive
-                  ? 'border-[#5D969D] bg-[rgba(93,150,157,0.1)] text-[#5D969D]'
+                  ? 'border-blue-600 bg-blue-500/10 text-blue-600'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
               )}
             >
@@ -278,7 +278,7 @@ function PayrollRegisterPanel() {
                 className={cn(
                   'px-3 py-1.5 text-xs font-medium rounded-full transition-colors',
                   activeSubTab === tab.key
-                    ? 'bg-[rgba(93,150,157,0.1)] text-[#5D969D]'
+                    ? 'bg-blue-500/10 text-blue-600'
                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50',
                 )}
               >

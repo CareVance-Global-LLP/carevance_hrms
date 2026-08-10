@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TaxWizardSession extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'tax_wizard_sessions';
 
     protected $fillable = [

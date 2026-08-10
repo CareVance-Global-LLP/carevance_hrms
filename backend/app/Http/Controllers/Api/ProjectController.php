@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Group;
 use App\Models\Project;
+use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\Authorization\GroupAccessService;
 use App\Services\Reports\TimeBreakdownService;
@@ -38,7 +39,58 @@ class ProjectController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $trackedByProject = $this->trackedSecondsByProject($projects->pluck('id'));
+
+        $projects->each(function (Project $project) use ($trackedByProject) {
+            $project->setAttribute('tracked_seconds', (int) ($trackedByProject[$project->id] ?? 0));
+            $project->setAttribute('estimated_minutes', (int) $project->tasks->sum('estimated_time'));
+            $project->setAttribute('tasks_count', $project->tasks->count());
+            $project->setAttribute('tasks_done_count', $project->tasks->where('status', 'done')->count());
+        });
+
         return response()->json($projects);
+    }
+
+    /**
+     * Tracked seconds per project, counting both entries logged straight against
+     * a project and entries logged against one of its tasks.
+     *
+     * Without this the projects list had no hours to show, which is why every
+     * card printed a hardcoded "0h".
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $projectIds
+     * @return array<int, int>
+     */
+    private function trackedSecondsByProject($projectIds): array
+    {
+        $ids = $projectIds->filter()->values();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $direct = TimeEntry::query()
+            ->whereIn('project_id', $ids->all())
+            ->where('is_break', false)
+            ->groupBy('project_id')
+            ->selectRaw('project_id, SUM(duration) as total')
+            ->pluck('total', 'project_id');
+
+        // Entries attached to a task inherit that task's project.
+        $viaTasks = TimeEntry::query()
+            ->join('tasks', 'tasks.id', '=', 'time_entries.task_id')
+            ->whereNull('time_entries.project_id')
+            ->whereIn('tasks.project_id', $ids->all())
+            ->where('time_entries.is_break', false)
+            ->groupBy('tasks.project_id')
+            ->selectRaw('tasks.project_id as project_id, SUM(time_entries.duration) as total')
+            ->pluck('total', 'project_id');
+
+        $totals = [];
+        foreach ($ids as $id) {
+            $totals[(int) $id] = (int) ($direct[$id] ?? 0) + (int) ($viaTasks[$id] ?? 0);
+        }
+
+        return $totals;
     }
 
     public function store(Request $request)
@@ -47,6 +99,7 @@ class ProjectController extends Controller
             'name' => 'required|string|max:255',
             'group_id' => 'required|integer|exists:groups,id',
             'description' => 'nullable|string',
+            'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
             'budget' => 'nullable|numeric',
             'deadline' => 'nullable|date',
             'status' => 'nullable|in:active,completed,archived',
@@ -70,6 +123,7 @@ class ProjectController extends Controller
             'name' => $request->name,
             'group_id' => $group->id,
             'description' => $request->description,
+            'color' => $request->color,
             'budget' => $request->budget,
             'deadline' => $request->deadline,
             'status' => $request->status ?? 'active',
@@ -107,6 +161,7 @@ class ProjectController extends Controller
             'name' => 'sometimes|string|max:255',
             'group_id' => 'sometimes|integer|exists:groups,id',
             'description' => 'nullable|string',
+            'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
             'budget' => 'nullable|numeric',
             'deadline' => 'nullable|date',
             'status' => 'nullable|in:active,completed,archived',
@@ -117,7 +172,7 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $payload = $request->only(['name', 'description', 'budget', 'deadline', 'status']);
+        $payload = $request->only(['name', 'description', 'color', 'budget', 'deadline', 'status']);
         if ($request->exists('group_id')) {
             $group = $this->resolveManageableGroup($user, (int) $request->group_id);
             if (!$group) {

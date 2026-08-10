@@ -47,9 +47,11 @@ class TaskController extends Controller
         $request->validate([
             'group_id' => 'nullable|integer',
             'project_id' => 'nullable|integer',
-            'status' => 'nullable|in:todo,in_progress,done',
+            'status' => 'nullable|in:todo,in_progress,in_review,done',
             'assignee_id' => 'nullable|integer',
             'timer_only' => 'nullable|boolean',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
         ]);
 
         $user = request()->user();
@@ -59,7 +61,18 @@ class TaskController extends Controller
 
         $tasks = $this->scopedTasksQuery($user)
             ->with(['group', 'project', 'assignee', 'assignees'])
-            ->withSum('timeEntries', 'duration')
+            // Scoped to the requested range when one is given, so a time report
+            // can ask "what was tracked in July" instead of only ever summing
+            // every entry a task has ever had. With no dates this is identical
+            // to the unconstrained sum it replaces.
+            ->withSum(['timeEntries' => function ($query) use ($request) {
+                if ($request->filled('start_date')) {
+                    $query->whereDate('start_time', '>=', $request->start_date);
+                }
+                if ($request->filled('end_date')) {
+                    $query->whereDate('start_time', '<=', $request->end_date);
+                }
+            }], 'duration')
             ->when($request->filled('group_id'), function (Builder $query) use ($request, $user) {
                 $groupId = (int) $request->group_id;
                 $visibleGroupIds = $this->groupAccessService->visibleGroupIds($user);
@@ -115,7 +128,7 @@ class TaskController extends Controller
             'description' => 'nullable|string',
             'group_id' => 'required|exists:groups,id',
             'project_id' => 'nullable|exists:projects,id',
-            'status' => 'nullable|in:todo,in_progress,done',
+            'status' => 'nullable|in:todo,in_progress,in_review,done',
             'priority' => 'nullable|in:low,medium,high,urgent',
             'assignee_id' => 'nullable|exists:users,id',
             'assignee_ids' => 'nullable|array',
@@ -220,7 +233,7 @@ class TaskController extends Controller
             'description' => 'nullable|string',
             'group_id' => 'nullable|exists:groups,id',
             'project_id' => 'nullable|exists:projects,id',
-            'status' => 'nullable|in:todo,in_progress,done',
+            'status' => 'nullable|in:todo,in_progress,in_review,done',
             'priority' => 'nullable|in:low,medium,high,urgent',
             'assignee_id' => 'nullable|exists:users,id',
             'assignee_ids' => 'nullable|array',
@@ -334,7 +347,7 @@ class TaskController extends Controller
         }
 
         $request->validate([
-            'status' => 'required|in:todo,in_progress,done',
+            'status' => 'required|in:todo,in_progress,in_review,done',
         ]);
 
         $oldStatus = $task->status;

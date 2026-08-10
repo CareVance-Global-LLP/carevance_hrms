@@ -30,6 +30,27 @@
     />
     <meta name="twitter:image" content="/carevance-logo-full.png?v=carevance-1" />
     <script src="/env-config.js"></script>
+    <script>
+      /*
+       * Resolve the theme before first paint. React mounts several providers
+       * deep, so waiting for it would show a white flash before dark applies.
+       * Kept inline and dependency-free for that reason — see ThemeContext.tsx
+       * for the rest of the runtime, which reads the same storage key.
+       */
+      (function () {
+        try {
+          var stored = localStorage.getItem('carevance.theme');
+          var choice = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var resolved = choice === 'system' ? (prefersDark ? 'dark' : 'light') : choice;
+          document.documentElement.setAttribute('data-theme', resolved);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0E141A' : '#f8fafc');
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
     <title>CareVance HRMS</title>
   </head>
   <body>

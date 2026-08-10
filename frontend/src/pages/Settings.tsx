@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE, getSupportedTimezones, resolveTimeZone } from '@/lib/timezones';
 import { employeeWorkspaceApi, productivityClassificationApi, settingsApi, supportApi, organizationApi } from '@/services/api';
+import { breakTrackingApi } from '@/services/breakTrackingApi';
 import type { ProductivityClassificationItem } from '@/types';
-import { ArrowRight, User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy, Trash2, AlertTriangle, Sparkles } from 'lucide-react';
+import { ArrowRight, User, Bell, Lock, CreditCard, Building, Briefcase, Link2, FileSpreadsheet, LifeBuoy, Trash2, AlertTriangle, Sparkles, Coffee, Palette, Sun, Moon, Monitor, Check } from 'lucide-react';
+import { useTheme, type ThemeChoice } from '@/contexts/ThemeContext';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
@@ -124,11 +127,174 @@ const readLeaveCategories = (org?: any): LeaveCategorySetting[] => {
   return normalized.length ? normalized : DEFAULT_LEAVE_CATEGORIES;
 };
 
+/**
+ * Organization break types.
+ *
+ * is_paid is the consequential field: it decides whether the break counts as
+ * payable worked time. Before break types existed, every break was excluded
+ * from pay implicitly, because the code filtered is_break — a policy nobody had
+ * chosen. This makes it a deliberate, per-type decision.
+ *
+ * Deactivation is soft on the server so historical entries keep their type for
+ * reporting; the type simply stops being offered.
+ */
+function BreakTypesSection() {
+  const queryClient = useQueryClient();
+  const [draftName, setDraftName] = useState('');
+  const [draftPaid, setDraftPaid] = useState(false);
+  const [draftLimit, setDraftLimit] = useState('');
+  const [error, setError] = useState('');
+
+  const { data: types = [], isLoading } = useQuery({
+    queryKey: ['break-types'],
+    queryFn: () => breakTrackingApi.getTypes(),
+  });
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['break-types'] });
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      breakTrackingApi.createType({
+        name: draftName.trim(),
+        is_paid: draftPaid,
+        max_minutes_per_day: draftLimit ? Number(draftLimit) : null,
+      }),
+    onSuccess: () => {
+      setDraftName('');
+      setDraftPaid(false);
+      setDraftLimit('');
+      setError('');
+      void refresh();
+    },
+    onError: (e: any) => setError(e?.response?.data?.message || 'Could not create break type.'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
+      breakTrackingApi.updateType(id, payload),
+    onSuccess: () => void refresh(),
+    onError: (e: any) => setError(e?.response?.data?.message || 'Could not update break type.'),
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: (id: number) => breakTrackingApi.deactivateType(id),
+    onSuccess: () => void refresh(),
+    onError: (e: any) => setError(e?.response?.data?.message || 'Could not remove break type.'),
+  });
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <Coffee className="h-4 w-4 text-slate-500" />
+        <h3 className="text-sm font-semibold text-slate-900">Break Types</h3>
+      </div>
+      <p className="mb-4 text-sm text-gray-500">
+        Paid breaks count toward worked hours and payroll. Unpaid breaks do not. A daily limit is a soft
+        allowance — going over is flagged in reports, never blocked.
+      </p>
+
+      {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
+
+      {isLoading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : (
+        <div className="space-y-2">
+          {types.map((type) => (
+            <div
+              key={type.id}
+              className="flex flex-col gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{type.name}</span>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-400"
+                    checked={type.is_paid}
+                    onChange={(e) =>
+                      updateMutation.mutate({ id: type.id, payload: { is_paid: e.target.checked } })
+                    }
+                  />
+                  Paid
+                </label>
+
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <span className="whitespace-nowrap">Daily limit</span>
+                  <TextInput
+                    type="number"
+                    min={1}
+                    max={1440}
+                    placeholder="None"
+                    defaultValue={type.max_minutes_per_day ?? ''}
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim();
+                      const next = raw === '' ? null : Number(raw);
+                      if (next !== (type.max_minutes_per_day ?? null)) {
+                        updateMutation.mutate({ id: type.id, payload: { max_minutes_per_day: next } });
+                      }
+                    }}
+                    className="w-24"
+                  />
+                  <span className="text-xs text-slate-400">min</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => deactivateMutation.mutate(type.id)}
+                  className="text-slate-400 transition hover:text-red-600"
+                  aria-label={`Remove ${type.name}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <div className="flex flex-col gap-3 rounded-lg border border-dashed border-slate-300 p-3 sm:flex-row sm:items-center">
+            <TextInput
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              placeholder="New break type (e.g. Prayer)"
+              className="flex-1"
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-400"
+                checked={draftPaid}
+                onChange={(e) => setDraftPaid(e.target.checked)}
+              />
+              Paid
+            </label>
+            <TextInput
+              type="number"
+              min={1}
+              max={1440}
+              value={draftLimit}
+              onChange={(e) => setDraftLimit(e.target.value)}
+              placeholder="Limit"
+              className="w-24"
+            />
+            <Button
+              onClick={() => createMutation.mutate()}
+              disabled={!draftName.trim() || createMutation.isPending}
+            >
+              Add
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user, organization, updateUser, updateOrganization } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
+  const { choice: themeChoice, theme: resolvedTheme, setTheme: setThemeChoice } = useTheme();
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -163,6 +329,9 @@ export default function SettingsPage() {
   const [orgLogoPreview, setOrgLogoPreview] = useState(extractOrganizationLogoUrl(organization));
   const [officeStartTime, setOfficeStartTime] = useState('');
   const [lateAfterTime, setLateAfterTime] = useState('');
+  // Organization-wide screenshot capture default. '' means "no org default",
+  // in which case users fall through to the system default.
+  const [orgMonitoringInterval, setOrgMonitoringInterval] = useState('');
   const [orgTimezone, setOrgTimezone] = useState(DEFAULT_APP_TIMEZONE);
   const [leaveCategories, setLeaveCategories] = useState<LeaveCategorySetting[]>(() => readLeaveCategories(organization));
 
@@ -204,6 +373,7 @@ export default function SettingsPage() {
     { id: 'profile', name: 'Profile', icon: User },
     ...(isStrictAdminUser ? [{ id: 'organization', name: 'Organization', icon: Building }] : []),
     { id: 'notifications', name: 'Notifications', icon: Bell },
+    { id: 'appearance', name: 'Appearance', icon: Palette },
     { id: 'security', name: 'Security', icon: Lock },
     { id: 'help', name: 'Help', icon: LifeBuoy },
     ...(canManageSettings ? [{ id: 'integrations', name: 'Integrations', icon: Link2 }] : []),
@@ -259,6 +429,7 @@ export default function SettingsPage() {
     setOrgLogoPreview(logoUrl);
     setOfficeStartTime(toTimeInputValue((organization?.settings as any)?.attendance?.office_start_time));
     setLateAfterTime(toTimeInputValue((organization?.settings as any)?.attendance?.late_after_time));
+    setOrgMonitoringInterval(String((organization?.settings as any)?.monitoring?.interval_minutes ?? ''));
     setOrgTimezone(resolveTimeZone((organization?.settings as any)?.timezone));
     setLeaveCategories(readLeaveCategories(organization));
   }, [organization]);
@@ -294,6 +465,7 @@ export default function SettingsPage() {
           setOrgLogoPreview(fetchedOrgLogo);
           setOfficeStartTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.office_start_time));
           setLateAfterTime(toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.late_after_time));
+          setOrgMonitoringInterval(String((fetchedOrg?.settings as any)?.monitoring?.interval_minutes ?? ''));
           setOrgTimezone(resolveTimeZone((fetchedOrg?.settings as any)?.timezone));
           setLeaveCategories(readLeaveCategories(fetchedOrg));
           setTimezone(resolveTimeZone(settings.timezone || DEFAULT_APP_TIMEZONE));
@@ -618,6 +790,8 @@ export default function SettingsPage() {
             formData.append('timezone', orgTimezone);
             if (isStrictAdminUser) {
               formData.append('leave_categories_json', JSON.stringify(normalizedLeaveCategories));
+              // FormData cannot carry null; '' is read as "clear the org default".
+              formData.append('monitoring_interval_minutes', orgMonitoringInterval);
             }
             formData.append('logo_file', orgLogoFile);
             return formData;
@@ -628,7 +802,12 @@ export default function SettingsPage() {
             office_start_time: officeStartTime || null,
             late_after_time: lateAfterTime || null,
             timezone: orgTimezone,
-            ...(isStrictAdminUser ? { leave_categories: normalizedLeaveCategories } : {}),
+            ...(isStrictAdminUser
+              ? {
+                  leave_categories: normalizedLeaveCategories,
+                  monitoring_interval_minutes: orgMonitoringInterval === '' ? null : Number(orgMonitoringInterval),
+                }
+              : {}),
           };
 
       const res = await settingsApi.updateOrganization(payload);
@@ -1045,6 +1224,32 @@ export default function SettingsPage() {
                   <p className="mt-2 text-sm text-gray-500">Check-ins after this time are marked late (for example 09:15).</p>
                 </div>
               </div>
+              {isStrictAdminUser ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel>Screenshot Interval (organization default)</FieldLabel>
+                    <SelectInput
+                      value={orgMonitoringInterval}
+                      onChange={(e) => setOrgMonitoringInterval(e.target.value)}
+                      disabled={!isOrgEditable}
+                      className={!isOrgEditable ? 'bg-slate-50 text-slate-500' : ''}
+                    >
+                      <option value="">No organization default (every 10 minutes)</option>
+                      <option value="1">Every 1 minute</option>
+                      <option value="3">Every 3 minutes</option>
+                      <option value="5">Every 5 minutes</option>
+                      <option value="10">Every 10 minutes</option>
+                      <option value="15">Every 15 minutes</option>
+                      <option value="30">Every 30 minutes</option>
+                    </SelectInput>
+                    <p className="mt-2 text-sm text-gray-500">
+                      Applies to everyone without a per-user override. Admins only, because lowering it multiplies capture for the whole organization at once.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              {isStrictAdminUser ? <BreakTypesSection /> : null}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <FieldLabel>Timezone</FieldLabel>
@@ -1198,7 +1403,7 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => navigate('/signup-owner')}
-                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-surface-inverse px-5 py-3 text-sm font-semibold text-on-inverse transition hover:bg-slate-800"
                   >
                     Create Workspace
                   </button>
@@ -1225,6 +1430,60 @@ export default function SettingsPage() {
                 </div>
               ))}
               <Button onClick={savePreferences}>Save Preferences</Button>
+            </div>
+          )}
+
+          {activeTab === 'appearance' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Appearance</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Choose how CareVance looks. This applies to this device straight away.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                {([
+                  { value: 'light', label: 'Light', hint: 'Always light', icon: Sun },
+                  { value: 'dark', label: 'Dark', hint: 'Always dark', icon: Moon },
+                  { value: 'system', label: 'System', hint: 'Match my device', icon: Monitor },
+                ] as Array<{ value: ThemeChoice; label: string; hint: string; icon: typeof Sun }>).map((option) => {
+                  const Icon = option.icon;
+                  const selected = themeChoice === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        // Local storage applies instantly and covers logged-out
+                        // pages; the account copy just follows you to other devices.
+                        setThemeChoice(option.value);
+                        settingsApi.updatePreferences({ theme: option.value }).catch(() => {
+                          // Non-fatal: the theme is already applied on this device.
+                        });
+                      }}
+                      aria-pressed={selected}
+                      className={`flex items-start gap-3 rounded-lg border p-4 text-left transition ${
+                        selected
+                          ? 'border-sky-400 bg-sky-50 ring-2 ring-sky-300/30'
+                          : 'border-slate-200 bg-surface-card hover:border-slate-300'
+                      }`}
+                    >
+                      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-slate-900">{option.label}</span>
+                        <span className="block text-xs text-slate-500">{option.hint}</span>
+                      </span>
+                      {selected ? <Check className="h-4 w-4 shrink-0 text-sky-600" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="text-xs text-slate-500">
+                Currently showing the <strong className="font-semibold text-slate-700">{resolvedTheme}</strong> theme
+                {themeChoice === 'system' ? ', following your device setting.' : '.'}
+              </p>
             </div>
           )}
 
@@ -1300,7 +1559,7 @@ export default function SettingsPage() {
                   {billingPlan?.renewal_date ? ` | Renewal: ${new Date(billingPlan.renewal_date).toLocaleDateString()}` : ''}
                 </p>
               </div>
-              <Link to="/settings/billing" className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800">
+              <Link to="/settings/billing" className="inline-flex items-center gap-2 rounded-full bg-surface-inverse px-5 py-2.5 text-sm font-semibold text-on-inverse transition hover:bg-slate-800">
                 Manage Subscription <ArrowRight className="h-4 w-4" />
               </Link>
             </div>

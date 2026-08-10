@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invitationApi, organizationApi, reportGroupApi, roleApi, userApi } from '@/services/api';
 import DepartmentWorkspace from '@/features/departments/DepartmentWorkspace';
+import RoleAssignmentBoard from '@/features/roles/RoleAssignmentBoard';
+import EmployeeRoster, { type Segment as RosterSegment } from '@/features/employees/EmployeeRoster';
+import SlideOver from '@/features/employees/SlideOver';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import Button from '@/components/ui/Button';
-import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
-import { AlertCircle, Download, KeyRound, MailPlus, ShieldCheck, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
+import { profileCompleteness } from '@/lib/employeeProfileFields';
+import { Download, MailPlus, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
 import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
 
@@ -126,8 +129,6 @@ const resolveEmployeeDepartment = (user: any) =>
 const resolveEmployeeTimezone = (user: any) =>
   resolveTimeZone(user?.settings?.timezone || DEFAULT_APP_TIMEZONE);
 
-const piePalette = ['#2563eb', '#0ea5e9', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#8b5cf6'];
-
 const monitoringIntervalOptions = [
   { value: 1, label: 'Every 1 minute' },
   { value: 3, label: 'Every 3 minutes' },
@@ -137,7 +138,8 @@ const monitoringIntervalOptions = [
   { value: 30, label: 'Every 30 minutes' },
 ] as const;
 
-type MonitoringInterval = typeof monitoringIntervalOptions[number]['value'];
+/** null = inherit the organization default. */
+type MonitoringInterval = typeof monitoringIntervalOptions[number]['value'] | null;
 
 type EmployeeSettingsDraft = {
   monitoringInterval: MonitoringInterval;
@@ -151,12 +153,16 @@ const allowedMonitoringIntervals = monitoringIntervalOptions.map((option) => opt
 
 const resolveEmployeeSettings = (targetUser: any): EmployeeSettingsDraft => {
   const settings = targetUser?.settings || {};
-  const interval = Number(settings.monitoring_interval_minutes || 10);
+  // `== null` rather than a falsy check: absence of the key is what "inherit
+  // from the organization" means, and it must be distinguishable from a real
+  // per-user override.
+  const rawInterval = settings.monitoring_interval_minutes;
+  const interval = rawInterval == null ? null : Number(rawInterval);
 
   return {
-    monitoringInterval: allowedMonitoringIntervals.includes(interval as MonitoringInterval)
+    monitoringInterval: interval !== null && allowedMonitoringIntervals.includes(interval as any)
       ? interval as MonitoringInterval
-      : 10,
+      : null,
     canEditTime: settings.can_edit_time !== false,
     attendanceMonitoring: settings.attendance_monitoring !== false,
     payrollVisibility: (targetUser?.hierarchy_level ?? (targetUser?.role === 'employee' ? 100 : 50)) >= 100 ? false : settings.payroll_visibility !== false,
@@ -194,10 +200,11 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const queryClient = useQueryClient();
   const viewerTimezone = (user?.settings as any)?.timezone || DEFAULT_APP_TIMEZONE;
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [directoryFilterUserId, setDirectoryFilterUserId] = useState<number | ''>('');
   const [directoryDepartmentFilter, setDirectoryDepartmentFilter] = useState('All departments');
   const [directoryTimezoneFilter, setDirectoryTimezoneFilter] = useState('All timezones');
   const [directorySort, setDirectorySort] = useState<EmployeeDirectorySort>('default');
+  const [directoryQuery, setDirectoryQuery] = useState('');
+  const [directorySegment, setDirectorySegment] = useState<RosterSegment>('all');
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupDirectoryQuery, setGroupDirectoryQuery] = useState('');
   const [_groupDirectoryFilter, setGroupDirectoryFilter] = useState('all');
@@ -210,12 +217,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [incompleteFilterType, setIncompleteFilterType] = useState<'all' | 'missing_pan' | 'missing_bank'>('all');
   const [settingsUserId, setSettingsUserId] = useState<number | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<EmployeeSettingsDraft | null>(null);
-  const [activeTeamId, setActiveTeamId] = useState<number | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const settingsPanelRef = useRef<HTMLDivElement | null>(null);
-  const pendingSettingsScrollUserIdRef = useRef<number | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
   const canManageDirectoryRoles = isStrictAdmin;
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
@@ -391,30 +395,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
   }, [allowedRoles, inviteRole]);
 
-  useEffect(() => {
-    if (
-      !settingsTargetUser?.id ||
-      !settingsDraft ||
-      pendingSettingsScrollUserIdRef.current !== settingsTargetUser.id
-    ) {
-      return;
-    }
-
-    let nextFrameId: number | null = null;
-    const frameId = window.requestAnimationFrame(() => {
-      nextFrameId = window.requestAnimationFrame(() => {
-        settingsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        pendingSettingsScrollUserIdRef.current = null;
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-      if (nextFrameId !== null) {
-        window.cancelAnimationFrame(nextFrameId);
-      }
-    };
-  }, [settingsDraft, settingsTargetUser?.id]);
+  // The settings form used to render below the table, so opening it required a
+  // double-rAF scroll to bring the panel into view. It is a drawer now — it
+  // arrives already visible, and the list behind it never moves.
 
   const inviteMutation = useMutation({
     mutationFn: async () => {
@@ -504,39 +487,59 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const isError = usersQuery.isError || groupsQuery.isError || membersQuery.isError || invitationsQuery.isError;
   const pageTitle = modeCopy[mode];
 
+  /**
+   * "Incomplete" now means the shared registry says so, rather than a local
+   * two-field rule. The old version only looked at bank details and PAN, so a
+   * record missing a date of birth, an address and an emergency contact counted
+   * as complete — and one missing nothing but a bank row counted as incomplete.
+   * The deep links from payroll still target their specific field.
+   */
   const hasIncompleteProfile = (user: any, filterType: 'all' | 'missing_pan' | 'missing_bank' = 'all') => {
-    // Check for missing bank account or PAN details
-    const hasBankDetails = user.bank_accounts && user.bank_accounts.length > 0;
-    const hasPanNumber = user.government_ids?.some((id: any) =>
-      id.id_type?.toLowerCase().includes('pan') && id.id_number
-    );
-    
-    if (filterType === 'missing_pan') {
-      return !hasPanNumber;
-    } else if (filterType === 'missing_bank') {
-      return !hasBankDetails;
+    if (filterType === 'missing_pan' || filterType === 'missing_bank') {
+      const key = filterType === 'missing_pan' ? 'pan' : 'bank_account';
+      return profileCompleteness(user).missing.some((field) => field.key === key);
     }
-    
-    // Default 'all' - return true if either is missing
-    return !hasBankDetails || !hasPanNumber;
+
+    return !profileCompleteness(user).isComplete;
   };
 
+  const employeeCodeOf = (item: any) =>
+    item.employee_work_info?.employee_code || item.employeeWorkInfo?.employee_code || '';
+
   const employeeDirectoryRows = useMemo(() => {
-    const filteredRows = directoryFilterUserId === ''
-      ? [...users]
-      : users.filter((item: any) => Number(item.id) === Number(directoryFilterUserId));
+    // A free-text box replaced the "specific employee" dropdown: typing three
+    // letters beats opening a picker and scrolling to a name.
+    const needle = directoryQuery.trim().toLowerCase();
+    const searchedRows = needle
+      ? users.filter((item: any) =>
+          [item.name, item.email, employeeCodeOf(item)]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(needle)
+        )
+      : [...users];
 
     const departmentFilteredRows = directoryDepartmentFilter === 'All departments'
-      ? filteredRows
-      : filteredRows.filter((item: any) => resolveEmployeeDepartment(item) === directoryDepartmentFilter);
+      ? searchedRows
+      : searchedRows.filter((item: any) => resolveEmployeeDepartment(item) === directoryDepartmentFilter);
 
     const timezoneFilteredRows = directoryTimezoneFilter === 'All timezones'
       ? departmentFilteredRows
       : departmentFilteredRows.filter((item: any) => resolveEmployeeTimezone(item) === directoryTimezoneFilter);
 
-    const incompleteFilteredRows = showIncompleteOnly
-      ? timezoneFilteredRows.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType))
-      : timezoneFilteredRows;
+    // The segment is the coarse view; `showIncompleteOnly` is still honoured so
+    // the deep link from the payroll dashboard keeps working.
+    const segmentedRows =
+      directorySegment === 'working'
+        ? timezoneFilteredRows.filter((item: any) => Boolean(item.is_working))
+        : directorySegment === 'incomplete'
+          ? timezoneFilteredRows.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType))
+          : timezoneFilteredRows;
+
+    const incompleteFilteredRows = showIncompleteOnly && directorySegment !== 'incomplete'
+      ? segmentedRows.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType))
+      : segmentedRows;
 
     switch (directorySort) {
       case 'name_asc':
@@ -559,7 +562,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       default:
         return incompleteFilteredRows;
     }
-  }, [directoryDepartmentFilter, directoryFilterUserId, directoryTimezoneFilter, directorySort, users, showIncompleteOnly, incompleteFilterType]);
+  }, [directoryDepartmentFilter, directoryTimezoneFilter, directorySort, users, showIncompleteOnly, incompleteFilterType, directoryQuery, directorySegment]);
+
+  const workingNowCount = useMemo(
+    () => users.filter((item: any) => Boolean(item.is_working)).length,
+    [users]
+  );
+  const incompleteProfileCount = useMemo(
+    () => users.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType)).length,
+    [users, incompleteFilterType]
+  );
 
   const handleExportCsv = async () => {
     setIsExporting(true);
@@ -586,37 +598,131 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       setIsExporting(false);
     }
   };
-  const roleCards = useMemo(() => {
-    const allRoles = [...(customRolesQuery.data || [])].sort((a: any, b: any) => a.hierarchy_level - b.hierarchy_level);
-    return allRoles.map((role: any, idx: number) => {
-      const count = role.is_system
-        ? users.filter((u: any) => u.role_id === role.id || (!u.role_id && u.role === role.slug)).length
-        : users.filter((u: any) => u.role_id === role.id).length;
-      const isLast = idx === allRoles.length - 1;
-      const isFirst = idx === 0;
-      return {
-        key: `role-card-${role.id}`,
-        label: role.name,
-        value: count,
-        hint: role.is_system ? `System role \u2022 Level ${role.hierarchy_level}` : `Custom role \u2022 Level ${role.hierarchy_level}`,
-        icon: isFirst ? ShieldCheck : isLast ? Users : KeyRound,
-        accent: isFirst ? 'sky' as const : isLast ? 'violet' as const : 'amber' as const,
-      };
-    });
-  }, [customRolesQuery.data, users]);
 
-  const filteredRoleUsers = useMemo(() => {
-    const normalizedQuery = roleSearchQuery.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return users;
+  /* ── bulk actions on the employee roster ─────────────────────── */
+
+  const [isBulkRunning, setIsBulkRunning] = useState(false);
+
+  /**
+   * Runs one write per person and reports once at the end. Failures are counted
+   * rather than thrown away, so a partial run says so instead of claiming
+   * success — there is no bulk endpoint to lean on here.
+   */
+  const runBulk = async (
+    userIds: number[],
+    write: (userId: number) => Promise<unknown>,
+    describe: (okCount: number) => string
+  ) => {
+    setIsBulkRunning(true);
+    setFeedback(null);
+    let ok = 0;
+    let failed = 0;
+
+    for (const userId of userIds) {
+      try {
+        await write(userId);
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
     }
 
-    return users.filter((item: any) => {
-      const roleLabel = resolveUserRoleLabel(item, customRolesQuery.data || []);
-      return [item.name, item.email, item.role, roleLabel, resolveEmployeeDepartment(item)]
-        .some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
-    });
-  }, [roleSearchQuery, users, customRolesQuery.data]);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+      queryClient.invalidateQueries({ queryKey: ['employee-workspace-groups'] }),
+      queryClient.invalidateQueries({ queryKey: ['employee-workspace-custom-roles'] }),
+    ]);
+
+    setFeedback(
+      failed === 0
+        ? { tone: 'success', message: describe(ok) }
+        : { tone: 'error', message: `${describe(ok)} ${failed} could not be updated.` }
+    );
+    setIsBulkRunning(false);
+  };
+
+  const handleBulkAddToDepartment = (userIds: number[], departmentId: number, departmentName: string) =>
+    void runBulk(
+      userIds,
+      async (userId) => {
+        // Union, never replace: someone may sit in more than one department and
+        // overwriting the list here would quietly drop the others.
+        const member = findUserById(userId);
+        const existing = (member?.groups || []).map((group: any) => Number(group.id));
+        await userApi.update(userId, {
+          group_ids: Array.from(new Set([...existing, departmentId])),
+        });
+      },
+      (ok) => `Added ${ok} ${ok === 1 ? 'person' : 'people'} to ${departmentName}.`
+    );
+
+  const handleBulkAssignRole = (userIds: number[], roleId: number, roleName: string) => {
+    const role = (customRolesQuery.data || []).find((candidate: any) => candidate.id === roleId);
+    if (!role) return;
+
+    void runBulk(
+      userIds,
+      async (userId) => {
+        if (role.is_system) {
+          await userApi.update(userId, { role: role.slug as 'admin' | 'manager' | 'employee' });
+        } else {
+          await roleApi.assignUser({ user_id: userId, role_id: roleId });
+        }
+      },
+      (ok) => `Assigned ${roleName} to ${ok} ${ok === 1 ? 'person' : 'people'}.`
+    );
+  };
+
+  const handleBulkRemove = (userIds: number[]) => {
+    const removable = userIds.filter((id) => Number(id) !== Number(user.id));
+    if (removable.length === 0) {
+      setFeedback({ tone: 'error', message: 'You cannot remove your own account.' });
+      return;
+    }
+    if (!confirm(`Remove ${removable.length} ${removable.length === 1 ? 'employee' : 'employees'}? Their accounts are deleted.`)) {
+      return;
+    }
+
+    void runBulk(
+      removable,
+      (userId) => userApi.delete(userId),
+      (ok) => `Removed ${ok} ${ok === 1 ? 'employee' : 'employees'}.`
+    );
+  };
+
+  /**
+   * Built in the browser from the rows already on screen. `userApi.exportCsv`
+   * only accepts a department filter, so it cannot express "these ten people".
+   */
+  const handleExportSelected = (selectedUsers: any[]) => {
+    const header = ['Employee code', 'Name', 'Email', 'Role', 'Department', 'Timezone'];
+    const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+    const csv = [
+      header.map(escape).join(','),
+      ...selectedUsers.map((row) =>
+        [
+          employeeCodeOf(row) || row.id,
+          row.name,
+          row.email,
+          resolveUserRoleLabel(row, customRolesQuery.data || []),
+          resolveEmployeeDepartment(row),
+          resolveEmployeeTimezone(row),
+        ]
+          .map(escape)
+          .join(',')
+      ),
+    ].join('\n');
+
+    const url = window.URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `employees-selected-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
 
   const canCreateGroups = currentUserLevel <= 10;
   const canManageDepartments = currentUserLevel <= 50;
@@ -727,9 +833,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         displayRole: getRoleName(member),
       }));
 
-      // Find lead: highest rank (lowest hierarchy_level)
-      const sortedByRank = [...enrichedUsers].sort((a, b) => a.level - b.level);
-      const lead = sortedByRank[0] ?? null;
+      // The department lead is the most senior MANAGER — not simply the most
+      // senior person. Sorting everyone by hierarchy_level and taking the first
+      // picks an admin whenever one happens to be a member, which is why the
+      // chart showed employees led by (and reporting to) an admin. Admins are
+      // above the department, not the lead of it. Mirrors the server-side
+      // ReportingManagerResolver rule: 10 < level < 100.
+      const managerCandidates = enrichedUsers
+        .filter((member: any) => member.level > 10 && member.level < 100)
+        .sort((a: any, b: any) => a.level - b.level || String(a.name || '').localeCompare(String(b.name || '')));
+      const lead = managerCandidates[0] ?? null;
       const leadLabel = lead?.displayRole || 'Lead';
       const memberCount = enrichedUsers.length;
 
@@ -744,44 +857,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         leadLabel,
         leadEmail: lead?.email || null,
         managerName: lead?.name || 'Not assigned', // keep for backward compat in UI refs
-        color: piePalette[index % piePalette.length],
       };
     });
   }, [groups, customRolesQuery.data]);
-
-  const selectedDepartmentUsers = useMemo(() => {
-    const dept = teamInsights.find((t) => t.id === selectedTeamId);
-    return (dept?.users ?? []).map((u: any) => ({ id: u.id, name: u.name, email: u.email }));
-  }, [teamInsights, selectedTeamId]);
-
-  const pieSegments = useMemo(() => {
-    const values = teamInsights.map((team) => team.membersCount);
-    const total = values.reduce((sum, value) => sum + value, 0);
-    if (total <= 0) {
-      return teamInsights.map((team) => ({
-        ...team,
-        startAngle: 0,
-        endAngle: 0,
-        percentage: 0,
-      }));
-    }
-
-    let currentAngle = 0;
-    return teamInsights.map((team, index) => {
-      const value = values[index];
-      const sweep = (value / total) * 360;
-      const startAngle = currentAngle;
-      const endAngle = startAngle + sweep;
-      currentAngle = endAngle;
-
-      return {
-        ...team,
-        startAngle,
-        endAngle,
-        percentage: Math.round((value / total) * 100),
-      };
-    });
-  }, [teamInsights]);
 
   useEffect(() => {
     if (!departmentOptions.includes(directoryDepartmentFilter)) {
@@ -794,70 +872,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       setDirectoryTimezoneFilter('All timezones');
     }
   }, [timezoneOptions, directoryTimezoneFilter]);
-
-  const resolveRoleValue = (row: any, roleOptions: Array<{ value: string }>): string => {
-    const customCandidate = row.role_id ? `custom_${row.role_id}` : null;
-    const candidates = [customCandidate, row.role].filter(Boolean);
-    for (const candidate of candidates) {
-      if (roleOptions.some((o) => o.value === candidate)) {
-        return candidate;
-      }
-    }
-    const fallback = roleOptions.find((o) => o.value === 'employee') ? 'employee' : roleOptions[0]?.value;
-    return fallback || row.role || 'employee';
-  };
-
-  const getRoleDropdownOptions = (row: any): Array<{ value: string; label: string; isCustom: boolean; roleId?: number }> => {
-    const currentRole = row?.role as string;
-    const currentRoleId = row?.role_id as number | null;
-    const customRoles = customRolesQuery.data || [];
-    const options: Array<{ value: string; label: string; isCustom: boolean; roleId?: number }> = [];
-
-    if (currentUserLevel <= 10) {
-      if (Number(row?.id) === Number(user.id)) {
-        if (currentRoleId) {
-          const cr = customRoles.find((r: any) => r.id === currentRoleId);
-          options.push({ value: `custom_${currentRoleId}`, label: cr?.name || 'Custom Role', isCustom: true, roleId: currentRoleId });
-        } else {
-          options.push({ value: currentRole, label: currentRole.charAt(0).toUpperCase() + currentRole.slice(1), isCustom: false });
-        }
-        return options;
-      }
-
-      options.push(
-        { value: 'admin', label: 'Admin', isCustom: false },
-        { value: 'manager', label: 'Manager', isCustom: false },
-        { value: 'employee', label: 'Employee', isCustom: false },
-      );
-
-      const seenValues = new Set(['admin', 'manager', 'employee']);
-      for (const cr of customRoles) {
-        const value = cr.is_system ? cr.slug : `custom_${cr.id}`;
-        if (!seenValues.has(value)) {
-          seenValues.add(value);
-          options.push({ value, label: cr.name, isCustom: !cr.is_system, roleId: cr.is_system ? undefined : cr.id });
-        }
-      }
-
-      return options;
-    }
-
-    if (currentUserLevel <= 50) {
-      const val = currentRoleId ? `custom_${currentRoleId}` : currentRole;
-      const label = currentRoleId
-        ? (customRoles.find((r: any) => r.id === currentRoleId)?.name || 'Custom Role')
-        : (currentRole.charAt(0).toUpperCase() + currentRole.slice(1));
-      options.push({ value: val, label, isCustom: !!currentRoleId, roleId: currentRoleId || undefined });
-      return options;
-    }
-
-    const val = currentRoleId ? `custom_${currentRoleId}` : currentRole;
-    const label = currentRoleId
-      ? (customRoles.find((r: any) => r.id === currentRoleId)?.name || 'Custom Role')
-      : (currentRole.charAt(0).toUpperCase() + currentRole.slice(1));
-    options.push({ value: val, label, isCustom: !!currentRoleId, roleId: currentRoleId || undefined });
-    return options;
-  };
 
   const handleDeleteUser = (targetUser: any) => {
     if (!isStrictAdmin || !targetUser?.id) {
@@ -873,10 +887,14 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   };
 
   const handleOpenSettings = (targetUser: any) => {
-    pendingSettingsScrollUserIdRef.current = targetUser.id;
     setSettingsUserId(targetUser.id);
     setSettingsDraft(resolveEmployeeSettings(targetUser));
     setFeedback(null);
+  };
+
+  const handleCloseSettings = () => {
+    setSettingsUserId(null);
+    setSettingsDraft(null);
   };
 
   const handleSaveSettings = () => {
@@ -914,7 +932,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   }
 
   return (
-    <div className="w-full space-y-5 bg-[#f5f7fb] pb-8 text-slate-900">
+    // No background of its own: the shell already paints #F5F7F8, and this was
+    // painting #f5f7fb over it — a near-miss shade that showed as a seam.
+    <div className="w-full space-y-5 pb-8 text-slate-900">
       {mode !== 'teams' && (
       <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
@@ -922,26 +942,9 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <p className="mt-3 text-sm font-medium text-slate-900">{pageTitle.eyebrow}</p>
           <p className="mt-1 max-w-4xl text-xs text-slate-500">{pageTitle.description}</p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-start gap-2 self-start md:mt-3">
-          {mode === 'employees' && isStrictAdmin ? (
-            <Link to="/add-user" className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80">
-              <UserPlus className="h-4 w-4" />
-              Add Employee
-            </Link>
-          ) : null}
-          {mode === 'employees' ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void handleExportCsv()}
-              disabled={isExporting}
-              className="h-10"
-            >
-              <Download className="h-4 w-4" />
-              {isExporting ? 'Exporting...' : 'Export CSV'}
-            </Button>
-          ) : null}
-        </div>
+        {/* Add Employee and Export CSV live in the roster toolbar for this mode,
+            beside the search and filters they act on — repeating them up here
+            rendered each button twice on the page. */}
       </header>
       )}
 
@@ -949,181 +952,91 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
       {mode === 'employees' && (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-2">
-            <MetricCard label="Employees" value={users.length} hint="Current organization users" icon={Users} accent="sky" />
-            <MetricCard label="Managers / Admins" value={users.filter((u: any) => getHierarchyLevel(u) < 100).length} hint="Elevated roles" icon={KeyRound} accent="violet" />
-          </div>
-
-          <DataTable
-            title={showIncompleteOnly 
-              ? incompleteFilterType === 'missing_pan' 
-                ? 'Employees Missing PAN Numbers'
-                : incompleteFilterType === 'missing_bank'
-                  ? 'Employees Missing Bank Details'
-                  : 'Employees with Incomplete Profiles'
-              : 'Employee Directory'}
-            description={showIncompleteOnly 
-              ? incompleteFilterType === 'missing_pan'
-                ? 'Showing employees without PAN card details. Click on an employee to update their profile.'
-                : incompleteFilterType === 'missing_bank'
-                  ? 'Showing employees missing bank account information. Click on an employee to update their profile.'
-                  : 'Showing employees missing bank account or PAN details. Click on an employee to complete their profile.' 
-              : canManageDirectoryRoles 
-                ? 'Role, department, work state, tracked hours, and promotion controls from the existing users endpoint.' 
-                : 'Role, department, work state, and tracked hours from the existing users endpoint.'}
+          <EmployeeRoster
+            users={users}
             rows={employeeDirectoryRows}
-            emptyMessage="No employees found."
-            bodyClassName="max-h-[34rem] overflow-auto"
-            headerAction={(
-              <div className="flex flex-col gap-2">
-                <div className="grid grid-cols-1 gap-2 lg:grid-cols-4">
-                {showIncompleteOnly && (
-                  <div className="min-w-[13rem] lg:col-span-4">
-                    <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                      <AlertCircle className="h-4 w-4 text-amber-600" />
-                      <span className="text-sm text-amber-800 flex-1">
-                        {incompleteFilterType === 'missing_pan' 
-                          ? 'Showing employees without PAN card details'
-                          : incompleteFilterType === 'missing_bank'
-                            ? 'Showing employees missing bank account information'
-                            : 'Showing employees with incomplete profiles (missing bank/PAN details)'}
-                      </span>
-                      <Button 
-                        variant="secondary" 
-                        size="sm"
-                        onClick={() => {
-                          setShowIncompleteOnly(false);
-                          setIncompleteFilterType('all');
-                          navigate('/employees');
-                        }}
-                      >
-                        Clear Filter
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                <div className="min-w-[13rem]">
-                  <FieldLabel>Specific employee</FieldLabel>
-                  <EmployeeSelect
-                    employees={users}
-                    ariaLabel="Specific employee filter"
-                    value={directoryFilterUserId}
-                    onChange={(nextValue) => {
-                      setDirectoryFilterUserId(nextValue);
-                      if (typeof nextValue === 'number') {
-                        setSelectedUserId(nextValue);
-                      }
-                    }}
-                    includeAllOption
-                    allOptionLabel="All employees"
-                    searchPlaceholder="Search employee name"
-                  />
-                </div>
-                <div className="min-w-[13rem]">
-                  <FieldLabel>Department</FieldLabel>
-                  <SelectInput
-                    aria-label="Employee department filter"
-                    value={directoryDepartmentFilter}
-                    onChange={(event) => setDirectoryDepartmentFilter(event.target.value)}
-                  >
-                    {departmentOptions.map((department) => (
-                      <option key={department} value={department}>
-                        {department}
-                      </option>
-                    ))}
-                  </SelectInput>
-                </div>
-                <div className="min-w-[13rem]">
-                  <FieldLabel>Timezone</FieldLabel>
-                  <SelectInput
-                    aria-label="Employee timezone filter"
-                    value={directoryTimezoneFilter}
-                    onChange={(event) => setDirectoryTimezoneFilter(event.target.value)}
-                  >
-                    {timezoneOptions.map((tz) => (
-                      <option key={tz} value={tz}>{tz}</option>
-                    ))}
-                  </SelectInput>
-                </div>
-                <div className="min-w-[13rem]">
-                  <FieldLabel>Sort list</FieldLabel>
-                  <SelectInput
-                    aria-label="Employee directory sort"
-                    value={directorySort}
-                    onChange={(event) => setDirectorySort(event.target.value as EmployeeDirectorySort)}
-                  >
-                    <option value="default">Default order</option>
-                    <option value="name_asc">Name A-Z</option>
-                  </SelectInput>
-                </div>
-              </div>
-              </div>
-            )}
-            columns={[
-              { key: 'employee_id', header: 'Employee Code', render: (row: any) => <span className="text-sm text-slate-600 font-mono">{row.employee_work_info?.employee_code || row.employeeWorkInfo?.employee_code || '—'}</span> },
-              { key: 'employee', header: 'Employee', render: (row: any) => <div><Link to={`/employees/${row.employee_work_info?.employee_code || row.employeeWorkInfo?.employee_code || row.id}`} className="font-medium text-slate-950 hover:text-sky-700">{row.name}</Link><p className="text-xs text-slate-500">{row.email}</p></div> },
-              { key: 'role', header: 'Role', render: (row: any) => resolveUserRoleLabel(row, customRolesQuery.data || []) },
-              { key: 'department', header: 'Department', render: (row: any) => resolveEmployeeDepartment(row) },
-              { key: 'timezone', header: 'Timezone', render: (row: any) => resolveEmployeeTimezone(row) },
-              {
-                key: 'settings',
-                header: 'Settings',
-                render: (row: any) => (
-                  <Button variant="secondary" size="sm" onClick={() => handleOpenSettings(row)}>
-                    <SlidersHorizontal className="h-4 w-4" />
-                    Settings
-                  </Button>
-                ),
-              },
-              ...(isStrictAdmin
-                ? [{
-                    key: 'remove',
-                    header: 'Remove',
-                    render: (row: any) => (
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleDeleteUser(row)}
-                        disabled={deleteUserMutation.isPending}
-                      >
-                        Remove
-                      </Button>
-                    ),
-                  }]
-                : []),
-
-            ]}
+            segment={directorySegment}
+            setSegment={setDirectorySegment}
+            query={directoryQuery}
+            setQuery={setDirectoryQuery}
+            departmentOptions={departmentOptions}
+            departmentFilter={directoryDepartmentFilter}
+            setDepartmentFilter={setDirectoryDepartmentFilter}
+            timezoneOptions={timezoneOptions}
+            timezoneFilter={directoryTimezoneFilter}
+            setTimezoneFilter={setDirectoryTimezoneFilter}
+            sort={directorySort}
+            setSort={setDirectorySort}
+            workingCount={workingNowCount}
+            incompleteCount={incompleteProfileCount}
+            canManage={isStrictAdmin}
+            isExporting={isExporting}
+            resolveCode={(row: any) => employeeCodeOf(row) || String(row.id)}
+            resolveRole={(row: any) => resolveUserRoleLabel(row, customRolesQuery.data || [])}
+            resolveDepartment={(row: any) => resolveEmployeeDepartment(row)}
+            resolveTimezone={(row: any) => resolveEmployeeTimezone(row)}
+            resolveHref={(row: any) => `/employees/${employeeCodeOf(row) || row.id}`}
+            isIncomplete={(row: any) => hasIncompleteProfile(row, incompleteFilterType)}
+            onOpenSettings={(row: any) => handleOpenSettings(row)}
+            onRemove={(row: any) => handleDeleteUser(row)}
+            onExport={() => void handleExportCsv()}
+            bulk={{
+              departments: groups.map((group: any) => ({ id: Number(group.id), name: group.name })),
+              roles: (customRolesQuery.data || []).map((role: any) => ({ id: role.id, name: role.name })),
+              canMoveDepartment: canManageDepartments,
+              canAssignRole: isStrictAdmin,
+              canRemove: isStrictAdmin,
+              isBusy: isBulkRunning,
+              onAddToDepartment: handleBulkAddToDepartment,
+              onAssignRole: handleBulkAssignRole,
+              onExportSelected: handleExportSelected,
+              onRemove: handleBulkRemove,
+            }}
+            addEmployeeSlot={isStrictAdmin ? (
+              <Link
+                to="/add-user"
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700"
+              >
+                <UserPlus className="h-4 w-4" /> Add employee
+              </Link>
+            ) : null}
           />
 
-          {settingsTargetUser && settingsDraft ? (
-            <div ref={settingsPanelRef} className="scroll-mt-28">
-              <SurfaceCard className="p-5">
-                <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">Additional settings</p>
-                    <h2 className="mt-2 text-lg font-semibold text-slate-950">{settingsTargetUser.name}</h2>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Update monitoring interval and permission toggles for this {resolveUserRoleLabel(settingsTargetUser, customRolesQuery.data || [])}. Screenshot capture uses this monitoring interval after the user refreshes or signs in again.
-                    </p>
-                  </div>
-                  <Button
-                    onClick={handleSaveSettings}
-                    disabled={updateSettingsMutation.isPending}
-                  >
-                    {updateSettingsMutation.isPending ? 'Saving...' : 'Save Settings'}
-                  </Button>
-                </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <SlideOver
+            open={Boolean(settingsTargetUser && settingsDraft)}
+            title={settingsTargetUser?.name ?? ''}
+            subtitle={`Monitoring and access for this ${resolveUserRoleLabel(settingsTargetUser, customRolesQuery.data || [])}`}
+            onClose={handleCloseSettings}
+            footer={(
+              <>
+                <Button variant="secondary" size="sm" onClick={handleCloseSettings} disabled={updateSettingsMutation.isPending}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={handleSaveSettings} loading={updateSettingsMutation.isPending}>
+                  Save settings
+                </Button>
+              </>
+            )}
+          >
+            <p className="mb-4 text-xs leading-relaxed text-slate-500">
+              Screenshot capture picks up a new monitoring interval after the user refreshes or signs in again.
+            </p>
+            {settingsDraft ? (            <div className="grid grid-cols-1 gap-4">
                   <div>
                     <FieldLabel>Monitoring Interval</FieldLabel>
                     <SelectInput
-                      value={settingsDraft.monitoringInterval}
+                      value={settingsDraft.monitoringInterval ?? ''}
                       onChange={(event) => setSettingsDraft((current) => current ? {
                         ...current,
-                        monitoringInterval: Number(event.target.value) as MonitoringInterval,
+                        monitoringInterval: event.target.value === ''
+                          ? null
+                          : Number(event.target.value) as MonitoringInterval,
                       } : current)}
                     >
+                      <option value="">
+                        {`Inherit from organization (every ${settingsTargetUser?.effective_monitoring_interval_minutes ?? 10} minutes)`}
+                      </option>
                       {monitoringIntervalOptions.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
@@ -1187,10 +1100,8 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                       />
                     </div>
                   </div>
-                </div>
-              </SurfaceCard>
-            </div>
-          ) : null}
+            </div>            ) : null}
+          </SlideOver>
         </>
       )}
 
@@ -1204,16 +1115,12 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           canManageDepartments={canManageDepartments}
           canCreateGroups={canCreateGroups}
           teamInsights={teamInsights}
-          pieSegments={pieSegments}
-          selectedDepartmentUsers={selectedDepartmentUsers}
           groupDirectoryQuery={groupDirectoryQuery}
           setGroupDirectoryQuery={setGroupDirectoryQuery}
           memberDrafts={memberDrafts}
           setMemberDrafts={setMemberDrafts}
           selectedTeamId={selectedTeamId}
           setSelectedTeamId={setSelectedTeamId}
-          activeTeamId={activeTeamId}
-          setActiveTeamId={setActiveTeamId}
           showGroupModal={showGroupModal}
           setShowGroupModal={setShowGroupModal}
           feedback={feedback}
@@ -1289,96 +1196,24 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       )}
 
       {mode === 'roles' && (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {roleCards.length > 0
-              ? roleCards.map((card: any) => (
-                  <MetricCard key={card.key} label={card.label} value={card.value} hint={card.hint} icon={card.icon} accent={card.accent} />
-                ))
-              : (
-                <>
-                  <MetricCard label="Admins" value={users.filter((u: any) => getHierarchyLevel(u) <= 10).length} hint="Organization admins" icon={ShieldCheck} accent="sky" />
-                  <MetricCard label="Managers" value={users.filter((u: any) => getHierarchyLevel(u) === 50 && !u.role_id).length} hint="Managers" icon={ShieldCheck} accent="emerald" />
-                  <MetricCard label="Employees" value={users.filter((u: any) => getHierarchyLevel(u) >= 100 && !u.role_id).length} hint="Default role users" icon={Users} accent="violet" />
-                  <MetricCard label="Custom Roles" value={users.filter((u: any) => u.role_id).length} hint="Users with custom job roles" icon={KeyRound} accent="amber" />
-                </>
-              )}
-          </div>
-
-          <SurfaceCard className="p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">Role Assignment</h2>
-                <p className="mt-1 text-sm text-slate-500">Search by person, email, role, or department to update access without scanning the full list.</p>
-              </div>
-              <div className="w-full lg:max-w-sm">
-                <FieldLabel>Search people</FieldLabel>
-                <TextInput
-                  value={roleSearchQuery}
-                  onChange={(event) => setRoleSearchQuery(event.target.value)}
-                  placeholder="Search name, email, role, or department"
-                />
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span className="rounded-full bg-slate-100 px-3 py-1">
-                Showing <span className="font-semibold text-slate-700">{filteredRoleUsers.length}</span> of {users.length} users
-              </span>
-              {roleSearchQuery.trim() ? (
-                <button
-                  type="button"
-                  onClick={() => setRoleSearchQuery('')}
-                  className="rounded-full border border-slate-200 px-3 py-1 font-medium text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
-                >
-                  Clear search
-                </button>
-              ) : null}
-            </div>
-            <div className="mt-4 space-y-3">
-              {users.length === 0 ? (
-                <PageEmptyState title="No users found" description="Users must exist before roles can be updated." />
-              ) : filteredRoleUsers.length === 0 ? (
-                <PageEmptyState title="No matching users" description="Try a different search term to find the role assignment you need." />
-              ) : (
-                filteredRoleUsers.map((targetUser: any) => {
-                  const roleOptions = getRoleDropdownOptions(targetUser);
-                  const currentValue = resolveRoleValue(targetUser, roleOptions);
-                  return (
-                    <div key={targetUser.id} className="flex flex-col gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <p className="font-medium text-slate-950">{targetUser.name}</p>
-                        <p className="text-sm text-slate-500">{targetUser.email}</p>
-                        <p className="mt-1 text-xs text-slate-500">{resolveEmployeeDepartment(targetUser)} department</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <SelectInput
-                          value={currentValue}
-                          onChange={(event) => {
-                            const val = event.target.value;
-                            if (val.startsWith('custom_')) {
-                              const roleId = parseInt(val.replace('custom_', ''));
-                              updateRoleMutation.mutate({ userId: targetUser.id, roleId });
-                            } else {
-                              updateRoleMutation.mutate({ userId: targetUser.id, role: val });
-                            }
-                          }}
-                          disabled={!isStrictAdmin || updateRoleMutation.isPending}
-                          className="min-w-[11rem]"
-                        >
-                          {roleOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </SelectInput>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </SurfaceCard>
-        </>
+        <RoleAssignmentBoard
+          users={users}
+          roles={(customRolesQuery.data || []) as any[]}
+          currentUserId={Number(user.id)}
+          canAssign={isStrictAdmin}
+          isPending={updateRoleMutation.isPending}
+          query={roleSearchQuery}
+          setQuery={setRoleSearchQuery}
+          departmentOf={(target: any) => resolveEmployeeDepartment(target)}
+          onAssign={(userIds, target, roleName) => {
+            userIds.forEach((userId) => updateRoleMutation.mutate({ userId, ...target }));
+            setFeedback({
+              tone: 'success',
+              message: `Assigning ${roleName} to ${userIds.length} ${userIds.length === 1 ? 'person' : 'people'}…`,
+            });
+          }}
+          onManageDefinitions={() => navigate('/settings/roles')}
+        />
       )}
 
       <QuickCreateGroupDialog

@@ -13,6 +13,7 @@ use App\Models\ChatMessageReaction;
 use App\Models\ChatTypingStatus;
 use App\Models\User;
 use App\Services\AppNotificationService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -288,15 +289,120 @@ class ChatService
             return ['status' => 404, 'payload' => ['message' => 'Group not found']];
         }
 
-        return [
-            'status' => 200,
-            'payload' => ChatGroupMessage::query()
-                ->where('group_id', $group->id)
-                ->when($sinceId, fn ($query, $id) => $query->where('id', '>', $id))
-                ->with(['sender:id,name,email', 'reactionEntries'])
-                ->orderBy('created_at')
-                ->get(),
-        ];
+        $messages = ChatGroupMessage::query()
+            ->where('group_id', $group->id)
+            ->when($sinceId, fn ($query, $id) => $query->where('id', '>', $id))
+            ->with(['sender:id,name,email', 'reactionEntries'])
+            ->orderBy('created_at')
+            ->get();
+
+        // Direct messages have always shown Sent / Read; a group post showed
+        // nothing at all, so you could not tell whether anyone had seen it.
+        // A member counts as having read a message when they opened the group
+        // after it was posted.
+        $lastReadByMember = ChatGroupMember::query()
+            ->where('group_id', $group->id)
+            ->pluck('last_read_at', 'user_id');
+
+        $messages->each(function (ChatGroupMessage $message) use ($lastReadByMember) {
+            $readers = $lastReadByMember
+                ->filter(fn ($lastReadAt, $userId) => (int) $userId !== (int) $message->sender_id
+                    && $lastReadAt !== null
+                    && Carbon::parse($lastReadAt)->gte($message->created_at))
+                ->count();
+
+            $message->setAttribute('read_by_count', $readers);
+            $message->setAttribute('audience_count', max(0, $lastReadByMember->count() - 1));
+        });
+
+        return ['status' => 200, 'payload' => $messages];
+    }
+
+    /**
+     * Find messages by body text across every thread the user belongs to.
+     *
+     * The chat search box could only filter the threads already loaded in the
+     * browser by name and last-message text, so a message more than one post
+     * old was unreachable.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function searchMessages(?User $user, string $term, int $limit = 30): array
+    {
+        $term = trim($term);
+        if (!$user || !$user->organization_id || mb_strlen($term) < 2) {
+            return [];
+        }
+
+        $conversationIds = ChatConversation::query()
+            ->where('organization_id', $user->organization_id)
+            ->where(function ($query) use ($user) {
+                $query->where('participant_one_id', $user->id)
+                    ->orWhere('participant_two_id', $user->id);
+            })
+            ->pluck('id');
+
+        $groupIds = $this->userGroupIds($user);
+
+        // Bodies are stored HTML-escaped by HtmlSanitizerService, so a message
+        // reading "what's up" sits in the column as "what&apos;s up". Matching
+        // the raw term alone silently returned nothing for any phrase
+        // containing an apostrophe, quote or ampersand.
+        $escapedTerm = htmlspecialchars($term, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $matchesTerm = function ($query) use ($term, $escapedTerm) {
+            $query->where('body', 'like', '%'.$term.'%');
+            if ($escapedTerm !== $term) {
+                $query->orWhere('body', 'like', '%'.$escapedTerm.'%');
+            }
+        };
+
+        $direct = $conversationIds->isEmpty() ? collect() : ChatMessage::query()
+            ->whereIn('conversation_id', $conversationIds)
+            ->where($matchesTerm)
+            ->with(['sender:id,name', 'conversation:id,participant_one_id,participant_two_id'])
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get()
+            ->map(function (ChatMessage $message) use ($user) {
+                $conversation = $message->conversation;
+                $otherId = $conversation && (int) $conversation->participant_one_id === (int) $user->id
+                    ? $conversation->participant_two_id
+                    : $conversation?->participant_one_id;
+
+                return [
+                    'message_id' => (int) $message->id,
+                    'thread_type' => 'direct',
+                    'thread_id' => (int) $message->conversation_id,
+                    'thread_name' => optional(User::find($otherId))->name ?? 'Direct message',
+                    'sender_name' => $message->sender?->name,
+                    'body' => (string) $message->body,
+                    'created_at' => $message->created_at,
+                ];
+            });
+
+        $groupHits = $groupIds->isEmpty() ? collect() : ChatGroupMessage::query()
+            ->whereIn('group_id', $groupIds)
+            ->where($matchesTerm)
+            ->with(['sender:id,name', 'group:id,name'])
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (ChatGroupMessage $message) => [
+                'message_id' => (int) $message->id,
+                'thread_type' => 'group',
+                'thread_id' => (int) $message->group_id,
+                'thread_name' => $message->group?->name ?? 'Group',
+                'sender_name' => $message->sender?->name,
+                'body' => (string) $message->body,
+                'created_at' => $message->created_at,
+            ]);
+
+        return $direct
+            ->concat($groupHits)
+            ->sortByDesc('created_at')
+            ->take($limit)
+            ->values()
+            ->all();
     }
 
     public function sendMessage(Request $request, ?User $user, int $conversationId): array
@@ -840,5 +946,14 @@ class ChatService
             ->where('id', $groupId)
             ->whereHas('members', fn ($query) => $query->where('user_id', $userId))
             ->first();
+    }
+
+    /** Ids of every chat group the user is a member of, for scoping search. */
+    private function userGroupIds(User $user)
+    {
+        return ChatGroup::query()
+            ->where('organization_id', $user->organization_id)
+            ->whereHas('members', fn ($query) => $query->where('user_id', $user->id))
+            ->pluck('id');
     }
 }

@@ -8,10 +8,9 @@ use Illuminate\Support\Facades\URL;
 
 class Screenshot extends Model
 {
-    protected $fillable = ['time_entry_id', 'filename', 'thumbnail', 'blurred', 'local_id', 'device_id', 'captured_at'];
+    protected $fillable = ['time_entry_id', 'filename', 'thumbnail', 'local_id', 'device_id', 'captured_at'];
 
     protected $casts = [
-        'blurred' => 'boolean',
         'captured_at' => 'datetime',
     ];
 
@@ -27,10 +26,22 @@ class Screenshot extends Model
         $ttlMinutes = (int) config('screenshots.url_ttl_minutes', 30);
         $ttlMinutes = max(1, $ttlMinutes);
 
+        // Bind the link to whoever it is being minted for. ScreenshotController::file()
+        // rejects a signed URL whose viewer does not match the caller, so a link
+        // that leaks out of one admin's session cannot be replayed by anyone else.
+        // Console contexts (screenshots:health-check) have no request and mint an
+        // unbound link; file() treats a missing viewer as "fall back to the
+        // authorization check alone".
+        $parameters = ['screenshot' => $this->getKey()];
+        $viewerId = request()?->user()?->id;
+        if ($viewerId) {
+            $parameters['viewer'] = (int) $viewerId;
+        }
+
         $relativeSignedPath = URL::temporarySignedRoute(
             'screenshots.file',
             now()->addMinutes($ttlMinutes),
-            ['screenshot' => $this->getKey()],
+            $parameters,
             absolute: false
         );
 

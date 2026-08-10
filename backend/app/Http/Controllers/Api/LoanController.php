@@ -106,6 +106,17 @@ class LoanController extends Controller
             ], 422);
         }
 
+        // Maker-checker. The route is admin/manager-gated, but that still left
+        // an approver able to raise a loan for themselves and approve it in the
+        // next request — money out of the company on one person's say-so, with
+        // approved_by pointing at the same person who requested it.
+        if ((int) $loan->user_id === (int) $request->user()->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You cannot approve your own loan request. Ask another approver.',
+            ], 403);
+        }
+
         $loan->update([
             'status' => 'approved',
             'approved_by' => auth()->id(),

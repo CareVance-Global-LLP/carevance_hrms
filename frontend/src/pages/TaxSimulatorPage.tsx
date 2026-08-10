@@ -139,7 +139,7 @@ export default function TaxSimulatorPage() {
           {/* Inputs Panel */}
           <SurfaceCard className="p-5 lg:col-span-1">
             <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <Calculator className="h-5 w-5 text-[#5D969D]" />
+              <Calculator className="h-5 w-5 text-blue-600" />
               Your Inputs
             </h3>
             <div className="space-y-4">
@@ -221,7 +221,7 @@ export default function TaxSimulatorPage() {
               <>
                 {compareMutation.isPending && (
                   <SurfaceCard className="p-8 text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-[#5D969D] mx-auto mb-2" />
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
                     <p className="text-slate-500">Calculating tax under both regimes...</p>
                   </SurfaceCard>
                 )}
@@ -248,7 +248,7 @@ export default function TaxSimulatorPage() {
                         <div className="border-t pt-2 mt-2">
                           <div className="flex justify-between text-base font-bold">
                             <span>Annual Tax</span>
-                            <span className="text-[#5D969D]">{formatPayrollAmount(compareResult?.new_regime?.tax || 0, { compact: true })}</span>
+                            <span className="text-blue-600">{formatPayrollAmount(compareResult?.new_regime?.tax || 0, { compact: true })}</span>
                           </div>
                           <div className="flex justify-between text-xs text-slate-500 mt-1">
                             <span>Monthly TDS</span>
@@ -290,7 +290,7 @@ export default function TaxSimulatorPage() {
                     {compareResult?.recommendation && (
                       <SurfaceCard className="p-5 md:col-span-2">
                         <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2">
-                          <Info className="h-4 w-4 text-[#5D969D]" />
+                          <Info className="h-4 w-4 text-blue-600" />
                           Recommendation
                         </h3>
                         <p className="text-sm text-slate-600">
@@ -312,7 +312,7 @@ export default function TaxSimulatorPage() {
               <>
                 {takeHomeMutation.isPending && (
                   <SurfaceCard className="p-8 text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-[#5D969D] mx-auto mb-2" />
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-2" />
                     <p className="text-slate-500">Calculating monthly take-home...</p>
                   </SurfaceCard>
                 )}
@@ -422,7 +422,7 @@ export default function TaxSimulatorPage() {
             {activeTab === 'hra' && (
               <SurfaceCard className="p-5">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                  <Home className="h-5 w-5 text-[#5D969D]" />
+                  <Home className="h-5 w-5 text-blue-600" />
                   HRA Optimization Calculator
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

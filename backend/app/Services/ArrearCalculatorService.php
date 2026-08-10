@@ -56,7 +56,7 @@ class ArrearCalculatorService
 
                 $calculation = $this->calculator->calculatePayroll(
                     annualCtc: $currentCtc,
-                    state: $currentTemplate->pt_state ?? 'maharashtra',
+                    state: $currentTemplate->pt_state ?: '',
                     isMetro: $currentTemplate->is_metro_city ?? true,
                     taxRegime: $currentTemplate->tax_regime ?? 'new',
                     config: [

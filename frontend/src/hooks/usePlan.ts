@@ -203,10 +203,18 @@ export function usePlan() {
 
   const hasFeature = useCallback(
     (feature: string) => {
-      if (feature === 'payroll' && payrollEnabled) return true;
+      // payrollEnabled is a global kill-switch, NOT an entitlement. It used to
+      // `return true` here whenever the flag was on, which granted payroll to
+      // every plan and made the plan check dead code — isPayrollPlan was
+      // computed and never consulted. A tracking-only customer got the full
+      // payroll UI. Both conditions have to hold.
+      if (feature === 'payroll') {
+        return payrollEnabled && isPayrollPlan;
+      }
+
       return features.includes(feature);
     },
-    [features]
+    [features, isPayrollPlan]
   );
 
   return useMemo(() => ({

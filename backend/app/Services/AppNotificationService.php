@@ -20,7 +20,10 @@ class AppNotificationService
         string $title,
         string $message,
         ?array $meta = null,
-        ?int $pollId = null
+        ?int $pollId = null,
+        // Ties every row written by one publish together, so the sender can be
+        // told how many of them have been read.
+        ?string $broadcastId = null
     ): void {
         $normalizedUserIds = $userIds
             ->unique()
@@ -40,7 +43,7 @@ class AppNotificationService
 
         $rows = $users
             ->filter(fn (User $user) => $this->shouldStoreNotification($user, $type))
-            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $meta, $pollId, &$recipientUserIds) {
+            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $meta, $pollId, $broadcastId, &$recipientUserIds) {
                 $resolvedMeta = $this->resolveMeta($type, $meta);
                 $recipientUserIds[] = (int) $user->id;
 
@@ -48,6 +51,7 @@ class AppNotificationService
                     'organization_id' => $organizationId,
                     'user_id' => (int) $user->id,
                     'sender_id' => $senderId,
+                    'broadcast_id' => $broadcastId,
                     'poll_id' => $pollId,
                     'type' => $type,
                     'title' => $title,

@@ -12,10 +12,10 @@ import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import MonthTimeline from './MonthTimeline';
-import CompensationAnalytics from './CompensationAnalytics';
+import PayrollAnalytics, { type AnalyticsRun } from './PayrollAnalytics';
 import ComplianceStatusBoard from './ComplianceStatusBoard';
 
-import type { PayGroup, PayrollMonthlyRun, PayrollDepartment } from '@/types';
+import type { PayGroup } from '@/types';
 
 interface PayrollDashboardProps {
   selectedMonth?: string;
@@ -57,7 +57,12 @@ export default function PayrollDashboard({
   const setSelectedMonth = (m: string) => onMonthChange?.(m);
 
   // Fetch data (runs for timeline, pay groups for stats & grid)
-  const { data: runsData } = useQuery({
+  const {
+    data: runsData,
+    isLoading: isRunsLoading,
+    isError: isRunsError,
+    refetch: refetchRuns,
+  } = useQuery({
     queryKey: ['payroll', 'runs'],
     queryFn: () => payrollApi.getPayrollRuns().then((r) => r.data),
   });
@@ -80,6 +85,15 @@ export default function PayrollDashboard({
     total_gross?: number;
     total_deductions?: number;
     total_net_pay?: number;
+    // Stored per run by updatePayrollRunTotals() and returned by /payroll/runs.
+    // The analytics panel needs the split to show where gross actually goes.
+    total_employer_contributions?: number | string;
+    total_pf_employee?: number | string;
+    total_pf_employer?: number | string;
+    total_esi_employee?: number | string;
+    total_esi_employer?: number | string;
+    total_pt?: number | string;
+    total_tds?: number | string;
     created_at?: string;
     disbursed_at?: string;
   }>;
@@ -88,17 +102,6 @@ export default function PayrollDashboard({
   const monthRun = useMemo(
     () => runs.find((r) => r.month_year === selectedMonth) ?? null,
     [runs, selectedMonth],
-  );
-
-  // Fetch departments for CompensationAnalytics
-  const { data: deptsData } = useQuery({
-    queryKey: ['payroll', 'departments', selectedMonth],
-    queryFn: () =>
-      payrollApi.getDepartments({ month_year: selectedMonth }).then((r) => r.data),
-  });
-  const departments: PayrollDepartment[] = useMemo(
-    () => (deptsData?.departments ?? []) as PayrollDepartment[],
-    [deptsData],
   );
 
   const summaryStats = useMemo(() => {
@@ -214,12 +217,28 @@ export default function PayrollDashboard({
         />
       </div>
 
-      {/* Compensation Analytics Charts */}
-      <CompensationAnalytics
-        departments={departments}
-        runs={runs as Partial<PayrollMonthlyRun>[]}
-        summaryStats={summaryStats}
+      {/* Analytics: cost trend, composition, true cost, headcount vs per-head.
+          Every figure is read off payroll_monthly_runs, which stores its own
+          totals — nothing here re-derives money in the browser. */}
+      <PayrollAnalytics
+        runs={runs as AnalyticsRun[]}
+        selectedMonth={selectedMonth}
+        isLoading={isRunsLoading}
+        isError={isRunsError}
+        onRetry={() => refetchRuns()}
       />
+
+      {/* CompensationAnalytics used to render here. Its four sections are now
+          covered or retired:
+            · "Compensation Distribution by Department" — retired. There is no
+              department key on employee_work_infos, 32 of 88 users are in no
+              team, and "HR"/"Human Resources" both exist as departments, so
+              every department total was silently split. It rendered ₹0.
+            · "Monthly Payroll Trend"        → PayrollAnalytics chart 1
+            · "Earnings vs Deductions"       → PayrollAnalytics chart 2
+            · "Statutory Deductions Breakdown" → PayrollAnalytics chart 2
+          The component file is left in place rather than deleted, so any
+          section can be brought back by re-rendering it. */}
 
       {/* Live statutory compliance readiness board */}
       <ComplianceStatusBoard monthYear={selectedMonth} onOpenFilings={onOpenFilings} />

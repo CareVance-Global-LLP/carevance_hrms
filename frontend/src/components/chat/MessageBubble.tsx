@@ -243,6 +243,14 @@ export default function MessageBubble({
             <span>{formatDateTime(message.created_at, viewerTimezone)}</span>
             {message.is_edited ? <span>Edited</span> : null}
             {!isGroupMsg && mine ? <span>{(message as ChatMessage).read_at ? 'Read' : 'Sent'}</span> : null}
+            {/* Group posts used to show no read state at all. */}
+            {isGroupMsg && mine ? (
+              <span>
+                {Number((message as ChatGroupMessage).read_by_count || 0) > 0
+                  ? `Read by ${(message as ChatGroupMessage).read_by_count}`
+                  : 'Sent'}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>

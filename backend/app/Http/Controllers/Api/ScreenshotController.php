@@ -260,7 +260,6 @@ class ScreenshotController extends Controller
                 'image_data_url' => 'nullable|string|max:'.self::MAX_DATA_URL_CHARS,
                 'filename' => 'nullable|string|max:255',
                 'thumbnail' => 'nullable|string|max:65535',
-                'blurred' => 'nullable|boolean',
                 // Idempotency keys for the offline sync flow. When both are
                 // present, the request is treated as a re-send from the
                 // desktop's offline queue and a previously persisted
@@ -279,7 +278,13 @@ class ScreenshotController extends Controller
             if (!$timeEntry || !$timeEntry->user || $timeEntry->user->organization_id !== $user->organization_id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
-            if (!$this->canViewAll($user) && $timeEntry->user_id !== $user->id) {
+            // Upload authority has to match read authority. canViewAll() is a flat
+            // "hierarchy level < 100" test with no group scoping and no direction
+            // check, so it let any manager attach a forged screenshot to any
+            // same-org user — including an admin, and including employees outside
+            // their own groups — while reading that same row went through the far
+            // stricter canMonitorUser().
+            if ((int) $timeEntry->user_id !== (int) $user->id && !$this->canMonitorUser($user, $timeEntry->user)) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
 
@@ -361,7 +366,6 @@ class ScreenshotController extends Controller
                 'time_entry_id' => $validated['time_entry_id'],
                 'filename' => $filename,
                 'thumbnail' => $validated['thumbnail'] ?? null,
-                'blurred' => (bool)($validated['blurred'] ?? false),
                 // Persist offline-queue idempotency keys so that retries
                 // from the same device can be detected and the existing
                 // row reused instead of duplicated.
@@ -380,7 +384,6 @@ class ScreenshotController extends Controller
                 'filename' => $filename,
                 'mime_type' => $request->file('image')?->getMimeType(),
                 'file_size_bytes' => $request->file('image')?->getSize(),
-                'blurred' => (bool) ($validated['blurred'] ?? false),
                 'recorded_at' => $screenshot->created_at?->toIso8601String(),
             ]);
 
@@ -463,6 +466,22 @@ class ScreenshotController extends Controller
     public function file(Request $request, Screenshot $screenshot): BinaryFileResponse|\Illuminate\Http\JsonResponse
     {
         try {
+            // A valid signature only proves the URL was minted by us and has
+            // not expired. It says nothing about who is holding it, so the same
+            // authorization that governs show()/update()/destroy() has to run
+            // here too — this endpoint returns the actual screen contents.
+            if (! $this->canAccessScreenshot($screenshot)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            // Bind the link to the viewer it was minted for, so a leaked URL
+            // cannot be replayed by a different (even otherwise-authorized)
+            // account. Links minted outside a request context carry no viewer.
+            $signedViewerId = $request->query('viewer');
+            if ($signedViewerId !== null && (int) $signedViewerId !== (int) $request->user()->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
             $path = basename((string) $screenshot->filename);
 
             if ($path === '' || !Storage::disk('screenshots')->exists($path)) {
@@ -515,7 +534,6 @@ class ScreenshotController extends Controller
 
             $validated = $request->validate([
                 'thumbnail' => 'nullable|string',
-                'blurred' => 'nullable|boolean',
             ]);
 
             $screenshot->update($validated);
@@ -576,6 +594,13 @@ class ScreenshotController extends Controller
         if (!$screenshot->timeEntry || !$screenshot->timeEntry->user) {
             return false;
         }
+        // Own captures are always visible to their owner. canMonitorUser() answers
+        // "may this viewer monitor that other person" and deliberately rejects a
+        // subject at or above the viewer's own level — which would otherwise lock
+        // a manager out of their own screenshots even though the listing shows them.
+        if ((int) $screenshot->timeEntry->user_id === (int) $user->id) {
+            return true;
+        }
         if (!$this->canMonitorUser($user, $screenshot->timeEntry->user)) {
             return false;
         }
@@ -630,7 +655,7 @@ class ScreenshotController extends Controller
         }
 
         return Screenshot::query()
-            ->select(['id', 'time_entry_id', 'filename', 'thumbnail', 'blurred', 'created_at'])
+            ->select(['id', 'time_entry_id', 'filename', 'thumbnail', 'created_at'])
             ->with(['timeEntry.user:id,name,email,role'])
             ->whereHas('timeEntry.user', function ($query) use ($user) {
                 $query->where('organization_id', $user->organization_id);

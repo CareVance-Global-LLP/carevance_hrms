@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -6,25 +6,22 @@ import { activityApi, reportApi, screenshotApi, userApi } from '@/services/api';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import FilterPanel from '@/components/dashboard/FilterPanel';
-import MetricCard from '@/components/dashboard/MetricCard';
-import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import DataTable from '@/components/dashboard/DataTable';
 import Button from '@/components/ui/Button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
-import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
+import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel } from '@/components/ui/FormField';
-import { classifyActivityProductivity as classifyProductivity, normalizeActivityToolLabel as normalizeToolLabel } from '@/lib/activityProductivity';
+import MonitoringOverview from '@/features/monitoring/MonitoringOverview';
+import ScreenshotFilmstrip from '@/features/monitoring/ScreenshotFilmstrip';
 import { hasStrictAdminAccess } from '@/lib/permissions';
-import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
 import { deriveDateRangeFromPreset, detectDateRangePreset, resolvePersistedDateRange, type DateRangePreset } from '@/lib/dateRange';
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
-import { formatDuration } from '@/lib/formatters';
-import { Activity, AppWindow, Camera, ChevronLeft, ChevronRight, Coffee, Download, Eye, Globe, RefreshCw, TimerReset, Trash2, Users } from 'lucide-react';
-import type { BrowserTrackingHealthSummary } from '@/types';
+import { todayIso } from '@/lib/formatters';
+import { Download, RefreshCw } from 'lucide-react';
 
-type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots' | 'app-usage' | 'website-usage';
-const RECENT_SCREENSHOT_PREVIEW_LIMIT = 10;
+type MonitoringWorkspaceMode = 'productive-time' | 'unproductive-time' | 'screenshots';
+
 type SectionFeedback = {
   tone: 'success' | 'error';
   message: string;
@@ -34,19 +31,24 @@ type PersistedMonitoringWorkspaceFilters = {
   datePreset: DateRangePreset;
   startDate: string;
   endDate: string;
-  query: string;
   selectedUserId: number | '';
 };
+
+type PendingScreenshotDelete =
+  | { kind: 'selected'; count: number }
+  | { kind: 'range'; count: number }
+  | { kind: 'single'; id: number };
 
 const MONITORING_WORKSPACE_FILTER_STORAGE_KEY = 'monitoring-workspace-filters';
 const getMonitoringWorkspaceFilterStorageKey = (mode: MonitoringWorkspaceMode) => `${MONITORING_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
 const defaultDateRange = deriveDateRangeFromPreset('today');
+const SCREENSHOTS_PER_PAGE = 48;
+const NEW_SCREENSHOT_POLL_MS = 60_000;
 
 const getDefaultMonitoringWorkspaceFilters = (): PersistedMonitoringWorkspaceFilters => ({
   datePreset: 'today',
   startDate: defaultDateRange.startDate,
   endDate: defaultDateRange.endDate,
-  query: '',
   selectedUserId: '',
 });
 
@@ -77,196 +79,61 @@ const readPersistedMonitoringWorkspaceFilters = (mode: MonitoringWorkspaceMode):
     datePreset,
     startDate: resolvedRange.startDate,
     endDate: resolvedRange.endDate,
-    query: typeof parsed.query === 'string' ? parsed.query : fallback.query,
     selectedUserId: coercePositiveNumber(parsed.selectedUserId) ?? '',
   };
-};
-
-const formatDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
-  formatDateTimeForTimezone(value, timezone, 'en-US', 'No recent activity');
-const resolveLiveToolLabel = (liveRow?: any | null) => {
-  const resolved = [
-    liveRow?.current_tool,
-    liveRow?.tool_label,
-    liveRow?.normalized_label,
-    liveRow?.name,
-  ]
-    .map((candidate) => String(candidate || '').trim())
-    .find(Boolean);
-
-  return resolved || 'No active tool detected';
-};
-const resolveLiveToolTypeLabel = (liveRow?: any | null) => {
-  const resolved = [
-    liveRow?.tool_type,
-    liveRow?.activity_type,
-    liveRow?.type,
-  ]
-    .map((candidate) => String(candidate || '').trim())
-    .find(Boolean);
-
-  return resolved || 'No tool type';
-};
-const resolveLiveActivityLabel = (liveRow?: any | null, timezone = DEFAULT_APP_TIMEZONE) => {
-  const activityAt =
-    liveRow?.last_activity_at
-    || liveRow?.recorded_at
-    || liveRow?.last_seen_at
-    || liveRow?.browser_tracking?.last_seen_at
-    || liveRow?.browser_tracking?.last_sync_at;
-
-  return formatDateTime(activityAt, timezone);
-};
-const productivityTone = (classification?: string | null) =>
-  classification === 'productive'
-    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-    : classification === 'unproductive'
-      ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200'
-      : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200';
-
-const browserTrackingTone = (status?: string | null) =>
-  status === 'connected'
-    ? 'text-emerald-700'
-    : status === 'disconnected' || status === 'disabled'
-      ? 'text-amber-700'
-      : 'text-slate-950';
-
-const formatBrowserTrackingBrowsers = (summary?: BrowserTrackingHealthSummary | null) => {
-  const browsers = Array.isArray(summary?.browsers) ? summary.browsers : [];
-  if (!browsers.length) {
-    return 'Browser tracking';
-  }
-
-  return browsers
-    .map((browser) => {
-      const normalized = String(browser || '').trim().toLowerCase();
-      return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : '';
-    })
-    .filter(Boolean)
-    .join(', ');
-};
-
-const formatBrowserTrackingStatus = (summary?: BrowserTrackingHealthSummary | null) => {
-  switch (String(summary?.status || 'unknown')) {
-    case 'connected':
-      return 'Connected';
-    case 'disconnected':
-      return 'Tracking off';
-    case 'disabled':
-      return 'Bridge offline';
-    default:
-      return 'Unknown';
-  }
-};
-
-const shouldPreferWindowTitleForDesktopRow = (item: any) => {
-  const appName = String(item?.app_name || '').trim().toLowerCase();
-  const windowTitle = String(item?.window_title || '').trim();
-
-  if (!windowTitle) {
-    return false;
-  }
-
-  return ['explorer.exe', 'windows explorer', 'file explorer'].some((keyword) => appName.includes(keyword));
-};
-
-const resolveExactActivityLabel = (item: any, mode: MonitoringWorkspaceMode) => {
-  if (mode === 'website-usage') {
-    return normalizeToolLabel(item?.name || 'Unknown', item?.type || 'url');
-  }
-
-  if (shouldPreferWindowTitleForDesktopRow(item)) {
-    return String(item?.window_title || 'Unknown').trim();
-  }
-
-  return String(
-    item?.app_name
-    || item?.name
-    || item?.window_title
-    || item?.software_name
-    || item?.normalized_label
-    || 'Unknown'
-  ).trim();
-};
-
-const formatBrowserTrackingHint = (summary?: BrowserTrackingHealthSummary | null) => {
-  const deviceLabel = String(summary?.device_label || '').trim();
-  const disconnectReason = String(summary?.disconnect_reason || '').trim().replace(/_/g, ' ');
-
-  switch (String(summary?.status || 'unknown')) {
-    case 'connected':
-      return [
-        formatBrowserTrackingBrowsers(summary),
-        deviceLabel ? `active on ${deviceLabel}` : 'exact tracking active',
-      ].filter(Boolean).join(' ');
-    case 'disconnected':
-      return deviceLabel
-        ? `${deviceLabel} reported ${disconnectReason || 'extension missing'}`
-        : `Extension reported ${disconnectReason || 'missing'}`;
-    case 'disabled':
-      return deviceLabel
-        ? `${deviceLabel} reported ${disconnectReason || 'bridge unavailable'}`
-        : `Desktop app reported ${disconnectReason || 'bridge unavailable'}`;
-    default:
-      return 'No exact browser tracking health reported yet';
-  }
 };
 
 const modeCopy: Record<MonitoringWorkspaceMode, { title: string; description: string; eyebrow: string }> = {
   'productive-time': {
     eyebrow: 'Monitoring',
-    title: 'Productive Time',
-    description: 'Review productive duration, top performers, and the organization’s most effective tools.',
+    title: 'Monitoring',
+    description: 'Who is working right now, where the tracked time went, and who needs a look.',
   },
   'unproductive-time': {
     eyebrow: 'Monitoring',
-    title: 'Unproductive Time',
-    description: 'Inspect unproductive duration, low-efficiency teams, and tool usage dragging performance.',
+    title: 'Monitoring · Unproductive focus',
+    description: 'The same command view, ranked and focused on unproductive time.',
   },
   screenshots: {
     eyebrow: 'Monitoring',
     title: 'Screenshots',
-    description: 'Browse captured screenshots across the organization with employee-level filtering.',
-  },
-  'app-usage': {
-    eyebrow: 'Monitoring',
-    title: 'App Usage',
-    description: 'Track application usage frequency and duration from recorded activity events.',
-  },
-  'website-usage': {
-    eyebrow: 'Monitoring',
-    title: 'Website Usage',
-    description: 'Track website usage frequency and duration from recorded browsing activity events.',
+    description: 'Captured evidence grouped by person and hour, with each hour’s productivity mix.',
   },
 };
-const SCREENSHOT_REFRESH_INTERVAL_MS = 60_000;
 
 export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspaceMode }) {
   const { user } = useAuth();
-  const viewOnly = !hasStrictAdminAccess(user);
   const canDeleteScreenshots = hasStrictAdminAccess(user);
   const navigate = useNavigate();
   const location = useLocation();
   const [datePreset, setDatePreset] = useState<DateRangePreset>(() => readPersistedMonitoringWorkspaceFilters(mode).datePreset);
   const [startDate, setStartDate] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).startDate);
   const [endDate, setEndDate] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).endDate);
-  const [query, setQuery] = useState(() => readPersistedMonitoringWorkspaceFilters(mode).query);
   const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedMonitoringWorkspaceFilters(mode).selectedUserId);
   const [screenshotPage, setScreenshotPage] = useState(1);
   const [screenshotFeedback, setScreenshotFeedback] = useState<SectionFeedback>(null);
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<number[]>([]);
   const [isDeletingScreenshots, setIsDeletingScreenshots] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<PendingScreenshotDelete | null>(null);
   const [refreshedScreenshotPaths, setRefreshedScreenshotPaths] = useState<Record<number, string>>({});
+  // Blob object URLs for screenshot images, keyed by screenshot id. Held in a
+  // ref as well as state so the revoke-on-cleanup path can reach them without
+  // depending on a stale render closure.
+  const [screenshotObjectUrls, setScreenshotObjectUrls] = useState<Record<number, string>>({});
+  const screenshotObjectUrlsRef = useRef<Record<number, string>>({});
+  const inFlightScreenshotLoadsRef = useRef<Set<number>>(new Set());
+  const isMountedRef = useRef(true);
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
+
+  const isOverviewMode = mode === 'productive-time' || mode === 'unproductive-time';
 
   useEffect(() => {
     const persisted = readPersistedMonitoringWorkspaceFilters(mode);
     setDatePreset(persisted.datePreset);
     setStartDate(persisted.startDate);
     setEndDate(persisted.endDate);
-    setQuery(persisted.query);
     setSelectedUserId(persisted.selectedUserId);
   }, [mode]);
 
@@ -277,11 +144,10 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
         datePreset,
         startDate,
         endDate,
-        query,
         selectedUserId,
       } satisfies PersistedMonitoringWorkspaceFilters
     );
-  }, [datePreset, endDate, mode, query, selectedUserId, startDate]);
+  }, [datePreset, endDate, mode, selectedUserId, startDate]);
 
   useEffect(() => {
     if (!location.search) return;
@@ -289,7 +155,6 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     const params = new URLSearchParams(location.search);
     const nextStartDate = params.get('start');
     const nextEndDate = params.get('end');
-    const nextQuery = params.get('q');
     const nextUserId = params.get('user') || params.get('user_id');
 
     if (nextStartDate && nextEndDate) {
@@ -304,10 +169,6 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
         setEndDate(nextEndDate);
       }
       setDatePreset('custom');
-    }
-
-    if (nextQuery !== null) {
-      setQuery(nextQuery);
     }
 
     if (nextUserId !== null) {
@@ -352,93 +213,85 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     return users.some((employee: any) => Number(employee.id) === Number(selectedUserId)) ? selectedUserId : '';
   }, [selectedUserId, users, usersQuery.isSuccess]);
   const hasExplicitEmployeeSelection = effectiveSelectedUserId !== '';
-  const screenshotTotalQueryEnabled =
-    usersQuery.isSuccess && hasExplicitEmployeeSelection && (mode === 'productive-time' || mode === 'unproductive-time');
+  const isSingleDayRange = startDate === endDate;
 
   const dataQuery = useQuery({
-    queryKey: ['monitoring-workspace-data', mode, startDate, endDate, query, effectiveSelectedUserId, screenshotPage],
+    queryKey: ['monitoring-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, screenshotPage],
     enabled: usersQuery.isSuccess,
     placeholderData: (previousData) => previousData,
-    refetchOnWindowFocus: mode === 'screenshots',
-    refetchInterval: mode === 'screenshots' ? SCREENSHOT_REFRESH_INTERVAL_MS : false,
     queryFn: async () => {
-      if (mode === 'productive-time' || mode === 'unproductive-time') {
+      if (isOverviewMode) {
         const response = await reportApi.employeeInsights({
           start_date: startDate,
           end_date: endDate,
-          q: query || undefined,
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
-          recent_screenshot_limit: RECENT_SCREENSHOT_PREVIEW_LIMIT,
         });
         return response.data;
       }
 
-      if (mode === 'screenshots') {
-        const [screenshotsResponse, insightsResponse] = await Promise.all([
-          screenshotApi.getAll({
-            user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
-            start_date: startDate,
-            end_date: endDate,
-            page: screenshotPage,
-            per_page: RECENT_SCREENSHOT_PREVIEW_LIMIT,
-          }),
-          reportApi.employeeInsights({
-            start_date: startDate,
-            end_date: endDate,
-            q: query || undefined,
-            user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
-            recent_screenshot_limit: RECENT_SCREENSHOT_PREVIEW_LIMIT,
-          }),
-        ]);
-
-        return {
-          screenshotsPage: screenshotsResponse.data || null,
-          insights: insightsResponse.data,
-        };
-      }
-
-      const [activityResponse, insightsResponse] = await Promise.all([
-        activityApi.getAll({
-          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
-          type: mode === 'app-usage' ? 'app' : 'url',
-          start_date: startDate,
-          end_date: endDate,
-          page: 1,
-          per_page: 10,
-        }),
-        reportApi.employeeInsights({
-          start_date: startDate,
-          end_date: endDate,
-          q: query || undefined,
-          user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
-          recent_screenshot_limit: RECENT_SCREENSHOT_PREVIEW_LIMIT,
-        }),
-      ]);
-
-      return {
-        activities: activityResponse.data?.data || [],
-        insights: insightsResponse.data,
-      };
+      const response = await screenshotApi.getAll({
+        user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
+        start_date: startDate,
+        end_date: endDate,
+        page: screenshotPage,
+        per_page: SCREENSHOTS_PER_PAGE,
+      });
+      return { screenshotsPage: response.data || null };
     },
   });
 
-  const screenshotTotalQuery = useQuery({
-    queryKey: ['monitoring-screenshot-total', effectiveSelectedUserId, startDate, endDate],
-    enabled: screenshotTotalQueryEnabled,
+  // Daily trend for the overview — /reports/employee-insights has no daily
+  // series, but /reports/overall returns by_day (worked vs idle per day).
+  const trendQuery = useQuery({
+    queryKey: ['monitoring-trend', startDate, endDate],
+    enabled: usersQuery.isSuccess && isOverviewMode,
+    placeholderData: (previousData) => previousData,
+    queryFn: async () => {
+      const response = await reportApi.overall({ start_date: startDate, end_date: endDate });
+      return (response.data as any)?.by_day || [];
+    },
+  });
+
+  // Hour productivity-mix bars in the filmstrip come from the server's own
+  // classification on processed timeline rows. Single-day ranges only — a
+  // 30-day sweep would need thousands of rows for a bar nobody can read.
+  const mixActivitiesQuery = useQuery({
+    queryKey: ['monitoring-hour-mix', startDate, endDate, effectiveSelectedUserId],
+    enabled: usersQuery.isSuccess && mode === 'screenshots' && isSingleDayRange,
+    placeholderData: (previousData) => previousData,
+    queryFn: async () => {
+      const response = await activityApi.getAll({
+        user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
+        start_date: startDate,
+        end_date: endDate,
+        processed: true,
+        page: 1,
+        per_page: 200,
+      });
+      return (response.data as any)?.data || [];
+    },
+  });
+
+  // Instead of silently rearranging the grid every 60 seconds, poll only the
+  // count and offer a "N new — refresh" chip when today is on screen.
+  const screenshotPageData = mode === 'screenshots' ? ((dataQuery.data as any)?.screenshotsPage || null) : null;
+  const screenshotTotal = Number(screenshotPageData?.total || 0);
+  const newCountQuery = useQuery({
+    queryKey: ['monitoring-screenshot-count', startDate, endDate, effectiveSelectedUserId],
+    enabled: usersQuery.isSuccess && mode === 'screenshots' && endDate >= todayIso(),
+    refetchInterval: NEW_SCREENSHOT_POLL_MS,
     queryFn: async () => {
       const response = await screenshotApi.getAll({
-        user_id: Number(effectiveSelectedUserId),
+        user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
         start_date: startDate,
         end_date: endDate,
         page: 1,
         per_page: 1,
       });
-
-      return {
-        total: Number(response.data?.total || 0),
-      };
+      return { total: Number(response.data?.total || 0) };
     },
   });
+  const newScreenshotCount = Math.max(0, Number(newCountQuery.data?.total ?? screenshotTotal) - screenshotTotal);
 
   const isLoading = usersQuery.isLoading || (dataQuery.isLoading && !dataQuery.data);
   const isError = usersQuery.isError || dataQuery.isError;
@@ -456,9 +309,6 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     return targetTimezone ? resolveTimeZone(targetTimezone) : viewerTimezone;
   }, [effectiveSelectedUserId, user, usersById]);
   const pageTitle = modeCopy[mode];
-  const selectedEmployeeLabel = effectiveSelectedUserId
-    ? users.find((employee: any) => Number(employee.id) === Number(effectiveSelectedUserId))?.name || 'Selected employee'
-    : 'All employees';
 
   useEffect(() => {
     if (!usersQuery.isSuccess || selectedUserId === '' || effectiveSelectedUserId !== '') {
@@ -483,22 +333,11 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     );
   }, [effectiveSelectedUserId, location.pathname, location.search, navigate, selectedUserId, usersQuery.isSuccess]);
 
-  const insights =
-    mode === 'productive-time' || mode === 'unproductive-time'
-      ? (dataQuery.data as any)
-      : (dataQuery.data as any)?.insights || null;
-  const screenshotPageData = mode === 'screenshots' ? ((dataQuery.data as any)?.screenshotsPage || null) : null;
+  const insights = isOverviewMode ? (dataQuery.data as any) : null;
   const screenshots = mode === 'screenshots' ? (screenshotPageData?.data || []) : [];
-  const screenshotTotal =
-    mode === 'screenshots'
-      ? Number(screenshotPageData?.total || screenshots.length || 0)
-      : Number(screenshotTotalQuery.data?.total || 0);
   const screenshotLastPage = Math.max(1, Number(screenshotPageData?.last_page || 1));
   const screenshotCurrentPage = Math.max(1, Number(screenshotPageData?.current_page || screenshotPage));
-  const visibleScreenshotIds = screenshots.map((shot: any) => Number(shot.id));
-  const allVisibleScreenshotsSelected =
-    visibleScreenshotIds.length > 0 && visibleScreenshotIds.every((id: number) => selectedScreenshotIds.includes(id));
-  const activityRows = mode === 'app-usage' || mode === 'website-usage' ? ((dataQuery.data as any)?.activities || []) : [];
+
   const resolveScreenshotUser = (shot: any) => {
     if (shot?.user?.name) {
       return shot.user;
@@ -507,14 +346,22 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     const resolvedUserId = Number(shot?.user_id || shot?.time_entry?.user_id || 0);
     return resolvedUserId > 0 ? usersById.get(resolvedUserId) || null : null;
   };
+
+  // The file endpoint is authenticated, so an <img> cannot load the signed URL
+  // directly — the browser sends no Authorization header. Fetch the bytes
+  // through the api client instead and render the resulting object URL.
   const resolveScreenshotPath = (shot: any) => {
     const screenshotId = Number(shot?.id || 0);
-    const refreshedPath = screenshotId > 0 ? refreshedScreenshotPaths[screenshotId] : '';
 
-    return refreshedPath || String(shot?.path || '');
+    return screenshotId > 0 ? (screenshotObjectUrls[screenshotId] || '') : '';
   };
+
   const refreshScreenshotPath = async (screenshotId: number) => {
     if (!Number.isFinite(screenshotId) || screenshotId <= 0) {
+      return;
+    }
+
+    if (refreshedScreenshotPaths[screenshotId]) {
       return;
     }
 
@@ -536,62 +383,63 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     }
   };
 
-  const aggregatedActivity = useMemo(() => {
-    if (mode !== 'app-usage' && mode !== 'website-usage') return [];
-    const mapped = new Map<string, { label: string; duration: number; count: number; users: Set<string>; classification: string }>();
+  const loadScreenshotObjectUrl = async (screenshotId: number, signedPath: string) => {
+    if (screenshotObjectUrlsRef.current[screenshotId] || inFlightScreenshotLoadsRef.current.has(screenshotId)) {
+      return;
+    }
 
-    activityRows.forEach((item: any) => {
-      const label = resolveExactActivityLabel(item, mode);
-      const key = label || 'Unknown';
-      const classification = classifyProductivity(label, item.type || (mode === 'website-usage' ? 'url' : 'app'));
-      if (!mapped.has(key)) {
-        mapped.set(key, { label: key, duration: 0, count: 0, users: new Set(), classification });
-      }
-      const current = mapped.get(key)!;
-      current.duration += Number(item.duration || 0);
-      current.count += 1;
-      if (item.user?.name) {
-        current.users.add(item.user.name);
-      }
-    });
+    inFlightScreenshotLoadsRef.current.add(screenshotId);
 
-    return Array.from(mapped.values())
-      .map((item) => ({ ...item, user_count: item.users.size }))
-      .sort((a, b) => b.duration - a.duration);
-  }, [activityRows, mode]);
+    try {
+      const objectUrl = await screenshotApi.fetchFileObjectUrl(signedPath);
 
-  const employeeWebsiteRows = useMemo(() => {
-    if (mode !== 'website-usage') return [];
-
-    const mapped = new Map<string, { employee: any; website: string; classification: string; duration: number; events: number; last_used_at?: string | null }>();
-
-    activityRows.forEach((item: any) => {
-      const employeeId = item.user?.id || 'unknown';
-      const website = normalizeToolLabel(item.name || 'Unknown', item.type || 'url');
-      const classification = classifyProductivity(website, item.type || 'url');
-      const key = `${employeeId}:${website}:${classification}`;
-
-      if (!mapped.has(key)) {
-        mapped.set(key, {
-          employee: item.user || null,
-          website,
-          classification,
-          duration: 0,
-          events: 0,
-          last_used_at: item.recorded_at || null,
-        });
+      // Revoke rather than leak if the workspace was reset mid-flight.
+      if (!isMountedRef.current) {
+        URL.revokeObjectURL(objectUrl);
+        return;
       }
 
-      const current = mapped.get(key)!;
-      current.duration += Number(item.duration || 0);
-      current.events += 1;
-      if (item.recorded_at && (!current.last_used_at || +new Date(item.recorded_at) > +new Date(current.last_used_at))) {
-        current.last_used_at = item.recorded_at;
+      screenshotObjectUrlsRef.current[screenshotId] = objectUrl;
+      setScreenshotObjectUrls((current) => ({ ...current, [screenshotId]: objectUrl }));
+    } catch (error) {
+      console.warn('Failed to load screenshot image:', error);
+      // An expired signature is the common case; mint a fresh link and retry once.
+      void refreshScreenshotPath(screenshotId);
+    } finally {
+      inFlightScreenshotLoadsRef.current.delete(screenshotId);
+    }
+  };
+
+  // Lazy trigger from the filmstrip: a tile scrolled into view and wants its bytes.
+  const handleShotVisible = (shot: any) => {
+    const screenshotId = Number(shot?.id || 0);
+    if (screenshotId <= 0) {
+      return;
+    }
+
+    const signedPath = refreshedScreenshotPaths[screenshotId] || String(shot?.path || '');
+    if (signedPath) {
+      void loadScreenshotObjectUrl(screenshotId, signedPath);
+    }
+  };
+
+  // A refreshed signature may arrive after the tile already asked and failed —
+  // retry those with the fresh path.
+  useEffect(() => {
+    Object.entries(refreshedScreenshotPaths).forEach(([id, path]) => {
+      const screenshotId = Number(id);
+      if (screenshotId > 0 && path && !screenshotObjectUrlsRef.current[screenshotId]) {
+        void loadScreenshotObjectUrl(screenshotId, path);
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshedScreenshotPaths]);
 
-    return Array.from(mapped.values()).sort((a, b) => b.duration - a.duration);
-  }, [activityRows, mode]);
+  const releaseScreenshotObjectUrls = () => {
+    Object.values(screenshotObjectUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
+    screenshotObjectUrlsRef.current = {};
+    inFlightScreenshotLoadsRef.current.clear();
+  };
 
   useEffect(() => {
     setScreenshotFeedback(null);
@@ -599,26 +447,137 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     setIsDeletingScreenshots(false);
     setScreenshotPage(1);
     setRefreshedScreenshotPaths({});
-  }, [endDate, mode, query, selectedUserId, startDate]);
+    // Filters changed: the previous page's images are no longer on screen, so
+    // free their blobs instead of holding every screenshot the session viewed.
+    releaseScreenshotObjectUrls();
+    setScreenshotObjectUrls({});
+  }, [endDate, mode, selectedUserId, startDate]);
+
+  // Page changed within the same filters: old page blobs are off screen.
+  useEffect(() => {
+    releaseScreenshotObjectUrls();
+    setScreenshotObjectUrls({});
+  }, [screenshotPage]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      releaseScreenshotObjectUrls();
+    };
+  }, []);
 
   const refreshWorkspaceData = async () => {
     const refreshTasks: Array<Promise<unknown>> = [dataQuery.refetch()];
-
-    if (screenshotTotalQueryEnabled) {
-      refreshTasks.push(screenshotTotalQuery.refetch());
+    if (isOverviewMode) {
+      refreshTasks.push(trendQuery.refetch());
+    } else {
+      refreshTasks.push(newCountQuery.refetch());
     }
 
     await Promise.all(refreshTasks);
   };
 
-  const renderPanelRefreshButton = () => (
-    <Button variant="ghost" size="sm" onClick={() => void refreshWorkspaceData()} iconLeft={<RefreshCw className="h-4 w-4" />}>
-      Refresh
-    </Button>
-  );
   const handleEmployeeFilterChange = (value: number | '') => {
     setSelectedUserId(value);
-    setQuery('');
+  };
+
+  const toggleScreenshotSelection = (screenshotId: number) => {
+    setSelectedScreenshotIds((current) =>
+      current.includes(screenshotId)
+        ? current.filter((id) => id !== screenshotId)
+        : [...current, screenshotId]
+    );
+  };
+
+  const executePendingDelete = async () => {
+    if (!pendingDelete) {
+      return;
+    }
+
+    setScreenshotFeedback(null);
+    setIsDeletingScreenshots(true);
+
+    try {
+      let message = '';
+
+      if (pendingDelete.kind === 'selected') {
+        const response = await screenshotApi.bulkDelete({ screenshot_ids: selectedScreenshotIds });
+        message = response.data?.message || `${selectedScreenshotIds.length} screenshots deleted.`;
+        setSelectedScreenshotIds([]);
+      } else if (pendingDelete.kind === 'range') {
+        const response = await screenshotApi.bulkDelete({
+          delete_all_in_range: true,
+          user_id: Number(effectiveSelectedUserId),
+          start_date: startDate,
+          end_date: endDate,
+        });
+        message = response.data?.message || 'All screenshots in the selected range were deleted.';
+        setSelectedScreenshotIds([]);
+      } else {
+        await screenshotApi.delete(pendingDelete.id);
+        message = 'Screenshot deleted.';
+        setSelectedScreenshotIds((current) => current.filter((id) => id !== pendingDelete.id));
+      }
+
+      setScreenshotPage(1);
+      await refreshWorkspaceData();
+      setScreenshotFeedback({ tone: 'success', message });
+    } catch (error) {
+      console.error('Monitoring workspace screenshot delete failed:', error);
+      setScreenshotFeedback({
+        tone: 'error',
+        message: (error as any)?.response?.data?.message || 'Failed to delete screenshots.',
+      });
+    } finally {
+      setIsDeletingScreenshots(false);
+      setPendingDelete(null);
+    }
+  };
+
+  const pendingDeleteCopy = pendingDelete === null
+    ? { title: '', message: '' }
+    : pendingDelete.kind === 'selected'
+      ? {
+        title: `Delete ${pendingDelete.count} screenshot${pendingDelete.count === 1 ? '' : 's'}?`,
+        message: 'The selected screenshots will be permanently removed. This cannot be undone.',
+      }
+      : pendingDelete.kind === 'range'
+        ? {
+          title: `Delete all ${pendingDelete.count} screenshots in range?`,
+          message: 'Every screenshot for this employee in the current date range will be permanently removed. This cannot be undone.',
+        }
+        : {
+          title: 'Delete this screenshot?',
+          message: 'This screenshot will be permanently removed. This cannot be undone.',
+        };
+
+  const handleExport = async () => {
+    setExportMessage('');
+    setExportError('');
+    setIsExporting(true);
+    try {
+      const response = await reportApi.export({
+        start_date: startDate,
+        end_date: endDate,
+        user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
+        report_type: mode,
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `report-${mode}-${startDate}-to-${endDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setExportMessage('Export completed.');
+    } catch (error: any) {
+      setExportError(error?.response?.data?.message || 'Failed to export report.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   if (isLoading) {
@@ -637,188 +596,6 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
     );
   }
 
-  const organizationSummary = insights?.organization_summary || {};
-  const selectedUserStats = insights?.stats || {};
-  const selectedUserTools = insights?.selected_user_tools || { productive: [], unproductive: [], neutral: [] };
-  const organizationTools = insights?.organization_tools || { productive: [], unproductive: [] };
-  const employeeRankings = insights?.employee_rankings?.by_productive_duration || [];
-  const liveMonitoring = insights?.live_monitoring || { employees_active: [], employees_inactive: [], employees_on_leave: [], employees_on_break: [], selected_user: null, all_users: [] };
-  const selectedUserLive = liveMonitoring.selected_user || null;
-  const recentEmployeeScreenshots = insights?.recent_screenshots || [];
-  const screenshotCountLabel = screenshotTotalQuery.data ? screenshotTotal : recentEmployeeScreenshots.length;
-  const topUnproductiveTool = selectedUserTools.unproductive?.[0] || null;
-  const trackedDurationValue = Number(organizationSummary.tracked_duration || organizationSummary.total_duration || 0);
-  const workingDurationValue = Number(organizationSummary.working_duration || 0);
-  // Idle: try the most authoritative fields first. The backend's
-  // /api/reports/employee-insights can return idle under several keys
-  // depending on org size and aggregation path; coalesce them.
-  const idleDurationValue = Number(
-    organizationSummary.idle_duration
-    ?? organizationSummary.idle_time
-    ?? organizationSummary.total_idle_duration
-    ?? 0
-  );
-  const breakDurationValue = Number(
-    hasExplicitEmployeeSelection
-      ? selectedUserStats.break_seconds
-      : organizationSummary.break_seconds ?? 0
-  );
-  const productiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.productive || [] : organizationTools.productive || [];
-  const unproductiveTableRows = hasExplicitEmployeeSelection ? selectedUserTools.unproductive || [] : organizationTools.unproductive || [];
-  const selectedUserBrowserTracking = (selectedUserLive?.browser_tracking || null) as BrowserTrackingHealthSummary | null;
-
-  const renderBrowserTrackingCard = (browserTracking: BrowserTrackingHealthSummary | null) => (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Browser tracking</p>
-      <p className={`mt-2 text-base font-semibold ${browserTrackingTone(browserTracking?.status)}`}>
-        {formatBrowserTrackingStatus(browserTracking)}
-      </p>
-      <p className="mt-1 text-sm text-slate-500">{formatBrowserTrackingHint(browserTracking)}</p>
-    </div>
-  );
-
-  const openScreenshotGallery = () => {
-    if (!hasExplicitEmployeeSelection || !effectiveSelectedUserId || screenshotTotal <= 0) {
-      return;
-    }
-
-    const params = new URLSearchParams();
-    params.set('user', String(effectiveSelectedUserId));
-    params.set('start', startDate);
-    params.set('end', endDate);
-
-    if (query.trim()) {
-      params.set('q', query.trim());
-    }
-
-    navigate(`/monitoring/screenshots?${params.toString()}`);
-  };
-
-  const toggleScreenshotSelection = (screenshotId: number) => {
-    setSelectedScreenshotIds((current) =>
-      current.includes(screenshotId)
-        ? current.filter((id) => id !== screenshotId)
-        : [...current, screenshotId]
-    );
-  };
-
-  const toggleVisibleScreenshotSelection = () => {
-    setSelectedScreenshotIds((current) => {
-      if (allVisibleScreenshotsSelected) {
-        return current.filter((id) => !visibleScreenshotIds.includes(id));
-      }
-
-      return Array.from(new Set([...current, ...visibleScreenshotIds]));
-    });
-  };
-
-  const handleDeleteSelectedScreenshots = async () => {
-    if (selectedScreenshotIds.length === 0) {
-      return;
-    }
-
-    if (!confirm(`Delete ${selectedScreenshotIds.length} selected screenshot${selectedScreenshotIds.length === 1 ? '' : 's'}?`)) {
-      return;
-    }
-
-    setScreenshotFeedback(null);
-    setIsDeletingScreenshots(true);
-
-    try {
-      const response = await screenshotApi.bulkDelete({
-        screenshot_ids: selectedScreenshotIds,
-      });
-
-      setSelectedScreenshotIds([]);
-      setScreenshotPage(1);
-      await refreshWorkspaceData();
-      setScreenshotFeedback({
-        tone: 'success',
-        message: response.data?.message || `${selectedScreenshotIds.length} screenshots deleted.`,
-      });
-    } catch (error) {
-      console.error('Monitoring workspace selected screenshot delete failed:', error);
-      setScreenshotFeedback({
-        tone: 'error',
-        message: (error as any)?.response?.data?.message || 'Failed to delete selected screenshots.',
-      });
-    } finally {
-      setIsDeletingScreenshots(false);
-    }
-  };
-
-  const handleDeleteAllScreenshotsInRange = async () => {
-    if (!hasExplicitEmployeeSelection || !effectiveSelectedUserId || screenshotTotal <= 0) {
-      return;
-    }
-
-    if (!confirm(`Delete all ${screenshotTotal} screenshot${screenshotTotal === 1 ? '' : 's'} for this employee in the current date range?`)) {
-      return;
-    }
-
-    setScreenshotFeedback(null);
-    setIsDeletingScreenshots(true);
-
-    try {
-      const response = await screenshotApi.bulkDelete({
-        delete_all_in_range: true,
-        user_id: Number(effectiveSelectedUserId),
-        start_date: startDate,
-        end_date: endDate,
-      });
-
-      setSelectedScreenshotIds([]);
-      setScreenshotPage(1);
-      await refreshWorkspaceData();
-      setScreenshotFeedback({
-        tone: 'success',
-        message: response.data?.message || 'All screenshots in the selected range were deleted.',
-      });
-    } catch (error) {
-      console.error('Monitoring workspace bulk screenshot delete failed:', error);
-      setScreenshotFeedback({
-        tone: 'error',
-        message: (error as any)?.response?.data?.message || 'Failed to delete screenshots in the current range.',
-      });
-    } finally {
-      setIsDeletingScreenshots(false);
-    }
-  };
-
-  const handleExport = async () => {
-    setExportMessage('');
-    setExportError('');
-    setIsExporting(true);
-    try {
-      const reportTypeMap: Record<MonitoringWorkspaceMode, string> = {
-        'productive-time': 'productive-time',
-        'unproductive-time': 'unproductive-time',
-        'app-usage': 'app-usage',
-        'website-usage': 'website-usage',
-        'screenshots': 'screenshots',
-      };
-      const response = await reportApi.export({
-        start_date: startDate,
-        end_date: endDate,
-        user_ids: effectiveSelectedUserId ? [Number(effectiveSelectedUserId)] : undefined,
-        report_type: reportTypeMap[mode],
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `report-${mode}-${startDate}-to-${endDate}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      setExportMessage('Export completed.');
-    } catch (error: any) {
-      setExportError(error?.response?.data?.message || 'Failed to export report.');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -826,10 +603,15 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
         title={pageTitle.title}
         description={pageTitle.description}
         actions={
-          <Button onClick={() => void handleExport()} variant="secondary" disabled={isExporting}>
-            <Download className="h-4 w-4" />
-            {isExporting ? 'Exporting...' : 'Export CSV'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => void refreshWorkspaceData()} iconLeft={<RefreshCw className="h-4 w-4" />}>
+              Refresh
+            </Button>
+            <Button onClick={() => void handleExport()} variant="secondary" disabled={isExporting}>
+              <Download className="h-4 w-4" />
+              {isExporting ? 'Exporting...' : 'Export CSV'}
+            </Button>
+          </div>
         }
       />
 
@@ -838,6 +620,13 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
       )}
       {exportError && (
         <FeedbackBanner tone="error" message={exportError} onDismiss={() => setExportError('')} />
+      )}
+      {screenshotFeedback && (
+        <FeedbackBanner
+          tone={screenshotFeedback.tone}
+          message={screenshotFeedback.message}
+          onDismiss={() => setScreenshotFeedback(null)}
+        />
       )}
 
       <FilterPanel className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -859,597 +648,97 @@ export default function MonitoringWorkspace({ mode }: { mode: MonitoringWorkspac
           <FieldLabel>Employee</FieldLabel>
           <EmployeeSelect employees={users} value={effectiveSelectedUserId} onChange={handleEmployeeFilterChange} includeAllOption />
         </div>
+        {isOverviewMode && (
+          <div>
+            <FieldLabel>Focus</FieldLabel>
+            <div className="flex gap-1.5">
+              <Button
+                variant={mode === 'productive-time' ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => navigate('/monitoring/productive-time')}
+              >
+                Productive
+              </Button>
+              <Button
+                variant={mode === 'unproductive-time' ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => navigate('/monitoring/unproductive-time')}
+              >
+                Unproductive
+              </Button>
+            </div>
+          </div>
+        )}
       </FilterPanel>
 
-      {(mode === 'productive-time' || mode === 'unproductive-time') && (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              label={mode === 'productive-time' ? 'Productive Share' : 'Unproductive Share'}
-              value={`${Number(mode === 'productive-time' ? organizationSummary.productive_share || 0 : organizationSummary.unproductive_share || 0).toFixed(1)}%`}
-              hint="Organization average"
-              icon={Activity}
-              accent={mode === 'productive-time' ? 'emerald' : 'amber'}
-            />
-            {!hasExplicitEmployeeSelection ? (
-              <MetricCard
-                label="Tracked Time"
-                value={formatDuration(trackedDurationValue)}
-                hint="All visible users in range"
-                icon={TimerReset}
-                accent="amber"
-              />
-            ) : null}
-            {!hasExplicitEmployeeSelection ? (
-              <MetricCard
-                label="Work Time"
-                value={formatDuration(workingDurationValue)}
-                hint="All visible users active work"
-                icon={Activity}
-                accent="emerald"
-              />
-            ) : null}
-            {!hasExplicitEmployeeSelection ? (
-              <MetricCard
-                label="Idle Time"
-                value={formatDuration(idleDurationValue)}
-                hint="All visible users idle duration"
-                icon={TimerReset}
-                accent="violet"
-              />
-            ) : null}
-            {!hasExplicitEmployeeSelection ? (
-              <MetricCard
-                label="Break Time"
-                value={formatDuration(breakDurationValue)}
-                hint="All visible users break duration"
-                icon={Coffee}
-                accent="amber"
-              />
-            ) : null}
-            <MetricCard
-              label="Active Employees"
-              value={liveMonitoring.employees_active?.length || 0}
-              hint="Currently active now"
-              icon={Users}
-              accent="sky"
-            />
-            <MetricCard
-              label="Inactive Employees"
-              value={liveMonitoring.employees_inactive?.length || 0}
-              hint="No recent activity"
-              icon={TimerReset}
-              accent="violet"
-            />
-            <MetricCard
-              label="On Leave"
-              value={liveMonitoring.employees_on_leave?.length || 0}
-              hint="Leave approved today"
-              icon={Users}
-              accent="slate"
-            />
-            <MetricCard
-              label="On Break"
-              value={liveMonitoring.employees_on_break?.length || 0}
-              hint="Currently on a break"
-              icon={Coffee}
-              accent="amber"
-            />
-          </div>
-
-          {hasExplicitEmployeeSelection && selectedUserLive ? (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <SurfaceCard className="p-5">
-                <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected employee live monitoring</p>
-                    <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">{selectedUserLive.user?.name || 'Selected employee'}</h2>
-                    <p className="mt-1 text-sm text-slate-500">{selectedUserLive.user?.email || 'No email available'}</p>
-                  </div>
-                  <div className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold capitalize ${productivityTone(selectedUserLive.classification)}`}>
-                    {selectedUserLive.classification || 'neutral'}
-                  </div>
-                </div>
-
-                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveToolLabel(selectedUserLive)}</p>
-                    <p className="mt-1 text-sm capitalize text-slate-500">{resolveLiveToolTypeLabel(selectedUserLive)}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
-                    <p className={`mt-2 text-base font-semibold capitalize ${selectedUserLive.is_on_break ? 'text-amber-600' : 'text-slate-950'}`}>{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
-                    <p className="mt-1 text-sm text-slate-500">{selectedUserLive.is_on_break ? 'On a break right now' : selectedUserLive.is_working ? 'Timer is active right now' : 'No active timer right now'}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveActivityLabel(selectedUserLive, displayTimezone)}</p>
-                    <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
-                  </div>
-                  {renderBrowserTrackingCard(selectedUserBrowserTracking)}
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tracked time</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.tracked_duration || selectedUserStats.total_duration || 0))}</p>
-                    <p className="mt-1 text-sm text-slate-500">Total tracked in selected range</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work time</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.working_duration || 0))}</p>
-                    <p className="mt-1 text-sm text-slate-500">Effective worked duration</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Idle time</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.idle_total_duration || selectedUserStats.idle_duration || 0))}</p>
-                    <p className="mt-1 text-sm text-slate-500">Idle duration in selected range</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Break time</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{formatDuration(Number(selectedUserStats.break_seconds || 0))}</p>
-                    <p className="mt-1 text-sm text-slate-500">Break duration in selected range</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Top unproductive tool</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{topUnproductiveTool?.label || 'No unproductive tool found'}</p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {topUnproductiveTool ? `${topUnproductiveTool.type} • ${formatDuration(topUnproductiveTool.total_duration || 0)}` : 'No unproductive usage in the selected range'}
-                  </p>
-                </div>
-              </SurfaceCard>
-
-              <SurfaceCard className="p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-950">Recent screenshots</h2>
-                    <p className="mt-1 text-sm text-slate-500">Latest screenshot captures for the selected employee.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <span className="text-xs text-slate-500">{screenshotCountLabel} found</span>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      iconLeft={<Eye className="h-4 w-4" />}
-                      onClick={openScreenshotGallery}
-                      disabled={screenshotTotal === 0}
-                    >
-                      View all screenshots
-                    </Button>
-                    {canDeleteScreenshots ? (
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        iconLeft={<Trash2 className="h-4 w-4" />}
-                        onClick={() => void handleDeleteAllScreenshotsInRange()}
-                        disabled={!hasExplicitEmployeeSelection || screenshotTotal === 0 || isDeletingScreenshots}
-                      >
-                        {isDeletingScreenshots ? 'Deleting...' : 'Delete all in range'}
-                      </Button>
-                    ) : null}
-                    {renderPanelRefreshButton()}
-                  </div>
-                </div>
-                {screenshotFeedback ? (
-                  <div className="mt-4">
-                    <FeedbackBanner tone={screenshotFeedback.tone} message={screenshotFeedback.message} />
-                  </div>
-                ) : null}
-
-                {recentEmployeeScreenshots.length === 0 ? (
-                  <div className="mt-4">
-                    <PageEmptyState title="No screenshots found" description="No recent screenshots were returned for this employee." />
-                  </div>
-                ) : (
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {recentEmployeeScreenshots.slice(0, 4).map((shot: any) => {
-                      const shotPath = resolveScreenshotPath(shot);
-
-                      return (
-                        <a
-                          key={shot.id}
-                          href={shotPath}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="overflow-hidden rounded-lg border border-slate-200 bg-white transition hover:border-sky-200"
-                        >
-                          <img
-                            src={shotPath}
-                            alt={shot.filename || `Screenshot ${shot.id}`}
-                            className="h-36 w-full object-cover"
-                            onError={(event) => {
-                              if (event.currentTarget.dataset.retrying === 'true') {
-                                return;
-                              }
-
-                              event.currentTarget.dataset.retrying = 'true';
-                              void refreshScreenshotPath(Number(shot.id));
-                            }}
-                          />
-                          <div className="space-y-2 p-3">
-                            <p className="text-sm font-medium text-slate-950">{formatDateTime(shot.recorded_at || shot.created_at, displayTimezone)}</p>
-                            <p className="text-xs text-slate-500">{shot.filename || 'Captured screenshot'}</p>
-                          </div>
-                        </a>
-                      );
-                    })}
-                  </div>
-                )}
-              </SurfaceCard>
-            </div>
-          ) : null}
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <DataTable
-              title={mode === 'productive-time' ? 'Top Productive Tools' : 'Top Unproductive Tools'}
-              description={
-                hasExplicitEmployeeSelection
-                  ? mode === 'productive-time'
-                    ? 'Productive tools for the selected employee in the current range.'
-                    : 'Unproductive tools for the selected employee in the current range.'
-                  : 'Organization-level tool rankings from employee monitoring analytics.'
-              }
-              rows={mode === 'productive-time' ? productiveTableRows : unproductiveTableRows}
-              emptyMessage="No tool analytics found."
-              headerAction={renderPanelRefreshButton()}
-              columns={[
-                { key: 'label', header: 'Tool', render: (row: any) => row.label },
-                { key: 'type', header: 'Type', render: (row: any) => row.type },
-                { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.total_duration || 0) },
-                {
-                  key: 'avg',
-                  header: hasExplicitEmployeeSelection ? 'Events' : 'Avg / Employee',
-                  render: (row: any) => hasExplicitEmployeeSelection ? String(row.total_events || 0) : formatDuration(row.avg_duration_per_employee || 0),
-                },
-              ]}
-            />
-            <DataTable
-              title={mode === 'productive-time' ? 'Employee Ranking' : 'Selected Employee Risk Tools'}
-              description={mode === 'productive-time' ? 'Ranked by productive duration.' : 'Focused view of tools classified as unproductive for the selected employee.'}
-              rows={mode === 'productive-time' ? employeeRankings : selectedUserTools.unproductive || []}
-              emptyMessage="No ranking data found."
-              headerAction={renderPanelRefreshButton()}
-              columns={
-                mode === 'productive-time'
-                  ? [
-                      { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
-                      { key: 'productive', header: 'Productive Time', render: (row: any) => formatDuration(row.productive_duration || 0) },
-                      { key: 'total', header: 'Worked', render: (row: any) => formatDuration(row.total_duration || 0) },
-                    ]
-                  : [
-                      { key: 'tool', header: 'Tool', render: (row: any) => row.label },
-                      { key: 'type', header: 'Type', render: (row: any) => row.type },
-                      { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.total_duration || 0) },
-                    ]
-              }
-            />
-          </div>
-
-          {mode === 'productive-time' ? (
-            <DataTable
-              title="Top Unproductive Tools"
-              description={hasExplicitEmployeeSelection ? 'Unproductive tools for the selected employee in the current range.' : 'Organization-level unproductive tool rankings from employee monitoring analytics.'}
-              rows={unproductiveTableRows}
-              emptyMessage="No unproductive tool analytics found."
-              headerAction={renderPanelRefreshButton()}
-              columns={[
-                { key: 'label', header: 'Tool', render: (row: any) => row.label },
-                { key: 'type', header: 'Type', render: (row: any) => row.type },
-                { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.total_duration || 0) },
-                { key: 'events', header: 'Events', render: (row: any) => row.total_events || '0' },
-              ]}
-            />
-          ) : null}
-        </>
+      {isOverviewMode && (
+        <MonitoringOverview
+          insights={insights}
+          users={users}
+          trend={trendQuery.data || null}
+          trendLoading={trendQuery.isLoading}
+          focus={mode === 'unproductive-time' ? 'unproductive' : 'productive'}
+          selectedUserId={effectiveSelectedUserId}
+          onSelectUser={handleEmployeeFilterChange}
+          onOpenScreenshots={(userId) => {
+            const params = new URLSearchParams();
+            params.set('user', String(userId));
+            params.set('start', startDate);
+            params.set('end', endDate);
+            navigate(`/monitoring/screenshots?${params.toString()}`);
+          }}
+          timezone={displayTimezone}
+          isFetching={dataQuery.isFetching}
+        />
       )}
 
       {mode === 'screenshots' && (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Screenshots" value={screenshotTotal} hint="Total captures in current range" icon={Camera} accent="sky" />
-            <MetricCard label="Employees" value={new Set(screenshots.map((item: any) => resolveScreenshotUser(item)?.id || item.user_id).filter(Boolean)).size} hint="Employees with screenshots" icon={Users} accent="emerald" />
-            <MetricCard label="Selected Filter" value={selectedEmployeeLabel} hint="Current employee filter" icon={Activity} accent="violet" />
-            <MetricCard label="Range" value={`${startDate} to ${endDate}`} hint="Date controls for workspace context" icon={TimerReset} accent="amber" />
+        screenshots.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+            <p className="text-sm font-medium text-slate-700">No screenshots in this range.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Try a wider date range or a different employee — captures only exist while a timer runs with monitoring enabled.
+            </p>
           </div>
-
-          {hasExplicitEmployeeSelection && selectedUserLive ? (
-            <SurfaceCard className="p-5">
-              <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Live monitoring</p>
-                  <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">{selectedUserLive.user?.name || 'Selected employee'}</h2>
-                  <p className="mt-1 text-sm text-slate-500">{selectedUserLive.user?.email || 'No email available'}</p>
-                </div>
-                <div className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold capitalize ${productivityTone(selectedUserLive.classification)}`}>
-                  {selectedUserLive.classification || 'neutral'}
-                </div>
-              </div>
-
-              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current activity</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveToolLabel(selectedUserLive)}</p>
-                  <p className="mt-1 text-sm capitalize text-slate-500">{resolveLiveToolTypeLabel(selectedUserLive)}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Work status</p>
-                  <p className={`mt-2 text-base font-semibold capitalize ${selectedUserLive.is_on_break ? 'text-amber-600' : 'text-slate-950'}`}>{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
-                  <p className="mt-1 text-sm text-slate-500">{selectedUserLive.is_on_break ? 'On a break right now' : selectedUserLive.is_working ? 'Timer is active right now' : 'No active timer right now'}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last activity</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveActivityLabel(selectedUserLive, displayTimezone)}</p>
-                  <p className="mt-1 text-sm text-slate-500">Latest captured monitoring event</p>
-                </div>
-                {renderBrowserTrackingCard(selectedUserBrowserTracking)}
-              </div>
-            </SurfaceCard>
-          ) : null}
-
-          {screenshotTotal === 0 ? (
-            <PageEmptyState title="No screenshots found" description="Captured screenshots will appear here when available." />
-          ) : (
-            <SurfaceCard className="p-5">
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Total in range</p>
-                    <p className="mt-2 text-lg font-semibold text-slate-950">{screenshotTotal}</p>
-                  </div>
-                  {canDeleteScreenshots ? (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Selected</p>
-                      <p className="mt-2 text-lg font-semibold text-slate-950">{selectedScreenshotIds.length}</p>
-                    </div>
-                  ) : null}
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Date range</p>
-                    <p className="mt-2 text-sm font-semibold text-slate-950">{startDate} to {endDate}</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 lg:justify-end">
-                  {canDeleteScreenshots ? (
-                    <>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={toggleVisibleScreenshotSelection}
-                        disabled={screenshots.length === 0}
-                      >
-                        {allVisibleScreenshotsSelected ? 'Unselect visible' : 'Select visible'}
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        iconLeft={<Trash2 className="h-4 w-4" />}
-                        onClick={() => void handleDeleteSelectedScreenshots()}
-                        disabled={selectedScreenshotIds.length === 0 || isDeletingScreenshots}
-                      >
-                        Delete selected
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        iconLeft={<Trash2 className="h-4 w-4" />}
-                        onClick={() => void handleDeleteAllScreenshotsInRange()}
-                        disabled={!hasExplicitEmployeeSelection || screenshotTotal === 0 || isDeletingScreenshots}
-                      >
-                        {isDeletingScreenshots ? 'Deleting...' : 'Delete all in range'}
-                      </Button>
-                    </>
-                  ) : null}
-                  {renderPanelRefreshButton()}
-                </div>
-              </div>
-              {screenshotFeedback ? (
-                <div className="mt-4">
-                  <FeedbackBanner tone={screenshotFeedback.tone} message={screenshotFeedback.message} />
-                </div>
-              ) : null}
-              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {screenshots.map((shot: any) => {
-                  const isSelected = selectedScreenshotIds.includes(Number(shot.id));
-                  const screenshotUser = resolveScreenshotUser(shot);
-                  const shotPath = resolveScreenshotPath(shot);
-
-                  return (
-                    <div
-                      key={shot.id}
-                      className={`overflow-hidden rounded-lg border bg-white transition ${
-                        isSelected ? 'border-sky-300 shadow-sm' : 'border-slate-200'
-                      }`}
-                    >
-                      <div className="relative">
-                        <img
-                          src={shotPath}
-                          alt={shot.filename || `Screenshot ${shot.id}`}
-                          className="h-44 w-full object-cover"
-                          onError={(event) => {
-                            if (event.currentTarget.dataset.retrying === 'true') {
-                              return;
-                            }
-
-                            event.currentTarget.dataset.retrying = 'true';
-                            void refreshScreenshotPath(Number(shot.id));
-                          }}
-                        />
-                        {canDeleteScreenshots ? (
-                          <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-400"
-                              checked={isSelected}
-                              onChange={() => toggleScreenshotSelection(Number(shot.id))}
-                            />
-                            Select
-                          </label>
-                        ) : null}
-                        <a
-                          href={shotPath}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-slate-950/80 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-950"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          Open
-                        </a>
-                      </div>
-                      <div className="space-y-2 p-4">
-                        <p className="font-medium text-slate-950">{screenshotUser?.name || 'Unknown employee'}</p>
-                        <p className="text-xs text-slate-500">{formatDateTime(shot.recorded_at, displayTimezone)}</p>
-                        <p className="truncate text-xs text-slate-500" title={shot.filename || 'Captured screenshot'}>
-                          {shot.filename || 'Captured screenshot'}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-slate-500">
-                  Page {screenshotCurrentPage} of {screenshotLastPage}
-                  {screenshotTotal > 0 ? ` • ${screenshotTotal} total screenshot${screenshotTotal === 1 ? '' : 's'}` : ''}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    iconLeft={<ChevronLeft className="h-4 w-4" />}
-                    onClick={() => setScreenshotPage((current) => Math.max(1, current - 1))}
-                    disabled={screenshotCurrentPage <= 1 || dataQuery.isFetching}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    iconRight={<ChevronRight className="h-4 w-4" />}
-                    onClick={() => setScreenshotPage((current) => Math.min(screenshotLastPage, current + 1))}
-                    disabled={screenshotCurrentPage >= screenshotLastPage || dataQuery.isFetching}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            </SurfaceCard>
-          )}
-        </>
-      )}
-
-      {(mode === 'app-usage' || mode === 'website-usage') && (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Tracked Tools" value={aggregatedActivity.length} hint="Unique names in current range" icon={mode === 'app-usage' ? AppWindow : Globe} accent="sky" />
-            <MetricCard label="Events" value={activityRows.length} hint="Raw activity events" icon={Activity} accent="emerald" />
-            <MetricCard label="Track Time" value={formatDuration(activityRows.reduce((sum: number, row: any) => sum + Number(row.duration || 0), 0))} hint="Duration across all events" icon={TimerReset} accent="amber" />
-            <MetricCard label="Employees" value={new Set(activityRows.map((row: any) => row.user?.id).filter(Boolean)).size} hint="Employees in result set" icon={Users} accent="violet" />
-          </div>
-
-          {hasExplicitEmployeeSelection && selectedUserLive ? (
-            <SurfaceCard className="p-5">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Live Activity</h2>
-                  <p className="mt-1 text-sm text-slate-500">What the selected employee is doing right now and whether it is productive.</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${productivityTone(selectedUserLive.classification)}`}>
-                    {selectedUserLive.classification || 'neutral'}
-                  </span>
-                  {renderPanelRefreshButton()}
-                </div>
-              </div>
-              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Employee</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{selectedUserLive.user?.name || 'Unknown'}</p>
-                  <p className="mt-1 text-sm text-slate-500">{selectedUserLive.user?.email || 'No email available'}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Current tool</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveToolLabel(selectedUserLive)}</p>
-                  <p className={`mt-1 text-sm capitalize ${selectedUserLive.is_on_break ? 'text-amber-600' : 'text-slate-500'}`}>{selectedUserLive.work_status?.replace('_', ' ') || 'inactive'}</p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Last seen</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{resolveLiveActivityLabel(selectedUserLive, displayTimezone)}</p>
-                  <p className="mt-1 text-sm text-slate-500">Most recent monitoring signal</p>
-                </div>
-                {renderBrowserTrackingCard(selectedUserBrowserTracking)}
-              </div>
-            </SurfaceCard>
-          ) : null}
-
-          <div className={`grid grid-cols-1 gap-5 ${mode === 'website-usage' ? 'xl:grid-cols-2 xl:items-start' : ''}`.trim()}>
-            <DataTable
-              title={mode === 'app-usage' ? 'Application Usage' : 'Website Usage'}
-              description="Aggregated duration, event count, and employee coverage for each tool."
-              rows={aggregatedActivity}
-              emptyMessage="No activity usage found."
-              headerAction={renderPanelRefreshButton()}
-              bodyClassName="max-h-[30rem] overflow-y-auto"
-              stickyHeader
-              columns={[
-                { key: 'label', header: 'Name', render: (row: any) => row.label },
-                { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(row.classification)}`}>{row.classification}</span> },
-                { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
-                { key: 'count', header: 'Events', render: (row: any) => row.count },
-                { key: 'users', header: 'Employees', render: (row: any) => row.user_count },
-              ]}
-            />
-
-            {mode === 'website-usage' ? (
-              <DataTable
-                title={hasExplicitEmployeeSelection ? 'Selected Employee Website Breakdown' : 'Website Usage By Employee'}
-                description={
-                  hasExplicitEmployeeSelection
-                    ? 'Website-by-website productivity view for the selected employee.'
-                    : 'All employees, which websites they used, and whether each site was productive or not.'
-                }
-                rows={employeeWebsiteRows}
-                emptyMessage="No website rows found."
-                headerAction={renderPanelRefreshButton()}
-                bodyClassName="max-h-[30rem] overflow-y-auto"
-                stickyHeader
-                columns={[
-                  { key: 'employee', header: 'Employee', render: (row: any) => row.employee?.name || 'Unknown' },
-                  { key: 'website', header: 'Website', render: (row: any) => row.website },
-                  { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(row.classification)}`}>{row.classification}</span> },
-                  { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
-                  { key: 'events', header: 'Events', render: (row: any) => row.events },
-                  { key: 'last_used_at', header: 'Last Used', render: (row: any) => formatDateTime(row.last_used_at, displayTimezone) },
-                ]}
-              />
-            ) : null}
-          </div>
-
-          <DataTable
-            title="Raw Activity"
-            description="Underlying activity events captured from the monitoring pipeline."
-            rows={activityRows.slice().sort((a: any, b: any) => +new Date(b.recorded_at) - +new Date(a.recorded_at))}
-            emptyMessage="No raw events found."
-            headerAction={renderPanelRefreshButton()}
-            bodyClassName="max-h-[34rem] overflow-y-auto"
-            stickyHeader
-            columns={[
-              { key: 'recorded_at', header: 'When', render: (row: any) => formatDateTime(row.recorded_at, displayTimezone) },
-              { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
-              { key: 'name', header: 'Name', render: (row: any) => row.name },
-              { key: 'classification', header: 'Productivity', render: (row: any) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${productivityTone(classifyProductivity(normalizeToolLabel(row.name || '', row.type || 'app'), row.type || 'app'))}`}>{classifyProductivity(normalizeToolLabel(row.name || '', row.type || 'app'), row.type || 'app')}</span> },
-              { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.duration || 0) },
-            ]}
+        ) : (
+          <ScreenshotFilmstrip
+            screenshots={screenshots}
+            total={screenshotTotal}
+            currentPage={screenshotCurrentPage}
+            lastPage={screenshotLastPage}
+            onPageChange={setScreenshotPage}
+            resolveShotUrl={resolveScreenshotPath}
+            onShotVisible={handleShotVisible}
+            resolveShotUser={resolveScreenshotUser}
+            timezone={displayTimezone}
+            isFetching={dataQuery.isFetching}
+            canDelete={canDeleteScreenshots}
+            selectedIds={selectedScreenshotIds}
+            onToggleSelect={toggleScreenshotSelection}
+            onClearSelection={() => setSelectedScreenshotIds([])}
+            onDeleteSelected={() => setPendingDelete({ kind: 'selected', count: selectedScreenshotIds.length })}
+            onDeleteShot={(id) => setPendingDelete({ kind: 'single', id })}
+            hasEmployeeFilter={hasExplicitEmployeeSelection}
+            onDeleteAllInRange={() => setPendingDelete({ kind: 'range', count: screenshotTotal })}
+            deleting={isDeletingScreenshots}
+            newCount={newScreenshotCount}
+            onRefresh={() => void refreshWorkspaceData()}
+            dayActivities={isSingleDayRange ? (mixActivitiesQuery.data || null) : null}
+            isSingleDayRange={isSingleDayRange}
           />
-        </>
+        )
       )}
 
-      <div className="flex justify-end">
-        <Button variant="secondary" onClick={() => void dataQuery.refetch()}>
-          Refresh data
-        </Button>
-      </div>
+      <ConfirmDialog
+        isOpen={pendingDelete !== null}
+        title={pendingDeleteCopy.title}
+        message={pendingDeleteCopy.message}
+        confirmLabel="Delete"
+        tone="danger"
+        isLoading={isDeletingScreenshots}
+        onConfirm={() => void executePendingDelete()}
+        onClose={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

@@ -306,7 +306,7 @@ function LoanRow({ loan, isAdmin, colCount, onAction, onViewSchedule }: { loan: 
           <div className="flex items-center gap-2">
             <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className="h-full bg-[#5D969D] rounded-full transition-all"
+                className="h-full bg-blue-600 rounded-full transition-all"
                 style={{
                   width: `${loan.total_installments > 0
                     ? Math.round((loan.paid_installments / loan.total_installments) * 100)

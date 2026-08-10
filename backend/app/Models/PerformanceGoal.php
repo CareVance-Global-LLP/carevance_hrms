@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,12 +10,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PerformanceGoal extends Model
 {
+    use BelongsToOrganization;
     use HasFactory;
 
     protected $fillable = [
         'organization_id',
         'employee_id',
         'manager_id',
+        'scope',
+        'parent_goal_id',
+        'group_id',
         'title',
         'description',
         'category',
@@ -52,6 +57,26 @@ class PerformanceGoal extends Model
     public function reviews(): HasMany
     {
         return $this->hasMany(PerformanceReview::class, 'goal_id');
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_goal_id');
+    }
+
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_goal_id');
+    }
+
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(Group::class, 'group_id');
+    }
+
+    public function checkIns(): HasMany
+    {
+        return $this->hasMany(GoalCheckIn::class, 'goal_id');
     }
 
     public function scopeActive($query)

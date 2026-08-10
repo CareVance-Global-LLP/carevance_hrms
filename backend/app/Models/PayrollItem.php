@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PayrollItem extends Model
 {
+    use BelongsToOrganization;
+
     protected $fillable = [
         'payroll_run_id',
         'month_year',

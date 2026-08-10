@@ -261,40 +261,24 @@ class ReportGroupController extends Controller
 
     private function resolveGroupManagerId(int $organizationId, int $groupId): ?int
     {
-        return User::query()
-            ->where('organization_id', $organizationId)
-            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
-            ->with('customRole')
-            ->get()
-            ->sortBy(fn ($user) => $user->customRole?->hierarchy_level ?? match ($user->role) {
-                'admin' => 10,
-                'manager' => 50,
-                'employee' => 100,
-                default => 100,
-            })
-            ->first()
-            ?->id;
+        // Was a local copy that sorted ALL members by hierarchy_level ascending
+        // and took the first — which prefers an admin, since admins have the
+        // lowest level. Every employee in a group containing an admin was
+        // re-pointed at that admin. Now shares one resolver with UserController.
+        return app(\App\Services\Organization\ReportingManagerResolver::class)
+            ->forGroup($organizationId, $groupId);
     }
 
     private function syncEmployeesForGroup(int $organizationId, int $groupId): void
     {
-        $managerId = $this->resolveGroupManagerId($organizationId, $groupId);
-        $memberIds = User::query()
-            ->where('organization_id', $organizationId)
-            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
-            ->pluck('id');
+        $resolver = app(\App\Services\Organization\ReportingManagerResolver::class);
 
-        foreach ($memberIds as $memberId) {
-            EmployeeWorkInfo::query()->updateOrCreate(
-                [
-                    'organization_id' => $organizationId,
-                    'user_id' => (int) $memberId,
-                ],
-                [
-                    'report_group_id' => $groupId,
-                    'reporting_manager_id' => $managerId,
-                ]
-            );
+        // Employees only. This used to write a reporting_manager_id onto every
+        // member, so managers were given a reporting line to a peer — or to
+        // themselves. applyDerivedManager additionally refuses to overwrite a
+        // line someone set by hand.
+        foreach ($resolver->reportingMemberIds($organizationId, $groupId) as $memberId) {
+            $resolver->applyDerivedManager($organizationId, (int) $memberId, $groupId);
         }
     }
 

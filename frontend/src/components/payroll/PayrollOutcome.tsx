@@ -86,7 +86,19 @@ export default function PayrollOutcome({ run, items }: PayrollOutcomeProps) {
   // TDS — count items where tds > 0
   const tdsItems = items.filter((i) => toNum(i.tds) > 0);
   const tdsTotal = tdsItems.reduce((sum, i) => sum + toNum(i.tds), 0);
-  const cessEstimate = tdsTotal * 0.04; // Simplified: 4% cess (3% education + 1% secondary)
+
+  // Cess is already inside `tds`. PayrollCalculatorService computes
+  // total_tax = (tax + surcharge) + 4% cess, and that total is what lands on the
+  // item. Multiplying by 0.04 again presented cess as an ADDITIONAL amount and
+  // overstated the statutory total by 4%. Recover the portion that is embedded
+  // instead: tds = base × 1.04, so cess = tds × 0.04 / 1.04.
+  const cessIncluded = tdsTotal * (0.04 / 1.04);
+  const incomeTaxBeforeCess = tdsTotal - cessIncluded;
+
+  // Surcharge is genuinely computed per employee (with marginal relief) but is
+  // not carried on the payroll item, so it cannot be broken out here. Showing a
+  // hardcoded ₹0 asserted there was none, which is wrong for anyone above the
+  // ₹50L threshold. Left out of the breakdown rather than stated falsely.
 
   // PF
   const pfItems = items.filter((i) => toNum(i.pf_employee) > 0);
@@ -163,9 +175,9 @@ export default function PayrollOutcome({ run, items }: PayrollOutcomeProps) {
           accent="violet"
           primary={[
             { label: 'Employees', value: `${tdsItems.length}` },
-            { label: 'Income Tax', value: formatINR(tdsTotal) },
-            { label: 'Surcharge', value: formatINR(0) },
-            { label: 'Cess (4% est.)', value: formatINR(cessEstimate) },
+            { label: 'TDS deducted', value: formatINR(tdsTotal) },
+            { label: 'of which income tax', value: formatINR(incomeTaxBeforeCess) },
+            { label: 'of which cess (4%)', value: formatINR(cessIncluded) },
           ]}
           action={
             <Button variant="ghost" size="sm" onClick={reviewStub('TDS')}>

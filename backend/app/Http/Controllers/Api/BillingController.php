@@ -642,7 +642,16 @@ class BillingController extends Controller
     public function razorpayWebhook(Request $request)
     {
         $payload = $request->getContent();
-        $signature = $request->header('X-Razorpay-Signature');
+        // header() returns null when absent, and verifyWebhookSignature is typed
+        // `string $signature` — so a request with no signature header threw a
+        // TypeError and came back as a 500. That reads as "our webhook endpoint
+        // is broken", which makes Razorpay retry it, when the correct answer to
+        // an unsigned request is a flat rejection.
+        $signature = (string) $request->header('X-Razorpay-Signature', '');
+
+        if ($signature === '') {
+            return response()->json(['error' => 'Missing webhook signature'], 400);
+        }
 
         try {
             $razorpayService = new \App\Services\Billing\RazorpayPaymentService();

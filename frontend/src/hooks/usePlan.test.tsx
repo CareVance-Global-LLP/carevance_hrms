@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
 import { usePlan } from './usePlan';
-import { payrollEnabled } from '@/lib/runtimeConfig';
 
 // Mock runtimeConfig
 vi.mock('@/lib/runtimeConfig', () => ({
@@ -13,64 +13,43 @@ vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
+/**
+ * usePlan is a React hook and calls useCallback, so it only runs inside a
+ * render. These tests used to invoke it directly, which threw
+ * "Cannot read properties of null (reading 'useCallback')" because React had no
+ * current dispatcher. renderHook supplies one.
+ */
+const planFor = (planCode: string) => {
+  mockUseAuth.mockReturnValue({
+    organization: {
+      plan_code: planCode,
+      max_seats: 5,
+      subscription_status: 'active',
+    },
+  });
+
+  return renderHook(() => usePlan()).result.current;
+};
+
 describe('usePlan', () => {
-  it('should not show payroll for basic plan even when payrollEnabled is true', () => {
-    mockUseAuth.mockReturnValue({
-      organization: {
-        plan_code: 'basic',
-        max_seats: 5,
-        subscription_status: 'active',
-      },
-    });
-
-    const { hasFeature } = usePlan();
-    expect(hasFeature('payroll')).toBe(false);
+  it('should not show payroll for the basic tracking plan even when payrollEnabled is true', () => {
+    expect(planFor('basic_tracking').hasFeature('payroll')).toBe(false);
   });
 
-  it('should not show payroll for advanced_tracker plan even when payrollEnabled is true', () => {
-    mockUseAuth.mockReturnValue({
-      organization: {
-        plan_code: 'advanced_tracker',
-        max_seats: 5,
-        subscription_status: 'active',
-      },
-    });
-
-    const { hasFeature } = usePlan();
-    expect(hasFeature('payroll')).toBe(false);
+  it('should not show payroll for the advance tracking plan even when payrollEnabled is true', () => {
+    expect(planFor('advance_tracking').hasFeature('payroll')).toBe(false);
   });
 
-  it('should show payroll for enterprise plan when payrollEnabled is true', () => {
-    mockUseAuth.mockReturnValue({
-      organization: {
-        plan_code: 'enterprise',
-        max_seats: 5,
-        subscription_status: 'active',
-      },
-    });
-
-    const { hasFeature } = usePlan();
-    expect(hasFeature('payroll')).toBe(true);
+  it('should show payroll for the enterprise plan when payrollEnabled is true', () => {
+    expect(planFor('enterprise').hasFeature('payroll')).toBe(true);
   });
 
-  it('should not show payroll for any plan when payrollEnabled is false', async () => {
-    // Override the mock for this test
-    vi.doMock('@/lib/runtimeConfig', () => ({
-      payrollEnabled: false,
-    }));
+  it('should show payroll for the dedicated payroll plans', () => {
+    expect(planFor('basic_payroll').hasFeature('payroll')).toBe(true);
+    expect(planFor('professional_payroll').hasFeature('payroll')).toBe(true);
+  });
 
-    // Need to re-import for the mock to take effect
-    const { usePlan: usePlanReloaded } = await import('./usePlan');
-
-    mockUseAuth.mockReturnValue({
-      organization: {
-        plan_code: 'enterprise',
-        max_seats: 5,
-        subscription_status: 'active',
-      },
-    });
-
-    const { hasFeature } = usePlanReloaded();
-    expect(hasFeature('payroll')).toBe(false);
+  it('should not show payroll for an unrecognised plan code', () => {
+    expect(planFor('some_plan_that_does_not_exist').hasFeature('payroll')).toBe(false);
   });
 });

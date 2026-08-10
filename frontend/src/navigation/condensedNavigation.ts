@@ -8,6 +8,8 @@ import {
   CalendarClock,
   Camera,
   Coffee,
+
+  DoorOpen,
   FileClock,
   Fingerprint,
   FolderKanban,
@@ -83,7 +85,7 @@ export const condensedNavigation: NavGroup[] = [
     items: [
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
       { label: 'New Hires', to: '/new-hires', icon: UserPlus, adminOnly: true },
-      { label: 'Resignations', to: '/resignations', icon: UserMinus, adminOnly: true },
+      { label: 'Exits', to: '/exits', icon: DoorOpen, adminOnly: true },
       { label: 'My Team', to: '/my-team', icon: Share2, employeeOnly: true },
     ],
   },
@@ -104,7 +106,8 @@ export const condensedNavigation: NavGroup[] = [
       { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management' },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
-      { label: 'Breaks', to: '/breaks', icon: Coffee },
+      // Personal break tracker — hidden from admins. See dashboardNavigation.
+      { label: 'Breaks', to: '/breaks', icon: Coffee, employeeAndManagerOnly: true },
       { label: 'Shifts', to: '/shifts', icon: Coffee, adminOnly: true, planFeature: 'shift_management' },
     ],
   },
@@ -125,16 +128,17 @@ export const condensedNavigation: NavGroup[] = [
   {
     label: 'Performance',
     icon: Award,
+    planFeature: 'performance_management',
     items: [
-      { label: 'Performance Reviews', to: '/performance', icon: Award },
-      { label: 'Goals', to: '/performance-goals', icon: Target },
+      { label: 'Performance Reviews', to: '/performance', icon: Award, planFeature: 'performance_management' },
+      { label: 'Goals', to: '/performance-goals', icon: Target, planFeature: 'performance_management' },
     ],
   },
   {
     label: 'Work',
     icon: FolderKanban,
     items: [
-      { label: 'Timesheets', to: '/reports/hours-tracked', icon: FileClock, adminOnly: true, permission: 'reports.view' },
+      { label: 'Timesheets', to: '/work/timesheets', icon: FileClock, adminOnly: true, permission: 'reports.view' },
       { label: 'Projects', to: '/projects', icon: FolderKanban, planFeature: 'project_tracking' },
       { label: 'Tasks', to: '/tasks', icon: SquareKanban, planFeature: 'task_tracking' },
       { label: 'Time Reports', to: '/tasks/time-reports', icon: BarChart3, planFeature: 'task_tracking', adminOnly: true, permission: 'reports.view' },

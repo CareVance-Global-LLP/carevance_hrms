@@ -1,0 +1,634 @@
+/*
+ * CareVance theme tokens.
+ *
+ * Every colour in the app resolves through one of these variables: the Tailwind
+ * config maps its palettes to `rgb(var(--token) / <alpha-value>)`, so flipping
+ * the values below re-themes the whole product without touching components.
+ *
+ * Channels are space-separated RGB (not hex) because that is the only format
+ * Tailwind's <alpha-value> placeholder can compose with, which keeps classes
+ * like `bg-slate-200/60` working in both themes.
+ *
+ * The dark neutral ramp is INVERTED relative to light: --n-50 is the darkest
+ * surface and --n-900 the lightest text. That is what makes existing classes
+ * like `bg-slate-50` / `text-slate-900` correct in both themes with no edits.
+ * Anywhere the code deliberately wanted a dark-on-light element, use the
+ * `surface-inverse` / `on-inverse` pair instead of `slate-900`.
+ */
+
+/* ===================== LIGHT (default) ===================== */
+:root {
+  color-scheme: light;
+
+  /* neutral ramp — aliased by slate / gray / neutral / ink */
+  --n-50: 248 250 251;
+  --n-100: 241 244 246;
+  --n-200: 228 232 235;
+  --n-300: 210 216 221;
+  --n-400: 154 164 172;
+  --n-500: 107 117 125;
+  --n-600: 78 86 93;
+  --n-700: 58 65 71;
+  --n-800: 39 44 48;
+  --n-900: 22 25 28;
+  --n-950: 14 16 18;
+
+  /* brand teal — aliased by blue / primary */
+  --brand-50: 240 247 248;
+  --brand-100: 217 235 237;
+  --brand-200: 179 215 219;
+  --brand-300: 141 195 201;
+  --brand-400: 122 173 179;
+  --brand-500: 93 150 157;
+  --brand-600: 93 150 157;
+  --brand-700: 61 101 107;
+  --brand-800: 48 80 86;
+  --brand-900: 35 59 64;
+  --brand-950: 22 38 43;
+
+  /* brand gold */
+  --accent-50: 253 248 239;
+  --accent-100: 251 239 207;
+  --accent-200: 247 224 159;
+  --accent-300: 243 208 111;
+  --accent-400: 227 168 66;
+  --accent-500: 200 146 58;
+  --accent-600: 168 122 48;
+  --accent-700: 136 98 38;
+  --accent-800: 104 74 28;
+  --accent-900: 72 50 18;
+
+  /* semantic scales */
+  --success-50: 236 253 245;
+  --success-100: 209 250 229;
+  --success-500: 16 185 129;
+  --success-700: 4 120 87;
+  --success-800: 6 95 70;
+  --warning-50: 254 246 231;
+  --warning-100: 253 236 203;
+  --warning-500: 227 168 66;
+  --warning-700: 168 122 48;
+  --warning-800: 122 86 14;
+  --danger-50: 254 242 242;
+  --danger-100: 254 226 226;
+  --danger-500: 239 68 68;
+  --danger-700: 185 28 28;
+  --danger-800: 153 27 27;
+  --info-50: 240 247 248;
+  --info-100: 217 235 237;
+  --info-500: 93 150 157;
+  --info-700: 61 101 107;
+  --info-800: 48 80 86;
+
+  /* stock Tailwind palettes used across the app */
+  --emerald-50: 236 253 245;
+  --emerald-100: 209 250 229;
+  --emerald-200: 167 243 208;
+  --emerald-300: 110 231 183;
+  --emerald-400: 52 211 153;
+  --emerald-500: 16 185 129;
+  --emerald-600: 5 150 105;
+  --emerald-700: 4 120 87;
+  --emerald-800: 6 95 70;
+  --emerald-900: 6 78 59;
+  --rose-50: 255 241 242;
+  --rose-100: 255 228 230;
+  --rose-200: 254 205 211;
+  --rose-300: 253 164 175;
+  --rose-400: 251 113 133;
+  --rose-500: 244 63 94;
+  --rose-600: 225 29 72;
+  --rose-700: 190 18 60;
+  --rose-800: 159 18 57;
+  --rose-900: 136 19 55;
+  --amber-50: 255 251 235;
+  --amber-100: 254 243 199;
+  --amber-200: 253 230 138;
+  --amber-300: 252 211 77;
+  --amber-400: 251 191 36;
+  --amber-500: 245 158 11;
+  --amber-600: 217 119 6;
+  --amber-700: 180 83 9;
+  --amber-800: 146 64 14;
+  --amber-900: 120 53 15;
+  --sky-50: 240 249 255;
+  --sky-100: 224 242 254;
+  --sky-200: 186 230 253;
+  --sky-300: 125 211 252;
+  --sky-400: 56 189 248;
+  --sky-500: 14 165 233;
+  --sky-600: 2 132 199;
+  --sky-700: 3 105 161;
+  --sky-800: 7 89 133;
+  --sky-900: 12 74 110;
+  --red-50: 254 242 242;
+  --red-100: 254 226 226;
+  --red-200: 254 202 202;
+  --red-300: 252 165 165;
+  --red-400: 248 113 113;
+  --red-500: 239 68 68;
+  --red-600: 220 38 38;
+  --red-700: 185 28 28;
+  --red-800: 153 27 27;
+  --red-900: 127 29 29;
+  --green-50: 240 253 244;
+  --green-100: 220 252 231;
+  --green-200: 187 247 208;
+  --green-300: 134 239 172;
+  --green-400: 74 222 128;
+  --green-500: 34 197 94;
+  --green-600: 22 163 74;
+  --green-700: 21 128 61;
+  --green-800: 22 101 52;
+  --green-900: 20 83 45;
+  --violet-50: 245 243 255;
+  --violet-100: 237 233 254;
+  --violet-200: 221 214 254;
+  --violet-300: 196 181 253;
+  --violet-400: 167 139 250;
+  --violet-500: 139 92 246;
+  --violet-600: 124 58 237;
+  --violet-700: 109 40 217;
+  --violet-800: 91 33 182;
+  --violet-900: 76 29 149;
+  --teal-50: 240 253 250;
+  --teal-100: 204 251 241;
+  --teal-200: 153 246 228;
+  --teal-300: 94 234 212;
+  --teal-400: 45 212 191;
+  --teal-500: 20 184 166;
+  --teal-600: 13 148 136;
+  --teal-700: 15 118 110;
+  --teal-800: 17 94 89;
+  --teal-900: 19 78 74;
+  --indigo-50: 238 242 255;
+  --indigo-100: 224 231 255;
+  --indigo-200: 199 210 254;
+  --indigo-300: 165 180 252;
+  --indigo-400: 129 140 248;
+  --indigo-500: 99 102 241;
+  --indigo-600: 79 70 229;
+  --indigo-700: 67 56 202;
+  --indigo-800: 55 48 163;
+  --indigo-900: 49 46 129;
+  --cyan-50: 236 254 255;
+  --cyan-100: 207 250 254;
+  --cyan-200: 165 243 252;
+  --cyan-300: 103 232 249;
+  --cyan-400: 34 211 238;
+  --cyan-500: 6 182 212;
+  --cyan-600: 8 145 178;
+  --cyan-700: 14 116 144;
+  --cyan-800: 21 94 117;
+  --cyan-900: 22 78 99;
+  --orange-50: 255 247 237;
+  --orange-100: 255 237 213;
+  --orange-200: 254 215 170;
+  --orange-300: 253 186 116;
+  --orange-400: 251 146 60;
+  --orange-500: 249 115 22;
+  --orange-600: 234 88 12;
+  --orange-700: 194 65 12;
+  --orange-800: 154 52 18;
+  --orange-900: 124 45 18;
+  --purple-50: 250 245 255;
+  --purple-100: 243 232 255;
+  --purple-200: 233 213 255;
+  --purple-300: 216 180 254;
+  --purple-400: 192 132 252;
+  --purple-500: 168 85 247;
+  --purple-600: 147 51 234;
+  --purple-700: 126 34 206;
+  --purple-800: 107 33 168;
+  --purple-900: 88 28 135;
+  --yellow-50: 254 252 232;
+  --yellow-100: 254 249 195;
+  --yellow-200: 254 240 138;
+  --yellow-300: 253 224 71;
+  --yellow-400: 250 204 21;
+  --yellow-500: 234 179 8;
+  --yellow-600: 202 138 4;
+  --yellow-700: 161 98 7;
+  --yellow-800: 133 77 14;
+  --yellow-900: 113 63 18;
+
+  /* surface + role tokens */
+  --app-bg: 245 247 248;
+  --surface-card: 255 255 255;
+  --surface-raised: 255 255 255;
+  --surface-sunken: 241 244 246;
+  --surface-inverse: 22 25 28;
+  --on-inverse: 255 255 255;
+  --border-strong: 210 216 221;
+  --ring: 93 150 157;
+  --on-brand: 255 255 255;
+}
+
+/* ===================== DARK ===================== */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --n-50: 14 20 26;
+  --n-100: 22 31 38;
+  --n-200: 33 44 52;
+  --n-300: 42 56 65;
+  /* Lifted from #7C8C96 / #93A2AB: muted labels sit on *raised* surfaces as
+     often as on cards, and only cleared 4.2:1 there. These clear 4.5:1 on the
+     lightest surface in the set, so they are safe wherever they land. */
+  --n-400: 134 146 152;
+  --n-500: 154 168 176;
+  --n-600: 169 184 192;
+  --n-700: 195 207 213;
+  --n-800: 217 226 230;
+  --n-900: 230 237 240;
+  --n-950: 242 246 248;
+
+  --brand-50: 18 34 40;
+  --brand-100: 22 48 58;
+  --brand-200: 30 69 80;
+  --brand-300: 46 100 112;
+  --brand-400: 93 150 157;
+  --brand-500: 111 169 176;
+  --brand-600: 111 169 176;
+  --brand-700: 140 198 206;
+  --brand-800: 165 212 218;
+  --brand-900: 192 226 230;
+  --brand-950: 220 240 242;
+
+  --accent-50: 42 35 18;
+  --accent-100: 58 48 24;
+  --accent-200: 90 71 34;
+  --accent-300: 138 108 49;
+  --accent-400: 235 184 97;
+  --accent-500: 223 175 87;
+  --accent-600: 211 164 76;
+  --accent-700: 231 188 105;
+  --accent-800: 240 206 142;
+  --accent-900: 247 226 183;
+
+  --success-50: 18 40 31;
+  --success-100: 23 58 43;
+  --success-500: 52 200 138;
+  --success-700: 91 205 151;
+  --success-800: 143 224 186;
+  --warning-50: 42 35 18;
+  --warning-100: 58 48 24;
+  --warning-500: 227 168 66;
+  --warning-700: 231 188 105;
+  --warning-800: 240 206 142;
+  --danger-50: 43 25 23;
+  --danger-100: 61 33 30;
+  --danger-500: 240 91 74;
+  --danger-700: 238 136 120;
+  --danger-800: 245 175 163;
+  --info-50: 18 34 40;
+  --info-100: 22 48 58;
+  --info-500: 111 169 176;
+  --info-700: 140 198 206;
+  --info-800: 165 212 218;
+
+  /* stock palettes, ramp mirrored so `bg-X-50 text-X-700` chips invert cleanly */
+  --emerald-50: 6 78 59;
+  --emerald-100: 6 95 70;
+  --emerald-200: 4 120 87;
+  --emerald-300: 5 150 105;
+  --emerald-400: 16 185 129;
+  --emerald-500: 52 211 153;
+  --emerald-600: 110 231 183;
+  --emerald-700: 167 243 208;
+  --emerald-800: 209 250 229;
+  --emerald-900: 236 253 245;
+  --rose-50: 136 19 55;
+  --rose-100: 159 18 57;
+  --rose-200: 190 18 60;
+  --rose-300: 225 29 72;
+  --rose-400: 244 63 94;
+  --rose-500: 251 113 133;
+  --rose-600: 253 164 175;
+  --rose-700: 254 205 211;
+  --rose-800: 255 228 230;
+  --rose-900: 255 241 242;
+  --amber-50: 120 53 15;
+  --amber-100: 146 64 14;
+  --amber-200: 180 83 9;
+  --amber-300: 217 119 6;
+  --amber-400: 245 158 11;
+  --amber-500: 251 191 36;
+  --amber-600: 252 211 77;
+  --amber-700: 253 230 138;
+  --amber-800: 254 243 199;
+  --amber-900: 255 251 235;
+  --sky-50: 12 74 110;
+  --sky-100: 7 89 133;
+  --sky-200: 3 105 161;
+  --sky-300: 2 132 199;
+  --sky-400: 14 165 233;
+  --sky-500: 56 189 248;
+  --sky-600: 125 211 252;
+  --sky-700: 186 230 253;
+  --sky-800: 224 242 254;
+  --sky-900: 240 249 255;
+  --red-50: 127 29 29;
+  --red-100: 153 27 27;
+  --red-200: 185 28 28;
+  --red-300: 220 38 38;
+  --red-400: 239 68 68;
+  --red-500: 248 113 113;
+  --red-600: 252 165 165;
+  --red-700: 254 202 202;
+  --red-800: 254 226 226;
+  --red-900: 254 242 242;
+  --green-50: 20 83 45;
+  --green-100: 22 101 52;
+  --green-200: 21 128 61;
+  --green-300: 22 163 74;
+  --green-400: 34 197 94;
+  --green-500: 74 222 128;
+  --green-600: 134 239 172;
+  --green-700: 187 247 208;
+  --green-800: 220 252 231;
+  --green-900: 240 253 244;
+  --violet-50: 76 29 149;
+  --violet-100: 91 33 182;
+  --violet-200: 109 40 217;
+  --violet-300: 124 58 237;
+  --violet-400: 139 92 246;
+  --violet-500: 167 139 250;
+  --violet-600: 196 181 253;
+  --violet-700: 221 214 254;
+  --violet-800: 237 233 254;
+  --violet-900: 245 243 255;
+  --teal-50: 19 78 74;
+  --teal-100: 17 94 89;
+  --teal-200: 15 118 110;
+  --teal-300: 13 148 136;
+  --teal-400: 20 184 166;
+  --teal-500: 45 212 191;
+  --teal-600: 94 234 212;
+  --teal-700: 153 246 228;
+  --teal-800: 204 251 241;
+  --teal-900: 240 253 250;
+  --indigo-50: 49 46 129;
+  --indigo-100: 55 48 163;
+  --indigo-200: 67 56 202;
+  --indigo-300: 79 70 229;
+  --indigo-400: 99 102 241;
+  --indigo-500: 129 140 248;
+  --indigo-600: 165 180 252;
+  --indigo-700: 199 210 254;
+  --indigo-800: 224 231 255;
+  --indigo-900: 238 242 255;
+  --cyan-50: 22 78 99;
+  --cyan-100: 21 94 117;
+  --cyan-200: 14 116 144;
+  --cyan-300: 8 145 178;
+  --cyan-400: 6 182 212;
+  --cyan-500: 34 211 238;
+  --cyan-600: 103 232 249;
+  --cyan-700: 165 243 252;
+  --cyan-800: 207 250 254;
+  --cyan-900: 236 254 255;
+  --orange-50: 124 45 18;
+  --orange-100: 154 52 18;
+  --orange-200: 194 65 12;
+  --orange-300: 234 88 12;
+  --orange-400: 249 115 22;
+  --orange-500: 251 146 60;
+  --orange-600: 253 186 116;
+  --orange-700: 254 215 170;
+  --orange-800: 255 237 213;
+  --orange-900: 255 247 237;
+  --purple-50: 88 28 135;
+  --purple-100: 107 33 168;
+  --purple-200: 126 34 206;
+  --purple-300: 147 51 234;
+  --purple-400: 168 85 247;
+  --purple-500: 192 132 252;
+  --purple-600: 216 180 254;
+  --purple-700: 233 213 255;
+  --purple-800: 243 232 255;
+  --purple-900: 250 245 255;
+  --yellow-50: 113 63 18;
+  --yellow-100: 133 77 14;
+  --yellow-200: 161 98 7;
+  --yellow-300: 202 138 4;
+  --yellow-400: 234 179 8;
+  --yellow-500: 250 204 21;
+  --yellow-600: 253 224 71;
+  --yellow-700: 254 240 138;
+  --yellow-800: 254 249 195;
+  --yellow-900: 254 252 232;
+
+  --app-bg: 14 20 26;
+  --surface-card: 22 31 38;
+  --surface-raised: 30 42 51;
+  --surface-sunken: 10 16 21;
+  --surface-inverse: 230 237 240;
+  --on-inverse: 14 20 26;
+  --border-strong: 105 116 122;
+  --ring: 140 198 206;
+  --on-brand: 10 15 20;
+
+  /* ---- legacy variables kept in sync so pre-token components follow the theme ---- */
+  --background: #0E141A;
+  --surface: #161F26;
+  --text-primary: #E6EDF0;
+  --text-secondary: #A9B8C0;
+  --border: #212C34;
+  --secondary: #7C8C96;
+  --brand-primary: #7FB6BD;
+  --brand-primary-light: #A5D4DA;
+  --brand-primary-dark: #5D969D;
+  --primary: #7FB6BD;
+  --primary-dark: #5D969D;
+  --success: #34C88A;
+  --warning: #E3A842;
+  /* Used as a solid fill behind white text (notification counts), so it is
+     darker than the danger *text* colour, which needs to be light instead. */
+  --danger: #C2453A;
+
+  /* sidebar deepens so it stays a distinct rail against the darker page */
+  --sidebar-bg: #0A0F14;
+  --sidebar-hover: #18222B;
+  /* Deepened from #5D969D: white label text only reaches 3.3:1 on the lighter
+     teal, and the active item is small text that needs 4.5:1. */
+  --sidebar-active: #436F76;
+  --sidebar-text: rgba(230, 237, 240, 0.66);
+  --sidebar-text-active: #ffffff;
+  --sidebar-badge: #B3392E;
+  --sidebar-flyout-bg: #131B21;
+  --sidebar-flyout-line: rgba(255, 255, 255, 0.09);
+  --sidebar-flyout-border: rgba(255, 255, 255, 0.10);
+  --sidebar-accent: #E3A842;
+  --sidebar-accent-soft: rgba(227, 168, 66, 0.16);
+  --sidebar-accent-wash: rgba(227, 168, 66, 0.12);
+
+  /* AdaptiveSurface contrast subsystem */
+  --contrast-text-primary: #E6EDF0;
+  --contrast-text-secondary: #A9B8C0;
+  --contrast-text-muted: #7C8C96;
+  --contrast-text-accent: #7FB6BD;
+  --contrast-text-inverse: #0E141A;
+  --contrast-border-soft: rgba(230, 237, 240, 0.12);
+  --contrast-elevated: rgba(22, 31, 38, 0.95);
+}
+
+/* ===================== theme-wide surface behaviour ===================== */
+
+body {
+  background-color: rgb(var(--app-bg));
+  color: rgb(var(--n-900));
+}
+
+/*
+ * `bg-white` appears in 178 files and predates the token layer. Rather than
+ * rewriting all of them, remap the utility itself in dark mode.
+ *
+ * The alpha variants split by intent, not by syntax:
+ *   - HIGH alpha (>= 50%) is an opaque panel — dropdowns, popovers, sheets.
+ *     Those must be repainted or they stay a white slab floating on a dark app.
+ *   - LOW alpha (<= 30%) is a lifting wash over an already-dark surface
+ *     (sidebar hover, image overlays) and is left alone, because a translucent
+ *     white is exactly how you lighten something dark.
+ */
+:root[data-theme="dark"] .bg-white,
+:root[data-theme="dark"] .hover\:bg-white:hover,
+:root[data-theme="dark"] .focus\:bg-white:focus,
+:root[data-theme="dark"] .group:hover .group-hover\:bg-white {
+  background-color: rgb(var(--surface-card));
+}
+
+:root[data-theme="dark"] .bg-white\/50,
+:root[data-theme="dark"] .bg-white\/70,
+:root[data-theme="dark"] .bg-white\/75,
+:root[data-theme="dark"] .bg-white\/80,
+:root[data-theme="dark"] .bg-white\/85,
+:root[data-theme="dark"] .bg-white\/88,
+:root[data-theme="dark"] .bg-white\/90,
+:root[data-theme="dark"] .bg-white\/95,
+:root[data-theme="dark"] .hover\:bg-white\/80:hover,
+:root[data-theme="dark"] .hover\:bg-white\/90:hover,
+:root[data-theme="dark"] .focus\:bg-white\/90:focus {
+  background-color: rgb(var(--surface-raised));
+}
+
+/* A light hairline would ring those panels in white against the dark page. */
+:root[data-theme="dark"] .border-white\/50,
+:root[data-theme="dark"] .border-white\/70,
+:root[data-theme="dark"] .border-white\/80 {
+  border-color: rgb(var(--n-300));
+}
+
+/* Cards that sit on top of another card read as raised. */
+:root[data-theme="dark"] .bg-white .bg-white {
+  background-color: rgb(var(--surface-raised));
+}
+
+/*
+ * Solid brand/semantic fills are LIGHTER in dark mode, so `text-white` on top
+ * of them collapses to ~2.6:1. Where both classes sit on the same element we
+ * can correct it centrally rather than editing every call site; `on-brand` is
+ * near-black in dark and white in light, so this is a no-op in light mode.
+ */
+/*
+ * Tint backgrounds (`bg-sky-50`, `bg-emerald-50`, …).
+ *
+ * Mirroring the ramp turns the 50 step into stock 900, but stock 900s are
+ * vivid mid-darks — heavy as a panel background, and only ~3.9:1 behind muted
+ * neutral text. These replace the two tint steps with the palette hue mixed
+ * into the card colour, which keeps them subtle: chip text lands at 10-11:1
+ * and neutral body text at 5.6-6.3:1.
+ */
+:root[data-theme="dark"] {
+  --emerald-50: 20 48 47;  --emerald-100: 18 60 54;
+  --rose-50: 50 31 43;     --rose-100: 71 31 46;
+  --amber-50: 49 43 34;    --amber-100: 69 52 30;
+  --sky-50: 19 45 61;      --sky-100: 17 55 77;
+  --red-50: 50 32 38;      --red-100: 70 33 38;
+  --green-50: 22 49 43;    --green-100: 22 63 47;
+  --violet-50: 36 35 66;   --violet-100: 46 37 86;
+  --teal-50: 21 47 52;     --teal-100: 20 59 62;
+  --indigo-50: 30 36 65;   --indigo-100: 36 40 84;
+  --cyan-50: 20 47 58;     --cyan-100: 19 58 72;
+  --orange-50: 52 39 34;   --orange-100: 73 45 32;
+  --purple-50: 40 34 65;   --purple-100: 52 36 85;
+  --yellow-50: 47 46 33;   --yellow-100: 65 57 30;
+}
+
+:root[data-theme="dark"] [class*="bg-primary-5"].text-white,
+:root[data-theme="dark"] [class*="bg-primary-6"].text-white,
+:root[data-theme="dark"] [class*="bg-primary-7"].text-white,
+:root[data-theme="dark"] [class*="bg-slate-4"].text-white,
+:root[data-theme="dark"] [class*="bg-slate-5"].text-white,
+:root[data-theme="dark"] [class*="bg-slate-6"].text-white,
+:root[data-theme="dark"] [class*="bg-gray-4"].text-white,
+:root[data-theme="dark"] [class*="bg-gray-5"].text-white,
+:root[data-theme="dark"] [class*="bg-teal-5"].text-white,
+:root[data-theme="dark"] [class*="bg-teal-6"].text-white,
+:root[data-theme="dark"] [class*="bg-cyan-5"].text-white,
+:root[data-theme="dark"] [class*="bg-cyan-6"].text-white,
+:root[data-theme="dark"] [class*="bg-orange-5"].text-white,
+:root[data-theme="dark"] [class*="bg-purple-5"].text-white,
+:root[data-theme="dark"] [class*="bg-purple-6"].text-white,
+:root[data-theme="dark"] [class*="bg-blue-5"].text-white,
+:root[data-theme="dark"] [class*="bg-blue-6"].text-white,
+:root[data-theme="dark"] [class*="bg-blue-7"].text-white,
+:root[data-theme="dark"] [class*="bg-red-5"].text-white,
+:root[data-theme="dark"] [class*="bg-red-6"].text-white,
+:root[data-theme="dark"] [class*="bg-red-7"].text-white,
+:root[data-theme="dark"] [class*="bg-rose-5"].text-white,
+:root[data-theme="dark"] [class*="bg-rose-6"].text-white,
+:root[data-theme="dark"] [class*="bg-rose-7"].text-white,
+:root[data-theme="dark"] [class*="bg-emerald-5"].text-white,
+:root[data-theme="dark"] [class*="bg-emerald-6"].text-white,
+:root[data-theme="dark"] [class*="bg-emerald-7"].text-white,
+:root[data-theme="dark"] [class*="bg-green-5"].text-white,
+:root[data-theme="dark"] [class*="bg-green-6"].text-white,
+:root[data-theme="dark"] [class*="bg-amber-5"].text-white,
+:root[data-theme="dark"] [class*="bg-amber-6"].text-white,
+:root[data-theme="dark"] [class*="bg-sky-5"].text-white,
+:root[data-theme="dark"] [class*="bg-sky-6"].text-white,
+:root[data-theme="dark"] [class*="bg-violet-5"].text-white,
+:root[data-theme="dark"] [class*="bg-violet-6"].text-white,
+:root[data-theme="dark"] [class*="bg-indigo-5"].text-white,
+:root[data-theme="dark"] [class*="bg-indigo-6"].text-white,
+:root[data-theme="dark"] [class*="bg-accent-4"].text-white,
+:root[data-theme="dark"] [class*="bg-accent-5"].text-white {
+  color: rgb(var(--on-brand));
+}
+
+/* Shadows read as haze on dark surfaces; trade them for a defining hairline. */
+:root[data-theme="dark"] .shadow-sm,
+:root[data-theme="dark"] .shadow,
+:root[data-theme="dark"] .shadow-md,
+:root[data-theme="dark"] .shadow-card {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+:root[data-theme="dark"] .shadow-lg,
+:root[data-theme="dark"] .shadow-xl,
+:root[data-theme="dark"] .shadow-modal {
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.65), 0 4px 12px -6px rgb(0 0 0 / 0.5);
+}
+
+/* Native controls: date pickers, selects and scrollbars follow the theme. */
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+:root[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
+:root[data-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.6);
+}
+
+/* Theme transitions — skipped for reduced-motion and during first paint. */
+:root.theme-ready body,
+:root.theme-ready .bg-white,
+:root.theme-ready [class*="bg-slate"],
+:root.theme-ready [class*="bg-white"],
+:root.theme-ready [class*="border-slate"] {
+  transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root.theme-ready body,
+  :root.theme-ready .bg-white,
+  :root.theme-ready [class*="bg-slate"],
+  :root.theme-ready [class*="bg-white"],
+  :root.theme-ready [class*="border-slate"] { transition: none; }
+}

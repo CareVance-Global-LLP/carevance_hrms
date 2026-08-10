@@ -8,7 +8,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
@@ -491,13 +490,13 @@ export default function ReimbursementsPage() {
       : tabs.filter(t => t.key === 'my_submissions' || t.key === 'history');
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader
-        title="Reimbursements"
-        description="Submit and manage expense claims with manager and admin approval."
-      />
-
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Reimbursements</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Submit and manage expense claims with manager and admin approval.
+        </p>
+      </div>
         <HowItWorksCard
           whatIsThis="Refunds for out-of-pocket business expenses. Employee submits a claim with receipts, manager verifies, admin gives final approval, and the amount is added to payroll."
           whenToUse={[
@@ -1028,7 +1027,7 @@ export default function ReimbursementsPage() {
                         {reim.title || reim.description || '-'}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-500/10 text-blue-600">
                           {CATEGORIES.find(c => c.value === reim.category)?.label || reim.category || 'Other'}
                         </span>
                       </td>
@@ -1126,7 +1125,6 @@ export default function ReimbursementsPage() {
             </div>
           )}
         </SurfaceCard>
-      </div>
 
       <RejectReasonModal
         isOpen={rejectingId !== null}

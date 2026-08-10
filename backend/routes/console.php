@@ -290,3 +290,10 @@ Artisan::command('schedule:timers-close-stale', function () {
 Artisan::command('schedule:timers-close-idle', function () {
     $this->call('timers:close-idle');
 })->everyMinute();
+
+// Schedule: revoke access past the last working day, and advance onboarding
+// stages by date. Runs shortly after midnight so a last working day is fully
+// over before the account is closed.
+Artisan::command('schedule:lifecycle-process', function () {
+    $this->call('lifecycle:process');
+})->dailyAt('00:30');

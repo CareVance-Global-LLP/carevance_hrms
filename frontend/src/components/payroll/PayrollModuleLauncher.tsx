@@ -213,7 +213,7 @@ export default function PayrollModuleLauncher({
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
             <LayoutGrid className="h-5 w-5" />
           </div>
           <div>
@@ -228,7 +228,7 @@ export default function PayrollModuleLauncher({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search modules..."
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 focus:border-[#5D969D] focus:outline-none focus:ring-1 focus:ring-[#5D969D]"
+            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-700 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-[#5D969D]"
           />
         </div>
       </div>
@@ -245,7 +245,7 @@ export default function PayrollModuleLauncher({
               className={cn(
                 'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                 isActive
-                  ? 'border-[#5D969D] bg-[rgba(93,150,157,0.1)] text-[#5D969D]'
+                  ? 'border-blue-600 bg-blue-500/10 text-blue-600'
                   : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
               )}
             >
@@ -264,7 +264,7 @@ export default function PayrollModuleLauncher({
             <button
               type="button"
               onClick={() => setSearch('')}
-              className="mt-3 text-sm font-medium text-[#5D969D] hover:underline"
+              className="mt-3 text-sm font-medium text-blue-600 hover:underline"
             >
               Clear search
             </button>
@@ -285,14 +285,14 @@ export default function PayrollModuleLauncher({
                     <SurfaceCard
                       key={m.id}
                       onClick={() => handleActivate(m)}
-                      className="group flex cursor-pointer items-start gap-3 p-4 transition-all hover:border-[#5D969D] hover:shadow-md"
+                      className="group flex cursor-pointer items-start gap-3 p-4 transition-all hover:border-blue-600 hover:shadow-md"
                     >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
                         <Icon className="h-5 w-5" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <h4 className="truncate font-medium text-slate-900 group-hover:text-[#5D969D]">
+                          <h4 className="truncate font-medium text-slate-900 group-hover:text-blue-600">
                             {m.label}
                           </h4>
                           {count !== undefined && count > 0 && (
@@ -307,7 +307,7 @@ export default function PayrollModuleLauncher({
                           </p>
                         )}
                       </div>
-                      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-[#5D969D]" />
+                      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-blue-600" />
                     </SurfaceCard>
                   );
                 })}

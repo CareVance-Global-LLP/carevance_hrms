@@ -1,140 +1,80 @@
+/**
+ * Colours resolve through CSS custom properties defined in src/styles/theme.css.
+ *
+ * The `rgb(var(--x) / <alpha-value>)` form is what keeps opacity modifiers
+ * (`bg-slate-200/60`, `ring-sky-300/25`) working; a plain `var(--x)` would break
+ * them. Because every palette is indirected this way, switching themes is a
+ * matter of flipping the variables — no component classes change.
+ */
+const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+const ramp = (prefix, steps) =>
+  Object.fromEntries(steps.map((step) => [step, token(`${prefix}-${step}`)]));
+
+const FULL = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
+const FULL_950 = [...FULL, 950];
+const SEMANTIC = [50, 100, 500, 700, 800];
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  // Theme is driven by an explicit attribute rather than the OS query, so the
+  // in-app toggle can override the system preference. "system" is resolved in
+  // JS and written out as this attribute.
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
         // Brand Teal (replaces blue as primary interactive color)
-        blue: {
-          50: '#F0F7F8',
-          100: '#D9EBED',
-          200: '#B3D7DB',
-          300: '#8DC3C9',
-          400: '#7AADB3',
-          500: '#5D969D',
-          600: '#5D969D',
-          700: '#3D656B',
-          800: '#305056',
-          900: '#233B40',
-          950: '#16262B',
-        },
+        blue: ramp('brand', FULL_950),
         // Keep `primary` as alias for backward compat
-        primary: {
-          50: '#F0F7F8',
-          100: '#D9EBED',
-          200: '#B3D7DB',
-          300: '#8DC3C9',
-          400: '#7AADB3',
-          500: '#5D969D',
-          600: '#5D969D',
-          700: '#3D656B',
-          800: '#305056',
-          900: '#233B40',
-        },
+        primary: ramp('brand', FULL),
         // Brand Gold (accent / CTA)
-        accent: {
-          50: '#FDF8EF',
-          100: '#FBEFCF',
-          200: '#F7E09F',
-          300: '#F3D06F',
-          400: '#E3A842',
-          500: '#C8923A',
-          600: '#A87A30',
-          700: '#886226',
-          800: '#684A1C',
-          900: '#483212',
-        },
+        accent: ramp('accent', FULL),
         // Brand neutral scale (single source of truth for all grays)
-        neutral: {
-          50: '#F8FAFB',
-          100: '#F1F4F6',
-          200: '#E4E8EB',
-          300: '#D2D8DD',
-          400: '#9AA4AC',
-          500: '#6B757D',
-          600: '#4E565D',
-          700: '#3A4147',
-          800: '#272C30',
-          900: '#16191C',
-        },
+        neutral: ramp('n', FULL),
         // `ink` = semantic text scale (replaces raw slate-*-as-text usages)
-        ink: {
-          900: '#16191C',
-          800: '#272C30',
-          700: '#3A4147',
-          600: '#4E565D',
-          500: '#6B757D',
-          400: '#9AA4AC',
-          300: '#D2D8DD',
-          200: '#E4E8EB',
-          100: '#F1F4F6',
-          50: '#F8FAFB',
-        },
+        ink: ramp('n', FULL),
         // Re-point Tailwind's `gray` and `slate` at the brand neutral scale so
         // every existing `slate-*` / `gray-*` class is already on-brand.
-        gray: {
-          50: '#F8FAFB',
-          100: '#F1F4F6',
-          200: '#E4E8EB',
-          300: '#D2D8DD',
-          400: '#9AA4AC',
-          500: '#6B757D',
-          600: '#4E565D',
-          700: '#3A4147',
-          800: '#272C30',
-          900: '#16191C',
-        },
-        slate: {
-          50: '#F8FAFB',
-          100: '#F1F4F6',
-          200: '#E4E8EB',
-          300: '#D2D8DD',
-          400: '#9AA4AC',
-          500: '#6B757D',
-          600: '#4E565D',
-          700: '#3A4147',
-          800: '#272C30',
-          900: '#16191C',
-          950: '#0E1012',
-        },
+        gray: ramp('n', FULL),
+        slate: ramp('n', FULL_950),
         // Semantic status system (darkened text-on-tint pairs for AA contrast)
-        success: {
-          50: '#ECFDF5',
-          100: '#D1FAE5',
-          500: '#10B981',
-          700: '#047857',
-          800: '#065F46',
-        },
-        warning: {
-          50: '#FEF6E7',
-          100: '#FDECCB',
-          500: '#E3A842',
-          700: '#A87A30',
-          800: '#7A560E',
-        },
-        danger: {
-          50: '#FEF2F2',
-          100: '#FEE2E2',
-          500: '#EF4444',
-          700: '#B91C1C',
-          800: '#991B1B',
-        },
-        info: {
-          50: '#F0F7F8',
-          100: '#D9EBED',
-          500: '#5D969D',
-          700: '#3D656B',
-          800: '#305056',
-        },
+        success: ramp('success', SEMANTIC),
+        warning: ramp('warning', SEMANTIC),
+        danger: ramp('danger', SEMANTIC),
+        info: ramp('info', SEMANTIC),
+        // Stock Tailwind palettes the app uses directly. Tokenised so status
+        // tints (`bg-emerald-50 text-emerald-700`) invert in dark mode instead
+        // of glowing as light chips on a dark card.
+        emerald: ramp('emerald', FULL),
+        rose: ramp('rose', FULL),
+        amber: ramp('amber', FULL),
+        sky: ramp('sky', FULL),
+        red: ramp('red', FULL),
+        green: ramp('green', FULL),
+        violet: ramp('violet', FULL),
+        teal: ramp('teal', FULL),
+        indigo: ramp('indigo', FULL),
+        cyan: ramp('cyan', FULL),
+        orange: ramp('orange', FULL),
+        purple: ramp('purple', FULL),
+        yellow: ramp('yellow', FULL),
         surface: {
-          base: '#F5F7F8',
-          card: '#FFFFFF',
-          raised: '#FFFFFF',
+          base: token('app-bg'),
+          card: token('surface-card'),
+          raised: token('surface-raised'),
+          sunken: token('surface-sunken'),
+          // Deliberately dark-on-light in light mode, and the reverse in dark.
+          // Use this instead of `bg-slate-900` for intentionally inverted chrome.
+          inverse: token('surface-inverse'),
         },
-        background: '#F5F7F8',
+        'on-inverse': token('on-inverse'),
+        'on-brand': token('on-brand'),
+        'border-strong': token('border-strong'),
+        background: token('app-bg'),
       },
       fontSize: {
         // Page / display title

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { X, AlertTriangle, Loader2 } from 'lucide-react';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import Button from '@/components/ui/Button';
@@ -32,13 +32,62 @@ export default function ConfirmDialog({
   onClose,
   isLoading = false,
 }: ConfirmDialogProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+  /*
+   * This is the dialog that guards destructive actions, so it has to behave
+   * like one. It previously rendered as plain divs: no dialog role, so screen
+   * readers announced nothing; no focus move, so keyboard users stayed on the
+   * page behind and could tab straight past the warning into the content it was
+   * warning about; and no focus trap, so Tab walked out of the dialog entirely.
+   */
   useEffect(() => {
     if (!isOpen) return;
+
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+
+    // Focus the panel itself rather than a button — landing on "Confirm" makes
+    // a stray Enter destroy something.
+    panelRef.current?.focus();
+
+    const focusable = () =>
+      Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => el.offsetParent !== null);
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isLoading) onClose();
+      if (e.key === 'Escape' && !isLoading) {
+        onClose();
+        return;
+      }
+
+      if (e.key !== 'Tab') return;
+
+      const items = focusable();
+      if (items.length === 0) return;
+
+      const first = items[0];
+      const last = items[items.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      // Put focus back where the user left it, or it lands on <body> and the
+      // next Tab starts from the top of the page.
+      restoreFocusRef.current?.focus?.();
+    };
   }, [isOpen, isLoading, onClose]);
 
   if (!isOpen) return null;
@@ -48,21 +97,29 @@ export default function ConfirmDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <SurfaceCard className="w-full max-w-md">
-        <div className="p-5">
+        <div
+          ref={panelRef}
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="confirm-dialog-title"
+          aria-describedby="confirm-dialog-message"
+          tabIndex={-1}
+          className="p-5 outline-none"
+        >
           <div className="flex items-start gap-3">
             <div
               className={cn(
                 'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
                 isDanger
                   ? 'bg-rose-100 text-rose-600'
-                  : 'bg-[rgba(93,150,157,0.1)] text-[#5D969D]'
+                  : 'bg-blue-500/10 text-blue-600'
               )}
             >
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-              <p className="mt-1 text-sm text-slate-600">{message}</p>
+              <h2 id="confirm-dialog-title" className="text-base font-semibold text-slate-900">{title}</h2>
+              <p id="confirm-dialog-message" className="mt-1 text-sm text-slate-600">{message}</p>
             </div>
             <button
               onClick={onClose}

@@ -139,7 +139,10 @@ class PayrollIntegrationTest extends TestCase
                 'account_number' => '1234567890' . $user->id,
                 'ifsc_swift' => 'HDFC0001234',
                 'bank_name' => 'HDFC Bank',
-                'is_primary' => true,
+                // The column is is_default (see the create_employee_workspace_tables
+                // migration and EmployeeBankAccount::$fillable). is_primary was a
+                // stale name that silently failed the insert.
+                'is_default' => true,
             ]);
         }
     }
@@ -360,9 +363,15 @@ class PayrollIntegrationTest extends TestCase
         ]);
         $response->assertStatus(200);
 
-        // Verify run is paid
+        // Verify the run reached its terminal state.
+        //
+        // Asserted 'paid' until now, which processRunPayment has never set —
+        // it marks each *item* payment_status = 'paid' and moves the *run* to
+        // 'disbursed', the immutable terminal state in the documented lifecycle
+        // (draft → locked → approved → released → disbursed). The test was
+        // failing on this line rather than on any of the requests above.
         $payrollRun->refresh();
-        $this->assertEquals('paid', $payrollRun->status);
+        $this->assertEquals('disbursed', $payrollRun->status);
     }
 
     // ==================== LEAVE ENCASHMENT WORKFLOW ====================
@@ -612,7 +621,13 @@ class PayrollIntegrationTest extends TestCase
             'last_working_date' => now()->format('Y-m-d'),
         ]);
 
-        $response->assertStatus(404);
+        // 422, not 404. The employee id arrives in the request body, so an id
+        // that does not resolve is a validation failure on the payload — 404
+        // would mean the endpoint itself was not found. The point of the test
+        // is that a settlement is not created for a stranger, which the
+        // assertion below checks directly.
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('user_id');
     }
 
     // ==================== BANK FILE GENERATION ====================

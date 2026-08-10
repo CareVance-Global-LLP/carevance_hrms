@@ -5,7 +5,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
 import { PageLoadingState, PageEmptyState, PageErrorState, FeedbackBanner } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
@@ -80,13 +79,13 @@ export default function FBPPage() {
   const users = Array.isArray(usersData) ? usersData : [];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader
-        title="FBP Basket — All Employees"
-        description="Admin sets the FBP basket per template; employee allocates within their FBP amount, submits bills, admin verifies against exemption limits."
-      />
-
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">FBP Basket</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Admin sets the FBP basket per template; employee allocates within their FBP amount, submits bills, admin verifies against exemption limits.
+        </p>
+      </div>
         <HowItWorksCard
           whatIsThis="Restructures part of CTC into tax-free components the employee picks (meal vouchers, fuel, phone, books, driver). Reduces taxable income vs plain cash allowance."
           whenToUse={[
@@ -304,6 +303,5 @@ export default function FBPPage() {
           message="Flexible Benefits Plan allows employees to allocate a portion of their CTC across various components (Fuel, Phone, LTA, Books, etc.) for tax optimization. FBP components are fully exempt from income tax when used for the intended purpose."
         />
       </div>
-    </div>
   );
 }

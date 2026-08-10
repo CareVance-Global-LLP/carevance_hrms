@@ -17,6 +17,7 @@ const apiMocks = vi.hoisted(() => ({
   leaveList: vi.fn().mockResolvedValue({ data: { data: [] } }),
   attendanceTimeEditList: vi.fn().mockResolvedValue({ data: { data: [] } }),
   userGetAll: vi.fn().mockResolvedValue({ data: [] }),
+  searchQuery: vi.fn().mockResolvedValue({ data: { data: [] } }),
   notificationList: vi.fn().mockResolvedValue({ data: { data: [], unread_count: 0 } }),
   markAllRead: vi.fn().mockResolvedValue({}),
   markRead: vi.fn().mockResolvedValue({}),
@@ -38,6 +39,7 @@ vi.mock('@/services/api', async () => {
     leaveApi: { list: apiMocks.leaveList },
     attendanceTimeEditApi: { list: apiMocks.attendanceTimeEditList },
     userApi: { getAll: apiMocks.userGetAll },
+    searchApi: { query: apiMocks.searchQuery },
     notificationApi: {
       list: apiMocks.notificationList,
       markAllRead: apiMocks.markAllRead,
@@ -55,6 +57,7 @@ describe('Layout navigation', () => {
     apiMocks.leaveList.mockResolvedValue({ data: { data: [] } });
     apiMocks.attendanceTimeEditList.mockResolvedValue({ data: { data: [] } });
     apiMocks.userGetAll.mockResolvedValue({ data: [] });
+    apiMocks.searchQuery.mockResolvedValue({ data: { data: [] } });
     apiMocks.notificationList.mockResolvedValue({ data: { data: [], unread_count: 0 } });
     apiMocks.markAllRead.mockResolvedValue({});
     apiMocks.markRead.mockResolvedValue({});
@@ -87,33 +90,110 @@ describe('Layout navigation', () => {
     expect(screen.getByText('Audit Logs')).toBeInTheDocument();
   });
 
-  it('shows employee and department suggestions in the global search', async () => {
+  it('opens the command bar from the header trigger and finds a page', async () => {
     const user = userEvent.setup();
-    apiMocks.userGetAll.mockResolvedValue({
-      data: [
-        {
-          id: 17,
-          name: 'Zeel',
-          email: 'zeel@test.com',
-          role: 'employee',
-          groups: [{ name: 'Quality Assurance' }],
-        },
-      ],
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    const trigger = await screen.findByRole('button', { name: /search or jump to/i });
+    await user.click(trigger);
+
+    const input = await screen.findByRole('combobox', { name: /search carevance/i });
+    await user.type(input, 'atendance');
+
+    // Typo-tolerant, and it never asks the server for a page it already knows.
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent).join(' ')).toContain('Attendance');
+  });
+
+  /*
+   * Below lg the aside is display:none and there used to be nothing else — a
+   * tablet had zero nav links and no menu button. The drawer is that missing
+   * surface, so the guarantee worth testing is that the button exists and opens
+   * a navigable, focus-trapped dialog.
+   */
+  it('offers a menu button that opens navigation in a dialog', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    const opener = await screen.findByRole('button', { name: /open navigation/i });
+    expect(opener).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(opener);
+
+    const drawer = await screen.findByRole('dialog', { name: /navigation/i });
+    expect(drawer).toHaveAttribute('aria-modal', 'true');
+    expect(within(drawer).getAllByRole('link').length).toBeGreaterThan(5);
+  });
+
+  it('closes the navigation drawer on Escape and restores focus', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    const opener = await screen.findByRole('button', { name: /open navigation/i });
+    opener.focus();
+    await user.click(opener);
+    await screen.findByRole('dialog', { name: /navigation/i });
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /navigation/i })).not.toBeInTheDocument());
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /open navigation/i }));
+  });
+
+  it('shows only one CareVance wordmark at any one breakpoint', async () => {
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+    await screen.findByRole('navigation', { name: 'Main' });
+
+    // Both used to render unconditionally, so two identical logos sat on screen
+    // together. The header copy is now lg:hidden — it only appears at the widths
+    // where the rail itself is hidden. jsdom applies no media queries, so assert
+    // the class rather than visibility.
+    const wordmarks = screen.getAllByAltText('CareVance').filter((img) => img.getAttribute('src')?.includes('full'));
+    const alwaysVisible = wordmarks.filter((img) => !img.parentElement?.className.includes('lg:hidden'));
+
+    expect(wordmarks).toHaveLength(2);
+    expect(alwaysVisible).toHaveLength(1);
+  });
+
+  it('uses the same logo artwork as the favicon', async () => {
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+    await screen.findByRole('navigation', { name: 'Main' });
+    // The public/ SVGs are much smaller but draw a different monogram; the
+    // favicon points at the PNG, so the app has to as well.
+    screen.getAllByAltText('CareVance').forEach((img) => {
+      expect(img.getAttribute('src')).toMatch(/\.png$/);
+    });
+  });
+
+  it('does not fetch the employee directory on mount', async () => {
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    await waitFor(() => expect(apiMocks.notificationList).toHaveBeenCalled());
+    // The old header search downloaded every employee on every mount.
+    expect(apiMocks.userGetAll).not.toHaveBeenCalled();
+    expect(apiMocks.searchQuery).not.toHaveBeenCalled();
+  });
+
+  it('queries the server only once the command bar is open and a query is typed', async () => {
+    const user = userEvent.setup();
+    apiMocks.searchQuery.mockResolvedValue({
+      data: {
+        data: [
+          { type: 'person', id: 17, title: 'Zeel', subtitle: 'zeel@test.com · Quality Assurance', url: '/employees/17' },
+        ],
+      },
     });
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    const searchInput = await screen.findByLabelText(/universal search/i);
-    await user.type(searchInput, 'zee');
+    await user.click(await screen.findByRole('button', { name: /search or jump to/i }));
+    expect(apiMocks.searchQuery).not.toHaveBeenCalled();
 
+    await user.type(await screen.findByRole('combobox', { name: /search carevance/i }), 'zeel');
+
+    await waitFor(() => expect(apiMocks.searchQuery).toHaveBeenCalled());
     expect(await screen.findByText('Zeel')).toBeInTheDocument();
-    expect(screen.getByText('zeel@test.com | Quality Assurance')).toBeInTheDocument();
-
-    await user.clear(searchInput);
-    await user.type(searchInput, 'quality');
-
-    expect(await screen.findByText('Quality Assurance')).toBeInTheDocument();
-    expect(screen.getByText('Department')).toBeInTheDocument();
+    expect(screen.getByText('zeel@test.com · Quality Assurance')).toBeInTheDocument();
   });
 
   it('highlights only the selected settings subpage', async () => {

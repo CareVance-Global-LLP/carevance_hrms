@@ -15,7 +15,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Singleton so its per-organization memo survives across a whole
+        // request. User::getEffectiveMonitoringIntervalMinutesAttribute() is an
+        // appended attribute, so it runs once per serialized user — without the
+        // shared memo a list endpoint would re-read the organization row for
+        // every row in the page.
+        $this->app->singleton(\App\Services\Monitoring\MonitoringSettingsResolver::class);
     }
 
     /**

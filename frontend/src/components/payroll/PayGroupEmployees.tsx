@@ -204,10 +204,19 @@ function EmployeeCard({
                 </p>
               </div>
             ) : hasCTC ? (
+              /* Showed "Est. Monthly ~{CTC/12 × 0.75}" — a flat 75% haircut
+                 invented in the browser. It is not a take-home estimate: the
+                 real deductions are PF (capped at the ₹15,000 wage ceiling),
+                 ESI (only below ₹21,000), state-dependent PT and TDS from the
+                 employee's own declarations, none of which approximate 25%.
+                 For most salaries it understated take-home substantially, and
+                 the "~" made a fabricated number look like a calculated one.
+                 Show the input we actually have; the real figure appears as
+                 Net Pay once the run is processed. */
               <div className="text-right">
-                <p className="text-xs text-slate-400">Est. Monthly</p>
+                <p className="text-xs text-slate-600">Monthly CTC</p>
                 <p className="font-semibold text-slate-700">
-                  ~{formatCurrency(monthlyCTC * 0.75)}<span className="text-slate-400 font-normal">/mo</span>
+                  {formatCurrency(monthlyCTC)}<span className="text-slate-600 font-normal">/mo</span>
                 </p>
               </div>
             ) : null}
@@ -794,7 +803,7 @@ function SetCtcModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <SurfaceCard className="w-full max-w-md p-6">
         <div className="flex items-start justify-between">
           <div>

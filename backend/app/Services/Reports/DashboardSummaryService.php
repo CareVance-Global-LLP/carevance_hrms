@@ -27,6 +27,7 @@ class DashboardSummaryService
         private readonly GroupAccessService $groupAccessService,
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly WorkTimeSummaryService $workTimeSummaryService,
+        private readonly WorkedTimeService $workedTimeService,
     ) {
     }
 
@@ -168,6 +169,12 @@ class DashboardSummaryService
             'today_work_time' => $todaySummary['work_time'],
             'today_idle_time' => $todaySummary['idle_time'],
             'today_break_time' => $todaySummary['break_time'],
+            // The canonical worked-time block, including the shift countdown.
+            // Clients render these verbatim. The dashboard used to derive worked
+            // time itself by taking max() over attendance seconds, gross entry
+            // duration and a localStorage snapshot, which is what made the Shift
+            // Remaining countdown run backwards.
+            'worked_time' => $this->workedTimeService->forUserToday($user),
             'all_time_total_duration' => $allTimeDuration,
             'all_time_total_elapsed_duration' => $allTimeElapsedDuration,
             'yesterday_total_duration' => $yesterdayDuration,

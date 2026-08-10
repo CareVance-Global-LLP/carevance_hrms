@@ -19,6 +19,7 @@ use App\Models\PayrollTaxDeclaration;
 use App\Models\Payslip;
 use App\Models\Reimbursement;
 use App\Models\User;
+use App\Services\Lifecycle\PayrollReadinessService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -26,6 +27,11 @@ use Illuminate\Support\Facades\Storage;
 
 class EmployeeWorkspaceService
 {
+    public function __construct(
+        private readonly PayrollReadinessService $payrollReadiness,
+    ) {
+    }
+
     private const EMPLOYEE_DOCUMENTS_DISK = 'employee_documents';
 
     public function workspace(User $employee, string $payrollMonth): array
@@ -107,6 +113,12 @@ class EmployeeWorkspaceService
             'payroll_month' => $payrollMonth,
             'about' => $profile,
             'work_info' => $workInfo,
+            // Derived, never stored: whether payroll would actually pay this
+            // person. A ticked "Upload PAN" checkbox says a file arrived; this
+            // says the PAN is well-formed, unique, and that the bank line will
+            // clear — so the problem surfaces during onboarding rather than on
+            // payday.
+            'payroll_readiness' => $this->payrollReadiness->evaluate($employee),
             'payroll' => [
                 'profile' => $payrollProfile,
                 'salary_assignments' => $salaryAssignments,
@@ -169,9 +181,22 @@ class EmployeeWorkspaceService
 
     public function upsertWorkInfo(User $employee, array $data): EmployeeWorkInfo
     {
-        if (!empty($data['report_group_id'])) {
-            $resolvedManagerId = $this->resolveGroupManagerId((int) $employee->organization_id, (int) $data['report_group_id']);
-            $data['reporting_manager_id'] = $resolvedManagerId;
+        // Derive a manager from the group ONLY when the caller did not supply
+        // one, AND only for employees.
+        //
+        // This is the live path that kept recreating manager-reports-to-manager:
+        // saving ANY person's work info with a department handed them that
+        // department's senior manager, so a manager saved into Marketing was
+        // given the other Marketing manager. Nobody chose those lines — the
+        // system invented them. A manager's reporting line is now only ever set
+        // deliberately by a human.
+        $isEmployee = app(\App\Services\Organization\ReportingManagerResolver::class)
+            ->levelFor($employee) >= 100;
+
+        if ($isEmployee && !empty($data['report_group_id']) && !array_key_exists('reporting_manager_id', $data)) {
+            $data['reporting_manager_id'] = app(\App\Services\Organization\ReportingManagerResolver::class)
+                ->forGroup((int) $employee->organization_id, (int) $data['report_group_id']);
+            $data['reporting_manager_source'] = \App\Services\Organization\ReportingManagerResolver::SOURCE_DERIVED;
         }
 
         // Check for duplicate employee_code within the same organization
@@ -199,6 +224,12 @@ class EmployeeWorkspaceService
         return $workInfo->fresh(['department', 'reportingManager']);
     }
 
+    /**
+     * The third copy of this logic, and the most direct cause of employees
+     * reporting to an admin: it listed 'admin' as an eligible candidate outright
+     * via orWhereIn('role', ['admin', 'manager']). Now delegates to the one
+     * resolver, which excludes admins by rule.
+     */
     private function resolveGroupManagerId(int $organizationId, int $groupId): ?int
     {
         $groupExists = Group::query()
@@ -210,15 +241,8 @@ class EmployeeWorkspaceService
             return null;
         }
 
-        return User::query()
-            ->where('organization_id', $organizationId)
-            ->where(function ($q) {
-                $q->whereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<', 100)->where('hierarchy_level', '>', 10))
-                    ->orWhereIn('role', ['admin', 'manager']);
-            })
-            ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
-            ->orderBy('name')
-            ->value('id');
+        return app(\App\Services\Organization\ReportingManagerResolver::class)
+            ->forGroup($organizationId, $groupId);
     }
 
     public function storeDocument(User $employee, User $actor, array $data, UploadedFile $file): EmployeeDocument

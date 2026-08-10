@@ -127,6 +127,71 @@ class User extends Authenticatable
         return $this->hasMany(EmployeeBankAccount::class);
     }
 
+    /**
+     * A statutory identifier, wherever this person's happens to be stored.
+     *
+     * There are two homes for these: dedicated columns on the employee profile
+     * (`pan_number`, `uan_number`, `esi_ip_number`) and free-form rows in
+     * `employee_government_ids`. Onboarding writes the rows; payroll filing was
+     * reading only the columns, so every Form 16 came out as NOPAN and every
+     * 24Q deductee as PANNOTAVBL while the PAN sat one table away. Stored
+     * `id_type` values are mixed case ('pan', 'PAN', 'uan'), hence the
+     * case-insensitive match.
+     */
+    public function statutoryId(string $type): ?string
+    {
+        $column = match (strtolower($type)) {
+            'pan' => 'pan_number',
+            'uan' => 'uan_number',
+            'esi' => 'esi_ip_number',
+            default => null,
+        };
+
+        $fromProfile = $column ? ($this->employeeProfile?->{$column} ?? null) : null;
+        if (filled($fromProfile)) {
+            return trim((string) $fromProfile);
+        }
+
+        /*
+         * A person can carry more than one row of the same kind — 15 employees
+         * on the live database have two PAN rows with different values, e.g.
+         * "A7C3F04348" and "45300C". `->first()` returned whichever the
+         * collection happened to yield, so the PAN that reached Form 16 could
+         * change between requests depending on load order.
+         *
+         * Resolve deterministically instead: prefer a value that matches the
+         * statutory format, and fall back to the most recently updated row so
+         * the answer is at least stable and explainable when none of them do.
+         */
+        $candidates = $this->employeeGovernmentIds
+            ->filter(fn ($id) => str_contains(strtolower((string) $id->id_type), strtolower($type)))
+            ->filter(fn ($id) => filled($id->id_number))
+            ->sortByDesc(fn ($id) => $id->updated_at?->getTimestamp() ?? 0)
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        $pattern = match (strtolower($type)) {
+            'pan' => '/^[A-Z]{5}[0-9]{4}[A-Z]$/',
+            'uan' => '/^\d{12}$/',
+            default => null,
+        };
+
+        if ($pattern !== null) {
+            $wellFormed = $candidates->first(
+                fn ($id) => preg_match($pattern, strtoupper(trim((string) $id->id_number))) === 1
+            );
+
+            if ($wellFormed !== null) {
+                return trim((string) $wellFormed->id_number);
+            }
+        }
+
+        return trim((string) $candidates->first()->id_number);
+    }
+
     public function employeeActivityLogs(): HasMany
     {
         return $this->hasMany(EmployeeActivityLog::class);
@@ -208,6 +273,11 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        // OAuth credentials must never reach a client. The refresh token in
+        // particular is long-lived and would otherwise be serialized by every
+        // endpoint that returns a User.
+        'google_token',
+        'google_refresh_token',
     ];
 
     /**
@@ -224,10 +294,11 @@ class User extends Authenticatable
             'last_seen_at' => 'datetime',
             'trial_used_at' => 'datetime',
             'trial_ended_at' => 'datetime',
+            'deactivated_at' => 'datetime',
         ];
     }
 
-    protected $appends = ['is_active', 'is_online'];
+    protected $appends = ['is_active', 'is_online', 'effective_monitoring_interval_minutes'];
 
     public function inviter(): BelongsTo
     {
@@ -249,9 +320,17 @@ class User extends Authenticatable
         return $this->hasMany(Resignation::class, 'approved_by');
     }
 
+    /**
+     * Whether the account can still be used.
+     *
+     * This used to return a hardcoded `true`, which meant "revoke access on the
+     * last working day" had nothing to write to and accounts outlived the people
+     * who held them. It is now backed by `deactivated_at`, set by the exit
+     * process on the last working day.
+     */
     public function getIsActiveAttribute(): bool
     {
-        return true;
+        return $this->deactivated_at === null;
     }
 
     /**
@@ -306,6 +385,20 @@ class User extends Authenticatable
         return $this->last_seen_at->greaterThanOrEqualTo(now()->subMinutes(2));
     }
 
+    /**
+     * The capture interval this user is actually monitored at, resolved
+     * server-side (per-user override -> organization default -> system default).
+     *
+     * Read-only and deliberately NOT written back into `settings`: the SPA
+     * round-trips the settings object, so baking the resolved value in there
+     * would silently convert an inheriting user into a hard override on the next
+     * unrelated save.
+     */
+    public function getEffectiveMonitoringIntervalMinutesAttribute(): int
+    {
+        return app(\App\Services\Monitoring\MonitoringSettingsResolver::class)->resolveForUser($this);
+    }
+
     public function hasVerifiedEmail(): bool
     {
         return $this->email_verified_at !== null;
@@ -335,7 +428,12 @@ class User extends Authenticatable
             ]
         );
 
-        \Illuminate\Support\Facades\Log::info('DEBUG: Verification URL generated', ['url' => $verificationUrl]);
+        // The full signed verification URL used to be written here. Anyone who
+        // could read the log — and until a moment ago that was anyone at all,
+        // via the unauthenticated GET /api/test/email-log — could take it and
+        // verify someone else's address. Log that one was issued, not the
+        // credential itself.
+        \Illuminate\Support\Facades\Log::info('Verification URL generated', ['user_id' => $this->getKey()]);
 
         // Use send() for immediate delivery, or queue() for background processing
         // For localhost development, send() ensures immediate delivery
@@ -432,8 +530,19 @@ class User extends Authenticatable
         return $this->customRole?->hierarchy_level ?? match ($this->role) {
             'super_admin' => 0,
             'admin' => 10,
+            // HR and payroll managers run payroll — PayslipController's
+            // PAYROLL_ROLES has always listed them alongside admin — but they
+            // were absent from this map and fell through to 999, which ranks
+            // them BELOW a plain employee. Nothing exposed it while payroll
+            // authorisation was inline; the moment the routes got a real role
+            // gate, HR was locked out of their own module. Placed above line
+            // managers and below admins: they can operate payroll, they cannot
+            // administer the organisation.
+            'hr', 'payroll_manager' => 20,
             'manager' => 50,
             'employee' => 100,
+            // Unknown roles stay maximally unprivileged. Only the 'employee'
+            // gate, which admits everyone, will let them through.
             default => 999,
         };
     }

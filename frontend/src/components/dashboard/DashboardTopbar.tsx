@@ -10,6 +10,7 @@ import { cn } from '@/utils/cn';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { resolveUserRoleLabel } from '@/lib/permissions';
 import { OfflineStatusIndicator } from '@/components/desktop/OfflineStatusIndicator';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 
 interface DashboardTopbarProps {
   user?: User | null;
@@ -133,6 +134,7 @@ export default function DashboardTopbar({
 
             <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-2.5">
               <OfflineStatusIndicator />
+              <ThemeToggle className="h-11 w-11" />
               <div className="relative">
                 <button
                   type="button"

@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeWorkInfo extends Model
 {
+    use BelongsToOrganization;
     use HasFactory;
 
     protected $fillable = [
@@ -17,6 +19,7 @@ class EmployeeWorkInfo extends Model
         'report_group_id',
         'designation',
         'reporting_manager_id',
+        'reporting_manager_source',
         'work_location',
         'shift_name',
         'attendance_policy',
@@ -34,8 +37,13 @@ class EmployeeWorkInfo extends Model
     protected function casts(): array
     {
         return [
-            'joining_date' => 'date',
-            'exit_date' => 'date',
+            // date:Y-m-d — these are calendar dates, not instants. Under a plain
+            // `date` cast they serialise as UTC midnight and land a day early
+            // for any client ahead of UTC. Joining date in particular anchors
+            // the onboarding checklist, probation reviews and the five-year
+            // gratuity floor, so a one-day drift is not cosmetic.
+            'joining_date' => 'date:Y-m-d',
+            'exit_date' => 'date:Y-m-d',
             'meta' => 'array',
         ];
     }

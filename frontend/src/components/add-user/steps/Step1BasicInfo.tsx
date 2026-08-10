@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import {useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Hash, AlertTriangle, XCircle, IndianRupee, Users, FileStack } from 'lucide-react';
 import { groupApi, payrollApi } from '../../../services/api';
@@ -42,7 +42,23 @@ const TIMEZONES = [
   { value: 'Australia/Sydney', label: 'AEST (UTC+10) — Sydney' },
 ];
 
+/**
+ * The furthest joining date the picker will accept, as `YYYY-MM-DD`.
+ *
+ * Assembled from local date parts on purpose. `toISOString()` converts to UTC
+ * first, so in IST it returns yesterday for any local time before 05:30 — the
+ * same class of bug that made date-only columns land a day early elsewhere.
+ */
+function computeMaxJoiningDate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 2);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
 export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromStep2, incompleteUser, setIncompleteUser }: Step1Props) {
+  const maxJoiningDate = useMemo(computeMaxJoiningDate, []);
   // Fetch departments from backend API
   const { data: departments, isLoading: departmentsLoading } = useQuery({
     queryKey: ['add-user-groups'],
@@ -123,8 +139,21 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
     if (field === 'phone' && form.phone && !/^[+]?[\d\s-]{10,}$/.test(form.phone)) {
       newErrors.phone = 'Please enter a valid phone number (10+ digits)';
     }
-    if (field === 'joiningDate' && form.joiningDate && new Date(form.joiningDate) > new Date()) {
-      newErrors.joiningDate = 'Joining date cannot be in the future';
+    // Kept in step with the `max` on the date input below, so the picker and
+    // the validation agree on what a plausible joining date is.
+    //
+    // A future joining date is the normal case, not an error: HR sets a joiner
+    // up before day one so payroll, assets and accounts are ready when they
+    // arrive. Only an implausibly distant date is worth questioning.
+    if (field === 'joiningDate' && form.joiningDate) {
+      const joining = new Date(form.joiningDate);
+      const twoYearsOut = new Date();
+      twoYearsOut.setFullYear(twoYearsOut.getFullYear() + 2);
+      if (joining > twoYearsOut) {
+        newErrors.joiningDate = 'Joining date is more than two years away — please check it';
+      } else {
+        delete newErrors.joiningDate;
+      }
     }
     setErrors(newErrors);
   };
@@ -345,7 +374,15 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           <input
             type="date"
             value={form.joiningDate}
-            max={new Date().toISOString().split('T')[0]}
+            /* Was capped at today, which made pre-boarding impossible on the
+               primary hire path — the picker refused the future date that the
+               validation above explicitly allows, and that the whole onboarding
+               checklist is anchored on (its first items sit at day −14).
+               Matched to that validation: two years out, and no lower bound
+               because backdating a late-entered joiner is legitimate.
+               Built from local date parts rather than toISOString(), which
+               resolves against UTC and lands a day early in IST. */
+            max={maxJoiningDate}
             onChange={(e) => {
               setForm((p) => ({ ...p, joiningDate: e.target.value }));
               if (errors.joiningDate) setErrors((p) => ({ ...p, joiningDate: undefined }));

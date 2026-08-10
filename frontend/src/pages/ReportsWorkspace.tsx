@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   activityApi,
+  productivityClassificationApi,
   reportApi,
   reportGroupApi,
   taskApi,
@@ -10,6 +11,10 @@ import {
   userApi,
 } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { hasStrictAdminAccess } from '@/lib/permissions';
+import TimelineSwimlanes from '@/features/monitoring/TimelineSwimlanes';
+import UsageAnalytics from '@/features/monitoring/UsageAnalytics';
+import type { Classification } from '@/features/monitoring/monitoringUi';
 import { usePlan } from '@/hooks/usePlan';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
@@ -28,6 +33,9 @@ import { DATE_RANGE_PRESET_OPTIONS, deriveDateRangeFromPreset, detectDateRangePr
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
+import { useChartTheme } from '@/hooks/useChartTheme';
+import ReportTile from '@/features/reports/ReportTile';
+import { formatRecentAge, readRecentReports, rememberReport } from '@/features/reports/recentReports';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDurationSmart as formatDuration, formatPercent } from '@/lib/formatters';
 import { API_LIMITS, limitConcurrency, batchArray, validateDateRange, getSafeDateRange } from '@/lib/apiLimits';
@@ -35,27 +43,24 @@ import {
   Activity,
   AlertCircle,
   AlertTriangle,
-  ArrowRight,
+  Search,
   Award,
-  BarChart3,
-  Building2,
   CalendarDays,
   Camera,
-  CheckCircle2,
   Download,
   FileClock,
   Gauge,
   LineChart,
   ListFilter,
   Monitor,
-  PieChart as PieChartIcon,
+  
   RefreshCw,
   TimerReset,
   Users,
   Waypoints,
-  XCircle,
 } from 'lucide-react';
-import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
+import type { LucideIcon } from 'lucide-react';
+import { BarChart, Bar, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const formatAttendanceDateTime = (dateStr: string | null | undefined, tz: string): string => {
   if (!dateStr) return '—';
@@ -349,9 +354,23 @@ const modeCopy: Record<ReportsWorkspaceMode, { title: string; description: strin
   },
 };
 
-const reportCatalogItems = [
+interface ReportCatalogItem {
+  title: string;
+  description: string;
+  to: string;
+  category: string;
+  highlights: string[];
+  icon: LucideIcon;
+  accent: string;
+  planFeature?: string;
+  /** Key into the hub summary payload. Absent means the tile has no live figure. */
+  summaryKey?: string;
+}
+
+const reportCatalogItems: ReportCatalogItem[] = [
   {
     title: 'Attendance Report',
+    summaryKey: 'attendance',
     description: 'Presence, leave, absence, attendance rate, and employee attendance exceptions.',
     to: '/reports/attendance',
     category: 'Workforce health',
@@ -361,6 +380,7 @@ const reportCatalogItems = [
   },
   {
     title: 'Hours Tracked',
+    summaryKey: 'hours-tracked',
     description: 'Tracked time, working time, idle time, daily totals, and employee hour rows.',
     to: '/reports/hours-tracked',
     category: 'Time tracking',
@@ -370,6 +390,7 @@ const reportCatalogItems = [
   },
   {
     title: 'Task Overview',
+    summaryKey: 'projects-tasks',
     description: 'Task allocation, project coverage, assignee detail, status, priority, and due dates.',
     to: '/reports/projects-tasks',
     category: 'Delivery status',
@@ -380,6 +401,7 @@ const reportCatalogItems = [
   },
   {
     title: 'Timeline Report',
+    summaryKey: 'timeline',
     description: 'Chronological activity report for app, website, idle, employee, and duration rows.',
     to: '/reports/timeline',
     category: 'Activity audit',
@@ -399,7 +421,7 @@ const reportCatalogItems = [
   },
 ];
 
-const analyticsCatalogItems = [
+const analyticsCatalogItems: ReportCatalogItem[] = [
   {
     title: 'Productivity Summary',
     description: 'Productive share, idle share, daily productivity trend, and employee contributor analytics.',
@@ -451,26 +473,6 @@ const analyticsCatalogItems = [
     planFeature: 'employee_timeline',
   },
   {
-    title: 'App Usage',
-    description: 'Application analytics grouped by employee, duration, and usage classification.',
-    to: '/monitoring/app-usage',
-    category: 'Desktop apps',
-    highlights: ['Apps by employee', 'Duration', 'Usage class'],
-    icon: BarChart3,
-    accent: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
-    planFeature: 'monitoring',
-  },
-  {
-    title: 'Website Usage',
-    description: 'Website analytics grouped by employee, domain, duration, and usage classification.',
-    to: '/monitoring/website-usage',
-    category: 'Web domains',
-    highlights: ['Domains', 'Duration', 'Usage class'],
-    icon: Monitor,
-    accent: 'bg-teal-50 text-teal-700 ring-teal-200',
-    planFeature: 'monitoring',
-  },
-  {
     title: 'Screenshots',
     description: 'Screenshot review analytics for tracked work sessions and employee activity proof.',
     to: '/monitoring/screenshots',
@@ -493,6 +495,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [selectedUserId, setSelectedUserId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedUserId);
   const [selectedGroupId, setSelectedGroupId] = useState<number | ''>(() => readPersistedReportsWorkspaceFilters(mode).selectedGroupId);
   const [timelinePage, setTimelinePage] = useState(1);
+  const [timelineView, setTimelineView] = useState<'day' | 'log'>('day');
+  const [timelineTypeFilter, setTimelineTypeFilter] = useState<'' | 'app' | 'url' | 'idle'>('');
+  const [timelineClassFilter, setTimelineClassFilter] = useState<'' | Classification>('');
   const [hoursPage, setHoursPage] = useState(1);
   const [exportMessage, setExportMessage] = useState('');
   const [exportError, setExportError] = useState('');
@@ -505,6 +510,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   const [customExportEmployeeSearch, setCustomExportEmployeeSearch] = useState('');
   const hasAutoOpenedCustomExportModal = useRef(false);
   const isHubMode = mode === 'reports-hub' || mode === 'analytics-hub';
+  const [hubQuery, setHubQuery] = useState('');
+  // Recharts takes colours as props, so it cannot reach the CSS token layer the
+  // rest of the app themes through — this hook is the bridge.
+  const chartTheme = useChartTheme();
 
   useEffect(() => {
     const persisted = readPersistedReportsWorkspaceFilters(mode);
@@ -515,6 +524,12 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     setSelectedUserId(persisted.selectedUserId);
     setSelectedGroupId(persisted.selectedGroupId);
   }, [mode]);
+
+  // The swimlane view only makes sense for a single day; ranges read as a log.
+  useEffect(() => {
+    setTimelineView(startDate === endDate ? 'day' : 'log');
+    setTimelinePage(1);
+  }, [startDate, endDate]);
 
   // Validate and limit date range for performance (max 30 days)
   useEffect(() => {
@@ -765,7 +780,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
   }, [canUseGroupFilters, groups, selectedGroupId]);
 
   const dataQuery = useQuery({
-    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, effectiveSelectedGroupId, timelinePage, hoursPage],
+    queryKey: ['report-workspace-data', mode, startDate, endDate, effectiveSelectedUserId, effectiveSelectedGroupId, timelinePage, timelineView, timelineTypeFilter, timelineClassFilter, hoursPage],
     enabled: isHubMode || (usersQuery.isSuccess && (groupsQuery.isSuccess || groupsQuery.isError)),
     placeholderData: (previousData, previousQuery) => (
       shouldReuseReportPlaceholderData(previousQuery?.queryKey, mode)
@@ -836,14 +851,31 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       }
 
       if (mode === 'timeline') {
+        if (timelineView === 'day' && startDate === endDate) {
+          // The swimlanes need every block of the day at once. The processed
+          // endpoint serves 200 rows per page now, so this is 1–5 requests.
+          const rows = await activityApi.getAllPages({
+            user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
+            group_ids: effectiveSelectedGroupId ? [Number(effectiveSelectedGroupId)] : undefined,
+            start_date: startDate,
+            end_date: endDate,
+            processed: true,
+            per_page: 200,
+            max_records: 1000,
+          });
+          return { swimlaneRows: rows, truncated: rows.length >= 1000 };
+        }
+
         const response = await activityApi.getAll({
           user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
           group_ids: effectiveSelectedGroupId ? [Number(effectiveSelectedGroupId)] : undefined,
           start_date: startDate,
           end_date: endDate,
           processed: true,
+          type: timelineTypeFilter || undefined,
+          classification: timelineClassFilter || undefined,
           page: timelinePage,
-          per_page: 10,
+          per_page: 50,
         });
         return response.data;
       }
@@ -1179,7 +1211,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     return taskAllocationRows.find((row: any) => Number(row.id) === Number(effectiveSelectedTaskId)) || null;
   }, [effectiveSelectedTaskId, hasSelectedTask, mode, taskAllocationRows]);
 
-  const timelinePayload = mode === 'timeline' && dataQuery.data && !Array.isArray(dataQuery.data)
+  const timelineSwimlaneData = mode === 'timeline' && (dataQuery.data as any)?.swimlaneRows
+    ? (dataQuery.data as any)
+    : null;
+  const timelinePayload = mode === 'timeline' && dataQuery.data && !Array.isArray(dataQuery.data) && !timelineSwimlaneData
     ? dataQuery.data as any
     : null;
   const timelineRows = Array.isArray(dataQuery.data)
@@ -1191,27 +1226,45 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     total: Number.isFinite(Number(timelinePayload?.total)) ? Number(timelinePayload?.total) : timelineRows.length,
     hasMore: Boolean(timelinePayload?.has_more) || Number(timelinePayload?.current_page || timelinePage || 1) < Number(timelinePayload?.last_page || 1),
   };
-  const timelineSummary = useMemo(() => {
-    if (mode !== 'timeline') return null;
-    // Single-pass reduce (was 3x O(N) filters).
-    // Idle check covers both `type === 'idle'` and `tool_type === 'idle'`
-    // so the metric matches whatever the backend returns.
-    let apps = 0;
-    let urls = 0;
-    let idle = 0;
-    for (const item of timelineRows) {
-      const itemType = (item as any).type;
-      const toolType = (item as any).tool_type;
-      if (itemType === 'idle' || toolType === 'idle') {
-        idle += 1;
-      } else if (itemType === 'app') {
-        apps += 1;
-      } else if (itemType === 'url' || toolType === 'website') {
-        urls += 1;
-      }
+  const shiftTimelineDay = (delta: number) => {
+    const base = new Date(`${startDate}T00:00:00`);
+    if (Number.isNaN(base.getTime())) return;
+    base.setDate(base.getDate() + delta);
+    const iso = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(base.getDate()).padStart(2, '0')}`;
+    setDatePreset('custom');
+    setStartDate(iso);
+    setEndDate(iso);
+  };
+
+  const switchTimelineView = (view: 'day' | 'log') => {
+    if (view === 'day' && startDate !== endDate) {
+      // Day view needs one day — jump to the end of the current range.
+      setDatePreset('custom');
+      setStartDate(endDate);
     }
-    return { apps, urls, idle };
-  }, [mode, timelineRows]);
+    setTimelinePage(1);
+    setTimelineView(view);
+  };
+
+  const canReclassifyTools = hasStrictAdminAccess(user);
+  const handleReclassifyTool = async (
+    targetType: 'app' | 'domain',
+    targetValue: string,
+    classification: Classification
+  ): Promise<boolean> => {
+    try {
+      await productivityClassificationApi.create({
+        target_type: targetType,
+        target_value: targetValue,
+        classification,
+      });
+      void dataQuery.refetch();
+      return true;
+    } catch (error) {
+      console.error('Tool reclassification failed:', error);
+      return false;
+    }
+  };
 
   const usageData = dataQuery.data as any;
   const usageStats = usageData?.stats || {};
@@ -1306,85 +1359,96 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     return baseItems.filter((item) => !item.planFeature || hasFeature(item.planFeature));
   }, [mode, hasFeature]);
 
+  // One summary call for the whole hub — five separate report queries just to
+  // render a menu would cost more than the problem it solves. Any module that
+  // fails server-side is simply absent, and its tile falls back to a plain link.
+  const hubSummaryQuery = useQuery({
+    queryKey: ['reports', 'hub-summary'],
+    queryFn: async () => (await reportApi.hubSummary()).data,
+    enabled: isHubMode,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const recentReports = useMemo(() => (isHubMode ? readRecentReports() : []), [isHubMode]);
+
+  // Opening a focused report records it, so the hub can offer it back later.
+  useEffect(() => {
+    if (isHubMode) return;
+    const entry = [...reportCatalogItems, ...analyticsCatalogItems].find((item) => item.to === location.pathname);
+    if (entry) rememberReport({ to: entry.to, title: entry.title });
+  }, [isHubMode, location.pathname]);
+
   if (isHubMode) {
+    const needle = hubQuery.trim().toLowerCase();
+    const shownItems = needle
+      ? catalogItems.filter((item) =>
+          `${item.title} ${item.description} ${item.category}`.toLowerCase().includes(needle)
+        )
+      : catalogItems;
+
     return (
-      <div className="space-y-6">
-        <PageHeader
-          eyebrow={pageTitle.eyebrow}
-          title={pageTitle.title}
-          description={pageTitle.description}
-        />
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">{pageTitle.title}</h1>
+            <p className="text-sm text-slate-600">
+              {hubSummaryQuery.data?.start_date
+                ? `Last 7 days · compared with the week before`
+                : pageTitle.description}
+            </p>
+          </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {catalogItems.map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.title}
-                to={item.to}
-                className="group flex min-h-[172px] flex-col justify-between rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-                      {mode === 'analytics-hub' ? 'Analytics' : 'Report'}
-                    </p>
-                    <p className="mt-2 text-xs font-medium text-slate-500">{item.category}</p>
-                    <h2 className="mt-2 text-lg font-semibold text-slate-950">{item.title}</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">{item.description}</p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {item.highlights.map((highlight) => (
-                        <span key={highlight} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
-                          {highlight}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ring-1 ${item.accent}`}>
-                    <Icon className="h-5 w-5" />
-                  </span>
-                </div>
-                <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-blue-600 transition group-hover:text-blue-700">
-                  Open {item.title}
-                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                </span>
-              </Link>
-            );
-          })}
+          {catalogItems.length > 3 ? (
+            <div className="relative min-w-[200px]">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                aria-label="Search reports"
+                placeholder="Search reports..."
+                value={hubQuery}
+                onChange={(event) => setHubQuery(event.target.value)}
+                className="min-h-10 w-full rounded-lg border border-slate-200 bg-surface-card pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-600 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-sky-300"
+              />
+            </div>
+          ) : null}
         </div>
 
-        <SurfaceCard className="p-5">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Coverage</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-950">{catalogItems.length}</p>
-              <p className="mt-1 text-sm text-slate-500">
-                {mode === 'analytics-hub' ? 'analytics views' : 'report modules'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Primary Use</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">
-                {mode === 'analytics-hub' ? 'Understand patterns' : 'Prepare records'}
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                {mode === 'analytics-hub'
-                  ? 'Use these views to inspect trends, focus, and usage behavior.'
-                  : 'Use these views for attendance, hours, tasks, and export records.'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Data Scope</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">
-                {mode === 'analytics-hub' ? 'Live monitoring signals' : 'Operational reports'}
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Each tile opens the focused workspace with its own filters and tables.
-              </p>
-            </div>
+        {recentReports.length > 0 && !needle ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-semibold uppercase tracking-[0.12em] text-slate-600">Recently opened</span>
+            {recentReports.map((recent) => (
+              <Link
+                key={recent.to}
+                to={recent.to}
+                className="rounded-full border border-slate-200 bg-surface-card px-2.5 py-1 font-medium text-slate-700 transition hover:border-blue-300 hover:text-blue-800"
+              >
+                {recent.title}
+                <span className="ml-1.5 text-slate-600">{formatRecentAge(recent.at)}</span>
+              </Link>
+            ))}
           </div>
-        </SurfaceCard>
+        ) : null}
+
+        {shownItems.length === 0 ? (
+          <PageEmptyState title="No report matches that search" description="Try a different term." />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {shownItems.map((item) => (
+              <ReportTile
+                key={item.title}
+                title={item.title}
+                description={item.description}
+                to={item.to}
+                icon={item.icon}
+                summary={hubSummaryQuery.data?.data?.[item.summaryKey ?? '']}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -1704,7 +1768,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       {exportError ? <FeedbackBanner tone="error" message={exportError} /> : null}
 
       {customExportModalOpen ? (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4">
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/60 p-4">
           <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-6 shadow-sm sm:p-7">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -2309,7 +2373,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
       {(mode === 'hours-tracked' || mode === 'productivity') && (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {/* Five cards, five columns — in a four-column grid "Active Users"
+              orphaned onto a row of its own at every width above xl. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard label="Track Time" value={formatDuration(overallSummary.total_duration || 0)} hint="Total duration in range" icon={TimerReset} accent="sky" />
             <MetricCard label="Work Time" value={formatDuration(getWorkingDuration(overallSummary))} hint="Tracked time minus measured idle time" icon={LineChart} accent="emerald" />
             <MetricCard label="Idle Time" value={formatDuration(overallSummary.idle_duration || 0)} hint="Measured idle time inside tracked time" icon={Activity} accent="amber" />
@@ -2362,7 +2428,10 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                   header: 'Overtime',
                   render: (row: any) => {
                     const workingSec = getWorkingDuration(row);
-                    const daysInRange = Number(row.calendar_days_in_range || row.working_days_in_range || 1);
+                    // Working days, not calendar days: a Mon–Sun range owes 5
+                    // days of work, not 7. Reading calendar days first counted
+                    // both weekend days as 8-hour obligations.
+                    const daysInRange = Number(row.working_days_in_range || row.calendar_days_in_range || 1);
                     const thresholdSec = daysInRange * 8 * 3600;
                     const overtimeSec = Math.max(0, workingSec - thresholdSec);
                     const h = Math.floor(overtimeSec / 3600);
@@ -2416,9 +2485,9 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                 <div className="mt-5">
                   <ResponsiveContainer width="100%" height={Math.max(120, byDay.length * 36)}>
                     <BarChart data={byDay} layout="vertical" margin={{ top: 4, right: 64, left: 80, bottom: 4 }} barCategoryGap="25%">
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => formatDuration(v)} axisLine={false} tickLine={false} />
-                      <YAxis type="category" dataKey="date" tick={{ fontSize: 11, fill: '#475569', fontWeight: 500 }} axisLine={false} tickLine={false} width={75} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 11, fill: chartTheme.axisLabel }} tickFormatter={(v) => formatDuration(v)} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="date" tick={{ fontSize: 11, fill: chartTheme.axisLabel, fontWeight: 500 }} axisLine={false} tickLine={false} width={75} />
                         <Tooltip
                           content={({ active, payload }: any) => {
                             if (!active || !payload?.length) return null;
@@ -2440,7 +2509,16 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                         {byDay.map((item: any) => {
                           const maxDuration = Math.max(1, ...byDay.map((e: any) => Number(e.total_duration || 0)));
                           const ratio = Number(item.total_duration || 0) / maxDuration;
-                          return <Cell key={item.date} fill={ratio >= 0.75 ? '#0ea5e9' : ratio >= 0.4 ? '#38bdf8' : '#bae6fd'} />;
+                          // Opacity carries the ratio so the ramp works on either
+                          // ground; the three fixed blues were tuned for a white
+                          // surface and washed out on the dark one.
+                          return (
+                            <Cell
+                              key={item.date}
+                              fill={chartTheme.series[0]}
+                              fillOpacity={ratio >= 0.75 ? 1 : ratio >= 0.4 ? 0.7 : 0.4}
+                            />
+                          );
                         })}
                       </Bar>
                     </BarChart>
@@ -2578,157 +2656,165 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
         </>
       )}
 
-      {mode === 'timeline' && timelineSummary && (
+      {mode === 'timeline' && (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Events" value={timelinePagination.total} hint="All timeline events" icon={Waypoints} accent="sky" />
-            <MetricCard label="Apps" value={timelineSummary.apps} hint="Desktop/app events on this page" icon={Activity} accent="emerald" />
-            <MetricCard label="Web" value={timelineSummary.urls} hint="Website events on this page" icon={LineChart} accent="violet" />
-            <MetricCard label="Idle" value={timelineSummary.idle} hint="Idle periods on this page" icon={TimerReset} accent="amber" />
-          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-lg border border-slate-200">
+              <button
+                type="button"
+                aria-pressed={timelineView === 'day'}
+                onClick={() => switchTimelineView('day')}
+                className={`px-3.5 py-2 text-xs font-semibold transition ${timelineView === 'day' ? 'bg-blue-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              >
+                Day view
+              </button>
+              <button
+                type="button"
+                aria-pressed={timelineView === 'log'}
+                onClick={() => switchTimelineView('log')}
+                className={`px-3.5 py-2 text-xs font-semibold transition ${timelineView === 'log' ? 'bg-blue-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              >
+                Event log
+              </button>
+            </div>
 
-          <div className="space-y-3">
-            <DataTable
-              title="Activity Timeline"
-              description="Recent app, website, and idle events in chronological order."
-              rows={timelineRows.slice().sort((a: any, b: any) => +new Date(b.recorded_at) - +new Date(a.recorded_at))}
-              emptyMessage="No timeline events found."
-              headerAction={renderPanelRefreshButton()}
-              columns={[
-                { key: 'recorded_at', header: 'When', render: (row: any) => formatDateTimeForTimezone(row.recorded_at, displayTimezone, 'en-US', 'Not recorded') },
-                { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
-                { key: 'type', header: 'Type', render: (row: any) => row.tool_type || row.type },
-                {
-                  key: 'name',
-                  header: 'Tool',
-                  render: (row: any) => (
-                    <div>
-                      <p className="font-medium text-slate-950">{formatTimelineToolLabel(row)}</p>
-                      {row?.name && row?.name !== formatTimelineToolLabel(row) ? (
-                        <p className="text-xs text-slate-500">{row.name}</p>
-                      ) : null}
-                    </div>
-                  ),
-                },
-                {
-                  key: 'classification',
-                  header: 'Productivity',
-                  render: (row: any) => (
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${timelineProductivityTone(row.classification)}`}>
-                      {row.classification || 'neutral'}
-                    </span>
-                  ),
-                },
-                { key: 'duration', header: 'Duration', render: (row: any) => formatTimelineDuration(row.duration || 0) },
-              ]}
-            />
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-              <span>
-                Page {timelinePagination.currentPage} of {timelinePagination.lastPage} - {timelinePagination.total} events
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={timelinePagination.currentPage <= 1 || dataQuery.isFetching}
-                  onClick={() => setTimelinePage((page) => Math.max(1, page - 1))}
-                >
-                  Previous
+            {timelineView === 'day' && startDate === endDate && (
+              <div className="flex items-center gap-1">
+                <Button type="button" variant="ghost" size="sm" aria-label="Previous day" onClick={() => shiftTimelineDay(-1)}>
+                  ◀
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={!timelinePagination.hasMore || dataQuery.isFetching}
-                  onClick={() => setTimelinePage((page) => page + 1)}
-                >
-                  Next
+                <span className="font-mono text-xs font-semibold text-slate-700">
+                  {new Date(`${startDate}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                </span>
+                <Button type="button" variant="ghost" size="sm" aria-label="Next day" onClick={() => shiftTimelineDay(1)}>
+                  ▶
                 </Button>
               </div>
-            </div>
+            )}
+
+            {timelineView === 'log' && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {([['', 'All'], ['app', 'Apps'], ['url', 'Web'], ['idle', 'Idle']] as Array<['' | 'app' | 'url' | 'idle', string]>).map(([key, label]) => (
+                  <button
+                    key={`type-${key}`}
+                    type="button"
+                    aria-pressed={timelineTypeFilter === key}
+                    onClick={() => {
+                      setTimelineTypeFilter(key);
+                      setTimelinePage(1);
+                    }}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${timelineTypeFilter === key ? 'bg-blue-700 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-blue-300'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden />
+                {([['', 'Any class'], ['productive', 'Productive'], ['neutral', 'Neutral'], ['context_dependent', 'Context'], ['unproductive', 'Unproductive']] as Array<['' | Classification, string]>).map(([key, label]) => (
+                  <button
+                    key={`class-${key}`}
+                    type="button"
+                    aria-pressed={timelineClassFilter === key}
+                    onClick={() => {
+                      setTimelineClassFilter(key);
+                      setTimelinePage(1);
+                    }}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${timelineClassFilter === key ? 'bg-blue-700 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-blue-300'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <span className="ml-auto">{renderPanelRefreshButton()}</span>
           </div>
+
+          {timelineView === 'day' && startDate === endDate ? (
+            <TimelineSwimlanes
+              rows={timelineSwimlaneData?.swimlaneRows || []}
+              timezone={displayTimezone}
+              focusedUserId={effectiveSelectedUserId}
+              onFocusPerson={(id) => setSelectedUserId(id)}
+              truncated={Boolean(timelineSwimlaneData?.truncated)}
+            />
+          ) : (
+            <div className="space-y-3">
+              <DataTable
+                title="Activity Timeline"
+                description="App, website, and idle events, newest first. Use the chips above to narrow by kind or classification."
+                rows={timelineRows.slice().sort((a: any, b: any) => +new Date(b.recorded_at) - +new Date(a.recorded_at))}
+                emptyMessage="No timeline events match these filters."
+                columns={[
+                  { key: 'recorded_at', header: 'When', render: (row: any) => formatDateTimeForTimezone(row.recorded_at, displayTimezone, 'en-US', 'Not recorded') },
+                  { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
+                  { key: 'type', header: 'Type', render: (row: any) => row.tool_type || row.type },
+                  {
+                    key: 'name',
+                    header: 'Tool',
+                    render: (row: any) => (
+                      <div>
+                        <p className="font-medium text-slate-950">{formatTimelineToolLabel(row)}</p>
+                        {row?.classification_reason ? (
+                          <p className="text-xs text-slate-500">{row.classification_reason}</p>
+                        ) : null}
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'classification',
+                    header: 'Productivity',
+                    render: (row: any) => (
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${timelineProductivityTone(row.classification)}`}>
+                        {row.classification || 'neutral'}
+                      </span>
+                    ),
+                  },
+                  { key: 'duration', header: 'Duration', render: (row: any) => formatTimelineDuration(row.duration || 0) },
+                ]}
+              />
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                <span>
+                  Page {timelinePagination.currentPage} of {timelinePagination.lastPage} · {timelinePagination.total} events
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={timelinePagination.currentPage <= 1 || dataQuery.isFetching}
+                    onClick={() => setTimelinePage((page) => Math.max(1, page - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={!timelinePagination.hasMore || dataQuery.isFetching}
+                    onClick={() => setTimelinePage((page) => page + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
       {mode === 'web-app-usage' && (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              label={hasSelectedEmployee ? 'Selected Employee' : 'Scope'}
-              value={hasSelectedEmployee ? usageData?.selected_user?.name || 'Selected employee' : 'All employees'}
-              hint={hasSelectedEmployee ? usageData?.selected_user?.email || 'Using selected employee filter' : selectedGroupId ? 'Team filter selected' : 'Organization-wide view'}
-              icon={Users}
-              accent="sky"
-            />
-            <MetricCard label="Work Time" value={formatDuration(usageWorkedDuration)} hint={hasSelectedEmployee ? 'Tracked time minus measured idle time' : 'Working time across current scope'} icon={TimerReset} accent="emerald" />
-            <MetricCard label="Productive Share" value={`${Number(orgSummary.productive_share || 0).toFixed(1)}%`} hint="Organization average" icon={LineChart} accent="violet" />
-            <MetricCard
-              label={hasSelectedEmployee ? 'Idle' : 'Employees'}
-              value={hasSelectedEmployee ? formatDuration(usageStats.idle_total_duration || 0) : employeeRankings.length}
-              hint={hasSelectedEmployee ? 'Selected employee idle time' : 'Employees in current monitoring dataset'}
-              icon={Activity}
-              accent="amber"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            <DataTable
-              title={hasSelectedEmployee ? 'Productive Tools' : 'Top Productive Tools'}
-              description={hasSelectedEmployee ? 'Top productive websites and apps for the selected employee.' : 'Top productive websites and apps across the current scope.'}
-              rows={usageProductiveRows}
-              emptyMessage="No productive tool usage found."
-              headerAction={renderPanelRefreshButton()}
-              bodyClassName={usageProductiveRows.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
-              columns={[
-                { key: 'label', header: 'Tool', render: (row: any) => row.label },
-                { key: 'type', header: 'Type', render: (row: any) => row.type },
-                { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.total_duration || 0) },
-              ]}
-            />
-            <DataTable
-              title={hasSelectedEmployee ? 'Unproductive Tools' : 'Top Unproductive Tools'}
-              description={hasSelectedEmployee ? 'Top unproductive websites and apps for the selected employee.' : 'Top unproductive websites and apps across the current scope.'}
-              rows={usageUnproductiveRows}
-              emptyMessage="No unproductive tool usage found."
-              headerAction={renderPanelRefreshButton()}
-              bodyClassName={usageUnproductiveRows.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
-              columns={[
-                { key: 'label', header: 'Tool', render: (row: any) => row.label },
-                { key: 'type', header: 'Type', render: (row: any) => row.type },
-                { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.total_duration || 0) },
-              ]}
-            />
-            <DataTable
-              title={hasSelectedEmployee ? 'Context-Dependent Tools' : 'Top Context-Dependent Tools'}
-              description={hasSelectedEmployee ? 'Tools that need business context for the selected employee.' : 'Tools that need business context across the current scope.'}
-              rows={usageContextRows}
-              emptyMessage="No context-dependent tool usage found."
-              headerAction={renderPanelRefreshButton()}
-              bodyClassName={usageContextRows.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
-              columns={[
-                { key: 'label', header: 'Tool', render: (row: any) => row.label },
-                { key: 'type', header: 'Type', render: (row: any) => row.type },
-                { key: 'duration', header: 'Duration', render: (row: any) => formatDuration(row.total_duration || 0) },
-              ]}
-            />
-          </div>
-
-          <DataTable
-            title="Top Productive Employees"
-            description={hasSelectedEmployee ? 'Employee ranking by productive duration from the current monitoring dataset.' : 'Employee ranking by productive duration across the current monitoring dataset.'}
-            rows={employeeRankings}
-            emptyMessage="No employee ranking data found."
-            headerAction={renderPanelRefreshButton()}
-            bodyClassName={employeeRankings.length > 5 ? 'max-h-[320px] overflow-y-auto' : undefined}
-            columns={[
-              { key: 'employee', header: 'Employee', render: (row: any) => row.user?.name || 'Unknown' },
-              { key: 'productive_duration', header: 'Productive Time', render: (row: any) => formatDuration(row.productive_duration || 0) },
-              { key: 'worked', header: 'Work Time', render: (row: any) => formatDuration(getWorkingDuration(row) || row.total_duration || 0) },
-              { key: 'matched_users', header: 'Search Pool', render: () => usageMatchedUsers.length },
-            ]}
-          />
-        </>
+        <UsageAnalytics
+          data={usageData}
+          hasSelectedEmployee={hasSelectedEmployee}
+          scopeLabel={
+            hasSelectedEmployee
+              ? usageData?.selected_user?.name || 'Selected employee'
+              : selectedGroup?.name || 'All employees'
+          }
+          isFetching={dataQuery.isFetching}
+          canReclassify={canReclassifyTools}
+          onReclassify={handleReclassifyTool}
+        />
       )}
 
       {mode !== 'attendance' &&

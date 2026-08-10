@@ -132,8 +132,14 @@ const validateStep1 = (form: AddUserWizardForm): Partial<Record<keyof AddUserWiz
   }
   if (!form.joiningDate) {
     errors.joiningDate = 'Joining date is required';
-  } else if (new Date(form.joiningDate) > new Date()) {
-    errors.joiningDate = 'Joining date cannot be in the future';
+  } else {
+    // Pre-boarding is the normal path — a joiner is set up before their first
+    // day. Only flag a date far enough out to look like a typo.
+    const twoYearsOut = new Date();
+    twoYearsOut.setFullYear(twoYearsOut.getFullYear() + 2);
+    if (new Date(form.joiningDate) > twoYearsOut) {
+      errors.joiningDate = 'Joining date is more than two years away — please check it';
+    }
   }
 
   return errors;
@@ -285,13 +291,20 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         phone: formData.phone,
         role: formData.role,
         group_ids: formData.departmentIds,
+        // Sent at creation, not with the later work-info call, because the
+        // onboarding checklist anchors its due dates on the joining date the
+        // moment the journey opens — several tasks fall before day one.
+        joining_date: formData.joiningDate || undefined,
+        designation: formData.designation || undefined,
         settings: {
           timezone: formData.timezone,
           attendance_monitoring: true,
           payroll_visibility: false,
           can_edit_time: false,
           task_assignment_access: true,
-          monitoring_interval_minutes: 10,
+          // No monitoring_interval_minutes key: this wizard never asks for one,
+          // and omitting it means "inherit the organization default" rather
+          // than silently pinning every user created here to a hardcoded 10.
         },
       });
 

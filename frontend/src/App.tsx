@@ -56,7 +56,7 @@ const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTi
 const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
 const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
 const TaskTimeReports = lazyWithChunkRetry(() => import('@/pages/TimeReports'));
-const Reports = lazyWithChunkRetry(() => import('@/pages/Reports'));
+const Timesheets = lazyWithChunkRetry(() => import('@/pages/Timesheets'));
 const Invoices = lazyWithChunkRetry(() => import('@/pages/Invoices'));
 const Settings = lazyWithChunkRetry(() => import('@/pages/Settings'));
 const Monitoring = lazyWithChunkRetry(() => import('@/pages/Monitoring'));
@@ -69,7 +69,7 @@ const NotificationsCenter = lazyWithChunkRetry(() => import('@/pages/Notificatio
 const ReportsWorkspace = lazyWithChunkRetry(() => import('@/pages/ReportsWorkspace'));
 const MonitoringWorkspace = lazyWithChunkRetry(() => import('@/pages/MonitoringWorkspace'));
 const NewHiresPage = lazyWithChunkRetry(() => import('@/pages/NewHiresPage'));
-const ResignationsPage = lazyWithChunkRetry(() => import('@/pages/ResignationsPage'));
+const ExitsPage = lazyWithChunkRetry(() => import('@/pages/ExitsPage'));
 const EmployeeManagementWorkspace = lazyWithChunkRetry(() => import('@/pages/EmployeeManagementWorkspace'));
 const EmployeePersonalDetailsPage = lazyWithChunkRetry(() => import('@/pages/EmployeePersonalDetailsPage'));
 const Assets = lazyWithChunkRetry(() => import('@/pages/Assets'));
@@ -591,12 +591,17 @@ function App() {
             <Route path="monitoring/productive-time" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="productive-time" /></AdminRoute></PlanFeatureRoute>} />
             <Route path="monitoring/unproductive-time" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="unproductive-time" /></AdminRoute></PlanFeatureRoute>} />
             <Route path="monitoring/screenshots" element={<AdminRoute><MonitoringWorkspace mode="screenshots" /></AdminRoute>} />
-            <Route path="monitoring/app-usage" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="app-usage" /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="monitoring/website-usage" element={<PlanFeatureRoute feature="monitoring"><AdminRoute><MonitoringWorkspace mode="website-usage" /></AdminRoute></PlanFeatureRoute>} />
+            {/* The old app/website usage pages computed totals from a 10-event
+                sample; the Web & App Usage report is the single usage surface now. */}
+            <Route path="monitoring/app-usage" element={<Navigate to="/reports/web-app-usage" replace />} />
+            <Route path="monitoring/website-usage" element={<Navigate to="/reports/web-app-usage" replace />} />
             <Route path="approval-inbox" element={<AdminRoute><ApprovalInbox /></AdminRoute>} />
             <Route path="reports" element={<AdminRoute><ReportsWorkspace key="reports-hub" mode="reports-hub" /></AdminRoute>} />
             <Route path="analytics" element={<AdminRoute><ReportsWorkspace key="analytics-hub" mode="analytics-hub" /></AdminRoute>} />
             <Route path="reports/attendance" element={<AdminRoute><ReportsWorkspace key="attendance" mode="attendance" /></AdminRoute>} />
+            <Route path="work/timesheets" element={<AdminRoute><Timesheets /></AdminRoute>} />
+            {/* The per-person hours report keeps its route — it is a real report
+                and eight other modes share this workspace's shell. */}
             <Route path="reports/hours-tracked" element={<AdminRoute><ReportsWorkspace key="hours-tracked" mode="hours-tracked" /></AdminRoute>} />
             <Route path="reports/projects-tasks" element={<AdminRoute><ReportsWorkspace key="projects-tasks" mode="projects-tasks" /></AdminRoute>} />
             <Route path="reports/timeline" element={<PlanFeatureRoute feature="employee_timeline"><AdminRoute><ReportsWorkspace key="timeline" mode="timeline" /></AdminRoute></PlanFeatureRoute>} />
@@ -612,7 +617,11 @@ function App() {
             <Route path="employees/roles" element={<AdminRoute><EmployeeManagementWorkspace mode="roles" /></AdminRoute>} />
             <Route path="assets" element={<PermissionRoute permission="assets.view"><Assets /></PermissionRoute>} />
             <Route path="new-hires" element={<AdminRoute><NewHiresPage /></AdminRoute>} />
-            <Route path="resignations" element={<AdminRoute><ResignationsPage /></AdminRoute>} />
+            {/* The old Resignations page never read the resignations table — it
+                filtered the user list by `employment_status`. Exits reads real
+                records, so this redirects rather than keeping two answers. */}
+            <Route path="resignations" element={<Navigate to="/exits" replace />} />
+            <Route path="exits" element={<AdminRoute><ExitsPage /></AdminRoute>} />
             <Route path="resignation" element={<ResignationPage />} />
             <Route path="resignation/status" element={<MyResignationStatusPage />} />
             <Route path="audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
@@ -678,7 +687,6 @@ function App() {
             <Route path="super-admin/users" element={<SuperAdminRoute><SuperAdminUsers /></SuperAdminRoute>} />
             <Route path="super-admin/billing" element={<SuperAdminRoute><SuperAdminBilling /></SuperAdminRoute>} />
             <Route path="super-admin/plans" element={<SuperAdminRoute><SuperAdminPlans /></SuperAdminRoute>} />
-            <Route path="legacy/reports" element={<AdminRoute><Reports /></AdminRoute>} />
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
             <Route path="legacy/user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />
           </Route>

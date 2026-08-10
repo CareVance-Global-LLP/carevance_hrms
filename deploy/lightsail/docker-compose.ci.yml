@@ -43,7 +43,32 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
-    command: ["sh", "-lc", "php artisan queue:work --tries=1 --timeout=0"]
+    # --tries=1 means a single SMTP hiccup permanently drops the mail, and
+    # --timeout=0 means one hung job stalls the only worker forever. Matched to
+    # the production settings so CI exercises the same retry behaviour.
+    command: ["sh", "-lc", "php artisan queue:work --tries=3 --timeout=60 --sleep=3"]
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - backend_storage:/var/www/html/storage
+    networks:
+      - carevance
+
+  # Runs Laravel's scheduler. Without it every command in routes/console.php —
+  # closing stale and idle timers, revoking access for departed employees,
+  # advancing onboarding journeys, task reminders and recurrences — never fires.
+  scheduler:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE before running docker compose}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+    command: ["sh", "-lc", "php artisan schedule:work"]
     depends_on:
       db:
         condition: service_healthy

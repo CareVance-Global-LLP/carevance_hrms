@@ -64,6 +64,10 @@ prompts/
 *.txt
 !README.md
 
+# Test baselines are the input to the CI gate, not scratch — without them the
+# workflow compares against nothing and reports every known failure as new.
+!.github/baselines/*.txt
+
 # Presentation artifacts
 *.pptx
 create_presentation.py

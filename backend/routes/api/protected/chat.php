@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\ChatController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/chat/conversations', [ChatController::class, 'conversations']);
+Route::get('/chat/search', [ChatController::class, 'searchMessages']);
 Route::get('/chat/available-users', [ChatController::class, 'availableUsers']);
 Route::get('/chat/unread-summary', [ChatController::class, 'unreadSummary']);
 Route::post('/chat/conversations', [ChatController::class, 'startConversation']);

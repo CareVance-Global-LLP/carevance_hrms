@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FbpClaim extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'fbp_claims';
 
     protected $fillable = [

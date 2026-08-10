@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ReimbursementPayrollLink extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'reimbursement_payroll_links';
 
     protected $fillable = [

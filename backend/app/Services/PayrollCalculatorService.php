@@ -32,6 +32,10 @@ class PayrollCalculatorService
     const ESI_EMPLOYEE_RATE = 0.0075;
     const ESI_EMPLOYER_RATE = 0.0325;
     const GRATUITY_RATE = 0.0481;
+    /** Payment of Gratuity Act: nothing payable below five years of continuous service. */
+    const GRATUITY_MIN_YEARS = 5;
+    /** Statutory ceiling on a gratuity payout. */
+    const GRATUITY_MAX_PAYOUT = 2000000;
     const STANDARD_DEDUCTION_NEW = 75000;
     const STANDARD_DEDUCTION_OLD = 50000;
     const REBATE_LIMIT_NEW = 1200000;
@@ -208,7 +212,7 @@ class PayrollCalculatorService
         ];
     }
 
-    protected function calculateEmployerContributions(float $basic, float $gross): array
+    public function calculateEmployerContributions(float $basic, float $gross): array
     {
         $pf = $this->calculateEmployerPF($basic);
         $pfWages = min($basic, self::PF_WAGE_CAP);
@@ -269,6 +273,223 @@ class PayrollCalculatorService
     public function calculateGratuityOnExit(float $lastBasic, float $yearsOfService, float $dearnessAllowance = 0): float
     {
         return (($lastBasic + $dearnessAllowance) * 15 * $yearsOfService) / 26;
+    }
+
+    /**
+     * Gratuity payable in a full-and-final settlement.
+     *
+     * Differs from calculateGratuityOnExit in the two ways the Payment of
+     * Gratuity Act requires and a raw formula does not express: nothing is
+     * payable below five years of continuous service, and the statutory ceiling
+     * caps the payout.
+     */
+    public function calculateGratuityForSettlement(
+        float $lastBasic,
+        float $yearsOfService,
+        float $dearnessAllowance = 0,
+    ): float {
+        if ($yearsOfService < self::GRATUITY_MIN_YEARS) {
+            return 0.0;
+        }
+
+        return min(
+            $this->calculateGratuityOnExit($lastBasic, $yearsOfService, $dearnessAllowance),
+            self::GRATUITY_MAX_PAYOUT,
+        );
+    }
+
+    /** Dearness Allowance: a percentage of basic. */
+    public function calculateDA(float $basic, float $daPercentage): float
+    {
+        return round(($basic * $daPercentage) / 100, 2);
+    }
+
+    /**
+     * City Compensatory Allowance. Rates step down by city tier because the
+     * allowance exists to offset cost of living.
+     */
+    public function calculateCCA(float $basic, float $dearnessAllowance = 0, string $cityTier = 'other'): float
+    {
+        $rate = match ($cityTier) {
+            'metro_a', 'metro', 'x' => 0.06,
+            'metro_b', 'y' => 0.04,
+            default => 0.02,
+        };
+
+        return round(($basic + $dearnessAllowance) * $rate, 2);
+    }
+
+    /** Encashment of an unused leave balance at the daily rate. */
+    public function calculateLeaveEncashment(float $leaveBalanceDays, float $monthlyGross, int $workingDays = 26): float
+    {
+        if ($leaveBalanceDays <= 0 || $monthlyGross <= 0) {
+            return 0.0;
+        }
+
+        $workingDays = max(1, $workingDays);
+
+        return round(($monthlyGross / $workingDays) * $leaveBalanceDays, 2);
+    }
+
+    /** Back-pay owed after a retrospective salary revision. */
+    public function calculateArrears(float $originalSalary, float $revisedSalary, int $months): float
+    {
+        if ($months <= 0) {
+            return 0.0;
+        }
+
+        return round(($revisedSalary - $originalSalary) * $months, 2);
+    }
+
+    /** National Pension System contribution. */
+    public function calculateNPS(float $basic, float $dearnessAllowance = 0, float $percentage = 10): float
+    {
+        if ($percentage <= 0) {
+            return 0.0;
+        }
+
+        return round((($basic + $dearnessAllowance) * $percentage) / 100, 2);
+    }
+
+    /**
+     * Recovery for notice the employee did not serve. Only the unserved portion
+     * is recoverable — charging the full notice period regardless of days served
+     * is a common and expensive error.
+     */
+    public function calculateNoticePayRecovery(float $monthlyGross, int $noticePeriodDays, int $servedDays): float
+    {
+        $unservedDays = max(0, $noticePeriodDays - max(0, $servedDays));
+
+        if ($unservedDays <= 0 || $noticePeriodDays <= 0) {
+            return 0.0;
+        }
+
+        return round(($monthlyGross / $noticePeriodDays) * $unservedDays, 2);
+    }
+
+    /** Premium paid on night and weekend hours, on top of the base hourly rate. */
+    public function calculateShiftDifferential(
+        float $hourlyRate,
+        float $nightHours = 0,
+        float $weekendHours = 0,
+        float $nightDifferentialPercentage = 10,
+        float $weekendDifferentialPercentage = 25,
+    ): float {
+        $night = $hourlyRate * ($nightDifferentialPercentage / 100) * max(0, $nightHours);
+        $weekend = $hourlyRate * ($weekendDifferentialPercentage / 100) * max(0, $weekendHours);
+
+        return round($night + $weekend, 2);
+    }
+
+    /**
+     * Voluntary Provident Fund: an employee-chosen percentage of basic, over and
+     * above the statutory 12%. Unlike the statutory contribution it is not
+     * subject to the wage ceiling.
+     */
+    public function calculateVPF(float $basic, float $vpfPercentage): float
+    {
+        if ($vpfPercentage <= 0 || $basic <= 0) {
+            return 0.0;
+        }
+
+        return round(($basic * $vpfPercentage) / 100, 2);
+    }
+
+    /**
+     * Net pay from its components.
+     */
+    public function calculateNetSalary(
+        float $basicSalary,
+        float $allowances = 0,
+        float $bonus = 0,
+        float $deductions = 0,
+        float $tax = 0,
+    ): float {
+        return (float) ($basicSalary + $allowances + $bonus - $deductions - $tax);
+    }
+
+    /**
+     * The non-formula payroll path: fixed monthly, hourly, or hybrid.
+     *
+     * Loss of pay is reported both ways on purpose. `base_pay` is what the
+     * employee actually earned (already reduced by LOP), because that is the
+     * number a payslip shows; `lop_deduction` is carried in `deductions` so the
+     * gross-to-net breakdown reconciles. Reporting only one of the two is what
+     * makes payslips and payroll registers disagree.
+     *
+     * @param array<string, mixed> $config Salary configuration for the employee
+     * @param array<string, mixed> $inputs Period inputs (attendance, adjustments)
+     * @return array<string, mixed>
+     */
+    public function calculateSimplePayroll(array $config, array $inputs = []): array
+    {
+        $salaryType = (string) ($config['salary_type'] ?? 'fixed_monthly');
+        $monthlySalary = (float) ($config['monthly_salary'] ?? 0);
+        $workingDays = max(1, (int) ($config['working_days'] ?? 30));
+
+        $unpaidLeaveDays = max(0.0, (float) ($inputs['unpaid_leave_days'] ?? 0));
+        $warnings = [];
+
+        if ($salaryType === 'hourly') {
+            $hourlyRate = (float) ($config['hourly_rate'] ?? 0);
+            $workedHours = max(0.0, (float) ($inputs['approved_worked_hours'] ?? 0));
+
+            $basePay = $hourlyRate * $workedHours;
+            $lopDeduction = 0.0;
+            $grossBase = $basePay;
+        } else {
+            $perDay = $monthlySalary / $workingDays;
+            $lopDeduction = round($perDay * $unpaidLeaveDays, 2);
+            $basePay = round($monthlySalary - $lopDeduction, 2);
+            // Gross is built from the FULL monthly salary and LOP is taken as a
+            // deduction, so gross - deductions == net.
+            $grossBase = $monthlySalary;
+        }
+
+        $overtime = $salaryType === 'hourly'
+            ? 0.0
+            : round((float) ($config['overtime_hourly_rate'] ?? 0) * (float) ($inputs['overtime_hours'] ?? 0), 2);
+
+        $productivityBonus = 0.0;
+        if (! empty($config['productivity_bonus_enabled'])) {
+            $productivityBonus = round(
+                (float) ($config['productivity_bonus_rate'] ?? 0) * (float) ($inputs['approved_productive_hours'] ?? 0),
+                2,
+            );
+        }
+
+        $bonus = (float) ($inputs['bonus'] ?? 0);
+        $reimbursement = (float) ($inputs['reimbursement'] ?? 0);
+
+        $grossPay = round($grossBase + $overtime + $productivityBonus + $bonus + $reimbursement, 2);
+
+        $deductions = round(
+            (float) ($inputs['manual_deduction'] ?? 0)
+            + (float) ($inputs['other_deduction'] ?? 0)
+            + $lopDeduction,
+            2,
+        );
+
+        $netPay = round($grossPay - $deductions, 2);
+
+        if ($netPay < 0) {
+            $warnings[] = 'Negative calculated pay';
+        }
+
+        return [
+            'salary_type' => $salaryType,
+            'base_pay' => (float) $basePay,
+            'lop_deduction' => (float) $lopDeduction,
+            'overtime' => (float) $overtime,
+            'productivity_bonus' => (float) $productivityBonus,
+            'bonus' => (float) $bonus,
+            'reimbursement' => (float) $reimbursement,
+            'gross_pay' => (float) $grossPay,
+            'deductions' => (float) $deductions,
+            'net_pay' => (float) $netPay,
+            'warnings' => $warnings,
+            'status' => $warnings === [] ? 'ok' : 'exception',
+        ];
     }
 
     /**

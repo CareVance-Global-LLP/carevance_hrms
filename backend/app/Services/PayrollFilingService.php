@@ -31,6 +31,69 @@ class PayrollFilingService
     }
 
     /**
+     * An organization's statutory identifier, wherever setup happened to store it.
+     *
+     * The payroll setup wizard writes these under
+     * `settings.payroll.statutory.{tan,pan,establishmentCode,esiCode,…}`, while
+     * this service was reading top-level `settings.tan_number` /
+     * `settings.pan_number`. The two never met: an admin could complete the
+     * whole Statutory Details step and every filing would still report
+     * "not configured". Both shapes are accepted so neither path is broken.
+     *
+     * @param  string  $wizardKey  key under settings.payroll.statutory
+     * @param  array<int, string>  $legacyKeys  top-level fallbacks
+     */
+    /** A well-formed PAN: five letters, four digits, one letter. */
+    public const PAN_PATTERN = '/^[A-Z]{5}[0-9]{4}[A-Z]$/';
+
+    /** A UAN is exactly twelve digits. */
+    public const UAN_PATTERN = '/^\d{12}$/';
+
+    /**
+     * Days that count toward PF/ESI contribution for one payroll item.
+     *
+     * payroll_items carries two parallel sets of attendance-day columns and
+     * only one of them is written: on the live database `present_days` and
+     * `paid_leave_days` are zero in every row, while `days_present` holds real
+     * values. The ECR and ESI generators read the empty pair, so contributory
+     * days computed as 0 and non-contributory days were reported as the entire
+     * month for every employee — a filing that is wrong for everyone.
+     *
+     * Reads the populated columns first and falls back to the legacy pair, so
+     * this is correct on both old and new rows. The duplicate columns should be
+     * converged and one set dropped; until then this is the single place that
+     * decides which to trust.
+     */
+    private static function contributoryDays(object $item): float
+    {
+        $present = (float) ($item->days_present ?? 0) + (float) ($item->days_leave ?? 0);
+
+        if ($present > 0) {
+            return $present;
+        }
+
+        return (float) ($item->present_days ?? 0) + (float) ($item->paid_leave_days ?? 0);
+    }
+
+    private function orgStatutoryId(?Organization $org, string $wizardKey, array $legacyKeys = []): string
+    {
+        $settings = $org?->settings ?? [];
+
+        $fromWizard = $settings['payroll']['statutory'][$wizardKey] ?? null;
+        if (filled($fromWizard)) {
+            return trim((string) $fromWizard);
+        }
+
+        foreach ($legacyKeys as $key) {
+            if (filled($settings[$key] ?? null)) {
+                return trim((string) $settings[$key]);
+            }
+        }
+
+        return '';
+    }
+
+    /**
      * Generate the PF ECR in EPFO's actual Electronic Challan cum Return (ECR)
      * format. EPFO revamped ECR is a `||`-delimited, 11-column text file:
      *
@@ -51,7 +114,7 @@ class PayrollFilingService
      */
     public function generatePfEcr(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
         $org = Organization::find($orgId);
         $lines = [];
         $totalWages = 0;
@@ -82,11 +145,12 @@ class PayrollFilingService
             // NCP days = non-contributory paid days. We derive from attendance:
             // working days minus actually paid/contributory days.
             $workingDays = (float) ($item->total_working_days ?? 0);
-            $contributoryDays = (float) ($item->present_days ?? 0) + (float) ($item->paid_leave_days ?? 0);
+            $contributoryDays = self::contributoryDays($item);
             $ncpDays = $workingDays > 0 ? max(0, round($workingDays - $contributoryDays, 2)) : 0;
 
             $lines[] = implode('||', [
-                $profile?->uan_number ?? '',
+                // Column 1 of the ECR. EPFO rejects the upload if it is blank.
+                $item->user?->statutoryId('uan') ?? '',
                 $item->user->name ?? '',
                 number_format($grossWages, 2, '.', ''),
                 number_format($epfWages, 2, '.', ''),
@@ -105,6 +169,32 @@ class PayrollFilingService
         $path = "filings/{$orgId}/pf/{$filename}";
         Storage::disk('local')->put($path, $content);
 
+        // UAN is column 1 and mandatory: EPFO rejects the upload outright if any
+        // row is missing one. Reporting the file as ready regardless meant the
+        // rejection was only discovered on the portal, after the due date.
+        $validationErrors = [];
+        $withoutUan = $items->filter(fn ($item) => blank($item->user?->statutoryId('uan')))->count();
+        if ($withoutUan > 0) {
+            $validationErrors[] = "{$withoutUan} employee(s) have no UAN on record — "
+                . 'EPFO rejects an ECR containing blank UANs.';
+        }
+
+        // Presence was checked but never shape, so a UAN of "UAN0000000004" —
+        // which is what the seeded data actually holds — passed as valid and the
+        // ECR reported itself ready. EPFO rejects on format just as hard as on
+        // absence, and the rejection only surfaces on the portal after the due
+        // date. Malformed is as fatal as missing, so it is treated the same.
+        $malformedUan = $items->filter(function ($item) {
+            $uan = $item->user?->statutoryId('uan');
+
+            return filled($uan) && ! preg_match(self::UAN_PATTERN, preg_replace('/\D/', '', (string) $uan));
+        })->count();
+        if ($malformedUan > 0) {
+            $validationErrors[] = "{$malformedUan} employee(s) have a UAN that is not 12 digits — "
+                . 'EPFO will reject the upload.';
+        }
+        $filingReady = empty($validationErrors);
+
         return PayrollFiling::create([
             'organization_id' => $orgId,
             'type' => 'pf_ecr',
@@ -112,14 +202,15 @@ class PayrollFilingService
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
             'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
             'status' => 'generated',
-            'compliance_status' => 'ready',
+            'compliance_status' => $filingReady ? 'ready' : 'reference_only',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
             'generated_by' => $userId,
             'meta_data' => [
                 'format' => 'EPFO ECR 11-column ||-delimited',
-                'filing_ready' => true,
+                'filing_ready' => $filingReady,
+                'validation_errors' => $validationErrors,
                 'total_employees' => $items->count(),
                 'total_gross_wages' => $totalWages,
                 'total_epf_wages' => $totalEpfWages,
@@ -140,10 +231,10 @@ class PayrollFilingService
      */
     public function generateEsiChallan(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->where('esi_employee', '>', 0)->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->where('esi_employee', '>', 0)->get();
         $org = Organization::find($orgId);
 
-        $esiCode = $org->settings['esi_code'] ?? '';
+        $esiCode = $this->orgStatutoryId($org, 'esiCode', ['esi_code']);
         $totalGross = 0;
         $totalEe = 0;
         $totalEr = 0;
@@ -174,7 +265,7 @@ class PayrollFilingService
             $gross = (float) $item->gross_salary;
             $ee = (float) $item->esi_employee;
             $er = (float) $item->esi_employer;
-            $days = (float) ($item->present_days ?? 0) + (float) ($item->paid_leave_days ?? 0);
+            $days = self::contributoryDays($item);
 
             $totalGross += $gross;
             $totalEe += $ee;
@@ -264,13 +355,13 @@ class PayrollFilingService
      */
     public function generateForm24Q(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
         $org = Organization::find($orgId);
         $quarter = $this->getQuarterFromMonth(explode('-', $run->month_year)[1] ?? date('m'));
         $finYear = $this->getFinancialYear($run->month_year);
 
-        $pan = $org->settings['pan_number'] ?? '';
-        $tan = $org->settings['tan_number'] ?? '';
+        $pan = $this->orgStatutoryId($org, 'pan', ['pan_number']);
+        $tan = $this->orgStatutoryId($org, 'tan', ['tan_number']);
 
         // Validate PAN format (10-char alphanumeric starting with letters)
         $panStatus = preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]$/', $pan) ? $pan : 'PANINVALID';
@@ -328,7 +419,7 @@ class PayrollFilingService
         // --- Deductee Detail (DD) ---
         $ddSerial = 1;
         foreach ($items as $item) {
-            $deducteePan = $item->user->employeeProfile->pan_number ?? '';
+            $deducteePan = $item->user?->statutoryId('pan') ?? '';
             $deducteePanStatus = preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]$/', $deducteePan)
                 ? $deducteePan
                 : (empty($deducteePan) ? 'PANNOTAVBL' : 'PANINVALID');
@@ -381,6 +472,42 @@ class PayrollFilingService
 
         // Validate the FVU structure before marking as ready
         $validationErrors = $this->validateFvuStructure($content);
+
+        // Structural validity is not the same as filability. The deductor's own
+        // TAN and PAN are what NSDL matches the return against, and with neither
+        // configured the header goes out reading literally "PANINVALID" — while
+        // the filing still reported itself ready. Say so instead.
+        if ($panStatus === 'PANINVALID') {
+            $validationErrors[] = blank($pan)
+                ? 'Organization PAN is not configured — required in the 24Q file header.'
+                : "Organization PAN '{$pan}' is not a valid PAN format (AAAAA9999A).";
+        }
+        if (blank($tan)) {
+            $validationErrors[] = 'Organization TAN is not configured — NSDL will reject a return without it.';
+        }
+
+        $deducteesWithoutPan = $items->filter(
+            fn ($item) => blank($item->user?->statutoryId('pan'))
+        )->count();
+        if ($deducteesWithoutPan > 0) {
+            $validationErrors[] = "{$deducteesWithoutPan} employee(s) have no PAN on record — "
+                . 'TDS must be deducted at the higher rate under section 206AA for them.';
+        }
+
+        // Only blankness was checked, so a malformed PAN sailed through and the
+        // return reported 'ready'. NSDL's FVU validates the AAAAA9999A shape, so
+        // a badly-formed PAN fails the same way a missing one does — and every
+        // PAN currently on the live database is malformed.
+        $deducteesWithBadPan = $items->filter(function ($item) {
+            $pan = $item->user?->statutoryId('pan');
+
+            return filled($pan) && ! preg_match(self::PAN_PATTERN, strtoupper(trim((string) $pan)));
+        })->count();
+        if ($deducteesWithBadPan > 0) {
+            $validationErrors[] = "{$deducteesWithBadPan} employee(s) have a malformed PAN — "
+                . 'the NSDL FVU expects five letters, four digits and one letter.';
+        }
+
         $complianceStatus = empty($validationErrors) ? 'ready' : 'reference_only';
 
         return PayrollFiling::create([
@@ -474,7 +601,7 @@ class PayrollFilingService
 
         // No fabricated certificate number: a real one only exists after TRACES
         // issues Part A post quarterly TDS filing. We render Part B only.
-        $filename = sprintf('form_16_part_b_%s_%s.pdf', $user->employeeProfile->pan_number ?? 'NOPAN', $financialYear);
+        $filename = sprintf('form_16_part_b_%s_%s.pdf', $user?->statutoryId('pan') ?? 'NOPAN', $financialYear);
         $path = "filings/{$orgId}/form16/{$filename}";
 
         $this->renderAndStorePdf('filings.form16_annual', [
@@ -485,8 +612,8 @@ class PayrollFilingService
             'annualizedTds' => $annualizedTds,
             'taxRegime' => $taxRegime,
             'months' => $items,
-            'pan' => $org->settings['pan_number'] ?? '',
-            'tan' => $org->settings['tan_number'] ?? '',
+            'pan' => $this->orgStatutoryId($org, 'pan', ['pan_number']),
+            'tan' => $this->orgStatutoryId($org, 'tan', ['tan_number']),
             'generatedAt' => now(),
         ], $path);
 
@@ -503,7 +630,7 @@ class PayrollFilingService
             'generated_by' => $generatorId,
             'meta_data' => [
                 'user_id' => $employeeUserId,
-                'pan' => $user->employeeProfile->pan_number ?? '',
+                'pan' => $user?->statutoryId('pan') ?? '',
                 'financial_year' => $financialYear,
                 'tax_regime' => $taxRegime,
                 'part' => 'B',
@@ -518,7 +645,7 @@ class PayrollFilingService
 
     public function generateForm12BA(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
         $org = Organization::find($orgId);
 
         $entries = [];
@@ -529,7 +656,7 @@ class PayrollFilingService
 
             $entries[] = [
                 'employee' => $item->user->name,
-                'pan' => $item->user->employeeProfile->pan_number ?? '',
+                'pan' => $item->user?->statutoryId('pan') ?? '',
                 'gross_salary' => (float) $item->gross_salary,
                 'perquisites' => (float) $perquisites,
                 'profits_in_lieu' => 0,
@@ -554,8 +681,8 @@ class PayrollFilingService
             'employer' => $org,
             'entries' => $entries,
             'totals' => $totals,
-            'pan' => $org->settings['pan_number'] ?? '',
-            'tan' => $org->settings['tan_number'] ?? '',
+            'pan' => $this->orgStatutoryId($org, 'pan', ['pan_number']),
+            'tan' => $this->orgStatutoryId($org, 'tan', ['tan_number']),
             'generatedAt' => now(),
         ], $path);
 
@@ -655,7 +782,7 @@ class PayrollFilingService
             ->where('pt_state', $resolvedState)
             ->pluck('user_id');
         $items = $run->items()
-            ->with('user.employeeProfile', 'user.employeeWorkInfo')
+            ->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')
             ->whereIn('user_id', $userIdsInState)
             ->get();
         $org = Organization::find($orgId);
@@ -782,7 +909,7 @@ class PayrollFilingService
             ->where('lwf_enabled', true)
             ->pluck('user_id');
         $items = $run->items()
-            ->with('user.employeeProfile', 'user.employeeWorkInfo')
+            ->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')
             ->whereIn('user_id', $userIdsWithLwf)
             ->get();
         $org = Organization::find($orgId);
@@ -884,7 +1011,7 @@ class PayrollFilingService
         // whose latest-in-FY basic (or monthly avg) is at/under the Act's scope.
         $annualItems = PayrollItem::where('organization_id', $orgId)
             ->whereBetween('month_year', [$fyStart, $fyEnd])
-            ->with('user.employeeProfile', 'user.employeeWorkInfo')
+            ->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')
             ->get();
 
         // Group by user; sum basic across the year, then cap per the wage ceiling.
@@ -1008,7 +1135,7 @@ class PayrollFilingService
 
         $annualItems = PayrollItem::where('organization_id', $orgId)
             ->whereBetween('month_year', [$fyStart, $fyEnd])
-            ->with('user.employeeProfile', 'user.employeeWorkInfo')
+            ->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')
             ->get();
 
         $byUser = $annualItems->groupBy('user_id');
@@ -1112,7 +1239,7 @@ class PayrollFilingService
 
         $annualItems = PayrollItem::where('organization_id', $orgId)
             ->whereBetween('month_year', [$fyStart, $fyEnd])
-            ->with('user.employeeProfile', 'user.employeeWorkInfo')
+            ->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')
             ->get();
 
         $byUser = $annualItems->groupBy('user_id');
@@ -1208,15 +1335,15 @@ class PayrollFilingService
         $org = Organization::find($orgId);
         $settlements = FullAndFinalSettlement::where('organization_id', $orgId)
             ->where('payroll_run_id', $run->id)
-            ->with('user.employeeProfile', 'user.employeeWorkInfo')
+            ->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')
             ->get();
 
         $entries = [];
         foreach ($settlements as $settlement) {
             $entries[] = [
                 'employee' => $settlement->user->name ?? '',
-                'pan' => $settlement->user->employeeProfile->pan_number ?? '',
-                'uan' => $settlement->user->employeeProfile->uan_number ?? '',
+                'pan' => $settlement->user?->statutoryId('pan') ?? '',
+                'uan' => $settlement->user?->statutoryId('uan') ?? '',
                 'last_working_date' => $settlement->last_working_date ? $settlement->last_working_date->format('d/m/Y') : '',
                 'net_settlement' => (float) $settlement->net_settlement_amount,
                 'gratuity' => (float) $settlement->gratuity_amount,
@@ -1262,7 +1389,7 @@ class PayrollFilingService
     public function generateForm31(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
         $org = Organization::find($orgId);
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
 
         $entries = [];
         foreach ($items as $item) {
@@ -1273,7 +1400,7 @@ class PayrollFilingService
             }
             $entries[] = [
                 'employee' => $item->user->name ?? '',
-                'pan' => $item->user->employeeProfile->pan_number ?? '',
+                'pan' => $item->user?->statutoryId('pan') ?? '',
                 'designation' => $workInfo->designation ?? '',
                 'employment_status' => $employmentStatus,
                 'joining_date' => $workInfo->joining_date ? $workInfo->joining_date->format('d/m/Y') : '',
@@ -1344,15 +1471,15 @@ class PayrollFilingService
     public function generateForm2(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
         $org = Organization::find($orgId);
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
 
         $entries = [];
         foreach ($items as $item) {
             $entries[] = [
                 'employee' => $item->user->name ?? '',
-                'pan' => $item->user->employeeProfile->pan_number ?? '',
-                'uan' => $item->user->employeeProfile->uan_number ?? '',
-                'esi_ip' => $item->user->employeeProfile->esi_ip_number ?? '',
+                'pan' => $item->user?->statutoryId('pan') ?? '',
+                'uan' => $item->user?->statutoryId('uan') ?? '',
+                'esi_ip' => $item->user?->statutoryId('esi') ?? '',
                 'joining_date' => $item->user->employeeWorkInfo->joining_date ? $item->user->employeeWorkInfo->joining_date->format('d/m/Y') : '',
                 'designation' => $item->user->employeeWorkInfo->designation ?? '',
                 'department' => $item->user->employeeWorkInfo->department ?? '',
@@ -1391,7 +1518,7 @@ class PayrollFilingService
     public function generateForm6(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
         $org = Organization::find($orgId);
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
 
         $entries = [];
         $totalPfEmployee = 0;
@@ -1404,7 +1531,7 @@ class PayrollFilingService
         foreach ($items as $item) {
             $entries[] = [
                 'employee' => $item->user->name ?? '',
-                'pan' => $item->user->employeeProfile->pan_number ?? '',
+                'pan' => $item->user?->statutoryId('pan') ?? '',
                 'gross_salary' => (float) $item->gross_salary,
                 'pf_employee' => (float) $item->pf_employee,
                 'pf_employer' => (float) $item->pf_employer,
@@ -1461,14 +1588,14 @@ class PayrollFilingService
     public function generateEShramRegistration(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
         $org = Organization::find($orgId);
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
 
         $entries = [];
         foreach ($items as $item) {
             $entries[] = [
                 'employee' => $item->user->name ?? '',
-                'pan' => $item->user->employeeProfile->pan_number ?? '',
-                'uan' => $item->user->employeeProfile->uan_number ?? '',
+                'pan' => $item->user?->statutoryId('pan') ?? '',
+                'uan' => $item->user?->statutoryId('uan') ?? '',
                 'joining_date' => $item->user->employeeWorkInfo->joining_date ? $item->user->employeeWorkInfo->joining_date->format('d/m/Y') : '',
                 'gross_salary' => (float) $item->gross_salary,
             ];
@@ -1505,12 +1632,12 @@ class PayrollFilingService
     public function generateUanActivation(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
         $org = Organization::find($orgId);
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
 
         $entries = [];
         foreach ($items as $item) {
-            $pan = $item->user->employeeProfile->pan_number ?? '';
-            $uan = $item->user->employeeProfile->uan_number ?? '';
+            $pan = $item->user?->statutoryId('pan') ?? '';
+            $uan = $item->user?->statutoryId('uan') ?? '';
             $entries[] = [
                 'employee' => $item->user->name ?? '',
                 'pan' => $pan,
@@ -1584,14 +1711,14 @@ class PayrollFilingService
     public function generateShramCardRegistration(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
         $org = Organization::find($orgId);
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
 
         $entries = [];
         foreach ($items as $item) {
             $entries[] = [
                 'employee' => $item->user->name ?? '',
-                'pan' => $item->user->employeeProfile->pan_number ?? '',
-                'uan' => $item->user->employeeProfile->uan_number ?? '',
+                'pan' => $item->user?->statutoryId('pan') ?? '',
+                'uan' => $item->user?->statutoryId('uan') ?? '',
                 'joining_date' => $item->user->employeeWorkInfo->joining_date ? $item->user->employeeWorkInfo->joining_date->format('d/m/Y') : '',
                 'gross_salary' => (float) $item->gross_salary,
             ];
@@ -1628,13 +1755,13 @@ class PayrollFilingService
     public function generateForm124(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
         $org = Organization::find($orgId);
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
 
         $entries = [];
         foreach ($items as $item) {
             $entries[] = [
                 'employee' => $item->user->name ?? '',
-                'pan' => $item->user->employeeProfile->pan_number ?? '',
+                'pan' => $item->user?->statutoryId('pan') ?? '',
                 'gross_salary' => (float) $item->gross_salary,
                 'tds' => (float) $item->tds,
             ];
@@ -1670,9 +1797,9 @@ class PayrollFilingService
 
     public function generateFullEcr(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
     {
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo')->get();
+        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
         $org = Organization::find($orgId);
-        $pfEstablishment = $org->settings['pf_establishment_code'] ?? $org->settings['pf_code'] ?? '';
+        $pfEstablishment = $this->orgStatutoryId($org, 'establishmentCode', ['pf_establishment_code', 'pf_code']);
 
         $lines = [];
         $lines[] = "FULL ECR - ELECTRONIC CHALLAN CUM RETURN";
@@ -1691,7 +1818,8 @@ class PayrollFilingService
             $grossWages = (float) $item->gross_salary;
 
             $lines[] = implode('||', [
-                $profile?->uan_number ?? '',
+                // Column 1 of the ECR. EPFO rejects the upload if it is blank.
+                $item->user?->statutoryId('uan') ?? '',
                 $item->user->name ?? '',
                 number_format($grossWages, 2, '.', ''),
                 number_format($epfWages, 2, '.', ''),
@@ -1700,7 +1828,7 @@ class PayrollFilingService
                 number_format((float) $item->pf_employee, 2, '.', ''),
                 number_format((float) $item->eps, 2, '.', ''),
                 number_format((float) $item->pf_employer, 2, '.', ''),
-                number_format((float) ($item->total_working_days ?? 0) - (float) ($item->present_days ?? 0) - (float) ($item->paid_leave_days ?? 0), 2, '.', ''),
+                number_format(max(0, (float) ($item->total_working_days ?? 0) - self::contributoryDays($item)), 2, '.', ''),
                 '0.00',
                 $workInfo->employee_code ?? '',
                 $workInfo->designation ?? '',

@@ -105,7 +105,7 @@ foreach ($users as $i => $userData) {
     }
     
     // Create bank account
-    $bankExists = DB::table('employee_bank_accounts')->where('user_id', $userId)->where('is_primary', true)->first();
+    $bankExists = DB::table('employee_bank_accounts')->where('user_id', $userId)->where('is_default', true)->first();
     if (!$bankExists) {
         DB::table('employee_bank_accounts')->insert([
             'user_id' => $userId,
@@ -113,7 +113,7 @@ foreach ($users as $i => $userData) {
             'ifsc_swift' => 'HDFC0001234',
             'bank_name' => 'HDFC Bank',
             'account_holder_name' => $userData['name'],
-            'is_primary' => true,
+            'is_default' => true,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

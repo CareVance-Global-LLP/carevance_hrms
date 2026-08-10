@@ -703,8 +703,19 @@ class ReportWorkingTimeTest extends TestCase
                 ]);
             }
 
+            // Two different caps, on purpose. Processed timeline rows are
+            // assembled in memory and sliced, so a large page costs nothing and
+            // lets the swimlane view load a whole person-day in one request.
+            // The raw feed hits the database per row and keeps the tight cap.
             $this->getJson(
                 "/api/activities?user_id={$employee->id}&start_date=2026-04-21&end_date=2026-04-21&processed=1&per_page=200",
+                $headers
+            )
+                ->assertOk()
+                ->assertJsonPath('per_page', 200);
+
+            $this->getJson(
+                "/api/activities?user_id={$employee->id}&start_date=2026-04-21&end_date=2026-04-21&per_page=200",
                 $headers
             )
                 ->assertOk()

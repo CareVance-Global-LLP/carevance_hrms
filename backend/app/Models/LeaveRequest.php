@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 
 class LeaveRequest extends Model
 {
+    use BelongsToOrganization;
+
     protected $fillable = [
         'organization_id',
         'user_id',

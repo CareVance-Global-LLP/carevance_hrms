@@ -19,6 +19,7 @@ import {
   setOfflineCredentials,
   isDesktopApp,
 } from '@/services/offlineService';
+import { reportSilentError } from '@/lib/reportSilentError';
 
 interface GoogleAuthResponse {
   token: string;
@@ -297,7 +298,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (parsedOrg?.id) {
             setOrganization(parsedOrg);
           }
-        } catch {}
+        } catch (error) { reportSilentError('auth', error); }
       }
 
       let fetchUserSucceeded = false;
@@ -352,7 +353,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setOrganization(parsedOrg);
                 console.log('[Auth] Restored organization from localStorage fallback');
               }
-            } catch {}
+            } catch (error) { reportSilentError('auth', error); }
           }
         }
       }

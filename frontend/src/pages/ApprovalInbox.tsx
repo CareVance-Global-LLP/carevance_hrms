@@ -8,6 +8,9 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import Button from '@/components/ui/Button';
 import { RequestEscalateControl } from '@/components/requests/RequestEscalateControl';
+import ApprovalStream, { type ApprovalKind } from '@/features/approvals/ApprovalStream';
+import { overlappingApproved } from '@/features/leave/leaveUtils';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
 import { formatDuration } from '@/lib/formatters';
 import { formatDateTime } from '@/lib/dateTime';
@@ -19,6 +22,8 @@ const LEAVE_COLORS = ['#2563eb', '#0ea5e9', '#14b8a6', '#f59e0b', '#f97316', '#8
 
 type ApprovalSection = 'leave' | 'time-edit' | 'resignation' | 'payroll-lock';
 type ApprovalView = 'pending' | 'history';
+/** 'all' is the stream default; a ?section= param pre-selects one chip. */
+type StreamSection = 'all' | ApprovalSection;
 type AnalyticsPreset = 'today' | '2d' | '5d' | '7d' | 'custom';
 type AnalyticsSource = 'approved' | 'approved_pending';
 
@@ -34,10 +39,16 @@ type ApprovalCardItem = {
   reviewerName?: string;
   reviewedAt?: string | null;
   current_reviewer_ids?: number[] | null;
+  approval_destination?: string | null;
   leaveType?: string | null;
   leaveCategory?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  /* Structured facts the stream renders per kind — the one deciding line. */
+  userId?: number | null;
+  attendanceDate?: string | null;
+  extraSeconds?: number | null;
+  lastWorkingDate?: string | null;
   isSelfApproval?: boolean;
   onApprove?: () => Promise<void>;
   onReject?: () => Promise<void>;
@@ -225,6 +236,8 @@ export default function ApprovalInbox() {
   const [analyticsDepartment, setAnalyticsDepartment] = useState<string>('All');
   const [isLoading, setIsLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const historyDetailsRef = useRef<HTMLDivElement>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
@@ -238,23 +251,24 @@ export default function ApprovalInbox() {
   const [customEndDate, setCustomEndDate] = useState(todayIso);
 
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
-   const activeSection = useMemo<ApprovalSection>(() => {
+   const activeSection = useMemo<StreamSection>(() => {
      const section = String(params.get('section') || '').trim().toLowerCase();
      if (section === 'time-edit' || section === 'time_edit') return 'time-edit';
      if (section === 'resignation') return 'resignation';
      if (section === 'payroll-lock') return 'payroll-lock';
-     // Default to time-edit if user doesn't have leave_management feature
-     if (!canAccessLeave) return 'time-edit';
-     return 'leave';
+     if (section === 'leave' && canAccessLeave) return 'leave';
+     // The stream shows everything by default; a section link pre-selects a chip.
+     return 'all';
    }, [params, canAccessLeave]);
   const activeView = useMemo<ApprovalView>(() => {
     const view = String(params.get('view') || '').trim().toLowerCase();
     return view === 'history' ? 'history' : 'pending';
   }, [params]);
 
-  const setRouteState = (next: Partial<{ section: ApprovalSection; view: ApprovalView; leaveWindow: string | null }>) => {
+  const setRouteState = (next: Partial<{ section: StreamSection; view: ApprovalView; leaveWindow: string | null }>) => {
     const nextParams = new URLSearchParams(location.search);
-    if (next.section) nextParams.set('section', next.section);
+    if (next.section === 'all') nextParams.delete('section');
+    else if (next.section) nextParams.set('section', next.section);
     if (next.view) nextParams.set('view', next.view);
     if (next.leaveWindow === null) {
       nextParams.delete('leave_window');
@@ -415,12 +429,15 @@ export default function ApprovalInbox() {
 
   const handleAction = async (action: () => Promise<void>, successMessage: string) => {
     setFeedback(null);
+    setBusy(true);
     try {
       await action();
       setFeedback({ tone: 'success', message: successMessage });
       await load();
     } catch (error: any) {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Approval action failed.' });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -698,6 +715,7 @@ export default function ApprovalInbox() {
     id: item.id,
     kind: 'leave',
     submittedAt: item.created_at,
+    userId: item.user?.id ?? null,
     title: `Leave request: ${String(item.start_date || '').slice(0, 10)} to ${String(item.end_date || '').slice(0, 10)}`,
     description: item.reason || 'No reason provided.',
     employeeName: item.user?.name || 'Unknown',
@@ -727,6 +745,7 @@ export default function ApprovalInbox() {
     id: item.id,
     kind: 'leave',
     submittedAt: item.created_at,
+    userId: item.user?.id ?? null,
     title: `Leave request: ${String(item.start_date || '').slice(0, 10)} to ${String(item.end_date || '').slice(0, 10)}`,
     description: item.reason || 'No reason provided.',
     employeeName: item.user?.name || 'Unknown',
@@ -744,6 +763,8 @@ export default function ApprovalInbox() {
     id: item.id,
     kind: 'time-edit',
     submittedAt: item.created_at,
+    attendanceDate: item.attendance_date ?? null,
+    extraSeconds: Number(item.extra_seconds || 0),
     title: `Time edit request: ${item.attendance_date}`,
     description: `${formatDuration(Number(item.extra_seconds || 0))} requested${item.message ? ` | ${item.message}` : ''}`,
     employeeName: item.user?.name || 'Unknown',
@@ -769,6 +790,8 @@ export default function ApprovalInbox() {
     id: item.id,
     kind: 'time-edit',
     submittedAt: item.created_at,
+    attendanceDate: item.attendance_date ?? null,
+    extraSeconds: Number(item.extra_seconds || 0),
     title: `Time edit request: ${item.attendance_date}`,
     description: `${formatDuration(Number(item.extra_seconds || 0))} requested${item.message ? ` | ${item.message}` : ''}`,
     employeeName: item.user?.name || 'Unknown',
@@ -783,12 +806,14 @@ export default function ApprovalInbox() {
     id: item.id,
     kind: 'resignation',
     submittedAt: item.created_at || item.submitted_at,
+    lastWorkingDate: item.last_working_date ?? null,
     title: `Resignation Request`,
     description: `Last working date: ${item.last_working_date}${item.reason ? ` | Reason: ${item.reason}` : ''}`,
     employeeName: item.user?.name || 'Unknown',
     employeeEmail: item.user?.email || '',
     status: item.status,
     current_reviewer_ids: item.current_reviewer_ids ?? null,
+    approval_destination: item.approval_destination ?? null,
     escalated_to: item.escalated_to ?? null,
     escalation_history: item.escalation_history ?? null,
     onApprove: async () => {
@@ -805,6 +830,7 @@ export default function ApprovalInbox() {
     id: item.id,
     kind: 'resignation',
     submittedAt: item.created_at || item.submitted_at,
+    lastWorkingDate: item.last_working_date ?? null,
     title: `Resignation Request`,
     description: `Last working date: ${item.last_working_date}${item.reason ? ` | Reason: ${item.reason}` : ''}`,
     employeeName: item.user?.name || 'Unknown',
@@ -847,28 +873,123 @@ export default function ApprovalInbox() {
      reviewedAt: item.reviewed_at,
    })), [payrollLockHistory]);
 
-   const currentCards = activeSection === 'leave'
-     ? (activeView === 'pending' ? pendingLeaveCards : leaveHistoryCards)
-     : activeSection === 'resignation'
-     ? (activeView === 'pending' ? pendingResignationCards : resignationHistoryCards)
-     : activeSection === 'payroll-lock'
-     ? (activeView === 'pending' ? pendingPayrollLockCards : payrollLockHistoryCards)
-     : (activeView === 'pending' ? pendingTimeEditCards : timeEditHistoryCards);
+   const pendingStream = useMemo<ApprovalCardItem[]>(() => [
+     ...(canAccessLeave ? pendingLeaveCards : []),
+     ...pendingTimeEditCards,
+     ...pendingResignationCards,
+     ...(isAdmin ? pendingPayrollLockCards : []),
+   ], [canAccessLeave, isAdmin, pendingLeaveCards, pendingTimeEditCards, pendingResignationCards, pendingPayrollLockCards]);
 
-   const sectionTitle = activeSection === 'leave'
-     ? 'Leave Approval'
-     : activeSection === 'resignation'
-     ? 'Resignation Approval'
-     : activeSection === 'payroll-lock'
-     ? 'Payroll Lock Approval'
-     : 'Edit Time Approval';
-   const sectionDescription = activeSection === 'leave'
-     ? (activeView === 'pending' ? 'Review pending leave requests for your organization.' : 'Track approved, rejected, and auto-cancelled leave decisions.')
-     : activeSection === 'resignation'
-     ? (activeView === 'pending' ? 'Review pending resignation requests from employees.' : 'Track approved and rejected resignation decisions.')
-     : activeSection === 'payroll-lock'
-     ? (activeView === 'pending' ? 'Review payroll runs awaiting your approval.' : 'Track payroll lock approval and rejection decisions.')
-     : (activeView === 'pending' ? 'Review pending time edit and overtime correction requests.' : 'Track approved and rejected time edit decisions.');
+   const historyStream = useMemo<ApprovalCardItem[]>(() => [
+     ...(canAccessLeave ? leaveHistoryCards : []),
+     ...timeEditHistoryCards,
+     ...resignationHistoryCards,
+     ...(isAdmin ? payrollLockHistoryCards : []),
+   ], [canAccessLeave, isAdmin, leaveHistoryCards, timeEditHistoryCards, resignationHistoryCards, payrollLockHistoryCards]);
+
+   const visibleKinds = useMemo<ApprovalKind[]>(() => [
+     ...(canAccessLeave ? (['leave'] as ApprovalKind[]) : []),
+     'time-edit' as ApprovalKind,
+     'resignation' as ApprovalKind,
+     ...(isAdmin ? (['payroll-lock'] as ApprovalKind[]) : []),
+   ], [canAccessLeave, isAdmin]);
+
+   const approvedLeaveRequests = useMemo(
+     () => leaveHistory.filter((item: any) => item.status === 'approved'),
+     [leaveHistory]
+   );
+
+   /*
+    * Coverage is the fact that decides a leave approval. Same computation the
+    * leave page uses, so the decision carries equal information at both doors.
+    */
+   const coverageFor = (card: ApprovalCardItem) => {
+     if (!card.startDate || !card.endDate) return null;
+     const overlapping = overlappingApproved(
+       approvedLeaveRequests,
+       String(card.startDate).slice(0, 10),
+       String(card.endDate).slice(0, 10),
+       card.userId != null ? Number(card.userId) : null
+     );
+     const names = overlapping.map((item: any) => item?.user?.name).filter(Boolean).slice(0, 2);
+     return {
+       count: overlapping.length,
+       label: overlapping.length
+         ? overlapping.length + ' teammate' + (overlapping.length > 1 ? 's' : '') + ' already off in this span' + (names.length ? ' (' + names.join(', ') + ')' : '')
+         : '',
+     };
+   };
+
+   /* Bulk clear: the existing per-item endpoints run sequentially, and the
+      result is reported as a count — never a silent partial success. */
+   const runBulk = async (cards: ApprovalCardItem[], decision: 'approve' | 'reject') => {
+     setBusy(true);
+     setFeedback(null);
+     let succeeded = 0;
+     let failed = 0;
+     for (const card of cards) {
+       const action = decision === 'approve' ? card.onApprove : card.onReject;
+       if (!action) continue;
+       try {
+         await action();
+         succeeded += 1;
+       } catch {
+         failed += 1;
+       }
+     }
+     setFeedback({
+       tone: failed > 0 ? 'error' : 'success',
+       message: (decision === 'approve' ? 'Approved ' : 'Rejected ') + succeeded + (failed > 0 ? ', ' + failed + ' failed.' : '.'),
+     });
+     await load();
+     setBusy(false);
+   };
+
+   /* Escalate/transfer lives in the expanded detail, pending cards only. */
+   const renderDetail = (card: ApprovalCardItem) => {
+     if (!card.onApprove) return null;
+     if (card.isSelfApproval) return null;
+     if (card.kind === 'resignation') {
+       return (
+         <RequestEscalateControl
+           item={card}
+           onTransfer={async (note, toUserId) => {
+             const response = await resignationApi.transfer(card.id, note, toUserId);
+             ensureSuccessfulAction(response, 'Failed to forward resignation request.');
+           }}
+           forwardTargetLoader={async () => {
+             const res = await resignationApi.forwardTargets(card.id);
+             return res.data.data;
+           }}
+         />
+       );
+     }
+     if (
+       (card.kind === 'leave' || card.kind === 'time-edit') &&
+       (card.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) || isAdmin || user?.role === 'manager')
+     ) {
+       return (
+         <RequestEscalateControl
+           item={card}
+           onTransfer={async (note, toUserId) => {
+             if (card.kind === 'leave') {
+               const response = await leaveApi.transfer(card.id, note, toUserId);
+               ensureSuccessfulAction(response, 'Failed to forward leave request.');
+             } else {
+               const response = await attendanceTimeEditApi.transfer(card.id, note, toUserId);
+               ensureSuccessfulAction(response, 'Failed to forward time edit request.');
+             }
+           }}
+           forwardTargetLoader={async () => {
+             const api = card.kind === 'leave' ? leaveApi : attendanceTimeEditApi;
+             const res = await api.forwardTargets(card.id);
+             return res.data.data;
+           }}
+         />
+       );
+     }
+     return null;
+   };
 
   return (
     <div className="space-y-6">
@@ -881,97 +1002,19 @@ export default function ApprovalInbox() {
 
       {feedback ? <FeedbackBanner tone={feedback.tone} message={feedback.message} /> : null}
 
-       <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-         <MetricCard label="Pending Total" value={pendingLeaveCards.length + pendingTimeEditCards.length + pendingResignations.length + pendingPayrollLockCards.length} icon={Inbox} accent="sky" />
-         <MetricCard label="Leave Requests" value={pendingLeaveCards.length} icon={Clock3} accent="amber" />
-         <MetricCard label="Time Edits" value={pendingTimeEditCards.length} icon={CheckCircle2} accent="emerald" />
-         <MetricCard label="Resignations" value={pendingResignations.length} icon={UserMinus} accent="rose" />
-         <MetricCard label="Payroll Locks" value={pendingPayrollLockCards.length} icon={Building2} accent="violet" />
-       </div>
+      {/* Analytics kept intact, one click away instead of one screen tall. */}
+      <button
+        type="button"
+        onClick={() => setShowInsights((current) => !current)}
+        aria-expanded={showInsights}
+        className="flex w-full items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left text-xs font-bold text-slate-500 transition hover:text-slate-800"
+      >
+        {showInsights ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        Leave insights
+        <span className="font-medium text-slate-400">trends and department splits, out of the way until you need them</span>
+      </button>
 
-      <SurfaceCard className="p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">Approval Sections</h2>
-            <p className="mt-1 text-sm text-slate-500">Switch between leave approvals and time edit approvals without leaving the inbox.</p>
-          </div>
-           <div className="flex flex-wrap gap-2">
-             {[
-               ...(canAccessLeave ? [{ id: 'leave', label: 'Leave Approval', count: pendingLeaveCards.length }] : []),
-               { id: 'time-edit', label: 'Edit Time Approval', count: pendingTimeEditCards.length },
-               { id: 'resignation', label: 'Resignation', count: pendingResignations.length },
-               ...(isAdmin ? [{ id: 'payroll-lock', label: 'Payroll Lock', count: pendingPayrollLockCards.length }] : []),
-             ].map((section) => (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => {
-                  setRouteState({ section: section.id as ApprovalSection });
-                  scrollToHistoryDetails();
-                }}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
-                  activeSection === section.id
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-blue-50 hover:text-blue-700'
-                }`}
-              >
-                {section.label}
-                <span className={`rounded-full px-2 py-0.5 text-xs ${activeSection === section.id ? 'bg-white/20 text-white' : 'bg-white text-slate-600'}`}>
-                  {section.count}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <button
-            type="button"
-            onClick={() => {
-              setRouteState({ section: activeSection, view: 'pending' });
-              scrollToHistoryDetails();
-            }}
-            className={`rounded-xl border px-4 py-4 text-left transition ${
-              activeView === 'pending' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-100'
-            }`}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pending</p>
-             <p className="mt-2 text-2xl font-semibold text-slate-950">
-               {activeSection === 'leave' ? pendingLeaveCards.length : activeSection === 'resignation' ? pendingResignationCards.length : activeSection === 'payroll-lock' ? pendingPayrollLockCards.length : pendingTimeEditCards.length}
-             </p>
-            <p className="mt-1 text-sm text-slate-500">Requests waiting for approval</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setRouteState({ section: activeSection, view: 'history' });
-              scrollToHistoryDetails();
-            }}
-            className={`rounded-xl border px-4 py-4 text-left transition ${
-              activeView === 'history' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-white hover:border-blue-100'
-            }`}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">History</p>
-             <p className="mt-2 text-2xl font-semibold text-slate-950">
-               {activeSection === 'leave' ? leaveHistoryCards.length : activeSection === 'resignation' ? resignationHistoryCards.length : activeSection === 'payroll-lock' ? payrollLockHistoryCards.length : timeEditHistoryCards.length}
-             </p>
-            <p className="mt-1 text-sm text-slate-500">Approved and completed decisions</p>
-          </button>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Section</p>
-            <p className="mt-2 text-lg font-semibold text-slate-950">{sectionTitle}</p>
-            <p className="mt-1 text-sm text-slate-500">{activeView === 'pending' ? 'Action queue' : 'Decision archive'}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current view</p>
-            <p className="mt-2 text-lg font-semibold text-slate-950">{activeView === 'pending' ? 'Pending approvals' : 'History'}</p>
-             <p className="mt-1 text-sm text-slate-500">
-               {activeSection === 'leave' ? 'Leave workflow' : activeSection === 'resignation' ? 'Resignation workflow' : activeSection === 'payroll-lock' ? 'Payroll lock workflow' : 'Time edit workflow'}
-             </p>
-          </div>
-        </div>
-      </SurfaceCard>
-
+      {showInsights ? (
       <SurfaceCard className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -1167,189 +1210,23 @@ export default function ApprovalInbox() {
           </span>
         </div>
       </SurfaceCard>
+      ) : null}
 
-      <div ref={historyDetailsRef}>
-        <SurfaceCard className="p-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-semibold text-slate-950">{sectionTitle}</h2>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${activeView === 'pending' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>
-                  {activeView === 'pending' ? 'Pending' : 'History'}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-slate-500">{sectionDescription}</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <History className="h-4 w-4" />
-              {activeView === 'pending'
-                ? `${currentCards.length} requests need review`
-                : `${currentCards.length} requests in history`}
-            </div>
-          </div>
-        </SurfaceCard>
-      </div>
-
-       {isLoading ? (
-         <PageLoadingState label="Loading approval inbox..." />
-       ) : currentCards.length === 0 ? (
-         <PageEmptyState
-           title={activeView === 'pending' ? 'Inbox is clear' : 'No history yet'}
-           description={activeView === 'pending'
-             ? `No ${activeSection === 'leave' ? 'leave' : activeSection === 'resignation' ? 'resignation' : activeSection === 'payroll-lock' ? 'payroll lock' : 'time edit'} approvals are waiting right now.`
-             : `No ${activeSection === 'leave' ? 'leave' : activeSection === 'resignation' ? 'resignation' : activeSection === 'payroll-lock' ? 'payroll lock' : 'time edit'} approval history matches this view.`}
-         />
-       ) : (
-        <div className="space-y-3">
-          {currentCards.map((item) => (
-            <SurfaceCard key={`${item.kind}-${item.id}`} className="p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0 flex-1 space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                       item.kind === 'leave' ? 'bg-amber-100 text-amber-700' :
-                       item.kind === 'resignation' ? 'bg-rose-100 text-rose-700' :
-                       item.kind === 'payroll-lock' ? 'bg-indigo-100 text-indigo-700' :
-                       'bg-emerald-100 text-emerald-700'
-                     }`}>
-                       {item.kind === 'leave' ? 'Leave' :
-                        item.kind === 'resignation' ? 'Resignation' :
-                        item.kind === 'payroll-lock' ? 'Payroll Lock' :
-                        'Time Edit'}
-                     </span>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>
-                      {String(item.status || '').replace(/_/g, ' ')}
-                    </span>
-                    <span className="text-xs text-slate-500">
-                      Submitted {formatDateTime(item.submittedAt, viewerTimezone)}
-                    </span>
-                    {item.reviewedAt ? (
-                      <span className="text-xs text-slate-500">
-                        Reviewed {formatDateTime(item.reviewedAt, viewerTimezone)}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  {item.kind === 'leave' ? (
-                    <div className="space-y-2">
-                      <p className="text-sm text-slate-700">
-                        <span className="text-slate-500">Employee: </span>
-                        <span className="font-semibold text-slate-950">{item.employeeName}</span>
-                        {item.employeeEmail ? <span className="text-slate-500"> | {item.employeeEmail}</span> : null}
-                      </p>
-                      {(item.leaveCategory || item.leaveType) && (
-                        <p className="text-sm text-slate-700">
-                          <span className="text-slate-500">Type of leave: </span>
-                          <span className="font-semibold text-slate-950">
-                            {[formatLeaveCategory(item.leaveCategory), formatLeaveType(item.leaveType)].filter(Boolean).join(' · ')}
-                          </span>
-                        </p>
-                      )}
-                      {item.submittedAt && (
-                        <p className="text-sm text-slate-700">
-                          <span className="text-slate-500">Date requested: </span>
-                          <span className="font-semibold text-slate-950">{formatDateTime(item.submittedAt, viewerTimezone)}</span>
-                        </p>
-                      )}
-                      {(item.startDate || item.endDate) && (
-                        <p className="text-sm text-slate-700">
-                          <span className="text-slate-500">Leave period: </span>
-                          <span className="font-semibold text-slate-950">
-                            {[formatDateOnly(item.startDate), formatDateOnly(item.endDate)].filter(Boolean).join(' – ')}
-                          </span>
-                        </p>
-                      )}
-                      {item.description && (
-                        <p className="text-sm text-slate-700">
-                          <span className="text-slate-500">Reason: </span>
-                          <span className="text-slate-800">{item.description}</span>
-                        </p>
-                      )}
-                      {item.reviewerName ? (
-                        <p className="text-xs text-slate-500">Reviewed by {item.reviewerName}</p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <h3 className="text-lg font-semibold text-slate-950">{item.title}</h3>
-                      <p className="text-sm text-slate-600">Submitted by: {item.employeeName} {item.employeeEmail ? `| ${item.employeeEmail}` : ''}</p>
-                      <p className="text-sm text-slate-600">{item.description}</p>
-                      {item.reviewerName ? (
-                        <p className="text-xs text-slate-500">Reviewed by {item.reviewerName}</p>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-
-                 {activeView === 'pending' ? (
-                   <>
-                     {item.isSelfApproval ? (
-                       <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                         <Clock3 className="h-3.5 w-3.5" />
-                         Waiting for another admin
-                       </span>
-                     ) : (
-                       <div className="flex flex-wrap gap-2">
-                         <Button
-                           size="sm"
-                           className="bg-emerald-600 shadow-sm hover:bg-emerald-700"
-                           onClick={() => item.onApprove && handleAction(item.onApprove, `${item.employeeName}'s request approved.`)}
-                         >
-                           <CheckCircle2 className="h-4 w-4" />
-                           Approve
-                         </Button>
-                         <Button
-                           size="sm"
-                           variant="danger"
-                           onClick={() => item.onReject && handleAction(item.onReject, `${item.employeeName}'s request rejected.`)}
-                         >
-                           <XCircle className="h-4 w-4" />
-                           Reject
-                         </Button>
-                         {item.kind === 'resignation' ? (
-                           <RequestEscalateControl
-                             item={item}
-                             onTransfer={async (note, toUserId) => {
-                               const response = await resignationApi.transfer(item.id, note, toUserId);
-                               ensureSuccessfulAction(response, 'Failed to forward resignation request.');
-                             }}
-                             forwardTargetLoader={async () => {
-                               const res = await resignationApi.forwardTargets(item.id);
-                               return res.data.data;
-                             }}
-                           />
-                         ) : null}
-                       </div>
-                     )}
-                     {!item.isSelfApproval && item.kind !== 'resignation' &&
-                     (item.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) ||
-                       isAdmin ||
-                       user?.role === 'manager') ? (
-                       <RequestEscalateControl
-                         item={item}
-                         onTransfer={async (note, toUserId) => {
-                           if (item.kind === 'leave') {
-                             const response = await leaveApi.transfer(item.id, note, toUserId);
-                             ensureSuccessfulAction(response, 'Failed to forward leave request.');
-                           } else {
-                             const response = await attendanceTimeEditApi.transfer(item.id, note, toUserId);
-                             ensureSuccessfulAction(response, 'Failed to forward time edit request.');
-                           }
-                         }}
-                         forwardTargetLoader={async () => {
-                           const api = item.kind === 'leave' ? leaveApi : attendanceTimeEditApi;
-                           const res = await api.forwardTargets(item.id);
-                           return res.data.data;
-                         }}
-                       />
-                     ) : null}
-                   </>
-                 ) : null}
-              </div>
-            </SurfaceCard>
-          ))}
-        </div>
-      )}
+      <ApprovalStream
+        pending={pendingStream}
+        history={historyStream}
+        filter={activeSection}
+        onFilterChange={(next) => setRouteState({ section: next })}
+        view={activeView}
+        onViewChange={(next) => setRouteState({ view: next })}
+        visibleKinds={visibleKinds}
+        isLoading={isLoading}
+        busy={busy}
+        onAction={handleAction}
+        onBulk={runBulk}
+        coverageFor={coverageFor}
+        renderDetail={renderDetail}
+      />
     </div>
   );
-}
+}

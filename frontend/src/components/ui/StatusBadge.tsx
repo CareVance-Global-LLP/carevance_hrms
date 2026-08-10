@@ -2,11 +2,13 @@ import { cn } from '@/utils/cn';
 
 type BadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 
+// Tinted background + matching text, both from tokenised scales so the pair
+// inverts together in dark mode. The previous rgba() literals could not.
 const toneClasses: Record<BadgeTone, string> = {
-  neutral: 'border-[rgba(155,148,152,0.3)] bg-[rgba(155,148,152,0.1)] text-[#9B9498]',
-  info: 'border-[rgba(93,150,157,0.3)] bg-[rgba(93,150,157,0.1)] text-[#5D969D]',
+  neutral: 'border-slate-300 bg-slate-100 text-slate-600',
+  info: 'border-blue-200 bg-blue-50 text-blue-700',
   success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  warning: 'border-[rgba(227,168,66,0.3)] bg-[rgba(227,168,66,0.1)] text-[#C8923A]',
+  warning: 'border-amber-200 bg-amber-50 text-amber-700',
   danger: 'border-rose-200 bg-rose-50 text-rose-700',
 };
 

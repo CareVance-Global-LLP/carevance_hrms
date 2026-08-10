@@ -106,7 +106,7 @@ export default function InfoTooltip({
           role="tooltip"
           className="absolute z-50 left-1/2 -translate-x-1/2 top-full mt-2 w-72 max-w-[90vw] pointer-events-auto"
         >
-          <span className="block bg-slate-900 text-slate-100 text-xs leading-relaxed rounded-lg shadow-xl border border-slate-700 p-3">
+          <span className="block bg-surface-inverse text-on-inverse text-xs leading-relaxed rounded-lg shadow-xl border border-slate-700 p-3">
             {title && (
               <span className="block font-semibold text-white mb-1">{title}</span>
             )}
@@ -117,7 +117,7 @@ export default function InfoTooltip({
                 {typical}
               </span>
             )}
-            <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-900 border-l border-t border-slate-700 rotate-45" />
+            <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-surface-inverse border-l border-t border-slate-700 rotate-45" />
           </span>
         </span>
       )}

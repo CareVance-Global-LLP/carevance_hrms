@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class OtRule extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'ot_rules';
 
     protected $fillable = [

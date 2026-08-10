@@ -44,4 +44,9 @@ Route::get('/breaks/today', [BreakTrackingController::class, 'today']);
 Route::get('/breaks/history', [BreakTrackingController::class, 'history']);
 Route::post('/breaks/start', [BreakTrackingController::class, 'start']);
 Route::post('/breaks/end', [BreakTrackingController::class, 'end']);
+// Types before the {id} wildcard so "types" is never captured as an id.
+Route::get('/breaks/types', [BreakTrackingController::class, 'types']);
+Route::post('/breaks/types', [BreakTrackingController::class, 'storeType']);
+Route::put('/breaks/types/{id}', [BreakTrackingController::class, 'updateType']);
+Route::delete('/breaks/types/{id}', [BreakTrackingController::class, 'destroyType']);
 Route::delete('/breaks/{id}', [BreakTrackingController::class, 'destroy']);

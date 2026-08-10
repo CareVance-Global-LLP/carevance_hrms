@@ -28,6 +28,7 @@ import type {
   ChatConversation,
   ChatGroup,
   ChatGroupMessage,
+  ChatMessageSearchHit,
   ChatMessage,
   ChatTypingUser,
   ChatUnreadSummary,
@@ -148,6 +149,47 @@ export const isRetryableError = (error: AxiosError): boolean => {
 // Calculate retry delay with exponential backoff
 const getRetryDelay = (retryCount: number): number => {
   return Math.min(1000 * Math.pow(2, retryCount), 30000); // Max 30s
+};
+
+/**
+ * Reduce a server-minted absolute URL to a path relative to the axios baseURL.
+ *
+ * Screenshot file links are built server-side from config('app.url'), so they
+ * arrive absolute. Handing an absolute URL to the api instance would send the
+ * bearer token to whatever host that string names; stripping it back to a
+ * relative path keeps the token scoped to our own API and preserves the query
+ * string the signature depends on.
+ */
+export const toApiRelativePath = (rawUrl: string): string => {
+  const value = String(rawUrl || '').trim();
+  if (!value) return value;
+
+  let pathWithQuery = value;
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value);
+      pathWithQuery = `${parsed.pathname}${parsed.search}`;
+    } catch {
+      return value;
+    }
+  }
+
+  // baseURL already ends in the API prefix (e.g. ".../api"), so drop a leading
+  // duplicate rather than requesting /api/api/screenshots/...
+  const basePath = (() => {
+    try {
+      return new URL(apiUrl, 'http://placeholder.invalid').pathname.replace(/\/+$/, '');
+    } catch {
+      return '';
+    }
+  })();
+
+  if (basePath && basePath !== '/' && pathWithQuery.startsWith(`${basePath}/`)) {
+    pathWithQuery = pathWithQuery.slice(basePath.length);
+  }
+
+  return pathWithQuery;
 };
 
 // Check if browser is online.
@@ -582,6 +624,204 @@ export const employeeWorkspaceApi = {
 };
 
 // Resignation API
+/* ── Employee lifecycle: onboarding journeys and exits ─────────── */
+
+export type ChecklistOwnerKind = 'hr' | 'manager' | 'employee' | 'it' | 'finance' | 'buddy';
+export type ChecklistItemStatus = 'pending' | 'done' | 'blocked' | 'skipped';
+
+export interface ChecklistItem {
+  id: number;
+  title: string;
+  description: string | null;
+  owner_kind: ChecklistOwnerKind;
+  owner_user_id: number | null;
+  owner?: { id: number; name: string } | null;
+  due_date: string | null;
+  requires: 'none' | 'document' | 'asset_return' | 'acknowledgement';
+  is_blocking: boolean;
+  status: ChecklistItemStatus;
+  is_overdue: boolean;
+  completed_at: string | null;
+  notes: string | null;
+  asset_assignment_id: number | null;
+  sort_order: number;
+}
+
+export interface OnboardingReadiness {
+  total: number;
+  done: number;
+  overdue: number;
+  blocking_overdue: number;
+  /** Blocking items still open, late or not. Optional for older payloads. */
+  blocking_outstanding?: number;
+}
+
+export type OnboardingStage = 'preboarding' | 'day_one' | 'onboarding' | 'completed' | 'cancelled';
+
+/** What a new joiner sees of their own onboarding. */
+export interface MyOnboarding {
+  journey: {
+    id: number;
+    stage: OnboardingStage;
+    joining_date: string;
+    days_until_joining: number | null;
+    job_title: string | null;
+    candidate_name: string;
+  };
+  manager: { id: number; name: string } | null;
+  buddy: { id: number; name: string } | null;
+  group: { id: number; name: string } | null;
+  my_items: ChecklistItem[];
+  my_progress: { total: number; done: number; blocking_outstanding: number; overdue: number };
+  readiness: OnboardingReadiness;
+}
+
+export interface OnboardingJourney {
+  id: number;
+  user_id: number | null;
+  candidate_name: string;
+  candidate_email: string;
+  job_title: string | null;
+  joining_date: string;
+  stage: OnboardingStage;
+  days_until_joining: number;
+  readiness: OnboardingReadiness;
+  manager?: { id: number; name: string } | null;
+  buddy?: { id: number; name: string } | null;
+  group?: { id: number; name: string } | null;
+  user?: { id: number; name: string; email: string } | null;
+  checklist_items?: ChecklistItem[];
+  notes: string | null;
+}
+
+export type ExitStage = 'notice' | 'clearance' | 'settlement' | 'closed';
+export type ExitType = 'resignation' | 'termination' | 'retirement' | 'death' | 'layoff';
+
+export interface ClearanceProgress {
+  total: number;
+  done: number;
+  blocking_outstanding: number;
+}
+
+export interface EmployeeExit {
+  id: number;
+  user_id: number;
+  resignation_id: number | null;
+  exit_type: ExitType;
+  exit_reason: string | null;
+  last_working_date: string;
+  notice_period_days: number;
+  served_days: number;
+  shortfall_days: number;
+  stage: ExitStage;
+  days_remaining: number;
+  clearance_progress: ClearanceProgress;
+  clearance_completed_at: string | null;
+  access_revoked_at: string | null;
+  user?: { id: number; name: string; email: string } | null;
+  checklist_items?: ChecklistItem[];
+  interview?: ExitInterview | null;
+}
+
+export interface ExitInterview {
+  id: number;
+  primary_reason: string | null;
+  responses: Record<string, unknown> | null;
+  would_recommend: number | null;
+  would_rejoin: boolean | null;
+  comments: string | null;
+  submitted_at: string | null;
+}
+
+export interface NoticeEvaluation {
+  required: number;
+  served: number;
+  shortfall: number;
+  earliest_date: string;
+}
+
+export const onboardingApi = {
+  list: (params?: { stage?: OnboardingStage; open_only?: boolean }) =>
+    api.get<{ data: OnboardingJourney[] }>('/onboarding/journeys', { params }),
+
+  show: (id: number) =>
+    api.get<{ data: OnboardingJourney }>(`/onboarding/journeys/${id}`),
+
+  /**
+   * The signed-in joiner's own onboarding — their tasks only, not the whole
+   * journey. Returns `{ data: null }` for anyone without an open journey.
+   */
+  myJourney: () =>
+    api.get<{ data: MyOnboarding | null }>('/onboarding/my-journey'),
+
+  create: (data: {
+    candidate_name: string;
+    candidate_email: string;
+    joining_date: string;
+    job_title?: string;
+    manager_id?: number;
+    buddy_id?: number;
+    group_id?: number;
+    notes?: string;
+  }) => api.post<{ data: OnboardingJourney }>('/onboarding/journeys', data),
+
+  update: (id: number, data: Record<string, unknown>) =>
+    api.patch<{ data: OnboardingJourney }>(`/onboarding/journeys/${id}`, data),
+
+  completeItem: (id: number, itemId: number, notes?: string) =>
+    api.post<{ data: ChecklistItem; readiness: OnboardingReadiness }>(
+      `/onboarding/journeys/${id}/items/${itemId}/complete`,
+      { notes }
+    ),
+
+  reopenItem: (id: number, itemId: number) =>
+    api.post<{ data: ChecklistItem; readiness: OnboardingReadiness }>(
+      `/onboarding/journeys/${id}/items/${itemId}/reopen`
+    ),
+};
+
+export const exitApi = {
+  list: (params?: { stage?: ExitStage; open_only?: boolean }) =>
+    api.get<{ data: EmployeeExit[] }>('/exits', { params }),
+
+  show: (id: number) => api.get<{ data: EmployeeExit }>(`/exits/${id}`),
+
+  create: (data: {
+    user_id: number;
+    last_working_date: string;
+    exit_type: ExitType;
+    reason?: string;
+  }) => api.post<{ data: EmployeeExit }>('/exits', data),
+
+  advance: (id: number, stage: ExitStage) =>
+    api.post<{ data: EmployeeExit }>(`/exits/${id}/advance`, { stage }),
+
+  revokeAccess: (id: number) => api.post<{ data: EmployeeExit }>(`/exits/${id}/revoke-access`),
+
+  saveInterview: (id: number, data: Record<string, unknown>) =>
+    api.post<{ data: ExitInterview }>(`/exits/${id}/interview`, data),
+
+  completeItem: (id: number, itemId: number, notes?: string) =>
+    api.post<{ data: ChecklistItem; progress: ClearanceProgress }>(
+      `/exits/${id}/items/${itemId}/complete`,
+      { notes }
+    ),
+
+  reopenItem: (id: number, itemId: number) =>
+    api.post<{ data: ChecklistItem; progress: ClearanceProgress }>(
+      `/exits/${id}/items/${itemId}/reopen`
+    ),
+
+  noticePreview: (lastWorkingDate: string, userId?: number) =>
+    api.post<{ data: NoticeEvaluation }>('/exits/notice-preview', {
+      last_working_date: lastWorkingDate,
+      user_id: userId,
+    }),
+
+  attrition: () =>
+    api.get<{ data: Array<{ primary_reason: string; total: number }> }>('/exits/attrition'),
+};
+
 export const resignationApi = {
   submit: (data: { last_working_date: string; reason?: string }) =>
     api.post('/resignations', data),
@@ -709,7 +949,7 @@ export const departmentTeamApi = {
 
 // Task API
 export const taskApi = {
-  getAll: (params?: { project_id?: number; group_id?: number; status?: string; assignee_id?: number; timer_only?: boolean }) =>
+  getAll: (params?: { project_id?: number; group_id?: number; status?: string; assignee_id?: number; timer_only?: boolean; start_date?: string; end_date?: string }) =>
     api.get<Task[]>('/tasks', { params }),
   
   get: (id: number) => 
@@ -927,9 +1167,28 @@ export const screenshotApi = {
   getAll: (params?: { user_id?: number; time_entry_id?: number; start_date?: string; end_date?: string; page?: number; per_page?: number }) => 
     api.get<PaginatedResponse<Screenshot>>('/screenshots', { params }),
   
-  get: (id: number) => 
+  get: (id: number) =>
     api.get<Screenshot>(`/screenshots/${id}`),
-  
+
+  /**
+   * Fetch the raw image bytes for a signed screenshot URL and return an object
+   * URL the caller can hand to an <img src>.
+   *
+   * The file endpoint is authenticated now, so it cannot be loaded by pointing
+   * an <img> straight at the signed URL — the browser would send no
+   * Authorization header and get a 401. The signed path is reduced to a
+   * baseURL-relative one first so the bearer token is never sent to a host
+   * other than our own API.
+   *
+   * Callers own the returned object URL and must URL.revokeObjectURL() it.
+   */
+  fetchFileObjectUrl: async (signedPath: string): Promise<string> => {
+    const relative = toApiRelativePath(signedPath);
+    const response = await api.get<Blob>(relative, { responseType: 'blob' });
+
+    return URL.createObjectURL(response.data);
+  },
+
   upload: (timeEntryId: number, imageDataUrl: string, filename?: string) =>
     api.post<Screenshot>('/screenshots', {
       time_entry_id: timeEntryId,
@@ -1081,6 +1340,22 @@ export const reportApi = {
 
   overall: (params?: { start_date?: string; end_date?: string; user_ids?: number[]; group_ids?: number[]; dashboard_lite?: boolean | number; skip_activity?: boolean | number; page?: number; per_page?: number }) =>
     api.get('/reports/overall', { params }),
+
+  /** Headline figure, movement and sparkline per module, for the reports hub. */
+  hubSummary: () =>
+    api.get<{
+      start_date: string;
+      end_date: string;
+      data: Record<string, {
+        value: number;
+        unit: string;
+        delta: number;
+        delta_direction: 'up' | 'down';
+        delta_label?: string;
+        sparkline: number[];
+        hint?: string;
+      }>;
+    }>('/reports/hub-summary'),
   
   project: (projectId: number, params?: { start_date?: string; end_date?: string }) => 
     api.get(`/reports/project/${projectId}`, { params }),
@@ -1406,6 +1681,9 @@ export const chatApi = {
     api.get<ChatMessage[]>(`/chat/conversations/${conversationId}/messages`, { params }),
   getGroupMessages: (groupId: number, params?: { since_id?: number }) =>
     api.get<ChatGroupMessage[]>(`/chat/groups/${groupId}/messages`, { params }),
+  /** Message-body search across every thread the caller belongs to. */
+  searchMessages: (q: string) =>
+    api.get<{ data: ChatMessageSearchHit[] }>('/chat/search', { params: { q } }),
   sendMessage: (conversationId: number, data: { body?: string; attachment?: File | null }) => {
     if (data.attachment) {
       const formData = new FormData();
@@ -1493,6 +1771,13 @@ export const notificationApi = {
   }) =>
     api.post('/notifications/publish', data),
 
+  /** Read-through counts for announcements the caller published. Counts only, no names. */
+  deliveryStats: (broadcastIds: string[]) =>
+    api.post<{ data: Array<{ broadcast_id: string; total: number; read: number }> }>(
+      '/notifications/delivery-stats',
+      { broadcast_ids: broadcastIds }
+    ),
+
   markRead: (id: number) =>
     api.post(`/notifications/${id}/read`),
 
@@ -1577,6 +1862,7 @@ export const settingsApi = {
 
   updatePreferences: (data: {
     timezone?: string;
+    theme?: 'light' | 'dark' | 'system';
     notifications?: {
       email?: boolean;
       in_app?: boolean;
@@ -1745,6 +2031,35 @@ export const permissionApi = {
 export const teamApi = {
   getHierarchy: () =>
     api.get<TeamHierarchyPayload>('/me/team-hierarchy'),
+};
+
+export type GlobalSearchType =
+  | 'person'
+  | 'department'
+  | 'task'
+  | 'project'
+  | 'leave'
+  | 'asset'
+  | 'announcement';
+
+export interface GlobalSearchHit {
+  type: GlobalSearchType;
+  id: number;
+  title: string;
+  subtitle?: string;
+  url: string;
+}
+
+export const searchApi = {
+  /**
+   * Cross-entity search for the command bar. `signal` is required in practice:
+   * results arrive per keystroke and a slower earlier response must never
+   * overwrite a newer one.
+   */
+  query: (
+    params: { q: string; types?: string; limit?: number },
+    signal?: AbortSignal
+  ) => api.get<{ data: GlobalSearchHit[] }>('/search', { params, signal }),
 };
 
 // Payroll API - Comprehensive

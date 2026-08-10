@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type WheelEvent as ReactWheelEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Building2,
@@ -42,6 +42,26 @@ type OrgUser = {
 
 type ConnectorSeg = { path: string; team: boolean; id: NodeId };
 
+/**
+ * A parent whose children are ALL leaves gets its children stacked in a vertical
+ * column instead of spread across a row. Fanning eight leaf cards sideways is
+ * what forces the horizontal scrolling; stacking them costs one card of width.
+ * Only applied from three children up — one or two side by side still reads
+ * better as a row.
+ */
+const STACK_LEAVES_FROM = 3;
+
+/**
+ * Shared by the renderer and the connector drawer so both agree on which
+ * branches are stacked — they must, or the lines land in the wrong place.
+ */
+const shouldStackChildren = (
+  children: ReadonlyArray<{ id: NodeId }>,
+  childrenMap: Map<any, ReadonlyArray<unknown>>,
+): boolean =>
+  children.length >= STACK_LEAVES_FROM
+  && children.every((c) => (childrenMap.get(c.id)?.length ?? 0) === 0);
+
 /* ── Helpers ── */
 
 const initials = (name: string) => {
@@ -59,9 +79,64 @@ const matchUser = (u: OrgUser, q: string) =>
 
 const deptLabel = (d: string) => d || 'Unassigned';
 
+/**
+ * Parent-bottom to child-top connector with rounded elbows. Hard right angles
+ * at 2px read as a wireframe; the soft corners are what BambooHR-class charts
+ * use and they make dense sibling rows much easier to follow by eye.
+ */
+/**
+ * Connector for a STACKED (vertically listed) child: a spine dropping from the
+ * parent, then a short stub into the card's left edge. This is the shape every
+ * hybrid org-chart layout uses for leaf columns.
+ */
+const stackPath = (spineX: number, parentBottom: number, childLeft: number, childCy: number) => {
+  const r = Math.min(10, Math.max(0, (childLeft - spineX) / 2), Math.max(0, (childCy - parentBottom) / 2));
+
+  return [
+    `M ${spineX} ${parentBottom}`,
+    `L ${spineX} ${childCy - r}`,
+    `Q ${spineX} ${childCy} ${spineX + r} ${childCy}`,
+    `L ${childLeft} ${childCy}`,
+  ].join(' ');
+};
+
+const elbowPath = (x1: number, y1: number, x2: number, y2: number) => {
+  const midY = (y1 + y2) / 2;
+  const dx = x2 - x1;
+
+  if (Math.abs(dx) < 1) return `M ${x1} ${y1} L ${x2} ${y2}`;
+
+  const r = Math.min(10, Math.abs(dx) / 2, Math.abs(y2 - y1) / 2);
+  const dir = dx > 0 ? 1 : -1;
+
+  return [
+    `M ${x1} ${y1}`,
+    `L ${x1} ${midY - r}`,
+    `Q ${x1} ${midY} ${x1 + dir * r} ${midY}`,
+    `L ${x2 - dir * r} ${midY}`,
+    `Q ${x2} ${midY} ${x2} ${midY + r}`,
+    `L ${x2} ${y2}`,
+  ].join(' ');
+};
+
 /* ── Tree Node Card ── */
 
-function TreeNodeCard({
+/**
+ * Memoised deliberately, with a custom comparison.
+ *
+ * Hovering a card sets hovered-user state on the page, so React re-renders the
+ * whole tree — every node, on every pointer move between cards. On an org of
+ * any size that is hundreds of components rebuilt per mouse movement, which
+ * drops frames and reads as jitter.
+ *
+ * A plain memo() would achieve nothing here: cardHandlers() builds fresh arrow
+ * functions on every render, so the default shallow compare always sees changed
+ * props. The comparator below ignores those handlers — they are rebuilt but
+ * behaviourally identical — and re-renders only when something the card
+ * actually draws has changed. In practice that is the two nodes whose
+ * `emphasize` flipped.
+ */
+function TreeNodeCardBase({
   user, count, isCollapsed, onToggle, groupNames, matched, simple, emphasize, onMouseEnter, onMouseLeave, onClick,
 }: {
   user: OrgUser;
@@ -74,72 +149,95 @@ function TreeNodeCard({
 }) {
   const t = getRoleColor(user.role_color, user.hierarchy_level);
   const dept = deptLabel(user.department);
+
+  /*
+    Card layout follows the pattern shared by BambooHR / Pingboard-style org
+    charts: a narrow centred card — avatar, name, one line of role — and the
+    direct-report count as a chip SITTING ON the connector line beneath the
+    card, doubling as the expand/collapse control. Everything else (department,
+    team, groups) appears only in Detailed view; repeating "Marketing ·
+    EMPLOYEE · No reports" on every one of forty cards was most of the
+    congestion. The card stays the identity; the tree carries the structure.
+
+    transition-shadow, not transition-all: hover state re-renders nodes, and
+    animating every property on every node drops frames.
+  */
   return (
     <div
       data-node-id={user.id}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onClick={onClick}
-      className={`w-[200px] cursor-pointer rounded-xl border-2 p-3 shadow-sm transition-all hover:shadow-md ${t.border} ${t.bg} ${
+      className={`relative cursor-pointer rounded-xl border bg-white text-center shadow-sm transition-shadow hover:shadow-md ${
+        simple ? 'w-40 px-2.5 pb-3.5 pt-3' : 'w-44 px-3 pb-4 pt-3'
+      } ${t.border} ${
         matched === false ? 'opacity-40' : ''
       } ${matched ? 'ring-2 ring-sky-400' : ''} ${
         emphasize ? 'border-indigo-400 ring-2 ring-indigo-300 shadow-md' : ''
       }`}
     >
-      <div className="flex items-start gap-2.5">
-        <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${t.avatar}`}>
-          {initials(user.name)}
-        </div>
-        <div className="min-w-0 flex-1">
-          {/* Primary: name */}
-          <p className="break-words text-sm font-bold leading-tight text-slate-900">{user.name}</p>
+      <div className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold ${t.avatar}`}>
+        {initials(user.name)}
+      </div>
 
-          {/* Role: colored pill/badge (scannable tier) */}
-          <span
-            className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${t.avatar}`}
-          >
-            {user.role_name}
-          </span>
+      <p className="mt-1.5 truncate text-[13px] font-semibold leading-tight text-slate-900" title={user.name}>
+        {user.name}
+      </p>
 
-          {/* Department: plain secondary text */}
-          {dept !== 'Unassigned' && (
-            <p className="mt-1 break-words text-[11px] font-medium text-slate-500">{dept}</p>
-          )}
-          {dept === 'Unassigned' && (
-            <p className="mt-1 text-[11px] font-medium text-slate-400 italic">No department</p>
-          )}
+      <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+        {user.role_name}
+        {user.team?.is_manager ? ' · Lead' : ''}
+      </p>
 
-          {/* Team: distinct chip with icon (sub-group tag, not a department line). Hidden in Simple view. */}
-          {user.team && !simple && (
-            <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+      {!simple && (
+        <>
+          <p className={`mt-1 truncate text-[11px] ${dept === 'Unassigned' ? 'italic text-slate-400' : 'text-slate-500'}`}>
+            {dept === 'Unassigned' ? 'No department' : dept}
+          </p>
+          {user.team && (
+            <span className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-md bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600">
               <Users className="h-3 w-3 shrink-0" />
-              {user.team.name}
-              {user.team.is_manager ? ' • Lead' : ''}
+              <span className="truncate">{user.team.name}</span>
             </span>
           )}
-
-          {/* Direct-report count: least prominent, bottom of card */}
-          {typeof count === 'number' && (
-            <p className="mt-1.5 text-[10px] font-medium text-slate-400">
-              {count > 0 ? `${count} direct report${count === 1 ? '' : 's'}` : 'No reports'}
-            </p>
-          )}
-
           {groupNames && groupNames.filter((g) => g !== dept).length > 0 && (
-            <p className="mt-0.5 break-words text-[10px] font-medium text-indigo-600">
+            <p className="mt-0.5 truncate text-[10px] font-medium text-indigo-500">
               {groupNames.filter((g) => g !== dept).join(', ')}
             </p>
           )}
-        </div>
-        {onToggle && (
-          <button onClick={onToggle} className="mt-0.5 shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-white/60 hover:text-slate-600">
-            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
-        )}
-      </div>
+        </>
+      )}
+
+      {/* The expand/collapse chip lives on the connector line, so the control
+          for a subtree is exactly where the subtree hangs. stopPropagation so
+          toggling never also pins the card. */}
+      {onToggle && typeof count === 'number' && count > 0 && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          aria-label={isCollapsed ? `Expand ${count} reports` : `Collapse ${count} reports`}
+          className="absolute -bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600 shadow-sm transition-colors hover:border-sky-300 hover:text-sky-700"
+        >
+          {count}
+          <ChevronDown className={`h-3 w-3 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
+        </button>
+      )}
     </div>
   );
 }
+
+const TreeNodeCard = memo(TreeNodeCardBase, (prev, next) => (
+  prev.user === next.user
+  && prev.count === next.count
+  && prev.isCollapsed === next.isCollapsed
+  && prev.matched === next.matched
+  && prev.simple === next.simple
+  && prev.emphasize === next.emphasize
+  // groupNames is rebuilt per render, so compare contents rather than identity.
+  && (prev.groupNames ?? []).join(' ') === (next.groupNames ?? []).join(' ')
+));
 
 /* ── Recursive Subordinate Tree ── */
 
@@ -229,13 +327,45 @@ function SubordinateTree({
     onClick: onPinUser ? () => onPinUser(id) : undefined,
   });
 
+  /*
+    No panel around each subtree level. Every generation used to be wrapped in
+    its own bordered grey box, so a three-level org rendered boxes inside boxes
+    inside boxes — that nesting was the single biggest source of the congested
+    look. The connector lines already communicate the structure; only team
+    bands keep a (dashed) outline because they mark a real grouping.
+  */
+  /*
+    Hybrid layout. When every child is a leaf, list them in a vertical column
+    rather than fanning them across a row — the standard fix for horizontal
+    sprawl in org charts (yFiles calls it a stacked branch; dabeng/OrgChart
+    calls it hybrid). A manager with eight employees was ~1500px wide and forced
+    constant horizontal scrolling; stacked it costs one card of width and reads
+    top-to-bottom like a list.
+  */
+  if (shouldStackChildren(visibleChildren, childrenMap)) {
+    return (
+      <div className="flex flex-col items-start gap-2 pt-6">
+        {sorted.map((child) => (
+          <TreeNodeCard
+            key={child.id}
+            user={child}
+            simple={simple}
+            count={0}
+            matched={q ? matchUser(child, q) : undefined}
+            {...cardHandlers(child.id)}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-wrap justify-center gap-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+    <div className="flex flex-wrap justify-center gap-x-5 gap-y-10 pt-3">
       {rows.map((row) =>
         row.kind === 'band' ? (
           <div
             key={`band-${row.team.id}`}
-            className="flex flex-col items-center rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 p-3"
+            className="flex flex-col items-center rounded-xl border border-dashed border-indigo-200 bg-indigo-50/30 p-2.5"
           >
             {/* Team name as a header strip INSIDE the box */}
             <div className="mb-2 flex items-center gap-1.5 rounded-md bg-indigo-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-indigo-700">
@@ -326,7 +456,7 @@ function DeptNodeCard({ node, isCollapsed, onToggle }: { node: OrgNode & { kind:
       data-node-id={node.id}
       className="flex w-[210px] items-center gap-3 rounded-xl border-2 border-slate-300 bg-white p-3 shadow-sm"
     >
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-inverse text-on-inverse">
         <Building2 className="h-5 w-5" />
       </div>
       <div className="min-w-0">
@@ -467,6 +597,9 @@ export default function OrganizationTree() {
   const { isLoading: isAuthLoading, isAuthenticated } = useAuth();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [connectors, setConnectors] = useState<ConnectorSeg[]>([]);
+  // Geometry of the last connectors we committed. Lets draw() skip the state
+  // update when nothing moved, which is what breaks the ResizeObserver loop.
+  const connectorSignatureRef = useRef('');
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Set<NodeId>>(new Set());
 
@@ -725,23 +858,22 @@ export default function OrganizationTree() {
 
       if (u.reporting_manager_id && userById.has(u.reporting_manager_id)) {
         const manager = userById.get(u.reporting_manager_id)!;
-        // Can report to anyone higher in hierarchy
+
+        // The assigned manager wins. Full stop.
+        //
+        // There used to be a "closer superior" override here: if anyone in the
+        // same DEPARTMENT sat between this person and their assigned manager,
+        // the assignment was skipped and Step 4 re-parented them by department
+        // instead. That is why the chart could contradict the pinned reporting
+        // line directly above it — the line walked reporting_manager_id
+        // faithfully while the tree quietly substituted someone else.
+        //
+        // Every HRMS draws the chart from this one field (BambooHR's "Reports
+        // To", Zoho's reporting hierarchy). Department decides grouping and
+        // colour; it never decides parentage. The only constraint is authority:
+        // a manager must outrank the person reporting to them, which permits
+        // manager -> manager and manager -> admin.
         if (manager.hierarchy_level < u.hierarchy_level) {
-          // Before placing under reporting_manager_id, check if there is a
-          // CLOSER superior (higher level) in the same department. If so, skip
-          // placement here and let Step 4 place the user under the closest one.
-          const userDept = u.department_id;
-          const closerSuperiors = dedupedUsers.filter((other) =>
-            other.id !== manager.id &&
-            other.department_id === userDept &&
-            other.hierarchy_level < u.hierarchy_level &&
-            other.hierarchy_level > manager.hierarchy_level,
-          );
-
-          if (closerSuperiors.length > 0) {
-            continue; // Skip — let Step 4 place under closest superior
-          }
-
           if (!childrenMap.has(manager.id)) childrenMap.set(manager.id, []);
           childrenMap.get(manager.id)!.push(u);
           placedUserIds.add(u.id);
@@ -998,8 +1130,10 @@ export default function OrganizationTree() {
         const uy = (r.top - sr.top) / z;
         return {
           cx: ux + r.width / (2 * z),
+          left: ux,
           top: uy,
           bottom: uy + r.height / z,
+          cy: uy + r.height / (2 * z),
         };
       };
 
@@ -1009,6 +1143,9 @@ export default function OrganizationTree() {
 
         const parentNode = activeNodeById.get(parentId);
         const parentTeamId = parentNode && parentNode.kind === 'user' ? parentNode.user.team?.id ?? null : null;
+
+        // Must match the renderer's decision exactly, or lines miss their cards.
+        const stacked = shouldStackChildren(children, activeChildrenMap);
 
         for (const child of children) {
           const childPos = getNodePos(child.id);
@@ -1028,23 +1165,52 @@ export default function OrganizationTree() {
             childNode.user.team.id !== parentTeamId &&
             parentNode?.kind !== 'team';
 
-          const mY = (parentPos.bottom + childPos.top) / 2;
           segs.push({
-            path: `M ${parentPos.cx} ${parentPos.bottom} L ${parentPos.cx} ${mY} L ${childPos.cx} ${mY} L ${childPos.cx} ${childPos.top}`,
+            path: stacked
+              ? stackPath(parentPos.cx, parentPos.bottom, childPos.left, childPos.cy)
+              : elbowPath(parentPos.cx, parentPos.bottom, childPos.cx, childPos.top),
             team: isTeamEdge || isGrouping,
             id: child.id,
           });
         }
       }
 
+      // Bail out when nothing actually moved.
+      //
+      // This is what stops the jitter. draw() writes connector paths INTO the
+      // element the ResizeObserver below is watching, so every draw resizes the
+      // observed subtree and re-triggers the observer. Because setConnectors
+      // was handed a brand-new array each time, React re-rendered on every
+      // cycle even when the paths were byte-identical, and the observer never
+      // reached a steady state — it just kept firing, repainting the tree
+      // continuously. Moving the mouse piled more renders on top, which is why
+      // it showed up as hover jitter.
+      //
+      // Comparing first makes the loop self-terminating: identical geometry
+      // produces no state update, so the observer goes quiet.
+      const signature = segs.map((s) => `${s.id}|${s.team ? 1 : 0}|${s.path}`).join('~');
+      if (signature === connectorSignatureRef.current) return;
+      connectorSignatureRef.current = signature;
+
       setConnectors(segs);
     };
 
-    const ro = new ResizeObserver(draw);
+    // rAF-coalesced: a burst of resize notifications collapses into one draw
+    // per frame instead of one synchronous draw per notification.
+    let frame = 0;
+    const scheduleDraw = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(draw);
+    };
+
+    const ro = new ResizeObserver(scheduleDraw);
     const wrapper = wrapperRef.current;
     if (wrapper) ro.observe(wrapper);
-    requestAnimationFrame(draw);
-    return () => ro.disconnect();
+    scheduleDraw();
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
   }, [activeChildrenMap, activeNodeById, collapsed, search, raw, view]);
 
   /* ── Toggle collapse ── */
@@ -1248,13 +1414,30 @@ export default function OrganizationTree() {
           </span>
         </div>
 
-        {/* ── Reporting breadcrumb ── */}
+        {/* ── Reporting breadcrumb ──
+            THIS IS THE JITTER.
+
+            The bar is driven by `hovered`, sits in normal flow directly above
+            the tree viewport, and used to be unmounted entirely when nothing
+            was hovered. So: hover a card -> the bar mounts -> everything below
+            it shifts down -> the card slides out from under the cursor ->
+            mouseleave -> the bar unmounts -> everything shifts back up -> the
+            card returns under the cursor -> mouseenter. That loop runs as fast
+            as the browser can lay out, which is the shaking.
+
+            The container is now always mounted with a reserved min-height, so
+            the tree below never moves. Only the bar's own contents change. */}
+        <div className="mb-5 min-h-[68px]">
         {activeChain && activeChain.length > 0 ? (
-          <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          /* flex-nowrap + horizontal scroll: a long reporting chain must not
+             wrap onto a second line, because that grows the bar and shifts the
+             tree below — the same loop in a slower form. Height stays constant
+             regardless of chain length. */
+          <div className="flex flex-nowrap items-center gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white px-4 py-3">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               {pinned != null ? 'Pinned line' : 'Hover line'}
             </span>
-            <div className="flex flex-wrap items-center gap-1.5 text-sm">
+            <div className="flex flex-nowrap items-center gap-1.5 text-sm">
               {activeChain.map((u, i) => (
                 <Fragment key={u.id}>
                   {i > 0 ? (
@@ -1283,7 +1466,12 @@ export default function OrganizationTree() {
               </button>
             ) : null}
           </div>
-        ) : null}
+        ) : (
+          <div className="flex h-full items-center rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-400">
+            Hover a person to trace their reporting line · click to pin it
+          </div>
+        )}
+        </div>
 
         {/* ── Tree viewport ── */}
         <div
@@ -1335,10 +1523,12 @@ export default function OrganizationTree() {
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={() => focusNode(c.id)}
                       />
+                      {/* Lighter than before: at 2px slate-400 the lines competed
+                          with the cards. Structure should be legible but recede. */}
                       <path
                         d={c.path}
-                        stroke={c.team ? '#cbd5e1' : '#94a3b8'}
-                        strokeWidth={c.team ? 1.5 : 2}
+                        stroke={c.team ? '#c7d2fe' : '#cbd5e1'}
+                        strokeWidth={1.5}
                         strokeDasharray={c.team ? '5 4' : undefined}
                         fill="none"
                         strokeLinecap="round"

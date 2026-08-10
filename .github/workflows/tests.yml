@@ -1,0 +1,116 @@
+name: Tests
+
+# Both suites carry a tail of pre-existing failures, so gating on the total
+# would leave CI permanently red — and a red build that is always red is a
+# build nobody reads. These jobs gate on *new* failures instead, comparing the
+# set of failing test names against a committed baseline in .github/baselines.
+#
+# To accept an intended change, regenerate the baseline:
+#   node scripts/ci/test-baseline.mjs --junit <report> --baseline <file> --update
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend:
+    name: PHPUnit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_sqlite, mbstring, bcmath, gd, zip
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: backend/vendor
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install PHP dependencies
+        working-directory: backend
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare environment
+        working-directory: backend
+        run: |
+          cp .env.example .env 2>/dev/null || true
+          php artisan key:generate --force
+
+      # continue-on-error: the suite is expected to report failures today.
+      # Whether that is acceptable is the baseline check's decision, not the
+      # runner's.
+      - name: Run PHPUnit
+        id: phpunit
+        working-directory: backend
+        continue-on-error: true
+        run: php artisan test --without-tty --log-junit=../phpunit-report.xml
+
+      - name: Compare against baseline
+        run: node scripts/ci/test-baseline.mjs
+          --junit phpunit-report.xml
+          --baseline .github/baselines/phpunit.txt
+          --check --label phpunit
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: phpunit-report
+          path: phpunit-report.xml
+          retention-days: 14
+
+  frontend:
+    name: Vitest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Type errors are a hard failure — the codebase is clean at zero today
+      # and there is no reason to let that slip.
+      - name: Type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Run Vitest
+        id: vitest
+        working-directory: frontend
+        continue-on-error: true
+        run: npx vitest run --reporter=junit --outputFile=../vitest-report.xml
+
+      - name: Compare against baseline
+        run: node scripts/ci/test-baseline.mjs
+          --junit vitest-report.xml
+          --baseline .github/baselines/vitest.txt
+          --check --label vitest
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: vitest-report
+          path: vitest-report.xml
+          retention-days: 14

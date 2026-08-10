@@ -246,7 +246,11 @@ export default function MyPayrollPage() {
             value={formatCurrency(ytd.gross)}
             icon={Wallet}
             accent="sky"
-            hint={"\u2191 8% vs last year"}
+            // No year-on-year comparison is computed, and the figure that stood
+            // here was a fixed "8% vs last year" printed against every balance
+            // including \u20b90 on a joiner's first day. A count of the periods the
+            // total covers is something the payload actually knows.
+            hint={ytd.months_count ? `Across ${ytd.months_count} paid month${ytd.months_count === 1 ? '' : 's'}` : 'No payslips yet'}
           />
           <MetricCard
             label="YTD Deductions"
@@ -259,7 +263,13 @@ export default function MyPayrollPage() {
               YTD Net Pay
             </p>
             <p className="mt-2 text-2xl font-bold text-white">{formatCurrency(ytd.net_pay)}</p>
-            <p className="mt-1 text-xs font-medium text-teal-200">7 months paid</p>
+            {/* Was hardcoded to "7 months paid", which contradicted the
+                "Months Paid (FY)" tile beside it on every account. */}
+            <p className="mt-1 text-xs font-medium text-teal-200">
+              {ytd.months_count
+                ? `${ytd.months_count} month${ytd.months_count === 1 ? '' : 's'} paid`
+                : 'Nothing paid yet this financial year'}
+            </p>
           </SurfaceCard>
           <MetricCard
             label="Months Paid (FY)"
@@ -466,7 +476,9 @@ export default function MyPayrollPage() {
               <span className="text-sm text-slate-600">Old Regime selected</span>
               <span className="px-2 py-0.5 text-xs font-medium bg-teal-100 text-teal-700 rounded-full">Locked Oct</span>
             </div>
-            <p className="text-xs text-slate-400 mb-3">HRA \u00B7 80C \u00B7 80D \u00B7 NPS \u00B7 LTA</p>
+            {/* JSX text is not a JS string literal, so a \u escape here renders
+                as the literal characters rather than the separator. */}
+            <p className="text-xs text-slate-400 mb-3">{'HRA · 80C · 80D · NPS · LTA'}</p>
             <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
               <div
                 className="h-full bg-blue-600 rounded-full transition-all"

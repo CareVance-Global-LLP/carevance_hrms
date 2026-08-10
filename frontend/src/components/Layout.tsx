@@ -1,16 +1,15 @@
+import { reportSilentError } from '@/lib/reportSilentError';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
-import { buildSearchSuggestions, rankSearchSuggestions } from '@/lib/searchSuggestions';
-import type { SearchSuggestionOption } from '@/lib/searchSuggestions';
 import { usePlan } from '@/hooks/usePlan';
 import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
 import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
-import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, payrollApi, userApi } from '@/services/api';
+import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, payrollApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
 import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound } from '@/lib/desktopNotifications';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
@@ -19,6 +18,14 @@ import AIHelpBubble from '@/components/AIHelpBubble';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import StatusBadge from '@/components/ui/StatusBadge';
 import BrandLogo from '@/components/branding/BrandLogo';
+import ThemeToggle from '@/components/ui/ThemeToggle';
+import CommandBarTrigger from '@/components/search/CommandBarTrigger';
+import GlobalCommandBar from '@/components/search/GlobalCommandBar';
+import Sidebar from '@/components/navigation/Sidebar';
+import SidebarUser from '@/components/navigation/SidebarUser';
+import SidebarDrawer from '@/components/navigation/SidebarDrawer';
+import { useSidebarState } from '@/hooks/useSidebarState';
+import { useRecentCommands } from '@/hooks/useRecentCommands';
 import { topNavigation } from '@/navigation/dashboardNavigation';
 import { condensedNavigation } from '@/navigation/condensedNavigation';
 import { devModeNavigation } from '@/lib/runtimeConfig';
@@ -26,36 +33,20 @@ import { cn } from '@/utils/cn';
 import {
   Bell,
   CalendarClock,
-  ChevronDown,
   ChevronRight,
   Clock,
   LifeBuoy,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessageSquare,
   MoreHorizontal,
-  Search,
   Settings,
   Sparkles,
   Wallet,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-
-const resolveEmployeeDepartment = (employee: any) =>
-  String(
-    employee?.department
-    || employee?.employee_work_info?.department?.name
-    || employee?.employeeWorkInfo?.department?.name
-    || employee?.groups?.[0]?.name
-    || 'Unassigned'
-  ).trim() || 'Unassigned';
-
-type GlobalSuggestion = SearchSuggestionOption<any> & {
-  to: string;
-  externalPath?: string;
-  category: string;
-};
 
 export default function Layout() {
   const { user, organization, logout, token, desktopHandoffToken } = useAuth();
@@ -69,15 +60,16 @@ export default function Layout() {
   const [unreadChatMessages, setUnreadChatMessages] = useState(0);
   const [reimbursementInboxCount, setReimbursementInboxCount] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
-  const [globalSearch, setGlobalSearch] = useState('');
-  const [searchDirectoryUsers, setSearchDirectoryUsers] = useState<any[]>([]);
-  const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [commandBarOpen, setCommandBarOpen] = useState(false);
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [updatePanelOpen, setUpdatePanelOpen] = useState(false);
   const [seenDesktopUpdateKey, setSeenDesktopUpdateKey] = useState<string | null>(null);
-  const [openSidebarGroups, setOpenSidebarGroups] = useState<Set<string>>(new Set());
-  const globalSearchRef = useRef<HTMLDivElement | null>(null);
+  const sidebar = useSidebarState(user?.id);
+  // The command bar records what this person actually opens; the rail reads the
+  // same counts to surface their Frequent shortcuts.
+  const { usesOf: commandUsesOf } = useRecentCommands(user?.id);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const desktopNotificationByIdRef = useRef<Map<number, AppNotificationItem>>(new Map());
@@ -309,126 +301,6 @@ export default function Layout() {
     [canAccessAttendance, canAccessEditTime, isAdminView, isDesktopShell, isStrictAdminView, isSuperAdminView, isEmployeeOrManagerView, pendingApprovals, unreadChatMessages, reimbursementInboxCount, hasFeature, user, devModeNavigation]
   );
 
-  const globalSuggestions = useMemo<GlobalSuggestion[]>(
-    () => {
-      const panelSuggestions: GlobalSuggestion[] = primaryNavigation.flatMap((group) => {
-        if (group.to) {
-          return [{
-            id: `group:${group.label}:${group.to}`,
-            label: group.label,
-            description: group.externalPath || group.to,
-            category: 'Module',
-            to: group.to,
-            externalPath: group.externalPath,
-            searchValues: [group.label, group.externalPath || group.to, 'module panel navigation'],
-          }];
-        }
-
-        return (group.items || []).flatMap((item) => {
-          const baseSuggestion = {
-            id: `item:${group.label}:${item.label}:${item.to}`,
-            label: item.label,
-            description: `${group.label} | ${item.to}`,
-            category: 'Module',
-            to: item.to,
-            externalPath: item.externalPath,
-            searchValues: [item.label, group.label, item.to, item.externalPath, 'module panel navigation'],
-          };
-
-          if (item.to === '/approval-inbox?section=leave&view=pending&leave_window=today') {
-            return [
-              baseSuggestion,
-              {
-                id: 'approval-inbox:leave',
-                label: 'Leave Approval',
-                description: 'Approval Inbox | pending leave requests',
-                category: 'Module',
-                to: '/approval-inbox?section=leave&view=pending&leave_window=today',
-                searchValues: ['leave approval', 'approval inbox', 'leave request', 'pending leave'],
-              },
-              {
-                id: 'approval-inbox:time-edit',
-                label: 'Edit Time Approval',
-                description: 'Approval Inbox | pending time edit requests',
-                category: 'Module',
-                to: '/approval-inbox?section=time-edit&view=pending',
-                searchValues: ['edit time approval', 'approval inbox', 'time edit', 'overtime approval'],
-              },
-            ];
-          }
-
-          return [baseSuggestion];
-        });
-      });
-
-      const employeeSuggestions: GlobalSuggestion[] = isAdminView
-        ? buildSearchSuggestions(searchDirectoryUsers, (employee) => {
-            const employeeId = Number(employee?.id || 0);
-            if (!employeeId) {
-              return null;
-            }
-
-            const department = resolveEmployeeDepartment(employee);
-
-            return {
-              id: `employee:${employeeId}`,
-              label: String(employee?.name || employee?.email || 'Employee'),
-              description: [employee?.email, department].filter(Boolean).join(' | '),
-              category: 'Employee',
-              to: `/employees/${employeeId}`,
-              searchValues: [employee?.name, employee?.email, department, employee?.role, 'employee people person'],
-            };
-          }) as GlobalSuggestion[]
-        : [];
-
-      const departmentSuggestions: GlobalSuggestion[] = isAdminView
-        ? buildSearchSuggestions(
-            Array.from(new Set(searchDirectoryUsers.map((employee) => resolveEmployeeDepartment(employee)).filter(Boolean))),
-            (department) => ({
-              id: `department:${department}`,
-              label: String(department),
-              description: 'Department directory',
-              category: 'Department',
-              to: `/employees?department=${encodeURIComponent(String(department))}`,
-              searchValues: [department, 'department team employee group'],
-            })
-          ) as GlobalSuggestion[]
-        : [];
-
-      return [...panelSuggestions, ...employeeSuggestions, ...departmentSuggestions];
-    },
-    [isAdminView, primaryNavigation, searchDirectoryUsers]
-  );
-
-  const filteredGlobalSuggestions = useMemo(() => {
-    const query = globalSearch.trim().toLowerCase();
-    if (!query) {
-      return [] as GlobalSuggestion[];
-    }
-
-    return rankSearchSuggestions<any>(globalSuggestions, query, 10) as GlobalSuggestion[];
-  }, [globalSearch, globalSuggestions]);
-
-  const openGlobalSuggestion = (suggestion?: GlobalSuggestion) => {
-    if (!suggestion) {
-      return;
-    }
-
-    if (suggestion.externalPath) {
-      openWebDashboard(suggestion.externalPath);
-    } else {
-      navigate(suggestion.to);
-    }
-
-    setGlobalSearch(suggestion.label);
-    setIsGlobalSearchOpen(false);
-    setMobileNavigationOpen(false);
-    setNotificationsOpen(false);
-    setProfileOpen(false);
-  };
-
-  const hasGlobalSearchQuery = globalSearch.trim().length > 0;
-
   const globalPanelHeader = (
     <div className="relative z-[60] flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-start lg:gap-5 xl:gap-6">
       {organizationName ? (
@@ -451,60 +323,32 @@ export default function Layout() {
         </div>
       ) : null}
 
-      <div ref={globalSearchRef} className="relative z-[70] min-w-0 w-full lg:mx-auto lg:w-[32rem] lg:max-w-[32rem] xl:w-[36rem] xl:max-w-[36rem]">
-        <label className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-400 shadow-sm">
-          <Search className="h-3.5 w-3.5 shrink-0 text-blue-600" />
-          <input
-            aria-label="Universal search"
-            value={globalSearch}
-            onFocus={() => setIsGlobalSearchOpen(hasGlobalSearchQuery)}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setGlobalSearch(nextValue);
-              setIsGlobalSearchOpen(nextValue.trim().length > 0);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                openGlobalSuggestion(filteredGlobalSuggestions[0]);
-              }
-              if (event.key === 'Escape') {
-                setIsGlobalSearchOpen(false);
-              }
-            }}
-            className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
-            placeholder="Search panels, employees, reports, settings, attendance..."
-          />
-          <span className="hidden rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500 sm:inline">Enter</span>
-        </label>
-
-        {isGlobalSearchOpen ? (
-          <div className="absolute left-0 right-0 top-12 z-[80] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-            {filteredGlobalSuggestions.length ? (
-              <div className="max-h-80 overflow-y-auto p-2">
-                {filteredGlobalSuggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.id}
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => openGlobalSuggestion(suggestion)}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-blue-50"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-slate-900">{suggestion.label}</span>
-                      <span className="block truncate text-xs text-slate-500">{suggestion.description}</span>
-                    </span>
-                    <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">{suggestion.category}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="p-4 text-sm text-slate-500">No matching panel found.</div>
-            )}
-          </div>
-        ) : null}
+      <div className="relative z-[70] min-w-0 w-full lg:mx-auto lg:w-[32rem] lg:max-w-[32rem] xl:w-[36rem] xl:max-w-[36rem]">
+        <CommandBarTrigger onOpen={() => setCommandBarOpen(true)} />
       </div>
     </div>
+  );
+
+  // One instance for the whole app. It owns the ⌘K/Ctrl+K shortcut, so it has
+  // to stay mounted while closed — it renders nothing until then.
+  const commandBar = (
+    <GlobalCommandBar
+      open={commandBarOpen}
+      onOpen={() => {
+        setCommandBarOpen(true);
+        setNotificationsOpen(false);
+        setProfileOpen(false);
+        setMobileNavigationOpen(false);
+      }}
+      onClose={() => setCommandBarOpen(false)}
+      navigation={primaryNavigation}
+      isAdminView={isAdminView}
+      isStrictAdminView={isStrictAdminView}
+      isSuperAdminView={isSuperAdminView}
+      isEmployeeOrManagerView={isEmployeeOrManagerView}
+      isDesktopShell={isDesktopShell}
+      openWebDashboard={openWebDashboard}
+    />
   );
 
   const handleLogout = async () => {
@@ -573,9 +417,6 @@ export default function Layout() {
         setProfileOpen(false);
       }
 
-      if (isGlobalSearchOpen && globalSearchRef.current && !globalSearchRef.current.contains(target)) {
-        setIsGlobalSearchOpen(false);
-      }
     };
 
     document.addEventListener('mousedown', handleOutside);
@@ -585,11 +426,7 @@ export default function Layout() {
       document.removeEventListener('mousedown', handleOutside);
       document.removeEventListener('touchstart', handleOutside);
     };
-  }, [isGlobalSearchOpen, notificationsOpen, profileOpen]);
-
-  useEffect(() => {
-    setIsGlobalSearchOpen(false);
-  }, [location.pathname, location.search]);
+  }, [notificationsOpen, profileOpen]);
 
   useEffect(() => {
     let active = true;
@@ -632,9 +469,14 @@ export default function Layout() {
 
         if (approvalResponses) {
           const [leaveResponse, timeEditResponse] = approvalResponses;
-          const leaveCount = Number(leaveResponse.data?.data?.length || 0);
-          const timeEditCount = Number(timeEditResponse.data?.data?.length || 0);
-          setPendingApprovals(leaveCount + timeEditCount);
+          // Count the whole pending set, not the returned page. The list
+          // endpoint caps at 10 by default, so measuring `data.length` showed
+          // "10 pending" while 28 were waiting — and clearing the badge left
+          // the remainder unseen. `total` falls back to the page length for
+          // any endpoint that does not report it yet.
+          const countOf = (response: any) =>
+            Number(response?.data?.total ?? response?.data?.data?.length ?? 0);
+          setPendingApprovals(countOf(leaveResponse) + countOf(timeEditResponse));
         } else {
           setPendingApprovals(0);
         }
@@ -659,52 +501,43 @@ export default function Layout() {
         newChat.forEach((item) => showDesktopNotification(item));
 
         allItems.forEach((item) => seenNotificationIdsRef.current.add(Number(item.id)));
-      } catch {
-        if (active) {
-          setNotifications([]);
-          setUnreadNotifications(0);
-          setUnreadChatMessages(0);
-          setReimbursementInboxCount(0);
-          setPendingApprovals(0);
-        }
+      } catch (error) {
+        // Every badge used to be reset to zero here. A single dropped poll —
+        // a flaky connection, a redeploy, a 502 — told the user they had no
+        // unread messages, no notifications and no pending approvals, which is
+        // worse than showing a stale count: they stop checking. Keep the last
+        // known values and let the next poll correct them.
+        reportSilentError('Layout: notification poll failed; keeping last known badge counts', error);
       }
     };
 
     loadAlerts();
-    const interval = setInterval(loadAlerts, 8000);
+
+    // Five endpoints every 8 seconds, on every authenticated page, whether or
+    // not anyone was looking — a backgrounded tab kept 37 requests a minute
+    // going all day. Poll only while the tab is visible, and refresh once on
+    // the way back so returning to the tab still shows current badges.
+    const tick = () => {
+      if (document.visibilityState === 'visible') loadAlerts();
+    };
+
+    const interval = setInterval(tick, 30000);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadAlerts();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       active = false;
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [isAdminView]);
 
-  useEffect(() => {
-    let active = true;
-
-    const loadSearchDirectory = async () => {
-      if (!isAdminView) {
-        setSearchDirectoryUsers([]);
-        return;
-      }
-
-      try {
-        const response = await userApi.getAll({ period: 'all' });
-        if (!active) return;
-        setSearchDirectoryUsers(Array.isArray(response.data) ? response.data : []);
-      } catch {
-        if (active) {
-          setSearchDirectoryUsers([]);
-        }
-      }
-    };
-
-    void loadSearchDirectory();
-
-    return () => {
-      active = false;
-    };
-  }, [isAdminView]);
+  // The employee directory used to be downloaded in full here on every mount,
+  // for every admin, whether or not they ever searched. People search is now a
+  // scoped query against /api/search, issued only while the command bar is open.
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window) || !desktopPushEnabled) {
@@ -716,258 +549,175 @@ export default function Layout() {
     }
   }, [desktopPushEnabled]);
 
-  // Auto-expand sidebar groups containing the active route
-  useEffect(() => {
-    const newOpen = new Set(openSidebarGroups);
-    let changed = false;
-
-    // Find the BEST matching item across all groups (longest route wins)
-    let bestMatchGroupLabel: string | null = null;
-    let bestMatchLength = 0;
+  /**
+   * Which group owns the current route. Longest matching path wins, so
+   * /reports/attendance resolves to Reports rather than to a shorter sibling.
+   *
+   * Derived rather than computed inside the effect below because the effect
+   * must not re-run every time a badge count changes — `primaryNavigation` is
+   * rebuilt on each poll, and re-running would slam shut any group the user had
+   * just opened by hand. A plain string is stable across those rebuilds.
+   */
+  const activeGroupLabel = useMemo(() => {
+    let bestLabel: string | null = null;
+    let bestLength = 0;
 
     for (const group of primaryNavigation) {
       if (!group.items?.length) continue;
       for (const item of group.items) {
         if (!item.to) continue;
-        const normalizedItemTo = String(item.to).split('?')[0] || item.to;
+        const normalized = String(item.to).split('?')[0] || item.to;
         if (
-          (location.pathname === normalizedItemTo ||
-            (normalizedItemTo !== '/dashboard' && location.pathname.startsWith(`${normalizedItemTo}/`))) &&
-          normalizedItemTo.length > bestMatchLength
+          (location.pathname === normalized ||
+            (normalized !== '/dashboard' && location.pathname.startsWith(`${normalized}/`))) &&
+          normalized.length > bestLength
         ) {
-          bestMatchLength = normalizedItemTo.length;
-          bestMatchGroupLabel = group.label;
+          bestLength = normalized.length;
+          bestLabel = group.label;
         }
       }
     }
 
-    if (bestMatchGroupLabel && !newOpen.has(bestMatchGroupLabel)) {
-      newOpen.add(bestMatchGroupLabel);
-      changed = true;
-    }
+    return bestLabel;
+  }, [primaryNavigation, location.pathname]);
 
-    if (changed) {
-      setOpenSidebarGroups(newOpen);
-    }
-  }, [location.pathname]);
+  /*
+   * Open the group holding the current route, and close the ones you've left.
+   *
+   * This previously only ever called `add`, so visiting Attendance, then
+   * Reports, then Payroll left all three open and the rail grew until it
+   * scrolled, with no way back. `focusGroup` replaces the open set rather than
+   * accumulating into it, and persists the result.
+   *
+   * Keyed on the resolved label, not on the pathname: navigation is empty on
+   * the first render or two while the user loads, so a pathname-only effect
+   * computed no match, never ran again, and left whatever group was persisted
+   * from a previous session open on the wrong page.
+   */
+  useEffect(() => {
+    // A route with no owning group (Dashboard, Organization) leaves whatever
+    // the user last opened alone rather than collapsing the rail under them.
+    if (activeGroupLabel) sidebar.focusGroup(activeGroupLabel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGroupLabel]);
+
+  // Navigating from anywhere (including the command bar) closes the drawer.
+  useEffect(() => {
+    setNavDrawerOpen(false);
+  }, [location.pathname, location.search]);
+
+  // "[" toggles the rail, matching the convention in editors and Linear. Guarded
+  // so it never eats the character while someone is typing.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '[' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
+
+      event.preventDefault();
+      sidebar.toggleCollapsed();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [sidebar]);
 
   // Note: Removed auto-mark-as-read when opening notification dropdown
   // Notifications should only be marked as read when user actually clicks on them
   // This prevents notifications from disappearing just by opening the dropdown
 
-  const isRouteActive = (to?: string) => {
-    if (!to) return false;
-    const normalizedTo = String(to).split('?')[0] || to;
-    if (normalizedTo === '/settings') return location.pathname === normalizedTo;
-    if (normalizedTo === '/reports' || normalizedTo === '/analytics') return location.pathname === normalizedTo;
-    return location.pathname === normalizedTo || (normalizedTo !== '/dashboard' && location.pathname.startsWith(`${normalizedTo}/`));
-  };
-
-  const getBestMatchedItemTo = (items: any[] = []) =>
-    items
-      .filter((item) => isRouteActive(item.to))
-      .sort((left, right) => String(right.to || '').length - String(left.to || '').length)[0]?.to;
-
-  const globalBestMatch = primaryNavigation
-    .filter((g) => g.items)
-    .flatMap((g) => g.items!.map((item) => ({ groupLabel: g.label, itemTo: item.to })))
-    .filter((entry) => entry.itemTo && isRouteActive(entry.itemTo))
-    .sort((a, b) => String(b.itemTo || '').length - String(a.itemTo || '').length)[0] as
-    | { groupLabel: string; itemTo: string }
-    | undefined;
+  // Active-route matching moved into Sidebar, which is the only thing that
+  // needed it — Layout kept three helpers to compute it for the inline rail.
 
 
-  const renderSidebarLink = (item: any, nested = false, activeOverride?: boolean) => {
-    const Icon = item.icon;
-    const active = activeOverride ?? isRouteActive(item.to);
-
-    return (
-      <Link
-        key={`${item.label}-${item.to}`}
-        to={item.to}
-        className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-200 ${
-          active
-            ? 'bg-[var(--brand-primary)] text-white shadow-md shadow-[var(--brand-primary)]/20'
-            : nested
-              ? 'text-[var(--text-secondary)] hover:bg-[var(--border)] hover:text-[var(--text-primary)]'
-              : 'text-[var(--text-secondary)] hover:bg-[var(--border)] hover:text-[var(--text-primary)]'
-        }`}
-      >
-        <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-white' : 'text-[var(--secondary)]'}`} />
-        <span className="truncate">{item.label}</span>
-        {item.unreadCount ? (
-          <span className={`ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${active ? 'bg-white/20 text-white' : 'bg-[var(--danger)] text-white'}`}>
-            {item.unreadCount > 99 ? '99+' : item.unreadCount}
-          </span>
-        ) : null}
-      </Link>
-    );
-  };
-
+  // The sidebar is always a dark rail, so its states come from the --sidebar-*
+  // tokens. It previously borrowed --text-primary / --border, which are
+  // page-surface colours: on hover that put near-black text on the near-black
+  // rail and the label disappeared.
   // Hide sidebar for Super Admin users
   const showSidebar = !isSuperAdminView;
 
+  // One definition, rendered twice: as the sticky rail at lg and up, and as the
+  // drawer below it. Previously there was no second surface at all, so a tablet
+  // had zero navigation.
+  const sidebarContent = (variant: 'rail' | 'drawer') => (
+    <Sidebar
+      variant={variant}
+      navigation={primaryNavigation}
+      collapsed={sidebar.collapsed}
+      onToggleCollapsed={sidebar.toggleCollapsed}
+      isGroupOpen={sidebar.isGroupOpen}
+      onToggleGroup={sidebar.toggleGroup}
+      onExpandInto={(label) => {
+        sidebar.setCollapsed(false);
+        sidebar.focusGroup(label);
+      }}
+      usesOf={commandUsesOf}
+      pendingApprovals={pendingApprovals}
+      onOpenCommandBar={() => setCommandBarOpen(true)}
+      showTimer={isEmployeeOrManagerView}
+      onNavigate={variant === 'drawer' ? () => setNavDrawerOpen(false) : undefined}
+      footer={
+        <SidebarUser
+          name={user?.name}
+          roleLabel={resolveUserRoleLabel(user)}
+          avatar={user?.avatar}
+          collapsed={sidebar.collapsed && variant === 'rail'}
+          onNavigate={variant === 'drawer' ? () => setNavDrawerOpen(false) : undefined}
+        />
+      }
+    />
+  );
+
   if (!isDesktopShell) {
     return (
-      <div className={`min-h-screen bg-[#F5F7F8] ${showSidebar ? 'lg:grid lg:grid-cols-[232px_minmax(0,1fr)]' : ''}`}>
+      <div
+        className={'min-h-screen bg-surface-base ' + (showSidebar ? 'lg:grid' : '')}
+        style={showSidebar ? { gridTemplateColumns: (sidebar.collapsed ? '4.5rem' : '15.5rem') + ' minmax(0,1fr)' } : undefined}
+      >
         {showSidebar && (
-          <aside className="hidden h-screen lg:sticky lg:top-0 lg:flex lg:flex-col" style={{ background: 'var(--sidebar-bg)' }}>
-          <div className="flex h-16 items-center border-b border-white/10 px-5">
-            <BrandLogo variant="full" size="sm" className="max-w-[9.75rem]" />
-          </div>
-
-          <nav className="flex-1 overflow-y-auto px-3 py-4">
-            {primaryNavigation.map((group) => {
-              const activeItemTo = getBestMatchedItemTo(group.items);
-              const groupActive = isRouteActive(group.to) ||
-                (activeItemTo && activeItemTo === globalBestMatch?.itemTo);
-
-              if (group.to) {
-                return (
-                  <div key={group.label} className="mb-3">
-                    {renderSidebarLink(group)}
-                  </div>
-                );
-              }
-
-              const hasSections = group.items?.some((i) => i.section);
-              const sectionGroups = hasSections
-                ? (group.items ?? []).reduce<{ label: string; items: typeof group.items }[]>((acc, item) => {
-                    const section = item.section ?? '';
-                    const last = acc[acc.length - 1];
-                    if (!last || last.label !== section) {
-                      acc.push({ label: section, items: [item] });
-                    } else {
-                      last.items.push(item);
-                    }
-                    return acc;
-                  }, [])
-                : null;
-              const items = group.items ?? [];
-
-              const isGroupOpen = openSidebarGroups.has(group.label);
-
-              return (
-                <div key={group.label} className="mb-3 space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = new Set(openSidebarGroups);
-                      if (next.has(group.label)) {
-                        next.delete(group.label);
-                      } else {
-                        next.add(group.label);
-                      }
-                      setOpenSidebarGroups(next);
-                    }}
-                    className={`flex w-full items-center justify-between px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-[0.08em] transition-colors rounded-md ${
-                      groupActive ? 'text-[var(--brand-primary-light)] bg-white/5' : 'text-white/50 hover:text-white/80 hover:bg-white/5'
-                    }`}
-                  >
-                    <span>{group.label}</span>
-                    <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isGroupOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  <div
-                    className="grid transition-all duration-200 ease-in-out"
-                    style={{ gridTemplateRows: isGroupOpen ? '1fr' : '0fr' }}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="space-y-0.5 pt-0.5">
-                        {sectionGroups ? (
-                          sectionGroups.map((sg) => (
-                            <div key={sg.label}>
-                              <p className="px-3 pt-3 pb-1 text-[12px] font-extrabold uppercase tracking-[0.08em] text-white/40">
-                                {sg.label}
-                              </p>
-                              {sg.items.map((item) => renderSidebarLink(
-                                String(item.to || '').startsWith('/approval-inbox')
-                                  ? { ...item, unreadCount: pendingApprovals }
-                                  : item,
-                                true,
-                                activeItemTo === item.to
-                              ))}
-                            </div>
-                          ))
-                        ) : (
-                          items.map((item) => renderSidebarLink(
-                            String(item.to || '').startsWith('/approval-inbox')
-                              ? { ...item, unreadCount: pendingApprovals }
-                              : item,
-                            true,
-                            activeItemTo === item.to
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </nav>
-        </aside>
+          <aside className="hidden h-screen lg:sticky lg:top-0 lg:block">
+            {sidebarContent('rail')}
+          </aside>
         )}
+
+        {showSidebar ? (
+          <SidebarDrawer open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)}>
+            {sidebarContent('drawer')}
+          </SidebarDrawer>
+        ) : null}
+
 
         <main className={`min-w-0 px-4 py-4 lg:pr-5 lg:py-4 xl:pr-6 ${!showSidebar ? 'lg:col-span-full' : ''}`}>
           <div className="flex items-center justify-between gap-4 mb-5">
+            {/*
+              The full wordmark used to render here as well as in the rail, so
+              two identical CareVance logos sat centimetres apart. The rail owns
+              the brand now; this slot becomes the drawer trigger, which is the
+              only navigation that exists below lg.
+            */}
             <div className="flex items-center gap-3 shrink-0">
-              <BrandLogo variant="full" size="sm" className="max-w-[9.75rem]" />
+              {showSidebar ? (
+                <button
+                  type="button"
+                  onClick={() => setNavDrawerOpen(true)}
+                  aria-label="Open navigation"
+                  aria-expanded={navDrawerOpen}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:hidden"
+                >
+                  <Menu className="h-5 w-5" aria-hidden="true" />
+                </button>
+              ) : null}
+              <BrandLogo variant="full" size="sm" className="max-w-[9.75rem] lg:hidden" />
             </div>
 
-            <div ref={globalSearchRef} className="relative flex-1 min-w-0 max-w-[36rem]">
-              <label className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-400 shadow-sm">
-                <Search className="h-3.5 w-3.5 shrink-0 text-blue-600" />
-                <input
-                  aria-label="Universal search"
-                  value={globalSearch}
-                  onFocus={() => setIsGlobalSearchOpen(hasGlobalSearchQuery)}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setGlobalSearch(nextValue);
-                    setIsGlobalSearchOpen(nextValue.trim().length > 0);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      openGlobalSuggestion(filteredGlobalSuggestions[0]);
-                    }
-                    if (event.key === 'Escape') {
-                      setIsGlobalSearchOpen(false);
-                    }
-                  }}
-                  className="w-full min-w-0 bg-transparent text-[13px] outline-none placeholder:text-slate-400"
-                  placeholder="Search panels, employees, reports, settings, attendance..."
-                />
-                <kbd className="hidden shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 sm:inline-flex">Enter</kbd>
-              </label>
-
-              {isGlobalSearchOpen && (
-                <div className="absolute left-0 right-0 top-12 z-[80] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-                  {filteredGlobalSuggestions.length ? (
-                    <div className="max-h-80 overflow-y-auto p-2">
-                      {filteredGlobalSuggestions.map((suggestion) => (
-                        <button
-                          key={suggestion.id}
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => openGlobalSuggestion(suggestion)}
-                          className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-blue-50"
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-semibold text-slate-900">{suggestion.label}</span>
-                            <span className="block truncate text-xs text-slate-500">{suggestion.description}</span>
-                          </span>
-                          <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500">{suggestion.category}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 text-sm text-slate-500">No matching panel found.</div>
-                  )}
-                </div>
-              )}
+            <div className="relative flex-1 min-w-0 max-w-[36rem]">
+              <CommandBarTrigger onOpen={() => setCommandBarOpen(true)} />
             </div>
 
             <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              <ThemeToggle className="h-11 w-11" />
               <div ref={notificationsRef} className="relative">
                 <button
                   type="button"
@@ -1155,6 +905,7 @@ export default function Layout() {
           </div>
         </main>
         <AIHelpBubble userRole={user?.role} />
+        {commandBar}
       </div>
     );
   }
@@ -1323,15 +1074,16 @@ export default function Layout() {
           <Outlet />
         </main>
         <AIHelpBubble />
+        {commandBar}
 
         {isDesktopShell && updatePanelOpen ? (
-          <div className="fixed inset-0 z-40 flex items-start justify-center bg-slate-950/28 px-4 py-20 backdrop-blur-sm sm:px-6">
+          <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/28 px-4 py-20 backdrop-blur-sm sm:px-6">
             <div className="relative w-full max-w-4xl">
               <button
                 type="button"
                 onClick={() => setUpdatePanelOpen(false)}
                 aria-label="Close updates dialog"
-                className="absolute -top-14 right-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/35 bg-slate-950/65 text-white shadow-lg transition hover:bg-slate-950/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/80"
+                className="absolute -top-14 right-0 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/35 bg-black/65 text-white shadow-lg transition hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/80"
               >
                 <X className="h-5 w-5" />
               </button>

@@ -16,7 +16,8 @@ export interface InviteDefaults {
 }
 
 export interface AdditionalInviteSettings {
-  monitoringInterval: 1 | 3 | 5 | 10 | 15 | 30;
+  /** null = inherit the organization default. */
+  monitoringInterval: 1 | 3 | 5 | 10 | 15 | 30 | null;
   canEditTime: boolean;
   attendanceMonitoring: boolean;
   payrollVisibility: boolean;

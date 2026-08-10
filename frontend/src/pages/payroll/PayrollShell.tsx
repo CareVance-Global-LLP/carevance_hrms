@@ -65,7 +65,7 @@ export default function PayrollShell() {
           <button
             type="button"
             onClick={() => setIsHelpOpen(true)}
-            className="inline-flex items-center gap-2 self-start rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-[#5D969D] sm:self-auto"
+            className="inline-flex items-center gap-2 self-start rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-blue-600 sm:self-auto"
             aria-label="Open help"
           >
             <HelpCircle className="h-4 w-4" />
@@ -87,7 +87,7 @@ export default function PayrollShell() {
                 className={cn(
                   'inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
                   isActive
-                    ? 'border-[#5D969D] text-[#5D969D]'
+                    ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800',
                 )}
                 aria-current={isActive ? 'page' : undefined}

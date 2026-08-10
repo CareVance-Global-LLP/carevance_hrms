@@ -3,22 +3,25 @@ import type {
   Asset,
   AssetDetail,
   AssetFilters,
+  AssetListResponse,
   CreateAssetPayload,
   EmployeeAssetItem,
   UpdateAssetPayload,
 } from '@/types/assets';
 
-const buildParams = (filters?: AssetFilters): Record<string, string> => {
-  const params: Record<string, string> = {};
+const buildParams = (filters?: AssetFilters): Record<string, string | number> => {
+  const params: Record<string, string | number> = {};
   if (filters?.status) params.status = filters.status;
   if (filters?.category) params.category = filters.category;
   if (filters?.search && filters.search.trim()) params.search = filters.search.trim();
+  if (filters?.page) params.page = filters.page;
+  if (filters?.per_page) params.per_page = filters.per_page;
   return params;
 };
 
 export const assetsApi = {
   list: (filters?: AssetFilters) =>
-    api.get<{ data: Asset[] }>('/assets', { params: buildParams(filters) }),
+    api.get<AssetListResponse>('/assets', { params: buildParams(filters) }),
 
   get: (id: number) =>
     api.get<{ data: AssetDetail }>(`/assets/${id}`),

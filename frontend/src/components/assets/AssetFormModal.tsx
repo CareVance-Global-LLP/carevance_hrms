@@ -94,7 +94,7 @@ export default function AssetFormModal({ isOpen, onClose, asset, onSuccess }: As
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
         <header className="flex items-center justify-between p-4 border-b border-slate-200">
           <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-            <Package className="h-5 w-5 text-[#5D969D]" />
+            <Package className="h-5 w-5 text-blue-600" />
             {isEdit ? 'Edit Asset' : 'Add Asset'}
           </h2>
           <button

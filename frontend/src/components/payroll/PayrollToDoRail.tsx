@@ -32,7 +32,7 @@ type Alert = {
 const TYPE_STYLES: Record<string, { icon: typeof Info; iconClass: string }> = {
   critical: { icon: AlertCircle, iconClass: 'text-rose-600 bg-rose-50' },
   warning: { icon: AlertTriangle, iconClass: 'text-amber-600 bg-amber-50' },
-  info: { icon: Info, iconClass: 'text-[#5D969D] bg-[rgba(93,150,157,0.1)]' },
+  info: { icon: Info, iconClass: 'text-blue-600 bg-blue-500/10' },
 };
 
 export default function PayrollToDoRail({
@@ -70,7 +70,7 @@ export default function PayrollToDoRail({
   return (
     <SurfaceCard className="p-5">
       <div className="mb-4 flex items-center gap-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[rgba(93,150,157,0.1)] text-[#5D969D]">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
           <ListChecks className="h-5 w-5" />
         </div>
         <div>
@@ -123,7 +123,7 @@ export default function PayrollToDoRail({
                   <button
                     type="button"
                     onClick={() => handleAction(alert)}
-                    className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm font-medium text-[#5D969D] hover:underline"
+                    className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm font-medium text-blue-600 hover:underline"
                   >
                     {alert.action}
                     <ArrowRight className="h-4 w-4" />

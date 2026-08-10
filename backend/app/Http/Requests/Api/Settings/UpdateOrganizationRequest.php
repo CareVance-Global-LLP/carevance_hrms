@@ -4,6 +4,8 @@ namespace App\Http\Requests\Api\Settings;
 
 use App\Http\Requests\Api\ApiFormRequest;
 use App\Rules\ValidTimezone;
+use App\Services\Monitoring\MonitoringSettingsResolver;
+use Illuminate\Validation\Rule;
 
 class UpdateOrganizationRequest extends ApiFormRequest
 {
@@ -21,6 +23,13 @@ class UpdateOrganizationRequest extends ApiFormRequest
             'leave_categories.*.annual_quota' => 'required_with:leave_categories|numeric|min:0|max:366',
             'leave_categories_json' => 'nullable|string',
             'timezone' => ['nullable', 'string', 'max:255', new ValidTimezone],
+            // Organization-wide screenshot capture default. null clears it, so
+            // users fall through to the system default.
+            'monitoring_interval_minutes' => [
+                'nullable',
+                'integer',
+                Rule::in(app(MonitoringSettingsResolver::class)->allowedIntervals()),
+            ],
         ];
     }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { activityApi, attendanceApi, attendanceHolidayApi, attendanceTimeEditApi, leaveApi, organizationApi, reportApi, userApi } from '@/services/api';
@@ -9,7 +9,18 @@ import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
-import MetricCard from '@/components/dashboard/MetricCard';
+import AttendanceRoster from '@/features/attendance/AttendanceRoster';
+import OvertimeWorkspace from '@/features/attendance/OvertimeWorkspace';
+import SlideOver from '@/features/employees/SlideOver';
+import LeaveBalanceCards from '@/features/leave/LeaveBalanceCards';
+import WhosOffStrip from '@/features/leave/WhosOffStrip';
+import LeaveRequestDrawer from '@/features/leave/LeaveRequestDrawer';
+import LeaveRequestsPanel from '@/features/leave/LeaveRequestsPanel';
+import TeamLeaveBalances from '@/features/leave/TeamLeaveBalances';
+import { makeCategoryColorOf } from '@/features/leave/leaveUtils';
+import { useResolvedThemeSafe } from '@/contexts/ThemeContext';
+import { useComposeAction } from '@/hooks/useComposeAction';
+import { COMPOSE_KEYS } from '@/lib/commandRegistry';
 import Button from '@/components/ui/Button';
 import EmployeeSelect from '@/components/ui/EmployeeSelect';
 import { FeedbackBanner, PageEmptyState, PageLoadingState } from '@/components/ui/PageState';
@@ -22,7 +33,7 @@ import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDuration } from '@/lib/formatters';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { RequestEscalateControl } from '@/components/requests/RequestEscalateControl';
-import { Briefcase, CalendarDays, Clock, Download, FolderKanban, Layers3, Users } from 'lucide-react';
+import { Briefcase, Download, FolderKanban, Layers3, Users } from 'lucide-react';
 import type { UserProfile360 } from '@/types';
 
 const formatDateTime = (value?: string | null, timezone = DEFAULT_APP_TIMEZONE) =>
@@ -199,6 +210,9 @@ const readPersistedAttendanceFilters = (): PersistedAttendanceFilters => {
 };
 export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const { user, organization } = useAuth();
+  // Leave category chips are inline-styled, so their colours are picked in JS
+  // rather than by the CSS token layer — they need the active theme.
+  const resolvedTheme = useResolvedThemeSafe();
   const { hasFeature } = usePlan();
   const canAccessLeave = hasFeature('leave_management');
   const location = useLocation();
@@ -210,9 +224,20 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [startDate, setStartDate] = useState(() => readPersistedAttendanceFilters().startDate);
   const [endDate, setEndDate] = useState(() => readPersistedAttendanceFilters().endDate);
   const [rows, setRows] = useState<any[]>([]);
+  /*
+   * The page used to stack ten full-width bands — records, calendar, monthly
+   * summary, holidays, time edits, leave — one after another. Grouping them
+   * into views keeps each screen about one job instead of scrolling past four
+   * unrelated ones to reach the fifth.
+   */
+  const [attendanceView, setAttendanceView] = useState<'overview' | 'calendar' | 'requests'>('overview');
+  /*
+   * The person drawer replaces the panels that used to load below the table —
+   * clicking row 30 pushed detail in underneath and left you scrolling to find
+   * what you just asked for.
+   */
+  const [personDrawerOpen, setPersonDrawerOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [workingDays, setWorkingDays] = useState(0);
-  const [weekendDays, setWeekendDays] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   const [todayRecord, setTodayRecord] = useState<null | {
@@ -266,21 +291,19 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [isLeaveLoading, setIsLeaveLoading] = useState(false);
   const [isLeaveSubmitting, setIsLeaveSubmitting] = useState(false);
-  const [leaveStartDate, setLeaveStartDate] = useState(formatLocalDate(new Date()));
-  const [leaveEndDate, setLeaveEndDate] = useState(formatLocalDate(new Date()));
-  const [leaveType, setLeaveType] = useState<'full_day' | 'half_day'>('full_day');
-  const [leaveCategory, setLeaveCategory] = useState('paid');
+  const [leaveDrawerOpen, setLeaveDrawerOpen] = useState(false);
+  // "Apply for leave" in the command bar lands here with the drawer already open.
+  useComposeAction(COMPOSE_KEYS.leaveRequest, () => setLeaveDrawerOpen(true));
+  // Holidays for the request-cost preview and the who's-off strip; kept apart
+  // from the admin holiday editor's month-scoped fetch.
+  const [leaveHolidays, setLeaveHolidays] = useState<any[]>([]);
   const [leaveFilterUserId, setLeaveFilterUserId] = useState<number | ''>('');
   const [leaveFilterDepartment, setLeaveFilterDepartment] = useState('ALL');
-  const [leaveReason, setLeaveReason] = useState('');
   const [leaveBalances, setLeaveBalances] = useState<any | null>(null);
   const [isLeaveBalanceLoading, setIsLeaveBalanceLoading] = useState(false);
   const [timeEditRequests, setTimeEditRequests] = useState<any[]>([]);
   const [isTimeEditLoading, setIsTimeEditLoading] = useState(false);
   const [isTimeEditSubmitting, setIsTimeEditSubmitting] = useState(false);
-  const [timeEditDate, setTimeEditDate] = useState(formatLocalDate(new Date()));
-  const [extraMinutes, setExtraMinutes] = useState(60);
-  const [timeEditMessage, setTimeEditMessage] = useState('');
   const [punchFeedback, setPunchFeedbackState] = useState<SectionFeedback>(null);
   const [holidayFeedback, setHolidayFeedbackState] = useState<SectionFeedback>(null);
   const [leaveFeedback, setLeaveFeedbackState] = useState<SectionFeedback>(null);
@@ -579,8 +602,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       const payload = response.data as any;
       const nextRows = payload?.data || [];
       setRows(nextRows);
-      setWorkingDays(Number(payload?.working_days || 0));
-      setWeekendDays(Number(payload?.weekend_days || 0));
       if (!selectedUserId && nextRows.length > 0) {
         setSelectedUserId(nextRows[0].user.id);
       }
@@ -761,11 +782,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     try {
       const response = await leaveApi.balances();
       setLeaveBalances(response.data || null);
-      const policyCategories = (response.data as any)?.policy?.categories || [];
-      if (!policyCategories.some((item: any) => String(item?.code || '').trim().toLowerCase() === leaveCategory)) {
-        const nextCategory = String(policyCategories[0]?.code || 'paid').trim().toLowerCase() || 'paid';
-        setLeaveCategory(nextCategory);
-      }
     } catch (error) {
       console.error('Leave balances fetch failed:', error);
       setLeaveBalances(null);
@@ -774,46 +790,61 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
-  const submitLeaveRequest = async () => {
-    if (!leaveStartDate || !leaveEndDate) {
+  /**
+   * Submit a leave request from the drawer. The drawer already priced the
+   * request and blocked overdrafts client-side; this keeps the server-facing
+   * guards and the refresh fan-out, and reports success so the drawer can close.
+   */
+  const submitLeave = async (payload: {
+    start_date: string;
+    end_date: string;
+    leave_type: 'full_day' | 'half_day';
+    leave_category: string;
+    reason?: string;
+  }): Promise<boolean> => {
+    if (!payload.start_date || !payload.end_date) {
       setLeaveFeedback('', 'Please select start and end date');
-      return;
+      return false;
     }
 
-    if (leaveType === 'half_day' && leaveStartDate !== leaveEndDate) {
+    if (payload.leave_type === 'half_day' && payload.start_date !== payload.end_date) {
       setLeaveFeedback('', 'Half day leave can only be requested for one date.');
-      return;
+      return false;
     }
 
-    if (leaveCategory !== 'birthday' && (!leaveReason || !leaveReason.trim())) {
+    if (payload.leave_category !== 'birthday' && !String(payload.reason || '').trim()) {
       setLeaveFeedback('', 'Reason is required. Please provide a reason for your leave.');
-      return;
+      return false;
     }
 
-    if (leaveCategory !== 'unpaid' && selectedCategoryRemaining <= 0) {
-      const catLabel = selfLeaveCategories.find((c: any) => String(c.code || '').toLowerCase() === leaveCategory)?.name || leaveCategory;
-      setLeaveFeedback('', `You have already used your ${catLabel} for this year.`);
-      return;
+    if (payload.leave_category !== 'unpaid') {
+      const category = selfLeaveCategories.find(
+        (c: any) => String(c.code || '').toLowerCase() === payload.leave_category
+      );
+      if (category && Number(category.remaining || 0) <= 0) {
+        setLeaveFeedback('', `You have already used your ${category.name} for this year.`);
+        return false;
+      }
     }
 
     setIsLeaveSubmitting(true);
     setLeaveFeedback();
     try {
       await leaveApi.create({
-        start_date: leaveStartDate,
-        end_date: leaveEndDate,
-        leave_type: leaveType,
-        leave_category: leaveCategory,
-        reason: leaveReason || undefined,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+        leave_type: payload.leave_type,
+        leave_category: payload.leave_category,
+        reason: payload.reason,
       });
-      setLeaveReason('');
-      setLeaveType('full_day');
       await Promise.all([fetchLeaveRequests(), fetchLeaveBalances()]);
       await Promise.all([fetchCalendar(), fetchToday(), fetchAttendance()]);
       setLeaveFeedback('Leave request submitted');
+      return true;
     } catch (e) {
       console.error('Leave request submit failed:', e);
       setLeaveFeedback('', (e as any)?.response?.data?.message || 'Failed to submit leave request');
+      return false;
     } finally {
       setIsLeaveSubmitting(false);
     }
@@ -904,40 +935,62 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
-  const submitTimeEditRequest = async () => {
+  const submitTimeEditRequest = async (payload: { date: string; extraMinutes: number; message: string }): Promise<boolean> => {
     if (!canRequestTimeEdit) {
       setTimeEditFeedback('', 'Time edit requests are disabled for your account.');
-      return;
+      return false;
     }
 
-    if (!timeEditDate || !extraMinutes || extraMinutes <= 0) {
+    if (!payload.date || !payload.extraMinutes || payload.extraMinutes <= 0) {
       setTimeEditFeedback('', 'Please enter a valid date and extra minutes');
-      return;
+      return false;
     }
 
-    const requestedDay = calendarDays.find((day) => day?.date === timeEditDate);
+    // The workspace disables submit on holidays it can see; this guard covers
+    // dates whose month is not loaded yet, where the server has the final say.
+    const requestedDay = calendarDays.find((day) => day?.date === payload.date);
     if (requestedDay?.status === 'holiday' || requestedDay?.is_holiday) {
       setTimeEditFeedback('', 'Time edit request is not allowed on holidays.');
-      return;
+      return false;
     }
 
     setIsTimeEditSubmitting(true);
     setTimeEditFeedback();
     try {
       const response = await attendanceTimeEditApi.create({
-        attendance_date: timeEditDate,
-        extra_minutes: extraMinutes,
-        message: timeEditMessage || undefined,
+        attendance_date: payload.date,
+        extra_minutes: payload.extraMinutes,
+        message: payload.message || undefined,
       });
-      setTimeEditMessage('');
       await fetchTimeEditRequests();
       setTimeEditFeedback((response.data as any)?.message || 'Time edit request submitted and sent to your group manager.');
+      return true;
     } catch (e) {
       console.error('Time edit request submit failed:', e);
       setTimeEditFeedback('', (e as any)?.response?.data?.message || 'Failed to submit time edit request');
+      return false;
     } finally {
       setIsTimeEditSubmitting(false);
     }
+  };
+
+  /*
+   * Day context for someone else's request: one calendar call per (person,
+   * month), cached for the session. Pending overtime is a handful of rows, so
+   * this stays cheap — and a failed fetch degrades to "no day data", never an
+   * error state.
+   */
+  const dayContextCacheRef = useRef<Map<string, any[]>>(new Map());
+  const fetchDayContextFor = async (userId: number, dateISO: string) => {
+    const month = dateISO.slice(0, 7);
+    const cacheKey = `${userId}:${month}`;
+    let days = dayContextCacheRef.current.get(cacheKey);
+    if (!days) {
+      const response = await attendanceApi.calendar({ user_id: userId, month, scope: 'selected' });
+      days = (response.data as any)?.days || [];
+      dayContextCacheRef.current.set(cacheKey, days ?? []);
+    }
+    return (days ?? []).find((day: any) => day?.date === dateISO) ?? null;
   };
 
   const approveTimeEdit = async (id: number) => {
@@ -1016,6 +1069,32 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     if (mode !== 'full' || !isAdmin) return;
     fetchHolidays();
   }, [calendarMonth, isAdmin, mode]);
+
+  useEffect(() => {
+    if (mode !== 'leave') return;
+    // The holidays endpoint is month-scoped and readable by everyone, so pull
+    // this month and the next two — enough for the strip and any realistic
+    // request range. Ranges beyond that fall back to weekend-only estimates.
+    let cancelled = false;
+    (async () => {
+      const now = new Date();
+      const months = [0, 1, 2].map((offset) => {
+        const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      });
+      try {
+        const results = await Promise.all(months.map((month) => attendanceHolidayApi.list({ month })));
+        if (!cancelled) {
+          setLeaveHolidays(results.flatMap((res) => ((res.data as any)?.data || [])));
+        }
+      } catch (error) {
+        console.error('Leave holidays fetch failed:', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== 'full' && mode !== 'leave') return;
@@ -1195,11 +1274,6 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     () => ((leaveBalances?.self?.categories || []) as any[]),
     [leaveBalances?.self?.categories]
   );
-  const selectedCategoryRemaining = useMemo(() => {
-    if (leaveCategory === 'unpaid') return Infinity;
-    const cat = selfLeaveCategories.find((c: any) => String(c.code || '').toLowerCase() === leaveCategory);
-    return cat ? Number(cat.remaining || 0) : Infinity;
-  }, [selfLeaveCategories, leaveCategory]);
   const leaveTeamBalances = useMemo(
     () => ((leaveBalances?.team || []) as any[]),
     [leaveBalances?.team]
@@ -1399,15 +1473,39 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   }
 
   if (mode === 'leave') {
+    const leaveHolidayMap = new Map<string, string>(
+      leaveHolidays.map((h: any) => [String(h.holiday_date), String(h.title || 'Holiday')])
+    );
+    const leaveHolidayDates = new Set<string>(leaveHolidayMap.keys());
+    const leaveColorOf = makeCategoryColorOf(selfLeaveCategories, resolvedTheme);
+    const canManageLeave = Boolean(leaveBalances?.approval_scope?.can_manage);
+
     return (
-      <div className="space-y-6 animate-fade-in">
+      <div className="space-y-5 animate-fade-in">
         <PageHeader
           eyebrow="Leave operations"
           title="Leave"
-          description="View leave balances, submit leave requests, and track approvals."
+          description="Balances, who is off, and approvals in one place."
+          actions={
+            canAccessLeave ? (
+              <Button onClick={() => setLeaveDrawerOpen(true)}>+ Request leave</Button>
+            ) : undefined
+          }
         />
 
-        {leaveBalances?.approval_scope?.can_manage ? (
+        {leaveFeedback ? <FeedbackBanner tone={leaveFeedback.tone} message={leaveFeedback.message} /> : null}
+
+        <LeaveBalanceCards
+          categories={selfLeaveCategories}
+          unpaidUsed={Number(leaveBalances?.self?.unpaid?.used || 0)}
+          isLoading={isLeaveBalanceLoading}
+          onRefresh={fetchLeaveBalances}
+          colorOf={leaveColorOf}
+        />
+
+        <WhosOffStrip requests={filteredLeaveRequests} holidays={leaveHolidayMap} colorOf={leaveColorOf} />
+
+        {canManageLeave ? (
           <SurfaceCard className="p-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
@@ -1442,243 +1540,51 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           </SurfaceCard>
         ) : null}
 
-        {leaveBalances?.approval_scope?.can_manage ? (
-          <SurfaceCard className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">Team Leave Balance</h2>
-              <Button onClick={fetchLeaveBalances} variant="ghost" size="sm" disabled={isLeaveBalanceLoading}>
-                {isLeaveBalanceLoading ? 'Refreshing...' : 'Refresh'}
-              </Button>
-            </div>
-            {filteredLeaveTeamRows.length === 0 ? (
-              <PageEmptyState title="No team balances" description="No employees are mapped to your leave approval scope yet." />
-            ) : (
-              <div className="max-h-80 overflow-auto rounded-lg border border-slate-200">
-                <table className="min-w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Employee</th>
-                      <th className="px-3 py-2 font-medium">Role</th>
-                      <th className="px-3 py-2 font-medium">Department</th>
-                      <th className="px-3 py-2 font-medium">Manager</th>
-                      <th className="px-3 py-2 font-medium">Left Leave</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {filteredLeaveTeamRows.map((row: any) => {
-                      const categorySummary = (row.balance?.categories || [])
-                        .map((category: any) => `${category.name}: ${Number(category.remaining || 0).toFixed(1)}`)
-                        .join(' | ');
-                      const managerName = row.user?.reporting_manager?.name || 'Unassigned';
-                      const role = resolveUserRoleLabel(row.user) || 'Employee';
-
-                      return (
-                        <tr key={row.user?.id}>
-                          <td className="px-3 py-2 text-slate-900">
-                            <p className="font-medium">{row.user?.name || 'Unknown'}</p>
-                            <p className="text-[11px] text-slate-500">{row.user?.email || '--'}</p>
-                          </td>
-                          <td className="px-3 py-2 capitalize text-slate-700">{role}</td>
-                          <td className="px-3 py-2 text-slate-700">{row.user?.department || 'Unassigned'}</td>
-                          <td className="px-3 py-2 text-slate-700">{managerName}</td>
-                          <td className="px-3 py-2 text-slate-700">
-                            <p>{categorySummary || 'No policy'}</p>
-                            <p className="text-[11px] text-rose-700">Unpaid used: {Number(row.balance?.unpaid?.used || 0).toFixed(1)}</p>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </SurfaceCard>
+        {canManageLeave ? (
+          <TeamLeaveBalances
+            rows={filteredLeaveTeamRows}
+            isLoading={isLeaveBalanceLoading}
+            onRefresh={fetchLeaveBalances}
+            colorOf={leaveColorOf}
+          />
         ) : null}
 
-        {canAccessLeave && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {leaveFeedback ? (
-              <div className="lg:col-span-2">
-                <FeedbackBanner tone={leaveFeedback.tone} message={leaveFeedback.message} />
-              </div>
-            ) : null}
-            <SurfaceCard className="p-4">
-              <h2 className="font-semibold text-gray-900 mb-3">Request Leave</h2>
-              <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Leave Balance</p>
-                  <Button onClick={fetchLeaveBalances} variant="ghost" size="sm" disabled={isLeaveBalanceLoading}>
-                    {isLeaveBalanceLoading ? 'Refreshing...' : 'Refresh'}
-                  </Button>
-                </div>
-                {isLeaveBalanceLoading ? (
-                  <p className="text-xs text-slate-500">Loading leave balances...</p>
-                ) : selfLeaveCategories.length === 0 ? (
-                  <p className="text-xs text-slate-500">No leave policy configured yet.</p>
-                ) : (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {selfLeaveCategories.map((category: any) => (
-                      <div key={category.code} className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs">
-                        <p className="font-semibold text-slate-900">{category.name}</p>
-                        <p className="text-slate-600">Remaining: <span className="font-medium text-slate-900">{Number(category.remaining || 0).toFixed(1)}</span> / {Number(category.annual_quota || 0).toFixed(1)}</p>
-                        <p className="text-slate-500">Used: {Number(category.used || 0).toFixed(1)}</p>
-                      </div>
-                    ))}
-                    <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs">
-                      <p className="font-semibold text-rose-800">Unpaid Leave</p>
-                      <p className="text-rose-700">Used: {Number(leaveBalances?.self?.unpaid?.used || 0).toFixed(1)}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            <div className="mb-3">
-              <FieldLabel>Leave Type</FieldLabel>
-              <SelectInput
-                value={leaveType}
-                onChange={(e) => {
-                  const nextType = e.target.value === 'half_day' ? 'half_day' : 'full_day';
-                  setLeaveType(nextType);
-                  if (nextType === 'half_day') {
-                    setLeaveEndDate(leaveStartDate);
-                  }
-                }}
-              >
-                <option value="full_day">Full Day</option>
-                <option value="half_day">Half Day</option>
-              </SelectInput>
-            </div>
-            <div className="mb-3">
-              <FieldLabel>Leave Category</FieldLabel>
-              <SelectInput value={leaveCategory} onChange={(e) => setLeaveCategory(String(e.target.value || 'paid'))}>
-                {leavePolicyCategories.map((category: any) => (
-                  <option key={category.code} value={String(category.code || '').toLowerCase()}>
-                    {category.name}
-                  </option>
-                ))}
-                <option value="unpaid">Unpaid Leave</option>
-              </SelectInput>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <FieldLabel>Start Date</FieldLabel>
-                <TextInput
-                  type="date"
-                  value={leaveStartDate}
-                  onChange={(e) => {
-                    setLeaveStartDate(e.target.value);
-                    if (leaveType === 'half_day') {
-                      setLeaveEndDate(e.target.value);
-                    }
-                  }}
+        {canAccessLeave ? (
+          <LeaveRequestsPanel
+            requests={filteredLeaveRequests}
+            currentUserId={Number(user?.id || 0)}
+            hasApprovalPowers={canManageLeave || isAdmin}
+            isLoading={isLeaveLoading}
+            canReview={canReviewLeaveRequest}
+            canRequestRevoke={canRequestRevoke}
+            isAdmin={isAdmin}
+            onApprove={approveLeave}
+            onReject={rejectLeave}
+            onRequestRevoke={requestLeaveRevoke}
+            onApproveRevoke={approveLeaveRevoke}
+            onRejectRevoke={rejectLeaveRevoke}
+            formatCategoryLabel={formatLeaveCategoryLabel}
+            colorOf={leaveColorOf}
+            renderEscalate={(item) =>
+              (item.current_reviewer_ids?.some((id: number) => Number(id) === Number(user?.id)) || isAdmin) && item.status === 'pending' ? (
+                <RequestEscalateControl
+                  item={item}
+                  onTransfer={(note, toUserId) => transferLeave(item.id, note, toUserId)}
+                  forwardTargetLoader={() => leaveApi.forwardTargets(item.id).then((r) => r.data.data)}
                 />
-              </div>
-              <div>
-                <FieldLabel>End Date</FieldLabel>
-                <TextInput
-                  type="date"
-                  value={leaveEndDate}
-                  onChange={(e) => setLeaveEndDate(e.target.value)}
-                  disabled={leaveType === 'half_day'}
-                />
-              </div>
-            </div>
-            {leaveType === 'half_day' ? (
-              <p className="mt-2 text-xs text-amber-700">
-                Half day leave reduces the day target to half of normal working hours.
-              </p>
-            ) : null}
-            <div className="mt-3">
-              <FieldLabel>Reason</FieldLabel>
-              <TextareaInput
-                value={leaveReason}
-                onChange={(e) => setLeaveReason(e.target.value)}
-                rows={3}
-                placeholder="Leave reason..."
-              />
-            </div>
-            <div className="mt-3">
-              <Button onClick={submitLeaveRequest} disabled={isLeaveSubmitting || (leaveCategory !== 'unpaid' && selectedCategoryRemaining <= 0)}>
-                {isLeaveSubmitting ? 'Submitting...' : 'Submit Leave Request'}
-              </Button>
-              {leaveCategory !== 'unpaid' && selectedCategoryRemaining <= 0 && (
-                <p className="mt-2 text-xs text-rose-600">
-                  You have no remaining balance for this leave category this year.
-                </p>
-              )}
-            </div>
-          </SurfaceCard>
+              ) : null
+            }
+          />
+        ) : null}
 
-          <SurfaceCard className="p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">Leave Requests</h2>
-              <Button onClick={fetchLeaveRequests} variant="ghost" size="sm">Refresh</Button>
-            </div>
-            {isLeaveLoading ? (
-              <PageLoadingState label="Loading leave requests..." />
-            ) : filteredLeaveRequests.length === 0 ? (
-              <PageEmptyState title="No leave requests found" description="Submitted leave requests will appear here." />
-            ) : (
-              <div className="mt-3 space-y-2 max-h-72 overflow-auto">
-                {filteredLeaveRequests.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-gray-900">
-                        {item.user?.name || 'You'}: {item.start_date} to {item.end_date}
-                      </p>
-                      <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : item.status === 'revoked' ? 'neutral' : 'warning'}>{item.status}</StatusBadge>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {item.leave_type === 'half_day' ? 'Half day leave' : 'Full day leave'}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">Category: {formatLeaveCategoryLabel(item.leave_category)}</p>
-                    {Array.isArray(item.consumed_breakdown) && item.consumed_breakdown.length > 0 ? (
-                      <p className="mt-1 text-xs text-slate-500">
-                        Consumption: {item.consumed_breakdown.map((part: any) => `${Number(part?.units || 0).toFixed(1)} ${formatLeaveCategoryLabel(part?.category)}`).join(', ')}
-                      </p>
-                    ) : null}
-                    {item.approval_destination ? (
-                      <p className="mt-1 text-xs font-medium text-sky-700">{item.approval_destination}</p>
-                    ) : null}
-                    {item.reason ? <p className="text-xs text-gray-600 mt-1">{item.reason}</p> : null}
-                    {item.revoke_status ? (
-                      <p className="text-xs mt-1 text-gray-600">
-                        Revoke Request: <span className={`font-medium ${item.revoke_status === 'pending' ? 'text-amber-700' : item.revoke_status === 'approved' ? 'text-green-700' : 'text-red-700'}`}>{item.revoke_status}</span>
-                      </p>
-                    ) : null}
-                    {canReviewLeaveRequest(item) && item.status === 'pending' ? (
-                      <div className="mt-2 flex gap-2">
-                        <Button onClick={() => approveLeave(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
-                        <Button onClick={() => rejectLeave(item.id)} variant="danger" size="sm">Reject</Button>
-                      </div>
-                    ) : null}
-                    {!isAdmin && canRequestRevoke(item) ? (
-                      <div className="mt-2">
-                        <Button onClick={() => requestLeaveRevoke(item.id)} variant="danger" size="sm">Request Revoke</Button>
-                      </div>
-                    ) : null}
-                    {(item.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) || isAdmin) && item.status === 'pending' ? (
-                      <RequestEscalateControl
-                        item={item}
-                        onTransfer={(note, toUserId) => transferLeave(item.id, note, toUserId)}
-                        forwardTargetLoader={() => leaveApi.forwardTargets(item.id).then((r) => r.data.data)}
-                      />
-                    ) : null}
-                    {canReviewLeaveRequest(item) && item.status === 'approved' && item.revoke_status === 'pending' ? (
-                      <div className="mt-2 flex gap-2">
-                        <Button onClick={() => approveLeaveRevoke(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve Revoke</Button>
-                        <Button onClick={() => rejectLeaveRevoke(item.id)} variant="danger" size="sm">Reject Revoke</Button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-            {pendingLeaveRequests.length > 0 ? (
-              <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingLeaveRequests.length}</p>
-            ) : null}
-          </SurfaceCard>
-        </div>
-      )}
+        <LeaveRequestDrawer
+          open={leaveDrawerOpen}
+          onClose={() => setLeaveDrawerOpen(false)}
+          categories={selfLeaveCategories}
+          holidayDates={leaveHolidayDates}
+          submitting={isLeaveSubmitting}
+          onSubmit={submitLeave}
+        />
       </div>
     );
   }
@@ -1694,94 +1600,36 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
 
     return (
-      <div className="space-y-6 animate-fade-in">
-        <PageHeader eyebrow="Attendance adjustments" title="Edit Time" description="Request overtime or attendance time adjustments and review approval status." />
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {timeEditFeedback ? (
-            <div className="lg:col-span-2">
-              <FeedbackBanner tone={timeEditFeedback.tone} message={timeEditFeedback.message} />
-            </div>
-          ) : null}
-          <SurfaceCard className="p-4">
-            <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <FieldLabel>Attendance Date</FieldLabel>
-                <TextInput type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} />
-              </div>
-              <div>
-                <FieldLabel>Extra Minutes</FieldLabel>
-                <TextInput
-                  type="number"
-                  min={1}
-                  max={600}
-                  value={extraMinutes}
-                  onChange={(e) => setExtraMinutes(Number(e.target.value))}
-                />
-              </div>
-            </div>
-            <div className="mt-3">
-              <FieldLabel>Message to Admin</FieldLabel>
-              <TextareaInput
-                value={timeEditMessage}
-                onChange={(e) => setTimeEditMessage(e.target.value)}
-                rows={3}
-                placeholder="Example: I worked 1 hour extra after shift due to release deployment."
+      <div className="space-y-5 animate-fade-in">
+        <PageHeader
+          eyebrow="Time operations"
+          title="Overtime & time edits"
+          description="Request extra time against a specific day, and review requests with that day attached."
+        />
+        {timeEditFeedback ? <FeedbackBanner tone={timeEditFeedback.tone} message={timeEditFeedback.message} /> : null}
+        <OvertimeWorkspace
+          requests={timeEditRequests}
+          currentUserId={Number(user?.id)}
+          canRequest={canRequestTimeEdit}
+          canReview={canReviewTimeEditRequest}
+          isLoading={isTimeEditLoading}
+          submitting={isTimeEditSubmitting}
+          dayLookup={(dateISO) => calendarDays.find((day: any) => day?.date === dateISO)}
+          onMonthNeeded={(month) => setCalendarMonth(month)}
+          fetchDayFor={fetchDayContextFor}
+          onSubmit={submitTimeEditRequest}
+          onApprove={approveTimeEdit}
+          onReject={rejectTimeEdit}
+          renderEscalate={(item) =>
+            (item.current_reviewer_ids?.some((id: number) => Number(id) === Number(user?.id)) || isAdmin) ? (
+              <RequestEscalateControl
+                item={item}
+                onTransfer={(note, toUserId) => transferTimeEdit(item.id, note, toUserId)}
+                forwardTargetLoader={() => attendanceTimeEditApi.forwardTargets(item.id).then((r) => r.data.data)}
               />
-            </div>
-            <div className="mt-3">
-              <Button onClick={submitTimeEditRequest} disabled={isTimeEditSubmitting}>
-                {isTimeEditSubmitting ? 'Submitting...' : 'Submit Time Edit Request'}
-              </Button>
-            </div>
-          </SurfaceCard>
-
-          <SurfaceCard className="p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">Time Edit Requests</h2>
-              <Button onClick={fetchTimeEditRequests} variant="ghost" size="sm">Refresh</Button>
-            </div>
-            {isTimeEditLoading ? (
-              <PageLoadingState label="Loading requests..." />
-            ) : timeEditRequests.length === 0 ? (
-              <PageEmptyState title="No time edit requests found" description="Submitted overtime and time adjustments will appear here." />
-            ) : (
-              <div className="mt-3 space-y-2 max-h-72 overflow-auto">
-                {timeEditRequests.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-gray-900">
-                        {item.user?.name || 'You'}: {item.attendance_date} (+{formatDuration(item.extra_seconds)})
-                      </p>
-                      <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'}>{item.status}</StatusBadge>
-                    </div>
-                    {item.approval_destination ? (
-                      <p className="mt-1 text-xs font-medium text-sky-700">{item.approval_destination}</p>
-                    ) : null}
-                    {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
-                    {canReviewTimeEditRequest(item) && item.status === 'pending' ? (
-                      <div className="mt-2 flex gap-2">
-                        <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
-                        <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
-                      </div>
-                    ) : null}
-                    {(item.current_reviewer_ids?.some((id) => Number(id) === Number(user?.id)) || isAdmin) && item.status === 'pending' ? (
-                      <RequestEscalateControl
-                        item={item}
-                        onTransfer={(note, toUserId) => transferTimeEdit(item.id, note, toUserId)}
-                        forwardTargetLoader={() => attendanceTimeEditApi.forwardTargets(item.id).then((r) => r.data.data)}
-                      />
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-            {pendingTimeEditRequests.length > 0 ? (
-              <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingTimeEditRequests.length}</p>
-            ) : null}
-          </SurfaceCard>
-        </div>
+            ) : null
+          }
+        />
       </div>
     );
   }
@@ -1857,11 +1705,30 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         </div>
       </FilterPanel>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <MetricCard label="Working Days" value={workingDays} hint="Excluding weekends" icon={CalendarDays} accent="sky" />
-        <MetricCard label="Weekend Days" value={weekendDays} hint="Within selected range" icon={Clock} accent="amber" />
-        <MetricCard label="Employees in View" value={rows.length} hint={isAdmin ? 'Based on current filter' : 'Your own attendance view'} icon={Users} accent="emerald" />
+      {/* One row of views instead of ten stacked sections. */}
+      <div className="flex gap-0.5 rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Attendance view">
+        {([
+          { key: 'overview', label: 'Overview' },
+          { key: 'calendar', label: 'Calendar' },
+          { key: 'requests', label: 'Requests' },
+        ] as const).map((view) => (
+          <button
+            key={view.key}
+            type="button"
+            aria-pressed={attendanceView === view.key}
+            onClick={() => setAttendanceView(view.key)}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition sm:flex-none ${
+              attendanceView === view.key
+                ? 'bg-white text-slate-950 shadow-card'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
 
+      <div className={`grid grid-cols-1 lg:grid-cols-3 gap-4 ${attendanceView === 'overview' ? '' : 'hidden'}`}>
         {!isAdmin ? (
           <SurfaceCard className="lg:col-span-3 p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -2073,60 +1940,22 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         </SurfaceCard>
       </div>
 
-      <SurfaceCard className="overflow-hidden">
-        <div className="max-h-[26rem] overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Employee</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Present Days</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Leave Days</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Attendance %</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Track Time</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Work Time</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Idle Time</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Break Time</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr><td className="px-4 py-6" colSpan={9}><PageLoadingState label="Loading attendance records..." /></td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td className="px-4 py-6" colSpan={9}><PageEmptyState title="No attendance records" description="Attendance data will appear here for the selected date range." /></td></tr>
-            ) : rows.map((row) => (
-              <tr
-                key={row.user.id}
-                className={`cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 ${selectedRow?.user?.id === row.user.id ? 'bg-sky-50' : ''}`}
-                onClick={() => {
-                  setSelectedUserId(row.user.id);
-                  if (isAdmin) {
-                    setCalendarScope('selected');
-                  }
-                }}
-              >
-                <td className="px-4 py-3">
-                  <p className="font-medium text-gray-900">{row.user.name}</p>
-                  <p className="text-xs text-gray-500">{row.user.email}</p>
-                </td>
-                <td className="px-4 py-3 text-gray-700">{row.days_present} / {row.calendar_days_in_range || row.working_days_in_range}</td>
-                <td className="px-4 py-3 text-gray-700">{row.leave_days}</td>
-                <td className="px-4 py-3 text-gray-700">{row.attendance_rate}%</td>
-                <td className="px-4 py-3 text-gray-700">{formatDuration(row.work_time_breakdown?.track_time ?? 0)}</td>
-                <td className="px-4 py-3 text-gray-700">{formatDuration(row.work_time_breakdown?.work_time ?? row.worked_seconds ?? 0)}</td>
-                <td className="px-4 py-3 text-gray-700">{formatDuration(row.work_time_breakdown?.idle_time ?? 0)}</td>
-                <td className="px-4 py-3 text-gray-700">{formatDuration(row.total_break_seconds || 0)}</td>
-                <td className="px-4 py-3">
-                  <StatusBadge tone={row.is_working ? 'success' : 'neutral'}>{row.is_working ? 'Working' : 'Not Working'}</StatusBadge>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      </SurfaceCard>
+      {attendanceView === 'overview' ? (
+        <AttendanceRoster
+          rows={rows}
+          isLoading={isLoading}
+          selectedUserId={selectedRow?.user?.id ?? null}
+          onOpenPerson={(userId) => {
+            setSelectedUserId(userId);
+            if (isAdmin) {
+              setCalendarScope('selected');
+            }
+            setPersonDrawerOpen(true);
+          }}
+        />
+      ) : null}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 lg:grid-cols-3 gap-4 ${attendanceView === 'calendar' ? '' : 'hidden'}`}>
         <SurfaceCard className="lg:col-span-2 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -2413,125 +2242,121 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         </SurfaceCard>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {timeEditFeedback && canRequestTimeEdit ? (
-          <div className="lg:col-span-2">
-            <FeedbackBanner tone={timeEditFeedback.tone} message={timeEditFeedback.message} />
-          </div>
-        ) : null}
-        {canRequestTimeEdit ? (
-          <SurfaceCard className="p-4">
-            <h2 className="font-semibold text-gray-900 mb-3">Request Time Edit / Overtime</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <FieldLabel>Attendance Date</FieldLabel>
-                <TextInput type="date" value={timeEditDate} onChange={(e) => setTimeEditDate(e.target.value)} />
-              </div>
-              <div>
-                <FieldLabel>Extra Minutes</FieldLabel>
-                <TextInput
-                  type="number"
-                  min={1}
-                  max={600}
-                  value={extraMinutes}
-                  onChange={(e) => setExtraMinutes(Number(e.target.value))}
+      {/* Same workspace as /edit-time — one implementation of the request
+          form and the review list, not two drifting copies. */}
+      <div className={attendanceView === 'requests' ? '' : 'hidden'}>
+        {timeEditFeedback ? <FeedbackBanner tone={timeEditFeedback.tone} message={timeEditFeedback.message} /> : null}
+        <div className="mt-3">
+          <OvertimeWorkspace
+            requests={timeEditRequests}
+            currentUserId={Number(user?.id)}
+            canRequest={canRequestTimeEdit}
+            canReview={canReviewTimeEditRequest}
+            isLoading={isTimeEditLoading}
+            submitting={isTimeEditSubmitting}
+            dayLookup={(dateISO) => calendarDays.find((day: any) => day?.date === dateISO)}
+            onMonthNeeded={(month) => setCalendarMonth(month)}
+            fetchDayFor={fetchDayContextFor}
+            onSubmit={submitTimeEditRequest}
+            onApprove={approveTimeEdit}
+            onReject={rejectTimeEdit}
+            renderEscalate={(item) =>
+              (item.current_reviewer_ids?.some((id: number) => Number(id) === Number(user?.id)) || isAdmin) ? (
+                <RequestEscalateControl
+                  item={item}
+                  onTransfer={(note, toUserId) => transferTimeEdit(item.id, note, toUserId)}
+                  forwardTargetLoader={() => attendanceTimeEditApi.forwardTargets(item.id).then((r) => r.data.data)}
                 />
-              </div>
-            </div>
-            <div className="mt-3">
-              <FieldLabel>Message to Admin</FieldLabel>
-              <TextareaInput
-                value={timeEditMessage}
-                onChange={(e) => setTimeEditMessage(e.target.value)}
-                rows={3}
-                placeholder="Example: I worked 1 hour extra after shift due to release deployment."
-              />
-            </div>
-            <div className="mt-3">
-              <Button onClick={submitTimeEditRequest} disabled={isTimeEditSubmitting}>
-                {isTimeEditSubmitting ? 'Submitting...' : 'Submit Time Edit Request'}
-              </Button>
-            </div>
-          </SurfaceCard>
-        ) : null}
+              ) : null
+            }
+          />
+        </div>
+      </div>
 
-        <SurfaceCard className={`p-4 ${!canRequestTimeEdit ? 'lg:col-span-2' : ''}`}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Time Edit Requests</h2>
-            <Button onClick={fetchTimeEditRequests} variant="ghost" size="sm">Refresh</Button>
-          </div>
-          {isTimeEditLoading ? (
-            <PageLoadingState label="Loading time edit requests..." />
-          ) : timeEditRequests.length === 0 ? (
-            <PageEmptyState title="No time edit requests found" description="Attendance adjustment requests will appear here." />
-          ) : (
-            <div className="mt-3 space-y-2 max-h-72 overflow-auto">
-              {timeEditRequests.map((item) => (
-                <div key={item.id} className="rounded-lg border border-slate-200 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-gray-900">
-                      {item.user?.name || 'You'}: {item.attendance_date} (+{formatDuration(item.extra_seconds)})
-                    </p>
-                    <StatusBadge tone={item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'}>{item.status}</StatusBadge>
-                  </div>
-                  {item.approval_destination ? (
-                    <p className="mt-1 text-xs font-medium text-sky-700">{item.approval_destination}</p>
-                  ) : null}
-                  {item.message ? <p className="text-xs text-gray-600 mt-1">{item.message}</p> : null}
-                  {canReviewTimeEditRequest(item) && item.status === 'pending' ? (
-                    <div className="mt-2 flex gap-2">
-                      <Button onClick={() => approveTimeEdit(item.id)} size="sm" className="bg-emerald-600 shadow-sm hover:bg-emerald-700">Approve</Button>
-                      <Button onClick={() => rejectTimeEdit(item.id)} variant="danger" size="sm">Reject</Button>
-                    </div>
-                  ) : null}
+      {/* Person detail: a drawer over the list instead of panels under it. */}
+      <SlideOver
+        open={personDrawerOpen && Boolean(selectedRow)}
+        title={selectedRow?.user?.name ?? ''}
+        subtitle={selectedRow?.user?.email ?? undefined}
+        onClose={() => setPersonDrawerOpen(false)}
+        footer={(
+          <button
+            type="button"
+            onClick={() => {
+              setPersonDrawerOpen(false);
+              setAttendanceView('calendar');
+            }}
+            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+          >
+            Open month calendar
+          </button>
+        )}
+      >
+        {selectedRow ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                {
+                  label: 'Present',
+                  value: `${selectedRow.days_present}/${selectedRow.calendar_days_in_range || selectedRow.working_days_in_range || 0}`,
+                },
+                {
+                  label: 'Attendance',
+                  value: `${Math.round(selectedRow.attendance_rate)}%`,
+                  warn: selectedRow.attendance_rate < 75,
+                },
+                { label: 'Leave days', value: selectedRow.leave_days || 0 },
+                { label: 'Worked', value: formatDuration(selectedRow.work_time_breakdown?.work_time ?? selectedRow.worked_seconds ?? 0) },
+                {
+                  label: 'Idle',
+                  value: formatDuration(selectedRow.work_time_breakdown?.idle_time ?? 0),
+                  warn: (selectedRow.work_time_breakdown?.idle_time ?? 0) > 0.25 * Math.max(1, selectedRow.work_time_breakdown?.track_time ?? 0),
+                },
+                { label: 'Break', value: formatDuration(selectedRow.total_break_seconds || 0) },
+              ].map((stat) => (
+                <div key={stat.label} className="rounded-lg border border-slate-200 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{stat.label}</p>
+                  <p className={`mt-0.5 text-sm font-bold tabular-nums ${stat.warn ? 'text-warning-800' : 'text-slate-900'}`}>
+                    {stat.value}
+                  </p>
                 </div>
               ))}
             </div>
-          )}
-          {pendingTimeEditRequests.length > 0 ? (
-            <p className="text-xs text-gray-500 mt-2">Pending approvals: {pendingTimeEditRequests.length}</p>
-          ) : null}
-        </SurfaceCard>
-      </div>
 
-      {selectedRow && (
-        <div className={`grid grid-cols-1 gap-4 ${canAccessLeave ? 'lg:grid-cols-2' : 'lg:grid-cols-1'}`}>
-          {canAccessLeave && (
-            <SurfaceCard className="p-4">
-              <h2 className="font-semibold text-gray-900 mb-3">
-                {selectedRow.user.name} - Leave Dates (Weekend Excluded)
-              </h2>
-              <div className="max-h-72 overflow-auto flex flex-wrap gap-2">
-                {(selectedRow.leave_dates || []).length === 0 ? (
-                  <p className="text-sm text-gray-500">No leave dates in selected range.</p>
+            <div>
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Present dates</p>
+              <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
+                {(selectedRow.present_dates || []).length === 0 ? (
+                  <p className="text-xs text-slate-400">None in the selected range.</p>
                 ) : (
-                  selectedRow.leave_dates.map((date: string) => (
-                    <span key={date} className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs text-rose-700">
+                  (selectedRow.present_dates || []).map((date: string) => (
+                    <span key={date} className="rounded-full border border-success-100 bg-success-50 px-2 py-0.5 text-[11px] tabular-nums text-success-800">
                       {date}
                     </span>
                   ))
                 )}
               </div>
-            </SurfaceCard>
-          )}
-          <SurfaceCard className="p-4">
-            <h2 className="font-semibold text-gray-900 mb-3">
-              {selectedRow.user.name} - Present Dates
-            </h2>
-            <div className="max-h-72 overflow-auto flex flex-wrap gap-2">
-              {(selectedRow.present_dates || []).length === 0 ? (
-                <p className="text-sm text-gray-500">No present dates in selected range.</p>
-              ) : (
-                selectedRow.present_dates.map((date: string) => (
-                  <span key={date} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700">
-                    {date}
-                  </span>
-                ))
-              )}
             </div>
-          </SurfaceCard>
-        </div>
-      )}
+
+            {canAccessLeave ? (
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Leave dates</p>
+                <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
+                  {(selectedRow.leave_dates || []).length === 0 ? (
+                    <p className="text-xs text-slate-400">None in the selected range.</p>
+                  ) : (
+                    (selectedRow.leave_dates || []).map((date: string) => (
+                      <span key={date} className="rounded-full border border-accent-200 bg-accent-50 px-2 py-0.5 text-[11px] tabular-nums text-warning-800">
+                        {date}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </SlideOver>
     </div>
   );
 }

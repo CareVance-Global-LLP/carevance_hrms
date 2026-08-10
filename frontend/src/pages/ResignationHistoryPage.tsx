@@ -17,6 +17,7 @@ interface ResignationHistoryItem {
   approved_at?: string;
   rejected_at?: string;
   cancelled_at?: string;
+  approval_destination?: string | null;
 }
 
 export default function ResignationHistoryPage() {
@@ -157,11 +158,16 @@ export default function ResignationHistoryPage() {
                         Submitted: {new Date(resignation.submitted_at).toLocaleDateString()}
                       </span>
                     </div>
-                    {resignation.reason && (
-                      <p className="mt-1 text-xs text-slate-600 line-clamp-1">
-                        Reason: {resignation.reason}
-                      </p>
-                    )}
+                     {resignation.reason && (
+                       <p className="mt-1 text-xs text-slate-600 line-clamp-1">
+                         Reason: {resignation.reason}
+                       </p>
+                     )}
+                     {resignation.status === 'pending' && resignation.approval_destination && (
+                       <p className="mt-1 text-xs font-medium text-sky-700">
+                         {resignation.approval_destination}
+                       </p>
+                     )}
                   </div>
                 </div>
 

@@ -5,7 +5,6 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
@@ -131,10 +130,13 @@ export default function TaxDeclarationPage() {
   const isSubmitted = declaration?.status === 'submitted';
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Tax Declarations" description="Form 12BB - Declare your tax-saving investments" />
-
-      <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Tax Declarations</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Form 12BB — Declare your tax-saving investments
+        </p>
+      </div>
         {/* Header Controls */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -435,6 +437,5 @@ export default function TaxDeclarationPage() {
           </ul>
         </div>
       </div>
-    </div>
   );
 }

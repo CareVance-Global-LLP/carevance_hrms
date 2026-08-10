@@ -38,6 +38,27 @@ trait BelongsToOrganization
                     $builder->getModel()->qualifyColumn('organization_id'),
                     $organizationId
                 );
+
+                return;
+            }
+
+            // A null organization means one of two very different things, and
+            // treating them the same was a cross-tenant hole.
+            //
+            //   No authenticated user  → console command, queued job, migration.
+            //                            The scope must be a no-op or background
+            //                            work silently filters to nothing.
+            //
+            //   Authenticated, no org  → a user row with organization_id NULL.
+            //                            Previously this ALSO skipped the filter,
+            //                            so such an account read every tenant's
+            //                            data through every scoped model.
+            //
+            // Fail closed on the second: an org-less session sees nothing rather
+            // than everything. Anything that legitimately needs cross-tenant
+            // reads already has withoutOrganizationScope().
+            if (Auth::hasUser()) {
+                $builder->whereRaw('1 = 0');
             }
         });
 

@@ -10,6 +10,7 @@ use App\Models\FullAndFinalSettlement;
 use App\Models\LeaveEncashment;
 use App\Models\Organization;
 use App\Models\PayrollItem;
+use App\Models\EmployeeTaxDeclaration;
 use App\Models\PayrollMonthlyRun;
 use App\Models\User;
 use App\Services\PayrollCalculatorService;
@@ -358,7 +359,15 @@ class EnhancedPayrollController extends Controller
             $esiEmployeeRate = ((float) ($config['esiEmployeePercentage'] ?? 0.75)) / 100;
             $esiThreshold = (float) ($config['esiThreshold'] ?? 21000);
             $pfOnArrear = $basicDifference * $pfRate;
-            $esiOnArrear = $grossDifference <= $esiThreshold ? $grossDifference * $esiEmployeeRate : 0;
+
+            // ESI coverage follows the employee's monthly wage, not the size of
+            // the arrear. Testing the difference against the ceiling inverted
+            // the rule in practice: someone on ₹1.1L — not ESI-covered at all —
+            // was charged ESI because their ₹10k arrear fell under ₹21k, while
+            // a genuinely covered employee receiving a large arrear was charged
+            // nothing.
+            $isEsiCovered = (float) $request->revised_gross <= $esiThreshold;
+            $esiOnArrear = $isEsiCovered ? $grossDifference * $esiEmployeeRate : 0;
 
             $taxRegime = $user->employeePayrollTemplate?->tax_regime ?? 'new';
             $exemptionMap = $this->calculator->getApprovedTaxDeductionMap($user->id);
@@ -369,10 +378,17 @@ class EnhancedPayrollController extends Controller
                 ? $this->calculator->calculateNewRegimeTax($request->original_gross * 12, $exemptionMap)
                 : $this->calculator->calculateOldRegimeTax($request->original_gross * 12, $exemptionMap);
             $tdsOnArrear = round(max(0, ($revisedTdsResult['total_tax'] ?? 0) - ($originalTdsResult['total_tax'] ?? 0)) / 12, 2);
-            $ptOnArrear = PTStateService::calculate(
-                $user->employeeProfile?->pt_state ?? $config['defaultState'] ?? 'maharashtra',
-                $grossDifference
-            );
+            // Professional tax is a slab on monthly gross, so the arrear owes
+            // the difference between the slab at the revised wage and the slab
+            // already charged at the original one — the same delta the TDS
+            // calculation above takes. Running the slab against the arrear
+            // amount alone charged a fresh, unrelated slab.
+            $ptState = $user->employeeProfile?->pt_state ?? $config['defaultState'] ?? '';
+            $ptOnArrear = max(0, round(
+                PTStateService::calculate($ptState, (float) $request->revised_gross)
+                - PTStateService::calculate($ptState, (float) $request->original_gross),
+                2
+            ));
 
             $netArrear = $grossDifference - $pfOnArrear - $esiOnArrear - $tdsOnArrear - $ptOnArrear;
 
@@ -505,7 +521,14 @@ class EnhancedPayrollController extends Controller
                 'tds' => (float) $item->tds + $tdsOnArrear,
                 'total_deductions' => (float) $item->total_deductions + $arrearDeductions,
 
-                'net_pay' => max(0, (float) $item->net_pay + $grossDifference - $arrearDeductions),
+                // Store the signed figure. Flooring at zero here hid the fact
+                // that deductions had overtaken gross: the payslip read ₹0.00,
+                // and the "no negative salaries" validation — which tests
+                // net_pay < 0 — could never fire because the value it inspects
+                // had already been clamped. Payroll validation is what should
+                // stop a run like this, and it can only do that if it can see
+                // the real number.
+                'net_pay' => round((float) $item->net_pay + $grossDifference - $arrearDeductions, 2),
             ]);
 
             $arrear->update([
@@ -630,8 +653,12 @@ class EnhancedPayrollController extends Controller
             $ratePerDay = $monthlyGross / $workingDays;
             $leaveEncashment = $ratePerDay * $request->earned_leave_balance;
 
-            $gratuityAmount = $request->is_gratuity_eligible && $request->years_of_service >= 5
-                ? $this->calculator->calculateGratuityOnExit($basicSalary, $request->years_of_service)
+            // calculateGratuityForSettlement applies both statutory rules — the
+            // five-year minimum and the maximum payout ceiling. The raw
+            // calculateGratuityOnExit applies neither, so an eligibility check
+            // duplicated here still left the ceiling entirely unenforced.
+            $gratuityAmount = $request->is_gratuity_eligible
+                ? $this->calculator->calculateGratuityForSettlement($basicSalary, (float) $request->years_of_service)
                 : 0;
 
             $lastWorkingDate = Carbon::parse($request->last_working_date);

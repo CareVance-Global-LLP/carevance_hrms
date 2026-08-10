@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeePayrollTemplate extends Model
 {
+    use BelongsToOrganization;
+
     protected $table = 'employee_payroll_templates';
     
     protected $fillable = [
@@ -235,8 +238,15 @@ class EmployeePayrollTemplate extends Model
                         ?? ($deptTemplate?->esi_employer_percentage ?? 3.25),
                     'esi_threshold' => $orgSettings['esiThreshold']
                         ?? ($deptTemplate?->esi_threshold ?? 21000.00),
+                    // No fabricated fallback. Professional tax is state-levied
+                    // and several states charge none, so stamping a real state
+                    // on a template nobody configured quietly deducts ₹200 a
+                    // month from people who may owe nothing. Null means
+                    // unconfigured, and PTStateService returns ₹0 for it —
+                    // under-deducting is correctable, taking money that was
+                    // never owed is not.
                     'pt_state' => $orgSettings['defaultState']
-                        ?? ($deptTemplate?->pt_state ?? 'maharashtra'),
+                        ?? $deptTemplate?->pt_state,
                     'tax_regime' => $orgSettings['defaultTaxRegime']
                         ?? ($deptTemplate?->tax_regime ?? 'new'),
                     'is_metro_city' => $orgSettings['isMetroCity']

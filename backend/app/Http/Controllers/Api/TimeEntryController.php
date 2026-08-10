@@ -35,6 +35,7 @@ class TimeEntryController extends Controller
         private readonly TimeEntryDurationService $timeEntryDurationService,
         private readonly IdleAutoStopMailService $idleAutoStopMailService,
         private readonly \App\Services\Reports\WorkTimeSummaryService $workTimeSummaryService,
+        private readonly \App\Services\Reports\WorkedTimeService $workedTimeService,
     ) {
     }
 
@@ -386,17 +387,37 @@ class TimeEntryController extends Controller
             Log::info('Idle auto-stop validated.', $idleContext['log']);
         }
 
-        $this->closeRunningEntries($runningEntries, $stoppedAt);
-        $timeEntry = $runningEntries->first();
+        $attendanceCheckoutAt = $stoppedAt;
 
-        if ($request->boolean('auto_stopped_for_idle')) {
-            $timeEntry->timestamps = false;
-            $timeEntry->auto_stopped_for_idle = true;
-            $timeEntry->save();
+        if ($request->boolean('auto_stopped_for_idle') && $idleContext) {
+            // End the entry AT the last keypress so the idle tail is not billed,
+            // matching the in-request server fallback and the cron. This path
+            // used to close at now(), so the same idle period was billed or
+            // excluded depending purely on which of the three paths fired.
+            $attendanceCheckoutAt = $this->closeIdleStoppedEntries(
+                $runningEntries,
+                $stoppedAt,
+                $idleContext['last_active_at'] instanceof Carbon
+                    ? $idleContext['last_active_at']->copy()
+                    : $stoppedAt->copy(),
+                (int) $idleContext['resolved_idle_seconds'],
+            );
+        } else {
+            $this->closeRunningEntries($runningEntries, $stoppedAt);
+
+            foreach ($runningEntries as $running) {
+                $running->timestamps = false;
+                $running->stop_reason = $request->filled('ended_at')
+                    ? TimeEntry::STOP_MANUAL_OFFLINE_SYNC
+                    : TimeEntry::STOP_MANUAL;
+                $running->save();
+            }
         }
 
+        $timeEntry = $runningEntries->first();
+
         if ($slot === 'primary') {
-            $this->ensureAttendanceCheckedOutForBreak($user->id, $stoppedAt);
+            $this->ensureAttendanceCheckedOutForBreak($user->id, $attendanceCheckoutAt);
         }
 
         if ($shouldSendIdleEmail && $idleContext) {
@@ -489,6 +510,11 @@ class TimeEntryController extends Controller
             'work_time' => $workTimeSummary['work_time'],
             'idle_time' => $workTimeSummary['idle_time'],
             'break_time' => $workTimeSummary['break_time'],
+            // The canonical block. Clients render these verbatim and must not
+            // recombine them with anything else — the shift countdown ran
+            // backwards precisely because the client was reconciling five
+            // different worked-time sources with max().
+            'worked_time' => $this->workedTimeService->forUserToday($user, $resolvedNow),
         ]);
     }
 
@@ -718,6 +744,62 @@ class TimeEntryController extends Controller
         }
     }
 
+    /**
+     * Close entries that the client auto-stopped for idle.
+     *
+     * The one duration rule, shared with closeIdleRunningEntry() and
+     * timers:close-idle: end_time is rewound to the last real activity so the
+     * idle tail falls outside the billed span, and the tail itself is recorded
+     * separately in trailing_idle_seconds.
+     *
+     * @return Carbon the instant attendance should be punched out at
+     */
+    private function closeIdleStoppedEntries(
+        Collection $runningEntries,
+        Carbon $stoppedAt,
+        Carbon $lastActiveAt,
+        int $resolvedIdleSeconds,
+    ): Carbon {
+        $earliestEnd = $stoppedAt->copy();
+
+        foreach ($runningEntries as $running) {
+            $startTime = Carbon::parse($running->start_time);
+            $anchor = $lastActiveAt->copy();
+
+            // When no activity was ever recorded for the session the anchor
+            // collapses to start_time, which would close the entry at zero
+            // seconds and destroy the whole session. The client told us how long
+            // it had been idle, so back-compute the anchor from that instead.
+            if ($anchor->lte($startTime) && $resolvedIdleSeconds > 0) {
+                $anchor = $stoppedAt->copy()->subSeconds($resolvedIdleSeconds);
+            }
+
+            if ($anchor->lt($startTime)) {
+                $anchor = $startTime->copy();
+            }
+            if ($anchor->gt($stoppedAt)) {
+                $anchor = $stoppedAt->copy();
+            }
+
+            $running->timestamps = false;
+            $running->update([
+                'end_time' => $anchor,
+                'duration' => (int) max(0, $startTime->diffInSeconds($anchor)),
+                'auto_stopped_for_idle' => true,
+                'stop_reason' => TimeEntry::STOP_IDLE_CLIENT,
+                'last_activity_at' => $anchor,
+                'trailing_idle_seconds' => (int) max(0, $anchor->diffInSeconds($stoppedAt)),
+                'duration_reconciled_at' => $stoppedAt,
+            ]);
+
+            if ($anchor->lt($earliestEnd)) {
+                $earliestEnd = $anchor->copy();
+            }
+        }
+
+        return $earliestEnd;
+    }
+
     private function closeStalePrimaryRunningEntries(int $userId, Carbon $boundaryAt, string $slot): void
     {
         if ($slot !== 'primary') {
@@ -777,9 +859,33 @@ class TimeEntryController extends Controller
             ->orderByDesc('recorded_at')
             ->first(['recorded_at']);
 
-        $lastActivityAt = $lastActivity
-            ? Carbon::parse($lastActivity->recorded_at)
-            : $startTime;
+        // The tracker has TWO activity ledgers. When the Electron
+        // foreground-window bridge is available the renderer writes an
+        // activity_sessions row and returns before ever creating an `activities`
+        // row, so anchoring on `activities` alone found nothing, fell back to
+        // start_time, and closed the entry with duration = 0 — losing real work.
+        // It is build-dependent, which is why it came and went.
+        $lastSessionAt = DB::table('activity_sessions')
+            ->where('user_id', $userId)
+            ->where('time_entry_id', $entry->id)
+            ->max(DB::raw('COALESCE(ended_at, started_at)'));
+
+        $activityAt = $lastActivity ? Carbon::parse($lastActivity->recorded_at) : null;
+        $sessionAt = $lastSessionAt ? Carbon::parse($lastSessionAt) : null;
+
+        // Whichever ledger saw the user most recently wins.
+        $lastActivityAt = $startTime;
+        $anchoredOn = 'start_time';
+
+        if ($activityAt && $activityAt->gt($lastActivityAt)) {
+            $lastActivityAt = $activityAt;
+            $anchoredOn = 'last_activity';
+        }
+
+        if ($sessionAt && $sessionAt->gt($lastActivityAt)) {
+            $lastActivityAt = $sessionAt;
+            $anchoredOn = 'activity_session';
+        }
 
         // Idle is time since the last real activity. Not idle long enough yet.
         if ($lastActivityAt->gt($cutoff)) {
@@ -793,12 +899,19 @@ class TimeEntryController extends Controller
             $endTime = $startTime->copy();
         }
         $duration = (int) max(0, $startTime->diffInSeconds($endTime));
+        $trailingIdleSeconds = (int) max(0, $endTime->diffInSeconds($now));
 
         $entry->timestamps = false;
         $entry->update([
             'end_time' => $endTime,
             'duration' => $duration,
             'auto_stopped_for_idle' => true,
+            'stop_reason' => TimeEntry::STOP_IDLE_SERVER,
+            'last_activity_at' => $lastActivityAt,
+            'trailing_idle_seconds' => $trailingIdleSeconds,
+            // Marks `duration` as deliberately computed so effectiveDuration()
+            // does not raise it back to the raw start->end span.
+            'duration_reconciled_at' => $now,
         ]);
 
         $this->closeOpenAttendancePunches($userId, $endTime);
@@ -810,9 +923,11 @@ class TimeEntryController extends Controller
             'last_activity_at' => $lastActivityAt->toIso8601String(),
             'end_time' => $endTime->toIso8601String(),
             'worked_seconds' => $duration,
+            'trailing_idle_seconds' => $trailingIdleSeconds,
             'idle_threshold_seconds' => $idleThreshold,
-            'anchored_on' => $lastActivity ? 'last_activity' : 'start_time',
+            'anchored_on' => $anchoredOn,
             'auto_stopped_for_idle' => true,
+            'stop_reason' => TimeEntry::STOP_IDLE_SERVER,
         ]);
     }
 
@@ -997,6 +1112,10 @@ class TimeEntryController extends Controller
         return [
             'eligible' => $eligible,
             'resolved_idle_seconds' => $resolvedIdleSeconds,
+            // The last-keypress anchor, resolved with the client-vs-database
+            // precedence above. Exposed so the stop path can rewind end_time to
+            // it instead of re-deriving it with weaker logic.
+            'last_active_at' => $lastActiveAt,
             'retry_after_seconds' => $retryAfterSeconds,
             'dedupe_key' => sprintf(
                 'idle-auto-stop:%d:%d:%s',

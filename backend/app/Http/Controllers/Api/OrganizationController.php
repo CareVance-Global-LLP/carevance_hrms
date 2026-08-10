@@ -75,7 +75,29 @@ class OrganizationController extends Controller
             'settings' => 'nullable|array',
         ]);
 
-        $organization->update($request->only(['name', 'slug', 'settings']));
+        // This route is open to managers, and a raw `settings` passthrough would
+        // let one write org policy keys directly — including the monitoring
+        // capture interval, whose own endpoint is admin-only. Preserve the
+        // guarded sub-trees from the stored settings rather than trusting the
+        // request for them; /settings/organization is the write path for those.
+        $payload = $request->only(['name', 'slug', 'settings']);
+
+        if (array_key_exists('settings', $payload)) {
+            $existing = is_array($organization->settings) ? $organization->settings : [];
+            $incoming = is_array($payload['settings']) ? $payload['settings'] : [];
+
+            foreach (['monitoring', 'leave_policy'] as $guardedKey) {
+                unset($incoming[$guardedKey]);
+
+                if (array_key_exists($guardedKey, $existing)) {
+                    $incoming[$guardedKey] = $existing[$guardedKey];
+                }
+            }
+
+            $payload['settings'] = $incoming;
+        }
+
+        $organization->update($payload);
 
         return response()->json($organization);
     }

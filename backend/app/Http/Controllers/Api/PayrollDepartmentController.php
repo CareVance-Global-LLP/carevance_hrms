@@ -21,11 +21,14 @@ use App\Services\Attendance\AttendanceService;
 use App\Services\PayrollCalculatorService;
 use App\Services\BankIntegrationService;
 use App\Services\PTStateService;
+use App\Models\StopPaymentFlag;
+use App\Services\Payroll\PayrollDisbursementService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use App\Services\PayrollPdfService;
@@ -42,6 +45,7 @@ class PayrollDepartmentController extends Controller
         AttendanceService $attendance,
         TimeEntryDurationService $timeEntryDuration,
         BankIntegrationService $bank,
+        private readonly PayrollDisbursementService $disbursement,
     ) {
         $this->calculator = $calculator;
         $this->attendance = $attendance;
@@ -740,7 +744,7 @@ class PayrollDepartmentController extends Controller
 
             $payrollPreview = $this->calculator->calculatePayroll(
                 annualCtc: (float) $annualCtc,
-                stateCode: $template->pt_state ?? 'maharashtra',
+                stateCode: $template->pt_state ?: '',
                 isMetroCity: $template->is_metro_city,
                 taxRegime: $template->tax_regime,
                 customConfig: [
@@ -1042,12 +1046,30 @@ class PayrollDepartmentController extends Controller
         $attendance = $this->attendance->monthlyAttendanceSummary($user, $request->month_year);
         $workingDays = $request->filled('working_days') ? (int) $request->working_days : (int) round($attendance['working_days']);
         $daysPresent = $request->filled('days_present') ? (int) $request->days_present : (int) round($attendance['present_days']);
-        $lOPDays = $request->filled('lOP_days')
-            ? (float) $request->lOP_days
-            : (float) ($attendance['total_lop_days'] ?? $attendance['legacy_lop_days'] ?? 0);
+        /*
+         * Loss of pay has to agree with the attendance it is derived from.
+         *
+         * Taking it from the summary while working_days and days_present came
+         * from an explicit override left the three mutually contradictory: an
+         * employee entered as present for all 26 working days still carried the
+         * summary's 22 LOP days, which deducted ₹81,464 from a ₹96,275 gross
+         * and paid them ₹3,762. When the caller states attendance, LOP is what
+         * that attendance implies.
+         */
+        if ($request->filled('lOP_days')) {
+            $lOPDays = (float) $request->lOP_days;
+        } elseif ($request->filled('working_days') || $request->filled('days_present')) {
+            $lOPDays = (float) max(0, $workingDays - $daysPresent);
+        } else {
+            $lOPDays = (float) ($attendance['total_lop_days'] ?? $attendance['legacy_lop_days'] ?? 0);
+        }
+        // The summary omits overtime_seconds for a period with no overtime
+        // records, and this was the one call site reading it without a default
+        // — every other one coalesces. Processing an employee's payroll for a
+        // month with no overtime fataled here rather than paying them.
         $overtimeHours = $request->filled('overtime_hours')
             ? (float) $request->overtime_hours
-            : round($attendance['overtime_seconds'] / 3600, 2);
+            : round(($attendance['overtime_seconds'] ?? 0) / 3600, 2);
 
         // Get department ID
         $departmentId = DB::table('group_user')
@@ -1060,7 +1082,7 @@ class PayrollDepartmentController extends Controller
 
         $calculation = $this->calculator->calculatePayroll(
             annualCtc: (float) $request->annual_ctc,
-            stateCode: $template->pt_state ?? 'maharashtra',
+            stateCode: $template->pt_state ?: '',
             isMetroCity: $template->is_metro_city,
             taxRegime: $template->tax_regime,
             customConfig: [
@@ -1104,7 +1126,7 @@ class PayrollDepartmentController extends Controller
         // February). Omitting it under-collects PT across the year.
         $ptMonth = (int) (explode('-', (string) $request->month_year)[1] ?? 0) ?: null;
         $ptAmount = $template->pt_enabled
-            ? \App\Services\PTStateService::calculate($template->pt_state ?? 'maharashtra', $payableGross, $ptMonth)
+            ? \App\Services\PTStateService::calculate($template->pt_state ?: '', $payableGross, $ptMonth)
             : 0;
         $tdsAmount = $template->tds_enabled
             ? $calculation['components']['deductions']['tds']
@@ -2106,6 +2128,16 @@ class PayrollDepartmentController extends Controller
                     'total_deductions' => $run->total_deductions,
                     'total_net_pay' => $run->total_net_pay,
                     'total_employer_contributions' => $run->total_employer_contributions,
+                    // The statutory split is already computed and stored by
+                    // updatePayrollRunTotals(); it was simply never returned.
+                    // The dashboard's composition chart needs it to show where
+                    // gross actually goes, rather than one opaque "deductions".
+                    'total_pf_employee' => $run->total_pf_employee,
+                    'total_pf_employer' => $run->total_pf_employer,
+                    'total_esi_employee' => $run->total_esi_employee,
+                    'total_esi_employer' => $run->total_esi_employer,
+                    'total_pt' => $run->total_pt,
+                    'total_tds' => $run->total_tds,
                     'created_by_name' => $run->createdBy?->name,
                     'locked_by_name' => $run->lockedBy?->name,
                     'approved_by_name' => $run->approvedBy?->name,
@@ -3704,6 +3736,33 @@ class PayrollDepartmentController extends Controller
 
         $filename = "bank_file_{$run->month_year}_{$run->id}.csv";
 
+        /*
+         * Persist what was instructed.
+         *
+         * This endpoint used to build the CSV in memory and hand it back, which
+         * left no record that a payment instruction had ever been produced —
+         * bank_transfer_batches stayed empty while runs reached 'disbursed'.
+         * The batch is what a returning UTR reconciles against, so it has to
+         * outlive the response. Never allowed to fail the download: a file the
+         * user can still take to the bank beats an error because bookkeeping
+         * did not save.
+         */
+        $batchReference = null;
+
+        try {
+            $prepared = $this->disbursement->prepareBatch(
+                run: $run,
+                actorId: (int) auth()->id(),
+                bankName: $request->get('bank_name'),
+            );
+            $batchReference = $prepared['batch']->batch_reference;
+        } catch (\Throwable $e) {
+            Log::warning('Bank file generated but the transfer batch was not recorded', [
+                'run_id' => $run->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'filename' => $filename,
@@ -3714,6 +3773,7 @@ class PayrollDepartmentController extends Controller
             'total_pending' => $items->count(),
             'skipped_employees' => $skipped,
             'partial' => count($skipped) > 0,
+            'batch_reference' => $batchReference,
         ]);
     }
 
@@ -4111,14 +4171,30 @@ class PayrollDepartmentController extends Controller
         // foreach below iterated an undefined variable: the run flipped to
         // 'disbursed' while every single payroll item stayed 'pending', and
         // the audit log recorded a paid count of zero.
-        DB::transaction(function () use ($run, $request, $paymentMethod, $pendingItems) {
+        // The batch this run's bank file was issued under, if one exists.
+        $batchReference = \App\Models\BankTransferBatch::where('payroll_run_id', $run->id)
+            ->latest('id')
+            ->value('batch_reference');
+
+        DB::transaction(function () use ($run, $request, $paymentMethod, $pendingItems, $batchReference) {
             foreach ($pendingItems as $item) {
                 $item->update([
                     'payment_status' => 'paid',
                     'payment_method' => $paymentMethod,
-                    // Per-item reference is deliberate: reconciliation against
-                    // the bank statement matches on it line by line.
-                    'payment_reference' => 'PAY-' . strtoupper(substr(md5(random_bytes(6)), 0, 8)),
+                    /*
+                     * Carry the batch reference the bank file was issued under,
+                     * so a line can be traced back to the instruction that paid
+                     * it. A locally invented 'PAY-xxxxxxxx' matched nothing on
+                     * a bank statement, which is the only thing reconciliation
+                     * has to work with.
+                     *
+                     * This still records an *instruction*, not a confirmation —
+                     * the bank's UTR replaces it when the results come back
+                     * through PayrollDisbursementService::recordResults().
+                     */
+                    'payment_reference' => $batchReference
+                        ? $batchReference.'/'.$item->user_id
+                        : 'PAY-'.strtoupper(substr(md5(random_bytes(6)), 0, 8)),
                     'paid_at' => now(),
                 ]);
             }

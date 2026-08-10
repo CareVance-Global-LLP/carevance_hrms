@@ -8,6 +8,7 @@ import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { useAuth } from '@/contexts/AuthContext';
 import { settingsApi } from '@/services/api';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
+import { profileCompleteness } from '@/lib/employeeProfileFields';
 import type { EmployeeProfileDetails } from '@/types';
 
 type ProfileForm = {
@@ -102,11 +103,19 @@ export default function ProfileOnboardingPage() {
     [form]
   );
 
-  const totalFields = Object.keys(form).length + 1; // +1 for timezone
-  const completedFields = useMemo(
-    () => Object.values(form).filter((value) => String(value).trim() !== '').length + (timezone ? 1 : 0),
-    [form, timezone]
+  /*
+   * Counted against the shared registry rather than the shape of this form, so
+   * the percentage here and the "incomplete profiles" count on the Employees
+   * page cannot disagree. Scoped to employee-owned fields: HR still has to
+   * supply the employee code and joining date, and it would be wrong to tell a
+   * new joiner they are incomplete because of something they cannot enter.
+   */
+  const completeness = useMemo(
+    () => profileCompleteness({ employee_profile: form }, { owner: 'employee' }),
+    [form]
   );
+  const totalFields = completeness.total + 1; // +1 for timezone
+  const completedFields = completeness.filled + (timezone ? 1 : 0);
   const progressPercentage = Math.round((completedFields / Math.max(1, totalFields)) * 100);
 
   const saveMutation = useMutation({

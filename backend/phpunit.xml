@@ -29,6 +29,13 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
+        <!--
+            Payroll feature tests exercise payroll behaviour, not billing. Without
+            this they all 403 at the plan gate before reaching anything they mean
+            to assert. The gate itself is covered directly by
+            PayrollPlanGateTest, which turns this back off.
+        -->
+        <env name="PAYROLL_DEV_MODE" value="true"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\AppNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class NotificationController extends Controller
 {
@@ -117,6 +118,8 @@ $query = AppNotification::with(['sender:id,name,email', 'poll' => function ($que
                 ]));
         }
 
+        $broadcastId = (string) Str::uuid();
+
         $this->notificationService->sendToUsers(
             organizationId: (int) $currentUser->organization_id,
             userIds: $recipientIds,
@@ -126,9 +129,47 @@ $query = AppNotification::with(['sender:id,name,email', 'poll' => function ($que
             message: (string) $request->message,
             meta: $request->priority ? ['priority' => $request->priority] : null,
             pollId: $poll?->id,
+            broadcastId: $broadcastId,
         );
 
-        return $this->createdResponse([], 'Notification published.');
+        return $this->createdResponse(['broadcast_id' => $broadcastId], 'Notification published.');
+    }
+
+    /**
+     * How many recipients have opened each of the given broadcasts.
+     *
+     * Counts only — naming who has not read an announcement turns internal
+     * comms into a compliance tool, which is a deliberate product decision and
+     * not one this endpoint should make on anyone's behalf.
+     */
+    public function deliveryStats(Request $request)
+    {
+        $currentUser = $request->user();
+        if (!$currentUser || !$currentUser->organization_id) {
+            return response()->json(['data' => []]);
+        }
+        if (!$this->canManage($currentUser)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $request->validate([
+            'broadcast_ids' => 'required|array|max:100',
+            'broadcast_ids.*' => 'string|uuid',
+        ]);
+
+        $stats = AppNotification::query()
+            ->where('organization_id', $currentUser->organization_id)
+            ->whereIn('broadcast_id', $request->input('broadcast_ids'))
+            ->groupBy('broadcast_id')
+            ->selectRaw('broadcast_id, COUNT(*) as total, SUM(CASE WHEN is_read THEN 1 ELSE 0 END) as read_count')
+            ->get()
+            ->map(fn ($row) => [
+                'broadcast_id' => (string) $row->broadcast_id,
+                'total' => (int) $row->total,
+                'read' => (int) $row->read_count,
+            ]);
+
+        return response()->json(['data' => $stats]);
     }
 
     public function markRead(Request $request, int $id)
