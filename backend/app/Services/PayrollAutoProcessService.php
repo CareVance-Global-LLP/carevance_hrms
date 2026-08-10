@@ -470,10 +470,26 @@ class PayrollAutoProcessService
              * turn lopDays > totalDays into a negative factor and cascade a
              * negative gross, basic and PF base through the whole calculation.
              */
-            $monthlyGross = $monthlyCtc;
-            $basic = round($monthlyGross * $basicPct, 2);
-            $hra = round($basic * $hraPct, 2);
-            $conveyance = min((float) ($template->conveyance_allowance ?? 1600), $monthlyGross);
+            /*
+             * One definition of gross, shared with every other engine.
+             *
+             * This used to set gross = monthly CTC, which pays the employer's
+             * own PF contribution and gratuity provision to the employee as
+             * special allowance: on a ₹6,00,000 CTC the employer spent the
+             * whole ₹50,000 on wages and then funded ₹1,800 PF and ₹962
+             * gratuity on top — ₹2,762 a month per head over the agreed cost.
+             * Code on Wages s.2(y) excludes both from "wages".
+             */
+            $components = $this->calculator->calculateSalaryComponents($monthlyCtc, [
+                'basic_percentage' => $basicPct,
+                'hra_percentage_of_basic' => $hraPct,
+                'conveyance_allowance' => (float) ($template->conveyance_allowance ?? 1600),
+            ]);
+
+            $monthlyGross = (float) $components['gross'];
+            $basic = round((float) $components['basic'], 2);
+            $hra = round((float) $components['hra'], 2);
+            $conveyance = min((float) $components['conveyance'], $monthlyGross);
             $medical = min((float) ($template->medical_allowance ?? 0), $monthlyGross);
             $specialAllowance = round($monthlyGross - $basic - $hra - $conveyance - $medical, 2);
 

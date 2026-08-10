@@ -80,7 +80,18 @@ class SalaryCalculationService
         // Conveyance, medical, special allowance are fixed (not pro-rated)
         $conveyance = min((float) ($template->conveyance_allowance ?? 1600), 1600);
         $medical = min((float) ($template->medical_allowance ?? 0), 1250);
-        $specialAllowance = max(0, $monthlyCtc - ($monthlyCtc * ($basicPercentage / 100)) - $hra - $da - $conveyance - $medical);
+        /*
+         * The residual is taken against GROSS, not CTC. Using CTC hands the
+         * employer's own PF contribution and gratuity provision to the
+         * employee as special allowance — Code on Wages s.2(y) excludes both
+         * from "wages", and the employer then funds them a second time on top
+         * of the agreed cost to company.
+         */
+        $monthlyGross = $monthlyCtc
+            - app(\App\Services\PayrollCalculatorService::class)->calculateEmployerPF($monthlyCtc * ($basicPercentage / 100))
+            - app(\App\Services\PayrollCalculatorService::class)->calculateGratuityProvision($monthlyCtc * ($basicPercentage / 100));
+
+        $specialAllowance = max(0, $monthlyGross - ($monthlyCtc * ($basicPercentage / 100)) - $hra - $da - $conveyance - $medical);
         $statutoryBonus = $this->calculateStatutoryBonus($basic, $payMonth, $payYear);
         $foodAllowance = (float) ($template->meal_allowance ?? 0);
         $overtimePay = $this->calculateOvertime($basic, $overtimeHours);

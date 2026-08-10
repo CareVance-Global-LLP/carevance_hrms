@@ -153,7 +153,21 @@ class PayrollCalculatorService
         ];
     }
 
-    protected function calculateSalaryComponents(float $monthlyCtc, array $config): array
+    /**
+     * Split a monthly cost-to-company into the employee's own earnings lines.
+     *
+     * Gross is CTC less the employer-side amounts, because employer PF and the
+     * gratuity provision are the employer's cost, not the employee's wages —
+     * Code on Wages s.2(y) excludes both from "wages". Treating gross as equal
+     * to CTC pays those amounts to the employee as special allowance, so the
+     * employer spends its whole CTC on wages and then funds PF and gratuity on
+     * top of it.
+     *
+     * Public so every engine shares one definition. Three coexisted, and for a
+     * ₹6,00,000 CTC they produced ₹50,000, ₹47,238 and ₹50,000 for the same
+     * person in the same month.
+     */
+    public function calculateSalaryComponents(float $monthlyCtc, array $config): array
     {
         $basic = $monthlyCtc * $config['basic_percentage'];
         $hra = $basic * $config['hra_percentage_of_basic'];
