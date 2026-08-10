@@ -26,7 +26,10 @@ class AttendanceRecord extends Model
     protected function casts(): array
     {
         return [
-            'attendance_date' => 'date',
+            // date:Y-m-d, not date — a plain 'date' cast serializes as a full
+            // datetime, so a bare 'Y-m-d' bound in a whereBetween sorts before
+            // the stored value and silently drops the last day of the month.
+            'attendance_date' => 'date:Y-m-d',
             'check_in_at' => 'datetime',
             'check_out_at' => 'datetime',
             'worked_seconds' => 'integer',

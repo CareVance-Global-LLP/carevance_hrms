@@ -116,6 +116,69 @@ class LeaveRequest extends Model
         return $this->isHalfDay() ? 0.5 : 1.0;
     }
 
+    /**
+     * Split this leave's units for a single date into paid and unpaid.
+     *
+     * The paid/unpaid decision lives in `leave_category`: 'unpaid' is the only
+     * unpaid category (LeavePolicyService::resolvePolicyCategories refuses to
+     * register any other), everything else is drawn from a quota and is paid.
+     *
+     * When a request overruns its quota the approver records the split in
+     * `consumed_breakdown`. Quota is consumed chronologically, so the earliest
+     * days of the request are the paid ones and the overflow is unpaid.
+     *
+     * @return array{paid: float, unpaid: float}
+     */
+    public function paidUnpaidUnitsForDate(Carbon|string $date): array
+    {
+        $units = $this->unitsForDate($date);
+        if ($units <= 0) {
+            return ['paid' => 0.0, 'unpaid' => 0.0];
+        }
+
+        if (strtolower(trim((string) ($this->leave_category ?: 'paid'))) === 'unpaid') {
+            return ['paid' => 0.0, 'unpaid' => $units];
+        }
+
+        $paidQuotaUnits = $this->paidUnitsFromBreakdown();
+        if ($paidQuotaUnits === null) {
+            return ['paid' => $units, 'unpaid' => 0.0];
+        }
+
+        // Walk the request's own days in order and work out how much paid quota
+        // is still unspent by the time we reach $date.
+        $targetDate = $date instanceof Carbon ? $date->toDateString() : Carbon::parse($date)->toDateString();
+        $spentBefore = 0.0;
+        foreach (CarbonPeriod::create($this->start_date->copy()->startOfDay(), $this->end_date->copy()->startOfDay()) as $day) {
+            if ($day->toDateString() >= $targetDate) {
+                break;
+            }
+            $spentBefore += $this->unitsForDate($day);
+        }
+
+        $paid = max(0.0, min($units, $paidQuotaUnits - $spentBefore));
+
+        return ['paid' => $paid, 'unpaid' => round($units - $paid, 2)];
+    }
+
+    /**
+     * Paid units recorded on `consumed_breakdown`, or null when the request has
+     * no breakdown and should therefore be treated as wholly paid.
+     */
+    private function paidUnitsFromBreakdown(): ?float
+    {
+        $breakdown = collect((array) ($this->consumed_breakdown ?? []))
+            ->filter(fn ($row) => is_array($row));
+
+        if ($breakdown->isEmpty()) {
+            return null;
+        }
+
+        return (float) $breakdown
+            ->reject(fn (array $row) => strtolower(trim((string) ($row['category'] ?? 'unpaid'))) === 'unpaid')
+            ->sum(fn (array $row) => (float) ($row['units'] ?? 0));
+    }
+
     public function effectiveUnitsInRange(Carbon $startDate, Carbon $endDate): float
     {
         $overlapStart = $this->start_date->copy()->startOfDay()->max($startDate->copy()->startOfDay());

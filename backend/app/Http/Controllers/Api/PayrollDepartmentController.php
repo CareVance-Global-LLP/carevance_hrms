@@ -1361,7 +1361,15 @@ class PayrollDepartmentController extends Controller
         $grossWithOT = $calculation['monthly']['gross'] + $overtimePay + $additionalEarnings
             + $formulaEarnings + $arrearsGross;
         $totalDeductions += $formulaDeductions + $arrearsDeductions;
-        $netPay = max(0, $grossWithOT - $totalDeductions);
+        /*
+         * Signed, deliberately — never max(0, ...). Clamping hid the one case
+         * that most needs to stop a run: deductions overrunning gross, from a
+         * large recovery or a full month of unpaid leave. Payroll validation
+         * and the disbursement exclusion check can only act on the problem if
+         * the real number survives, and a silent 0 reads as "owed nothing"
+         * rather than "this figure is wrong".
+         */
+        $netPay = round($grossWithOT - $totalDeductions, 2);
 
         // Create or update payroll item
         $payrollItem = PayrollItem::updateOrCreate(
@@ -3946,7 +3954,16 @@ class PayrollDepartmentController extends Controller
 
         $organizationId = $request->user()->organization_id;
         $monthYear = $data['month_year'];
-        $workingDays = (int) ($data['working_days'] ?? 26);
+        /*
+         * No default here on purpose. Injecting a flat 26 for the whole
+         * organization left working_days disagreeing with the days_present each
+         * employee's own calendar produced (~21-23), and processEmployeePayroll
+         * reads an explicit working_days as "the caller is stating attendance"
+         * and derives LOP = working_days - days_present. Every employee with
+         * perfect attendance was therefore docked 3-5 days on every run.
+         * Passing null lets each employee fall back to their own summary.
+         */
+        $workingDays = isset($data['working_days']) ? (int) $data['working_days'] : null;
 
         // Immutability: cannot re-run for a disbursed month.
         $existing = PayrollMonthlyRun::where('organization_id', $organizationId)
@@ -4028,11 +4045,13 @@ class PayrollDepartmentController extends Controller
                 $subRequest = Request::create(
                     '/payroll/employees/' . $uid . '/process',
                     'POST',
-                    [
+                    array_filter([
                         'month_year' => $monthYear,
                         'annual_ctc' => (float) $template->annual_ctc,
+                        // Only forwarded when the operator explicitly set it;
+                        // otherwise each employee uses their own attendance.
                         'working_days' => $workingDays,
-                    ]
+                    ], fn ($value) => $value !== null)
                 );
                 $subRequest->setUserResolver(fn () => $request->user());
 

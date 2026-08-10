@@ -46,7 +46,7 @@ class PayrollAutoProcessService
         $this->fbp = $fbp;
     }
 
-    public function quickProcess(int $orgId, string $monthYear, int $userId): array
+    public function quickProcess(int $orgId, string $monthYear, int $userId): \App\Models\PayrollMonthlyRun
     {
         return $this->processForUsers($orgId, $monthYear, null, $userId);
     }
@@ -436,8 +436,17 @@ class PayrollAutoProcessService
             $pfEnabled = $template->pf_enabled;
             $esiEnabled = $template->esi_enabled;
 
-            $proRationFactor = $totalDays > 0 ? ($totalDays - $lopDays) / $totalDays : 1;
-            $monthlyGross = $monthlyCtc * $proRationFactor;
+            /*
+             * Gross is the FULL month. Loss of pay is applied exactly once,
+             * below, as an explicit lopDeduction line.
+             *
+             * This used to also pro-rate gross by (totalDays - lopDays)/totalDays
+             * and then subtract a lopDeduction computed off that already-reduced
+             * gross, charging every LOP day twice. Pro-rating here would also
+             * turn lopDays > totalDays into a negative factor and cascade a
+             * negative gross, basic and PF base through the whole calculation.
+             */
+            $monthlyGross = $monthlyCtc;
             $basic = round($monthlyGross * $basicPct, 2);
             $hra = round($basic * $hraPct, 2);
             $conveyance = min((float) ($template->conveyance_allowance ?? 1600), $monthlyGross);
@@ -456,7 +465,11 @@ class PayrollAutoProcessService
             // Use $gross (not $monthlyCtc) as the basis so the LOP
             // deduction matches what already exists in the database
             // for previous runs: lOP_deduction = (gross / totalDays) × lopDays.
-            $lopDeduction = $lopDays > 0 ? round($gross / $totalDays * $lopDays, 2) : 0;
+            // Capped at gross: a data-entry error where lopDays exceeds the
+            // month's working days must not invent earnings to claw back.
+            $lopDeduction = ($lopDays > 0 && $totalDays > 0)
+                ? min(round($gross / $totalDays * $lopDays, 2), round($gross, 2))
+                : 0;
 
             // Actual payable wages = gross minus LOP
             $payableGross = max(0, $gross - $lopDeduction);
@@ -467,11 +480,11 @@ class PayrollAutoProcessService
                 ? max(0, $basic - ($basic / $gross) * $lopDeduction)
                 : 0;
 
-            // PF on earned basic (pro-rated for days present, BEFORE LOP deduction).
-            // PF applies to actual wages for days worked — LOP is unpaid absence
-            // but the employee still earns PF on the days they were present.
-            // If 1 out of 22 days was worked, PF = 1/22 of the monthly PF amount.
-            $pfWages = min($basic, 15000);
+            // PF applies to the basic actually earned, so it is computed on
+            // payableBasic (basic less this month's LOP share) and not on the
+            // full-month basic. The statutory wage ceiling is applied after
+            // that reduction, per the EPF wage definition.
+            $pfWages = min($payableBasic, 15000);
             $pfEmployee = $pfEnabled ? round($pfWages * 0.12, 2) : 0;
             $eps = $pfEnabled ? round($pfWages * 0.0833, 2) : 0;
             $epf = $pfEnabled ? round($pfWages * 0.0367, 2) : 0;

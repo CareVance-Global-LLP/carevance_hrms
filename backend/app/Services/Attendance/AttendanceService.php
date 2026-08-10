@@ -1291,21 +1291,21 @@ class AttendanceService
             // 2. If approved leave exists: paid/unpaid based on leave type
             // 3. Otherwise: absent (LOP)
             
-            if ($leaveUnits >= 1.0) {
-                // Full day leave - check if paid or unpaid
-                $leaveForDate = $approvedLeaves->first(fn ($l) => $l->unitsForDate($date) >= 1.0);
-                if ($leaveForDate && in_array($leaveForDate->leave_type, ['casual', 'sick', 'earned', 'annual'])) {
-                    $paidLeaveDays += 1.0;
+            if ($leaveUnits >= 0.5) {
+                // Paid vs unpaid is decided by leave_category (and, on a quota
+                // overrun, by consumed_breakdown) — never by leave_type, which
+                // only ever holds 'full_day'/'half_day'.
+                $leaveForDate = $approvedLeaves->first(fn ($l) => $l->unitsForDate($date) >= $leaveUnits);
+                $split = $leaveForDate
+                    ? $leaveForDate->paidUnpaidUnitsForDate($date)
+                    : ['paid' => 0.0, 'unpaid' => $leaveUnits];
+
+                if ($leaveUnits >= 1.0) {
+                    $paidLeaveDays += $split['paid'];
+                    $unpaidLeaveDays += $split['unpaid'];
                 } else {
-                    $unpaidLeaveDays += 1.0;
-                }
-            } elseif ($leaveUnits >= 0.5) {
-                // Half day leave
-                $leaveForDate = $approvedLeaves->first(fn ($l) => $l->unitsForDate($date) >= 0.5);
-                if ($leaveForDate && in_array($leaveForDate->leave_type, ['casual', 'sick', 'earned', 'annual'])) {
-                    $halfDayPresent += 0.5;
-                } else {
-                    $halfDayAbsent += 0.5;
+                    $halfDayPresent += $split['paid'];
+                    $halfDayAbsent += $split['unpaid'];
                 }
             } elseif ($hasCheckIn) {
                 // Has check-in, no leave
