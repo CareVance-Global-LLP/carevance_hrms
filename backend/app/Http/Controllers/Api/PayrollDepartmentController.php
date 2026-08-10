@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessPayrollRunEmployees;
 use App\Models\EmployeeLoan;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\FbpAllocation;
@@ -2645,6 +2646,24 @@ class PayrollDepartmentController extends Controller
      * Users without an annual_ctc configured yet are counted as expected
      * so the operator sees them as "needs setup" rather than silently skipped.
      */
+    /**
+     * The employees in this run that still have no payroll item.
+     *
+     * Public because ProcessPayrollRunEmployees needs it, and because it is the
+     * only part of completeness the job cares about. Deliberately re-derived on
+     * every call rather than passed along: the job recomputes it when the worker
+     * picks the run up, which is what makes re-running safe — anyone processed
+     * in the meantime is simply no longer in the list.
+     *
+     * @return array<int, int>
+     */
+    public function missingEmployeeIdsForRun(int $organizationId, PayrollMonthlyRun $run): array
+    {
+        $completeness = $this->getRunCompletenessData($organizationId, $run);
+
+        return array_column($completeness['missing_employees'], 'id');
+    }
+
     private function getRunCompletenessData(int $organizationId, PayrollMonthlyRun $run): array
     {
         $monthYear = $run->month_year;
@@ -2760,62 +2779,86 @@ class PayrollDepartmentController extends Controller
             ]);
         }
 
-        $missingUserIds = array_column($completeness['missing_employees'], 'id');
-
-        // Compute working days default for this month. Per-employee
-        // processing always re-reads monthly attendance inside
-        // processEmployeePayroll, so passing 26 here is safe — the actual
-        // working_days get re-derived from attendance when not overridden.
-        $workingDays = 26;
-
-        $succeeded = 0;
-        $failed = 0;
-        $skippedNoCtc = 0;
-
-        foreach ($missingUserIds as $uid) {
-            $template = EmployeePayrollTemplate::where('user_id', $uid)
-                ->where('organization_id', $organizationId)
-                ->first();
-
-            if (! $template || ! $template->annual_ctc || $template->annual_ctc <= 0) {
-                $skippedNoCtc++;
-                continue;
-            }
-
-            $subRequest = Request::create(
-                '/payroll/employees/' . $uid . '/process',
-                'POST',
-                [
-                    'month_year' => $run->month_year,
-                    'annual_ctc' => (float) $template->annual_ctc,
-                    'working_days' => $workingDays,
-                ]
-            );
-            $subRequest->setUserResolver(fn () => $request->user());
-
-            try {
-                $response = $this->processEmployeePayroll($subRequest, $uid);
-                if (($response->getData(true)['success'] ?? false) === true) {
-                    $succeeded++;
-                } else {
-                    $failed++;
-                }
-            } catch (\Throwable $e) {
-                $failed++;
-                \Log::warning("processRemainingEmployees: failed for user {$uid}", ['err' => $e->getMessage()]);
-            }
+        // Refuse to start a second pass while one is in flight. Two workers
+        // walking the same missing list would both see an employee as
+        // unprocessed and race to create their payroll item.
+        if (in_array($run->processing_state, ['queued', 'running'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This run is already being processed. Watch the progress rather than starting it again.',
+                'processing' => $this->processingPayload($run),
+            ], 409);
         }
 
-        $freshCompleteness = $this->getRunCompletenessData($organizationId, $run->fresh());
+        $missingUserIds = array_column($completeness['missing_employees'], 'id');
+
+        $run->update([
+            'processing_state' => 'queued',
+            'processing_total' => count($missingUserIds),
+            'processing_done' => 0,
+            'processing_failed' => 0,
+            'processing_skipped' => 0,
+            'processing_started_at' => null,
+            'processing_finished_at' => null,
+            'processing_message' => null,
+        ]);
+
+        ProcessPayrollRunEmployees::dispatch($run->id, $organizationId, (int) $request->user()->id);
+
+        // 202: the work has been accepted, not finished. Under the `sync` queue
+        // driver the job has in fact already run by the time we get here, so the
+        // payload is re-read from the run — the client polls the same fields
+        // either way and does not need to know which driver is configured.
+        return response()->json([
+            'success' => true,
+            'message' => 'Processing started. Track progress on this run.',
+            'processing' => $this->processingPayload($run->fresh()),
+            'completeness' => $this->getRunCompletenessData($organizationId, $run->fresh()),
+        ], 202);
+    }
+
+    /**
+     * Progress for a run whose employees are being processed in the background.
+     */
+    public function getRunProcessingStatus(Request $request, int $runId): JsonResponse
+    {
+        $organizationId = $request->user()->organization_id;
+
+        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
+            ->where('id', $runId)
+            ->firstOrFail();
 
         return response()->json([
-            'success' => $failed === 0,
-            'message' => "{$succeeded} processed, {$failed} failed, {$skippedNoCtc} skipped (no annual_ctc configured).",
-            'succeeded' => $succeeded,
-            'failed' => $failed,
-            'skipped_no_ctc' => $skippedNoCtc,
-            'completeness' => $freshCompleteness,
+            'success' => true,
+            'run_id' => $run->id,
+            'month_year' => $run->month_year,
+            'status' => $run->status,
+            'processing' => $this->processingPayload($run),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function processingPayload(PayrollMonthlyRun $run): array
+    {
+        $total = (int) $run->processing_total;
+        $settled = (int) $run->processing_done + (int) $run->processing_failed + (int) $run->processing_skipped;
+
+        return [
+            'state' => $run->processing_state ?? 'idle',
+            'total' => $total,
+            'done' => (int) $run->processing_done,
+            'failed' => (int) $run->processing_failed,
+            'skipped' => (int) $run->processing_skipped,
+            // Nothing to do is complete, not 0% — a bare done/total would show a
+            // stalled bar for a run with no outstanding employees.
+            'percent' => $total > 0 ? (int) floor(($settled / $total) * 100) : 100,
+            'is_finished' => in_array($run->processing_state, ['completed', 'failed'], true),
+            'started_at' => optional($run->processing_started_at)->toIso8601String(),
+            'finished_at' => optional($run->processing_finished_at)->toIso8601String(),
+            'message' => $run->processing_message,
+        ];
     }
 
     /**

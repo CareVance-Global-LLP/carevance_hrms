@@ -158,7 +158,7 @@ Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers res
 
 Real, and deliberately not yet built:
 
-- **No queue.** Payroll, filings and bank files run inside the web request. One job exists in the whole app. This is the ceiling on customer size — a run for a few hundred employees will hit `max_execution_time` mid-payroll, which is the worst place to lose a request.
+- **Filings and bank files still run inside the web request.** Run *processing* has been moved to `ProcessPayrollRunEmployees` (see below), but generating filings and bank files has not. Those remain the ceiling on customer size.
 - **No MFA and no SSO/SAML.** Google OAuth is the only federated option; a grep for `two_factor`/`totp`/`mfa`/`saml` returns nothing. This is the gate on any enterprise deal.
 - **No legal-entity layer.** One organization = one PAN/TAN/PF code.
 - **No offer letter, e-signature or background verification.**
@@ -168,6 +168,25 @@ Real, and deliberately not yet built:
 - **Mobile is employee-only** — no tasks, projects, chat, performance or resignation. No manager approvals, which is the most-used mobile workflow in every competing product.
 - **0 policies.** Authorization is inline in controllers.
 - **No real-time transport.** `BROADCAST_CONNECTION=log`; chat polls every 10s.
+
+### The queue, and the worker you must actually run
+
+`POST /payroll/runs/{id}/process-remaining` no longer processes employees inline. It marks the run `queued`, dispatches `ProcessPayrollRunEmployees`, and returns **202** with a progress handle; the client polls `GET /payroll/runs/{id}/processing-status` until `processing.is_finished`.
+
+**`.env.example` sets `QUEUE_CONNECTION=database`, so a deployment that follows it needs a worker running or payroll processing will queue and never happen:**
+
+```bash
+php artisan queue:work --queue=default --tries=1 --timeout=3600
+```
+
+Local `.env` files currently carry `QUEUE_CONNECTION=sync`, where the job runs inline on dispatch — same behaviour as before, and no worker needed. That is why the endpoint re-reads progress off the run before responding rather than assuming the work is still pending: the client polls the same fields under either driver and never needs to know which is configured.
+
+Two things about this job are load-bearing:
+
+- **It authenticates as the user who started it.** `BelongsToOrganization`'s global scope reads the organization from the authenticated user, and with *no* user it is deliberately a no-op so console commands are not filtered to nothing. In a queued job that default means querying **across every tenant**. Any new job touching scoped models must do the same — `Auth::setUser($actor)` — and `PayrollRunProcessingQueueTest` asserts it.
+- **`tries = 1`.** A retry would re-enter a partially processed run and race the first attempt. Failures are recorded on the run for a human, not retried silently.
+
+A second start while one is in flight is refused with **409** rather than queued — two workers walking the same missing list would race to create the same payroll item.
 
 ### Reading a failing payroll test
 

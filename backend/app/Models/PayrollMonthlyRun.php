@@ -18,6 +18,16 @@ class PayrollMonthlyRun extends Model
         'month_year',
         'status',
         'pay_date',
+        // Background processing progress — written by ProcessPayrollRunEmployees
+        // and polled through payroll/runs/{id}/processing-status.
+        'processing_state',
+        'processing_total',
+        'processing_done',
+        'processing_failed',
+        'processing_skipped',
+        'processing_started_at',
+        'processing_finished_at',
+        'processing_message',
         'total_employees',
         'total_gross',
         'total_deductions',
@@ -51,6 +61,8 @@ class PayrollMonthlyRun extends Model
 
     protected $casts = [
         'pay_date' => 'date',
+        'processing_started_at' => 'datetime',
+        'processing_finished_at' => 'datetime',
         'total_gross' => 'decimal:2',
         'total_deductions' => 'decimal:2',
         'total_net_pay' => 'decimal:2',
