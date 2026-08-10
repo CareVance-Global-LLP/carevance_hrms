@@ -42,7 +42,7 @@ class Reimbursement extends Model
     ];
 
     protected $casts = [
-        'expense_date' => 'date',
+        'expense_date' => 'date:Y-m-d',
         'approved_at' => 'datetime',
         'manager_approved_at' => 'datetime',
         'manager_read_at' => 'datetime',

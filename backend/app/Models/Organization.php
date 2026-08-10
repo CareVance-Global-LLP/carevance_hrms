@@ -70,7 +70,7 @@ class Organization extends Model
         'settings' => 'array',
         'trial_starts_at' => 'datetime',
         'trial_ends_at' => 'datetime',
-        'subscription_expires_at' => 'date',
+        'subscription_expires_at' => 'date:Y-m-d',
         'max_seats' => 'integer',
         'pending_seats' => 'integer',
         'pending_upgrade_amount' => 'decimal:2',

@@ -33,9 +33,9 @@ class TaskRecurrence extends Model
         'days_of_week' => 'array',
         'interval_value' => 'integer',
         'day_of_month' => 'integer',
-        'start_date' => 'date',
-        'end_date' => 'date',
-        'next_run_date' => 'date',
+        'start_date' => 'date:Y-m-d',
+        'end_date' => 'date:Y-m-d',
+        'next_run_date' => 'date:Y-m-d',
         'is_active' => 'boolean',
     ];
 

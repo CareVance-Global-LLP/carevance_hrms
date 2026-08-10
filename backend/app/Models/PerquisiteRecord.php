@@ -22,8 +22,8 @@ class PerquisiteRecord extends Model
         'annual_value' => 'decimal:2',
         'taxable_value' => 'decimal:2',
         'employee_contribution' => 'decimal:2',
-        'from_date' => 'date',
-        'to_date' => 'date',
+        'from_date' => 'date:Y-m-d',
+        'to_date' => 'date:Y-m-d',
         'details' => 'array',
         'is_active' => 'boolean',
     ];

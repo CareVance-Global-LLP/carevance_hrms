@@ -27,8 +27,8 @@ class EmployeeGovernmentId extends Model
     protected function casts(): array
     {
         return [
-            'issue_date' => 'date',
-            'expiry_date' => 'date',
+            'issue_date' => 'date:Y-m-d',
+            'expiry_date' => 'date:Y-m-d',
             'reviewed_at' => 'datetime',
         ];
     }

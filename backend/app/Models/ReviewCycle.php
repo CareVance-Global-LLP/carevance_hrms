@@ -28,11 +28,11 @@ class ReviewCycle extends Model
     ];
 
     protected $casts = [
-        'period_start' => 'date',
-        'period_end' => 'date',
-        'self_due' => 'date',
-        'manager_due' => 'date',
-        'share_date' => 'date',
+        'period_start' => 'date:Y-m-d',
+        'period_end' => 'date:Y-m-d',
+        'self_due' => 'date:Y-m-d',
+        'manager_due' => 'date:Y-m-d',
+        'share_date' => 'date:Y-m-d',
         'anonymize_peer' => 'boolean',
     ];
 

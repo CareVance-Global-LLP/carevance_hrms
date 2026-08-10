@@ -22,13 +22,16 @@ class Project extends Model
         'description',
         'color',
         'budget',
+        'budget_type',
+        'hourly_rate',
         'deadline',
         'status',
     ];
 
     protected $casts = [
         'budget' => 'decimal:2',
-        'deadline' => 'date',
+        'hourly_rate' => 'decimal:2',
+        'deadline' => 'date:Y-m-d',
     ];
 
     public function organization(): BelongsTo

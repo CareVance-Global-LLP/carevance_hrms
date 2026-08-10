@@ -23,7 +23,7 @@ class AttendanceHoliday extends Model
     protected function casts(): array
     {
         return [
-            'holiday_date' => 'date',
+            'holiday_date' => 'date:Y-m-d',
         ];
     }
 

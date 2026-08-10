@@ -41,8 +41,8 @@ class EmployeeExit extends Model
     ];
 
     protected $casts = [
-        'notice_start_date' => 'date',
-        'last_working_date' => 'date',
+        'notice_start_date' => 'date:Y-m-d',
+        'last_working_date' => 'date:Y-m-d',
         'notice_period_days' => 'integer',
         'served_days' => 'integer',
         'shortfall_days' => 'integer',

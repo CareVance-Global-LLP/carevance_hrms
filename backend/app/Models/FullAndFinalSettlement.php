@@ -62,9 +62,9 @@ class FullAndFinalSettlement extends Model
     ];
 
     protected $casts = [
-        'resignation_date' => 'date',
-        'last_working_date' => 'date',
-        'settlement_date' => 'date',
+        'resignation_date' => 'date:Y-m-d',
+        'last_working_date' => 'date:Y-m-d',
+        'settlement_date' => 'date:Y-m-d',
         'notice_pay_recovery' => 'decimal:2',
         'notice_pay_payable' => 'decimal:2',
         'basic_salary' => 'decimal:2',

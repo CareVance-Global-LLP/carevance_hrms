@@ -25,7 +25,7 @@ class Task extends Model
     ];
 
     protected $casts = [
-        'due_date' => 'date',
+        'due_date' => 'date:Y-m-d',
         'estimated_time' => 'integer',
         'remind_at' => 'datetime',
         'reminded_at' => 'datetime',

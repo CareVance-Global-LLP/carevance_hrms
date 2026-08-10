@@ -29,7 +29,7 @@ class CompOffTransaction extends Model
 
     protected $casts = [
         'days' => 'integer',
-        'transaction_date' => 'date',
+        'transaction_date' => 'date:Y-m-d',
         'monetary_value' => 'decimal:2',
     ];
 

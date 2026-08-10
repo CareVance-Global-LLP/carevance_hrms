@@ -27,7 +27,7 @@ class AttendanceTimeEditRequest extends Model
     protected function casts(): array
     {
         return [
-            'attendance_date' => 'date',
+            'attendance_date' => 'date:Y-m-d',
             'extra_seconds' => 'integer',
             'reviewed_at' => 'datetime',
             'escalation_history' => 'array',

@@ -29,7 +29,7 @@ class Asset extends Model
     ];
 
     protected $casts = [
-        'purchase_date' => 'date',
+        'purchase_date' => 'date:Y-m-d',
     ];
 
     public function organization(): BelongsTo

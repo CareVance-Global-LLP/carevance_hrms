@@ -30,7 +30,7 @@ class Resignation extends Model
     ];
 
     protected $casts = [
-        'last_working_date' => 'date',
+        'last_working_date' => 'date:Y-m-d',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
         'cancelled_at' => 'datetime',

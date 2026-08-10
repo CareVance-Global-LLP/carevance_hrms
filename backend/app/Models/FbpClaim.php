@@ -29,7 +29,7 @@ class FbpClaim extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
-        'claim_date' => 'date',
+        'claim_date' => 'date:Y-m-d',
         'reviewed_at' => 'datetime',
     ];
 

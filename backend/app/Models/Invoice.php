@@ -29,8 +29,8 @@ class Invoice extends Model
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
         'total' => 'decimal:2',
-        'due_date' => 'date',
-        'paid_at' => 'date',
+        'due_date' => 'date:Y-m-d',
+        'paid_at' => 'date:Y-m-d',
     ];
 
     protected $appends = ['total_amount', 'invoice_date'];

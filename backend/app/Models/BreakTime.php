@@ -25,7 +25,7 @@ class BreakTime extends Model
     ];
 
     protected $casts = [
-        'break_date' => 'date',
+        'break_date' => 'date:Y-m-d',
         'start_at' => 'datetime',
         'end_at' => 'datetime',
         'duration_seconds' => 'integer',

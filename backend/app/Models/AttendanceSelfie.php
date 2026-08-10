@@ -19,7 +19,7 @@ class AttendanceSelfie extends Model
     protected function casts(): array
     {
         return [
-            'attendance_date' => 'date',
+            'attendance_date' => 'date:Y-m-d',
             'latitude' => 'float',
             'longitude' => 'float',
             'accuracy_meters' => 'integer',

@@ -24,7 +24,7 @@ class SalaryRevisionLetter extends Model
         'new_ctc' => 'decimal:2',
         'arrear_amount' => 'decimal:2',
         'revision_percentage' => 'decimal:2',
-        'effective_from' => 'date',
+        'effective_from' => 'date:Y-m-d',
         'old_breakdown' => 'array',
         'new_breakdown' => 'array',
         'accepted_at' => 'datetime',

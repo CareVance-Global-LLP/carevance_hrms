@@ -32,7 +32,7 @@ class CompOffBalance extends Model
         'used_days' => 'integer',
         'expired_days' => 'integer',
         'balance_days' => 'integer',
-        'expiry_date' => 'date',
+        'expiry_date' => 'date:Y-m-d',
         'transaction_history' => 'array',
     ];
 

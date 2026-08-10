@@ -25,7 +25,7 @@ class PayrollTimeEntry extends Model
     ];
 
     protected $casts = [
-        'work_date' => 'date',
+        'work_date' => 'date:Y-m-d',
         'check_in' => 'datetime',
         'check_out' => 'datetime',
         'duration_seconds' => 'integer',

@@ -50,7 +50,7 @@ class PayrollMonthlyRun extends Model
     ];
 
     protected $casts = [
-        'pay_date' => 'date',
+        'pay_date' => 'date:Y-m-d',
         'total_gross' => 'decimal:2',
         'total_deductions' => 'decimal:2',
         'total_net_pay' => 'decimal:2',

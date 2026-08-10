@@ -31,8 +31,8 @@ class PerformanceReview extends Model
     ];
 
     protected $casts = [
-        'review_period_start' => 'date',
-        'review_period_end' => 'date',
+        'review_period_start' => 'date:Y-m-d',
+        'review_period_end' => 'date:Y-m-d',
         'strengths' => 'array',
         'areas_for_improvement' => 'array',
         'goals' => 'array',

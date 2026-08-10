@@ -29,8 +29,8 @@ class PayGroupFilingDetail extends Model
         return [
             'pt_enabled' => 'boolean',
             'lwf_enabled' => 'boolean',
-            'pt_registration_date' => 'date',
-            'lwf_registration_date' => 'date',
+            'pt_registration_date' => 'date:Y-m-d',
+            'lwf_registration_date' => 'date:Y-m-d',
         ];
     }
 
