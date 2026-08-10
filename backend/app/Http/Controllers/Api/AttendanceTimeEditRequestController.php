@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\AppNotificationService;
 use App\Services\Approvals\ApprovalRoutingService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Payroll\PayrollPeriodGuard;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 
@@ -19,6 +20,7 @@ class AttendanceTimeEditRequestController extends Controller
         private readonly AppNotificationService $notificationService,
         private readonly ApprovalRoutingService $approvalRoutingService,
         private readonly AuditLogService $auditLogService,
+        private readonly PayrollPeriodGuard $payrollPeriodGuard,
     ) {
     }
 
@@ -227,6 +229,22 @@ class AttendanceTimeEditRequestController extends Controller
         }
         if ($item->status !== 'pending') {
             return response()->json(['message' => 'Only pending requests can be approved.'], 422);
+        }
+
+        /*
+         * Refuse once that month's payroll has been locked. Approving here
+         * writes manual_adjustment_seconds onto attendance the run has already
+         * consumed, and nothing downstream recomputes — so the money paid and
+         * the attendance backing it would silently disagree.
+         */
+        $closedRun = $this->payrollPeriodGuard->closedRunFor(
+            (int) $item->organization_id,
+            $item->attendance_date
+        );
+        if ($closedRun) {
+            return response()->json([
+                'message' => $this->payrollPeriodGuard->refusalMessage($closedRun),
+            ], 422);
         }
 
         $item->update([

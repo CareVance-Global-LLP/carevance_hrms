@@ -253,6 +253,19 @@ class PayrollAutoProcessController extends Controller
         $orgId = Auth::user()->organization_id;
         $run = PayrollMonthlyRun::where('organization_id', $orgId)->findOrFail($runId);
 
+        /*
+         * Only an open run may be re-synced. This rewrites the attendance
+         * columns on every item but never recomputes the money, so running it
+         * against a locked or disbursed run left the days on the payslip
+         * contradicting the amount that was actually paid.
+         */
+        if ($closed = app(\App\Services\Payroll\PayrollPeriodGuard::class)->closedRunFor($orgId, $run->month_year.'-01')) {
+            return response()->json([
+                'success' => false,
+                'message' => "Payroll for {$closed->month_year} is already {$closed->status}; its attendance can no longer be re-synced.",
+            ], 422);
+        }
+
         // Re-run attendance sync for all items in the run
         $items = \App\Models\PayrollItem::where('payroll_run_id', $run->id)->get();
         $syncedCount = 0;
