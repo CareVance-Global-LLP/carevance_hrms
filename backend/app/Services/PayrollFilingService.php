@@ -1870,13 +1870,60 @@ class PayrollFilingService
         ]);
     }
 
+    /**
+     * Generate every statutory filing due for a run.
+     *
+     * Each generator is attempted independently and its outcome recorded. This
+     * used to be a straight sequence of unguarded calls, so the first one to
+     * throw ended the batch — and since ten of the declaration-form generators
+     * reference blade views that do not exist, `generateForm19()` reliably killed
+     * the run *after* PF ECR, the ESI challan, Form 24Q and Form 12BA had already
+     * been written. The caller saw a 500 and no report, while those four filings
+     * sat persisted in the database.
+     *
+     * One missing template must not cost the fourteen filings that do work. This
+     * mirrors how disbursement treats unpayable people: surfaced as an explicit
+     * exclusion, never silently dropped and never allowed to sink the batch.
+     *
+     * @return array{filings: array<int, mixed>, failures: array<int, array{type: string, message: string}>}
+     */
     public function generateAllFilings(PayrollMonthlyRun $run, int $orgId, int $userId, ?int $payGroupId = null): array
     {
         $filings = [];
-        $filings[] = $this->generatePfEcr($run, $orgId, $userId);
-        $filings[] = $this->generateEsiChallan($run, $orgId, $userId);
-        $filings[] = $this->generateForm24Q($run, $orgId, $userId);
-        $filings[] = $this->generateForm12BA($run, $orgId, $userId);
+        $failures = [];
+
+        /**
+         * InvalidArgumentException is how the generators say "not due this
+         * period" — a bi-annual LWF state in the wrong half, bonus with no
+         * percentage configured. That is a skip, not a failure. Anything else
+         * is recorded against the filing type so the report names what broke.
+         */
+        $attempt = function (string $type, callable $generate) use (&$filings, &$failures, $run, $orgId): void {
+            try {
+                $produced = $generate();
+
+                foreach (is_array($produced) ? $produced : [$produced] as $filing) {
+                    if ($filing !== null) {
+                        $filings[] = $filing;
+                    }
+                }
+            } catch (\InvalidArgumentException $e) {
+                \Log::info("Skipped filing {$type}: ".$e->getMessage());
+            } catch (\Throwable $e) {
+                $failures[] = ['type' => $type, 'message' => $e->getMessage()];
+                \Log::warning("Filing {$type} could not be generated", [
+                    'run_id' => $run->id,
+                    'organization_id' => $orgId,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        };
+
+        $attempt('pf_ecr', fn () => $this->generatePfEcr($run, $orgId, $userId));
+        $attempt('esi_challan', fn () => $this->generateEsiChallan($run, $orgId, $userId));
+        $attempt('form_24q', fn () => $this->generateForm24Q($run, $orgId, $userId));
+        $attempt('form_12ba', fn () => $this->generateForm12BA($run, $orgId, $userId));
 
         // LWF is state-specific (no universal formula) — generate per enabled state.
         $lwfStates = EmployeePayrollTemplate::where('organization_id', $orgId)
@@ -1885,54 +1932,47 @@ class PayrollFilingService
             ->distinct()
             ->pluck('pt_state')
             ->filter(fn ($s) => isset(self::LWF_STATE_CONFIG[$s]));
+
         foreach ($lwfStates as $state) {
-            try {
-                $filings[] = $this->generateLwfReturn($run, $state, $orgId, $userId, $payGroupId);
-            } catch (\InvalidArgumentException $e) {
-                // Bi-annual state not due this month, etc. — skip, not fatal.
-                \Log::info("Skipped LWF for state {$state}: ".$e->getMessage());
-            }
+            $attempt("lwf_return:{$state}", fn () => $this->generateLwfReturn($run, $state, $orgId, $userId, $payGroupId));
         }
 
         // PT is state-specific.
-        $templates = EmployeePayrollTemplate::where('organization_id', $orgId)
+        $ptStates = EmployeePayrollTemplate::where('organization_id', $orgId)
             ->whereNotNull('pt_state')
             ->select('pt_state')
             ->distinct()
             ->pluck('pt_state');
 
-        foreach ($templates as $state) {
-            $filings[] = $this->generatePtReturn($run, $state, $orgId, $userId, $payGroupId);
+        foreach ($ptStates as $state) {
+            $attempt("pt_return:{$state}", fn () => $this->generatePtReturn($run, $state, $orgId, $userId, $payGroupId));
         }
 
         // Bonus generation when bonus_percent is configured.
         $bonusPercent = $this->getConfiguredBonusPercent($orgId);
         if ($bonusPercent !== null) {
-            try {
-                $bonusFilings = $this->generateBonusAll($run, $orgId, $userId, $bonusPercent);
-                $filings = array_merge($filings, $bonusFilings);
-            } catch (\InvalidArgumentException $e) {
-                \Log::info("Skipped bonus generation: ".$e->getMessage());
-            }
+            $attempt('bonus', fn () => $this->generateBonusAll($run, $orgId, $userId, $bonusPercent));
         }
 
         // Declaration forms (Pattern A — generate here, human uploads to portal).
-        $filings[] = $this->generateForm19($run, $orgId, $userId);
-        $filings[] = $this->generateForm31($run, $orgId, $userId);
-        $filings[] = $this->generateForm1($run, $orgId, $userId);
-        $filings[] = $this->generateForm2($run, $orgId, $userId);
-        $filings[] = $this->generateForm6($run, $orgId, $userId);
-        $filings[] = $this->generateEShramRegistration($run, $orgId, $userId);
-        $filings[] = $this->generateUanActivation($run, $orgId, $userId);
-        $filings[] = $this->generateSeRegistration($run, $orgId, $userId);
-        $filings[] = $this->generateShramCardRegistration($run, $orgId, $userId);
-        $filings[] = $this->generateForm124($run, $orgId, $userId);
-        $filings[] = $this->generateFullEcr($run, $orgId, $userId);
+        $attempt('form_19', fn () => $this->generateForm19($run, $orgId, $userId));
+        $attempt('form_31', fn () => $this->generateForm31($run, $orgId, $userId));
+        $attempt('form_1', fn () => $this->generateForm1($run, $orgId, $userId));
+        $attempt('form_2', fn () => $this->generateForm2($run, $orgId, $userId));
+        $attempt('form_6', fn () => $this->generateForm6($run, $orgId, $userId));
+        $attempt('eshram_registration', fn () => $this->generateEShramRegistration($run, $orgId, $userId));
+        $attempt('uan_activation', fn () => $this->generateUanActivation($run, $orgId, $userId));
+        $attempt('se_registration', fn () => $this->generateSeRegistration($run, $orgId, $userId));
+        $attempt('shram_card_registration', fn () => $this->generateShramCardRegistration($run, $orgId, $userId));
+        $attempt('form_124', fn () => $this->generateForm124($run, $orgId, $userId));
+        $attempt('full_ecr', fn () => $this->generateFullEcr($run, $orgId, $userId));
 
         // Mark first filing generated (drives onboarding "Next Steps" card)
-        $this->markFirstFilingGeneratedIfNeeded($orgId);
+        if ($filings !== []) {
+            $this->markFirstFilingGeneratedIfNeeded($orgId);
+        }
 
-        return $filings;
+        return ['filings' => $filings, 'failures' => $failures];
     }
 
     /**

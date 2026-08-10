@@ -2786,7 +2786,7 @@ class PayrollDepartmentController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'This run is already being processed. Watch the progress rather than starting it again.',
-                'processing' => $this->processingPayload($run),
+                'processing' => $this->taskPayload($run, 'processing'),
             ], 409);
         }
 
@@ -2812,7 +2812,7 @@ class PayrollDepartmentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Processing started. Track progress on this run.',
-            'processing' => $this->processingPayload($run->fresh()),
+            'processing' => $this->taskPayload($run->fresh(), 'processing'),
             'completeness' => $this->getRunCompletenessData($organizationId, $run->fresh()),
         ], 202);
     }
@@ -2833,31 +2833,42 @@ class PayrollDepartmentController extends Controller
             'run_id' => $run->id,
             'month_year' => $run->month_year,
             'status' => $run->status,
-            'processing' => $this->processingPayload($run),
+            'processing' => $this->taskPayload($run, 'processing'),
+            'filings' => $this->taskPayload($run, 'filings'),
         ]);
     }
 
     /**
+     * Progress for one backgrounded task on a run.
+     *
+     * Parameterised by column prefix rather than written twice: employee
+     * processing and filing generation are tracked with identical column shapes
+     * (`processing_*`, `filings_*`), and the client renders them the same way.
+     *
+     * @param  'processing'|'filings'  $prefix
      * @return array<string, mixed>
      */
-    private function processingPayload(PayrollMonthlyRun $run): array
+    private function taskPayload(PayrollMonthlyRun $run, string $prefix): array
     {
-        $total = (int) $run->processing_total;
-        $settled = (int) $run->processing_done + (int) $run->processing_failed + (int) $run->processing_skipped;
+        $state = $run->{$prefix.'_state'} ?? 'idle';
+        $total = (int) $run->{$prefix.'_total'};
+        $done = (int) $run->{$prefix.'_done'};
+        $failed = (int) $run->{$prefix.'_failed'};
+        $skipped = (int) $run->{$prefix.'_skipped'};
 
         return [
-            'state' => $run->processing_state ?? 'idle',
+            'state' => $state,
             'total' => $total,
-            'done' => (int) $run->processing_done,
-            'failed' => (int) $run->processing_failed,
-            'skipped' => (int) $run->processing_skipped,
+            'done' => $done,
+            'failed' => $failed,
+            'skipped' => $skipped,
             // Nothing to do is complete, not 0% — a bare done/total would show a
-            // stalled bar for a run with no outstanding employees.
-            'percent' => $total > 0 ? (int) floor(($settled / $total) * 100) : 100,
-            'is_finished' => in_array($run->processing_state, ['completed', 'failed'], true),
-            'started_at' => optional($run->processing_started_at)->toIso8601String(),
-            'finished_at' => optional($run->processing_finished_at)->toIso8601String(),
-            'message' => $run->processing_message,
+            // stalled bar for a run with nothing outstanding.
+            'percent' => $total > 0 ? (int) floor((($done + $failed + $skipped) / $total) * 100) : 100,
+            'is_finished' => in_array($state, ['completed', 'failed'], true),
+            'started_at' => optional($run->{$prefix.'_started_at'})->toIso8601String(),
+            'finished_at' => optional($run->{$prefix.'_finished_at'})->toIso8601String(),
+            'message' => $run->{$prefix.'_message'},
         ];
     }
 

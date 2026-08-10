@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateRunFilings;
 use App\Models\EmployeeDocument;
 use App\Models\EmployeePerquisite;
 use App\Models\FbpAllocation;
@@ -528,12 +529,51 @@ class PayrollFilingController extends Controller
         ]);
         $run = PayrollMonthlyRun::findOrFail($data['payroll_run_id']);
         $this->assertRunFileable($run);
-        $filings = $filingService->generateAllFilings($run, auth()->user()->organization_id, auth()->id(), $data['pay_group_id'] ?? null);
+
+        // Refuse a second pass while one is in flight: two workers would both
+        // generate the same statutory files for the same run.
+        if (in_array($run->filings_state, ['queued', 'running'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Filings for this run are already being generated. Watch the progress rather than starting again.',
+            ], 409);
+        }
+
+        $run->update([
+            'filings_state' => 'queued',
+            'filings_total' => 0,
+            'filings_done' => 0,
+            'filings_failed' => 0,
+            'filings_skipped' => 0,
+            'filings_started_at' => null,
+            'filings_finished_at' => null,
+            'filings_message' => null,
+        ]);
+
+        GenerateRunFilings::dispatch(
+            $run->id,
+            (int) auth()->user()->organization_id,
+            (int) auth()->id(),
+            $data['pay_group_id'] ?? null
+        );
+
+        // 202: accepted, not finished. Ten to fifteen generators, each walking
+        // every payroll item and multiplied by the states the organization
+        // operates in, is not work to hold an HTTP request open for. Progress is
+        // polled from payroll/runs/{id}/processing-status under `filings`.
+        //
+        // Under the `sync` queue driver the job has already run by the time we
+        // reach here, so the run is re-read and the caller sees a finished state
+        // immediately — the client polls identically either way.
+        $run->refresh();
 
         return response()->json([
-            'filings' => $filings,
-            'count' => count($filings),
-        ]);
+            'success' => true,
+            'message' => 'Filing generation started. Track progress on this run.',
+            'filings_state' => $run->filings_state,
+            'filings_message' => $run->filings_message,
+            'count' => (int) $run->filings_done,
+        ], 202);
     }
 
     /**

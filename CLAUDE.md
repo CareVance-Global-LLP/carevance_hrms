@@ -158,7 +158,7 @@ Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers res
 
 Real, and deliberately not yet built:
 
-- **Filings and bank files still run inside the web request.** Run *processing* has been moved to `ProcessPayrollRunEmployees` (see below), but generating filings and bank files has not. Those remain the ceiling on customer size.
+- **Ten filing generators reference blade views that do not exist** — `form1`, `form2`, `form6`, `form19`, `form31`, `form124`, `eshram_registration`, `se_registration`, `shram_card_registration`, `uan_activation`. Only `form12ba`, `form16` and `form16_annual` exist under `resources/views/filings/`. Those generators fail on every run; the batch now reports them by name instead of dying. Writing the templates is real statutory work, not a stub.
 - **No MFA and no SSO/SAML.** Google OAuth is the only federated option; a grep for `two_factor`/`totp`/`mfa`/`saml` returns nothing. This is the gate on any enterprise deal.
 - **No legal-entity layer.** One organization = one PAN/TAN/PF code.
 - **No offer letter, e-signature or background verification.**
@@ -181,7 +181,11 @@ php artisan queue:work --queue=default --tries=1 --timeout=3600
 
 Local `.env` files currently carry `QUEUE_CONNECTION=sync`, where the job runs inline on dispatch — same behaviour as before, and no worker needed. That is why the endpoint re-reads progress off the run before responding rather than assuming the work is still pending: the client polls the same fields under either driver and never needs to know which is configured.
 
-Two things about this job are load-bearing:
+`POST /payroll/filings/generate/all` works the same way through `GenerateRunFilings`, and its progress appears under `filings` on the same status endpoint. **The bank file is deliberately still synchronous** — one eager-loaded query plus string formatting, returning content the user is waiting to download. Queueing it would turn a one-click download into prepare-poll-download for no gain.
+
+`PayrollFilingService::generateAllFilings()` returns `['filings' => [...], 'failures' => [...]]` and attempts each generator independently. It used to be an unguarded sequence, so the first throw ended the batch — and because ten declaration-form generators reference missing views, `generateForm19()` reliably killed the run *after* PF ECR, ESI, 24Q and 12BA had already been written, leaving a 500 and no report. An `InvalidArgumentException` from a generator means "not due this period" and is a skip, not a failure.
+
+Two things about these jobs are load-bearing:
 
 - **It authenticates as the user who started it.** `BelongsToOrganization`'s global scope reads the organization from the authenticated user, and with *no* user it is deliberately a no-op so console commands are not filtered to nothing. In a queued job that default means querying **across every tenant**. Any new job touching scoped models must do the same — `Auth::setUser($actor)` — and `PayrollRunProcessingQueueTest` asserts it.
 - **`tries = 1`.** A retry would re-enter a partially processed run and race the first attempt. Failures are recorded on the run for a human, not retried silently.
