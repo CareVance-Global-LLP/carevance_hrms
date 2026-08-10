@@ -169,13 +169,24 @@ Real, and deliberately not yet built:
 - **0 policies.** Authorization is inline in controllers.
 - **No real-time transport.** `BROADCAST_CONNECTION=log`; chat polls every 10s.
 
-### Payroll paths whose state is genuinely unknown
+### Reading a failing payroll test
 
-`PayrollIntegrationTest` fails on F&F settlement, arrear payment, leave encashment and bank file generation with **422** — the routes exist and validation rejects the payload. The cause was not determined, so it is not known whether these features work. Treat them as unverified rather than working.
+**Check the status code before you read the test.** The two failure modes mean opposite things:
 
-Distinguish this from `SimplePayrollFlowTest`, which fails with **405/404**: those tests target the retired `PayRun` API (`POST /api/payroll/runs/generate` no longer exists) and are dead weight in the baseline. **Check the status code before reading a failing payroll test** — 405 means delete it, 422 means investigate.
+- **405/404 — the test is dead.** `SimplePayrollFlowTest` targets the retired `PayRun` API (`POST /api/payroll/runs/generate` no longer exists). Delete it rather than debug it.
+- **422 — a guard is refusing an incomplete fixture.** Every one of these in `PayrollIntegrationTest` turned out to be correct business logic, not a defect. Capture the response body first; the messages name exactly what is missing.
 
-What *is* covered and passing: `PayrollDisbursementTest`, `PayrollReadinessTest` and `PayrollRouteAuthorizationTest` — 17 tests over disbursement idempotency, RTGS routing, exclusions-not-drops, UTR recording, PAN/IFSC validation and role-gating on every payroll route. The guardrails are tested; the generate → approve → payslip flow is not.
+The four guards worth knowing, because new payroll tests keep tripping them:
+
+| Operation | Requires first |
+|---|---|
+| F&F settlement, leave encashment | `annual_ctc` on the employee's payroll template — both compute every figure from it |
+| Arrear **approval** | A run *and* a `payroll_item` for the arrear's `calculation_month` |
+| Bank file | The run to have cleared `draft → locked → approved` |
+
+`payroll/employees/{id}` is an HR/admin view. Employees reach their own figures through `payroll/my/*` — see the allow-list in `PayrollRouteAuthorizationTest`.
+
+Covered and passing: `PayrollIntegrationTest` (15), plus `PayrollDisbursementTest`, `PayrollReadinessTest` and `PayrollRouteAuthorizationTest` (17) over disbursement idempotency, RTGS routing, exclusions-not-drops, UTR recording, PAN/IFSC validation and role-gating on every payroll route.
 
 ## Watch out for
 
