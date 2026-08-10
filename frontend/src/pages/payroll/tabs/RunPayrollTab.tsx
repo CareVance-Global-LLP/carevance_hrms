@@ -10,7 +10,6 @@ import PayGroupEmployees from '@/components/payroll/PayGroupEmployees';
 import BulkPayrollMatrix from '@/components/payroll/BulkPayrollMatrix';
 import PayGroupCard from '@/components/payroll/PayGroupCard';
 import PayGroupModal from '@/components/payroll/PayGroupModal';
-import PayGroupSettings from '@/pages/payroll/PayGroupSettings';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 
@@ -38,7 +37,6 @@ export default function RunPayrollTab() {
   const [bulkIds, setBulkIds] = useState<number[]>([]);
   const [processingEmployeeId, setProcessingEmployeeId] = useState<number | null>(null);
   const [isCreatePayGroupOpen, setIsCreatePayGroupOpen] = useState(false);
-  const [settingsPayGroupId, setSettingsPayGroupId] = useState<number | null>(null);
 
   // Sync state from URL params: payGroup (which group is open) and emp
   // (a specific employee to open the wizard for, e.g. from the Overview
@@ -57,7 +55,6 @@ export default function RunPayrollTab() {
     setSelectedPayGroupId(null);
     setBulkOpen(false);
     setProcessingEmployeeId(null);
-    setSettingsPayGroupId(null);
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -87,27 +84,16 @@ export default function RunPayrollTab() {
 
   // --- Pay group detail (employee management for the chosen pay group) ---
   if (selectedPayGroupId) {
+    /*
+     * No back button here. Every child below renders its own, pointing at the
+     * place that child came from. A wrapper button duplicated the employee
+     * list's (two identical controls side by side) and contradicted the bulk
+     * matrix's — one returned to the employee list while the other jumped out
+     * to the picker and discarded the matrix.
+     */
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <Button variant="ghost" size="sm" onClick={goToPicker}>
-            Back to pay groups
-          </Button>
-        </div>
-
-        {/* Inline Pay Group Settings view (replaces dead Settings noop). */}
-        {settingsPayGroupId ? (
-          <PayGroupSettings
-            payGroupId={settingsPayGroupId}
-            onBack={(target) => {
-              // 'group' → back to employee list; anything else → picker.
-              setSettingsPayGroupId(null);
-              if (target === 'dashboard') {
-                goToPicker();
-              }
-            }}
-          />
-        ) : bulkOpen ? (
+        {bulkOpen ? (
           <div className="overflow-hidden">
             <BulkPayrollMatrix
               payGroupId={selectedPayGroupId}

@@ -873,7 +873,7 @@ export default function BulkPayrollMatrix({
       <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
           <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
-            ← Back
+            Back to employees
           </Button>
           <div>
             <h1 className="text-base font-semibold text-slate-900">
@@ -1020,11 +1020,13 @@ export default function BulkPayrollMatrix({
 
             <div className="flex items-center gap-3 pt-4 border-t border-slate-200">
               <Button variant="ghost" onClick={onBack} iconLeft={<ArrowLeft className="h-4 w-4" />}>
-                ← Back to Employees
+                Back to employees
               </Button>
               {onProcessComplete && (
+                // Not back navigation — this finishes the run and returns to
+                // the payroll overview. Labelled for what it does.
                 <Button variant="primary" onClick={onProcessComplete}>
-                  Back to Overview →
+                  Done
                 </Button>
               )}
             </div>

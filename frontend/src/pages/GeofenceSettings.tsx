@@ -196,8 +196,8 @@ export default function GeofenceSettings() {
                   <div>
                     <p className="text-sm font-medium text-slate-800">{zone.name}</p>
                     <p className="text-xs text-slate-500">
-                      {zone.latitude}, {zone.longitude} &middot; {zone.radius_meters}m radius
-                      &middot; {zone.is_active ? 'Active' : 'Inactive'}
+                      {zone.latitude}, {zone.longitude} · {zone.radius_meters}m radius
+                      · {zone.is_active ? 'Active' : 'Inactive'}
                     </p>
                   </div>
                   <div className="flex gap-2">

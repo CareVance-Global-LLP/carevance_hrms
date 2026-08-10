@@ -536,8 +536,9 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
           variant="ghost"
           size="sm"
           onClick={() => onBack?.()}
+          iconLeft={<ArrowLeft className="h-4 w-4" />}
         >
-          ← Back to Pay Group
+          Back to pay groups
         </Button>
       </div>
 

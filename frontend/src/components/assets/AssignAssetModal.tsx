@@ -88,7 +88,7 @@ export default function AssignAssetModal({ isOpen, onClose, asset, onSuccess }: 
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-sm font-semibold text-slate-900">{asset.name}</p>
             <p className="text-xs text-slate-500">
-              {asset.asset_tag} &middot; {asset.category}
+              {asset.asset_tag} · {asset.category}
             </p>
           </div>
 

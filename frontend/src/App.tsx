@@ -1,5 +1,5 @@
 ﻿import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccess, hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { usePlan } from '@/hooks/usePlan';
@@ -474,6 +474,32 @@ function PlanFeatureRoute({ feature, children }: { feature: string; children: Re
   return <>{children}</>;
 }
 
+/**
+ * Pay group settings, as a route.
+ *
+ * Both registrations used to pass `onBack={function() {}}`, so the page's only
+ * back control did nothing and a successful delete — which calls
+ * onBack('dashboard') — left the user sitting on the settings page of a pay
+ * group that no longer existed. The `:payGroupId` param was also never handed
+ * to the component, so opening one group's settings rendered every group.
+ */
+function PayGroupSettingsRoute() {
+  const navigate = useNavigate();
+  const { payGroupId } = useParams();
+  const id = Number(payGroupId) || undefined;
+
+  return (
+    <PayGroupSettings
+      payGroupId={id}
+      onBack={(target) => {
+        // 'group' returns to the group's employee list; a delete ('dashboard')
+        // has no group left to return to, so it falls back to the picker.
+        navigate(target === 'group' && id ? `/payroll/run?payGroup=${id}` : '/payroll/run');
+      }}
+    />
+  );
+}
+
 function App() {
   const { user } = useAuth();
   const isSuperAdmin = hasSuperAdminAccess(user);
@@ -643,8 +669,8 @@ function App() {
               <Route path="reports" element={<PayrollReportsPage />} />
             </Route>
             {/* Pay Group Settings - standalone page for configuring pay group state and statutory details */}
-            <Route path="payroll/pay-group-settings" element={<PlanFeatureRoute feature="payroll"><StrictAdminRoute><PayGroupSettings onBack={function() {}} /></StrictAdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/pay-group-settings/:payGroupId" element={<PlanFeatureRoute feature="payroll"><StrictAdminRoute><PayGroupSettings onBack={function() {}} /></StrictAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/pay-group-settings" element={<PlanFeatureRoute feature="payroll"><StrictAdminRoute><PayGroupSettingsRoute /></StrictAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/pay-group-settings/:payGroupId" element={<PlanFeatureRoute feature="payroll"><StrictAdminRoute><PayGroupSettingsRoute /></StrictAdminRoute></PlanFeatureRoute>} />
             {/* Standalone Unassigned Employees screen (not a tab) */}
             <Route path="payroll/unassigned-employees" element={<PlanFeatureRoute feature="payroll"><AdminRoute><UnassignedEmployeesPage /></AdminRoute></PlanFeatureRoute>} />
             <Route path="my-payroll" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><MyPayroll /></ProtectedRoute></PlanFeatureRoute>} />
