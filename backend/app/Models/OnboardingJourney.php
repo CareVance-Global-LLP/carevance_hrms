@@ -78,6 +78,22 @@ class OnboardingJourney extends Model
         return $this->morphMany(ChecklistItem::class, 'subject')->orderBy('sort_order');
     }
 
+    /**
+     * Take the checklist with the journey.
+     *
+     * `subject_type`/`subject_id` is polymorphic, so the database cannot own
+     * this with a foreign key — deleting a journey left its items behind as
+     * rows pointing at nothing. A real workspace was found holding 36 such
+     * orphans across two journeys that no longer existed, which silently
+     * inflates any "open onboarding tasks" count built on this table.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (self $journey) {
+            $journey->checklistItems()->delete();
+        });
+    }
+
     /** Negative once the joining date has passed. */
     public function getDaysUntilJoiningAttribute(): int
     {

@@ -158,16 +158,29 @@ Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers res
 
 Real, and deliberately not yet built:
 
-- **No queue.** Payroll, filings and bank files run inside the web request. One job exists in the whole app.
+- **No queue.** Payroll, filings and bank files run inside the web request. One job exists in the whole app. This is the ceiling on customer size — a run for a few hundred employees will hit `max_execution_time` mid-payroll, which is the worst place to lose a request.
+- **No MFA and no SSO/SAML.** Google OAuth is the only federated option; a grep for `two_factor`/`totp`/`mfa`/`saml` returns nothing. This is the gate on any enterprise deal.
 - **No legal-entity layer.** One organization = one PAN/TAN/PF code.
 - **No offer letter, e-signature or background verification.**
+- **No recruitment/ATS, engagement surveys, or HR helpdesk.** No job, candidate, interview or offer models exist. This is most of what a Keka comparison turns on.
 - **No effective-dated compensation**, so retro/arrears across a revision is approximate.
-- **Mobile is employee-only** — no tasks, projects, chat, performance or resignation.
+- **Leave is a flat annual quota**, held as JSON in `organizations.settings` (`LeavePolicyService`). No accrual schedule, no pro-rating for mid-year joiners, no configurable leave year, no per-type carry-forward caps.
+- **Mobile is employee-only** — no tasks, projects, chat, performance or resignation. No manager approvals, which is the most-used mobile workflow in every competing product.
 - **0 policies.** Authorization is inline in controllers.
+- **No real-time transport.** `BROADCAST_CONNECTION=log`; chat polls every 10s.
+
+### Payroll paths whose state is genuinely unknown
+
+`PayrollIntegrationTest` fails on F&F settlement, arrear payment, leave encashment and bank file generation with **422** — the routes exist and validation rejects the payload. The cause was not determined, so it is not known whether these features work. Treat them as unverified rather than working.
+
+Distinguish this from `SimplePayrollFlowTest`, which fails with **405/404**: those tests target the retired `PayRun` API (`POST /api/payroll/runs/generate` no longer exists) and are dead weight in the baseline. **Check the status code before reading a failing payroll test** — 405 means delete it, 422 means investigate.
+
+What *is* covered and passing: `PayrollDisbursementTest`, `PayrollReadinessTest` and `PayrollRouteAuthorizationTest` — 17 tests over disbursement idempotency, RTGS routing, exclusions-not-drops, UTR recording, PAN/IFSC validation and role-gating on every payroll route. The guardrails are tested; the generate → approve → payslip flow is not.
 
 ## Watch out for
 
 - `desktop/release-*/` holds ~5 GB of build output; `.git` is ~2.9 GB from artifacts committed before the ignore rule existed.
-- Two invite systems (`invitations`, `invites`) both exist and both are empty.
+- **There is one invite system now: `invitations`.** The legacy `invites` table and its routes were removed in Aug 2026 — the accept path resolved the invited address with an unscoped `User::query()` and overwrote the password of any account already holding it, in any organization. Do not reintroduce it. All four Add User tabs route through `invitations`, except **Create User**, which posts to `/users` with an admin-set password and is verified on create.
+- **Create User depends on its Temporary Password field.** `POST /users` mints `Str::random(12)` when no password is supplied and sends no verification mail, so an admin-created user with neither a password nor `email_verified_at` cannot sign in at all. `UserController::store` sets `email_verified_at` only when a password was explicitly supplied — keep those two facts together if you touch either.
 - Departments include both "HR" and "Human Resources" — duplicates that split every department-scoped report.
 - Schema has drifted from migrations before (`bank_transfer_batches`). If tests fail on a missing column that exists in Postgres, suspect drift and write a guarded reconcile migration rather than editing an old one.

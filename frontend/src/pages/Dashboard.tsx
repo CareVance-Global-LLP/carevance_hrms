@@ -10,6 +10,7 @@ import { PageLoadingState } from '@/components/ui/PageState';
 import MyOnboardingCard from '@/components/onboarding/MyOnboardingCard';
 import { formatDate as formatDateForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
 import { formatDuration, formatTimerClock } from '@/lib/formatters';
+import { greetUser } from '@/lib/greeting';
 import {
   Activity,
   Briefcase,
@@ -319,7 +320,7 @@ export default function Dashboard() {
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
-          <p className="mt-3 text-sm font-medium text-slate-900">Good morning, {user?.name?.split(' ')[0] || 'there'}!</p>
+          <p className="mt-3 text-sm font-medium text-slate-900">{greetUser(user?.name)}!</p>
           <p className="mt-1 text-xs text-slate-500">Here&apos;s your work summary, attendance, and task progress for today.</p>
         </div>
         <div className="flex items-center gap-3">

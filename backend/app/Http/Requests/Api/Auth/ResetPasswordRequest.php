@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\Auth;
 
 use App\Http\Requests\Api\ApiFormRequest;
+use Illuminate\Validation\Rules\Password;
 
 class ResetPasswordRequest extends ApiFormRequest
 {
@@ -19,7 +20,7 @@ class ResetPasswordRequest extends ApiFormRequest
         return [
             'email' => 'required|email|max:255',
             'token' => 'required|string',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => ['required', 'string', 'confirmed', Password::defaults()],
         ];
     }
 }

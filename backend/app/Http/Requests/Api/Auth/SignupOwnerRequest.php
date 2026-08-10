@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\Auth;
 
 use App\Http\Requests\Api\ApiFormRequest;
+use Illuminate\Validation\Rules\Password;
 use App\Rules\ValidTimezone;
 use Illuminate\Validation\Rule;
 
@@ -15,7 +16,7 @@ class SignupOwnerRequest extends ApiFormRequest
             'organization_name' => 'nullable|string|max:255',
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => ['required', 'string', 'confirmed', Password::defaults()],
             'plan_code' => ['nullable', 'string', Rule::in(array_keys(config('carevance.plans', [])))],
             'billing_cycle' => ['nullable', 'string', Rule::in(['monthly', 'yearly'])],
             'signup_mode' => ['nullable', 'string', Rule::in(['trial', 'paid'])],
