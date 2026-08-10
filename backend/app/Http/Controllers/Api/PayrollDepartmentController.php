@@ -1119,7 +1119,21 @@ class PayrollDepartmentController extends Controller
                 (bool) $template->pf_above_cap
             )
             : 0;
-        $esiAmount = $template->esi_enabled && $payableGross <= ($template->esi_threshold ?? 21000)
+        /*
+         * ESI coverage is fixed for the contribution period (Apr-Sep, Oct-Mar).
+         * Testing the ceiling alone dropped an employee the month a raise took
+         * them over it, where the Act requires contributions to continue until
+         * the period ends.
+         */
+        $esiCovered = $template->esi_enabled && app(\App\Services\Payroll\EsiContributionPeriodService::class)
+            ->isCovered(
+                (int) $userId,
+                (int) $organizationId,
+                (string) $request->month_year,
+                (float) $payableGross,
+                (float) ($template->esi_threshold ?? 21000)
+            );
+        $esiAmount = $esiCovered
             ? $payableGross * ($template->esi_employee_percentage / 100)
             : 0;
         // Month drives special-month PT instalments (e.g. Maharashtra
@@ -1226,7 +1240,17 @@ class PayrollDepartmentController extends Controller
             ];
         }
 
-        $totalDeductions = $pfAmount + $esiAmount + $ptAmount + $tdsAmount + $lOPDeduction + $loanEmiAmount + $customDeductionsTotal;
+        /*
+         * Labour Welfare Fund, from the same state table the LWF return is
+         * built from. It was never deducted on this path while the run still
+         * filed a return for it.
+         */
+        $lwfAmount = $template->lwf_enabled
+            ? app(\App\Services\Payroll\LwfCalculator::class)
+                ->forMonth((string) ($template->pt_state ?: ''), $ptMonth)
+            : 0.0;
+
+        $totalDeductions = $pfAmount + $esiAmount + $ptAmount + $tdsAmount + $lwfAmount + $lOPDeduction + $loanEmiAmount + $customDeductionsTotal;
 
         // Include approved reimbursements and active FBP allocations in
         // the gross. Reimbursements are non-taxable, FBP is allocated
@@ -1410,6 +1434,7 @@ class PayrollDepartmentController extends Controller
                 'esi_employee' => $esiAmount + $arrearsEsi,
                 'pt' => $ptAmount + $arrearsPt,
                 'tds' => $tdsAmount + $arrearsTds,
+                'lwf' => $lwfAmount,
                 'arrears' => $arrearsGross,
                 'arrears_pf' => $arrearsPf,
                 'lOP_deduction' => $lOPDeduction,

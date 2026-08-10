@@ -29,6 +29,8 @@ class PayrollAutoProcessService
     protected PayrollChecklistService $checklist;
     protected AttendanceService $attendance;
     protected FbpService $fbp;
+    protected \App\Services\Payroll\EsiContributionPeriodService $esiPeriods;
+    protected \App\Services\Payroll\LwfCalculator $lwf;
 
     public function __construct(
         PayrollCalculatorService $calculator,
@@ -37,6 +39,8 @@ class PayrollAutoProcessService
         PayrollChecklistService $checklist,
         AttendanceService $attendance,
         FbpService $fbp,
+        \App\Services\Payroll\EsiContributionPeriodService $esiPeriods,
+        \App\Services\Payroll\LwfCalculator $lwf,
     ) {
         $this->calculator = $calculator;
         $this->validation = $validation;
@@ -44,6 +48,8 @@ class PayrollAutoProcessService
         $this->checklist = $checklist;
         $this->attendance = $attendance;
         $this->fbp = $fbp;
+        $this->esiPeriods = $esiPeriods;
+        $this->lwf = $lwf;
     }
 
     public function quickProcess(int $orgId, string $monthYear, int $userId): \App\Models\PayrollMonthlyRun
@@ -490,11 +496,24 @@ class PayrollAutoProcessService
             $epf = $pfEnabled ? round($pfWages * 0.0367, 2) : 0;
             $pfEmployer = $pfEmployee;
 
-            // ESI eligibility is based on gross wages (before LOP) per the
-            // ESI Act. Contribution itself is computed on payable wages
-            // (after LOP) so partial-month absences reduce the contribution
-            // without invalidating coverage.
-            $esiApplicable = $esiEnabled && $gross <= 21000;
+            /*
+             * ESI eligibility is based on gross wages (before LOP) per the
+             * ESI Act. Contribution itself is computed on payable wages
+             * (after LOP) so partial-month absences reduce the contribution
+             * without invalidating coverage.
+             *
+             * Coverage is also fixed for the whole contribution period
+             * (Apr-Sep, Oct-Mar): someone covered at the start stays covered
+             * to the end of it even after a raise takes them over the ceiling,
+             * so the ceiling test alone would drop them a period early.
+             */
+            $esiApplicable = $esiEnabled && $this->esiPeriods->isCovered(
+                (int) $item->user_id,
+                (int) $run->organization_id,
+                $run->month_year,
+                $gross,
+                21000
+            );
             $esiEmployee = $esiApplicable ? round($payableGross * 0.0075, 2) : 0;
             $esiEmployer = $esiApplicable ? round($payableGross * 0.0325, 2) : 0;
 
@@ -522,7 +541,18 @@ class PayrollAutoProcessService
                 $tds = round(($taxCalc['total_tax'] ?? 0) / 12, 2);
             }
 
-            $totalDeductions = $pfEmployee + $esiEmployee + $pt + $tds + $lopDeduction;
+            /*
+             * Labour Welfare Fund. This run generates an LWF return further
+             * down, but nothing ever deducted the contribution the return
+             * reports — so the filing claimed money that had been withheld
+             * from nobody. Computed from the same state table the return is
+             * built from; a state with no LWF Act yields ₹0.
+             */
+            $lwf = $template->lwf_enabled
+                ? $this->lwf->forMonth((string) $state, $ptMonth)
+                : 0.0;
+
+            $totalDeductions = $pfEmployee + $esiEmployee + $pt + $tds + $lwf + $lopDeduction;
             // Stored signed, deliberately. Clamping with max(0, …) hid the one
             // case that most needs to stop a run: deductions overrunning gross,
             // which happens with a large recovery or a full month of unpaid
@@ -546,6 +576,7 @@ class PayrollAutoProcessService
                 'esi_employee' => $esiEmployee,
                 'pt' => $pt,
                 'tds' => $tds,
+                'lwf' => $lwf,
                 'lOP_deduction' => $lopDeduction,
                 'total_deductions' => round($totalDeductions, 2),
                 'pf_employer' => $pfEmployer,

@@ -239,39 +239,16 @@ class SalaryCalculationService
     /**
      * Calculate LWF for state
      */
+    /**
+     * Delegated to the shared calculator. This used to carry its own state
+     * table whose amounts disagreed with the one the LWF return is generated
+     * from — Gujarat ₹50 vs ₹25, Tamil Nadu ₹25 vs ₹30, Karnataka ₹15 vs ₹20 —
+     * so a payslip and the filing for the same month could not both be right.
+     * It also listed Rajasthan and Bihar, which have no Labour Welfare Fund Act.
+     */
     private function calculateLwf(string $stateCode, int $payMonth): float
     {
-        $lwfConfig = [
-            'maharashtra' => ['enabled' => true, 'amount' => 50, 'frequency' => 'monthly'],
-            'gujarat' => ['enabled' => true, 'amount' => 50, 'frequency' => 'bi_annual', 'months' => [1, 7]],
-            'karnataka' => ['enabled' => true, 'amount' => 15, 'frequency' => 'monthly'],
-            'andhra_pradesh' => ['enabled' => true, 'amount' => 20, 'frequency' => 'monthly'],
-            'telangana' => ['enabled' => true, 'amount' => 20, 'frequency' => 'monthly'],
-            'tamil_nadu' => ['enabled' => true, 'amount' => 25, 'frequency' => 'monthly'],
-            'west_bengal' => ['enabled' => true, 'amount' => 10, 'frequency' => 'monthly'],
-            'kerala' => ['enabled' => true, 'amount' => 20, 'frequency' => 'monthly'],
-            'bihar' => ['enabled' => true, 'amount' => 10, 'frequency' => 'monthly'],
-            'delhi' => ['enabled' => true, 'amount' => 6, 'frequency' => 'monthly'],
-            'madhya_pradesh' => ['enabled' => true, 'amount' => 18.75, 'frequency' => 'monthly'],
-            'rajasthan' => ['enabled' => true, 'amount' => 10, 'frequency' => 'monthly'],
-            'goa' => ['enabled' => true, 'amount' => 15, 'frequency' => 'monthly'],
-            'odisha' => ['enabled' => true, 'amount' => 10, 'frequency' => 'monthly'],
-        ];
-
-        $config = $lwfConfig[$stateCode] ?? ['enabled' => false, 'amount' => 0, 'frequency' => 'not_applicable'];
-
-        if (!$config['enabled']) {
-            return 0;
-        }
-
-        if ($config['frequency'] === 'bi_annual') {
-            if (in_array($payMonth, $config['months'] ?? [1, 7])) {
-                return $config['amount'];
-            }
-            return 0;
-        }
-
-        return $config['amount'];
+        return app(LwfCalculator::class)->forMonth($stateCode, $payMonth);
     }
 
     /**
