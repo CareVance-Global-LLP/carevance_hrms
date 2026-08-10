@@ -31,6 +31,7 @@ class PayrollAutoProcessService
     protected FbpService $fbp;
     protected \App\Services\Payroll\EsiContributionPeriodService $esiPeriods;
     protected \App\Services\Payroll\LwfCalculator $lwf;
+    protected \App\Services\Payroll\PayrollDayBasisResolver $dayBasis;
 
     public function __construct(
         PayrollCalculatorService $calculator,
@@ -41,6 +42,7 @@ class PayrollAutoProcessService
         FbpService $fbp,
         \App\Services\Payroll\EsiContributionPeriodService $esiPeriods,
         \App\Services\Payroll\LwfCalculator $lwf,
+        \App\Services\Payroll\PayrollDayBasisResolver $dayBasis,
     ) {
         $this->calculator = $calculator;
         $this->validation = $validation;
@@ -50,6 +52,7 @@ class PayrollAutoProcessService
         $this->fbp = $fbp;
         $this->esiPeriods = $esiPeriods;
         $this->lwf = $lwf;
+        $this->dayBasis = $dayBasis;
     }
 
     public function quickProcess(int $orgId, string $monthYear, int $userId): \App\Models\PayrollMonthlyRun
@@ -427,7 +430,22 @@ class PayrollAutoProcessService
             $annualCtc = (float) ($template->annual_ctc ?? 0);
             $monthlyCtc = $annualCtc / 12;
             $lopDays = (float) ($item->lOP_days ?? 0);
-            $totalDays = (float) ($item->total_working_days ?? 26);
+
+            /*
+             * The per-day divisor is the CALENDAR month by default, not the
+             * working-day count. Payment of Wages Act s.9(2) caps a deduction
+             * for absence at the proportion the absent period bears to the
+             * wage period, and the wage period is the calendar month — so one
+             * absent day may cost at most 1/30 of wages, never 1/22. It is
+             * also what EPFO reconciles NCP days against, and what every
+             * comparable product defaults to.
+             */
+            $dayBasis = $this->dayBasis->resolve(
+                $run->organization,
+                $run->month_year,
+                (float) ($item->total_working_days ?? 0)
+            );
+            $totalDays = $dayBasis['days'];
             $basicPct = (float) ($template->basic_percentage ?? 40) / 100;
             $hraPct = (float) ($template->hra_percentage ?? 50) / 100;
             $isMetro = $template->is_metro_city ?? true;
@@ -578,6 +596,11 @@ class PayrollAutoProcessService
                 'tds' => $tds,
                 'lwf' => $lwf,
                 'lOP_deduction' => $lopDeduction,
+                // Frozen so this payslip can be reproduced after the setting
+                // changes. Re-deriving would silently rewrite the arithmetic
+                // of an already-paid month.
+                'salary_day_basis' => $dayBasis['basis'],
+                'salary_divisor_days' => $totalDays,
                 'total_deductions' => round($totalDeductions, 2),
                 'pf_employer' => $pfEmployer,
                 'eps' => $eps,

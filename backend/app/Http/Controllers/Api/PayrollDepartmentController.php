@@ -1097,8 +1097,27 @@ class PayrollDepartmentController extends Controller
         // payable wages, not the full month's gross. Otherwise an
         // employee with heavy LOP ends up with total_deductions > gross
         // and net_pay = 0.
-        $lOPDeduction = $calculation['monthly']['gross'] > 0 && $workingDays > 0
-            ? ($calculation['monthly']['gross'] / $workingDays) * $lOPDays
+        /*
+         * The per-day divisor is the CALENDAR month by default, not the
+         * working-day count that drives attendance. Payment of Wages Act
+         * s.9(2) caps a deduction for absence at the proportion the absent
+         * period bears to the wage period — a calendar month — so one absent
+         * day may cost at most 1/30 of wages, never 1/22. EPFO also counts
+         * NCP days on the calendar, so a working-day LOP cannot reconcile
+         * against the ECR return.
+         *
+         * $workingDays stays the schedule (how many days the employee was due
+         * in); $divisorDays is what a day of salary is worth.
+         */
+        $dayBasis = app(\App\Services\Payroll\PayrollDayBasisResolver::class)
+            ->resolve($request->user()?->organization, (string) $request->month_year, (float) $workingDays);
+        $divisorDays = $dayBasis['days'];
+
+        $lOPDeduction = $calculation['monthly']['gross'] > 0 && $divisorDays > 0
+            ? min(
+                ($calculation['monthly']['gross'] / $divisorDays) * $lOPDays,
+                (float) $calculation['monthly']['gross']
+            )
             : 0;
 
         // Payable wages = gross minus LOP. PF applies to payable basic,
@@ -1410,6 +1429,10 @@ class PayrollDepartmentController extends Controller
                 // ones (see the engine_version migration).
                 'engine_version' => 'v2',
                 'total_working_days' => $workingDays,
+                // Frozen so this payslip stays reproducible if the
+                // organisation later changes its day basis.
+                'salary_day_basis' => $dayBasis['basis'],
+                'salary_divisor_days' => $divisorDays,
                 'days_present' => $daysPresent,
                 'days_absent' => $daysAbsent,
                 'lOP_days' => $lOPDays,

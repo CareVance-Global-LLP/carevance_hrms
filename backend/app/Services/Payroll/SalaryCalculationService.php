@@ -125,8 +125,13 @@ class SalaryCalculationService
         // divisor so it matches the payroll run. Capped at earnings so a bad
         // lopDays cannot invent wages to claw back.
         $lopDeduction = 0;
-        if ($lopDays > 0 && $workingDays > 0) {
-            $dailyWage = $totalEarnings / $workingDays;
+        $divisorDays = app(PayrollDayBasisResolver::class)->divisorDays(
+            app(PayrollDayBasisResolver::class)->basisFor($employee->organization),
+            sprintf('%04d-%02d', $payYear, $payMonth),
+            $workingDays
+        );
+        if ($lopDays > 0 && $divisorDays > 0) {
+            $dailyWage = $totalEarnings / $divisorDays;
             $lopDeduction = min(round($dailyWage * $lopDays, 2), round($totalEarnings, 2));
         }
 

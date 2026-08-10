@@ -145,11 +145,17 @@ class PayrollLopSingleApplicationTest extends TestCase
 
         $item = PayrollItem::where('user_id', $employee->id)->firstOrFail();
 
+        // One absent day costs 1/30 of a 30-day month, not 1/22 of its working
+        // days: Payment of Wages Act s.9(2) caps the deduction at the
+        // proportion the absent period bears to the wage period.
+        $this->assertSame('calendar', $item->salary_day_basis);
+        $this->assertSame(30.0, (float) $item->salary_divisor_days);
+
         $this->assertEqualsWithDelta(
-            (float) $item->gross_salary / $workingDays,
+            (float) $item->gross_salary / 30,
             (float) $item->lOP_deduction,
             0.02,
-            'One LOP day costs exactly one day of gross — charged once, not twice.'
+            'One LOP day costs exactly one calendar day of gross — charged once, not twice.'
         );
     }
 

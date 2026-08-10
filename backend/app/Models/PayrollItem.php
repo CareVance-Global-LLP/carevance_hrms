@@ -96,6 +96,10 @@ class PayrollItem extends Model
         'absent_days',
         'total_payable_days',
         'attendance_calculation_mode',
+        // The divisor this row's daily rate was computed with, frozen at run
+        // time so the payslip stays reproducible if the setting later changes.
+        'salary_day_basis',
+        'salary_divisor_days',
     ];
 
     protected $casts = [
@@ -136,6 +140,7 @@ class PayrollItem extends Model
         'nps_employee' => 'decimal:2',
         'vpf_employee' => 'decimal:2',
         'lwf' => 'decimal:2',
+        'salary_divisor_days' => 'decimal:2',
         'medical_insurance' => 'decimal:2',
         'life_insurance' => 'decimal:2',
         'custom_deductions' => 'decimal:2',
@@ -290,14 +295,35 @@ class PayrollItem extends Model
     }
 
     /**
-     * lOP_deduction is computed as (gross / workingDays) × lopDays.
-     * The stored column is kept for backward compatibility but the accessor
-     * ensures the value is always consistent with its source fields.
+     * lOP_deduction = (gross / salary divisor) × lopDays.
+     *
+     * The divisor is the one frozen onto this row at run time — the calendar
+     * month by default. It used to be `total_working_days` (~22), which made
+     * this accessor a divisor path of its own: whatever the engines computed
+     * and stored, every reader got the working-day figure back, so a single
+     * absent day was reported as costing 1/22 of wages rather than the 1/30
+     * that Payment of Wages Act s.9(2) caps it at.
+     *
+     * Rows written before the divisor was recorded fall back to their
+     * working-day count, which is genuinely what they were divided by.
      */
     public function getLOPDeductionAttribute(): float
     {
-        if ($this->total_working_days <= 0 || $this->lOP_days <= 0) return 0;
-        return round(($this->gross_salary / $this->total_working_days) * $this->lOP_days, 2);
+        if ($this->lOP_days <= 0) {
+            return 0;
+        }
+
+        $divisor = app(\App\Services\Payroll\PayrollDayBasisResolver::class)->forStoredItem($this);
+
+        if ($divisor <= 0) {
+            return 0;
+        }
+
+        // Never more than the month's gross, however bad the day count is.
+        return round(min(
+            ((float) $this->gross_salary / $divisor) * (float) $this->lOP_days,
+            (float) $this->gross_salary
+        ), 2);
     }
 
     public function scopePending($query)

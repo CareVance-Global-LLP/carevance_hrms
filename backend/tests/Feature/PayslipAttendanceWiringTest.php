@@ -144,15 +144,17 @@ class PayslipAttendanceWiringTest extends TestCase
 
     public function test_lop_is_charged_exactly_once(): void
     {
-        $workingDays = $this->markPresent([$this->firstWeekday()->toDateString()]);
+        $this->markPresent([$this->firstWeekday()->toDateString()]);
 
         $result = $this->calculate();
 
+        // June 2026 has 30 calendar days. The divisor is the wage period, not
+        // the working-day count — s.9(2) caps a day's deduction at 1/30.
         $this->assertEqualsWithDelta(
-            (float) $result['total_earnings'] / $workingDays,
+            (float) $result['total_earnings'] / 30,
             (float) $result['deductions']['lop'],
             0.02,
-            'One LOP day costs one day of earnings — not pro-rated and deducted twice.'
+            'One LOP day costs one calendar day of earnings — not pro-rated and deducted twice.'
         );
     }
 
