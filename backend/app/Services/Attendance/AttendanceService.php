@@ -249,10 +249,49 @@ class AttendanceService
         ];
     }
 
-    public function checkOut(?User $user, ?float $latitude = null, ?float $longitude = null): array
-    {
+    /**
+     * @param  array{local_id?:string|null,device_id?:string|null,punch_out_at?:string|null}  $syncContext
+     *        Offline-sync metadata, mirroring checkIn(). A punch-out buffered
+     *        while disconnected carries the time the employee actually clicked;
+     *        without it the punch lands at whatever time the queue happened to
+     *        drain, which silently inflates the worked hours for that day.
+     */
+    public function checkOut(
+        ?User $user,
+        ?float $latitude = null,
+        ?float $longitude = null,
+        array $syncContext = [],
+    ): array {
         if (!$user || !$user->organization_id) {
             return ['status' => 422, 'payload' => ['message' => 'Organization is required.']];
+        }
+
+        // A replayed punch-out must resolve to the punch it already closed,
+        // rather than reporting "No active punch-in found" and looking like a
+        // hard failure to a queue that is in fact fully synced.
+        $localId = $syncContext['local_id'] ?? null;
+        $deviceId = $syncContext['device_id'] ?? null;
+        if ($localId && $deviceId) {
+            $alreadyApplied = AttendancePunch::where('user_id', $user->id)
+                ->where('local_id', $localId)
+                ->where('device_id', $deviceId)
+                ->whereNotNull('punch_out_at')
+                ->exists();
+
+            if ($alreadyApplied) {
+                $existing = AttendanceRecord::where('user_id', $user->id)
+                    ->whereDate('attendance_date', now()->toDateString())
+                    ->with('punches')
+                    ->first();
+
+                return [
+                    'status' => 200,
+                    'payload' => [
+                        'message' => 'Punched out successfully',
+                        'record' => $existing ? $this->decorateRecord($existing) : null,
+                    ],
+                ];
+            }
         }
 
         $today = now()->toDateString();
@@ -270,13 +309,23 @@ class AttendanceService
             return ['status' => 422, 'payload' => ['message' => 'No active punch-in found.']];
         }
 
-        $checkOutAt = now();
-        $sessionWorkedSeconds = max(0, Carbon::parse($openPunch->punch_in_at)->diffInSeconds($checkOutAt));
+        $checkOutAt = $this->resolveSyncTimestamp($syncContext['punch_out_at'] ?? null);
+
+        // A buffered punch-out cannot predate its own punch-in: clock skew on
+        // the tracker machine would otherwise produce a negative session.
+        $punchInAt = Carbon::parse($openPunch->punch_in_at);
+        if ($checkOutAt->lessThan($punchInAt)) {
+            $checkOutAt = $punchInAt;
+        }
+
+        $sessionWorkedSeconds = max(0, $punchInAt->diffInSeconds($checkOutAt));
         $openPunch->update([
             'punch_out_at' => $checkOutAt,
             'worked_seconds' => (int) $sessionWorkedSeconds,
             'punch_out_latitude' => $latitude,
             'punch_out_longitude' => $longitude,
+            'local_id' => $localId ?? $openPunch->local_id,
+            'device_id' => $deviceId ?? $openPunch->device_id,
         ]);
 
         $record = $record->fresh('punches');

@@ -374,6 +374,45 @@ class SettingsController extends Controller
             );
         }
 
+        /*
+         * Tracker policy, admin-only for the same reason the capture interval
+         * is: these decide how quickly someone's timer is taken away and
+         * whether they can erase their own record. A manager tuning them for
+         * their own team is a different blast radius from late_after_time.
+         *
+         * An explicit null clears the override so the organization falls back
+         * to the system default, which is why this tests array_key_exists
+         * rather than truthiness.
+         */
+        $trackerPolicyKeys = [
+            'idle_track_threshold_seconds',
+            'idle_auto_stop_threshold_seconds',
+            'lock_auto_stop_threshold_seconds',
+            'screenshot_retention_days',
+            'employee_activity_visible',
+            'screenshot_employee_delete',
+        ];
+
+        foreach ($trackerPolicyKeys as $key) {
+            if (! array_key_exists($key, $validated)) {
+                continue;
+            }
+
+            if ($user->getHierarchyLevel() > 10) {
+                return response()->json(['message' => 'Only admins can update tracker settings.'], 403);
+            }
+
+            $value = $validated[$key];
+            if ($value === null || $value === '') {
+                unset($existingSettings[$key]);
+                continue;
+            }
+
+            $existingSettings[$key] = in_array($key, ['screenshot_employee_delete', 'employee_activity_visible'], true)
+                ? filter_var($value, FILTER_VALIDATE_BOOL)
+                : (int) $value;
+        }
+
         $updatedSettings = array_merge($existingSettings, [
             'attendance' => $attendanceSettings,
             'branding' => $brandingSettings,

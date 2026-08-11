@@ -57,16 +57,30 @@ class AuthenticateApiToken
             ]);
         }
 
+        // Enforce *paid* expiry too. This used to look only at trials, so a paid
+        // plan past its renewal date kept full access indefinitely. The daily
+        // billing:roll-cycle command does the same reconciliation; doing it here
+        // as well means a day the scheduler misses cannot hand out free access.
+        if ($organization && in_array($organization->subscription_status, ['active', 'past_due'], true)) {
+            app(\App\Services\Billing\SubscriptionCycleService::class)->reconcile($organization);
+        }
+
         // Block API access if subscription is expired (allow billing/settings endpoints)
         if ($organization && $organization->subscription_status === 'expired') {
             $allowedPaths = ['billing', 'settings', 'auth', 'logout', 'payment'];
             $path = $request->path();
             $isAllowed = collect($allowedPaths)->some(fn ($allowed) => str_contains($path, $allowed));
             if (!$isAllowed) {
+                // A paid plan that lapsed is not an expired trial, and telling
+                // the customer it was one sends them to the wrong screen.
+                $wasTrial = $organization->subscription_intent === 'trial' || !$organization->last_renewal_at;
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Your free trial has expired. Please upgrade to continue using CareVance.',
-                    'error_code' => 'TRIAL_EXPIRED',
+                    'message' => $wasTrial
+                        ? 'Your free trial has expired. Please upgrade to continue using CareVance.'
+                        : 'Your subscription has lapsed. Renew to restore full access — your data is untouched.',
+                    'error_code' => $wasTrial ? 'TRIAL_EXPIRED' : 'SUBSCRIPTION_EXPIRED',
                     'subscription_status' => 'expired',
                 ], 403);
             }

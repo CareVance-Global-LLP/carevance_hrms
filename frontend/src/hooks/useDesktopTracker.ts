@@ -7,7 +7,8 @@ import {
   isBrowserTrackingConnectionHealthy,
   isSupportedBrowserTrackingApp,
 } from '@/lib/browserTracking';
-import { idleAutoStopThresholdSeconds, idleGuardIntervalMs, idleTrackThresholdSeconds, lockScreenAutoStopThresholdSeconds } from '@/lib/runtimeConfig';
+import { idleGuardIntervalMs } from '@/lib/runtimeConfig';
+import { isCaptureBlockedContext, resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
   DESKTOP_TIMER_STARTED_EVENT,
@@ -15,6 +16,7 @@ import {
   type DesktopTimerSessionDetail,
   emitDesktopTimerIdleStop,
   setIdleAutoStopNotice,
+  emitIdleReturnPrompt,
   suppressAutoStart,
   suppressAutoStartGlobally,
 } from '@/lib/desktopTimerSession';
@@ -33,8 +35,6 @@ const ACTIVITY_TRACK_INTERVAL_MS = 1000;
 // Matches the server's system default (config/screenshots.php). This is only a
 // last-resort fallback now: the server resolves the effective interval
 // (per-user override -> org default -> system default) and sends it down.
-const FALLBACK_SCREENSHOT_INTERVAL_MINUTES = 10;
-const ALLOWED_SCREENSHOT_INTERVAL_MINUTES = [1, 3, 5, 10, 15, 30] as const;
 // Capture cadence is jittered by up to +/- this fraction so screenshots are not
 // perfectly periodic (and so a whole fleet on the same setting does not fire in
 // lockstep).
@@ -51,10 +51,7 @@ const SCREENSHOT_FAILURE_NOTIFY_AFTER = 3;
 // to the admin/Monitoring side via the activity heartbeat so it's visible there.
 const SCREENSHOT_FAILURE_REPORT_AFTER = 3;
 const SCREENSHOT_FAILURE_REPORT_DEBOUNCE_MS = 5 * 60 * 1000;
-const IDLE_THRESHOLD_SECONDS = idleTrackThresholdSeconds;
-const IDLE_AUTO_STOP_THRESHOLD_SECONDS = Math.max(idleAutoStopThresholdSeconds, IDLE_THRESHOLD_SECONDS);
 const IDLE_GUARD_INTERVAL_MS = idleGuardIntervalMs;
-const LOCK_SCREEN_AUTO_STOP_THRESHOLD_SECONDS = lockScreenAutoStopThresholdSeconds;
 const IDLE_STOP_API_TIMEOUT_MS = 15 * 1000;
 const IDLE_STOP_MIN_INTERVAL_MS = 5 * 1000;
 const IDLE_STOP_MAX_ATTEMPTS_PER_ENTRY = 3;
@@ -120,7 +117,6 @@ const formatIdleDurationLabel = (seconds: number) => {
   return `${minutes} minute${minutes === 1 ? '' : 's'} ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'}`;
 };
 
-const IDLE_AUTO_STOP_MESSAGE = `You were idle for ${formatIdleDurationLabel(IDLE_AUTO_STOP_THRESHOLD_SECONDS)}, so your timer was stopped.`;
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
   'mousemove',
   'mousedown',
@@ -139,38 +135,6 @@ const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
 ];
 
 let desktopTrackerRunSequence = 0;
-
-const isAllowedScreenshotInterval = (value: number) => (
-  ALLOWED_SCREENSHOT_INTERVAL_MINUTES.includes(
-    value as (typeof ALLOWED_SCREENSHOT_INTERVAL_MINUTES)[number]
-  )
-);
-
-/**
- * Resolve the capture interval for a user.
- *
- * The server now resolves this (per-user override -> org default -> system
- * default) and serialises it as effective_monitoring_interval_minutes, so the
- * client no longer carries its own opinion. The raw per-user setting is still
- * read as a fallback because AuthContext hydrates `user` from localStorage and
- * from the offline store before /auth/me returns, and those cached payloads can
- * predate the resolved field.
- */
-const resolveScreenshotIntervalMs = (
-  user?: { settings?: Record<string, any> | null; effective_monitoring_interval_minutes?: number | null } | null
-) => {
-  const resolved = Number(user?.effective_monitoring_interval_minutes);
-  if (isAllowedScreenshotInterval(resolved)) {
-    return resolved * 60 * 1000;
-  }
-
-  const legacy = Number(user?.settings?.monitoring_interval_minutes);
-  if (isAllowedScreenshotInterval(legacy)) {
-    return legacy * 60 * 1000;
-  }
-
-  return FALLBACK_SCREENSHOT_INTERVAL_MINUTES * 60 * 1000;
-};
 
 /**
  * Spread captures around the configured period so they are not perfectly
@@ -396,6 +360,13 @@ export const useDesktopTracker = () => {
   // When the last screenshot actually landed, used to suppress the
   // capture-on-restart burst.
   const lastScreenshotCaptureAtRef = useRef(0);
+  // Most recent foreground window, refreshed by the 1s activity tick and read
+  // by the capture-time privacy check.
+  const lastForegroundContextRef = useRef<{ app?: string | null; title?: string | null } | null>(null);
+  // The idle span currently awaiting an answer. Held from the moment idle is
+  // recorded until the person comes back and is asked what it was, so the
+  // prompt can name a duration and point at the row it belongs to.
+  const unansweredIdleRef = useRef<{ activityId: number; idleSeconds: number } | null>(null);
   const dedicatedIdleStopIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
@@ -535,7 +506,28 @@ export const useDesktopTracker = () => {
     const runId = ++desktopTrackerRunSequence;
     const isCurrentRun = () => desktopTrackerRunSequence === runId;
     const hasForegroundWindowBridge = typeof desktopApi?.onForegroundWindowChange === 'function';
-    const screenshotIntervalMs = resolveScreenshotIntervalMs(user);
+
+    /*
+     * Policy comes from the server, per run.
+     *
+     * These deliberately shadow the module-level constants of the same name,
+     * which are now only a pre-hydration fallback inside resolveTrackerPolicy.
+     * The client used to own these thresholds outright while the server owned
+     * a separate copy, with nothing keeping them in step — a client set below
+     * the server proposed idle stops that were rejected with 409 until it
+     * exhausted its three-attempt cap.
+     *
+     * The effect re-runs on `user`, so a policy change reaches a running
+     * tracker on the next /auth/me without restarting the app.
+     */
+    const trackerPolicy = resolveTrackerPolicy(user);
+    const IDLE_THRESHOLD_SECONDS = trackerPolicy.idle_track_threshold_seconds;
+    const IDLE_AUTO_STOP_THRESHOLD_SECONDS = trackerPolicy.idle_auto_stop_threshold_seconds;
+    const LOCK_SCREEN_AUTO_STOP_THRESHOLD_SECONDS = trackerPolicy.lock_auto_stop_threshold_seconds;
+    const IDLE_AUTO_STOP_MESSAGE =
+      `You were idle for ${formatIdleDurationLabel(IDLE_AUTO_STOP_THRESHOLD_SECONDS)}, so your timer was stopped.`;
+
+    const screenshotIntervalMs = trackerPolicy.capture_interval_minutes * 60 * 1000;
     let inFlight = false;
     let screenshotInFlight = false;
     // How long we may keep capturing against a CACHED active entry after the
@@ -1315,6 +1307,9 @@ export const useDesktopTracker = () => {
         });
         if (activeSegmentRef.current?.kind === 'idle' && activeSegmentRef.current.signature === idleSignature) {
           activeSegmentRef.current.durationSeconds = idleSeconds;
+          if (unansweredIdleRef.current?.activityId === activeSegmentRef.current.activityId) {
+            unansweredIdleRef.current.idleSeconds = idleSeconds;
+          }
         }
         return;
       }
@@ -1347,6 +1342,7 @@ export const useDesktopTracker = () => {
         signature: idleSignature,
         kind: 'idle',
       };
+      unansweredIdleRef.current = { activityId: response.data.id, idleSeconds };
     };
 
     /**
@@ -1663,6 +1659,11 @@ export const useDesktopTracker = () => {
         try {
           if (typeof desktopApi?.getActiveWindowContext === 'function') {
             activeContext = await desktopApi.getActiveWindowContext();
+            // Remembered for the capture-time privacy check, which must not
+            // issue a lookup of its own: this tick already runs every second,
+            // so the value is never more than a second stale, and a second
+            // call would double the IPC traffic for no extra accuracy.
+            lastForegroundContextRef.current = activeContext;
           }
         } catch (err) {
           console.warn('[usage] desktop active context fetch failed:', err);
@@ -1764,6 +1765,25 @@ export const useDesktopTracker = () => {
             return;
           }
         } else {
+          /*
+           * Back from idle. Ask rather than decide.
+           *
+           * The timer never stopped, so those minutes are already counted —
+           * which makes "keep" a no-op and "discard" the action that moves
+           * time. That is the reverse of the auto-stop path, where the tail
+           * was already rewound off the entry before anyone was asked.
+           */
+          const unanswered = unansweredIdleRef.current;
+          if (unanswered && unanswered.idleSeconds >= IDLE_THRESHOLD_SECONDS) {
+            unansweredIdleRef.current = null;
+            emitIdleReturnPrompt({
+              userId: userId || 0,
+              activityId: unanswered.activityId,
+              idleSeconds: unanswered.idleSeconds,
+              timerRunning: true,
+            });
+          }
+
           if (
             hasForegroundWindowBridge
             && (
@@ -2215,6 +2235,28 @@ export const useDesktopTracker = () => {
           });
           return;
         }
+        /*
+         * Capture-time privacy check, immediately before the capture itself.
+         *
+         * A screenshot is a full-resolution picture of whatever happens to be
+         * on screen — a password vault, personal banking, someone else's
+         * medical leave request. Asking what is in the foreground first, and
+         * skipping the shot entirely when it matches an organisation rule, is
+         * data minimisation at the only point where it actually costs nothing:
+         * the pixels are never read, so there is nothing to blur, store or
+         * later have to justify.
+         *
+         * Skipping is silent by design. Logging "we skipped your password
+         * manager" would record the very fact the rule exists to avoid.
+         */
+        if (isCaptureBlockedContext(trackerPolicy, lastForegroundContextRef.current)) {
+          // Treated as a completed period so the next capture is scheduled
+          // normally — a blocked window must not make the tracker retry in a
+          // tight loop until the user moves off it.
+          lastScreenshotCaptureAtRef.current = Date.now();
+          return;
+        }
+
         let captureResult: DesktopScreenshotCaptureResult;
         try {
           captureResult = await withTimeout(
@@ -2253,6 +2295,28 @@ export const useDesktopTracker = () => {
             'Desktop screenshot upload'
           );
         } catch (uploadError: any) {
+          /*
+           * "The server said no" and "there is no network" are different
+           * failures and must not share a retry path.
+           *
+           * Every upload error used to be queued offline, so a 422 on a
+           * malformed capture was retried ten times before the queue gave up
+           * on it — and until the queue learned to drop exhausted records, it
+           * sat at the head of the queue blocking everything behind it. A
+           * definite answer from the server is final; only a transport
+           * failure is worth buffering.
+           */
+          const status = Number(uploadError?.response?.status || 0);
+          const serverAnswered = status >= 400 && status < 500;
+
+          if (serverAnswered) {
+            console.warn('[Tracker] Screenshot rejected by the server; not queueing.', {
+              status,
+              entryId: activeEntry.id,
+            });
+            return;
+          }
+
           if (window.desktopTracker?.saveScreenshotOffline) {
             const { saveScreenshotOffline } = await import('@/services/offlineService');
             await saveScreenshotOffline(

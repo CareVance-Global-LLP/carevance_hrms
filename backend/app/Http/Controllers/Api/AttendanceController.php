@@ -58,10 +58,26 @@ class AttendanceController extends Controller
 
     public function checkOut(Request $request)
     {
+        $request->validate([
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            // Offline-sync metadata, mirroring checkIn above. The desktop queue
+            // already sends these; without them a buffered punch-out was
+            // stamped at sync time and could be applied twice.
+            'local_id' => 'nullable|string|max:191',
+            'device_id' => 'nullable|string|max:191',
+            'punch_out_at' => 'nullable|date',
+        ]);
+
         $result = $this->attendanceService->checkOut(
             $request->user(),
             $request->filled('latitude') ? (float) $request->latitude : null,
             $request->filled('longitude') ? (float) $request->longitude : null,
+            [
+                'local_id' => $request->input('local_id'),
+                'device_id' => $request->input('device_id'),
+                'punch_out_at' => $request->input('punch_out_at'),
+            ],
         );
 
         return response()->json($result['payload'], $result['status']);

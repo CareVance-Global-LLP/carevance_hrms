@@ -27,6 +27,9 @@ Route::middleware('role:admin')->group(function () {
     Route::post('/billing/confirm-add-seats', [BillingController::class, 'confirmAddSeats']);
     Route::post('/billing/reduce-seats', [BillingController::class, 'reduceSeats']);
     Route::post('/billing/confirm-reduce-seats', [BillingController::class, 'confirmReduceSeats']);
+    // Turning auto-renew on or off commits or cancels a future charge, so it
+    // belongs behind the same gate as the rest of the spending routes.
+    Route::post('/billing/auto-renew', [BillingController::class, 'setAutoRenew']);
     Route::post('/billing/cancel-plan', [BillingController::class, 'cancelPlan']);
     Route::post('/billing/cancel-pending-upgrade', [BillingController::class, 'cancelPendingUpgrade']);
 

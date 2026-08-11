@@ -10,12 +10,14 @@ import {
   Coffee,
 
   DoorOpen,
+  Eye,
   FileClock,
   Fingerprint,
   FolderKanban,
   Gauge,
   LayoutDashboard,
   LineChart,
+  MailPlus,
   MapPin,
   MessageSquare,
   Network,
@@ -45,6 +47,8 @@ export type NavLinkItem = {
   employeeOnly?: boolean;
   planFeature?: string;
   permission?: string;
+  /** Hidden unless this flag is true on the server-resolved tracker policy. */
+  trackerPolicyFlag?: 'can_view_own_activity';
   external?: boolean;
   externalPath?: string;
 };
@@ -83,9 +87,15 @@ export const condensedNavigation: NavGroup[] = [
     icon: Users,
     items: [
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
+      // Before New Hires because that is the order people move through: invited,
+      // then joined, then gone. The route existed with nothing linking to it, so
+      // pending invitations were only reachable by typing the URL.
+      { label: 'Invitations', to: '/employees/invitations', icon: MailPlus, adminOnly: true },
       { label: 'New Hires', to: '/new-hires', icon: UserPlus, adminOnly: true },
       { label: 'Exits', to: '/exits', icon: DoorOpen, adminOnly: true },
       { label: 'My Team', to: '/my-team', icon: Share2, employeeOnly: true },
+      // Shown only where the organization has switched self-view on.
+      { label: 'My Activity', to: '/my-activity', icon: Eye, trackerPolicyFlag: 'can_view_own_activity' },
     ],
   },
   {

@@ -8,7 +8,7 @@ export default function FAQSection() {
   const toggle = (i: number) => setOpenIndex(openIndex === i ? null : i);
 
   return (
-    <section id="faq" className="bg-[#f3f6fb] px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+    <section id="faq" className="bg-surface-sunken px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
       <div className="mx-auto max-w-3xl">
         {/* Header */}
         <div className="flex flex-col items-center gap-4 text-center">

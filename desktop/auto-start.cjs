@@ -9,6 +9,18 @@ const REGISTRY_RUN_VALUE = 'CareVanceTracker';
 const TASK_NAME = 'CareVanceTrackerAutoStart';
 
 /**
+ * Arguments the boot launch must carry.
+ *
+ * Packaged, `process.execPath` IS CareVance Tracker.exe and needs nothing else.
+ * Unpackaged it is `node_modules/electron/dist/electron.exe`, and Electron
+ * launched with no app directory falls back to its own built-in welcome app —
+ * which is exactly the "default Electron window instead of our app" symptom on
+ * boot. The directory has to be passed explicitly, quoted, because Windows
+ * stores the whole thing as one registry string.
+ */
+const resolveLoginItemArgs = () => (app.isPackaged ? [] : [`"${path.resolve(__dirname)}"`]);
+
+/**
  * Build the correct command to launch the app from auto-start.
  * - Packaged: the .exe IS the app, so use it directly.
  * - Development: electron.exe needs the app directory argument,
@@ -101,12 +113,24 @@ const setupStrongAutoStart = () => {
 
   // Method 1: Electron's built-in login item API (handles path quoting correctly)
   try {
+    const args = resolveLoginItemArgs();
     app.setLoginItemSettings({
       openAtLogin: true,
       path: process.execPath,
+      args,
     });
-    console.log('[auto-start] Auto-start set via Electron API');
-    return;
+
+    // setLoginItemSettings does not report failure on Windows, so confirm the
+    // entry we just wrote is the one that will actually start the app. An
+    // existing entry from an older build can be a bare electron.exe with no
+    // app directory, which boots into Electron's welcome window instead.
+    const written = app.getLoginItemSettings({ path: process.execPath, args });
+    if (written?.openAtLogin) {
+      console.log('[auto-start] Auto-start set via Electron API', args.length ? `(args: ${args.join(' ')})` : '');
+      return;
+    }
+
+    console.warn('[auto-start] Electron API reported the login item as not set; falling back');
   } catch (error) {
     console.warn('[auto-start] Electron API failed:', error.message);
   }
@@ -125,17 +149,22 @@ const setupStrongAutoStart = () => {
 };
 
 /**
- * Check if auto-start is enabled
+ * Check if auto-start is enabled.
+ *
+ * Asks Electron about its own login item rather than querying the legacy
+ * `CareVanceTracker` Run value: that value belongs to the old mechanism, is
+ * deleted on every launch by cleanupRegistryRunKey(), and was never what the
+ * Electron API writes — so the registry check reported "disabled" even with
+ * auto-start fully on.
  */
 const isAutoStartEnabled = () => {
   if (process.platform !== 'win32') return false;
 
   try {
-    const registryCheck = execSync(
-      `reg query "${REGISTRY_RUN_KEY}" /v "${REGISTRY_RUN_VALUE}"`,
-      { stdio: 'pipe' }
-    ).toString();
-    return registryCheck.includes(REGISTRY_RUN_VALUE);
+    return Boolean(app.getLoginItemSettings({
+      path: process.execPath,
+      args: resolveLoginItemArgs(),
+    })?.openAtLogin);
   } catch {
     return false;
   }
@@ -147,9 +176,14 @@ const isAutoStartEnabled = () => {
 const disableAutoStart = () => {
   if (process.platform !== 'win32') return;
 
-  // Disable Electron login item
+  // Disable Electron login item. The same path/args identify the entry that
+  // setupStrongAutoStart wrote.
   try {
-    app.setLoginItemSettings({ openAtLogin: false });
+    app.setLoginItemSettings({
+      openAtLogin: false,
+      path: process.execPath,
+      args: resolveLoginItemArgs(),
+    });
   } catch {}
 
   // Remove legacy Registry key

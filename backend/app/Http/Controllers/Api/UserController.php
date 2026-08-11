@@ -235,18 +235,40 @@ class UserController extends Controller
         $selectedRole = $validated['role'] ?? 'employee';
         $this->organizationRoleService->assertCanAssignRole($currentUser, $selectedRole);
 
+        // The seat cap, enforced. It existed as a column and a price for a long
+        // time without anything checking it before creating a user, which is how
+        // workspaces ended up well past what they pay for. Enforcement is
+        // forward-only: nobody already here is affected.
+        app(\App\Services\Billing\SeatGuard::class)
+            ->assertCanAdd($currentUser->organization, 1);
+
         $normalizedSettings = array_key_exists('settings', $validated)
             ? $this->normalizeUserSettings($validated['settings'] ?? [], $selectedRole)
             : null;
+
+        // An admin creating a user directly has typed the address and set the
+        // password, and hands both to the joiner. Treat the address as verified
+        // so those credentials actually work.
+        //
+        // Without this the account is created unverified and login is refused
+        // with EMAIL_NOT_VERIFIED, and nothing on this path ever sends a
+        // verification mail — so the only way in used to be the legacy invite
+        // email, which has been removed. An admin-created user with no password
+        // and no verified address cannot sign in at all.
+        //
+        // Invited users are not covered by this: they verify through the
+        // invitation they accepted, which is what proves they hold the address.
+        $suppliedPassword = $validated['password'] ?? null;
 
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?? null,
-            'password' => Hash::make($validated['password'] ?? Str::random(12)),
+            'password' => Hash::make($suppliedPassword ?? Str::random(12)),
             'role' => $selectedRole,
             'organization_id' => $currentUser->organization_id,
             'settings' => $normalizedSettings,
+            'email_verified_at' => $suppliedPassword !== null ? now() : null,
         ]);
 
         // Auto-create EmployeeProfile so work-info endpoint works

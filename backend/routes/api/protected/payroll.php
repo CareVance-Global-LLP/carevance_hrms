@@ -250,7 +250,10 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
     Route::post('/stop-payment-flags', [PayrollDepartmentController::class, 'createStopPaymentFlag']);
     Route::put('/stop-payment-flags/{id}', [PayrollDepartmentController::class, 'updateStopPaymentFlag']);
     Route::delete('/stop-payment-flags/{id}', [PayrollDepartmentController::class, 'resolveStopPaymentFlag']);
+    // Returns 202 and hands back a progress handle — the work happens in
+    // ProcessPayrollRunEmployees, not in this request. Poll processing-status.
     Route::post('/runs/{runId}/process-remaining', [PayrollDepartmentController::class, 'processRemainingEmployees']);
+    Route::get('/runs/{runId}/processing-status', [PayrollDepartmentController::class, 'getRunProcessingStatus']);
     Route::post('/runs/{runId}/lock', [PayrollDepartmentController::class, 'lockPayrollRun']);
     Route::post('/runs/{runId}/unlock', [PayrollDepartmentController::class, 'unlockPayrollRun']);
     Route::post('/runs/{runId}/approve', [PayrollDepartmentController::class, 'approvePayrollRun']);

@@ -104,6 +104,18 @@ QueueManager.prototype.markSynced = function (recordType, localId) {
   }
 };
 
+/**
+ * Retire a record the sync engine has stopped retrying. Without this the item
+ * stays in sync_queue and every batch keeps picking it up.
+ */
+QueueManager.prototype.dropExhausted = function (recordType, localId) {
+  const dropped = this.db.dropExhaustedFromQueue(recordType, localId);
+  if (dropped) {
+    this.emit('item-dropped', { recordType, localId });
+  }
+  return dropped;
+};
+
 QueueManager.prototype.markFailed = function (recordType, localId, errorMessage) {
   const markMap = {
     attendance: (id, msg) => this.db.markAttendanceFailed(id, msg),

@@ -7,6 +7,21 @@ const { encrypt, decrypt } = require('./crypto-utils.cjs');
 const SCHEMA_VERSION = 6;
  const DB_FILENAME = 'carevance-offline.db';
 
+/** Every table that carries a sync_status and therefore accumulates. */
+const SYNCABLE_TABLES = [
+  'offline_screenshots',
+  'offline_timeline',
+  'offline_app_usage',
+  'offline_website_usage',
+  'offline_attendance',
+  'offline_time_entries',
+  'offline_activity_records',
+];
+
+/** How long a record that already reached the server is kept locally. */
+const SYNCED_RETENTION_DAYS = 3;
+const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 const ensureDirectory = (dirPath) => {
   fs.mkdirSync(dirPath, { recursive: true });
   return dirPath;
@@ -218,6 +233,7 @@ function OfflineDatabase(userDataPath) {
   this.db = null;
   this.dbPath = null;
   this.saveTimer = null;
+  this.purgeTimer = null;
   this.dirty = false;
 
   if (!userDataPath) return this;
@@ -277,6 +293,15 @@ OfflineDatabase.prototype.open = async function () {
     }, 5000);
 
     this.ready = true;
+
+    // Reclaim first, then keep reclaiming: a session can stay open for days,
+    // and every synced screenshot still in the file is paid for again on each
+    // 5-second export above.
+    this.purgeSyncedOlderThan();
+    this.purgeTimer = setInterval(() => {
+      this.purgeSyncedOlderThan();
+    }, PURGE_INTERVAL_MS);
+
     console.log('[offline-db] SQLite (sql.js) database ready at:', this.dbPath);
     return true;
   } catch (err) {
@@ -325,6 +350,49 @@ OfflineDatabase.prototype._persist = function () {
 
 OfflineDatabase.prototype._markDirty = function () {
   this.dirty = true;
+};
+
+/**
+ * Delete records that have already reached the server.
+ *
+ * Nothing used to remove them: markXSynced only flips sync_status and drops the
+ * queue row, so every capture ever made stayed in the file. That matters more
+ * here than in a normal SQLite app for two reasons — screenshots are held as
+ * base64 image_data, and sql.js re-exports the ENTIRE database to disk on every
+ * flush. Left alone, both the file and the cost of each 5-second write grow
+ * without limit.
+ *
+ * Synced rows are kept for a short grace period rather than deleted on the spot
+ * so a sync that is retried or reconciled shortly afterwards can still find its
+ * local row.
+ */
+OfflineDatabase.prototype.purgeSyncedOlderThan = function (retentionDays = SYNCED_RETENTION_DAYS) {
+  if (!this.isReady()) return 0;
+
+  const days = Number.isFinite(retentionDays) && retentionDays >= 0 ? retentionDays : SYNCED_RETENTION_DAYS;
+  let removed = 0;
+
+  for (const table of SYNCABLE_TABLES) {
+    try {
+      const before = this._count(`SELECT COUNT(*) as count FROM ${table}`);
+      this._run(
+        `DELETE FROM ${table} WHERE sync_status = 'synced' AND synced_at IS NOT NULL`
+        + ` AND synced_at < datetime('now', ?)`,
+        [`-${days} days`]
+      );
+      const after = this._count(`SELECT COUNT(*) as count FROM ${table}`);
+      removed += Math.max(0, before - after);
+    } catch (err) {
+      console.warn(`[offline-db] purge failed for ${table}:`, err.message || err);
+    }
+  }
+
+  if (removed > 0) {
+    console.log(`[offline-db] Purged ${removed} synced record(s) older than ${days} day(s)`);
+    this._markDirty();
+  }
+
+  return removed;
 };
 
 OfflineDatabase.prototype._migrate = function (fromVersion) {
@@ -403,6 +471,10 @@ OfflineDatabase.prototype.close = function () {
   if (this.saveTimer) {
     clearInterval(this.saveTimer);
     this.saveTimer = null;
+  }
+  if (this.purgeTimer) {
+    clearInterval(this.purgeTimer);
+    this.purgeTimer = null;
   }
   if (this.db) {
     this._persist();
@@ -847,6 +919,21 @@ OfflineDatabase.prototype._dequeueSync = function (recordType, localId) {
   this._run('DELETE FROM sync_queue WHERE record_type = ? AND local_id = ?', [recordType, localId]);
 };
 
+/**
+ * Drop a record that has exhausted its retries out of the queue.
+ *
+ * The row itself is kept (status stays 'failed', with its error) so the failure
+ * is still inspectable, but it must leave `sync_queue` — a record that stays
+ * queued after the sync engine has given up on it is never removed by anything
+ * else, so it sits at the head of every future batch and blocks the records
+ * behind it forever.
+ */
+OfflineDatabase.prototype.dropExhaustedFromQueue = function (recordType, localId) {
+  if (!this.isReady()) return false;
+  this._dequeueSync(recordType, localId);
+  return true;
+};
+
 OfflineDatabase.prototype.getNextSyncBatch = function (limit = 20) {
   return this._all(
     'SELECT sq.* FROM sync_queue sq ORDER BY sq.priority ASC, sq.created_at ASC LIMIT ?',
@@ -859,7 +946,7 @@ OfflineDatabase.prototype.getQueueSize = function () {
 };
 
 OfflineDatabase.prototype.getSyncStatusCounts = function () {
-  const tables = ['offline_screenshots', 'offline_timeline', 'offline_app_usage', 'offline_website_usage', 'offline_attendance', 'offline_time_entries', 'offline_activity_records'];
+  const tables = SYNCABLE_TABLES;
   const counts = { pending: 0, syncing: 0, synced: 0, failed: 0 };
 
   for (const table of tables) {
@@ -882,7 +969,7 @@ OfflineDatabase.prototype.getAllPendingCount = function () {
 };
 
 OfflineDatabase.prototype.getLastSyncTime = function () {
-  const tables = ['offline_screenshots', 'offline_timeline', 'offline_app_usage', 'offline_website_usage', 'offline_attendance', 'offline_time_entries', 'offline_activity_records'];
+  const tables = SYNCABLE_TABLES;
   let latest = null;
 
   for (const table of tables) {

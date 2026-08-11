@@ -37,9 +37,27 @@ class ActivitySessionController extends Controller
             'ended_at' => 'nullable|date|after_or_equal:started_at',
             'confidence' => 'nullable|integer|min:0|max:100',
             'metadata' => 'nullable|array',
+            // Sent by the desktop tracker when replaying its offline queue.
+            'local_id' => 'nullable|string|max:120',
+            'device_id' => 'nullable|string|max:120',
         ]);
 
         $validated['user_id'] = $request->user()->id;
+
+        // A replayed session must resolve to the row it already created. This
+        // runs before closeConflictingOpenSessions() below, which would
+        // otherwise treat the retry as a new session overlapping the original
+        // and close the very row it is a duplicate of.
+        if (!empty($validated['local_id']) && !empty($validated['device_id'])) {
+            $existingSession = ActivitySession::query()
+                ->where('local_id', $validated['local_id'])
+                ->where('device_id', $validated['device_id'])
+                ->first();
+
+            if ($existingSession) {
+                return response()->json($existingSession, 200);
+            }
+        }
 
         if (($validated['activity_kind'] ?? null) === 'website') {
             validator($validated, [
@@ -72,9 +90,11 @@ class ActivitySessionController extends Controller
 
         $classification = $this->classifySessionPayload($validated + ['user_id' => $validated['user_id']]);
 
-        $session = ActivitySession::create([
+        $attributes = [
             'user_id' => $validated['user_id'],
             'time_entry_id' => $validated['time_entry_id'] ?? null,
+            'local_id' => $validated['local_id'] ?? null,
+            'device_id' => $validated['device_id'] ?? null,
             'source' => $validated['source'],
             'activity_kind' => $validated['activity_kind'],
             'tool_type' => $validated['tool_type'],
@@ -87,7 +107,26 @@ class ActivitySessionController extends Controller
             'duration_seconds' => $endedAt ? $this->resolveWholeSeconds($startedAt, $endedAt) : 0,
             'confidence' => $validated['confidence'] ?? 100,
             'metadata' => $validated['metadata'] ?? null,
-        ] + $classification);
+        ] + $classification;
+
+        try {
+            $session = ActivitySession::create($attributes);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Concurrent replays of the same queued record: the unique index
+            // decides, and losing that race means the row is already stored.
+            $session = !empty($validated['local_id']) && !empty($validated['device_id'])
+                ? ActivitySession::query()
+                    ->where('local_id', $validated['local_id'])
+                    ->where('device_id', $validated['device_id'])
+                    ->first()
+                : null;
+
+            if (!$session) {
+                throw $e;
+            }
+
+            return response()->json($session, 200);
+        }
 
         return response()->json($session, 201);
     }

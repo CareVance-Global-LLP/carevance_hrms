@@ -32,7 +32,10 @@ class InvitationFlowTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('invited_count', 1)
             ->assertJsonPath('invitations.0.role', 'employee')
-            ->assertJsonPath('invitations.0.mail_delivery', 'sent');
+            // 'queued', not 'sent': delivery is handed to SendInvitationMail so
+            // a fifty-recipient batch is not fifty blocking SMTP calls inside
+            // one request.
+            ->assertJsonPath('invitations.0.mail_delivery', 'queued');
 
         Mail::assertSent(CareVanceInvitationMail::class);
 
@@ -58,16 +61,23 @@ class InvitationFlowTest extends TestCase
             ->assertJsonPath('user.email', 'new.employee@example.com')
             ->assertJsonPath('user.role', 'employee')
             ->assertJsonPath('organization.id', $organization->id)
-            ->assertJsonPath('requires_verification', true)
+            // Redeeming a token that was emailed to this address IS the
+            // verification. Asking for a second round-trip locked people out
+            // whenever the verification mail failed to send.
+            ->assertJsonPath('requires_verification', false)
             ->assertJsonMissingPath('token')
-            ->assertJsonPath('verification_email_sent', true);
+            ->assertJsonPath('verification_email_sent', false);
 
         $this->assertDatabaseHas('invitations', [
             'organization_id' => $organization->id,
             'email' => 'new.employee@example.com',
             'status' => 'accepted',
         ]);
-        Mail::assertQueued(VerifyEmailMail::class);
+        $this->assertNotNull(
+            User::where('email', 'new.employee@example.com')->first()?->email_verified_at,
+            'An accepted invitation must leave the account verified and able to sign in.'
+        );
+        Mail::assertNotQueued(VerifyEmailMail::class);
 
         $this->postJson("/api/invitations/{$token}/accept", [
             'name' => 'New Employee',
@@ -252,7 +262,7 @@ class InvitationFlowTest extends TestCase
             'role' => 'employee',
             'delivery' => 'link',
             'settings' => [
-                'monitoring_interval_minutes' => 1,
+                'monitoring_interval_minutes' => 15,
                 'can_edit_time' => true,
                 'attendance_monitoring' => true,
                 'payroll_visibility' => true,
@@ -266,7 +276,7 @@ class InvitationFlowTest extends TestCase
             ->assertJsonPath('invitations.0.role', 'employee');
 
         $invitation = Invitation::query()->where('email', 'settings-user@example.com')->firstOrFail();
-        $this->assertSame(1, $invitation->settings['monitoring_interval_minutes']);
+        $this->assertSame(15, $invitation->settings['monitoring_interval_minutes']);
         $this->assertTrue($invitation->settings['can_edit_time']);
         $this->assertFalse($invitation->settings['payroll_visibility']);
 
@@ -280,7 +290,7 @@ class InvitationFlowTest extends TestCase
 
         $accepted = User::query()->where('email', 'settings-user@example.com')->firstOrFail();
         $this->assertSame($organization->id, $accepted->organization_id);
-        $this->assertSame(1, $accepted->settings['monitoring_interval_minutes']);
+        $this->assertSame(15, $accepted->settings['monitoring_interval_minutes']);
         $this->assertTrue($accepted->settings['can_edit_time']);
         $this->assertFalse($accepted->settings['payroll_visibility']);
     }
@@ -294,7 +304,7 @@ class InvitationFlowTest extends TestCase
             'role' => 'employee',
             'delivery' => 'link',
             'settings' => [
-                'monitoring_interval_minutes' => 1,
+                'monitoring_interval_minutes' => 15,
                 'can_edit_time' => false,
                 'attendance_monitoring' => true,
                 'task_assignment_access' => true,
@@ -330,7 +340,7 @@ class InvitationFlowTest extends TestCase
         $secondEmployee = User::query()->where('email', 'employee-two@example.com')->firstOrFail();
 
         $this->assertSame($organization->id, $firstEmployee->organization_id);
-        $this->assertSame(1, $firstEmployee->settings['monitoring_interval_minutes']);
+        $this->assertSame(15, $firstEmployee->settings['monitoring_interval_minutes']);
         $this->assertFalse($firstEmployee->settings['can_edit_time']);
 
         $this->assertSame($organization->id, $secondEmployee->organization_id);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Mail, UserPlus, Send } from 'lucide-react';
+import { X, Mail, UserPlus, Send, AlertCircle } from 'lucide-react';
 import { userApi, invitationApi, employeeWorkspaceApi, reportGroupApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel, ToggleInput } from '@/components/ui/FormField';
@@ -23,6 +23,13 @@ export default function AddEmployeeModal({ onClose, onSuccess, departments = [],
   const [sendInvite, setSendInvite] = useState(true);
   const [password, setPassword] = useState('');
   const [generatedPassword, setGeneratedPassword] = useState('');
+  /*
+   * Failures used to go to `alert()`, which drops a browser chrome dialog on
+   * top of the modal, loses the form's focus, and reads as a crash even when
+   * the message is an ordinary "email already in use". Shown inline instead,
+   * where the field that caused it still is.
+   */
+  const [error, setError] = useState<string | null>(null);
 
   const generatePassword = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
@@ -43,16 +50,30 @@ export default function AddEmployeeModal({ onClose, onSuccess, departments = [],
       };
       if (password) data.password = password;
       if (departmentId) data.group_ids = [parseInt(departmentId)];
+      if (phone.trim()) data.phone = phone.trim();
+      /*
+       * Sent at creation, not patched in afterwards.
+       *
+       * POST /users opens the onboarding journey inside the same request and
+       * anchors the checklist on `joining_date ?? now()`. Saving the date after
+       * the fact meant the journey was already built against today by the time
+       * it landed, so this form collected a start date that had no effect on
+       * onboarding at all — the pre-boarding items, which sit at day -14, were
+       * always scheduled in the past.
+       */
+      if (joiningDate) data.joining_date = joiningDate;
 
       const res = await userApi.create(data);
       const newUser = res.data;
       const userId = newUser.id || (newUser as any).user?.id;
 
+      // Still written to work info, which is where the roster reads it from;
+      // the journey above no longer depends on this call succeeding.
       if (joiningDate && userId) {
         try {
           await employeeWorkspaceApi.updateWorkInfo(userId, { joining_date: joiningDate });
-        } catch (e) {
-          // non-critical
+        } catch {
+          // Non-critical: the account and its journey both already have the date.
         }
       }
       return { user: newUser, generatedPassword };
@@ -65,8 +86,7 @@ export default function AddEmployeeModal({ onClose, onSuccess, departments = [],
       onClose();
     },
     onError: (error: any) => {
-      const msg = error?.response?.data?.message || error?.message || 'Failed to create employee';
-      alert(msg);
+      setError(error?.response?.data?.message || error?.message || 'Could not create this employee.');
     },
   });
 
@@ -78,6 +98,9 @@ export default function AddEmployeeModal({ onClose, onSuccess, departments = [],
         delivery: 'email',
       };
       if (departmentId) data.group_ids = [parseInt(departmentId)];
+      // The invited person's checklist anchors on this rather than on whenever
+      // they get round to clicking the link.
+      if (joiningDate) data.joining_date = joiningDate;
       return invitationApi.create(data);
     },
     onSuccess: () => {
@@ -86,8 +109,7 @@ export default function AddEmployeeModal({ onClose, onSuccess, departments = [],
       onClose();
     },
     onError: (error: any) => {
-      const msg = error?.response?.data?.message || error?.message || 'Failed to send invitation';
-      alert(msg);
+      setError(error?.response?.data?.message || error?.message || 'Could not send this invitation.');
     },
   });
 
@@ -97,6 +119,7 @@ export default function AddEmployeeModal({ onClose, onSuccess, departments = [],
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
 
+    setError(null);
     if (sendInvite) {
       inviteMutation.mutate();
     } else {
@@ -115,6 +138,16 @@ export default function AddEmployeeModal({ onClose, onSuccess, departments = [],
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {error ? (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2 sm:col-span-1">
               <FieldLabel>Full Name <span className="text-rose-500">*</span></FieldLabel>

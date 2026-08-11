@@ -55,6 +55,8 @@ const fillValidStep1 = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.type(screen.getByPlaceholderText("john@company.com"), 'priya@example.com');
   await user.type(screen.getByPlaceholderText("+91 98765 43210"), '9876543210');
   await user.type(screen.getByPlaceholderText("e.g., Software Engineer"), 'Data Analyst');
+  // A temporary password is set at creation time and is required.
+  await user.type(screen.getByPlaceholderText('At least 8 characters'), 'temp-pass-123');
   await user.click(screen.getByRole('button', { name: /recruitment/i }));
 };
 
@@ -189,7 +191,7 @@ describe('Add User wizard — validation happens before the network', () => {
     // gate demanded a date on or before today while the validator allowed two
     // years out — so it produced no message to display.
     await waitFor(() => {
-      expect(screen.getByText(/review details/i)).toBeInTheDocument();
+      expect(screen.getByText(/review before creating/i)).toBeInTheDocument();
     });
   });
 });

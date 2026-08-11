@@ -427,7 +427,7 @@ export default function ScreenshotFilmstrip({
                 {lightboxUrl ? (
                   <img src={lightboxUrl} alt="Screenshot enlarged" className="max-h-[74vh] w-full rounded-lg object-contain" />
                 ) : (
-                  <div className="flex h-[50vh] items-center justify-center rounded-lg bg-slate-800 text-sm text-slate-400">
+                  <div className="flex h-[50vh] items-center justify-center rounded-lg surface-fixed-dark text-sm text-white/60">
                     Loading image…
                   </div>
                 )}

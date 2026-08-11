@@ -88,6 +88,19 @@ class EmployeeExit extends Model
         return $this->morphMany(ChecklistItem::class, 'subject')->orderBy('sort_order');
     }
 
+    /**
+     * Take the checklist with the exit, for the same reason OnboardingJourney
+     * does: `subject_type`/`subject_id` is polymorphic, so no foreign key can
+     * cascade this. No orphans have been observed from this side yet — this is
+     * here so the pair cannot drift.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (self $exit) {
+            $exit->checklistItems()->delete();
+        });
+    }
+
     /** Negative once the last working day has passed. */
     public function getDaysRemainingAttribute(): int
     {

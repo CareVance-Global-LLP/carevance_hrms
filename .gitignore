@@ -22,6 +22,9 @@ yarn-error.log*
 .worktrees/
 desktop/release/
 desktop/release-*/
+# Bundled copy of the built web UI, produced by desktop/scripts/prepare-renderer.cjs
+# so the shell can serve the real app when the deployed one is unreachable.
+desktop/renderer/
 
 # Desktop build artifacts
 desktop-build/
@@ -74,3 +77,13 @@ create_presentation.py
 
 # IDE tooling
 .kilo/
+
+# Local SQLite databases. backend/timetrackpro was committed as a tracked
+# database — the app uses PostgreSQL, so it was only ever local scratch.
+backend/timetrackpro
+*.sqlite
+*.sqlite3
+
+# Local scratch that has a habit of appearing at the repo root.
+cookies.txt
+debug.log

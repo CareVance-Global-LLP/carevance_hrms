@@ -18,6 +18,25 @@ class PayrollMonthlyRun extends Model
         'month_year',
         'status',
         'pay_date',
+        // Background processing progress — written by ProcessPayrollRunEmployees
+        // and polled through payroll/runs/{id}/processing-status.
+        'processing_state',
+        'processing_total',
+        'processing_done',
+        'processing_failed',
+        'processing_skipped',
+        'processing_started_at',
+        'processing_finished_at',
+        'processing_message',
+        // Background statutory filing generation — written by GenerateRunFilings.
+        'filings_state',
+        'filings_total',
+        'filings_done',
+        'filings_failed',
+        'filings_skipped',
+        'filings_started_at',
+        'filings_finished_at',
+        'filings_message',
         'total_employees',
         'total_gross',
         'total_deductions',
@@ -50,7 +69,16 @@ class PayrollMonthlyRun extends Model
     ];
 
     protected $casts = [
+        // date:Y-m-d, not date — a plain date cast serialises as a UTC datetime
+        // and delivers a calendar date a day early east of UTC. Enforced by
+        // DateCastConventionTest.
         'pay_date' => 'date:Y-m-d',
+        // The queued-processing timestamps from the run-off-the-web-request work
+        // are real datetimes and stay as they are.
+        'processing_started_at' => 'datetime',
+        'processing_finished_at' => 'datetime',
+        'filings_started_at' => 'datetime',
+        'filings_finished_at' => 'datetime',
         'total_gross' => 'decimal:2',
         'total_deductions' => 'decimal:2',
         'total_net_pay' => 'decimal:2',

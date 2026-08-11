@@ -10,6 +10,9 @@ class ActivitySession extends Model
     protected $fillable = [
         'user_id',
         'time_entry_id',
+        // Offline-sync idempotency key — see Activity::$fillable.
+        'local_id',
+        'device_id',
         'source',
         'activity_kind',
         'tool_type',

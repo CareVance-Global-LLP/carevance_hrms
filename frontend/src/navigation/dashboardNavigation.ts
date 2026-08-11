@@ -10,12 +10,14 @@ import {
   Coffee,
 
   DoorOpen,
+  Eye,
   FileClock,
   Fingerprint,
   FolderKanban,
   Gauge,
   LayoutDashboard,
   LineChart,
+  MailPlus,
   MapPin,
   MessageSquare,
   Network,
@@ -45,6 +47,8 @@ export type NavLinkItem = {
   employeeOnly?: boolean;
   planFeature?: string;
   permission?: string;
+  /** Hidden unless this flag is true on the server-resolved tracker policy. */
+  trackerPolicyFlag?: 'can_view_own_activity';
   external?: boolean;
   externalPath?: string;
 };
@@ -83,9 +87,13 @@ export const topNavigation: NavGroup[] = [
     icon: Users,
     items: [
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
+      // Kept in step with condensedNavigation.ts, which defines the same rail.
+      { label: 'Invitations', to: '/employees/invitations', icon: MailPlus, adminOnly: true },
       { label: 'New Hires', to: '/new-hires', icon: UserPlus, adminOnly: true },
       { label: 'Exits', to: '/exits', icon: DoorOpen, adminOnly: true },
       { label: 'My Team', to: '/my-team', icon: Share2, employeeOnly: true },
+      // Shown only where the organization has switched self-view on.
+      { label: 'My Activity', to: '/my-activity', icon: Eye, trackerPolicyFlag: 'can_view_own_activity' },
     ],
   },
   {

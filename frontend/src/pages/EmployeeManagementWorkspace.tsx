@@ -210,8 +210,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [_groupDirectoryFilter, setGroupDirectoryFilter] = useState('all');
   const [memberDrafts, setMemberDrafts] = useState<Record<number, string>>({});
   const [_deletingGroupId, setDeletingGroupId] = useState<number | null>(null);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'manager' | 'employee'>('employee');
   const [roleSearchQuery, setRoleSearchQuery] = useState('');
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
   const [incompleteFilterType, setIncompleteFilterType] = useState<'all' | 'missing_pan' | 'missing_bank'>('all');
@@ -385,43 +383,50 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
   }, [location.search, mode, currentUserLevel, managerManagedDepartment]);
 
-  useEffect(() => {
-    if (allowedRoles.length === 0) {
-      return;
-    }
-
-    if (!allowedRoles.includes(inviteRole)) {
-      setInviteRole(allowedRoles[0]);
-    }
-  }, [allowedRoles, inviteRole]);
-
   // The settings form used to render below the table, so opening it required a
   // double-rAF scroll to bring the panel into view. It is a drawer now — it
   // arrives already visible, and the list behind it never moves.
 
-  const inviteMutation = useMutation({
-    mutationFn: async () => {
-      if (!organization?.id) {
-        throw new Error('Organization context unavailable.');
-      }
+  /*
+   * Resend and revoke.
+   *
+   * Until these existed an invitation was fire-and-forget: one whose mail
+   * failed could only be replaced by sending another, and one sent to the wrong
+   * address stayed valid for its whole window with no way to call it back.
+   *
+   * Resend rotates the token, so it doubles as "regenerate" for a link invite
+   * whose URL was shown once and lost — the response carries the new one.
+   */
+  const [copiedInviteId, setCopiedInviteId] = useState<number | null>(null);
 
-      await invitationApi.create({
-        email: inviteEmail.trim(),
-        role: inviteRole,
-        delivery: 'email',
-      });
-    },
-    onSuccess: async () => {
-      setInviteEmail('');
-      setInviteRole('employee');
-      setFeedback({ tone: 'success', message: 'Invitation sent successfully.' });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-invitations'] }),
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
-      ]);
+  const resendInviteMutation = useMutation({
+    mutationFn: async (invitationId: number) => (await invitationApi.resend(invitationId)).data.invitation,
+    onSuccess: async (invitation) => {
+      if (invitation?.delivery_method === 'link' && invitation.invite_url) {
+        await navigator.clipboard.writeText(invitation.invite_url).catch(() => undefined);
+        setCopiedInviteId(invitation.id);
+        setFeedback({
+          tone: 'success',
+          message: `New link for ${invitation.email} copied to your clipboard. The previous link no longer works.`,
+        });
+      } else {
+        setFeedback({ tone: 'success', message: `Invitation to ${invitation?.email} sent again.` });
+      }
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace-invitations'] });
     },
     onError: (error: any) => {
-      setFeedback({ tone: 'error', message: error?.response?.data?.message || error?.message || 'Failed to send invitation.' });
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not resend this invitation.' });
+    },
+  });
+
+  const revokeInviteMutation = useMutation({
+    mutationFn: async (invitationId: number) => (await invitationApi.revoke(invitationId)).data.invitation,
+    onSuccess: async (invitation) => {
+      setFeedback({ tone: 'success', message: `Invitation to ${invitation?.email} revoked. Its link no longer works.` });
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace-invitations'] });
+    },
+    onError: (error: any) => {
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not revoke this invitation.' });
     },
   });
 
@@ -1134,32 +1139,41 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
       {mode === 'invitations' && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          {/*
+            This used to be a second invite form.
+            It sent only an email and a role, so anyone invited from here got no
+            joining date and their onboarding checklist anchored on whenever
+            they happened to click the link — the pre-boarding items, which sit
+            at day -14, were always scheduled in the past. Rather than duplicate
+            the fields, this now points at the one invite flow that has them.
+          */}
           <SurfaceCard className="p-5">
-            <h2 className="text-lg font-semibold text-slate-950">Send Invitation</h2>
-            <p className="mt-1 text-sm text-slate-500">Invitation emails send secure accept links, and the backend locks email and role when the user completes signup.</p>
-            <div className="mt-4 space-y-4">
-              {allowedRoles.length === 0 ? (
+            <h2 className="text-lg font-semibold text-slate-950">Invite someone</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Invitations carry a joining date, job title and departments, so onboarding is scheduled
+              against their real start date rather than the day they accept.
+            </p>
+            {allowedRoles.length === 0 ? (
+              <div className="mt-4">
                 <PageEmptyState title="Invite permissions unavailable" description="Your current role does not allow sending workspace invitations." />
-              ) : null}
-              <div>
-                <FieldLabel>Email</FieldLabel>
-                <TextInput type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="employee@company.com" />
               </div>
-              <div>
-                <FieldLabel>Role</FieldLabel>
-                <SelectInput value={inviteRole} onChange={(event) => setInviteRole(event.target.value as 'admin' | 'manager' | 'employee')}>
-                  {allowedRoles.map((role) => (
-                    <option key={role} value={role}>
-                      {role.charAt(0).toUpperCase() + role.slice(1)}
-                    </option>
-                  ))}
-                </SelectInput>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <div className="space-y-2 text-sm text-slate-600">
+                  <p><span className="font-medium text-slate-900">Invite by email</span> — several people at once.</p>
+                  <p><span className="font-medium text-slate-900">Invite by link</span> — one secure URL you share yourself.</p>
+                  <p><span className="font-medium text-slate-900">Add by CSV</span> — bulk import, previewed before anything sends.</p>
+                  <p><span className="font-medium text-slate-900">Create user</span> — set their password and skip the invite entirely.</p>
+                </div>
+                <Link
+                  to="/add-user?tab=email"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700"
+                >
+                  <MailPlus className="h-4 w-4" />
+                  Go to Add User
+                </Link>
               </div>
-              <Button onClick={() => inviteMutation.mutate()} disabled={!inviteEmail.trim() || inviteMutation.isPending || allowedRoles.length === 0}>
-                <MailPlus className="h-4 w-4" />
-                Send Invitation
-              </Button>
-            </div>
+            )}
           </SurfaceCard>
 
           <div className="space-y-4">
@@ -1176,7 +1190,64 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                 { key: 'email', header: 'Email', render: (row: any) => row.email },
                 { key: 'role', header: 'Role', render: (row: any) => row.role ? row.role.charAt(0).toUpperCase() + row.role.slice(1) : 'Employee' },
                 { key: 'status', header: 'Status', render: (row: any) => row.status },
+                {
+                  // Whether the mail actually went out is the first thing an
+                  // admin wants before deciding to resend — a created
+                  // invitation whose delivery failed used to look identical to
+                  // one sitting in someone's inbox.
+                  key: 'sent',
+                  header: 'Sent',
+                  render: (row: any) => row.delivery_method === 'link'
+                    ? 'Link — shared manually'
+                    : row.email_sent_at
+                      ? formatDateTime(row.email_sent_at, viewerTimezone)
+                      : 'Not sent yet',
+                },
+                {
+                  key: 'invited_by',
+                  header: 'Invited by',
+                  render: (row: any) => row.invited_by?.name || '—',
+                },
                 { key: 'expires_at', header: 'Expires', render: (row: any) => row.expires_at ? formatDateTime(row.expires_at, viewerTimezone) : 'n/a' },
+                {
+                  key: 'actions',
+                  header: 'Actions',
+                  render: (row: any) => {
+                    if (!row.can_resend && !row.can_revoke) {
+                      return <span className="text-slate-400">—</span>;
+                    }
+
+                    const isBusy = (resendInviteMutation.isPending && resendInviteMutation.variables === row.id)
+                      || (revokeInviteMutation.isPending && revokeInviteMutation.variables === row.id);
+
+                    return (
+                      <div className="flex items-center gap-2">
+                        {row.can_resend && (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => resendInviteMutation.mutate(row.id)}
+                            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            {copiedInviteId === row.id
+                              ? 'Link copied'
+                              : row.delivery_method === 'link' ? 'New link' : 'Resend'}
+                          </button>
+                        )}
+                        {row.can_revoke && (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => revokeInviteMutation.mutate(row.id)}
+                            className="rounded-md border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </div>
+                    );
+                  },
+                },
               ]}
             />
             <DataTable

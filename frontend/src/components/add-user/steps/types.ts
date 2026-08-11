@@ -1,3 +1,5 @@
+import { detectTimeZone } from '@/lib/timezones';
+
 export interface OtherEarning {
   name: string;
   type: 'fixed' | 'percentage';
@@ -18,6 +20,11 @@ export interface AddUserWizardForm {
   firstName: string;
   lastName: string;
   email: string;
+  // Set by the admin, handed to the joiner directly. This is what separates
+  // "Create User" from the three invite tabs: the account is usable the moment
+  // it exists, so the address is treated as verified on create rather than
+  // waiting on an email the joiner may never receive.
+  password: string;
   phone: string;
   role: 'employee' | 'manager' | 'admin';
   departmentIds: number[];
@@ -68,13 +75,17 @@ export const defaultForm: AddUserWizardForm = {
   firstName: '',
   lastName: '',
   email: '',
+  password: '',
   phone: '',
   role: 'employee',
   departmentIds: [],
   designation: '',
   joiningDate: new Date().toISOString().split('T')[0],
   workLocation: 'office',
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+  // Canonicalised, because Chrome reports IST as the legacy `Asia/Calcutta`
+  // while the picker lists `Asia/Kolkata` — the raw value matched no option and
+  // left a required field looking unset.
+  timezone: detectTimeZone(),
   employeeCode: '',
 
   // Step 1: Payroll Info

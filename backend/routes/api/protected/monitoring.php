@@ -19,6 +19,9 @@ Route::get('/screenshots/{screenshot}', [ScreenshotController::class, 'show']);
 Route::put('/screenshots/{screenshot}', [ScreenshotController::class, 'update']);
 Route::patch('/screenshots/{screenshot}', [ScreenshotController::class, 'update']);
 Route::delete('/screenshots/{screenshot}', [ScreenshotController::class, 'destroy']);
+// Declared BEFORE the resource route: apiResource binds /activities/{activity}
+// and would otherwise swallow this path as a show().
+Route::post('/activities/{activity}/resolve-idle', [ActivityController::class, 'resolveIdle']);
 Route::apiResource('activities', ActivityController::class);
 Route::apiResource('activity-sessions', ActivitySessionController::class)->only(['store', 'update']);
 Route::post('/browser-tracking/connections/sync', [BrowserTrackingConnectionController::class, 'sync']);

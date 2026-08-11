@@ -44,7 +44,6 @@ import type {
   InvitationSummary,
   InvitationListResponse,
   InvitationCreateResponse,
-  InviteValidationResponse,
   BillingSnapshot,
   BugReportRequest,
   BugReportResponse,
@@ -485,6 +484,8 @@ export const invitationApi = {
     department_ids?: number[];
     project_ids?: number[];
     settings?: Record<string, any>;
+    joining_date?: string;
+    job_title?: string;
   }) => api.post<InvitationCreateResponse>('/invitations', data),
 
   importCsv: (data: {
@@ -495,28 +496,36 @@ export const invitationApi = {
       department_ids?: number[];
       project_ids?: number[];
       settings?: Record<string, any>;
+      job_title?: string;
+      joining_date?: string;
     }>;
     default_group_ids?: number[];
     default_department_ids?: number[];
     default_project_ids?: number[];
     settings?: Record<string, any>;
     expires_in_hours?: number;
+    joining_date?: string;
   }) => api.post<InvitationCreateResponse>('/invitations/import', data),
+
+  /**
+   * Rotate the token and send again.
+   *
+   * Only the hash is stored, so a resend cannot repeat the original URL — which
+   * is also what makes this the regenerate action for a link invite whose URL
+   * was shown once and lost.
+   */
+  resend: (id: number) =>
+    api.post<{ invitation: InvitationSummary }>(`/invitations/${id}/resend`),
+
+  /** Withdraw a pending invitation. The record stays for the audit trail. */
+  revoke: (id: number) =>
+    api.delete<{ invitation: InvitationSummary }>(`/invitations/${id}`),
 
   getByToken: (token: string) =>
     api.get<{ invitation: InvitationSummary }>(`/invitations/${token}`),
 
   accept: (token: string, data: { name: string; password: string; password_confirmation: string; timezone?: string }) =>
     api.post<AuthResponse>(`/invitations/${token}/accept`, data),
-};
-
-export const inviteApi = {
-  send: (data: { email: string; role?: string | null }) =>
-    api.post('/invites/send', data),
-  validate: (token: string) =>
-    api.get<InviteValidationResponse>('/invites/validate', { params: { token } }),
-  accept: (data: { token: string; name: string; password: string; password_confirmation: string }) =>
-    api.post<AuthResponse>('/invites/accept', data),
 };
 
 // User API
@@ -1203,12 +1212,24 @@ export const screenshotApi = {
   bulkDelete: (data: { screenshot_ids?: number[]; user_id?: number; time_entry_id?: number; start_date?: string; end_date?: string; delete_all_in_range?: boolean }) =>
     api.post<{ message: string; deleted_count: number }>('/screenshots/bulk-delete', data),
 
-  delete: (id: number) => 
-    api.delete(`/screenshots/${id}`),
+  // Returns how many tracked seconds were withdrawn along with the image, so
+  // the caller can tell the user what deleting actually cost them.
+  delete: (id: number) =>
+    api.delete<{ message: string; tracked_seconds_removed?: number }>(`/screenshots/${id}`),
 };
 
 // Activity API
 export const activityApi = {
+  /**
+   * Record what an idle stretch actually was. Only the person it belongs to
+   * may answer; the server refuses anyone else.
+   */
+  resolveIdle: (activityId: number, action: 'kept' | 'discarded') =>
+    api.post<{ resolution: 'kept' | 'discarded'; seconds_removed: number }>(
+      `/activities/${activityId}/resolve-idle`,
+      { action }
+    ),
+
   getAll: (params?: { user_id?: number; group_ids?: number[]; type?: string; classification?: string; tool_type?: string; start_date?: string; end_date?: string; processed?: boolean; simple?: boolean | number; page?: number; per_page?: number }) =>
     api.get<{ data: Activity[]; current_page?: number; last_page?: number; total?: number; has_more?: boolean }>('/activities', { params }),
 
@@ -1921,7 +1942,12 @@ export const billingApi = {
     api.post<{ current_seats: number; new_seats: number; seats_to_reduce: number; type: string; message: string; effective_date: string }>('/billing/reduce-seats', { seats }),
   confirmReduceSeats: () =>
     api.post<{ success: boolean; message?: string; subscription_status: string; max_seats: number }>('/billing/confirm-reduce-seats', {}),
-  
+  setAutoRenew: (autoRenew: boolean) =>
+    api.post<{ auto_renew: boolean; has_mandate: boolean; requires_mandate: boolean; message?: string }>(
+      '/billing/auto-renew',
+      { auto_renew: autoRenew }
+    ),
+
   // Razorpay payment methods
   createRazorpayOrder: (data: { amount: number; currency?: string; payment_type?: string }) =>
     api.post<{ success: boolean; order_id: string; amount: number; currency: string; key_id: string; mock_mode?: boolean; message?: string }>('/billing/razorpay/create-order', data),

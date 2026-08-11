@@ -156,7 +156,7 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                 onClick={() => setPlanType(type)}
                 className={`relative rounded-lg px-6 py-2.5 text-sm font-semibold transition-all duration-200 ${
                   planType === type
-                    ? 'bg-slate-900 text-white shadow-md'
+                    ? 'bg-surface-inverse text-on-inverse shadow-md'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >

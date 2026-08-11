@@ -43,7 +43,7 @@ function TeamShareBar({ teams, total }: { teams: DepartmentTeam[]; total: number
         ) : null
       )}
       {loose > 0 ? (
-        <span style={{ flex: loose, backgroundColor: '#D2D8DD' }} title={`Not in a team: ${loose}`} />
+        <span style={{ flex: loose, backgroundColor: 'rgb(var(--n-300))' }} title={`Not in a team: ${loose}`} />
       ) : null}
     </div>
   );

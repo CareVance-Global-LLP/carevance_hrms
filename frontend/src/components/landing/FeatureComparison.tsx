@@ -40,7 +40,7 @@ export default function FeatureComparison() {
   const columns = activeTab === 'tracking' ? trackingColumns : payrollColumns;
 
   return (
-    <section className="bg-[#f3f6fb] px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+    <section className="bg-surface-sunken px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Compare plans"
@@ -58,7 +58,7 @@ export default function FeatureComparison() {
                 onClick={() => setActiveTab(type)}
                 className={`rounded-md px-5 py-2 text-sm font-semibold transition ${
                   activeTab === type
-                    ? 'bg-slate-900 text-white shadow-sm'
+                    ? 'bg-surface-inverse text-on-inverse shadow-sm'
                     : 'text-slate-500 hover:text-slate-700'
                 }`}
               >

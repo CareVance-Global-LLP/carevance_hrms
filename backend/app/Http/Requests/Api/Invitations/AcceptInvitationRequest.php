@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\Invitations;
 
 use App\Http\Requests\Api\ApiFormRequest;
+use Illuminate\Validation\Rules\Password;
 use App\Rules\ValidTimezone;
 
 class AcceptInvitationRequest extends ApiFormRequest
@@ -11,7 +12,7 @@ class AcceptInvitationRequest extends ApiFormRequest
     {
         return [
             'name' => 'required|string|max:255',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => ['required', 'string', 'confirmed', Password::defaults()],
             'timezone' => ['nullable', 'string', 'max:255', new ValidTimezone],
         ];
     }

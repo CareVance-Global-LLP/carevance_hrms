@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { isLikelyMobile } from '@/lib/mobile';
 import { authApi } from '@/services/api';
@@ -35,7 +35,19 @@ export default function Login() {
     return window.localStorage.getItem(REMEMBERED_EMAIL_KEY) || '';
   };
 
-  const [email, setEmail] = useState(getRememberedEmail);
+  /*
+   * A joiner arriving straight from accepting an invitation.
+   *
+   * Their account already exists and is verified, so the only thing left is to
+   * sign in — prefill the address they just confirmed and say so, rather than
+   * dropping them on an empty form with no explanation of what just happened.
+   */
+  const [searchParams] = useSearchParams();
+  const invitedEmail = searchParams.get('status') === 'invite-accepted'
+    ? (searchParams.get('email') || '')
+    : '';
+
+  const [email, setEmail] = useState(() => invitedEmail || getRememberedEmail());
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(() => getRememberedEmail() !== '');
@@ -167,6 +179,15 @@ export default function Login() {
               </p>
             </div>
 
+            {invitedEmail && !error && (
+              <div className="mb-5 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <div className="text-sm text-emerald-800">
+                  Your account is ready. Sign in with the password you just set to get started.
+                </div>
+              </div>
+            )}
+
             {error && (
               <div className="mb-5 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
@@ -278,7 +299,7 @@ export default function Login() {
             {desktopDownloadUrl && !isDesktopShell ? (
               <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
                 <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-inverse text-on-inverse">
                     <Monitor className="h-4 w-4" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -383,12 +404,12 @@ export default function Login() {
                   </a>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-3">
-                  <div className="col-span-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-900 p-4">
+                  <div className="col-span-2 overflow-hidden rounded-lg border border-slate-200 surface-fixed-dark p-4">
                     <div className="mb-2 h-1.5 w-28 rounded-full bg-white/25" />
                     <div className="mb-3 h-1.5 w-16 rounded-full bg-white/15" />
                     <div className="h-20 rounded-lg bg-gradient-to-br from-cyan-500/20 via-blue-500/15 to-white/5" />
                   </div>
-                  <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-900 p-4">
+                  <div className="overflow-hidden rounded-lg border border-slate-200 surface-fixed-dark p-4">
                     <div className="mb-2 h-1.5 w-full rounded-full bg-white/25" />
                     <div className="mb-3 h-1.5 w-2/3 rounded-full bg-white/15" />
                     <div className="h-12 rounded-lg bg-white/10" />

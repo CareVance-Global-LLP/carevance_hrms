@@ -21,6 +21,7 @@ The platform consists of four integrated components:
 - [API Overview](#api-overview)
 - [Frontend Routes](#frontend-routes)
 - [Common Commands](#common-commands)
+- [Testing](#testing)
 - [Deployment](#deployment)
 - [Security](#security)
 - [License](#license)
@@ -432,6 +433,38 @@ Recent hardening includes:
 - Removal of SPA token storage from browser local/session storage
 - Private storage for employee documents
 - Per-endpoint rate limiting (auth, screenshots, chat, invitations)
+
+---
+
+## Testing
+
+```bash
+cd backend  && php artisan test        # ~610 tests
+cd frontend && npx vitest run          # ~560 tests
+cd frontend && npx tsc --noEmit        # must stay at 0 errors
+```
+
+**Both suites carry a tail of known failures, and that is deliberate.** They are
+listed by name in [`.github/baselines/`](.github/baselines/). CI does not gate on
+how many tests fail — it gates on whether a failure appears that is **not already
+in the baseline**:
+
+```bash
+node scripts/ci/test-baseline.mjs --junit report.xml \
+  --baseline .github/baselines/phpunit.txt --check --label phpunit
+```
+
+Counts lie: new tests shift totals, and a handful of suites are order-dependent.
+Only a name-level diff proves a change broke nothing. If a change legitimately
+alters the set, regenerate with `--update` and commit the baseline in the same
+commit as the change.
+
+Two rules follow from this:
+
+- **Never judge a change by the failure count.** Compare names.
+- **A test that fails because it targets a removed API is dead, not known-failing.**
+  Delete it rather than baselining it. A `405` means the route is gone; a `422`
+  means a guard is refusing your fixture and is worth reading.
 
 ---
 

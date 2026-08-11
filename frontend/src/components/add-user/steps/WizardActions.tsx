@@ -16,6 +16,8 @@ interface WizardActionsProps {
   onNext: () => void;
   onSkip?: () => void;
   nextLabel?: string;
+  /** Blocks the primary action for reasons the step itself explains (e.g. no seats left). */
+  disabled?: boolean;
 }
 
 export function WizardActions({
@@ -30,6 +32,7 @@ export function WizardActions({
   onNext,
   onSkip,
   nextLabel,
+  disabled = false,
 }: WizardActionsProps) {
   const blocked = isSubmitting || isBusy;
   return (
@@ -62,10 +65,13 @@ export function WizardActions({
             Skip Step 3
           </button>
         )}
+        {/* Two independent reasons to block the primary action: isBusy while
+            the account is still being created, and disabled when the step
+            itself says no (e.g. no seats left). */}
         {currentStep !== 'completed' && (
           <button
             onClick={onNext}
-            disabled={blocked}
+            disabled={blocked || disabled}
             className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {blocked && (

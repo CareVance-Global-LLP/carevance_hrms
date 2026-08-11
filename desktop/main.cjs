@@ -20,7 +20,7 @@ if (fs.existsSync(frontendEnvPath)) {
   console.log('[Desktop] No .env file found, using existing environment variables');
 }
 
-const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, nativeTheme, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const { execSync } = require('child_process');
@@ -33,6 +33,7 @@ const {
   prepareManagedBrowserTrackingExtensionDir,
 } = require('./browser-tracking-install-guide.cjs');
 const { OfflineDatabase, generateLocalId } = require('./offline/offline-db.cjs');
+const { LocalShellServer } = require('./offline/local-shell.cjs');
 const { NetworkMonitor } = require('./offline/network-monitor.cjs');
 const { QueueManager } = require('./offline/queue-manager.cjs');
 const SyncEngineModule = require('./offline/sync-engine.cjs');
@@ -127,7 +128,15 @@ const isSameOriginAsApp = (value) => {
   }
 
   try {
-    return new URL(raw).origin === new URL(APP_URL).origin;
+    const origin = new URL(raw).origin;
+
+    // The offline shell is our own UI on loopback, so navigation within it is
+    // as trusted as navigation within the deployed origin.
+    if (localShellOrigin && origin === localShellOrigin) {
+      return true;
+    }
+
+    return origin === new URL(APP_URL).origin;
   } catch {
     return false;
   }
@@ -207,6 +216,17 @@ const DEFAULT_SCREENSHOT_JPEG_QUALITY = 82;
 const FOREGROUND_WINDOW_POLL_INTERVAL_MS = 1000;
 const DEVICE_IDENTITY_FILENAME = 'desktop-device.json';
 const BROWSER_TRACKING_STATE_FILENAME = 'browser-tracking-state.json';
+const THEME_STATE_FILENAME = 'desktop-theme.json';
+
+/**
+ * Shell chrome painted by the main process, not by the renderer: the window
+ * background behind the page, plus the two native screens (load error, offline
+ * fallback) that render before or instead of the web app.
+ *
+ * These must match the app's `--app-bg` token, or the shell flashes white on
+ * every launch and reload while the user is in dark mode.
+ */
+const SHELL_BACKGROUND = { light: '#F5F7F8', dark: '#0E141A' };
 let mainWindow = null;
 let tray = null;
 let allowWindowClose = false;
@@ -234,6 +254,18 @@ let offlineDb = null;
 let networkMonitor = null;
 let queueManager = null;
 let syncEngine = null;
+
+/*
+ * Bundled copy of the web UI, used when the deployed app cannot be reached.
+ * Populated by `npm run prepare:renderer`; absent in a checkout that has not
+ * built it, in which case the shell degrades to the static offline notice.
+ */
+const LOCAL_SHELL_DIR = path.join(__dirname, 'renderer');
+const localShellServer = new LocalShellServer({
+  rendererDir: LOCAL_SHELL_DIR,
+  apiTarget: APP_URL,
+});
+let localShellOrigin = null;
 let offlineModeEnabled = false;
 let offlineStatusChangeCallback = null;
 let osConnectivityWatchTimer = null;
@@ -417,6 +449,60 @@ const getDesktopDeviceIdentity = () => {
 
   desktopDeviceIdentity = buildDesktopDeviceIdentity();
   return desktopDeviceIdentity;
+};
+
+/* ── Theme ─────────────────────────────────────────────────────────────────
+ *
+ * The renderer owns the choice (it is the same `carevance.theme` preference the
+ * web app uses) and pushes it down over IPC. The shell persists it so the very
+ * first frame after a cold start is already the right colour — reading it back
+ * from localStorage would be too late, the window has painted by then.
+ *
+ * Every path resolves through `nativeTheme.themeSource`, which drives both
+ * `shouldUseDarkColors` (window background) and `prefers-color-scheme` inside
+ * every renderer — that is what carries the theme into the load-error and
+ * offline screens, which are main-process HTML and never see the web app's CSS.
+ */
+
+const isThemeChoice = (value) => value === 'light' || value === 'dark' || value === 'system';
+
+const themeStatePath = () => path.join(app.getPath('userData'), THEME_STATE_FILENAME);
+
+const readPersistedThemeChoice = () => {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(themeStatePath(), 'utf8'));
+    if (isThemeChoice(parsed?.theme)) {
+      return parsed.theme;
+    }
+  } catch {
+    // First run, or the file was removed — follow the OS until told otherwise.
+  }
+
+  return 'system';
+};
+
+const persistThemeChoice = (choice) => {
+  try {
+    fs.writeFileSync(themeStatePath(), JSON.stringify({ theme: choice }, null, 2), 'utf8');
+  } catch {
+    // Best effort. The shell still tracks the renderer for this session.
+  }
+};
+
+const resolveShellBackground = () =>
+  (nativeTheme.shouldUseDarkColors ? SHELL_BACKGROUND.dark : SHELL_BACKGROUND.light);
+
+const repaintShellBackground = () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setBackgroundColor(resolveShellBackground());
+  }
+};
+
+const applyDesktopTheme = (choice) => {
+  const next = isThemeChoice(choice) ? choice : 'system';
+  nativeTheme.themeSource = next;
+  repaintShellBackground();
+  return next;
 };
 
 const parseIntEnv = (key, fallback, min, max) => {
@@ -891,17 +977,37 @@ const buildRendererLoadErrorDataUrl = ({
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CareVance desktop load error</title>
     <style>
-      body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: #f8fafc; color: #0f172a; }
+      /*
+       * Tokens rather than literals so the dark block only has to restate the
+       * palette. prefers-color-scheme here follows nativeTheme.themeSource,
+       * which the shell pins to the app's own theme choice, so this screen
+       * matches the workspace the user was just looking at.
+       */
+      :root {
+        color-scheme: light;
+        --page: #F5F7F8; --card: #ffffff; --ink: #16191C; --muted: #4E565D;
+        --line: #D2D8DD; --chip: #F1F4F6;
+        --accent: #5D969D; --on-accent: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0E141A; --card: #161F26; --ink: #E6EDF0; --muted: #A9B8C0;
+          --line: #2A3841; --chip: #0A1015;
+          --accent: #6FA9B0; --on-accent: #0E141A;
+        }
+      }
+      body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: var(--page); color: var(--ink); }
       .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-      .card { width: min(760px, 100%); background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 14px 35px rgba(15,23,42,0.08); }
+      .card { width: min(760px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; box-shadow: 0 14px 35px rgba(0,0,0,0.18); }
       h1 { margin: 0 0 10px; font-size: 20px; }
-      p { margin: 0 0 12px; line-height: 1.5; }
-      ul { margin: 8px 0 0; padding-left: 18px; }
-      code { font-family: Consolas, monospace; background: #f1f5f9; border-radius: 4px; padding: 2px 6px; }
+      p { margin: 0 0 12px; line-height: 1.5; color: var(--muted); }
+      ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+      code { font-family: Consolas, monospace; background: var(--chip); border-radius: 4px; padding: 2px 6px; color: var(--ink); }
       .actions { margin-top: 18px; display: flex; gap: 10px; }
       button { border: none; border-radius: 8px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
-      .primary { background: #0ea5e9; color: #ffffff; }
-      .secondary { background: #e2e8f0; color: #0f172a; }
+      .primary { background: var(--accent); color: var(--on-accent); }
+      .secondary { background: var(--chip); color: var(--ink); border: 1px solid var(--line); }
     </style>
   </head>
   <body>
@@ -948,6 +1054,10 @@ const showMainWindow = () => {
 };
 
 const createWindow = async () => {
+  // Before the window exists, so the very first painted frame is already in the
+  // user's theme instead of flashing the light default.
+  applyDesktopTheme(readPersistedThemeChoice());
+
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 860,
@@ -955,7 +1065,7 @@ const createWindow = async () => {
     minHeight: 720,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#f8fafc',
+    backgroundColor: resolveShellBackground(),
     title: 'CareVance Tracker',
     icon: APP_ICON,
     webPreferences: {
@@ -1014,20 +1124,43 @@ const createWindow = async () => {
       return;
     }
 
-    // If all retries exhausted due to no internet, show the local offline fallback page
+    // If all retries exhausted due to no internet, fall back locally.
     if (errorCode === ERR_INTERNET_DISCONNECTED && !onOfflineFallback) {
       onOfflineFallback = true;
-      console.log('[desktop] loading offline fallback page');
-      if (fs.existsSync(OFFLINE_FALLBACK_PATH)) {
-        mainWindow.loadFile(OFFLINE_FALLBACK_PATH).catch(() => {});
-      } else {
-        void renderRendererLoadError({
-          appUrl: APP_URL,
-          errorCode,
-          errorDescription,
-          failedUrl: validatedURL,
-        });
-      }
+
+      // Prefer the bundled UI: it is the real app, so a machine that booted
+      // before the network came up can still punch in and run a timer, and
+      // every write lands in the offline queue. The static notice is only for
+      // builds packaged without a bundled renderer.
+      void (async () => {
+        try {
+          localShellOrigin = await localShellServer.start();
+        } catch (err) {
+          console.warn('[desktop] local shell failed to start:', err?.message || err);
+          localShellOrigin = null;
+        }
+
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+
+        if (localShellOrigin) {
+          console.log('[desktop] loading bundled offline UI');
+          mainWindow.loadURL(localShellOrigin).catch(() => {});
+          return;
+        }
+
+        console.log('[desktop] loading offline fallback page');
+        if (fs.existsSync(OFFLINE_FALLBACK_PATH)) {
+          mainWindow.loadFile(OFFLINE_FALLBACK_PATH).catch(() => {});
+        } else {
+          void renderRendererLoadError({
+            appUrl: APP_URL,
+            errorCode,
+            errorDescription,
+            failedUrl: validatedURL,
+          });
+        }
+      })();
+
       return;
     }
 
@@ -1611,6 +1744,13 @@ ipcMain.handle('desktop:get-device-identity', async () => {
   return getDesktopDeviceIdentity();
 });
 
+ipcMain.handle('desktop:set-theme', async (_event, payload = {}) => {
+  const applied = applyDesktopTheme(payload?.theme);
+  persistThemeChoice(applied);
+
+  return { theme: applied, dark: nativeTheme.shouldUseDarkColors };
+});
+
 ipcMain.handle('desktop:get-browser-tracking-state', async () => {
   return ensureBrowserTrackingBridge().getRendererState();
 });
@@ -1937,6 +2077,12 @@ if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
   setupStrongAutoStart();
 
+  // Registered here rather than at module scope because nativeTheme is only
+  // safe to touch after ready, same as powerMonitor below. Only fires on a real
+  // OS change: under an explicit light/dark choice shouldUseDarkColors is
+  // pinned, so the repaint is a no-op.
+  nativeTheme.on('updated', repaintShellBackground);
+
   powerMonitor.on('lock-screen', () => {
     markSystemLocked('locked');
   });
@@ -2107,5 +2253,7 @@ app.on('before-quit', () => {
   if (offlineDb) {
     offlineDb.close();
   }
+  localShellServer.stop();
+  localShellOrigin = null;
 });
 }

@@ -89,7 +89,7 @@ export default function DemoSection() {
   const x = useTransform(scrollYProgress, [0, 1], ['0%', '-75%']);
 
   return (
-    <section id="product" className="bg-[#f3f6fb] px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+    <section id="product" className="bg-surface-sunken px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <SectionNumber number={1} label="Product" className="mb-6" />

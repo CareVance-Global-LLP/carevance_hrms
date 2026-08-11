@@ -38,9 +38,9 @@ class MonitoringIntervalResolutionTest extends TestCase
     public function test_per_user_override_wins_over_org_default(): void
     {
         $organization = $this->makeOrganization(5);
-        $user = $this->makeUser($organization, ['monitoring_interval_minutes' => 1], 'override@example.com');
+        $user = $this->makeUser($organization, ['monitoring_interval_minutes' => 30], 'override@example.com');
 
-        $this->assertSame(1, app(MonitoringSettingsResolver::class)->resolveForUser($user->fresh()));
+        $this->assertSame(30, app(MonitoringSettingsResolver::class)->resolveForUser($user->fresh()));
     }
 
     public function test_missing_override_inherits_the_org_default(): void
@@ -108,7 +108,7 @@ class MonitoringIntervalResolutionTest extends TestCase
         $this->putJson('/api/settings/organization', [
             'name' => $organization->name,
             'slug' => $organization->slug,
-            'monitoring_interval_minutes' => 1,
+            'monitoring_interval_minutes' => 15,
         ], $this->apiHeadersFor($manager))->assertForbidden();
 
         $this->assertNull(

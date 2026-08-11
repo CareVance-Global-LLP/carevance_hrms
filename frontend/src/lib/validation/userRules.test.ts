@@ -15,6 +15,10 @@ const form = (overrides: Partial<AddUserWizardForm> = {}): AddUserWizardForm => 
   phone: '9876543210',
   designation: 'Data Analyst',
   departmentIds: [1],
+  // Both became required on main: a temporary password is set at creation, and
+  // the timezone field is starred in the UI.
+  password: 'temp-pass-123',
+  timezone: 'Asia/Kolkata',
   ...overrides,
 });
 
@@ -121,10 +125,13 @@ describe('joining date', () => {
 describe('required fields', () => {
   it('names each missing field', () => {
     const errors = validateUserStep1(
-      form({ firstName: '', email: '', phone: '', designation: '', departmentIds: [] })
+      form({
+        firstName: '', email: '', phone: '', designation: '',
+        departmentIds: [], password: '', timezone: '',
+      })
     );
     expect(Object.keys(errors).sort()).toEqual(
-      ['departmentIds', 'designation', 'email', 'firstName', 'phone'].sort()
+      ['departmentIds', 'designation', 'email', 'firstName', 'password', 'phone', 'timezone'].sort()
     );
   });
 

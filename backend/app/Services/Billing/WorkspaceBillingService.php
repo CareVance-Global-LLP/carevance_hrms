@@ -6,6 +6,12 @@ use App\Models\Organization;
 
 class WorkspaceBillingService
 {
+    public function __construct(
+        private readonly SubscriptionCycleService $cycles,
+        private readonly SeatGuard $seats,
+    ) {
+    }
+
     public function snapshot(?Organization $organization): ?array
     {
         if (!$organization) {
@@ -18,12 +24,12 @@ class WorkspaceBillingService
 
         // Get the actual plan code from database, even during trial
         $actualPlanCode = (string) ($organization->plan_code ?: config('carevance.default_plan', 'basic_tracking'));
-        
+
         // For display purposes during trial, show the actual plan type (Tracking vs Payroll)
         if ($isTrial) {
             $isPayrollTrial = PlanService::isPayrollPlan($actualPlanCode);
             $planCode = $actualPlanCode; // Keep the actual plan code for reference
-            $planConfig = $isPayrollTrial 
+            $planConfig = $isPayrollTrial
                 ? ['label' => 'Payroll Trial', 'description' => '14-day free trial of Basic Payroll with full HR + Payroll features.']
                 : ['label' => 'Tracking Trial', 'description' => '14-day free trial of Basic Tracking with time tracking and HR features.'];
         } else {
@@ -32,7 +38,11 @@ class WorkspaceBillingService
         }
 
         $trialEndsAt = $organization->trial_ends_at ?? $organization->subscription_expires_at;
-        $usedSeats = $organization->users()->count();
+        $seats = $this->seats->summary($organization);
+        $cycle = $this->cycles->summary($organization);
+
+        $billingCycle = $organization->billing_cycle ?: 'monthly';
+        $pricePerSeat = (int) ($planConfig[$billingCycle === 'yearly' ? 'yearly_price' : 'monthly_price'] ?? 0);
 
         return [
             'plan' => [
@@ -40,21 +50,28 @@ class WorkspaceBillingService
                 'name' => $planConfig['label'] ?? ucfirst($planCode),
                 'description' => $planConfig['description'] ?? null,
                 'status' => $status,
-                'billing_cycle' => $organization->billing_cycle,
+                'billing_cycle' => $billingCycle,
                 'subscription_intent' => $organization->subscription_intent ?? ($isTrial ? 'trial' : 'paid'),
                 'is_trial' => $isTrial,
                 'trial_end_date' => $trialEndsAt?->toIso8601String(),
                 'renewal_date' => $organization->subscription_expires_at?->toDateString()
-                    ?? $trialEndsAt?->toDateString(),
+                    ?? ($trialEndsAt?->toDateString()),
                 'contact_sales_only' => (bool) ($planConfig['contact_sales_only'] ?? false),
-                'max_seats' => $organization->max_seats ?? 5,
-                'used_seats' => $usedSeats,
-                'users_count' => $usedSeats,
+                // Kept for existing callers. `seats` below is the shape new code
+                // should read: it carries the floor and the over-cap figure,
+                // which these two scalars cannot express.
+                'max_seats' => $seats['max'],
+                'used_seats' => $seats['used'],
+                'users_count' => $seats['used'],
+                'price_per_seat' => $pricePerSeat,
+                'renewal_amount' => $pricePerSeat * max($seats['max'], 0) * ($billingCycle === 'yearly' ? 12 : 1),
                 'pending_plan_code' => $organization->pending_plan_code,
                 'pending_billing_cycle' => $organization->pending_billing_cycle,
                 'pending_seats' => $organization->pending_seats,
                 'pending_upgrade_amount' => $organization->pending_upgrade_amount,
             ],
+            'seats' => $seats,
+            'cycle' => $cycle,
             'workspace' => [
                 'id' => $organization->id,
                 'name' => $organization->name,

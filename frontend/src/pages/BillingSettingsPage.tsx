@@ -1,562 +1,373 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, CalendarClock, CreditCard, Mail, Users, Plus, X, Loader2, Minus, AlertTriangle } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertTriangle,
+  ArrowRight,
+  CreditCard,
+  Mail,
+  Receipt,
+  RefreshCw,
+  Users,
+} from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import StatusBadge from '@/components/ui/StatusBadge';
+import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
+import { ToggleInput } from '@/components/ui/FormField';
+import { useToast } from '@/components/ui/Toast';
 import { billingApi } from '@/services/api';
-import { BillingSnapshot } from '@/types';
-import { getPricingPlan, getPricePerUserPerMonth, PricingBillingCycle, MIN_SEATS } from '@/constants/pricing';
-import { pricingUi } from '@/constants/pricing';
-import { usePlan } from '@/hooks/usePlan';
-import { buildUpgradePath } from '@/constants/pricing';
+import type { BillingSnapshot } from '@/types';
+import { getPricingPlan, getPricePerUserPerMonth, PricingBillingCycle } from '@/constants/pricing';
+import { pricingUi, buildUpgradePath } from '@/constants/pricing';
+import SeatMeter from '@/features/billing/SeatMeter';
+import CycleBar from '@/features/billing/CycleBar';
+import RenewalBanner from '@/features/billing/RenewalBanner';
+import { formatMoney, resolveRenewalNotice } from '@/features/billing/renewalState';
+import SeatDialog from '@/features/billing/SeatDialog';
+import CancelPlanDialog from '@/features/billing/CancelPlanDialog';
+
+const STATE_TONE: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'neutral'> = {
+  active: 'success',
+  trial: 'info',
+  past_due: 'warning',
+  expired: 'danger',
+  cancelled: 'danger',
+  inactive: 'neutral',
+};
+
+const STATE_LABEL: Record<string, string> = {
+  active: 'Active',
+  trial: 'Trial',
+  past_due: 'Past due',
+  expired: 'Expired',
+  cancelled: 'Cancelled',
+  inactive: 'Inactive',
+};
 
 export default function BillingSettingsPage() {
-  const [snapshot, setSnapshot] = useState<BillingSnapshot | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const { planCode, maxSeats } = usePlan();
   const navigate = useNavigate();
+  const toast = useToast();
+  const queryClient = useQueryClient();
 
-  const [showAddSeatsModal, setShowAddSeatsModal] = useState(false);
-  const [showReduceSeatsModal, setShowReduceSeatsModal] = useState(false);
-  const [seatsToReduce, setSeatsToReduce] = useState(0);
-  const [showCancelPlanModal, setShowCancelPlanModal] = useState(false);
-  const [seatsToAdd, setSeatsToAdd] = useState(1);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingError, setProcessingError] = useState('');
+  const [seatDialog, setSeatDialog] = useState<'add' | 'reduce' | null>(null);
+  const [showCancel, setShowCancel] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      setError('');
+  const { data: snapshot, isLoading, error } = useQuery<BillingSnapshot>({
+    queryKey: ['billing-snapshot'],
+    queryFn: async () => (await billingApi.current()).data,
+    retry: false,
+  });
 
-      try {
-        const response = await billingApi.current();
-        setSnapshot(response.data);
-      } catch (requestError: any) {
-        setError(requestError?.response?.data?.message || 'Unable to load billing details right now.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const autoRenewMutation = useMutation({
+    mutationFn: (next: boolean) => billingApi.setAutoRenew(next),
+    onSuccess: (response) => {
+      toast.show({
+        kind: response.data.requires_mandate ? 'info' : 'success',
+        message: response.data.message || 'Renewal preference saved.',
+      });
+      void queryClient.invalidateQueries({ queryKey: ['billing-snapshot'] });
+    },
+    onError: (e: any) => {
+      toast.show({ kind: 'error', message: e?.response?.data?.message || 'Could not save that preference.' });
+    },
+  });
 
-    void load();
-  }, []);
+  const notice = useMemo(() => resolveRenewalNotice(snapshot ?? null), [snapshot]);
 
   if (isLoading) {
     return <PageLoadingState label="Loading billing details..." />;
   }
 
   if (error) {
-    return <PageErrorState message={error} />;
+    return <PageErrorState message={(error as any)?.response?.data?.message || 'Unable to load billing details right now.'} />;
   }
 
   const plan = snapshot?.plan;
   const workspace = snapshot?.workspace;
-  const usedSeats = plan?.used_seats ?? 0;
-  const remainingSeats = maxSeats - usedSeats;
+  // Both numbers come from the snapshot that was just fetched. Reading the cap
+  // from the cached organization is what produced "86 / 5": two sources of
+  // truth, and the stale one won the denominator.
+  const seats = snapshot?.seats;
+  const cycle = snapshot?.cycle;
+
+  if (!plan) {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow="Billing" title="Workspace billing" description="Plan, seats and renewal for this workspace." />
+        <FeedbackBanner tone="error" message="No billing data is available for this workspace yet." />
+      </div>
+    );
+  }
+
+  const planCode = plan.code || 'basic_tracking';
   const selectedPlan = getPricingPlan(planCode);
-  const isTrial = plan?.status === 'trial';
-  const billingCycle = (plan?.billing_cycle as PricingBillingCycle) || 'monthly';
-  const pricePerUser = getPricePerUserPerMonth(selectedPlan, billingCycle);
-  const isPayrollPlan = selectedPlan.type === 'payroll';
-  const totalMonths = billingCycle === 'yearly' ? 12 : 1;
-  const addSeatsCost = seatsToAdd * pricePerUser * totalMonths;
-
-  const handleAddSeats = async () => {
-    setIsProcessing(true);
-    setProcessingError('');
-
-    try {
-      await billingApi.addSeats({
-        seats: maxSeats + seatsToAdd,
-        billing_cycle: billingCycle,
-      });
-
-      navigate('/payment?add-seats=true', { replace: true });
-    } catch (err: any) {
-      setProcessingError(err?.response?.data?.message || 'Failed to add seats. Please try again.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleCancelPlan = async () => {
-    setIsProcessing(true);
-    setProcessingError('');
-
-    try {
-      await billingApi.cancelPlan();
-      setShowCancelPlanModal(false);
-      window.location.reload();
-    } catch (err: any) {
-      setProcessingError(err?.response?.data?.message || 'Failed to cancel plan. Please try again.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const billingCycle = (plan.billing_cycle as PricingBillingCycle) || 'monthly';
+  const pricePerSeat = plan.price_per_seat || getPricePerUserPerMonth(selectedPlan, billingCycle);
+  const state = cycle?.state || plan.status;
+  const isTrial = state === 'trial';
+  const usedSeats = seats?.used ?? plan.used_seats ?? 0;
+  const maxSeats = seats?.max ?? plan.max_seats ?? 0;
+  const isOverCap = seats?.is_over_cap ?? false;
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Billing"
-        title="Workspace Billing"
-        description="Review current plan, seat usage, and upgrade paths for your workspace."
+        title="Workspace billing"
+        description="Plan, seats and renewal for this workspace."
+        actions={
+          <Link
+            to="/pricing"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-surface-card px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-blue-400"
+          >
+            Compare plans <ArrowRight className="h-4 w-4" />
+          </Link>
+        }
       />
 
-      {!plan ? (
-        <FeedbackBanner tone="error" message="No billing data is available for this workspace yet." />
-      ) : (
-        <>
-          <div className="grid gap-4 lg:grid-cols-4">
-            <SurfaceCard className="p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-sky-50 text-sky-700">
-                  <CreditCard className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Current plan</p>
-                  <p className="mt-1 text-lg font-semibold text-slate-950">{plan.name}</p>
-                </div>
-              </div>
-            </SurfaceCard>
-            <SurfaceCard className="p-5">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Subscription status</p>
-              <div className="mt-3">
-                <StatusBadge tone={plan.status === 'trial' ? 'success' : plan.status === 'active' ? 'info' : 'warning'}>{plan.status}</StatusBadge>
-              </div>
-              <p className="mt-3 text-sm text-slate-500">Intent: {plan.subscription_intent || 'n/a'}</p>
-            </SurfaceCard>
-            <SurfaceCard className="p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-emerald-50 text-emerald-700">
-                  <CalendarClock className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    {plan.is_trial ? 'Trial end date' : 'Renewal date'}
-                  </p>
-                  <p className="mt-1 text-lg font-semibold text-slate-950">
-                    {plan.trial_end_date || plan.renewal_date ? new Date(plan.trial_end_date || plan.renewal_date || '').toLocaleDateString() : 'Not set'}
-                  </p>
-                </div>
-              </div>
-            </SurfaceCard>
-            <SurfaceCard className="p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-violet-50 text-violet-700">
-                  <Users className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Seats</p>
-                  <p className="mt-1 text-lg font-semibold text-slate-950">{usedSeats} / {maxSeats}</p>
-                  <p className="mt-1 text-sm text-slate-500">{remainingSeats > 0 ? `${remainingSeats} available` : 'Full'}</p>
-                </div>
-              </div>
-            </SurfaceCard>
-          </div>
+      {notice ? <RenewalBanner notice={notice} /> : null}
 
-          <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-            <SurfaceCard className="p-6">
-              <h2 className="text-lg font-semibold text-slate-950">Workspace Snapshot</h2>
-              <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <div className="rounded-[22px] border border-slate-200/85 bg-slate-50/80 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Workspace</p>
-                  <p className="mt-2 text-base font-semibold text-slate-950">{workspace?.name || 'Current workspace'}</p>
-                  <p className="mt-1 text-sm text-slate-500">{workspace?.slug || 'No slug available'}</p>
-                </div>
-                <div className="rounded-[22px] border border-slate-200/85 bg-slate-50/80 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Billing cycle</p>
-                  <p className="mt-2 text-base font-semibold capitalize text-slate-950">{plan.billing_cycle || 'monthly'}</p>
-                  <p className="mt-1 text-sm text-slate-500">{plan.description || selectedPlan.shortDescription}</p>
-                </div>
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="space-y-4">
+          {/* ---- plan + cycle ---- */}
+          <SurfaceCard className="p-5">
+            <div className="flex flex-wrap items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-blue-50 text-blue-700">
+                <CreditCard className="h-5 w-5" />
+              </span>
+              <div className="min-w-[12rem] flex-1">
+                <h2 className="text-xl font-semibold tracking-tight text-slate-950">{plan.name}</h2>
+                <p className="mt-1 max-w-lg text-xs leading-5 text-slate-600">
+                  {plan.description || selectedPlan.shortDescription}
+                </p>
               </div>
-            </SurfaceCard>
-
-            <SurfaceCard className="p-6">
-              <h2 className="text-lg font-semibold text-slate-950">Actions</h2>
-              <div className="mt-5 space-y-3">
-                <button
-                  onClick={() => setShowAddSeatsModal(true)}
-                  className="flex w-full items-center justify-between rounded-[22px] border border-emerald-200/90 bg-emerald-50/80 px-4 py-4 text-sm font-semibold text-emerald-800 transition hover:-translate-y-0.5 hover:border-emerald-600"
-                >
-                  Add Seats
-                  <Plus className="h-4 w-4" />
-                </button>
-
-                {!isTrial && (
-                  <button
-                    onClick={() => setShowReduceSeatsModal(true)}
-                    className="flex w-full items-center justify-between rounded-[22px] border border-amber-200/90 bg-amber-50/80 px-4 py-4 text-sm font-semibold text-amber-800 transition hover:-translate-y-0.5 hover:border-amber-600"
-                  >
-                    Reduce Seats
-                    <span className="text-xs font-normal text-amber-600">(No refund)</span>
-                  </button>
-                )}
-
-                {isTrial ? (
-                  <>
-                    <p className="text-sm text-slate-600">Your trial is active. Upgrade to a paid plan to continue with full features.</p>
-                    <Link
-                      to={buildUpgradePath('basic_tracking', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
-                      className="flex items-center justify-between rounded-[22px] border border-sky-200/90 bg-sky-50/80 px-4 py-4 text-sm font-semibold text-sky-800 transition hover:-translate-y-0.5 hover:border-sky-600"
-                    >
-                      Upgrade Plan
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </>
-                ) : (
-                  <>
-                    {/* Only show upgrade to Advance Tracking if on Basic plan */}
-                    {(planCode === 'basic_tracking' || planCode === 'basic') && (
-                      <Link
-                        to={buildUpgradePath('advance_tracking', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
-                        className="flex items-center justify-between rounded-[22px] border border-sky-200/90 bg-sky-50/80 px-4 py-4 text-sm font-semibold text-sky-800 transition hover:-translate-y-0.5 hover:border-sky-600"
-                      >
-                        Upgrade to Advance Tracking
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
-                    )}
-                    
-                    {/* Show downgrade option if on Advance Tracking */}
-                    {(planCode === 'advance_tracking' || planCode === 'advanced_tracker') && (
-                      <Link
-                        to={buildUpgradePath('basic_tracking', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
-                        className="flex items-center justify-between rounded-[22px] border border-slate-200/90 bg-slate-50/80 px-4 py-4 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:border-slate-950"
-                      >
-                        Downgrade to Basic Tracking
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
-                    )}
-                    
-                    {/* 
-                      NOTE: Direct upgrade from Tracking to Payroll is disabled.
-                      Users should only upgrade to Payroll after their current 
-                      Tracking subscription ends or through the plan expiration flow.
-                      
-                      To re-enable direct payroll upgrades, uncomment the block below:
-                    */}
-                    {/* 
-                    {planCode !== 'basic_payroll' && planCode !== 'professional_payroll' && planCode !== 'enterprise' && (
-                      <>
-                        <Link
-                          to={buildUpgradePath('basic_payroll', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
-                          className="flex items-center justify-between rounded-[22px] border border-emerald-200/90 bg-emerald-50/80 px-4 py-4 text-sm font-semibold text-emerald-800 transition hover:-translate-y-0.5 hover:border-emerald-600"
-                        >
-                          Upgrade to Basic Payroll
-                          <ArrowRight className="h-4 w-4" />
-                        </Link>
-                        <Link
-                          to={buildUpgradePath('professional_payroll', (plan.billing_cycle as PricingBillingCycle) || 'monthly')}
-                          className="flex items-center justify-between rounded-[22px] border border-violet-200/90 bg-violet-50/80 px-4 py-4 text-sm font-semibold text-violet-800 transition hover:-translate-y-0.5 hover:border-violet-600"
-                        >
-                          Upgrade to Professional Payroll
-                          <ArrowRight className="h-4 w-4" />
-                        </Link>
-                      </>
-                    )}
-                    */}
-                    
-                    <Link
-                      to="/pricing"
-                      className="flex items-center justify-between rounded-[22px] border border-slate-200/90 bg-white/90 px-4 py-4 text-sm font-semibold text-slate-800 transition hover:-translate-y-0.5 hover:border-slate-950"
-                    >
-                      Compare plans
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                    <a
-                      href={`mailto:${pricingUi.contactEmail}?subject=CareVance%20Billing%20Support`}
-                      className="flex items-center justify-between rounded-[22px] border border-slate-200/90 bg-white/90 px-4 py-4 text-sm font-semibold text-slate-800 transition hover:-translate-y-0.5 hover:border-slate-950"
-                    >
-                      Contact sales
-                      <Mail className="h-4 w-4" />
-                    </a>
-                    <button
-                      onClick={() => setShowCancelPlanModal(true)}
-                      className="flex items-center justify-between rounded-[22px] border border-red-200/90 bg-red-50/80 px-4 py-4 text-sm font-semibold text-red-800 transition hover:-translate-y-0.5 hover:border-red-600"
-                    >
-                      Cancel Plan
-                      <AlertTriangle className="h-4 w-4" />
-                    </button>
-                  </>
-                )}
+              <div className="text-right">
+                <p className="text-xl font-semibold tabular-nums text-slate-950">
+                  {plan.renewal_amount ? formatMoney(plan.renewal_amount) : '—'}
+                </p>
+                <p className="text-xs text-slate-600">
+                  per {billingCycle === 'yearly' ? 'year' : 'month'} · {maxSeats} seat{maxSeats === 1 ? '' : 's'}
+                </p>
               </div>
-            </SurfaceCard>
-          </div>
-        </>
-      )}
-
-      {showAddSeatsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.3)] sm:p-8">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold tracking-[-0.04em]">Add Seats</h2>
-              <button
-                onClick={() => {
-                  setShowAddSeatsModal(false);
-                  setSeatsToAdd(1);
-                  setProcessingError('');
-                }}
-                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
             </div>
 
-            <p className="mt-2 text-sm text-slate-600">
-              Add more seats to your {selectedPlan.label} plan. You'll be charged for the remaining billing period.
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <StatusBadge tone={STATE_TONE[state] || 'neutral'}>{STATE_LABEL[state] || state}</StatusBadge>
+              <StatusBadge tone="neutral">{billingCycle}</StatusBadge>
+              {pricePerSeat ? (
+                <StatusBadge tone="neutral">
+                  ₹{pricePerSeat} / seat / month
+                </StatusBadge>
+              ) : null}
+            </div>
+
+            {cycle ? (
+              <div className="mt-5">
+                <CycleBar cycle={cycle} />
+              </div>
+            ) : null}
+          </SurfaceCard>
+
+          {/* ---- seats ---- */}
+          <SurfaceCard className="p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Seats</h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Every person with a login holds a seat, including admins.
+                </p>
+              </div>
+              {isOverCap ? (
+                <StatusBadge tone="danger">{seats?.over_by} over cap</StatusBadge>
+              ) : maxSeats > 0 && usedSeats >= maxSeats ? (
+                <StatusBadge tone="warning">At capacity</StatusBadge>
+              ) : maxSeats > 0 ? (
+                <StatusBadge tone="success">{maxSeats - usedSeats} available</StatusBadge>
+              ) : (
+                <StatusBadge tone="neutral">No cap set</StatusBadge>
+              )}
+            </div>
+
+            <div className="mt-4">
+              <SeatMeter used={usedSeats} max={maxSeats} />
+            </div>
+
+            <p className="mt-3 max-w-xl text-xs leading-5 text-slate-600">
+              {isOverCap ? (
+                <>
+                  This workspace is <span className="font-semibold text-rose-700">{seats?.over_by} seats over</span> what
+                  it pays for. Everyone already here keeps their access — the cap now applies to the next person added,
+                  who will be refused until it is raised.
+                </>
+              ) : maxSeats > 0 && usedSeats >= maxSeats ? (
+                <>Every paid seat is taken. The next person you add will be refused until you raise the cap.</>
+              ) : (
+                <>Raising the cap is charged for the rest of this cycle. Reducing it takes effect at the next renewal, and cannot go below the people already here.</>
+              )}
             </p>
 
-            <div className="mt-6 space-y-4">
-              <div className="rounded-2xl bg-slate-50 px-5 py-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Current seats</span>
-                  <span className="text-sm font-semibold">{maxSeats}</span>
-                </div>
-              </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => setSeatDialog('add')} iconLeft={<Users className="h-4 w-4" />}>
+                {isOverCap ? `Raise cap to ${usedSeats}` : 'Add seats'}
+              </Button>
+              {!isTrial ? (
+                <Button variant="secondary" onClick={() => setSeatDialog('reduce')}>
+                  Reduce seats
+                </Button>
+              ) : null}
+            </div>
+          </SurfaceCard>
+        </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-800">
-                  Seats to add
-                </label>
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={() => setSeatsToAdd((s) => Math.max(1, s - 1))}
-                    className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:border-slate-950 hover:text-slate-950"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="min-w-[3ch] text-center text-2xl font-semibold tabular-nums">{seatsToAdd}</span>
-                  <button
-                    onClick={() => setSeatsToAdd((s) => s + 1)}
-                    className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:border-slate-950 hover:text-slate-950"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+        <div className="space-y-4">
+          {/* ---- renewal ---- */}
+          <SurfaceCard className="p-5">
+            <h3 className="text-sm font-semibold text-slate-900">Renewal</h3>
 
-              <div className="rounded-2xl bg-slate-50 px-5 py-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">New total seats</span>
-                  <span className="text-sm font-semibold">{maxSeats + seatsToAdd}</span>
-                </div>
+            <div className="mt-4 flex items-center gap-3 border-t border-slate-200 pt-3 first:border-t-0">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-surface-sunken text-slate-600">
+                <RefreshCw className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-900">Auto-renew</p>
+                <p className="mt-0.5 text-xs leading-5 text-slate-600">
+                  {cycle?.auto_renew
+                    ? cycle.has_mandate
+                      ? 'We will charge your saved mandate on the renewal date.'
+                      : 'On, but no payment mandate is set up yet — we will remind you to pay instead.'
+                    : 'Charge automatically on the renewal date instead of reminding you.'}
+                </p>
               </div>
-
-              <div className="rounded-2xl bg-slate-50 px-5 py-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Price per seat</span>
-                  <span className="text-sm font-semibold">₹{pricePerUser}/user/month</span>
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 px-5 py-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-600">Billing cycle</span>
-                  <span className="text-sm font-semibold capitalize">{billingCycle}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between rounded-2xl bg-surface-inverse px-5 py-4 text-on-inverse">
-                <span className="text-sm font-semibold">Total amount due</span>
-                <span className="text-xl font-bold tabular-nums">₹{addSeatsCost.toLocaleString('en-IN')}</span>
-              </div>
-
-              <p className="text-xs text-slate-500">
-                {seatsToAdd} seat{seatsToAdd > 1 ? 's' : ''} × ₹{pricePerUser}/user/month × {totalMonths} month{totalMonths > 1 ? 's' : ''}
-              </p>
+              <ToggleInput
+                checked={Boolean(cycle?.auto_renew)}
+                disabled={autoRenewMutation.isPending}
+                onChange={(next) => autoRenewMutation.mutate(next)}
+              />
             </div>
 
-            {processingError && (
-              <p className="mt-3 text-center text-sm text-red-600">{processingError}</p>
-            )}
+            <div className="flex items-center gap-3 border-t border-slate-200 py-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-surface-sunken text-slate-600">
+                <Mail className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-900">Reminders</p>
+                <p className="mt-0.5 text-xs leading-5 text-slate-600">
+                  {(cycle?.reminder_stages || [7, 3, 1]).join(', ')} days before renewal, to workspace admins.
+                </p>
+              </div>
+              <StatusBadge tone="success">On</StatusBadge>
+            </div>
+          </SurfaceCard>
 
-            <button
-              onClick={handleAddSeats}
-              disabled={isProcessing}
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(135deg,#020617_0%,#0f172a_30%,#0284c7_100%)] px-5 py-4 text-sm font-semibold text-white shadow-[0_22px_50px_-18px_rgba(14,165,233,0.6)] transition hover:-translate-y-0.5 hover:shadow-[0_28px_58px_-20px_rgba(14,165,233,0.7)] disabled:opacity-70"
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Processing...
-                </>
+          {/* ---- workspace ---- */}
+          <SurfaceCard className="p-5">
+            <h3 className="text-sm font-semibold text-slate-900">Workspace</h3>
+            <dl className="mt-4 space-y-3">
+              <div>
+                <dt className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Name</dt>
+                <dd className="mt-0.5 text-sm font-semibold text-slate-900">{workspace?.name || 'Current workspace'}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Address</dt>
+                <dd className="mt-0.5 text-sm text-slate-700">{workspace?.slug || 'No slug available'}</dd>
+              </div>
+            </dl>
+          </SurfaceCard>
+
+          {/* ---- manage ---- */}
+          <SurfaceCard className="p-5">
+            <h3 className="text-sm font-semibold text-slate-900">Manage</h3>
+            <div className="mt-2">
+              {isTrial ? (
+                <Link
+                  to={buildUpgradePath('basic_tracking', billingCycle)}
+                  className="flex items-center justify-between gap-3 border-t border-slate-200 py-3 text-sm font-medium text-slate-900 transition hover:text-blue-700"
+                >
+                  Upgrade to a paid plan <ArrowRight className="h-4 w-4" />
+                </Link>
               ) : (
                 <>
-                  Proceed to payment <ArrowRight className="h-4 w-4" />
+                  {(planCode === 'basic_tracking' || planCode === 'basic') && (
+                    <Link
+                      to={buildUpgradePath('advance_tracking', billingCycle)}
+                      className="flex items-center justify-between gap-3 border-t border-slate-200 py-3 text-sm font-medium text-slate-900 transition hover:text-blue-700"
+                    >
+                      Upgrade to Advance Tracking <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  )}
+                  {(planCode === 'advance_tracking' || planCode === 'advanced_tracker') && (
+                    <Link
+                      to={buildUpgradePath('basic_tracking', billingCycle)}
+                      className="flex items-center justify-between gap-3 border-t border-slate-200 py-3 text-sm font-medium text-slate-900 transition hover:text-blue-700"
+                    >
+                      Downgrade to Basic Tracking <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  )}
                 </>
               )}
-            </button>
-          </div>
+
+              <Link
+                to="/settings/billing"
+                className="flex items-center justify-between gap-3 border-t border-slate-200 py-3 text-sm font-medium text-slate-900 transition hover:text-blue-700"
+              >
+                <span className="flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-slate-600" /> Payment history
+                </span>
+                <span className="text-xs text-slate-600">In the payment screen</span>
+              </Link>
+
+              <a
+                href={`mailto:${pricingUi.contactEmail}?subject=CareVance%20Billing%20Support`}
+                className="flex items-center justify-between gap-3 border-t border-slate-200 py-3 text-sm font-medium text-slate-900 transition hover:text-blue-700"
+              >
+                Contact sales <Mail className="h-4 w-4" />
+              </a>
+
+              {!isTrial ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCancel(true)}
+                  className="flex w-full items-center justify-between gap-3 border-t border-slate-200 py-3 text-left text-sm font-medium text-rose-700 transition hover:text-rose-800"
+                >
+                  Cancel plan <AlertTriangle className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+          </SurfaceCard>
         </div>
-      )}
+      </div>
 
-      {showReduceSeatsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.3)] sm:p-8">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold tracking-[-0.04em]">Reduce Seats</h2>
-              <button
-                onClick={() => {
-                  setShowReduceSeatsModal(false);
-                  setSeatsToReduce(0);
-                }}
-                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-              >
-                <span className="sr-only">Close</span>
-                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                </svg>
-              </button>
-            </div>
+      {seatDialog ? (
+        <SeatDialog
+          mode={seatDialog}
+          usedSeats={usedSeats}
+          maxSeats={maxSeats}
+          minAllowed={seats?.min_allowed ?? usedSeats}
+          pricePerSeat={pricePerSeat}
+          billingCycle={billingCycle}
+          planLabel={plan.name}
+          onClose={() => setSeatDialog(null)}
+          onAdded={() => navigate('/payment?add-seats=true', { replace: true })}
+          onReduced={() => {
+            setSeatDialog(null);
+            void queryClient.invalidateQueries({ queryKey: ['billing-snapshot'] });
+          }}
+        />
+      ) : null}
 
-            <div className="mt-6">
-              <p className="text-sm text-slate-600">
-                Current seats: <span className="font-semibold text-slate-900">{maxSeats}</span>
-              </p>
-              
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-semibold text-slate-800">
-                  New seat count
-                </label>
-                <input
-                  type="number"
-                  min={isPayrollPlan ? 50 : 10}
-                  max={maxSeats - 1}
-                  value={seatsToReduce || ''}
-                  onChange={(e) => setSeatsToReduce(parseInt(e.target.value) || 0)}
-                  className="block w-full rounded-[22px] border border-slate-200/90 bg-white/85 py-4 px-4 text-sm text-slate-950 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.22)] outline-none transition focus:border-sky-300/90 focus:bg-white focus:ring-2 focus:ring-sky-300/30"
-                  placeholder="Enter new seat count"
-                />
-                <p className="mt-2 text-xs text-slate-500">
-                  Minimum {isPayrollPlan ? 50 : 10} seats required
-                </p>
-              </div>
-
-              <div className="mt-4 rounded-[16px] border border-amber-200/50 bg-amber-50/50 p-4">
-                <p className="text-sm text-amber-800">
-                  <span className="font-semibold">No refund policy:</span> Seat reduction will take effect at your next billing cycle. No refund will be issued for the reduced seats.
-                </p>
-              </div>
-            </div>
-
-            {processingError && (
-              <p className="mt-4 text-center text-sm text-red-600">{processingError}</p>
-            )}
-
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowReduceSeatsModal(false);
-                  setSeatsToReduce(0);
-                  setProcessingError('');
-                }}
-                disabled={isProcessing}
-                className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (seatsToReduce < (isPayrollPlan ? 50 : 10) || seatsToReduce >= maxSeats) {
-                    setProcessingError(`Invalid seat count. Must be between ${isPayrollPlan ? 50 : 10} and ${maxSeats - 1}.`);
-                    return;
-                  }
-                  
-                  setIsProcessing(true);
-                  setProcessingError('');
-                  
-                  try {
-                    await billingApi.reduceSeats(seatsToReduce);
-                    setShowReduceSeatsModal(false);
-                    // Reload billing snapshot
-                    const response = await billingApi.current();
-                    setSnapshot(response.data);
-                  } catch (err: any) {
-                    setProcessingError(err?.response?.data?.message || 'Failed to reduce seats. Please try again.');
-                  } finally {
-                    setIsProcessing(false);
-                  }
-                }}
-                disabled={isProcessing || !seatsToReduce}
-                className="flex-1 rounded-full bg-amber-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-70"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Processing...
-                  </>
-                ) : (
-                  'Confirm Reduction'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCancelPlanModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.3)] sm:p-8">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold tracking-[-0.04em]">Cancel Plan</h2>
-              <button
-                onClick={() => {
-                  setShowCancelPlanModal(false);
-                  setProcessingError('');
-                }}
-                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mt-4 flex items-start gap-3 rounded-lg bg-amber-50 p-4">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
-              <div className="text-sm">
-                <p className="font-semibold text-amber-900">Important Notice</p>
-                <p className="mt-1 text-amber-800">
-                  Cancelling your plan will immediately shift your workspace to a 14-day Basic trial. You will lose access to Advanced Tracker and Enterprise features.
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-4 text-sm text-slate-600">
-              Are you sure you want to cancel your {selectedPlan.label} plan? This action cannot be undone.
-            </p>
-
-            {processingError && (
-              <p className="mt-3 text-center text-sm text-red-600">{processingError}</p>
-            )}
-
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowCancelPlanModal(false);
-                  setProcessingError('');
-                }}
-                disabled={isProcessing}
-                className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-70"
-              >
-                Keep Plan
-              </button>
-              <button
-                onClick={handleCancelPlan}
-                disabled={isProcessing}
-                className="flex-1 rounded-full bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-70"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Cancelling...
-                  </>
-                ) : (
-                  'Cancel Plan'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showCancel ? (
+        <CancelPlanDialog
+          planLabel={plan.name}
+          periodEnd={cycle?.period_end}
+          onClose={() => setShowCancel(false)}
+          onCancelled={() => {
+            setShowCancel(false);
+            void queryClient.invalidateQueries({ queryKey: ['billing-snapshot'] });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

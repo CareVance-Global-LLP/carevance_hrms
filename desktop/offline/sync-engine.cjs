@@ -182,11 +182,14 @@ SyncEngine.prototype._doSync = async function () {
       lastSyncAt: this.lastSyncAt,
     });
 
-    // If there are more items, schedule next batch. Only recurse when we made
-    // progress this pass, otherwise wait for the next interval to avoid a
-    // busy-loop on records that are blocked (e.g. waiting on a time-entry map).
+    // If there are more items, schedule next batch. The queue must have
+    // actually SHRUNK to recurse — `madeProgress` alone only means an item
+    // didn't throw, which a skipped or blocked record also satisfies, and
+    // chaining setImmediate on that re-runs the identical batch forever. A
+    // strictly smaller queue is the one condition that cannot repeat.
     const remaining = this.queueManager.getQueueSize();
-    if (remaining > 0 && this.running && madeProgress && this.networkMonitor.isOnline) {
+    const drained = remaining < queueSize;
+    if (remaining > 0 && drained && this.running && madeProgress && this.networkMonitor.isOnline) {
       setImmediate(() => {
         this._doSync().catch(() => {});
       });
@@ -208,6 +211,12 @@ SyncEngine.prototype._syncItem = async function (queueItem) {
   }
 
   if (record.retry_count >= MAX_RETRY_COUNT) {
+    // Drop it out of the queue, do not just skip it. Skipping left the item in
+    // sync_queue while still counting as a completed pass, so _doSync saw
+    // "progress made, queue not empty" and rescheduled itself immediately —
+    // forever, on the same batch, pinning a core and blocking every record
+    // behind it. The row survives with its 'failed' status for inspection.
+    this.queueManager.dropExhausted(queueItem.record_type, queueItem.local_id);
     this.emit('item-permanent-failure', {
       recordType: queueItem.record_type,
       localId: queueItem.local_id,

@@ -105,7 +105,7 @@ function StackingCard({ shot, index, total }: { shot: typeof shots[0]; index: nu
 
 export default function Screenshots() {
   return (
-    <section id="screenshots" className="bg-[#f8fafb] px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+    <section id="screenshots" className="bg-surface-sunken px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionHeading
           eyebrow="Product showcase"

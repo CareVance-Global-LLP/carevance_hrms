@@ -64,16 +64,30 @@ class Organization extends Model
         'pending_billing_cycle',
         'pending_seats',
         'pending_upgrade_amount',
+        'auto_renew',
+        'grace_ends_at',
+        'last_renewal_at',
+        'razorpay_mandate_id',
+        'renewal_reminder_stage',
+        'renewal_reminder_for',
     ];
 
     protected $casts = [
         'settings' => 'array',
         'trial_starts_at' => 'datetime',
         'trial_ends_at' => 'datetime',
+        // 'date:Y-m-d' rather than 'date': a plain date cast serialises as a UTC
+        // datetime, which reaches a client in a timezone ahead of UTC as the
+        // previous calendar day. A renewal date is a calendar date.
         'subscription_expires_at' => 'date:Y-m-d',
+        'grace_ends_at' => 'date:Y-m-d',
+        'last_renewal_at' => 'date:Y-m-d',
+        'renewal_reminder_for' => 'date:Y-m-d',
         'max_seats' => 'integer',
         'pending_seats' => 'integer',
         'pending_upgrade_amount' => 'decimal:2',
+        'auto_renew' => 'boolean',
+        'renewal_reminder_stage' => 'integer',
     ];
 
     protected static function booted(): void

@@ -74,6 +74,9 @@ class StoreInvitationImportRequest extends ApiFormRequest
             'rows.*.project_ids' => 'nullable|array',
             'rows.*.project_ids.*' => 'integer',
             'rows.*.job_title' => 'nullable|string|max:255',
+            // Per row, so one import can carry staggered start dates; the
+            // batch-level key below is the fallback for rows that omit it.
+            'rows.*.joining_date' => 'nullable|date|before_or_equal:'.now()->addYears(2)->format('Y-m-d'),
             'rows.*.settings' => 'nullable|array',
             'rows.*.settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in([1, 3, 5, 10, 15, 30])],
             'rows.*.settings.can_edit_time' => 'nullable|boolean',
@@ -93,6 +96,7 @@ class StoreInvitationImportRequest extends ApiFormRequest
             'settings.task_assignment_access' => 'nullable|boolean',
             'settings.timezone' => ['nullable', 'string', 'max:255', new ValidTimezone],
             'expires_in_hours' => 'nullable|integer|min:1|max:720',
+            'joining_date' => 'nullable|date|before_or_equal:'.now()->addYears(2)->format('Y-m-d'),
         ];
     }
 }

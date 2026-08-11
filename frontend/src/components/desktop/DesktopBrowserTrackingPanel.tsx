@@ -54,8 +54,12 @@ export default function DesktopBrowserTrackingPanel() {
       : 'Generate a pairing code in the desktop shell, then paste it into the browser extension to finish linking this machine.'
   );
 
+  // `bg-white` rather than an arbitrary white gradient: the theme layer remaps
+  // the utility to the card surface in dark mode, while a baked
+  // `linear-gradient(rgba(255,255,255,…))` stayed white — and since the text
+  // tokens invert to near-white with it, the whole panel read as blank.
   return (
-    <section className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(240,249,255,0.98),rgba(248,250,252,0.98))] p-5 text-slate-950 shadow-[0_30px_90px_-54px_rgba(14,165,233,0.35)]">
+    <section className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white p-5 text-slate-950 shadow-[0_30px_90px_-54px_rgba(14,165,233,0.35)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-2">

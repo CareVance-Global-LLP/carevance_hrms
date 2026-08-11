@@ -23,7 +23,46 @@ class ActivityController extends Controller
     public function __construct(
         private readonly ActivityFeedService $activityFeedService,
         private readonly UsageProcessingService $usageProcessingService,
+        private readonly \App\Services\Monitoring\IdleResolutionService $idleResolution,
     ) {
+    }
+
+    /**
+     * Record what an idle stretch actually was.
+     *
+     * Only the person it belongs to may answer — a manager deciding on
+     * somebody's behalf that they were slacking is exactly the dynamic this
+     * prompt exists to remove.
+     */
+    public function resolveIdle(Request $request, Activity $activity)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        if ((int) $activity->user_id !== (int) $user->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if ($activity->type !== 'idle') {
+            return response()->json(['message' => 'That activity is not an idle period.'], 422);
+        }
+
+        $validated = $request->validate([
+            'action' => 'required|in:kept,discarded',
+        ]);
+
+        $result = $this->idleResolution->resolve($activity, $user, $validated['action']);
+
+        return response()->json([
+            'message' => $result['resolution'] === \App\Services\Monitoring\IdleResolutionService::KEPT
+                ? 'Idle time kept.'
+                : 'Idle time discarded.',
+            'resolution' => $result['resolution'],
+            'seconds_removed' => $result['seconds_removed'],
+            'activity' => $activity->fresh(),
+        ]);
     }
 
     private function canViewAll(?\App\Models\User $user): bool
@@ -335,6 +374,9 @@ class ActivityController extends Controller
             'started_at' => 'nullable|date',
             'last_seen_at' => 'nullable|date',
             'ended_at' => 'nullable|date',
+            // Sent by the desktop tracker when replaying its offline queue.
+            'local_id' => 'nullable|string|max:120',
+            'device_id' => 'nullable|string|max:120',
         ]);
 
         if ($request->user()) {
@@ -367,6 +409,23 @@ class ActivityController extends Controller
 
         $existingActivity = null;
 
+        // Offline replay wins over every other match. The desktop queue retries
+        // a record until the server acknowledges it, so an acknowledgement lost
+        // in transit brings the same (device_id, local_id) back — and without
+        // this it would fall through to the heuristics below, which only catch
+        // a duplicate within a 5-second window and would happily insert a
+        // second row for a punch replayed hours later.
+        if (!empty($validated['local_id']) && !empty($validated['device_id'])) {
+            $existingActivity = Activity::query()
+                ->where('local_id', $validated['local_id'])
+                ->where('device_id', $validated['device_id'])
+                ->first();
+
+            if ($existingActivity) {
+                return response()->json($existingActivity, 200);
+            }
+        }
+
         if (!empty($validated['session_key'])) {
             $existingActivity = Activity::query()
                 ->where('user_id', $validated['user_id'])
@@ -392,6 +451,11 @@ class ActivityController extends Controller
             $existingActivity->fill([
                 'time_entry_id' => $validated['time_entry_id'] ?? $existingActivity->time_entry_id,
                 'session_key' => $validated['session_key'] ?? $existingActivity->session_key,
+                // Stamp the offline key onto the row the heuristics merged into,
+                // so a later replay of the same capture resolves by key instead
+                // of falling through to the 5-second window again.
+                'local_id' => $validated['local_id'] ?? $existingActivity->local_id,
+                'device_id' => $validated['device_id'] ?? $existingActivity->device_id,
                 'type' => $validated['type'],
                 'name' => $validated['name'],
                 'app_name' => $validated['app_name'] ?? $existingActivity->app_name,
@@ -430,7 +494,25 @@ class ActivityController extends Controller
             return response()->json($existingActivity, 200);
         }
 
-        $activity = Activity::create($validated);
+        try {
+            $activity = Activity::create($validated);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Two retries of the same queued record can clear the check above
+            // concurrently; the unique index is what actually decides. Losing
+            // that race is a successful sync, not an error.
+            $activity = !empty($validated['local_id']) && !empty($validated['device_id'])
+                ? Activity::query()
+                    ->where('local_id', $validated['local_id'])
+                    ->where('device_id', $validated['device_id'])
+                    ->first()
+                : null;
+
+            if (!$activity) {
+                throw $e;
+            }
+
+            return response()->json($activity, 200);
+        }
 
         // Bust idle cache so reports pick up fresh idle durations immediately
         if (($validated['type'] ?? '') === 'idle') {

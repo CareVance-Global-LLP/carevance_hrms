@@ -36,6 +36,39 @@ export const COMMON_TIMEZONES = [
   'Australia/Sydney',
 ];
 
+/**
+ * Legacy IANA zone names that browsers still report, mapped to their canonical
+ * successor.
+ *
+ * Chrome resolves the Indian zone as `Asia/Calcutta`, the pre-1993 name. Every
+ * picker in the app lists the canonical `Asia/Kolkata`, so an auto-detected
+ * value never matched an option and the select rendered empty on a required
+ * field — the browser and the list were naming the same zone differently.
+ */
+const TIMEZONE_ALIASES: Record<string, string> = {
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'Asia/Chungking': 'Asia/Chongqing',
+  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'Europe/Kiev': 'Europe/Kyiv',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+};
+
+/** Canonicalise a zone id, leaving anything already canonical untouched. */
+export const canonicalTimeZone = (value?: string | null): string => {
+  const candidate = String(value || '').trim();
+  if (!candidate) return DEFAULT_APP_TIMEZONE;
+  return TIMEZONE_ALIASES[candidate] ?? candidate;
+};
+
+/** The browser's zone, canonicalised, falling back to the app default. */
+export const detectTimeZone = (): string =>
+  canonicalTimeZone(
+    typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined
+  );
+
 export const getSupportedTimezones = () => {
   const supportedValuesOf = (Intl as typeof Intl & {
     supportedValuesOf?: (key: string) => string[];

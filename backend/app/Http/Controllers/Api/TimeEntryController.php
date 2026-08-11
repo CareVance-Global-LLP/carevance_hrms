@@ -36,6 +36,7 @@ class TimeEntryController extends Controller
         private readonly IdleAutoStopMailService $idleAutoStopMailService,
         private readonly \App\Services\Reports\WorkTimeSummaryService $workTimeSummaryService,
         private readonly \App\Services\Reports\WorkedTimeService $workedTimeService,
+        private readonly \App\Services\Monitoring\TrackerPolicyResolver $trackerPolicy,
     ) {
     }
 
@@ -831,7 +832,9 @@ class TimeEntryController extends Controller
      */
     private function closeIdleRunningEntry(int $userId): void
     {
-        $idleThreshold = max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
+        // Same resolved policy the client is given, so the in-request
+        // fallback holds a user to exactly the threshold their tracker uses.
+        $idleThreshold = $this->idleAutoStopThresholdSeconds(User::find($userId));
         $now = now();
         $cutoff = $now->copy()->subSeconds($idleThreshold);
 
@@ -1008,7 +1011,7 @@ class TimeEntryController extends Controller
         int $reportedIdleSeconds,
         ?Carbon $reportedLastActivityAt = null,
     ): array {
-        $idleAutoStopThresholdSeconds = $this->idleAutoStopThresholdSeconds();
+        $idleAutoStopThresholdSeconds = $this->idleAutoStopThresholdSeconds(User::find($userId));
         $entry = $runningEntries->sortByDesc('start_time')->first();
         $sessionStartAt = $entry?->start_time ? Carbon::parse($entry->start_time) : $stoppedAt;
 
@@ -1127,8 +1130,20 @@ class TimeEntryController extends Controller
         ];
     }
 
-    private function idleAutoStopThresholdSeconds(): int
+    /**
+     * The idle threshold this user is actually held to.
+     *
+     * Resolved through TrackerPolicyResolver — the same call the client's own
+     * threshold comes from — so the two sides cannot disagree. They used to be
+     * configured independently, and a client set below the server proposed
+     * stops that were rejected until it exhausted its retry cap.
+     */
+    private function idleAutoStopThresholdSeconds(?User $user = null): int
     {
+        if ($user) {
+            return (int) $this->trackerPolicy->resolveForUser($user)['idle_auto_stop_threshold_seconds'];
+        }
+
         return max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
     }
 

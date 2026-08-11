@@ -25,6 +25,9 @@ export interface AdditionalInviteSettings {
   timezone?: string;
 }
 
+/** Matches `emails` max:50 on StoreInvitationRequest. */
+export const EMAIL_BATCH_LIMIT = 50;
+
 export interface InviteSubmissionPayload {
   organizationId: number;
   emails: string[];
@@ -32,6 +35,9 @@ export interface InviteSubmissionPayload {
   groupIds: number[];
   projectIds: number[];
   settings: AdditionalInviteSettings;
+  joiningDate?: string;
+  jobTitle?: string;
+  expiresInHours?: number;
 }
 
 export interface InviteLinkPayload {
@@ -41,6 +47,9 @@ export interface InviteLinkPayload {
   groupIds: number[];
   projectIds: number[];
   settings: AdditionalInviteSettings;
+  joiningDate?: string;
+  jobTitle?: string;
+  expiresInHours?: number;
 }
 
 export interface InviteSubmissionResult {
@@ -67,6 +76,7 @@ export interface CsvParseRow {
   projectIds: number[];
   timezone?: string;
   jobTitle?: string;
+  joiningDate?: string;
   skippedRoleLabel?: string;
 }
 
@@ -82,6 +92,7 @@ interface BulkInviteRowPayload {
   department_ids?: number[];
   project_ids?: number[];
   job_title?: string;
+  joining_date?: string;
   settings?: Record<string, any>;
 }
 
@@ -92,6 +103,30 @@ type XlsxSheetResult = {
 };
 
 const INVITE_DEFAULTS_KEY = 'carevance-add-user-defaults';
+
+/**
+ * Module-level, not a method, because `fetchGroups` needs it.
+ *
+ * `addUserService.fetchGroups` is handed to react-query as a bare function
+ * reference, so `this` is undefined inside it — any `this.x()` call there
+ * throws, the query fails, and the departments list silently comes back empty.
+ */
+function readStoredDefaults(): InviteDefaults {
+  if (typeof window === 'undefined') {
+    return { remember: false, groupIds: [], projectIds: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(INVITE_DEFAULTS_KEY) || '{}') as Partial<InviteDefaults>;
+    return {
+      remember: Boolean(parsed.remember),
+      groupIds: Array.isArray(parsed.groupIds) ? parsed.groupIds.filter((id) => Number.isFinite(id)) : [],
+      projectIds: Array.isArray(parsed.projectIds) ? parsed.projectIds.filter((id) => Number.isFinite(id)) : [],
+    };
+  } catch {
+    return { remember: false, groupIds: [], projectIds: [] };
+  }
+}
 
 const unwrapInviteResponsePayload = (rawData: any) => {
   if (rawData && typeof rawData === 'object' && rawData.data && typeof rawData.data === 'object') {
@@ -151,6 +186,29 @@ const deriveDisplayName = (email: string) => {
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
+};
+
+/**
+ * Read a spreadsheet joining date into `YYYY-MM-DD`, or null if it is not a date.
+ *
+ * Assembled from local date parts rather than `toISOString()`, which resolves
+ * against UTC and lands a day early anywhere ahead of it — the shift that has
+ * bitten date-only values elsewhere in the app. An unreadable value returns
+ * null so the caller can report the row instead of silently importing a person
+ * with no start date.
+ */
+const normalizeJoiningDate = (raw: string): string | undefined => {
+  const value = raw.trim();
+  if (!value) return undefined;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${parsed.getFullYear()}-${month}-${day}`;
 };
 
 const parseMultiValueField = (value: string) =>
@@ -260,12 +318,16 @@ export const addUserService = {
   async fetchGroups() {
     const response = await reportGroupApi.list();
     const groups = response.data?.data || [];
+    // Flagged against the admin's own remembered selection, not against
+    // "has any members at all" — that marked every department DEFAULT, so the
+    // badge appeared on all ten and told the admin nothing.
+    const remembered = new Set(readStoredDefaults().groupIds);
 
     return groups.map((group) => ({
       id: group.id,
       name: group.name,
       description: `${group.users.length} member${group.users.length === 1 ? '' : 's'}`,
-      isDefault: group.users.length > 0,
+      isDefault: remembered.has(group.id),
     })) satisfies InviteOption[];
   },
 
@@ -281,22 +343,7 @@ export const addUserService = {
     })) satisfies InviteOption[];
   },
   
-  loadDefaults(): InviteDefaults {
-    if (typeof window === 'undefined') {
-      return { remember: false, groupIds: [], projectIds: [] };
-    }
-
-    try {
-      const parsed = JSON.parse(window.localStorage.getItem(INVITE_DEFAULTS_KEY) || '{}') as Partial<InviteDefaults>;
-      return {
-        remember: Boolean(parsed.remember),
-        groupIds: Array.isArray(parsed.groupIds) ? parsed.groupIds.filter((id) => Number.isFinite(id)) : [],
-        projectIds: Array.isArray(parsed.projectIds) ? parsed.projectIds.filter((id) => Number.isFinite(id)) : [],
-      };
-    } catch {
-      return { remember: false, groupIds: [], projectIds: [] };
-    }
-  },
+  loadDefaults: readStoredDefaults,
 
   saveDefaults(defaults: InviteDefaults) {
     if (typeof window === 'undefined') return;
@@ -309,35 +356,51 @@ export const addUserService = {
   },
 
   async inviteByEmail(payload: InviteSubmissionPayload): Promise<InviteSubmissionResult> {
-    const response = await invitationApi.create({
-      organization_id: payload.organizationId,
-      emails: payload.emails,
-      role: payload.role,
-      delivery: 'email',
-      department_ids: payload.groupIds,
-      project_ids: payload.projectIds,
-      settings: {
-        monitoring_interval_minutes: payload.settings.monitoringInterval,
-        can_edit_time: payload.settings.canEditTime,
-        attendance_monitoring: payload.settings.attendanceMonitoring,
-        payroll_visibility: payload.settings.payrollVisibility,
-        task_assignment_access: payload.settings.taskAssignmentAccess,
-        ...(payload.settings.timezone ? { timezone: payload.settings.timezone } : {}),
-      },
-    });
+    /*
+     * Chunked, because the API caps a single request at EMAIL_BATCH_LIMIT.
+     *
+     * The tag input happily accepted any number of addresses while the request
+     * refused more than fifty, so pasting a real hiring list assembled the
+     * whole thing and then failed on the count. The CSV path already chunked;
+     * this one now does too, which turns the ceiling into an implementation
+     * detail rather than something the admin has to know.
+     */
+    const chunks = chunkItems(payload.emails, EMAIL_BATCH_LIMIT);
+    let invitedCount = 0;
+    const failed: Array<{ email: string; message: string }> = [];
 
-    const responsePayload = ensureInviteRequestSucceeded(response, 'Failed to send invites.');
-    const failed = Array.isArray(responsePayload.failed) ? responsePayload.failed : [];
-    const invitedCount = Number(
-      responsePayload.invited_count
-      ?? responsePayload.invitedCount
-      ?? (Array.isArray(responsePayload.invitations) ? responsePayload.invitations.length : 0)
-    ) || 0;
+    for (const chunk of chunks) {
+      const response = await invitationApi.create({
+        organization_id: payload.organizationId,
+        emails: chunk,
+        role: payload.role,
+        delivery: 'email',
+        department_ids: payload.groupIds,
+        project_ids: payload.projectIds,
+        ...(payload.joiningDate ? { joining_date: payload.joiningDate } : {}),
+        ...(payload.jobTitle ? { job_title: payload.jobTitle } : {}),
+        ...(payload.expiresInHours ? { expires_in_hours: payload.expiresInHours } : {}),
+        settings: {
+          monitoring_interval_minutes: payload.settings.monitoringInterval,
+          can_edit_time: payload.settings.canEditTime,
+          attendance_monitoring: payload.settings.attendanceMonitoring,
+          payroll_visibility: payload.settings.payrollVisibility,
+          task_assignment_access: payload.settings.taskAssignmentAccess,
+          ...(payload.settings.timezone ? { timezone: payload.settings.timezone } : {}),
+        },
+      });
+
+      const responsePayload = ensureInviteRequestSucceeded(response, 'Failed to send invites.');
+      failed.push(...(Array.isArray(responsePayload.failed) ? responsePayload.failed : []));
+      invitedCount += Number(
+        responsePayload.invited_count
+        ?? responsePayload.invitedCount
+        ?? (Array.isArray(responsePayload.invitations) ? responsePayload.invitations.length : 0)
+      ) || 0;
+    }
 
     if (invitedCount === 0 && failed.length === 0) {
-      const error: any = new Error(responsePayload.message || 'No invitations were created.');
-      error.response = { ...response, data: response.data };
-      throw error;
+      throw new Error('No invitations were created.');
     }
 
     return {
@@ -355,6 +418,9 @@ export const addUserService = {
       delivery: 'link',
       department_ids: payload.groupIds,
       project_ids: payload.projectIds,
+      ...(payload.joiningDate ? { joining_date: payload.joiningDate } : {}),
+      ...(payload.jobTitle ? { job_title: payload.jobTitle } : {}),
+      ...(payload.expiresInHours ? { expires_in_hours: payload.expiresInHours } : {}),
       settings: {
         monitoring_interval_minutes: payload.settings.monitoringInterval,
         can_edit_time: payload.settings.canEditTime,
@@ -427,6 +493,7 @@ export const addUserService = {
     const projectIndex = getHeaderIndex(headers, ['projects', 'project', 'project ids', 'project id']);
     const timezoneIndex = getHeaderIndex(headers, ['timezone', 'time zone', 'tz']);
     const jobTitleIndex = getHeaderIndex(headers, ['job title', 'job_title', 'job role', 'designation', 'position']);
+    const joiningDateIndex = getHeaderIndex(headers, ['joining date', 'joining_date', 'date of joining', 'start date', 'doj']);
 
     if (emailIndex < 0) {
       return { rows: [], errors: ['Import file must include an email column.'] };
@@ -450,6 +517,13 @@ export const addUserService = {
 
       const rawTimezone = timezoneIndex >= 0 ? (columns[timezoneIndex] || '').trim() : '';
       const rawJobTitle = jobTitleIndex >= 0 ? (columns[jobTitleIndex] || '').trim() : '';
+      const rawJoiningDate = joiningDateIndex >= 0 ? (columns[joiningDateIndex] || '').trim() : '';
+      const joiningDate = normalizeJoiningDate(rawJoiningDate);
+
+      if (rawJoiningDate && !joiningDate) {
+        errors.push(`Row ${index + 2}: could not read joining date "${rawJoiningDate}". Use YYYY-MM-DD.`);
+        return;
+      }
 
       rows.push({
         email,
@@ -459,6 +533,7 @@ export const addUserService = {
         projectIds: mapOptionNamesToIds(parseMultiValueField(columns[projectIndex] || ''), projects),
         timezone: rawTimezone || undefined,
         jobTitle: rawJobTitle || (rawRole && !role ? rawRole : undefined),
+        joiningDate,
         skippedRoleLabel: rawRole && !role ? rawRole : undefined,
       });
     });
@@ -505,19 +580,24 @@ export const addUserService = {
     };
   },
 
-  async processImportFile(
-    file: File,
+  /**
+   * Send rows that have already been parsed and shown to the admin.
+   *
+   * Split out from `processImportFile` so the CSV tab can validate first and
+   * commit second. Choosing a file used to parse *and* invite in one action, so
+   * a mis-mapped column in a 200-row sheet was discovered only after 200 people
+   * had been emailed.
+   */
+  async sendParsedRows(
+    parsed: CsvParseResult,
     basePayload: {
       organizationId: number;
       defaultGroupIds: number[];
       defaultProjectIds: number[];
       settings: AdditionalInviteSettings;
-    },
-    groups: InviteOption[],
-    projects: InviteOption[]
+      joiningDate?: string;
+    }
   ) {
-    const parsed = await this.parseImportFile(file, groups, projects);
-
     if (parsed.rows.length === 0) {
       return {
         parsed,
@@ -543,6 +623,7 @@ export const addUserService = {
       department_ids: row.groupIds,
       project_ids: row.projectIds,
       job_title: row.jobTitle || row.skippedRoleLabel || undefined,
+      ...(row.joiningDate ? { joining_date: row.joiningDate } : {}),
       ...(row.timezone ? { settings: { timezone: row.timezone } } : {}),
     }));
     const rowChunks = chunkItems<BulkInviteRowPayload>(rows, 250);
@@ -553,6 +634,7 @@ export const addUserService = {
           rows: rowChunk,
           default_department_ids: basePayload.defaultGroupIds,
           default_project_ids: basePayload.defaultProjectIds,
+          ...(basePayload.joiningDate ? { joining_date: basePayload.joiningDate } : {}),
           settings: {
             monitoring_interval_minutes: basePayload.settings.monitoringInterval,
             can_edit_time: basePayload.settings.canEditTime,
@@ -597,10 +679,19 @@ export const addUserService = {
   },
   
   downloadCsvTemplate() {
+    /*
+     * Job titles belong in job_title, permissions in access_role.
+     *
+     * The template used to put "Software Engineer" in a `role` column and the
+     * permission in `access_role`, leaving `job_title` empty — so the file an
+     * admin opened demonstrated the confusing arrangement rather than the clear
+     * one. The parser still accepts `role` as an alias for files exported from
+     * elsewhere; the template no longer teaches it.
+     */
     const template = [
-      'email,name,role,access_role,departments,projects,job_title,timezone',
-      'alex@example.com,Alex Johnson,Software Engineer,employee,"Operations|Night Shift","CareVance HRMS",,Asia/Kolkata',
-      'jordan@example.com,Jordan Lee,Team Lead,manager,"Operations","Implementation",,America/New_York',
+      'email,name,access_role,job_title,departments,projects,joining_date,timezone',
+      'alex@example.com,Alex Johnson,employee,Software Engineer,"Operations|Night Shift","CareVance HRMS",2026-09-01,Asia/Kolkata',
+      'jordan@example.com,Jordan Lee,manager,Team Lead,"Operations","Implementation",2026-09-15,America/New_York',
     ].join('\n');
 
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });

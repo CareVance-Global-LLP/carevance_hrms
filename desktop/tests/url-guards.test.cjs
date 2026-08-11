@@ -39,14 +39,25 @@ function extractFunction(name) {
 }
 
 const APP_URL = 'https://app.carevance.test';
+const LOCAL_SHELL_ORIGIN = 'http://127.0.0.1:43117';
+
+// isSameOriginAsApp also consults `localShellOrigin`, the loopback origin the
+// offline shell binds. It must be injected here: left undefined, the reference
+// throws inside the guard's own try/catch and every check quietly returns
+// false, which would look like a passing "deny" test while actually breaking
+// navigation to the real app.
 // eslint-disable-next-line no-new-func
 const build = new Function(
   'APP_URL',
+  'localShellOrigin',
   `${extractFunction('isGoogleSignInUrl')};
    ${extractFunction('isSameOriginAsApp')};
    return { isGoogleSignInUrl, isSameOriginAsApp };`,
 );
-const { isGoogleSignInUrl, isSameOriginAsApp } = build(APP_URL);
+const { isGoogleSignInUrl, isSameOriginAsApp } = build(APP_URL, LOCAL_SHELL_ORIGIN);
+
+// The same guards with no offline shell running, to prove it fails closed.
+const { isSameOriginAsApp: isSameOriginWithoutShell } = build(APP_URL, null);
 
 test('google sign-in allowlist matches the real host', () => {
   assert.strictEqual(isGoogleSignInUrl('https://accounts.google.com/o/oauth2/v2/auth?x=1'), true);
@@ -93,4 +104,28 @@ test('navigation to any other origin is refused', () => {
   for (const url of offOrigin) {
     assert.strictEqual(isSameOriginAsApp(url), false, `should have refused ${url}`);
   }
+});
+
+test('the offline shell origin is navigable while it is running', () => {
+  assert.strictEqual(isSameOriginAsApp(`${LOCAL_SHELL_ORIGIN}/attendance`), true);
+  assert.strictEqual(isSameOriginAsApp(LOCAL_SHELL_ORIGIN), true);
+});
+
+test('loopback is not blanket-trusted — only the port the shell actually bound', () => {
+  // Any process on the machine can listen on loopback, so "it is localhost"
+  // is not the test; "it is the origin we ourselves bound" is.
+  const otherLoopback = [
+    'http://127.0.0.1:43118/dashboard',
+    'http://127.0.0.1:8080/',
+    'http://localhost:43117/',   // different host string, different origin
+  ];
+
+  for (const url of otherLoopback) {
+    assert.strictEqual(isSameOriginAsApp(url), false, `should have refused ${url}`);
+  }
+});
+
+test('with no offline shell running, loopback is refused entirely', () => {
+  assert.strictEqual(isSameOriginWithoutShell(`${LOCAL_SHELL_ORIGIN}/attendance`), false);
+  assert.strictEqual(isSameOriginWithoutShell(`${APP_URL}/dashboard`), true);
 });

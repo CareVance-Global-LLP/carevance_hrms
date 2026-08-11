@@ -53,6 +53,9 @@ export const MAX_JOINING_DATE_MONTHS_AHEAD = 24;
 /** Minimum digits for a phone number to look like one at all. */
 const MIN_PHONE_DIGITS = 10;
 
+/** users.password — UserController::store 'min:8'. */
+export const MIN_PASSWORD_LENGTH = 8;
+
 export const isValidEmail = (email: string): boolean =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
@@ -129,6 +132,19 @@ export function validateUserStep1(form: AddUserWizardForm): UserFieldErrors {
     errors.phone = tooLong(USER_FIELD_LIMITS.phone);
   } else if (!isValidPhone(phone)) {
     errors.phone = `Enter a valid phone number — at least ${MIN_PHONE_DIGITS} digits`;
+  }
+
+  if (!form.password) {
+    errors.password = 'Password is required';
+  } else if (form.password.length < MIN_PASSWORD_LENGTH) {
+    errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+
+  // Marked required in the UI, so it is checked here too — it used to be
+  // neither validated nor reliably selectable, which let an unset timezone
+  // through on a starred field.
+  if (!form.timezone.trim()) {
+    errors.timezone = 'Timezone is required';
   }
 
   // ── Job ─────────────────────────────────────────────────────

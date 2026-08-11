@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 're
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccess, hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { usePlan } from '@/hooks/usePlan';
+import { resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isLikelyMobile } from '@/lib/mobile';
 
 const lazyWithChunkRetry = <T extends { default: React.ComponentType<any> }>(
@@ -34,7 +35,6 @@ const PrivacyPolicyPage = lazyWithChunkRetry(() => import('@/pages/PrivacyPolicy
 const TermsPage = lazyWithChunkRetry(() => import('@/pages/TermsPage'));
 const PaymentPage = lazyWithChunkRetry(() => import('@/pages/PaymentPage'));
 const OwnerSignupPage = lazyWithChunkRetry(() => import('@/pages/OwnerSignupPage'));
-const InviteSignupPage = lazyWithChunkRetry(() => import('@/pages/InviteSignupPage'));
 const ContactSalesPage = lazyWithChunkRetry(() => import('@/pages/ContactSalesPage'));
 const SupportPage = lazyWithChunkRetry(() => import('@/pages/SupportPage'));
 const AcceptInvitePage = lazyWithChunkRetry(() => import('@/pages/AcceptInvitePage'));
@@ -50,6 +50,7 @@ const VerifyEmailPage = lazyWithChunkRetry(() => import('@/pages/VerifyEmailPage
 const ProfileOnboardingPage = lazyWithChunkRetry(() => import('@/pages/ProfileOnboardingPage'));
 const Dashboard = lazyWithChunkRetry(() => import('@/pages/Dashboard'));
 const MyTeam = lazyWithChunkRetry(() => import('@/pages/MyTeam'));
+const MyActivity = lazyWithChunkRetry(() => import('@/pages/MyActivity'));
 const OrganizationTree = lazyWithChunkRetry(() => import('@/pages/OrganizationTree'));
 const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
@@ -62,7 +63,6 @@ const Settings = lazyWithChunkRetry(() => import('@/pages/Settings'));
 const Monitoring = lazyWithChunkRetry(() => import('@/pages/Monitoring'));
 const Attendance = lazyWithChunkRetry(() => import('@/pages/Attendance'));
 const Chat = lazyWithChunkRetry(() => import('@/pages/Chat'));
-const UserManagement = lazyWithChunkRetry(() => import('@/pages/UserManagement'));
 const AuditLogs = lazyWithChunkRetry(() => import('@/pages/AuditLogs'));
 const ApprovalInbox = lazyWithChunkRetry(() => import('@/pages/ApprovalInbox'));
 const NotificationsCenter = lazyWithChunkRetry(() => import('@/pages/NotificationsCenter'));
@@ -356,6 +356,31 @@ function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNo
   return <>{children}</>;
 }
 
+/**
+ * Gate for a person's own tracker record.
+ *
+ * Supervisors always reach it; everyone else only where the organization has
+ * enabled self-view. The API refuses independently — this exists so a direct
+ * URL lands somewhere sensible instead of on an empty page.
+ */
+export function SelfActivityRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!resolveTrackerPolicy(user as any).can_view_own_activity) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 export function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
@@ -559,14 +584,14 @@ function App() {
               </PublicRoute>
             }
           />
-          <Route
-            path="/signup"
-            element={
-              <PublicRoute>
-                <InviteSignupPage />
-              </PublicRoute>
-            }
-          />
+          {/*
+            /signup served InviteSignupPage, the landing page for the legacy
+            `invites` system. That system has been removed (see the note in
+            backend routes/api/public.php), so there is nothing here to accept.
+            Redirected rather than dropped because the URL was mailed out and
+            may still be bookmarked. Modern invitations land on /accept-invite.
+          */}
+          <Route path="/signup" element={<Navigate to="/login" replace />} />
           <Route
             path="/signup-owner"
             element={
@@ -601,6 +626,9 @@ function App() {
           >
             <Route path="dashboard" element={effectiveDashboardElement} />
             <Route path="my-team" element={<EmployeeRoute><MyTeam /></EmployeeRoute>} />
+            {/* Self-view is an organization opt-in, so a direct URL has to be
+                turned away as well as the nav entry hidden. */}
+            <Route path="my-activity" element={<SelfActivityRoute><MyActivity /></SelfActivityRoute>} />
             <Route path="organization-tree" element={<OrganizationTree />} />
             <Route path="time-tracker" element={isSuperAdmin ? <Navigate to="/super-admin" replace /> : <DesktopTimerDashboard />} />
             <Route path="projects" element={<PlanFeatureRoute feature="project_tracking"><Projects /></PlanFeatureRoute>} />
@@ -714,7 +742,15 @@ function App() {
             <Route path="super-admin/billing" element={<SuperAdminRoute><SuperAdminBilling /></SuperAdminRoute>} />
             <Route path="super-admin/plans" element={<SuperAdminRoute><SuperAdminPlans /></SuperAdminRoute>} />
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
-            <Route path="legacy/user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />
+            {/*
+              `legacy/user-management` was removed here.
+
+              It was a fifth way to create an employee — a 729-line page calling
+              userApi.create with its own field set — and nothing in the app
+              linked to it, so it was reachable only by typing the path. Keeping
+              an unlinked create path alive meant every fix to the add-employee
+              flow had one more place to miss. Add User covers what it did.
+            */}
           </Route>
           <Route
             path="mobile/dashboard"

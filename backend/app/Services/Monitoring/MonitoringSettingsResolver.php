@@ -56,6 +56,18 @@ class MonitoringSettingsResolver
 
         $minutes = (int) $value;
 
+        /*
+         * Anything not in the allowed list means "inherit", including the
+         * legacy 1- and 3-minute settings that were selectable before
+         * per-minute capture was withdrawn.
+         *
+         * Inheriting is the right answer rather than rounding up to the
+         * nearest allowed value: the next value in the chain is the
+         * organization default, which an admin actually chose, and it is
+         * almost always LESS frequent than the sub-5-minute setting being
+         * replaced. Rounding up would override that deliberate choice with a
+         * more intrusive one.
+         */
         return in_array($minutes, $this->allowedIntervals(), true) ? $minutes : null;
     }
 

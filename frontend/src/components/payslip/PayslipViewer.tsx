@@ -184,7 +184,7 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
         <button
           onClick={() => downloadMutation.mutate()}
           disabled={downloadMutation.isPending}
-          className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-[#233B40] rounded-lg hover:bg-blue-950 disabled:opacity-50 transition-colors"
+          className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-primary-700 rounded-lg hover:bg-blue-950 disabled:opacity-50 transition-colors"
         >
           {downloadMutation.isPending ? (
             <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
@@ -272,7 +272,7 @@ export default function PayslipViewer({ payslipId, onBack }: { payslipId: number
         </div>
 
         {/* Net Pay */}
-        <div className="px-6 py-4 bg-[#D9EBED]">
+        <div className="px-6 py-4 bg-primary-100">
           <div className="flex justify-between items-center">
             <div>
               <p className="text-[10px] text-blue-700 uppercase tracking-wide font-semibold">Net Payable</p>

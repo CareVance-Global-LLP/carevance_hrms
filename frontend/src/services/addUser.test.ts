@@ -122,3 +122,85 @@ describe('addUserService import parsing', () => {
     });
   });
 });
+
+describe('joining dates in an import', () => {
+  it('reads a joining date column so onboarding can anchor on the real start date', () => {
+    // Without one the checklist anchors on whenever the invite is accepted,
+    // which puts every day -14 pre-boarding item in the past on arrival.
+    const parsed = addUserService.parseTableRows(
+      [
+        ['email', 'joining_date'],
+        ['starts.later@test.com', '2026-09-01'],
+      ],
+      [],
+      []
+    );
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.rows[0].joiningDate).toBe('2026-09-01');
+  });
+
+  it('accepts the common header spellings', () => {
+    const parsed = addUserService.parseTableRows(
+      [
+        ['email', 'Date of Joining'],
+        ['a@test.com', '2026-09-01'],
+      ],
+      [],
+      []
+    );
+
+    expect(parsed.rows[0].joiningDate).toBe('2026-09-01');
+  });
+
+  it('reports the row rather than importing someone with an unreadable date', () => {
+    const parsed = addUserService.parseTableRows(
+      [
+        ['email', 'joining_date'],
+        ['good@test.com', '2026-09-01'],
+        ['bad@test.com', 'next tuesday-ish'],
+      ],
+      [],
+      []
+    );
+
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0].email).toBe('good@test.com');
+    expect(parsed.errors[0]).toContain('Row 3');
+    expect(parsed.errors[0]).toContain('joining date');
+  });
+
+  it('leaves the joining date unset when the column is absent', () => {
+    const parsed = addUserService.parseTableRows([['email'], ['a@test.com']], [], []);
+
+    expect(parsed.rows[0].joiningDate).toBeUndefined();
+  });
+});
+
+describe('the downloadable template', () => {
+  it('puts job titles in job_title and permissions in access_role', () => {
+    // The old template demonstrated the confusing arrangement: a `role` column
+    // holding "Software Engineer" with job_title left empty.
+    const anchor = document.createElement('a');
+    const clickSpy = vi.spyOn(anchor, 'click').mockImplementation(() => undefined);
+    vi.spyOn(document, 'createElement').mockReturnValueOnce(anchor);
+    const blobSpy = vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:test');
+    vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    addUserService.downloadCsvTemplate();
+
+    const blob = blobSpy.mock.calls[0][0] as Blob;
+    expect(clickSpy).toHaveBeenCalled();
+
+    return blob.text().then((content) => {
+      const [header, firstRow] = content.split('\n');
+      expect(header).toContain('access_role');
+      expect(header).toContain('job_title');
+      expect(header).not.toMatch(/(^|,)role(,|$)/);
+      expect(firstRow).toContain('Software Engineer');
+      expect(header.split(',').indexOf('job_title'))
+        .toBe(firstRow.split(',').findIndex((cell) => cell === 'Software Engineer'));
+      vi.restoreAllMocks();
+    });
+  });
+});

@@ -291,9 +291,31 @@ Artisan::command('schedule:timers-close-idle', function () {
     $this->call('timers:close-idle');
 })->everyMinute();
 
+/*
+ * Screenshot retention. Runs nightly, off-peak: the purge deletes image files
+ * as well as rows, and there is no reason for that I/O to compete with a
+ * working day. Before this existed nothing ever deleted a screenshot.
+ */
+Artisan::command('schedule:screenshots-purge', function () {
+    $this->call('screenshots:purge');
+})->dailyAt('02:30');
+
 // Schedule: revoke access past the last working day, and advance onboarding
 // stages by date. Runs shortly after midnight so a last working day is fully
 // over before the account is closed.
 Artisan::command('schedule:lifecycle-process', function () {
     $this->call('lifecycle:process');
 })->dailyAt('00:30');
+
+/*
+ * Subscription cycle. Runs early so a renewal date that passed overnight is
+ * reflected before the working day starts, and so reminders land in the morning
+ * rather than at midnight.
+ *
+ * The middleware re-checks the same dates on every request, so a day this job
+ * misses cannot hand out free access — the job exists to make the transition
+ * visible and to send the reminders, not to be the only thing enforcing it.
+ */
+Artisan::command('schedule:billing-roll-cycle', function () {
+    $this->call('billing:roll-cycle');
+})->dailyAt('06:00');

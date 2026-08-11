@@ -256,7 +256,7 @@ export default function PaymentPage() {
           </div>
         </div>
 
-        <div className="mt-6 flex items-center justify-between rounded-xl bg-slate-900 px-5 py-4 text-white">
+        <div className="mt-6 flex items-center justify-between rounded-xl bg-surface-inverse px-5 py-4 text-on-inverse">
           <span className="text-sm font-semibold">Total amount due</span>
           <span className="text-xl font-bold">{PRICE_CURRENCY}{total.toLocaleString('en-IN')}</span>
         </div>

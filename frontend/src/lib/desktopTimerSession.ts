@@ -5,12 +5,26 @@ const DESKTOP_LAUNCH_AUTO_START_KEY = 'desktop_timer_launch_auto_start_seeded';
 const IDLE_AUTO_STOP_NOTICE_KEY = 'desktop_timer_idle_auto_stop_notice';
 const WORKED_BASELINE_KEY = 'desktop_timer_worked_baseline';
 export const DESKTOP_TIMER_IDLE_STOP_EVENT = 'desktop-timer:idle-auto-stop';
+/**
+ * Raised when someone comes back from an idle stretch that is still
+ * unanswered. The UI turns this into the keep/discard prompt.
+ */
+export const DESKTOP_TIMER_IDLE_RETURN_EVENT = 'desktop-timer:idle-return';
 export const DESKTOP_TIMER_STARTED_EVENT = 'desktop-timer:started';
 export const DESKTOP_TIMER_STOPPED_EVENT = 'desktop-timer:stopped';
 
 export type DesktopTimerIdleStopDetail = {
   userId: number;
   message: string;
+};
+
+export type DesktopTimerIdleReturnDetail = {
+  userId: number;
+  /** The idle activity row awaiting an answer. */
+  activityId: number;
+  idleSeconds: number;
+  /** Whether the timer is still running, which decides if "stop" is offered. */
+  timerRunning: boolean;
 };
 
 export type DesktopTimerSessionDetail = {
@@ -211,6 +225,12 @@ export const clearWorkedBaselineSnapshot = (userId?: number | null) => {
 
 export const emitDesktopTimerIdleStop = (detail: DesktopTimerIdleStopDetail) => {
   window.dispatchEvent(new CustomEvent<DesktopTimerIdleStopDetail>(DESKTOP_TIMER_IDLE_STOP_EVENT, { detail }));
+};
+
+/** Ask the person what an idle stretch was, now that they are back. */
+export const emitIdleReturnPrompt = (detail: DesktopTimerIdleReturnDetail) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<DesktopTimerIdleReturnDetail>(DESKTOP_TIMER_IDLE_RETURN_EVENT, { detail }));
 };
 
 export const emitDesktopTimerStarted = (detail: DesktopTimerSessionDetail) => {

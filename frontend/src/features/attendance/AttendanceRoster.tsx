@@ -70,7 +70,7 @@ export function RateBar({ rate }: { rate: number }) {
       </span>
       <span
         className="text-xs font-bold tabular-nums"
-        style={{ color: clamped >= LOW_ATTENDANCE_THRESHOLD ? '#3A4147' : '#7A560E' }}
+        style={{ color: clamped >= LOW_ATTENDANCE_THRESHOLD ? 'rgb(var(--n-700))' : 'rgb(var(--warning-800))' }}
       >
         {clamped}%
       </span>
@@ -88,9 +88,9 @@ export function TimeSplit({ row }: { row: AttendanceRow }) {
   if (total === 0) return <span className="text-xs text-slate-300">—</span>;
 
   const segments = [
-    { key: 'work', value: work, color: '#5D969D', label: 'Worked' },
-    { key: 'idle', value: idle, color: '#C8923A', label: 'Idle' },
-    { key: 'break', value: brk, color: '#D2D8DD', label: 'Break' },
+    { key: 'work', value: work, color: 'rgb(var(--brand-500))', label: 'Worked' },
+    { key: 'idle', value: idle, color: 'rgb(var(--accent-500))', label: 'Idle' },
+    { key: 'break', value: brk, color: 'rgb(var(--n-300))', label: 'Break' },
   ].filter((segment) => segment.value > 0);
 
   return (
@@ -469,9 +469,9 @@ export default function AttendanceRoster({
 
       <div className="flex flex-wrap items-center gap-4 px-1 text-[10px] font-semibold text-slate-400">
         {[
-          { color: '#5D969D', label: 'Worked' },
-          { color: '#C8923A', label: 'Idle' },
-          { color: '#D2D8DD', label: 'Break' },
+          { color: 'rgb(var(--brand-500))', label: 'Worked' },
+          { color: 'rgb(var(--accent-500))', label: 'Idle' },
+          { color: 'rgb(var(--n-300))', label: 'Break' },
         ].map((legend) => (
           <span key={legend.label} className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: legend.color }} />

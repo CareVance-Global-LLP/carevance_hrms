@@ -621,7 +621,7 @@ export default function DepartmentBoard({
           Manager
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: '#E4E8EB' }} />
+          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: 'rgb(var(--n-200))' }} />
           Employee
         </span>
         <span className="flex items-center gap-1.5">

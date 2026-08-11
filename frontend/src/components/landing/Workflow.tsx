@@ -31,7 +31,7 @@ function TimelineLine() {
 
 export default function Workflow() {
   return (
-    <section id="workflow" className="bg-[#f3f6fb] px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+    <section id="workflow" className="bg-surface-sunken px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <SectionNumber number={3} label="Workflow" className="mb-6" />
         <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 text-center">
