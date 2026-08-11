@@ -12,7 +12,7 @@ export default function ContactSalesPage() {
   const mailtoLink = `mailto:${pricingUi.contactEmail}?subject=CareVance%20Sales%20Inquiry`;
 
   return (
-    <div className="relative overflow-x-clip bg-[linear-gradient(180deg,#fcfdff_0%,#f2f8ff_24%,#eef5ff_48%,#f8fafc_100%)] text-slate-950">
+    <div className="relative overflow-x-clip page-canvas text-slate-950">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.35),transparent_58%)]" />
       <Navbar />
 

@@ -76,7 +76,7 @@ class RootErrorBoundary extends React.Component<RootErrorBoundaryProps, RootErro
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="mt-4 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+            className="mt-4 rounded-md bg-surface-inverse px-4 py-2 text-sm font-medium text-on-inverse"
           >
             Reload app
           </button>
@@ -122,7 +122,7 @@ function RuntimeGuard({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="mt-4 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+            className="mt-4 rounded-md bg-surface-inverse px-4 py-2 text-sm font-medium text-on-inverse"
           >
             Reload app
           </button>

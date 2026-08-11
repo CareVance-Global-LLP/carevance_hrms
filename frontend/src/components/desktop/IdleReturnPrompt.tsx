@@ -84,7 +84,7 @@ export default function IdleReturnPrompt() {
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="idle-return-title"
@@ -114,7 +114,7 @@ export default function IdleReturnPrompt() {
             type="button"
             onClick={() => resolve('discarded')}
             disabled={Boolean(busy)}
-            className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+            className="w-full rounded-lg bg-surface-inverse px-4 py-2.5 text-sm font-semibold text-on-inverse transition hover:bg-surface-inverse/90 disabled:opacity-60"
           >
             {busy === 'discarded' ? 'Removing…' : `Remove ${idleLabel} from my timesheet`}
           </button>

@@ -121,13 +121,13 @@ export default function CheckoutPage() {
 
   if (plan.enterpriseContactOnly) {
     return (
-      <div className="relative overflow-x-clip bg-[linear-gradient(180deg,#fcfdff_0%,#f2f8ff_24%,#eef5ff_48%,#f8fafc_100%)] text-slate-950">
+      <div className="relative overflow-x-clip page-canvas text-slate-950">
         <Navbar />
         <section className="flex min-h-[60vh] items-center justify-center px-4 py-24">
           <div className="max-w-md text-center">
             <h1 className="text-3xl font-semibold tracking-[-0.06em]">Enterprise Plan</h1>
             <p className="mt-4 text-slate-600">This plan requires a sales conversation. Please contact our sales team.</p>
-            <Link to="/contact-sales" className="mt-6 inline-flex items-center gap-2 rounded-full bg-slate-950 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
+            <Link to="/contact-sales" className="mt-6 inline-flex items-center gap-2 rounded-full bg-surface-inverse px-6 py-3 text-sm font-semibold text-on-inverse transition hover:bg-surface-inverse/90">
               Contact Sales <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
@@ -138,7 +138,7 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="relative overflow-x-clip bg-[linear-gradient(180deg,#fcfdff_0%,#f2f8ff_24%,#eef5ff_48%,#f8fafc_100%)] text-slate-950">
+    <div className="relative overflow-x-clip page-canvas text-slate-950">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.35),transparent_58%)]" />
       <Navbar />
 
@@ -272,7 +272,7 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-between rounded-2xl bg-slate-950 px-5 py-4 text-white">
+            <div className="mt-6 flex items-center justify-between rounded-2xl bg-surface-inverse px-5 py-4 text-on-inverse">
               <span className="text-sm font-semibold">
                 {isUpgradeMode ? 'Total amount due' : `Total per ${billingCycle === 'monthly' ? 'month' : 'year'}`}
               </span>

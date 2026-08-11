@@ -213,7 +213,7 @@ export default function BreakTrackingPage() {
                     <Clock className="h-4 w-4" />
                     <ElapsedTimer startAt={activeBreak.start_at} />
                   </div>
-                  <Button onClick={() => endMutation.mutate()} disabled={endMutation.isPending} className="bg-surface-inverse hover:bg-slate-800">
+                  <Button onClick={() => endMutation.mutate()} disabled={endMutation.isPending} className="bg-surface-inverse hover:bg-surface-inverse/90">
                     <Square className="h-4 w-4" /> End Break
                   </Button>
                 </div>

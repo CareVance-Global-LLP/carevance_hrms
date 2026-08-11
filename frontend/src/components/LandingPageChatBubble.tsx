@@ -99,7 +99,7 @@ export default function LandingPageChatBubble() {
                 <div
                   className={`max-w-[75%] rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
                     msg.role === 'user'
-                      ? 'bg-[#5B9B8E] text-white'
+                      ? 'bg-primary-500 text-white'
                       : 'bg-white text-slate-700 border border-slate-100 shadow-sm'
                   }`}
                 >
@@ -111,9 +111,9 @@ export default function LandingPageChatBubble() {
               <div className="flex justify-start">
                 <LandingBotAvatar className="mr-1.5 mt-0.5" />
                 <div className="flex items-center gap-1 rounded-xl border border-slate-100 bg-white px-3 py-2.5">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#5B9B8E]" style={{ animationDelay: '0s' }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#5B9B8E]" style={{ animationDelay: '0.15s' }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#5B9B8E]" style={{ animationDelay: '0.3s' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary-500" style={{ animationDelay: '0s' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary-500" style={{ animationDelay: '0.15s' }} />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary-500" style={{ animationDelay: '0.3s' }} />
                 </div>
               </div>
             )}
@@ -129,7 +129,7 @@ export default function LandingPageChatBubble() {
                     type="button"
                     disabled={isLoading}
                     onClick={() => void send(q)}
-                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-[#633806] transition hover:border-[#D89B3C] hover:bg-[#D89B3C]/10 hover:text-[#633806] disabled:opacity-50"
+                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-[#633806] transition hover:border-[#D89B3C] hover:bg-accent-500/10 hover:text-[#633806] disabled:opacity-50"
                   >
                     {q}
                   </button>
@@ -142,7 +142,7 @@ export default function LandingPageChatBubble() {
             <div className="border-t border-slate-100 bg-white px-3 pt-2 pb-1.5">
               <a
                 href={CTA_BUTTON.href}
-                className="block w-full rounded-lg bg-[#D89B3C] px-4 py-2 text-center text-[13px] font-medium text-white transition hover:bg-[#C8923A]"
+                className="block w-full rounded-lg bg-accent-500 px-4 py-2 text-center text-[13px] font-medium text-white transition hover:bg-[#C8923A]"
               >
                 {CTA_BUTTON.label}
               </a>
@@ -169,7 +169,7 @@ export default function LandingPageChatBubble() {
                 type="button"
                 onClick={() => void send(input)}
                 disabled={isLoading || !input.trim()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#5B9B8E] text-white disabled:opacity-50"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-500 text-white disabled:opacity-50"
               >
                 <Send className="h-3.5 w-3.5" />
               </button>

@@ -100,7 +100,7 @@ export default function PayrollRunCard({
           {run.status === 'released' && onDisburse && (
             <button
               onClick={(e) => { e.stopPropagation(); onDisburse(run.id); }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-[#4A7A80] transition-colors"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
             >
               Disburse
             </button>

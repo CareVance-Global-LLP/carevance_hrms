@@ -1,9 +1,40 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+/**
+ * Restart the dev server when the Tailwind config changes.
+ *
+ * PostCSS reads tailwind.config.js exactly once, at boot. src/styles/theme.css
+ * is an ordinary source file and hot-reloads. So editing both — or pulling a
+ * commit that touches both — leaves a running server with the NEW token layer
+ * and the OLD palette, and the two halves disagree about what a colour means:
+ *
+ *   .bg-white   remapped by theme.css   -> flips dark
+ *   bg-slate-50 remapped by the config  -> stays literal #f8fafc, i.e. white
+ *   text-slate-900 remapped by the config -> stays literal near-black
+ *
+ * which renders a white page with black cards and black-on-black text. Watching
+ * the file turns a silent half-applied theme into a two-second restart.
+ */
+function restartOnTailwindConfigChange(): Plugin {
+  const watched = path.resolve(__dirname, 'tailwind.config.js')
+  return {
+    name: 'carevance:restart-on-tailwind-config-change',
+    apply: 'serve',
+    configureServer(server) {
+      server.watcher.add(watched)
+      server.watcher.on('change', (file) => {
+        if (path.resolve(file) !== watched) return
+        server.config.logger.info('tailwind.config.js changed — restarting so PostCSS re-reads it')
+        void server.restart()
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), restartOnTailwindConfigChange()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

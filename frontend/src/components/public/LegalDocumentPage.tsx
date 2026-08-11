@@ -22,7 +22,7 @@ export default function LegalDocumentPage({
   const navbarMode = useMemo(() => (window.desktopTracker ? 'desktop-auth' : 'marketing'), []);
 
   return (
-    <div className="relative overflow-x-clip bg-[linear-gradient(180deg,#fcfdff_0%,#f2f8ff_24%,#eef5ff_48%,#f8fafc_100%)] text-slate-950">
+    <div className="relative overflow-x-clip page-canvas text-slate-950">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.35),transparent_58%)]" />
       <div className="pointer-events-none absolute left-[-8%] top-[16%] h-80 w-80 rounded-full bg-sky-200/30 blur-3xl" />
       <div className="pointer-events-none absolute right-[-6%] top-[38%] h-[26rem] w-[26rem] rounded-full bg-cyan-200/20 blur-3xl" />

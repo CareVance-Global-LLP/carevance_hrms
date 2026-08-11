@@ -47,7 +47,7 @@ function ShieldSVG() {
 
 export default function Security() {
   return (
-    <section id="security" className="bg-[#f3f6fb] px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+    <section id="security" className="bg-surface-sunken px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
       <div className="mx-auto max-w-7xl">
         <div className="rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-8 sm:py-10 lg:px-10">
           <ShieldSVG />

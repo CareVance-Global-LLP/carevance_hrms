@@ -37,7 +37,7 @@ export default function Footer() {
   const { openPreferences } = useConsent();
 
   return (
-    <footer className="bg-[#f3f6fb] px-4 pb-8 pt-10 sm:px-6 lg:px-8">
+    <footer className="bg-surface-sunken px-4 pb-8 pt-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-8 sm:py-10">
         <motion.div
           initial="hidden"

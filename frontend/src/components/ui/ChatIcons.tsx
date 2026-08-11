@@ -29,7 +29,7 @@ interface DefaultBotAvatarProps {
 export function DefaultBotAvatar({ className = '' }: DefaultBotAvatarProps) {
   return (
     <div
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[#E1F5EE] ${className}`}
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius)] bg-emerald-50 ${className}`}
     >
       <SparkleIcon size={16} />
     </div>
@@ -43,7 +43,7 @@ interface LandingBotAvatarProps {
 export function LandingBotAvatar({ className = '' }: LandingBotAvatarProps) {
   return (
     <div
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[#FAEEDA] ${className}`}
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius)] bg-accent-100 ${className}`}
     >
       <SparkleIcon size={16} />
     </div>

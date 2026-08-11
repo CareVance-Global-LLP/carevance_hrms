@@ -352,7 +352,7 @@ function CompetencyBars({
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
         {rating ? (
           <div
-            className={cn('h-full rounded-full', tone === 'self' ? 'bg-[#B9CFD3]' : 'bg-blue-600')}
+            className={cn('h-full rounded-full', tone === 'self' ? 'bg-primary-200' : 'bg-blue-600')}
             style={{ width: `${(rating / 5) * 100}%` }}
           />
         ) : null}

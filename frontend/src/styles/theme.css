@@ -222,6 +222,16 @@
   --border-strong: 210 216 221;
   --ring: 93 150 157;
   --on-brand: 255 255 255;
+
+  /* Page canvas gradient — see the .page-canvas utility below. */
+  --canvas-1: 252 253 255;
+  --canvas-2: 242 248 255;
+  --canvas-3: 238 245 255;
+  --canvas-4: 248 250 252;
+
+  /* Tinted wash behind avatar tiles and the active workspace tab. */
+  --wash-from: 224 242 254;
+  --wash-to: 219 234 254;
 }
 
 /* ===================== DARK ===================== */
@@ -429,6 +439,16 @@
   --ring: 140 198 206;
   --on-brand: 10 15 20;
 
+  /* Deepest at the top so the canvas recedes behind cards, mirroring the way
+     the light gradient lifts towards the viewer. */
+  --canvas-1: 10 15 20;
+  --canvas-2: 13 19 25;
+  --canvas-3: 15 22 29;
+  --canvas-4: 14 20 26;
+
+  --wash-from: 22 48 58;
+  --wash-to: 30 69 80;
+
   /* ---- legacy variables kept in sync so pre-token components follow the theme ---- */
   --background: #0E141A;
   --surface: #161F26;
@@ -475,6 +495,42 @@
 
 /* ===================== theme-wide surface behaviour ===================== */
 
+/*
+ * Named surfaces for the three things an arbitrary Tailwind value used to do.
+ *
+ * `bg-[linear-gradient(...,#fcfdff,...)]` bakes literal hexes into the class
+ * name, so no token can reach it and the surface stays light in dark mode —
+ * while the text on top of it flips, which is how the signup page ended up
+ * white-on-white. These carry both themes instead.
+ */
+
+/* Full-page canvas for auth and public pages (signup, login recovery, legal). */
+.page-canvas {
+  background-image: linear-gradient(
+    180deg,
+    rgb(var(--canvas-1)) 0%,
+    rgb(var(--canvas-2)) 26%,
+    rgb(var(--canvas-3)) 56%,
+    rgb(var(--canvas-4)) 100%
+  );
+}
+
+/* Tinted tile: avatar monograms, the active workspace tab. */
+.tile-wash {
+  background-image: linear-gradient(135deg, rgb(var(--wash-from)) 0%, rgb(var(--wash-to)) 100%);
+}
+
+/*
+ * Chrome that is dark in BOTH themes: media letterboxes and product mocks of a
+ * dark UI. `bg-slate-900` cannot express this — the neutral ramp is inverted,
+ * so it turns light at exactly the moment the rest of the page turns dark.
+ * Same reasoning as the sidebar rail.
+ */
+.surface-fixed-dark {
+  background-color: #131b21;
+  color: #e6edf0;
+}
+
 body {
   background-color: rgb(var(--app-bg));
   color: rgb(var(--n-900));
@@ -517,6 +573,15 @@ body {
 :root[data-theme="dark"] .border-white\/70,
 :root[data-theme="dark"] .border-white\/80 {
   border-color: rgb(var(--n-300));
+}
+
+/*
+ * Opaque `border-white` is never a hairline — it is the cut-out ring around a
+ * presence dot or a stacked avatar, and it works by matching the surface
+ * behind it. Left white it reads as a bright halo on every dark card.
+ */
+:root[data-theme="dark"] .border-white {
+  border-color: rgb(var(--surface-card));
 }
 
 /* Cards that sit on top of another card read as raised. */

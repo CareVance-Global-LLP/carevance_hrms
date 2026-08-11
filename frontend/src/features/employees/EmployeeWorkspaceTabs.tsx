@@ -19,7 +19,7 @@ export default function EmployeeWorkspaceTabs({
           className={cn(
             'rounded-full px-4 py-2.5 text-sm font-semibold transition',
             activeTab === tab.id
-              ? 'bg-[linear-gradient(135deg,#e0f2fe_0%,#ffffff_100%)] text-sky-800 shadow-[0_16px_32px_-24px_rgba(14,165,233,0.65)]'
+              ? 'tile-wash text-sky-800 shadow-[0_16px_32px_-24px_rgba(14,165,233,0.65)]'
               : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-950'
           )}
         >

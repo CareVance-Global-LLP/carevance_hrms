@@ -80,7 +80,7 @@ export default function PricingPage() {
         <FeatureComparison />
       </div>
 
-      <div className="bg-[#f3f6fb]">
+      <div className="bg-surface-sunken">
         <FAQSection />
       </div>
 
