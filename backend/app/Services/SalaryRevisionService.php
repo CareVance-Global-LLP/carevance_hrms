@@ -18,8 +18,24 @@ class SalaryRevisionService
         $this->calculator = $calculator;
     }
 
-    public function generateLetter(int $userId, int $orgId, float $newCtc, string $revisionType, string $reason, int $generatedBy): SalaryRevisionLetter
-    {
+    /**
+     * @param string|null $effectiveFrom Y-m-d the new salary starts from.
+     *        Defaults to the first of NEXT month, which is what a revision
+     *        agreed today normally means and what comparable products default
+     *        to. It used to be hardcoded to the start of the CURRENT month —
+     *        the caller could not express a date at all — so a revision agreed
+     *        on the 20th silently backdated itself to the 1st and paid the new
+     *        salary for three weeks nobody had agreed to.
+     */
+    public function generateLetter(
+        int $userId,
+        int $orgId,
+        float $newCtc,
+        string $revisionType,
+        string $reason,
+        int $generatedBy,
+        ?string $effectiveFrom = null
+    ): SalaryRevisionLetter {
         $template = EmployeePayrollTemplate::where('user_id', $userId)
             ->where('organization_id', $orgId)
             ->firstOrFail();
@@ -58,7 +74,9 @@ class SalaryRevisionService
             'new_ctc' => $newCtc,
             'revision_percentage' => $revisionPercentage,
             'revision_type' => $revisionType,
-            'effective_from' => now()->startOfMonth(),
+            'effective_from' => $effectiveFrom
+                ? \Carbon\Carbon::parse($effectiveFrom)->startOfDay()
+                : now()->addMonthNoOverflow()->startOfMonth(),
             'reason' => $reason,
             'old_breakdown' => $oldBreakdown,
             'new_breakdown' => $newBreakdown,
