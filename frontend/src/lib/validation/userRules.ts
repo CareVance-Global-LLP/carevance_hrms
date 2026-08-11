@@ -53,8 +53,35 @@ export const MAX_JOINING_DATE_MONTHS_AHEAD = 24;
 /** Minimum digits for a phone number to look like one at all. */
 const MIN_PHONE_DIGITS = 10;
 
-/** users.password — UserController::store 'min:8'. */
-export const MIN_PASSWORD_LENGTH = 8;
+/**
+ * Password policy, mirroring `Password::defaults()` in AppServiceProvider.
+ *
+ * That rule is environment-dependent: `Password::min(8)` outside production,
+ * and in production `min(12)->letters()->mixedCase()->numbers()->symbols()
+ * ->uncompromised()`. The browser cannot know which environment it is talking
+ * to, so it holds to the stricter one — being stricter than the server is safe,
+ * while being looser means an admin sets a password that works in staging and
+ * is rejected in production.
+ *
+ * `uncompromised()` checks the password against a breach corpus and can only be
+ * done server-side, so a 422 on that is still possible and is handled by the
+ * field-error routing rather than pre-empted here.
+ */
+export const MIN_PASSWORD_LENGTH = 12;
+
+const PASSWORD_COMPOSITION: Array<{ test: RegExp; missing: string }> = [
+  { test: /\p{L}/u, missing: 'a letter' },
+  { test: /\p{Lu}/u, missing: 'an upper-case letter' },
+  { test: /\p{Ll}/u, missing: 'a lower-case letter' },
+  { test: /\d/, missing: 'a number' },
+  { test: /[^\p{L}\d\s]/u, missing: 'a symbol' },
+];
+
+/** The first composition requirement a password fails, or null. */
+export function passwordShortfall(password: string): string | null {
+  const missing = PASSWORD_COMPOSITION.filter((rule) => !rule.test.test(password)).map((r) => r.missing);
+  return missing.length > 0 ? missing.join(', ') : null;
+}
 
 export const isValidEmail = (email: string): boolean =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -137,7 +164,12 @@ export function validateUserStep1(form: AddUserWizardForm): UserFieldErrors {
   if (!form.password) {
     errors.password = 'Password is required';
   } else if (form.password.length < MIN_PASSWORD_LENGTH) {
-    errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+    errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters — this is the password the joiner signs in with`;
+  } else {
+    const shortfall = passwordShortfall(form.password);
+    if (shortfall) {
+      errors.password = `Add ${shortfall}`;
+    }
   }
 
   // Marked required in the UI, so it is checked here too — it used to be

@@ -1,4 +1,4 @@
-import {useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useId, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Hash, AlertTriangle, XCircle, IndianRupee, Users, FileStack, Lock } from 'lucide-react';
 import { groupApi, payrollApi } from '../../../services/api';
@@ -64,6 +64,18 @@ const TIMEZONES = [
 
 export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromStep2, incompleteUser, setIncompleteUser }: Step1Props) {
   const maxJoiningDate = useMemo(computeMaxJoiningDate, []);
+
+  /**
+   * Stable ids so each visible caption is bound to its control.
+   *
+   * Every field here previously rendered a bare `<label>` next to an input with
+   * no id, so nothing associated them: a screen reader announced each one as
+   * "edit text, blank", and clicking a caption did not focus its field. Chrome's
+   * own audit reported the whole form as "No label associated with a form
+   * field". `useId()` keeps them unique if the wizard is ever rendered twice.
+   */
+  const idPrefix = useId();
+  const fieldId = (name: string) => `${idPrefix}-${name}`;
 
   /**
    * The eleven curated zones, plus the current value if it is not among them.
@@ -188,6 +200,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
     const fieldErrors = validateUserStep1(form);
     setErrors((prev) => ({ ...prev, [field]: fieldErrors[field] }));
+
   };
 
   /*
@@ -209,11 +222,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       {/* Name Row */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <label htmlFor={fieldId('f1')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Briefcase className="h-3.5 w-3.5 text-slate-400" />
             First Name <span className="text-red-400">*</span>
           </label>
           <TextInput
+            id={fieldId('f1')}
             type="text"
             value={form.firstName}
             onChange={(e) => {
@@ -227,8 +241,9 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">Last Name</label>
+          <label htmlFor={fieldId('f2')} className="block text-sm font-medium text-slate-700 mb-1.5">Last Name</label>
           <TextInput
+            id={fieldId('f2')}
             type="text"
             value={form.lastName}
             onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
@@ -240,11 +255,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       {/* Email & Phone */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <label htmlFor={fieldId('f3')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Mail className="h-3.5 w-3.5 text-slate-400" />
             Email Address <span className="text-red-400">*</span>
           </label>
           <TextInput
+            id={fieldId('f3')}
             type="email"
             value={form.email}
             onChange={(e) => {
@@ -290,11 +306,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           )}
         </div>
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <label htmlFor={fieldId('f4')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Lock className="h-3.5 w-3.5 text-slate-400" />
             Temporary Password <span className="text-red-400">*</span>
           </label>
           <TextInput
+            id={fieldId('f4')}
             type="text"
             value={form.password}
             onChange={(e) => {
@@ -303,7 +320,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             }}
             onBlur={() => handleBlur('password')}
             className={errorClass('password')}
-            placeholder="At least 8 characters"
+            placeholder="At least 12 characters"
             autoComplete="new-password"
           />
           {errors.password ? (
@@ -318,11 +335,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           )}
         </div>
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <label htmlFor={fieldId('f5')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Phone className="h-3.5 w-3.5 text-slate-400" />
             Phone Number <span className="text-red-400">*</span>
           </label>
           <TextInput
+            id={fieldId('f5')}
             type="tel"
             /*
              * maxLength mirrors the server's cap, so an over-long paste is
@@ -358,11 +376,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           />
         </div>
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <label htmlFor={fieldId('f7')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Briefcase className="h-3.5 w-3.5 text-slate-400" />
             Designation <span className="text-red-400">*</span>
           </label>
           <TextInput
+            id={fieldId('f7')}
             type="text"
             maxLength={USER_FIELD_LIMITS.designation}
             value={form.designation}
@@ -380,11 +399,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
       {/* Employee Code (optional) */}
       <div>
-        <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+        <label htmlFor={fieldId('f8')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
           <Hash className="h-3.5 w-3.5 text-slate-400" />
           Employee Code <span className="text-xs text-slate-400 font-normal">(optional)</span>
         </label>
         <TextInput
+            id={fieldId('f8')}
           type="text"
           maxLength={USER_FIELD_LIMITS.employeeCode}
           value={form.employeeCode}
@@ -447,11 +467,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       {/* Date of Joining & Work Location */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <label htmlFor={fieldId('f10')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Calendar className="h-3.5 w-3.5 text-slate-400" />
             Date of Joining <span className="text-red-400">*</span>
           </label>
           <TextInput
+            id={fieldId('f10')}
             type="date"
             value={form.joiningDate}
             /* Was capped at today, which made pre-boarding impossible on the
@@ -514,11 +535,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
         {/* Annual CTC */}
         <div className="mb-4">
-          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <label htmlFor={fieldId('f13')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <IndianRupee className="h-3.5 w-3.5 text-slate-400" />
             Annual CTC <span className="text-xs text-slate-400 font-normal">(optional)</span>
           </label>
           <TextInput
+            id={fieldId('f13')}
             type="number"
             min="0"
             step="1000"

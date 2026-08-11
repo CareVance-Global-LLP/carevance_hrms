@@ -50,14 +50,25 @@ vi.mock('@/services/api', () => ({
 // Step 3 fetches an employee workspace that does not exist yet; not the subject.
 vi.mock('@/components/EmployeeDetailsSection', () => ({ default: () => null }));
 
+/*
+ * Filled with change events rather than user.type(). Typing character by
+ * character across five fields pushed each test past the default timeout once
+ * the whole suite ran in parallel — and none of these assertions depend on
+ * per-keystroke behaviour.
+ */
 const fillValidStep1 = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.type(screen.getByPlaceholderText("John"), 'Priya');
-  await user.type(screen.getByPlaceholderText("john@company.com"), 'priya@example.com');
-  await user.type(screen.getByPlaceholderText("+91 98765 43210"), '9876543210');
-  await user.type(screen.getByPlaceholderText("e.g., Software Engineer"), 'Data Analyst');
+  const set = (placeholder: string, value: string) =>
+    fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value } });
+
+  set('John', 'Priya');
+  set('john@company.com', 'priya@example.com');
+  set('+91 98765 43210', '9876543210');
+  set('e.g., Software Engineer', 'Data Analyst');
   // A temporary password is set at creation time and is required.
-  await user.type(screen.getByPlaceholderText('At least 8 characters'), 'temp-pass-123');
-  await user.click(screen.getByRole('button', { name: /recruitment/i }));
+  set('At least 12 characters', 'Temp-Pass-1234!');
+  // Departments arrive from a query, so wait for the chip rather than assuming
+  // it has rendered — under a full-suite run it has not yet.
+  await user.click(await screen.findByRole('button', { name: /recruitment/i }));
 };
 
 const clickNext = async (user: ReturnType<typeof userEvent.setup>) => {

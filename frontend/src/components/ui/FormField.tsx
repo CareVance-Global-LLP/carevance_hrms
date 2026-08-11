@@ -27,15 +27,29 @@ export function FieldLabel({
   hint,
   className,
   labelClassName,
+  htmlFor,
 }: {
   children: ReactNode;
   hint?: ReactNode;
   className?: string;
   labelClassName?: string;
+  /**
+   * The id of the control this labels.
+   *
+   * Without it the `<label>` is decoration: a screen reader reaches the field
+   * and announces "edit text, blank", because the visible caption is not
+   * associated with anything. Chrome's own audit reports these as "No label
+   * associated with a form field". Pass it together with the same `id` on the
+   * control — `useId()` in the calling component is the easiest source.
+   */
+  htmlFor?: string;
 }) {
   return (
     <div className={cn('mb-1.5 flex min-h-[1.2rem] items-center justify-between gap-3', className)}>
-      <label className={cn('block min-w-0 flex-1 truncate whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-slate-500', labelClassName)}>
+      <label
+        htmlFor={htmlFor}
+        className={cn('block min-w-0 flex-1 truncate whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-slate-500', labelClassName)}
+      >
         {children}
       </label>
       {hint ? <span className="shrink-0 text-xs text-slate-400">{hint}</span> : null}

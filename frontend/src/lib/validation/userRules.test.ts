@@ -4,6 +4,7 @@ import {
   USER_FIELD_LIMITS,
   isValidPhone,
   maxDepartmentsFor,
+  MIN_PASSWORD_LENGTH,
   maxJoiningDate,
   validateUserStep1,
 } from './userRules';
@@ -17,7 +18,7 @@ const form = (overrides: Partial<AddUserWizardForm> = {}): AddUserWizardForm => 
   departmentIds: [1],
   // Both became required on main: a temporary password is set at creation, and
   // the timezone field is starred in the UI.
-  password: 'temp-pass-123',
+  password: 'Temp-Pass-1234!',
   timezone: 'Asia/Kolkata',
   ...overrides,
 });
@@ -143,6 +144,32 @@ describe('required fields', () => {
     expect(validateUserStep1(form({ email: 'not-an-email' })).email).toBe(
       'Enter a valid email address'
     );
+  });
+});
+
+describe('password policy mirrors Password::defaults()', () => {
+  /*
+   * Production requires min(12) with letters, mixed case, numbers and symbols.
+   * The browser holds to that even though dev only requires min(8): stricter
+   * than the server is safe, looser means a password that works in staging is
+   * refused in production.
+   */
+  it('requires the production minimum, not the dev one', () => {
+    expect(MIN_PASSWORD_LENGTH).toBe(12);
+    expect(validateUserStep1(form({ password: 'Short-1!' })).password).toContain('at least 12');
+  });
+
+  it('names what a long but weak password is missing', () => {
+    expect(validateUserStep1(form({ password: 'aaaaaaaaaaaaaa' })).password)
+      .toBe('Add an upper-case letter, a number, a symbol');
+  });
+
+  it('accepts a password meeting every requirement', () => {
+    expect(validateUserStep1(form({ password: 'Temp-Pass-1234!' })).password).toBeUndefined();
+  });
+
+  it('requires a password at all', () => {
+    expect(validateUserStep1(form({ password: '' })).password).toBe('Password is required');
   });
 });
 
