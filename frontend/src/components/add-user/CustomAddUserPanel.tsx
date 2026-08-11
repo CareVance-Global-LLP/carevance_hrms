@@ -116,7 +116,7 @@ const canProceedFromStep1 = (form: AddUserWizardForm, incompleteUser: Incomplete
     form.firstName.trim() !== '' &&
     form.email.trim() !== '' &&
     isValidEmail(form.email) &&
-    form.password.length >= 8 &&
+    form.password.length >= 12 &&
     form.phone.trim() !== '' &&
     isValidPhone(form.phone) &&
     form.departmentIds.length > 0 &&
@@ -140,8 +140,11 @@ const validateStep1 = (form: AddUserWizardForm): Partial<Record<keyof AddUserWiz
   }
   if (!form.password) {
     errors.password = 'Password is required';
-  } else if (form.password.length < 8) {
-    errors.password = 'Password must be at least 8 characters';
+  } else if (form.password.length < 12) {
+    // Matches Password::defaults() on the API, which in production also
+    // requires mixed case, numbers, symbols and a breach check. Catching the
+    // length here means the admin is not told about it only after submitting.
+    errors.password = 'Use at least 12 characters — this is the password the joiner signs in with';
   }
   if (!form.phone.trim()) {
     errors.phone = 'Phone number is required';

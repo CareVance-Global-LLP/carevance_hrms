@@ -29,6 +29,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
@@ -212,7 +213,19 @@ class UserController extends Controller
             'email' => 'required|string|email|max:255|unique:users,email',
             'phone' => 'nullable|string|max:64',
             'role' => 'nullable|in:admin,manager,employee,client',
-            'password' => 'nullable|string|min:8',
+            /*
+             * The same policy the rest of the app enforces.
+             *
+             * This was a hardcoded `min:8`, which quietly made the admin-set
+             * temporary password the weakest credential the system accepts: an
+             * invited joiner setting their own password goes through
+             * Password::defaults() — in production 12 characters, mixed case,
+             * numbers, symbols and a breach check — while an admin creating the
+             * same person here could set eight lowercase letters. A password
+             * handed over by a third party should be held to a higher bar than
+             * one the owner chooses, not a lower one.
+             */
+            'password' => ['nullable', 'string', Password::defaults()],
             'settings' => 'nullable|array',
             'settings.monitoring_interval_minutes' => 'nullable|integer|in:1,3,5,10,15,30',
             'settings.can_edit_time' => 'nullable|boolean',
