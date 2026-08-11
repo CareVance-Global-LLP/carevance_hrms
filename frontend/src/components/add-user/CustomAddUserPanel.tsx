@@ -9,6 +9,7 @@ import { Step2AccountCreated } from './steps/Step2AccountCreated';
 import { Step3Profile } from './steps/Step3Profile';
 import { defaultForm, type AddUserWizardForm, type IncompleteUserCheck } from './steps/types';
 import EmployeeDetailsSection from '@/components/EmployeeDetailsSection';
+import { isUserStep1Valid, validateUserStep1 } from '@/lib/validation/userRules';
 
 // ── Helper: Extract user-friendly error message ────────────
 
@@ -75,6 +76,65 @@ function extractFieldErrors(error: any): Partial<Record<keyof AddUserWizardForm,
   return fieldErrors;
 }
 
+/**
+ * Which step owns each field, so a server error can be shown where it can be
+ * fixed rather than on whichever step happened to be open.
+ *
+ * Every field the create sends belongs to step 1 — step 2 is a read-only review
+ * and step 3 is the optional profile — but the map is explicit so it stays
+ * correct if fields move between steps.
+ */
+const FIELD_STEP: Partial<Record<keyof AddUserWizardForm, 1 | 2 | 3>> = {
+  firstName: 1,
+  lastName: 1,
+  email: 1,
+  phone: 1,
+  role: 1,
+  designation: 1,
+  joiningDate: 1,
+  workLocation: 1,
+  timezone: 1,
+  departmentIds: 1,
+  employeeCode: 1,
+};
+
+/**
+ * Field errors from responses that carry no `errors` object.
+ *
+ * Most 422s use the standard envelope, but two checks bypass it: the employee
+ * code uniqueness check throws an InvalidArgumentException surfaced as a bare
+ * `{message}`, and the reporting-manager checks return an `error_code` with no
+ * field. Without this they fall through to the generic banner, which cannot say
+ * which field is wrong.
+ */
+function extractUnenvelopedFieldError(error: any): Partial<Record<keyof AddUserWizardForm, string>> {
+  const { status, data } = error.response ?? {};
+  if (status !== 422 || data?.errors) return {};
+
+  const message: string = data?.message ?? '';
+
+  if (/employee code/i.test(message)) {
+    return { employeeCode: message };
+  }
+  if (data?.error_code === 'REPORTING_CYCLE' || data?.error_code === 'INVALID_REPORTING_LINE') {
+    return { role: message };
+  }
+
+  return {};
+}
+
+/** The lowest-numbered step owning any of these fields, or null. */
+function firstStepWithError(
+  fieldErrors: Partial<Record<keyof AddUserWizardForm, string>>,
+): 1 | 2 | 3 | null {
+  const steps = Object.keys(fieldErrors)
+    .map((field) => FIELD_STEP[field as keyof AddUserWizardForm])
+    .filter((step): step is 1 | 2 | 3 => typeof step === 'number')
+    .sort((a, b) => a - b);
+
+  return steps[0] ?? null;
+}
+
 type WizardStep = 1 | 2 | 3 | 'completed';
 
 interface CustomAddUserPanelProps {
@@ -85,64 +145,34 @@ interface CustomAddUserPanelProps {
   onCancel?: () => void;
 }
 
-// ── Validation helpers ──────────────────────────────────────
+// ── Validation ──────────────────────────────────────────────
+//
+// The rules live in lib/validation/userRules, which mirrors the Laravel rules
+// field by field and is unit-tested against them. They used to live here as a
+// thin hand-rolled set with no length checks at all — a 200-digit phone number
+// and an article pasted into Employee Code both passed, and only failed on the
+// server two steps later.
 
-const isValidEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-const isValidPhone = (phone: string): boolean => /^[+]?[\d\s-]{10,}$/.test(phone);
+const validateStep1 = validateUserStep1;
 
-const canProceedFromStep1 = (form: AddUserWizardForm, incompleteUser: IncompleteUserCheck | null): boolean => {
+const canProceedFromStep1 = (
+  form: AddUserWizardForm,
+  incompleteUser: IncompleteUserCheck | null,
+): boolean => {
   // Block submission if email already exists as a complete account in this org
   if (incompleteUser?.exists && !incompleteUser?.incomplete) {
     return false;
   }
-  return (
-    form.firstName.trim() !== '' &&
-    form.email.trim() !== '' &&
-    isValidEmail(form.email) &&
-    form.phone.trim() !== '' &&
-    isValidPhone(form.phone) &&
-    form.departmentIds.length > 0 &&
-    form.designation.trim() !== '' &&
-    form.joiningDate !== '' &&
-    new Date(form.joiningDate) <= new Date()
-  );
-};
 
-const validateStep1 = (form: AddUserWizardForm): Partial<Record<keyof AddUserWizardForm, string>> => {
-  const errors: Partial<Record<keyof AddUserWizardForm, string>> = {};
-
-  if (!form.firstName.trim()) {
-    errors.firstName = 'First name is required';
-  }
-  if (!form.email.trim()) {
-    errors.email = 'Email is required';
-  } else if (!isValidEmail(form.email)) {
-    errors.email = 'Please enter a valid email';
-  }
-  if (!form.phone.trim()) {
-    errors.phone = 'Phone number is required';
-  } else if (!isValidPhone(form.phone)) {
-    errors.phone = 'Please enter a valid phone number';
-  }
-  if (form.departmentIds.length === 0) {
-    errors.departmentIds = 'Please select at least one department';
-  }
-  if (!form.designation.trim()) {
-    errors.designation = 'Designation is required';
-  }
-  if (!form.joiningDate) {
-    errors.joiningDate = 'Joining date is required';
-  } else {
-    // Pre-boarding is the normal path — a joiner is set up before their first
-    // day. Only flag a date far enough out to look like a typo.
-    const twoYearsOut = new Date();
-    twoYearsOut.setFullYear(twoYearsOut.getFullYear() + 2);
-    if (new Date(form.joiningDate) > twoYearsOut) {
-      errors.joiningDate = 'Joining date is more than two years away — please check it';
-    }
-  }
-
-  return errors;
+  /*
+   * Derived from the same validator that produces the messages, rather than a
+   * second hand-written copy of the conditions. The two previously disagreed
+   * about joining dates — this required one on or before today while the
+   * validator allowed two years out — so choosing a future date left Next doing
+   * nothing with no error shown, because validateStep1 returned no errors to
+   * display.
+   */
+  return isUserStep1Valid(form);
 };
 
 const hasAnyStep3Data = (form: AddUserWizardForm): boolean => {
@@ -251,6 +281,8 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
     const createUser = async () => {
       setIsCreatingUser(true);
       setCreationError(null);
+      // Only one error may be on screen at a time; clear the other surface.
+      setFeedback(null);
       try {
         const result = await createUserMutation.mutateAsync(form);
         if (cancelled) return;
@@ -264,8 +296,32 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         queryClient.invalidateQueries({ queryKey: ['employee-payroll-cards'] });
       } catch (error: any) {
         if (cancelled) return;
-        const errorMessage = extractErrorMessage(error);
-        setCreationError(errorMessage);
+
+        /*
+         * Put the message on the field that caused it. The mapping to do this
+         * already existed but was never called, so a "phone must not be greater
+         * than 64 characters" arrived as anonymous red text on step 3 — two
+         * steps away from the input at fault, with no indication of which field
+         * was meant.
+         */
+        const fieldErrors = {
+          ...extractFieldErrors(error),
+          ...extractUnenvelopedFieldError(error),
+        };
+        const targetStep = firstStepWithError(fieldErrors);
+
+        if (targetStep !== null) {
+          setErrors(fieldErrors);
+          setCurrentStep(targetStep);
+          setFeedback({
+            type: 'error',
+            message: 'Some details need fixing before the account can be created.',
+          });
+          return;
+        }
+
+        // Nothing field-specific to show — fall back to the single banner.
+        setCreationError(extractErrorMessage(error));
       } finally {
         if (!cancelled) setIsCreatingUser(false);
       }
@@ -510,11 +566,36 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         createdAt: new Date().toISOString(),
       });
     } else if (currentStep === 2) {
+      /*
+       * Re-validate before leaving the review step. Moving to step 3 is what
+       * fires the create — the effect that issues POST /users runs when step 3
+       * mounts — so this transition, not the submit button, is the last point
+       * at which bad input can be caught before it reaches the server. It was
+       * previously ungated entirely.
+       *
+       * Step 1's fields can still be wrong here: the wizard restores a saved
+       * step and a partial form from localStorage, so a stale draft can land
+       * on step 2 without ever having passed step 1.
+       */
+      const step1Errors = validateStep1(form);
+      if (Object.keys(step1Errors).length > 0) {
+        setErrors(step1Errors);
+        setFeedback({
+          type: 'error',
+          message: 'Some details need fixing before the account can be created.',
+        });
+        setCurrentStep(1);
+        return;
+      }
+
+      setErrors({});
       setCompletedSteps((prev) => new Set(prev).add(2));
       setCurrentStep(3);
     } else if (currentStep === 3) {
       if (!form.userId) {
-        setFeedback({ type: 'error', message: 'Account is still being created. Please wait a moment.' });
+        // The button is disabled while the account is being created, so this is
+        // only reachable if the create failed — in which case creationError is
+        // already on screen and this message would contradict it.
         return;
       }
 
@@ -566,7 +647,9 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
   const handleSkip = async () => {
     if (currentStep === 3) {
       if (!form.userId) {
-        setFeedback({ type: 'error', message: 'Account is still being created. Please wait a moment.' });
+        // Same reasoning as handleNext: Skip is disabled while the create is in
+        // flight, so reaching here means it failed and creationError is already
+        // showing. A second banner would only contradict it.
         return;
       }
 
@@ -746,6 +829,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
           showCancel={currentStep === 1}
           showSkip={currentStep === 3}
           isSubmitting={isSubmitting}
+          // Step 3 cannot be completed until the account exists. Without this
+          // the button stayed live through the create, and pressing it stacked
+          // a second, contradictory banner over the creation error.
+          isBusy={currentStep === 3 && (isCreatingUser || !form.userId)}
           onBack={handleBack}
           onCancel={handleCancel}
           onNext={handleNext}

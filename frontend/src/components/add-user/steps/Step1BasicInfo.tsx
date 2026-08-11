@@ -5,6 +5,11 @@ import { groupApi, payrollApi } from '../../../services/api';
 import api from '../../../services/api';
 import CustomSelect from '../../../components/ui/CustomSelect';
 import type { AddUserWizardForm, IncompleteUserCheck } from './types';
+import {
+  USER_FIELD_LIMITS,
+  maxDepartmentsFor,
+  maxJoiningDate as computeMaxJoiningDate,
+} from '@/lib/validation/userRules';
 
 interface Step1Props {
   form: AddUserWizardForm;
@@ -49,13 +54,11 @@ const TIMEZONES = [
  * first, so in IST it returns yesterday for any local time before 05:30 — the
  * same class of bug that made date-only columns land a day early elsewhere.
  */
-function computeMaxJoiningDate(): string {
-  const d = new Date();
-  d.setFullYear(d.getFullYear() + 2);
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${month}-${day}`;
-}
+/*
+ * The input's max now comes from the same helper the validator uses, so the
+ * date the picker allows and the date the wizard accepts cannot drift apart —
+ * they previously did, and a future joining date left Next silently inert.
+ */
 
 export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromStep2, incompleteUser, setIncompleteUser }: Step1Props) {
   const maxJoiningDate = useMemo(computeMaxJoiningDate, []);
@@ -103,12 +106,26 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
   }, [salaryStructures]);
 
   const handleDepartmentToggle = (deptId: number) => {
-    setForm((prev) => ({
-      ...prev,
-      departmentIds: prev.departmentIds.includes(deptId)
-        ? prev.departmentIds.filter((id) => id !== deptId)
-        : [...prev.departmentIds, deptId],
-    }));
+    setForm((prev) => {
+      const alreadySelected = prev.departmentIds.includes(deptId);
+      if (alreadySelected) {
+        return { ...prev, departmentIds: prev.departmentIds.filter((id) => id !== deptId) };
+      }
+
+      /*
+       * Only an admin may hold more than one department — the server enforces
+       * this after validation, in assertSingleGroupMembershipLimit, with
+       * "Managers and employees can belong to only one department at a time."
+       * Picking a second one here used to be accepted, then rejected two steps
+       * later. For a capped role, selecting a department now replaces the
+       * previous choice, which is what the picker is actually for.
+       */
+      const limit = maxDepartmentsFor(prev.role);
+      const next = limit === 1 ? [deptId] : [...prev.departmentIds, deptId];
+
+      return { ...prev, departmentIds: next };
+    });
+
     if (errors.departmentIds) {
       setErrors((prev) => ({ ...prev, departmentIds: undefined }));
     }
@@ -259,6 +276,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           </label>
           <input
             type="tel"
+            /*
+             * maxLength mirrors the server's cap, so an over-long paste is
+             * truncated in the field rather than becoming a validation error
+             * two steps later.
+             */
+            maxLength={USER_FIELD_LIMITS.phone}
             value={form.phone}
             onChange={(e) => {
               setForm((p) => ({ ...p, phone: e.target.value }));
@@ -293,6 +316,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           </label>
           <input
             type="text"
+            maxLength={USER_FIELD_LIMITS.designation}
             value={form.designation}
             onChange={(e) => {
               setForm((p) => ({ ...p, designation: e.target.value }));
@@ -314,13 +338,20 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         </label>
         <input
           type="text"
+          maxLength={USER_FIELD_LIMITS.employeeCode}
           value={form.employeeCode}
-          onChange={(e) => setForm((p) => ({ ...p, employeeCode: e.target.value }))}
-          className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none
-                     focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+          onChange={(e) => {
+            setForm((p) => ({ ...p, employeeCode: e.target.value }));
+            if (errors.employeeCode) setErrors((p) => ({ ...p, employeeCode: undefined }));
+          }}
+          className={inputClass('employeeCode')}
           placeholder="e.g., EMP-001"
         />
-        <p className="mt-1 text-xs text-gray-400">Unique identifier for this employee</p>
+        {errors.employeeCode ? (
+          <p className="mt-1 text-xs text-red-500">{errors.employeeCode}</p>
+        ) : (
+          <p className="mt-1 text-xs text-gray-400">Unique identifier for this employee</p>
+        )}
       </div>
 
       {/* Department (Multi-select chips) — FROM BACKEND API */}
@@ -328,7 +359,9 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-2">
           <Building2 className="h-3.5 w-3.5 text-gray-400" />
           Department <span className="text-red-400">*</span>
-          <span className="text-xs text-gray-400 font-normal">select one or more</span>
+          <span className="text-xs text-gray-400 font-normal">
+            {maxDepartmentsFor(form.role) === 1 ? 'select one' : 'select one or more'}
+          </span>
         </label>
 
         {departmentsLoading ? (

@@ -4,6 +4,13 @@ interface WizardActionsProps {
   showCancel: boolean;
   showSkip: boolean;
   isSubmitting: boolean;
+  /**
+   * The account is still being created in the background. Advancing is
+   * pointless until it resolves — pressing Complete during this window used to
+   * raise "Account is still being created", which then sat stacked on top of
+   * the creation error when the create had actually failed.
+   */
+  isBusy?: boolean;
   onBack: () => void;
   onCancel?: () => void;
   onNext: () => void;
@@ -17,12 +24,14 @@ export function WizardActions({
   showCancel,
   showSkip,
   isSubmitting,
+  isBusy = false,
   onBack,
   onCancel,
   onNext,
   onSkip,
   nextLabel,
 }: WizardActionsProps) {
+  const blocked = isSubmitting || isBusy;
   return (
     <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
       <div>
@@ -47,7 +56,8 @@ export function WizardActions({
         {showSkip && currentStep === 3 && onSkip && (
           <button
             onClick={onSkip}
-            className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 font-medium transition-colors"
+            disabled={blocked}
+            className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Skip Step 3
           </button>
@@ -55,10 +65,10 @@ export function WizardActions({
         {currentStep !== 'completed' && (
           <button
             onClick={onNext}
-            disabled={isSubmitting}
+            disabled={blocked}
             className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {isSubmitting && (
+            {blocked && (
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
