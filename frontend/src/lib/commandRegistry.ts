@@ -19,6 +19,7 @@ import {
   Link2,
   ListPlus,
   LogOut,
+  MailPlus,
   Moon,
   Monitor,
   Package,
@@ -178,6 +179,26 @@ export function buildPageCommands(navigation: NavGroup[]): CommandItem[] {
         effect: 'open',
       }
     );
+  }
+
+  /*
+   * The words people reach for are the actions, not the page name.
+   * "Invitations" is already contributed by the navigation; this adds the verbs
+   * — someone chasing a joiner searches "resend", not the noun on the rail.
+   */
+  const hasInvitations = items.some((item) => String(item.to || '') === '/employees/invitations');
+  if (hasInvitations) {
+    items.push({
+      id: 'page:invitations:manage',
+      title: 'Pending Invitations',
+      subtitle: 'Resend or revoke',
+      keywords: ['resend invite', 'revoke invite', 'cancel invitation', 'pending invites', 'new invite link', 'invitation expired'],
+      kind: 'page',
+      group: 'Go to',
+      icon: MailPlus,
+      to: '/employees/invitations',
+      effect: 'open',
+    });
   }
 
   return items;

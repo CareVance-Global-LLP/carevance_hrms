@@ -79,6 +79,7 @@ class InvitationController extends Controller
             'project_ids' => $payload['default_project_ids'] ?? [],
             'settings' => $payload['settings'] ?? null,
             'expires_in_hours' => $payload['expires_in_hours'] ?? null,
+            'joining_date' => $payload['joining_date'] ?? null,
         ]);
         $createdCount = count($result['created']);
 
@@ -102,6 +103,26 @@ class InvitationController extends Controller
         ], $createdCount === 1 ? 'Invitation created successfully.' : 'Invitations created successfully.');
     }
 
+    public function resend(Request $request, int $invitation)
+    {
+        $actor = $this->authorizeInvitationManagement($request);
+        $record = $this->findInvitationForActor($actor, $invitation);
+
+        return $this->successResponse([
+            'invitation' => $this->invitationService->resend($actor, $record),
+        ], 'Invitation sent again.');
+    }
+
+    public function destroy(Request $request, int $invitation)
+    {
+        $actor = $this->authorizeInvitationManagement($request);
+        $record = $this->findInvitationForActor($actor, $invitation);
+
+        return $this->successResponse([
+            'invitation' => $this->invitationService->serialize($this->invitationService->revoke($record)),
+        ], 'Invitation revoked.');
+    }
+
     public function storeLegacy(StoreInvitationRequest $request, int $organizationId)
     {
         $organization = Organization::query()->findOrFail($organizationId);
@@ -123,15 +144,48 @@ class InvitationController extends Controller
         $invitation = $this->invitationService->resolveByToken($token);
         $user = $this->invitationService->accept($invitation, $request->validated());
         $user->load(['organization', 'groups']);
-        $verificationEmailSent = $this->sendVerificationEmailSafely($user);
 
+        // No verification mail is sent here any more: redeeming the token that
+        // was emailed to this address already proved the joiner controls it.
+        // See the note on `email_verified_at` in InvitationService::accept().
         return $this->createdResponse([
             'user' => $user,
             'organization' => $user->organization,
-            'requires_verification' => true,
+            'requires_verification' => false,
             'email' => $user->email,
-            'verification_email_sent' => $verificationEmailSent,
-        ], 'Invitation accepted successfully. Please verify your email before signing in.');
+            'verification_email_sent' => false,
+        ], 'Invitation accepted successfully. You can sign in now.');
+    }
+
+    private function authorizeInvitationManagement(Request $request): \App\Models\User
+    {
+        $user = $request->user();
+
+        if (!$user || !$user->organization_id) {
+            abort(422, 'Organization context is required.');
+        }
+
+        if (!$this->organizationRoleService->canManageUsers($user)) {
+            abort(403, 'Forbidden');
+        }
+
+        return $user;
+    }
+
+    /**
+     * Resolve an invitation inside the actor's own workspace.
+     *
+     * `Invitation` carries no tenant scope, so the organization filter is
+     * written out here rather than assumed. Without it, an id from another
+     * workspace would resolve and be resendable across the tenant boundary.
+     */
+    private function findInvitationForActor(\App\Models\User $actor, int $invitationId): Invitation
+    {
+        return Invitation::query()
+            ->with(['organization', 'inviter'])
+            ->where('organization_id', $actor->organization_id)
+            ->where('id', $invitationId)
+            ->firstOr(fn () => abort(404, 'This invitation is no longer available.'));
     }
 
     private function storeForOrganization(StoreInvitationRequest $request, Organization $organization)
@@ -165,21 +219,4 @@ class InvitationController extends Controller
         ], $createdCount === 1 ? 'Invitation created successfully.' : 'Invitations created successfully.');
     }
 
-    private function sendVerificationEmailSafely($user): bool
-    {
-        try {
-            $user->sendEmailVerificationNotification();
-
-            return true;
-        } catch (\Throwable $exception) {
-            Log::warning('Verification email dispatch failed for invitation acceptance.', [
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'exception' => $exception::class,
-                'message' => $exception->getMessage(),
-            ]);
-
-            return false;
-        }
-    }
 }

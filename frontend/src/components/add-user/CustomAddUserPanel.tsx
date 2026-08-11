@@ -1,13 +1,21 @@
 import { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
-import api, { payrollApi } from '../../services/api';
+import { Link } from 'react-router-dom';
+import api, { billingApi, payrollApi } from '../../services/api';
 import { WizardProgress } from './steps/WizardProgress';
 import { WizardActions } from './steps/WizardActions';
 import { Step1BasicInfo } from './steps/Step1BasicInfo';
 import { Step2AccountCreated } from './steps/Step2AccountCreated';
 import { Step3Profile } from './steps/Step3Profile';
 import { defaultForm, type AddUserWizardForm, type IncompleteUserCheck } from './steps/types';
+import {
+  clearWizardDraft,
+  hasMeaningfulInput,
+  loadWizardDraft,
+  restoreDraft,
+  saveWizardDraft,
+} from './wizardDraft';
 import EmployeeDetailsSection from '@/components/EmployeeDetailsSection';
 
 // ── Helper: Extract user-friendly error message ────────────
@@ -113,6 +121,7 @@ const canProceedFromStep1 = (form: AddUserWizardForm, incompleteUser: Incomplete
     isValidPhone(form.phone) &&
     form.departmentIds.length > 0 &&
     form.designation.trim() !== '' &&
+    form.timezone.trim() !== '' &&
     form.joiningDate !== '' &&
     new Date(form.joiningDate) <= twoYearsOut
   );
@@ -145,6 +154,12 @@ const validateStep1 = (form: AddUserWizardForm): Partial<Record<keyof AddUserWiz
   if (!form.designation.trim()) {
     errors.designation = 'Designation is required';
   }
+  // Marked required in the UI, so it has to be checked here too. It used to be
+  // neither validated nor reliably selectable, which let an unset timezone
+  // through on a starred field.
+  if (!form.timezone.trim()) {
+    errors.timezone = 'Timezone is required';
+  }
   if (!form.joiningDate) {
     errors.joiningDate = 'Joining date is required';
   } else {
@@ -160,100 +175,110 @@ const validateStep1 = (form: AddUserWizardForm): Partial<Record<keyof AddUserWiz
   return errors;
 };
 
-const hasAnyStep3Data = (form: AddUserWizardForm): boolean => {
-  return (
-    form.gender !== '' ||
-    form.dateOfBirth !== '' ||
-    form.personalEmail !== '' ||
-    form.addressLine1 !== '' ||
-    form.city !== '' ||
-    form.state !== '' ||
-    form.pincode !== '' ||
-    form.emergencyContactName !== '' ||
-    form.idType !== '' ||
-    form.accountNumber !== ''
-  );
-};
-
-// ── localStorage helpers ───────────────────────────────────
-
-const STORAGE_KEY = 'add-user-wizard-state';
-
-interface PersistedWizardState {
-  step: 1 | 2 | 3;
-  form: Partial<AddUserWizardForm>;
-  userId: number | null;
-  createdAt: string;
-}
-
-function loadWizardState(): PersistedWizardState | null {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return null;
-    const state = JSON.parse(stored) as PersistedWizardState;
-    // Expire after 24 hours
-    if (state.createdAt) {
-      const hoursDiff = (Date.now() - new Date(state.createdAt).getTime()) / (1000 * 60 * 60);
-      if (hoursDiff > 24) {
-        localStorage.removeItem(STORAGE_KEY);
-        return null;
-      }
-    }
-    return state;
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
-    return null;
-  }
-}
-
-function saveWizardState(state: PersistedWizardState): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, createdAt: new Date().toISOString() }));
-  } catch {
-    // localStorage full or unavailable
-  }
-}
-
-function clearWizardState(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
 // ── Main Component ──────────────────────────────────────────
 
 export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuccess, onError, onCancel }: CustomAddUserPanelProps) {
   const queryClient = useQueryClient();
 
-  // ✅ Load persisted state on mount
-  const persistedState = loadWizardState();
+  /*
+   * Read storage exactly once, into the initial state.
+   *
+   * This used to be a bare call in the component body, so every render — every
+   * keystroke — re-read localStorage and re-parsed the whole draft, only for
+   * the result to be discarded by `useState`.
+   */
+  const [restored] = useState(() => restoreDraft(loadWizardDraft()));
 
-  const [currentStep, setCurrentStep] = useState<WizardStep>(
-    persistedState?.step && [1, 2, 3].includes(persistedState.step) ? persistedState.step : 1
-  );
-  const [form, setForm] = useState<AddUserWizardForm>({
-    ...defaultForm,
-    ...(persistedState?.form ?? {}),
-  });
-  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [currentStep, setCurrentStep] = useState<WizardStep>(restored?.step ?? 1);
+  const [form, setForm] = useState<AddUserWizardForm>(restored?.form ?? { ...defaultForm });
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(restored?.completedSteps ?? []));
   const [errors, setErrors] = useState<Partial<Record<keyof AddUserWizardForm, string>>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [incompleteUser, setIncompleteUser] = useState<IncompleteUserCheck | null>(null);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
+  /*
+   * True once a resumed draft has reached the end without the admin ever
+   * re-typing the password. The final panel hands over sign-in details, and it
+   * must not present an empty box as if it were the credential.
+   */
+  const [passwordUnavailable, setPasswordUnavailable] = useState(restored?.passwordUnavailable ?? false);
 
-  // ✅ Welcome back message if resuming from persisted state
+  // ── Seats ─────────────────────────────────────────────────
+  /*
+   * Checked here rather than left to the API. The server refuses correctly, but
+   * it refused at the point the account is created — three steps and a full
+   * form after the admin could have done anything about it.
+   */
+  const { data: billing } = useQuery({
+    queryKey: ['billing-snapshot'],
+    queryFn: async () => (await billingApi.current()).data,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const seats = billing?.seats ?? null;
+  // Mirrors SeatGuard::canAdd — a cap of zero or less was never configured, and
+  // must not be read as "nobody may join".
+  const seatsExhausted = Boolean(seats && seats.max > 0 && seats.used + 1 > seats.max);
+
+  /*
+   * Say what was restored, and say what was not.
+   *
+   * The password is the one field deliberately left behind, so a silent restore
+   * reads as the form having lost it by accident — and on a resumed draft the
+   * admin has no other way to know they have to type it again.
+   */
   useEffect(() => {
-    if (persistedState?.step && persistedState.step >= 2 && persistedState.form?.email) {
+    if (!restored) return;
+
+    if (restored.needsPasswordReentry) {
+      setFeedback({
+        type: 'error',
+        message:
+          'Draft restored. The temporary password is never saved in your browser — re-enter it to continue.',
+      });
+    } else if (restored.step >= 2 && restored.form.email) {
       setFeedback({
         type: 'success',
-        message: `Welcome back! Continuing setup for ${persistedState.form.email}.`,
+        message: `Welcome back! Continuing setup for ${restored.form.email}.`,
+      });
+    } else {
+      setFeedback({
+        type: 'success',
+        message: 'Draft restored. The temporary password is never saved in your browser — re-enter it.',
       });
     }
-  }, []);
+  }, [restored]);
+
+  /*
+   * Persist on change, debounced.
+   *
+   * The draft used to be written at exactly one moment — leaving step 1 — which
+   * meant the long form everyone actually loses work in was the one part never
+   * saved. Saving `form`, `currentStep` and `completedSteps` together also
+   * keeps `userId` on disk, so a refresh taken after the account is created
+   * resumes into it rather than stranding a real user with no way back.
+   */
+  useEffect(() => {
+    if (currentStep === 'completed') return;
+
+    if (!hasMeaningfulInput(form)) {
+      clearWizardDraft();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      saveWizardDraft({
+        step: currentStep,
+        form,
+        completedSteps: Array.from(completedSteps),
+      });
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [form, currentStep, completedSteps]);
 
   // ✅ Auto-create user when Step 3 loads (user not yet created)
   useEffect(() => {
@@ -399,84 +424,21 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
     },
   });
 
-  // ── API: Save profile data (Step 3) ──────────────────────
-
-  const saveStep3Data = async (formData: AddUserWizardForm): Promise<{ failures: number }> => {
-    if (!formData.userId) return { failures: 0 };
-
-    const promises: Promise<any>[] = [];
-
-    // Save profile if any personal data provided
-    if (formData.gender || formData.dateOfBirth || formData.addressLine1 || formData.city) {
-      promises.push(
-        api.put(`/employees/${formData.userId}/profile`, {
-          gender: formData.gender || undefined,
-          date_of_birth: formData.dateOfBirth || undefined,
-          personal_email: formData.personalEmail || undefined,
-          address_line: [formData.addressLine1, formData.addressLine2].filter(Boolean).join(', ') || undefined,
-          city: formData.city || undefined,
-          state: formData.state || undefined,
-          postal_code: formData.pincode || undefined,
-          emergency_contact_name: formData.emergencyContactName || undefined,
-          emergency_contact_number: formData.emergencyContactPhone || undefined,
-          emergency_contact_relationship: formData.emergencyRelationship || undefined,
-        })
-      );
-    }
-
-    // Upload government ID if provided
-    if (formData.idType && formData.idNumber) {
-      const idFormData = new FormData();
-      idFormData.append('id_type', formData.idType);
-      idFormData.append('id_number', formData.idNumber);
-      if (formData.idProofFile) {
-        idFormData.append('proof_document', formData.idProofFile);
-      }
-      promises.push(
-        api.post(`/employees/${formData.userId}/government-ids`, idFormData)
-      );
-    }
-
-    // Save bank account if provided
-    if (formData.accountNumber && formData.ifscCode) {
-      const bankFormData = new FormData();
-      bankFormData.append('account_holder_name', formData.accountHolderName || `${formData.firstName} ${formData.lastName}`);
-      bankFormData.append('bank_name', formData.bankName);
-      bankFormData.append('account_number', formData.accountNumber);
-      bankFormData.append('ifsc_swift', formData.ifscCode.toUpperCase());
-      bankFormData.append('branch_name', formData.branchName);
-      bankFormData.append('account_type', formData.accountType);
-      bankFormData.append('is_primary', formData.isDefaultAccount.toString());
-      if (formData.bankProofFile) {
-        bankFormData.append('proof_document', formData.bankProofFile);
-      }
-      promises.push(
-        api.post(`/employees/${formData.userId}/bank-accounts`, bankFormData)
-      );
-    }
-
-    // Upload documents
-    const documentFiles = [
-      { file: formData.resumeFile, title: 'Resume', category: 'resume' },
-      { file: formData.experienceCertFile, title: 'Experience Certificate', category: 'experience_certificate' },
-      { file: formData.educationCertFile, title: 'Education Certificate', category: 'education_certificate' },
-    ];
-    for (const doc of documentFiles) {
-      if (doc.file) {
-        const docFormData = new FormData();
-        docFormData.append('title', doc.title);
-        docFormData.append('category', doc.category);
-        docFormData.append('file', doc.file);
-        promises.push(
-          api.post(`/employees/${formData.userId}/documents`, docFormData)
-        );
-      }
-    }
-
-    const results = await Promise.allSettled(promises);
-    const failures = results.filter((r) => r.status === 'rejected').length;
-    return { failures };
-  };
+  /*
+   * Step 3 has no save path of its own on purpose.
+   *
+   * There used to be a `saveStep3Data` here — some 75 lines posting gender,
+   * address, bank account, government ID and three document uploads. None of it
+   * could ever run. `Step3Profile` takes `setForm` and never calls it; it
+   * renders `EmployeeDetailsSection`, which owns those fields and saves them
+   * itself, against the user id it is handed. So the wizard's copies of
+   * `form.gender`, `form.accountNumber` and the rest stayed at their defaults
+   * for the life of the wizard, the `hasAnyStep3Data` guard in front of the
+   * call was permanently false, and the whole block read as working code.
+   *
+   * If step 3 ever needs to collect something itself, wire it through
+   * EmployeeDetailsSection rather than reviving a parallel save.
+   */
 
   /*
    * This wizard used to POST /invites/send here, on top of creating the user.
@@ -504,15 +466,9 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
       setErrors({});
       setIncompleteUser(null);
+      setFeedback(null);
       setCompletedSteps((prev) => new Set(prev).add(1));
       setCurrentStep(2);
-
-      saveWizardState({
-        step: 2,
-        form,
-        userId: null,
-        createdAt: new Date().toISOString(),
-      });
     } else if (currentStep === 2) {
       setCompletedSteps((prev) => new Set(prev).add(2));
       setCurrentStep(3);
@@ -522,27 +478,9 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         return;
       }
 
-      setIsSubmitting(true);
-      try {
-        if (hasAnyStep3Data(form)) {
-          const { failures } = await saveStep3Data({ ...form, userId: form.userId });
-          if (failures > 0) {
-            setFeedback({
-              type: 'error',
-              message: `${failures} profile item(s) could not be saved. The account itself was created.`,
-            });
-          }
-        }
-
-        setCompletedSteps((prev) => new Set(prev).add(3));
-        setCurrentStep('completed');
-        clearWizardState();
-      } catch (error: any) {
-        const errorMessage = extractErrorMessage(error);
-        setFeedback({ type: 'error', message: errorMessage });
-      } finally {
-        setIsSubmitting(false);
-      }
+      setCompletedSteps((prev) => new Set(prev).add(3));
+      setCurrentStep('completed');
+      clearWizardDraft();
     }
   };
 
@@ -553,35 +491,32 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
     else if (currentStep === 3) setCurrentStep(2);
   };
 
+  /*
+   * Leaving is not discarding.
+   *
+   * This used to wipe the form and delete the draft, behind a button labelled
+   * "← Back", with no confirmation — so stepping out to check a department name
+   * cost the admin everything they had typed. The draft now survives; the three
+   * routes that genuinely end the job (completing, skipping, adding another)
+   * clear it explicitly.
+   */
   const handleCancel = () => {
-    clearWizardState();
-    setForm({ ...defaultForm });
-    setCurrentStep(1);
-    setCompletedSteps(new Set());
     setErrors({});
     setFeedback(null);
     onCancel?.();
   };
 
-  const handleSkip = async () => {
-    if (currentStep === 3) {
-      if (!form.userId) {
-        setFeedback({ type: 'error', message: 'Account is still being created. Please wait a moment.' });
-        return;
-      }
+  const handleSkip = () => {
+    if (currentStep !== 3) return;
 
-      setIsSubmitting(true);
-      try {
-        setCompletedSteps((prev) => new Set(prev).add(3));
-        setCurrentStep('completed');
-        clearWizardState();
-      } catch (error: any) {
-        const errorMessage = extractErrorMessage(error);
-        setFeedback({ type: 'error', message: errorMessage });
-      } finally {
-        setIsSubmitting(false);
-      }
+    if (!form.userId) {
+      setFeedback({ type: 'error', message: 'Account is still being created. Please wait a moment.' });
+      return;
     }
+
+    setCompletedSteps((prev) => new Set(prev).add(3));
+    setCurrentStep('completed');
+    clearWizardDraft();
   };
 
   // ✅ Resume from Step 2 when incomplete user is detected
@@ -609,13 +544,8 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
       setForm(updatedForm);
       setCompletedSteps(new Set([1]));
       setCurrentStep(2);
-
-      saveWizardState({
-        step: 2,
-        form: updatedForm,
-        userId,
-        createdAt: new Date().toISOString(),
-      });
+      // The account already exists, so its password is not ours to show.
+      setPasswordUnavailable(true);
 
       setFeedback({
         type: 'success',
@@ -645,7 +575,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
     setCompletedSteps(new Set());
     setErrors({});
     setFeedback(null);
-    clearWizardState();
+    setPasswordUnavailable(false);
+    clearWizardDraft();
+    // The seat just consumed makes the next create the one that might not fit.
+    queryClient.invalidateQueries({ queryKey: ['billing-snapshot'] });
   };
 
   return (
@@ -670,6 +603,30 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
           )}
           {feedback.message}
+        </div>
+      )}
+
+      {/*
+        Seat cap, surfaced before the form rather than after it.
+        The API refuses correctly but only at creation — which, on this wizard,
+        is two steps and a fully typed form past the point of no return.
+      */}
+      {currentStep !== 'completed' && seatsExhausted && seats && (
+        <div className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-start gap-2 text-sm bg-amber-50 text-amber-900 border border-amber-200">
+          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">No seats available</p>
+            <p className="mt-1">
+              This workspace is using {seats.used} of {seats.max} seats. Add at least one more before
+              creating another user.
+            </p>
+            <Link
+              to="/settings/billing"
+              className="mt-2 inline-block font-medium underline underline-offset-2 hover:no-underline"
+            >
+              Manage seats in Billing
+            </Link>
+          </div>
         </div>
       )}
 
@@ -713,22 +670,43 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
             No email is sent on this path, so the credentials only exist here.
             Showing them once, at the only moment they are known, is what stops
             the admin from creating an account nobody can get into.
+
+            A resumed draft is the one case where they are genuinely not known:
+            the password is deliberately never persisted, so after a refresh
+            there is nothing to show. Say so, rather than render an empty box
+            that reads as the password being blank.
           */}
-          <div className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-start gap-2 text-sm bg-sky-50 text-sky-900 border border-sky-200">
-            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-medium">Share these sign-in details with {form.firstName}</p>
-              <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 font-mono text-[13px]">
-                <dt className="text-sky-700">Email</dt>
-                <dd className="break-all">{form.email}</dd>
-                <dt className="text-sky-700">Password</dt>
-                <dd className="break-all">{form.password}</dd>
-              </dl>
-              <p className="mt-2 text-[13px] text-sky-800">
-                This password is not shown again. They can change it from Settings after signing in.
-              </p>
+          {form.password ? (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-start gap-2 text-sm bg-sky-50 text-sky-900 border border-sky-200">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium">Share these sign-in details with {form.firstName}</p>
+                <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 font-mono text-[13px]">
+                  <dt className="text-sky-700">Email</dt>
+                  <dd className="break-all">{form.email}</dd>
+                  <dt className="text-sky-700">Password</dt>
+                  <dd className="break-all">{form.password}</dd>
+                </dl>
+                <p className="mt-2 text-[13px] text-sky-800">
+                  This password is not shown again. They can change it from Settings after signing in.
+                </p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-start gap-2 text-sm bg-amber-50 text-amber-900 border border-amber-200">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium">Sign-in password not available</p>
+                <p className="mt-1">
+                  {passwordUnavailable
+                    ? 'This setup was resumed, and the temporary password is never kept in the browser.'
+                    : 'The temporary password is no longer available in this session.'}{' '}
+                  If it was not noted down, set a new one for <strong>{form.email}</strong> from their
+                  profile before handing the account over.
+                </p>
+              </div>
+            </div>
+          )}
           {form.userId && (
             <div className="p-4">
               <EmployeeDetailsSection
@@ -752,7 +730,21 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
           onCancel={handleCancel}
           onNext={handleNext}
           onSkip={handleSkip}
-          nextLabel={currentStep === 1 ? (form.userId ? 'Continue' : 'Create Account') : currentStep === 3 ? 'Complete' : 'Continue'}
+          /*
+            Step 1 used to say "Create Account" while doing nothing of the sort:
+            it advanced to step 2, and the POST fired later, from an effect on
+            step 3's mount — behind a button labelled "Continue". The labels now
+            name what the click does, so the irreversible one is the one that
+            says so.
+          */
+          nextLabel={
+            currentStep === 1
+              ? 'Continue'
+              : currentStep === 2
+                ? form.userId ? 'Continue' : 'Create Account'
+                : 'Complete'
+          }
+          disabled={currentStep === 2 && !form.userId && seatsExhausted}
         />
       )}
     </div>

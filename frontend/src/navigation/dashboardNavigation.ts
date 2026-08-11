@@ -17,6 +17,7 @@ import {
   Gauge,
   LayoutDashboard,
   LineChart,
+  MailPlus,
   MapPin,
   MessageSquare,
   Network,
@@ -86,6 +87,8 @@ export const topNavigation: NavGroup[] = [
     icon: Users,
     items: [
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
+      // Kept in step with condensedNavigation.ts, which defines the same rail.
+      { label: 'Invitations', to: '/employees/invitations', icon: MailPlus, adminOnly: true },
       { label: 'New Hires', to: '/new-hires', icon: UserPlus, adminOnly: true },
       { label: 'Exits', to: '/exits', icon: DoorOpen, adminOnly: true },
       { label: 'My Team', to: '/my-team', icon: Share2, employeeOnly: true },

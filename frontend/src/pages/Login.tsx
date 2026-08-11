@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { isLikelyMobile } from '@/lib/mobile';
 import { authApi } from '@/services/api';
@@ -35,7 +35,19 @@ export default function Login() {
     return window.localStorage.getItem(REMEMBERED_EMAIL_KEY) || '';
   };
 
-  const [email, setEmail] = useState(getRememberedEmail);
+  /*
+   * A joiner arriving straight from accepting an invitation.
+   *
+   * Their account already exists and is verified, so the only thing left is to
+   * sign in — prefill the address they just confirmed and say so, rather than
+   * dropping them on an empty form with no explanation of what just happened.
+   */
+  const [searchParams] = useSearchParams();
+  const invitedEmail = searchParams.get('status') === 'invite-accepted'
+    ? (searchParams.get('email') || '')
+    : '';
+
+  const [email, setEmail] = useState(() => invitedEmail || getRememberedEmail());
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(() => getRememberedEmail() !== '');
@@ -166,6 +178,15 @@ export default function Login() {
                 </Link>
               </p>
             </div>
+
+            {invitedEmail && !error && (
+              <div className="mb-5 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <div className="text-sm text-emerald-800">
+                  Your account is ready. Sign in with the password you just set to get started.
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="mb-5 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">

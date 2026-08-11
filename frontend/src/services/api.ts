@@ -484,6 +484,8 @@ export const invitationApi = {
     department_ids?: number[];
     project_ids?: number[];
     settings?: Record<string, any>;
+    joining_date?: string;
+    job_title?: string;
   }) => api.post<InvitationCreateResponse>('/invitations', data),
 
   importCsv: (data: {
@@ -494,13 +496,30 @@ export const invitationApi = {
       department_ids?: number[];
       project_ids?: number[];
       settings?: Record<string, any>;
+      job_title?: string;
+      joining_date?: string;
     }>;
     default_group_ids?: number[];
     default_department_ids?: number[];
     default_project_ids?: number[];
     settings?: Record<string, any>;
     expires_in_hours?: number;
+    joining_date?: string;
   }) => api.post<InvitationCreateResponse>('/invitations/import', data),
+
+  /**
+   * Rotate the token and send again.
+   *
+   * Only the hash is stored, so a resend cannot repeat the original URL — which
+   * is also what makes this the regenerate action for a link invite whose URL
+   * was shown once and lost.
+   */
+  resend: (id: number) =>
+    api.post<{ invitation: InvitationSummary }>(`/invitations/${id}/resend`),
+
+  /** Withdraw a pending invitation. The record stays for the audit trail. */
+  revoke: (id: number) =>
+    api.delete<{ invitation: InvitationSummary }>(`/invitations/${id}`),
 
   getByToken: (token: string) =>
     api.get<{ invitation: InvitationSummary }>(`/invitations/${token}`),

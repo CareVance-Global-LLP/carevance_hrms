@@ -46,8 +46,15 @@ export default function InviteLinkPanel({
         </p>
       </div>
 
+      {/*
+        Was a note to the next developer, rendered to admins: "keep this panel
+        as the starting point for a future multi-use flow". Replaced with what
+        the person using it actually needs to know — chiefly that only a hash of
+        the token is stored, so this URL cannot be looked up again later.
+      */}
       <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-        This link is secure and single-use. If you need reusable links later, keep this panel as the starting point for a future multi-use flow.
+        This link works once and is shown only now — copy it before you leave this page.
+        If you lose it, generate a new link from Pending Invitations; the old one stops working.
       </div>
 
       <div className="flex flex-wrap gap-3">

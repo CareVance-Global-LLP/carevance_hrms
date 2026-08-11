@@ -554,12 +554,18 @@ export interface InvitationSummary {
   email_sent_at?: string | null;
   expires_at?: string | null;
   accepted_at?: string | null;
-  mail_delivery?: 'sent' | 'failed' | 'not_requested';
+  /** 'queued' since delivery moved onto the queue; 'sent' kept for older payloads. */
+  mail_delivery?: 'queued' | 'sent' | 'failed' | 'not_requested';
   can_accept?: boolean;
+  can_resend?: boolean;
+  can_revoke?: boolean;
+  invited_by?: { id: number; name: string } | null;
   organization?: Pick<Organization, 'id' | 'name' | 'slug'>;
   metadata?: {
     group_ids?: number[];
     project_ids?: number[];
+    job_title?: string | null;
+    joining_date?: string | null;
   };
 }
 

@@ -4,6 +4,7 @@ import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Ha
 import { groupApi, payrollApi } from '../../../services/api';
 import api from '../../../services/api';
 import CustomSelect from '../../../components/ui/CustomSelect';
+import { TextInput } from '@/components/ui/FormField';
 import type { AddUserWizardForm, IncompleteUserCheck } from './types';
 
 interface Step1Props {
@@ -59,6 +60,21 @@ function computeMaxJoiningDate(): string {
 
 export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromStep2, incompleteUser, setIncompleteUser }: Step1Props) {
   const maxJoiningDate = useMemo(computeMaxJoiningDate, []);
+
+  /**
+   * The eleven curated zones, plus the current value if it is not among them.
+   *
+   * Without the fallback entry a timezone outside this shortlist — anyone
+   * working from a country the list does not name — renders the placeholder on
+   * a field marked required, with a value silently submitted underneath.
+   */
+  const timezoneOptions = useMemo(() => {
+    const options = TIMEZONES.map((tz) => ({ value: tz.value, label: tz.label }));
+    if (form.timezone && !options.some((option) => option.value === form.timezone)) {
+      options.push({ value: form.timezone, label: `${form.timezone} (detected)` });
+    }
+    return options;
+  }, [form.timezone]);
   // Fetch departments from backend API
   const { data: departments, isLoading: departmentsLoading } = useQuery({
     queryKey: ['add-user-groups'],
@@ -115,6 +131,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
   };
 
   const [showIncompleteModal, setShowIncompleteModal] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [checkingEmail, setCheckingEmail] = useState(false);
 
@@ -163,23 +180,30 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
     setErrors(newErrors);
   };
 
-  const inputClass = (field: keyof AddUserWizardForm) =>
-    `w-full px-3 py-2.5 text-sm border rounded-lg outline-none transition-all ${
-      errors[field]
-        ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-100'
-        : 'border-gray-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
-    }`;
+  /*
+   * Only the error state is expressed here.
+   *
+   * The base styling now comes from the shared `TextInput`, which every other
+   * form in the app renders through. This file used to hand-roll the whole
+   * control — its own border, padding and focus ring, against a hardcoded white
+   * background — so the wizard's fields sat a shade off from the drawer around
+   * them and did not pick up the theme tokens the rest of the app resolves
+   * against. Overriding the border via className is the existing convention;
+   * see the government-ID fields in EmployeeDetailWorkspace.
+   */
+  const errorClass = (field: keyof AddUserWizardForm) =>
+    errors[field] ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : '';
 
   return (
     <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
       {/* Name Row */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <Briefcase className="h-3.5 w-3.5 text-gray-400" />
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <Briefcase className="h-3.5 w-3.5 text-slate-400" />
             First Name <span className="text-red-400">*</span>
           </label>
-          <input
+          <TextInput
             type="text"
             value={form.firstName}
             onChange={(e) => {
@@ -187,19 +211,17 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               if (errors.firstName) setErrors((p) => ({ ...p, firstName: undefined }));
             }}
             onBlur={() => handleBlur('firstName')}
-            className={inputClass('firstName')}
+            className={errorClass('firstName')}
             placeholder="John"
           />
           {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name</label>
-          <input
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Last Name</label>
+          <TextInput
             type="text"
             value={form.lastName}
             onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
-            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none
-                       focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
             placeholder="Doe"
           />
         </div>
@@ -208,11 +230,11 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       {/* Email & Phone */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <Mail className="h-3.5 w-3.5 text-gray-400" />
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <Mail className="h-3.5 w-3.5 text-slate-400" />
             Email Address <span className="text-red-400">*</span>
           </label>
-          <input
+          <TextInput
             type="email"
             value={form.email}
             onChange={(e) => {
@@ -226,7 +248,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
                 checkEmail(form.email);
               }
             }}
-            className={inputClass('email')}
+            className={errorClass('email')}
             placeholder="john@company.com"
           />
           {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email}</p>}
@@ -258,11 +280,11 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           )}
         </div>
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <Lock className="h-3.5 w-3.5 text-gray-400" />
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <Lock className="h-3.5 w-3.5 text-slate-400" />
             Temporary Password <span className="text-red-400">*</span>
           </label>
-          <input
+          <TextInput
             type="text"
             value={form.password}
             onChange={(e) => {
@@ -270,7 +292,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               if (errors.password) setErrors((p) => ({ ...p, password: undefined }));
             }}
             onBlur={() => handleBlur('password')}
-            className={inputClass('password')}
+            className={errorClass('password')}
             placeholder="At least 8 characters"
             autoComplete="new-password"
           />
@@ -280,17 +302,17 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             // Deliberately not masked: the admin has to read this back to the
             // joiner, and a dot-filled box they cannot check is how the wrong
             // password gets handed over.
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-slate-500">
               Share this with the employee — they can change it from Settings after signing in.
             </p>
           )}
         </div>
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <Phone className="h-3.5 w-3.5 text-gray-400" />
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <Phone className="h-3.5 w-3.5 text-slate-400" />
             Phone Number <span className="text-red-400">*</span>
           </label>
-          <input
+          <TextInput
             type="tel"
             value={form.phone}
             onChange={(e) => {
@@ -298,7 +320,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               if (errors.phone) setErrors((p) => ({ ...p, phone: undefined }));
             }}
             onBlur={() => handleBlur('phone')}
-            className={inputClass('phone')}
+            className={errorClass('phone')}
             placeholder="+91 98765 43210"
           />
           {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone}</p>}
@@ -308,8 +330,8 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       {/* Role & Designation */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <Building2 className="h-3.5 w-3.5 text-gray-400" />
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <Building2 className="h-3.5 w-3.5 text-slate-400" />
             Role <span className="text-red-400">*</span>
           </label>
           <CustomSelect
@@ -320,11 +342,11 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           />
         </div>
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <Briefcase className="h-3.5 w-3.5 text-gray-400" />
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <Briefcase className="h-3.5 w-3.5 text-slate-400" />
             Designation <span className="text-red-400">*</span>
           </label>
-          <input
+          <TextInput
             type="text"
             value={form.designation}
             onChange={(e) => {
@@ -332,7 +354,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               if (errors.designation) setErrors((p) => ({ ...p, designation: undefined }));
             }}
             onBlur={() => handleBlur('designation')}
-            className={inputClass('designation')}
+            className={errorClass('designation')}
             placeholder="e.g., Software Engineer"
           />
           {errors.designation && <p className="mt-1 text-xs text-red-500">{errors.designation}</p>}
@@ -341,31 +363,29 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
       {/* Employee Code (optional) */}
       <div>
-        <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-          <Hash className="h-3.5 w-3.5 text-gray-400" />
-          Employee Code <span className="text-xs text-gray-400 font-normal">(optional)</span>
+        <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <Hash className="h-3.5 w-3.5 text-slate-400" />
+          Employee Code <span className="text-xs text-slate-400 font-normal">(optional)</span>
         </label>
-        <input
+        <TextInput
           type="text"
           value={form.employeeCode}
           onChange={(e) => setForm((p) => ({ ...p, employeeCode: e.target.value }))}
-          className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none
-                     focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
           placeholder="e.g., EMP-001"
         />
-        <p className="mt-1 text-xs text-gray-400">Unique identifier for this employee</p>
+        <p className="mt-1 text-xs text-slate-400">Unique identifier for this employee</p>
       </div>
 
       {/* Department (Multi-select chips) — FROM BACKEND API */}
       <div>
-        <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-2">
-          <Building2 className="h-3.5 w-3.5 text-gray-400" />
+        <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-2">
+          <Building2 className="h-3.5 w-3.5 text-slate-400" />
           Department <span className="text-red-400">*</span>
-          <span className="text-xs text-gray-400 font-normal">select one or more</span>
+          <span className="text-xs text-slate-400 font-normal">select one or more</span>
         </label>
 
         {departmentsLoading ? (
-          <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+          <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading departments...
           </div>
@@ -380,7 +400,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
                   className={`px-3 py-1.5 text-sm rounded-full border transition-all ${
                     isActive
                       ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium'
-                      : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
                   }`}
                 >
                   {isActive && <span className="mr-1">✓</span>}
@@ -390,7 +410,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             })}
           </div>
         ) : (
-          <div className="text-center py-4 text-sm text-gray-500 bg-gray-50 rounded-lg">
+          <div className="text-center py-4 text-sm text-slate-500 bg-slate-50 rounded-lg">
             No departments found. Create one in Settings → Groups.
           </div>
         )}
@@ -400,11 +420,11 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       {/* Date of Joining & Work Location */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <Calendar className="h-3.5 w-3.5 text-gray-400" />
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <Calendar className="h-3.5 w-3.5 text-slate-400" />
             Date of Joining <span className="text-red-400">*</span>
           </label>
-          <input
+          <TextInput
             type="date"
             value={form.joiningDate}
             /* Was capped at today, which made pre-boarding impossible on the
@@ -421,13 +441,13 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               if (errors.joiningDate) setErrors((p) => ({ ...p, joiningDate: undefined }));
             }}
             onBlur={() => handleBlur('joiningDate')}
-            className={inputClass('joiningDate')}
+            className={errorClass('joiningDate')}
           />
           {errors.joiningDate && <p className="mt-1 text-xs text-red-500">{errors.joiningDate}</p>}
         </div>
         <div>
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <MapPin className="h-3.5 w-3.5 text-gray-400" />
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <MapPin className="h-3.5 w-3.5 text-slate-400" />
             Work Location <span className="text-red-400">*</span>
           </label>
           <CustomSelect
@@ -441,49 +461,55 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
       {/* Timezone */}
       <div>
-        <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-          <Globe className="h-3.5 w-3.5 text-gray-400" />
+        <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+          <Globe className="h-3.5 w-3.5 text-slate-400" />
           Timezone <span className="text-red-400">*</span>
         </label>
         <CustomSelect
-          options={TIMEZONES.map((tz) => ({ value: tz.value, label: tz.label }))}
+          options={timezoneOptions}
           value={form.timezone}
-          onChange={(value) => setForm((p) => ({ ...p, timezone: value }))}
+          onChange={(value) => {
+            setForm((p) => ({ ...p, timezone: value }));
+            if (errors.timezone) setErrors((p) => ({ ...p, timezone: undefined }));
+          }}
           placeholder="Select timezone"
         />
-        <p className="mt-1 text-xs text-gray-400">Auto-detected from browser. Change if needed.</p>
+        {errors.timezone ? (
+          <p className="mt-1 text-xs text-red-500">{errors.timezone}</p>
+        ) : (
+          <p className="mt-1 text-xs text-slate-400">Auto-detected from browser. Change if needed.</p>
+        )}
       </div>
 
       {/* Payroll & Compensation */}
-      <div className="border-t border-gray-100 pt-5 mt-5">
+      <div className="border-t border-slate-100 pt-5 mt-5">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700 mb-4">Payroll & Compensation</p>
 
         {/* Annual CTC */}
         <div className="mb-4">
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <IndianRupee className="h-3.5 w-3.5 text-gray-400" />
-            Annual CTC <span className="text-xs text-gray-400 font-normal">(optional)</span>
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <IndianRupee className="h-3.5 w-3.5 text-slate-400" />
+            Annual CTC <span className="text-xs text-slate-400 font-normal">(optional)</span>
           </label>
-          <input
+          <TextInput
             type="number"
             min="0"
             step="1000"
             value={form.annualCtc || ''}
             onChange={(e) => setForm((p) => ({ ...p, annualCtc: e.target.value ? Number(e.target.value) : null }))}
-            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
             placeholder="e.g., 600000"
           />
-          <p className="mt-1 text-xs text-gray-400">Annual cost to company in INR</p>
+          <p className="mt-1 text-xs text-slate-400">Annual cost to company in INR</p>
         </div>
 
         {/* Pay Group */}
         <div className="mb-4">
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <Users className="h-3.5 w-3.5 text-gray-400" />
-            Pay Group <span className="text-xs text-gray-400 font-normal">(optional)</span>
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <Users className="h-3.5 w-3.5 text-slate-400" />
+            Pay Group <span className="text-xs text-slate-400 font-normal">(optional)</span>
           </label>
           {payGroupsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+            <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading pay groups...
             </div>
@@ -499,7 +525,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               dropDirection="down"
             />
           ) : (
-            <div className="text-sm text-gray-500 py-2 bg-gray-50 rounded-lg px-3">
+            <div className="text-sm text-slate-500 py-2 bg-slate-50 rounded-lg px-3">
               No pay groups found. Create one in Payroll → Pay Groups.
             </div>
           )}
@@ -507,12 +533,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
         {/* Salary Structure */}
         <div className="mb-4">
-          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
-            <FileStack className="h-3.5 w-3.5 text-gray-400" />
-            Salary Structure <span className="text-xs text-gray-400 font-normal">(optional)</span>
+          <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
+            <FileStack className="h-3.5 w-3.5 text-slate-400" />
+            Salary Structure <span className="text-xs text-slate-400 font-normal">(optional)</span>
           </label>
           {salaryStructuresLoading ? (
-            <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
+            <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading salary structures...
             </div>
@@ -530,12 +556,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
                 placeholder="Select salary structure"
                 dropDirection="down"
               />
-              <p className="mt-1 text-xs text-gray-400">
+              <p className="mt-1 text-xs text-slate-400">
                 Default structure is auto-selected. Change if needed.
               </p>
             </>
           ) : (
-            <div className="text-sm text-gray-500 py-2 bg-gray-50 rounded-lg px-3">
+            <div className="text-sm text-slate-500 py-2 bg-slate-50 rounded-lg px-3">
               No salary structures found. Create one in Payroll → Salary Structures.
             </div>
           )}
@@ -550,22 +576,28 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             onClick={(e) => e.stopPropagation()}
           />
 
-          <div className="relative z-10 w-full max-w-md mx-4 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+          <div className="relative z-10 w-full max-w-md mx-4 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden">
             <div className="px-6 pt-6 pb-2">
               <div className="flex items-center justify-center mb-3">
                 <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
                   <AlertTriangle className="h-6 w-6 text-amber-500" />
                 </div>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 text-center">
+              <h3 className="text-lg font-semibold text-slate-900 text-center">
                 {incompleteUser.incomplete ? 'Incomplete Account Found' : 'Account Already Exists'}
               </h3>
-              <p className="mt-2 text-sm text-gray-500 text-center leading-relaxed">
-                An account for <span className="font-semibold text-gray-700">{incompleteUser.email}</span> already exists.
+              <p className="mt-2 text-sm text-slate-500 text-center leading-relaxed">
+                An account for <span className="font-semibold text-slate-700">{incompleteUser.email}</span> already exists.
                 {incompleteUser.incomplete ? ' It was started but not completed.' : ''}
                 {' '}What would you like to do?
               </p>
             </div>
+
+            {deleteError ? (
+              <div role="alert" className="mx-6 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {deleteError}
+              </div>
+            ) : null}
 
             <div className="px-6 pb-6 pt-4 space-y-2.5">
               <button
@@ -593,7 +625,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
                   setErrors((prev) => ({ ...prev, email: undefined }));
                   setShowIncompleteModal(false);
                 }}
-                className="w-full px-4 py-2.5 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                className="w-full px-4 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 active:bg-slate-100 transition-colors"
               >
                 Use Different Email
               </button>
@@ -602,12 +634,19 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
                 type="button"
                 onClick={async () => {
                   if (!incompleteUser.userId) return;
+                  setDeleteError(null);
                   try {
                     await api.delete(`/users/${incompleteUser.userId}/incomplete`);
                     setIncompleteUser(null);
                     setShowIncompleteModal(false);
                   } catch (error: any) {
-                    alert(error.response?.data?.message || 'Cannot remove this user. Please resume instead.');
+                    // Shown inside the dialog rather than through alert(), which
+                    // stacked a browser dialog on top of this one and read as a
+                    // crash for what is usually "this account is too far along
+                    // to delete".
+                    setDeleteError(
+                      error.response?.data?.message || 'This account cannot be removed. Resume the setup instead.'
+                    );
                   }
                 }}
                 className="w-full px-4 py-2.5 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 active:bg-red-200 transition-colors"
@@ -618,7 +657,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               <button
                 type="button"
                 onClick={() => setShowIncompleteModal(false)}
-                className="w-full px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors"
+                className="w-full px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-600 transition-colors"
               >
                 Cancel
               </button>

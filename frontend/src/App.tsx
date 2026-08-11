@@ -63,7 +63,6 @@ const Settings = lazyWithChunkRetry(() => import('@/pages/Settings'));
 const Monitoring = lazyWithChunkRetry(() => import('@/pages/Monitoring'));
 const Attendance = lazyWithChunkRetry(() => import('@/pages/Attendance'));
 const Chat = lazyWithChunkRetry(() => import('@/pages/Chat'));
-const UserManagement = lazyWithChunkRetry(() => import('@/pages/UserManagement'));
 const AuditLogs = lazyWithChunkRetry(() => import('@/pages/AuditLogs'));
 const ApprovalInbox = lazyWithChunkRetry(() => import('@/pages/ApprovalInbox'));
 const NotificationsCenter = lazyWithChunkRetry(() => import('@/pages/NotificationsCenter'));
@@ -717,7 +716,15 @@ function App() {
             <Route path="super-admin/billing" element={<SuperAdminRoute><SuperAdminBilling /></SuperAdminRoute>} />
             <Route path="super-admin/plans" element={<SuperAdminRoute><SuperAdminPlans /></SuperAdminRoute>} />
             <Route path="legacy/monitoring" element={<AdminRoute><Monitoring /></AdminRoute>} />
-            <Route path="legacy/user-management" element={<AdminRoute><UserManagement /></AdminRoute>} />
+            {/*
+              `legacy/user-management` was removed here.
+
+              It was a fifth way to create an employee — a 729-line page calling
+              userApi.create with its own field set — and nothing in the app
+              linked to it, so it was reachable only by typing the path. Keeping
+              an unlinked create path alive meant every fix to the add-employee
+              flow had one more place to miss. Add User covers what it did.
+            */}
           </Route>
           <Route
             path="mobile/dashboard"

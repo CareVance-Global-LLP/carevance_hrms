@@ -1,3 +1,5 @@
+import { detectTimeZone } from '@/lib/timezones';
+
 export interface OtherEarning {
   name: string;
   type: 'fixed' | 'percentage';
@@ -80,7 +82,10 @@ export const defaultForm: AddUserWizardForm = {
   designation: '',
   joiningDate: new Date().toISOString().split('T')[0],
   workLocation: 'office',
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+  // Canonicalised, because Chrome reports IST as the legacy `Asia/Calcutta`
+  // while the picker lists `Asia/Kolkata` — the raw value matched no option and
+  // left a required field looking unset.
+  timezone: detectTimeZone(),
   employeeCode: '',
 
   // Step 1: Payroll Info

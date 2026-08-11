@@ -2,7 +2,7 @@
 
 namespace App\Services\Invitations;
 
-use App\Mail\CareVanceInvitationMail;
+use App\Jobs\SendInvitationMail;
 use App\Models\EmployeeWorkInfo;
 use App\Models\Group;
 use App\Models\Invitation;
@@ -14,7 +14,6 @@ use App\Services\Lifecycle\OnboardingService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -139,6 +138,9 @@ class InvitationService
                     $row['settings'] ?? null
                 ),
                 'job_title' => isset($row['job_title']) ? trim((string) $row['job_title']) : null,
+                // Per row, falling back to the batch default, so one CSV can
+                // carry staggered start dates.
+                'joining_date' => $row['joining_date'] ?? ($defaults['joining_date'] ?? null),
             ]);
             $created[] = $invitation;
 
@@ -155,6 +157,78 @@ class InvitationService
             'created' => $created,
             'failed' => $failed,
         ];
+    }
+
+    /**
+     * Issue a fresh token for an existing invitation and send it again.
+     *
+     * A resend has to rotate the token rather than repeat the old one: only the
+     * hash is stored, so the original URL is unrecoverable by design. Rotating
+     * also makes this the regenerate action for link invites, whose URL is
+     * shown exactly once and is otherwise lost the moment the panel closes.
+     *
+     * The returned payload carries `invite_url` for link deliveries so the
+     * caller can show the new link immediately.
+     */
+    public function resend(User $actor, Invitation $invitation): array
+    {
+        $invitation->markExpiredIfNeeded();
+
+        if ($invitation->status === 'accepted') {
+            throw new HttpException(422, 'This invitation has already been accepted.');
+        }
+
+        if ($invitation->status === 'revoked') {
+            throw new HttpException(422, 'This invitation was revoked. Send a new one instead.');
+        }
+
+        $failure = $this->validateRecipient($actor, $invitation->organization, $invitation->email);
+
+        if ($failure !== null) {
+            throw new HttpException(422, $failure);
+        }
+
+        $token = Invitation::generatePublicToken();
+
+        $invitation->forceFill([
+            'token_hash' => Invitation::hashPublicToken($token),
+            'status' => 'pending',
+            'expires_at' => now()->addHours((int) config('carevance.invitation_expiration_hours', 72)),
+            'email_sent_at' => null,
+        ])->save();
+
+        $mailDelivery = 'not_requested';
+        if ($invitation->delivery_method === 'email') {
+            $mailDelivery = $this->sendInvitationMail($invitation, $token) ? 'queued' : 'failed';
+        }
+
+        return [
+            ...$this->serialize($invitation->fresh(['organization', 'inviter']), $token),
+            'mail_delivery' => $mailDelivery,
+        ];
+    }
+
+    /**
+     * Withdraw a pending invitation so its link stops working.
+     *
+     * Revoking rather than deleting keeps the audit trail: who was invited, by
+     * whom, and that it was called back before anyone used it.
+     */
+    public function revoke(Invitation $invitation): Invitation
+    {
+        $invitation->markExpiredIfNeeded();
+
+        if ($invitation->status === 'accepted') {
+            throw new HttpException(422, 'This invitation has already been accepted and cannot be revoked.');
+        }
+
+        if ($invitation->status === 'revoked') {
+            return $invitation;
+        }
+
+        $invitation->forceFill(['status' => 'revoked'])->save();
+
+        return $invitation->fresh(['organization', 'inviter']);
     }
 
     public function resolveByToken(string $token): Invitation
@@ -198,6 +272,17 @@ class InvitationService
             ],
             'metadata' => $invitation->metadata ?? [],
             'can_accept' => $invitation->status === 'pending',
+            // Surfaced so the pending list can answer "who sent this, and when
+            // did the mail actually go out" without a second request — the two
+            // questions an admin asks before deciding to resend.
+            'invited_by' => $invitation->inviter ? [
+                'id' => $invitation->inviter->id,
+                'name' => $invitation->inviter->name,
+            ] : null,
+            // Expired invitations are resendable on purpose: rotating the token
+            // and extending the window is exactly what the admin wants there.
+            'can_resend' => in_array($invitation->status, ['pending', 'expired'], true),
+            'can_revoke' => in_array($invitation->status, ['pending', 'expired'], true),
         ];
     }
 
@@ -241,6 +326,17 @@ class InvitationService
                 'organization_id' => $invitation->organization_id,
                 'invited_by' => $invitation->invited_by,
                 'settings' => !empty($userSettings) ? $userSettings : null,
+                // Accepting the invitation IS the verification.
+                //
+                // The single-use token was delivered to this address and has
+                // just been redeemed, which is the same proof a verification
+                // link asks for. Leaving it unset sent the joiner round a
+                // second time for the same mailbox — and because login refuses
+                // an unverified account outright, a verification mail that
+                // failed to send (which this flow tolerates and logs) left a
+                // real person with an account they could never reach and no
+                // self-service way out.
+                'email_verified_at' => now(),
             ]);
 
             $groupIds = collect($invitation->metadata['group_ids'] ?? [])
@@ -350,6 +446,27 @@ class InvitationService
         return Carbon::now()->startOfDay();
     }
 
+    /**
+     * Store a joining date as a plain `Y-m-d` string.
+     *
+     * Deliberately date-only. Serialising a datetime here would put the value
+     * back through a UTC conversion on the way out and land the checklist a day
+     * early for anyone ahead of UTC — the same shift that date-only columns are
+     * cast around elsewhere in the app.
+     */
+    private function normalizeJoiningDate(mixed $raw): ?string
+    {
+        if (blank($raw)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $raw)->format('Y-m-d');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     private function createSingle(User $actor, Organization $organization, string $email, array $payload): array
     {
         $token = Invitation::generatePublicToken();
@@ -386,6 +503,13 @@ class InvitationService
                     'group_ids' => $allowedGroupIds,
                     'project_ids' => $allowedProjectIds,
                     'job_title' => isset($payload['job_title']) ? trim((string) $payload['job_title']) : null,
+                    // Read back by resolveJoiningDate() when the invite is
+                    // accepted. Before this the key was only ever read, so
+                    // every invited employee's onboarding checklist anchored on
+                    // whenever they happened to click the link — which makes
+                    // the pre-boarding items, the ones that sit at day -14,
+                    // impossible to schedule on any invite path.
+                    'joining_date' => $this->normalizeJoiningDate($payload['joining_date'] ?? null),
                 ],
                 'delivery_method' => $payload['delivery'] ?? 'email',
                 'expires_at' => $expiresAt,
@@ -394,7 +518,7 @@ class InvitationService
 
         $mailDelivery = 'not_requested';
         if (($payload['delivery'] ?? 'email') === 'email') {
-            $mailDelivery = $this->sendInvitationMail($invitation, $token) ? 'sent' : 'failed';
+            $mailDelivery = $this->sendInvitationMail($invitation, $token) ? 'queued' : 'failed';
         }
 
         $invitation->setRelation('organization', $organization);
@@ -485,6 +609,19 @@ class InvitationService
         return $normalized;
     }
 
+    /**
+     * Hand one invitation email to the queue.
+     *
+     * Returns whether the send was *accepted*, not whether it arrived — with a
+     * real queue driver the send happens after this request is over. The
+     * mail-configuration check stays in front of the dispatch so a workspace
+     * with no SMTP credentials still gets told immediately, rather than queuing
+     * work that can only fail.
+     *
+     * On the `sync` driver the job runs inline on dispatch, which is why a
+     * throwing send still reports false here and the caller's per-recipient
+     * failure reporting keeps working locally.
+     */
     private function sendInvitationMail(Invitation $invitation, string $token): bool
     {
         try {
@@ -498,14 +635,7 @@ class InvitationService
                 return false;
             }
 
-            Mail::to($invitation->email)->sendNow(
-                new CareVanceInvitationMail(
-                    invitation: $invitation->fresh(['organization', 'inviter']),
-                    acceptUrl: $this->invitationUrlService->acceptUrl($token),
-                )
-            );
-
-            $invitation->forceFill(['email_sent_at' => now()])->save();
+            SendInvitationMail::dispatch($invitation->id, $token);
 
             return true;
         } catch (\Throwable $exception) {

@@ -32,7 +32,10 @@ class InvitationFlowTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('invited_count', 1)
             ->assertJsonPath('invitations.0.role', 'employee')
-            ->assertJsonPath('invitations.0.mail_delivery', 'sent');
+            // 'queued', not 'sent': delivery is handed to SendInvitationMail so
+            // a fifty-recipient batch is not fifty blocking SMTP calls inside
+            // one request.
+            ->assertJsonPath('invitations.0.mail_delivery', 'queued');
 
         Mail::assertSent(CareVanceInvitationMail::class);
 
@@ -58,16 +61,23 @@ class InvitationFlowTest extends TestCase
             ->assertJsonPath('user.email', 'new.employee@example.com')
             ->assertJsonPath('user.role', 'employee')
             ->assertJsonPath('organization.id', $organization->id)
-            ->assertJsonPath('requires_verification', true)
+            // Redeeming a token that was emailed to this address IS the
+            // verification. Asking for a second round-trip locked people out
+            // whenever the verification mail failed to send.
+            ->assertJsonPath('requires_verification', false)
             ->assertJsonMissingPath('token')
-            ->assertJsonPath('verification_email_sent', true);
+            ->assertJsonPath('verification_email_sent', false);
 
         $this->assertDatabaseHas('invitations', [
             'organization_id' => $organization->id,
             'email' => 'new.employee@example.com',
             'status' => 'accepted',
         ]);
-        Mail::assertQueued(VerifyEmailMail::class);
+        $this->assertNotNull(
+            User::where('email', 'new.employee@example.com')->first()?->email_verified_at,
+            'An accepted invitation must leave the account verified and able to sign in.'
+        );
+        Mail::assertNotQueued(VerifyEmailMail::class);
 
         $this->postJson("/api/invitations/{$token}/accept", [
             'name' => 'New Employee',

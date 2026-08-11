@@ -9,6 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { invitationApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { analytics } from '@/lib/analytics';
+import { detectTimeZone } from '@/lib/timezones';
 
 const parseError = (error: any) => {
   const fieldErrors = error?.response?.data?.errors;
@@ -71,18 +72,35 @@ export default function AcceptInvitePage() {
       analytics.trackEvent('invite_accept_started', {
         source: 'accept-invite-page',
       });
-      const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      // Canonicalised: Chrome reports IST as the legacy `Asia/Calcutta`, which
+      // was being stamped onto the new account's settings and then matched no
+      // option in any timezone picker in the app.
       const result = await acceptInvitation(token, {
         name: name.trim(),
         password,
         password_confirmation: passwordConfirmation,
-        timezone: browserTimezone,
+        timezone: detectTimeZone(),
       });
 
       analytics.trackEvent('invite_accept_completed', {
         source: 'accept-invite-page',
       });
-      navigate(`/verify-email?email=${encodeURIComponent(result.email)}&status=pending-invite`);
+
+      /*
+       * Only send them to verify if the server actually wants verification.
+       *
+       * This redirect used to be unconditional, so an invited joiner was told
+       * "please verify your email before signing in" immediately after proving
+       * they control that mailbox by redeeming a token sent to it. The account
+       * is created verified now, and the response says so — this reads it
+       * instead of assuming.
+       */
+      if (result.requiresVerification) {
+        navigate(`/verify-email?email=${encodeURIComponent(result.email)}&status=pending-invite`);
+        return;
+      }
+
+      navigate(`/login?email=${encodeURIComponent(result.email)}&status=invite-accepted`);
     } catch (requestError: any) {
       setSubmitError(parseError(requestError));
     } finally {

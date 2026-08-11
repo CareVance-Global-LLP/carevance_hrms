@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, UserPlus } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { organizationApi } from '@/services/api';
+import { billingApi, organizationApi } from '@/services/api';
 import { getAssignableRoles } from '@/lib/permissions';
 import Button from '@/components/ui/Button';
 import { FeedbackBanner, PageEmptyState } from '@/components/ui/PageState';
@@ -19,6 +19,7 @@ import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import {
   addUserService,
   AdditionalInviteSettings,
+  CsvParseResult,
   InviteUserRole,
 } from '@/services/addUser';
 
@@ -55,6 +56,21 @@ const extractInviteError = (error: any, fallback: string) => {
 };
 
 const browserTimezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+
+/**
+ * Furthest joining date the invite forms accept, as `YYYY-MM-DD`.
+ *
+ * Built from local parts, not `toISOString()`, which converts to UTC first and
+ * returns yesterday in IST before 05:30. Matches the two-year ceiling the API
+ * and the Create User wizard both enforce.
+ */
+const maxJoiningDate = (() => {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() + 2);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+})();
 
 const defaultSettings: AdditionalInviteSettings = {
   // Inherit the organization default unless the inviter explicitly picks one.
@@ -129,8 +145,19 @@ export default function AddUserDrawer({
   const [inviteUrl, setInviteUrl] = useState('');
   const [linkEmail, setLinkEmail] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<CsvParseResult | null>(null);
   const [csvSummary, setCsvSummary] = useState<{ parsedCount: number; successCount: number; errorCount: number } | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
+  /*
+   * Shared by all three invite tabs.
+   *
+   * Without a joining date the onboarding checklist anchors on whenever the
+   * recipient happens to click their link, which puts every pre-boarding item
+   * (the first sit at day -14) in the past the moment they arrive.
+   */
+  const [joiningDate, setJoiningDate] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
+  const [expiresInHours, setExpiresInHours] = useState<number>(72);
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
 
   const groupsQuery = useQuery({
@@ -143,6 +170,34 @@ export default function AddUserDrawer({
     queryFn: addUserService.fetchProjects,
     enabled: open,
   });
+
+  /*
+   * Seat budget, shown before inviting rather than discovered at acceptance.
+   *
+   * Seats are deliberately claimed on accept, not on send — a pending invite
+   * holds nothing. But that made the budget invisible here, so twenty invites
+   * into five free seats meant fifteen people finding out individually, after
+   * clicking their link, with an error they could do nothing about. This warns;
+   * it does not block, because the accept-time check remains the authority.
+   */
+  const seatsQuery = useQuery({
+    queryKey: ['billing-snapshot'],
+    queryFn: async () => (await billingApi.current()).data,
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const seats = seatsQuery.data?.seats ?? null;
+  const seatsRemaining = seats && seats.max > 0 ? Math.max(0, seats.remaining) : null;
+  const pendingRecipients = activeTab === 'email'
+    ? emails.length
+    : activeTab === 'link'
+      ? (linkEmail.trim() ? 1 : 0)
+      : csvPreview?.rows.length ?? 0;
+  const seatShortfall = seatsRemaining !== null && pendingRecipients > seatsRemaining
+    ? pendingRecipients - seatsRemaining
+    : 0;
 
   const membersQuery = useQuery({
     queryKey: ['add-user-members', organization?.id],
@@ -232,6 +287,32 @@ export default function AddUserDrawer({
       ? 'Your current admin account email cannot be invited as another user.'
       : `${duplicateEmails.slice(0, 3).join(', ')} ${duplicateEmails.length === 1 ? 'already belongs' : 'already belong'} to existing user account${duplicateEmails.length === 1 ? '' : 's'}.`;
 
+  const departmentNameFor = (id: number) =>
+    (groupsQuery.data || []).find((group) => group.id === id)?.name ?? `#${id}`;
+
+  /**
+   * Hand the skipped rows back as a CSV.
+   *
+   * Row errors used to arrive as a wall of sentences with the row number buried
+   * in the prose, and there was nothing to give back to whoever produced the
+   * spreadsheet.
+   */
+  const downloadCsvErrors = () => {
+    if (!csvPreview?.errors.length) return;
+
+    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const content = ['issue', ...csvPreview.errors.map(escape)].join('\n');
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'carevance-import-issues.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   const saveDefaultsIfNeeded = () => {
     if (!rememberDefaults) {
       addUserService.clearDefaults();
@@ -258,6 +339,9 @@ export default function AddUserDrawer({
         groupIds: selectedGroupIds,
         projectIds: selectedProjectIds,
         settings,
+        joiningDate: joiningDate || undefined,
+        jobTitle: jobTitle.trim() || undefined,
+        expiresInHours,
       });
     },
     onSuccess: async (result) => {
@@ -297,6 +381,9 @@ export default function AddUserDrawer({
         groupIds: selectedGroupIds,
         projectIds: selectedProjectIds,
         settings,
+        joiningDate: joiningDate || undefined,
+        jobTitle: jobTitle.trim() || undefined,
+        expiresInHours,
       }),
     onSuccess: (result) => {
       saveDefaultsIfNeeded();
@@ -314,29 +401,54 @@ export default function AddUserDrawer({
     onError: () => setFeedback({ tone: 'error', message: 'Unable to copy invite link.' }),
   });
 
+  /*
+   * Parse on select, send on confirm.
+   *
+   * These were one action: choosing a file parsed it and immediately invited
+   * everyone in it. The parser already returns `{ rows, errors }`, so showing
+   * that before committing costs nothing and turns the riskiest tab into the
+   * one you can check.
+   */
+  const parseCsvMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!addUserService.isSupportedImportFile(file.name)) {
+        throw new Error('Only CSV and XLSX files are supported.');
+      }
+
+      return addUserService.parseImportFile(file, groupsQuery.data || [], projectsQuery.data || []);
+    },
+    onSuccess: (parsed) => {
+      setCsvPreview(parsed);
+      setCsvSummary(null);
+      setCsvError(
+        parsed.rows.length === 0
+          ? parsed.errors[0] || 'No usable rows found in this file.'
+          : null
+      );
+    },
+    onError: (error: any) => {
+      const message = extractInviteError(error, 'Could not read this file.');
+      setCsvPreview(null);
+      setCsvError(message);
+    },
+  });
+
   const csvMutation = useMutation({
     mutationFn: async () => {
       if (!organization?.id) {
         throw new Error('Organization context is required to import users.');
       }
-      if (!csvFile) {
-        throw new Error('Select a CSV file first.');
-      }
-      if (!addUserService.isSupportedImportFile(csvFile.name)) {
-        throw new Error('Only CSV and XLSX files are supported.');
+      if (!csvPreview) {
+        throw new Error('Select a file first.');
       }
 
-      return addUserService.processImportFile(
-        csvFile,
-        {
-          organizationId: organization.id,
-          defaultGroupIds: [],
-          defaultProjectIds: selectedProjectIds,
-          settings,
-        },
-        groupsQuery.data || [],
-        projectsQuery.data || []
-      );
+      return addUserService.sendParsedRows(csvPreview, {
+        organizationId: organization.id,
+        defaultGroupIds: [],
+        defaultProjectIds: selectedProjectIds,
+        settings,
+        joiningDate: joiningDate || undefined,
+      });
     },
     onSuccess: async ({ parsed, result }) => {
       saveDefaultsIfNeeded();
@@ -450,10 +562,22 @@ export default function AddUserDrawer({
               <>
                 <CsvUploadPanel
                   file={csvFile}
+                  preview={csvPreview}
+                  isParsing={parseCsvMutation.isPending}
+                  isImporting={csvMutation.isPending}
                   summary={csvSummary}
                   errorMessage={csvError}
-                  onSelectFile={setCsvFile}
+                  departmentNameFor={departmentNameFor}
+                  onSelectFile={(file) => {
+                    setCsvFile(file);
+                    setCsvPreview(null);
+                    setCsvSummary(null);
+                    setCsvError(null);
+                    if (file) parseCsvMutation.mutate(file);
+                  }}
                   onDownloadTemplate={addUserService.downloadCsvTemplate}
+                  onConfirmImport={() => csvMutation.mutate()}
+                  onDownloadErrors={downloadCsvErrors}
                 />
                 <div className="h-px bg-slate-200" />
               </>
@@ -482,6 +606,59 @@ export default function AddUserDrawer({
             {activeTab !== 'csv' && activeTab !== 'custom' ? (
               <>
                 <RoleSelector value={role} onChange={setRole} allowedRoles={allowedRoles} />
+                <div className="h-px bg-slate-200" />
+              </>
+            ) : null}
+
+            {/*
+              Joining date, job title and expiry, shared by both invite tabs.
+              An invite could previously carry none of them: the checklist
+              anchored on whenever the link was clicked, invited people arrived
+              with no designation, and every link lasted exactly 72 hours
+              because the UI never sent the expiry the API already accepted.
+            */}
+            {activeTab !== 'csv' && activeTab !== 'custom' ? (
+              <>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div>
+                    <FieldLabel hint="optional">Joining date</FieldLabel>
+                    <input
+                      type="date"
+                      value={joiningDate}
+                      max={maxJoiningDate}
+                      onChange={(event) => setJoiningDate(event.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">
+                      {joiningDate ? 'Onboarding anchors on this date.' : 'Defaults to the day they accept.'}
+                    </p>
+                  </div>
+                  <div>
+                    <FieldLabel hint="optional">Job title</FieldLabel>
+                    <input
+                      type="text"
+                      value={jobTitle}
+                      onChange={(event) => setJobTitle(event.target.value)}
+                      placeholder="e.g., Support Analyst"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                    />
+                    <p className="mt-1 text-xs text-slate-500">Saved as their designation.</p>
+                  </div>
+                  <div>
+                    <FieldLabel>Invite expires</FieldLabel>
+                    <SelectInput
+                      value={String(expiresInHours)}
+                      onChange={(event) => setExpiresInHours(Number(event.target.value))}
+                    >
+                      <option value="24">In 24 hours</option>
+                      <option value="72">In 3 days</option>
+                      <option value="168">In 7 days</option>
+                      <option value="720">In 30 days</option>
+                    </SelectInput>
+                    <p className="mt-1 text-xs text-slate-500">After this the link stops working.</p>
+                  </div>
+                </div>
+
                 <div className="h-px bg-slate-200" />
               </>
             ) : null}
@@ -649,6 +826,21 @@ export default function AddUserDrawer({
               />
             ) : null}
 
+            {activeTab !== 'custom' && seatShortfall > 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <p className="font-semibold">
+                  {seatsRemaining === 0
+                    ? 'No seats left'
+                    : `Only ${seatsRemaining} seat${seatsRemaining === 1 ? '' : 's'} left`}
+                </p>
+                <p className="mt-1">
+                  You are inviting {pendingRecipients}. Invitations still send, but the last{' '}
+                  {seatShortfall} to accept will be turned away until you{' '}
+                  <Link to="/settings/billing" className="font-medium underline underline-offset-2">add seats</Link>.
+                </p>
+              </div>
+            ) : null}
+
             <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-5">
               <Button variant="secondary" onClick={() => {
                 setFeedback(null);
@@ -663,7 +855,11 @@ export default function AddUserDrawer({
                   disabled={!organization?.id || allowedRoles.length === 0 || emails.length === 0 || invalidEmails.length > 0 || duplicateEmails.length > 0 || inviteMutation.isPending || membersQuery.isLoading}
                   iconLeft={<UserPlus className="h-4 w-4" />}
                 >
-                  {inviteMutation.isPending ? 'Sending...' : 'Send Invite'}
+                  {/* The count is the confirmation on a bulk action — this read
+                      the same for one recipient and for sixty. */}
+                  {inviteMutation.isPending
+                    ? `Sending ${emails.length}...`
+                    : emails.length > 1 ? `Send ${emails.length} invites` : 'Send invite'}
                 </Button>
               ) : null}
               {activeTab === 'link' ? (
@@ -680,18 +876,11 @@ export default function AddUserDrawer({
                   {inviteUrl ? 'Copy Invite Link' : 'Generate Invite Link'}
                 </Button>
               ) : null}
-              {activeTab === 'csv' ? (
-                <Button
-                  onClick={() => {
-                    setFeedback(null);
-                    setCsvError(null);
-                    csvMutation.mutate();
-                  }}
-                  disabled={!organization?.id || allowedRoles.length === 0 || !csvFile || csvMutation.isPending}
-                >
-                  {csvMutation.isPending ? 'Uploading CSV...' : 'Upload CSV'}
-                </Button>
-              ) : null}
+              {/*
+                No CSV button here on purpose. The import is confirmed from the
+                preview, next to the rows it is about to send — a second button
+                down here would be a way to import without having looked.
+              */}
             </div>
           </section>
         </div>

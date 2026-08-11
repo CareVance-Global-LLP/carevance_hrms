@@ -44,6 +44,11 @@ class StoreInvitationRequest extends ApiFormRequest
             'role' => ['required', 'string', Rule::in(['admin', 'manager', 'employee', 'client'])],
             'delivery' => ['nullable', 'string', Rule::in(['email', 'link'])],
             'expires_in_hours' => 'nullable|integer|min:1|max:720',
+            // No lower bound: entering a joiner late and backdating their start
+            // is legitimate. The upper bound matches the Create User wizard, so
+            // both paths agree on what a plausible start date looks like.
+            'joining_date' => 'nullable|date|before_or_equal:'.now()->addYears(2)->format('Y-m-d'),
+            'job_title' => 'nullable|string|max:255',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
             'project_ids' => 'nullable|array',
