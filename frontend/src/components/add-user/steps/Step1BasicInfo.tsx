@@ -10,6 +10,7 @@ import {
   USER_FIELD_LIMITS,
   maxDepartmentsFor,
   maxJoiningDate as computeMaxJoiningDate,
+  validateUserStep1,
 } from '@/lib/validation/userRules';
 
 interface Step1Props {
@@ -165,36 +166,28 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
     }
   };
 
+  /**
+   * Show the blurred field's error as soon as the user leaves it.
+   *
+   * Runs the same validator the step gate runs and takes only the message for
+   * that one field, rather than re-deriving the rule. This used to re-implement
+   * the email, phone, password and joining-date checks inline — four more
+   * copies to keep in step with the server — and the phone copy still carried
+   * the old unbounded regex, so an over-long number produced no error on blur
+   * even though the gate would refuse it a moment later.
+   *
+   * A field with nothing wrong has its error cleared, so correcting a value and
+   * tabbing away removes the message.
+   */
   const handleBlur = (field: keyof AddUserWizardForm) => {
-    const newErrors = { ...errors };
-    if (field === 'email' && form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      newErrors.email = 'Please enter a valid email';
-    }
-    if (field === 'phone' && form.phone && !/^[+]?[\d\s-]{10,}$/.test(form.phone)) {
-      newErrors.phone = 'Please enter a valid phone number (10+ digits)';
-    }
-    // Mirrors the API rule (min:8). Caught here so the admin fixes it before
-    // reaching step 2, where the account has already been created.
-    if (field === 'password' && form.password && form.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    }
-    // Kept in step with the `max` on the date input below, so the picker and
-    // the validation agree on what a plausible joining date is.
-    //
-    // A future joining date is the normal case, not an error: HR sets a joiner
-    // up before day one so payroll, assets and accounts are ready when they
-    // arrive. Only an implausibly distant date is worth questioning.
-    if (field === 'joiningDate' && form.joiningDate) {
-      const joining = new Date(form.joiningDate);
-      const twoYearsOut = new Date();
-      twoYearsOut.setFullYear(twoYearsOut.getFullYear() + 2);
-      if (joining > twoYearsOut) {
-        newErrors.joiningDate = 'Joining date is more than two years away — please check it';
-      } else {
-        delete newErrors.joiningDate;
-      }
-    }
-    setErrors(newErrors);
+    // Untouched empty fields should not be scolded before the user has had a
+    // chance to fill them — only report a required-field error once there is
+    // something to report about.
+    const isEmpty = !String(form[field] ?? '').trim();
+    if (isEmpty && !errors[field]) return;
+
+    const fieldErrors = validateUserStep1(form);
+    setErrors((prev) => ({ ...prev, [field]: fieldErrors[field] }));
   };
 
   /*
