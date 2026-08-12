@@ -250,7 +250,7 @@ export default function Sidebar({
              * it reads as a handle on the seam, and it needs no per-state
              * positioning to stay clear of the wordmark when expanded.
              */
-            className="absolute -right-3 top-[3.25rem] z-30 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+            className="absolute -right-3 top-[3.25rem] z-30 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border-strong bg-white text-slate-600 shadow-md transition hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
           >
             <ChevronLeft className={cn('h-3.5 w-3.5 transition-transform duration-200', collapsed && 'rotate-180')} aria-hidden="true" />
           </button>
