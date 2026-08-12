@@ -37,6 +37,15 @@ export interface AddUserWizardForm {
 
   // Step 1: Payroll Info (Optional)
   annualCtc: number | null;
+  /*
+   * Preview-only, not sent to the API.
+   *
+   * The breakup panel needs a basic percentage and a metro flag to show what a
+   * CTC means. The engine derives both server-side at payroll time, so these
+   * exist to drive the on-screen figures and nothing else.
+   */
+  ctcBasicPercentage: string;
+  ctcIsMetroCity: boolean;
   payGroupId: number | null;
   salaryStructureId: number | null;
 
@@ -92,6 +101,8 @@ export const defaultForm: AddUserWizardForm = {
 
   // Step 1: Payroll Info
   annualCtc: null,
+  ctcBasicPercentage: '',
+  ctcIsMetroCity: false,
   payGroupId: null,
   salaryStructureId: null,
 

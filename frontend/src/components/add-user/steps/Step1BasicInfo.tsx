@@ -4,6 +4,7 @@ import { Mail, Phone, Calendar, MapPin, Briefcase, Building2, Globe, Loader2, Ha
 import { groupApi, payrollApi } from '../../../services/api';
 import api from '../../../services/api';
 import CustomSelect from '../../../components/ui/CustomSelect';
+import CtcBreakupPanel from '@/components/payroll/CtcBreakupPanel';
 import { TextInput } from '@/components/ui/FormField';
 import type { AddUserWizardForm, IncompleteUserCheck } from './types';
 import {
@@ -606,6 +607,22 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             placeholder="e.g., 600000"
           />
           <p className="mt-1 text-xs text-slate-400">Annual cost to company in INR</p>
+
+          {/*
+            What that number means to the person, live.
+
+            The field used to take a CTC and show nothing back, so the admin
+            typed a figure with no idea what the joiner would receive. Every
+            value comes from lib/payroll/ctcBreakup, which mirrors
+            PayrollCalculatorService constant for constant.
+          */}
+          <CtcBreakupPanel
+            annualCtc={form.annualCtc ? String(form.annualCtc) : ''}
+            basicPercentage={form.ctcBasicPercentage}
+            onBasicPercentageChange={(value) => setForm((p) => ({ ...p, ctcBasicPercentage: value }))}
+            isMetroCity={form.ctcIsMetroCity}
+            onMetroChange={(value) => setForm((p) => ({ ...p, ctcIsMetroCity: value }))}
+          />
         </div>
 
         {/* Pay Group */}
