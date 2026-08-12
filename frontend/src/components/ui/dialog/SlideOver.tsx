@@ -1,15 +1,21 @@
 import { useId, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { cn } from '@/utils/cn';
 import { DialogDepthProvider, useDialogBehavior } from './useDialogBehavior';
 
 export interface SlideOverProps {
   open: boolean;
-  title: string;
+  /** Rendered as the drawer heading. Exactly one of title or titleId is required. */
+  title?: string;
+  /** Id of a heading already inside children, for drawers with a bespoke header. */
+  titleId?: string;
   subtitle?: string;
   onClose: () => void;
   busy?: boolean;
   dismissOnBackdrop?: boolean;
+  /** Panel width. Defaults to max-w-lg; drawers that were wider pass their own. */
+  widthClassName?: string;
   footer?: ReactNode;
   children: ReactNode;
 }
@@ -33,14 +39,16 @@ export interface SlideOverProps {
 export default function SlideOver({
   open,
   title,
+  titleId,
   subtitle,
   onClose,
   busy = false,
   dismissOnBackdrop = true,
+  widthClassName = 'max-w-lg',
   footer,
   children,
 }: SlideOverProps) {
-  const titleId = useId();
+  const generatedTitleId = useId();
   const { panelRef, backdropProps, panelProps, zIndex, depth } = useDialogBehavior({
     open,
     onClose,
@@ -50,6 +58,8 @@ export default function SlideOver({
 
   if (!open) return null;
   if (typeof document === 'undefined') return null;
+
+  const headingId = titleId ?? (title ? generatedTitleId : undefined);
 
   return createPortal(
     <div
@@ -61,29 +71,31 @@ export default function SlideOver({
       <div
         ref={panelRef}
         role="dialog"
-        aria-labelledby={titleId}
-        className="relative flex h-full w-full max-w-lg flex-col border-l border-slate-200 bg-white shadow-modal outline-none motion-safe:animate-slide-in-right"
+        aria-labelledby={headingId}
+        className={cn('relative flex h-full w-full flex-col border-l border-slate-200 bg-white shadow-modal outline-none motion-safe:animate-slide-in-right', widthClassName)}
         {...panelProps}
       >
-        <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
-          <div className="min-w-0 flex-1">
-            <h2 id={titleId} className="truncate text-base font-bold tracking-[-0.02em] text-slate-950">
-              {title}
-            </h2>
-            {subtitle ? <p className="mt-0.5 truncate text-xs text-slate-500">{subtitle}</p> : null}
+        {title ? (
+          <div className="flex items-start gap-3 border-b border-slate-200 px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <h2 id={headingId} className="truncate text-base font-bold tracking-[-0.02em] text-slate-950">
+                {title}
+              </h2>
+              {subtitle ? <p className="mt-0.5 truncate text-xs text-slate-500">{subtitle}</p> : null}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              aria-label="Close"
+              className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close"
-            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        ) : null}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className={cn('min-h-0 flex-1 overflow-y-auto', title ? 'px-5 py-4' : undefined)}>
           <DialogDepthProvider value={depth}>{children}</DialogDepthProvider>
         </div>
 

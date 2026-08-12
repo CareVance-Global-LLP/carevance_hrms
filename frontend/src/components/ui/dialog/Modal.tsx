@@ -24,6 +24,11 @@ const sizeClasses: Record<ModalSize, string> = {
   '6xl': 'max-w-6xl',
 };
 
+/** Stand-in for SurfaceCard when `bare` is set — layout only, no surface. */
+function BarePanelSurface({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={className}>{children}</div>;
+}
+
 export interface ModalProps {
   open: boolean;
   onClose: () => void;
@@ -37,6 +42,12 @@ export interface ModalProps {
   widthClassName?: string;
   /** Merged onto the panel. Migrations use it to keep a non-default max height. */
   panelClassName?: string;
+  /**
+   * Skip the SurfaceCard wrapper. For panels that already render their own
+   * card — wrapping those in a second one doubles the border and shadow.
+   * The child is then responsible for the panel's own surface and padding.
+   */
+  bare?: boolean;
   role?: 'dialog' | 'alertdialog';
   busy?: boolean;
   dismissOnBackdrop?: boolean;
@@ -74,6 +85,7 @@ export default function Modal({
   size = 'md',
   widthClassName,
   panelClassName,
+  bare = false,
   role = 'dialog',
   busy = false,
   dismissOnBackdrop = true,
@@ -96,6 +108,7 @@ export default function Modal({
   if (typeof document === 'undefined') return null;
 
   const headingId = titleId ?? (title ? generatedTitleId : undefined);
+  const PanelSurface = bare ? BarePanelSurface : SurfaceCard;
 
   return createPortal(
     <div
@@ -104,14 +117,15 @@ export default function Modal({
       style={{ zIndex }}
       {...backdropProps}
     >
-      <SurfaceCard className={cn('w-full', widthClassName ?? sizeClasses[size])}>
+      <PanelSurface className={cn('w-full', widthClassName ?? sizeClasses[size])}>
         <div
           ref={panelRef}
           role={role}
           aria-labelledby={headingId}
           aria-describedby={ariaDescribedBy}
           className={cn(
-            'flex max-h-[85vh] flex-col outline-none motion-safe:animate-dialog-in',
+            'flex flex-col outline-none motion-safe:animate-dialog-in',
+            bare ? 'max-h-full' : 'max-h-[85vh]',
             panelClassName,
           )}
           {...panelProps}
@@ -148,7 +162,7 @@ export default function Modal({
             </div>
           ) : null}
         </div>
-      </SurfaceCard>
+      </PanelSurface>
     </div>,
     document.body,
   );

@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { cn } from '@/utils/cn';
+import SlideOver from '@/components/ui/dialog/SlideOver';
 
 interface UploadForm16ModalProps {
   isOpen: boolean;
@@ -135,15 +136,16 @@ export default function UploadForm16Modal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
-      
-      {/* Slide-over panel */}
-      <div className="relative ml-auto w-full max-w-4xl h-full bg-white shadow-xl flex flex-col overflow-hidden">
+    <SlideOver
+      open
+      onClose={handleClose}
+      titleId="upload-form16-title"
+      widthClassName="max-w-4xl"
+      busy={uploadMutation.isPending}
+    >
         {/* Header */}
         <header className="flex items-center justify-between p-5 border-b border-slate-200 bg-slate-50">
-          <h2 className="text-xl font-bold text-slate-900">
+          <h2 id="upload-form16-title" className="text-xl font-bold text-slate-900">
             Upload Form 16 for FY {fyStart}-{fyEnd}
           </h2>
           <button
@@ -460,7 +462,6 @@ export default function UploadForm16Modal({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </SlideOver>
   );
 }

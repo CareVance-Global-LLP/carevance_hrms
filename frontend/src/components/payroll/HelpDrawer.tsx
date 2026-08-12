@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, HelpCircle } from 'lucide-react';
+import SlideOver from '@/components/ui/dialog/SlideOver';
 
 interface HelpDrawerProps {
   isOpen: boolean;
@@ -33,18 +34,9 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
-      <div
-        className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-        onClick={onClose}
-        aria-label="Close help"
-      />
-      <div
-        className="relative bg-white h-full overflow-y-auto shadow-2xl"
-        style={{ width: 420 }}
-      >
+    <SlideOver open onClose={onClose} titleId="help-drawer-title" widthClassName="max-w-[420px]">
         <div className="sticky top-0 bg-white z-10 px-[22px] py-5 flex items-center justify-between border-b border-slate-200">
-          <div className="text-[15px] font-bold text-slate-900">Help &amp; Resources — HelpDrawer</div>
+          <div id="help-drawer-title" className="text-[15px] font-bold text-slate-900">Help &amp; Resources — HelpDrawer</div>
           <button
             onClick={onClose}
             className="p-1.5 rounded-md text-slate-700 hover:bg-slate-100 transition-colors"
@@ -136,7 +128,6 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
             ))}
           </div>
         </div>
-      </div>
-    </div>
+    </SlideOver>
   );
 }

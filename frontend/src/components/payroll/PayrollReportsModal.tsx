@@ -3,6 +3,7 @@ import { X, Download, FileText, TrendingUp, IndianRupee, Calendar, FileSpreadshe
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import type { PayrollStats } from '@/types';
+import Modal from '@/components/ui/dialog/Modal';
 
 interface PayrollReportsModalProps {
   isOpen: boolean;
@@ -242,13 +243,12 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <SurfaceCard className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+    <Modal open onClose={onClose} titleId="payroll-reports-title" size="4xl" panelClassName="max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-200">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-900">Payroll Reports</h2>
+              <h2 id="payroll-reports-title" className="text-xl font-bold text-slate-900">Payroll Reports</h2>
               {monthYear && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
                   {monthYear}
@@ -361,7 +361,6 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
             Close
           </Button>
         </div>
-      </SurfaceCard>
-    </div>
+    </Modal>
   );
 }
