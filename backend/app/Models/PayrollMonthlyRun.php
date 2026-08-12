@@ -13,6 +13,37 @@ class PayrollMonthlyRun extends Model
 
     protected $table = 'payroll_monthly_runs';
 
+    /**
+     * Statuses at or beyond which a run's figures are settled.
+     *
+     * This is the answer to "has this month been done?" — used to pick the
+     * previous run for month-over-month comparison, and to refuse reprocessing
+     * a month that is already closed.
+     *
+     * Four call sites each carried their own copy of this list, and every one
+     * of them read ['locked', 'approved', 'released', 'paid']. That list is
+     * wrong in both directions: 'paid' is not a status this model ever takes,
+     * and 'disbursed' — the terminal state every completed run reaches — was
+     * missing. So a month whose money had actually left the bank was invisible
+     * to all four:
+     *
+     *   - getPayrollDiff() reported "No previous month data"
+     *   - detectChanges() found no previous employee set, and therefore
+     *     reported every employee as a new joiner with zero CTC revisions
+     *   - getRunDifference() found no previous run to compare against
+     *   - preRunChecks()'s "No existing locked run" reported green for a month
+     *     that had already been disbursed
+     *
+     * Month-over-month variance is the standard control for catching a payroll
+     * error before it is paid. It was inoperative from the second month on.
+     *
+     * Kept in step with PayrollPeriodGuard::CLOSED_STATUSES, which already had
+     * the correct list.
+     *
+     * @var list<string>
+     */
+    public const CLOSED_STATUSES = ['locked', 'approved', 'released', 'disbursed'];
+
     protected $fillable = [
         'organization_id',
         'month_year',

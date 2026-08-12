@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\EmployeePayrollTemplate;
 use App\Models\PayrollChecklistItem;
 use App\Models\PayrollRunChecklist;
 use App\Models\PayrollMonthlyRun;
@@ -84,7 +85,78 @@ class PayrollChecklistService
             ];
         }
 
+        $results['missing_ctc'] = $this->checkMissingCtc($run, $orgId);
+
         return $results;
+    }
+
+    /**
+     * Employees the run was meant to cover but could not pay.
+     *
+     * Every other check above walks the run's items. This one cannot: an
+     * employee with no annual CTC is excluded during calculation and their
+     * item is removed, precisely so a ₹0 line cannot reach a payslip or a bank
+     * file. By the time this runs there is nothing left to iterate.
+     *
+     * So it asks the question the run started from instead — who has an active
+     * payroll template? — which is the same population autoSyncEmployees
+     * builds the run from. Anyone in that set without a usable CTC is an
+     * error: they are on payroll, and payroll could not pay them.
+     *
+     * @return array<string, mixed>
+     */
+    private function checkMissingCtc(PayrollMonthlyRun $run, int $orgId): array
+    {
+        $checkItem = PayrollChecklistItem::firstOrCreate(
+            ['check_code' => 'missing_ctc', 'organization_id' => $orgId],
+            [
+                'category' => 'employee_data',
+                'label' => 'Missing Annual CTC',
+                'severity' => 'error',
+                'is_auto_resolvable' => false,
+                'sort_order' => 6,
+            ]
+        );
+
+        $templates = EmployeePayrollTemplate::with('user')
+            ->where('organization_id', $orgId)
+            ->where('is_active', true)
+            ->get();
+
+        $affectedUsers = [];
+
+        foreach ($templates as $template) {
+            if ((float) ($template->annual_ctc ?? 0) > 0) {
+                continue;
+            }
+
+            $affectedUsers[] = $template->user_id;
+
+            $name = $template->user->name ?? "User #{$template->user_id}";
+
+            PayrollRunChecklist::updateOrCreate(
+                [
+                    'payroll_run_id' => $run->id,
+                    'checklist_item_id' => $checkItem->id,
+                    'user_id' => $template->user_id,
+                ],
+                [
+                    'organization_id' => $orgId,
+                    'status' => 'failed',
+                    'message' => "Missing Annual CTC: {$name}",
+                ]
+            );
+        }
+
+        return [
+            'check' => 'Missing Annual CTC',
+            'severity' => 'error',
+            'total' => $templates->count(),
+            'passed' => $templates->count() - count($affectedUsers),
+            'failed' => count($affectedUsers),
+            'affected_users' => $affectedUsers,
+            'status' => count($affectedUsers) > 0 ? 'failed' : 'passed',
+        ];
     }
 
     public function getRunChecklistStatus(int $payrollRunId): array

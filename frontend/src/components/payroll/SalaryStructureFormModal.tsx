@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Plus, Save } from 'lucide-react';
 import { payrollApi } from '@/services/api';
+import Modal from '@/components/ui/dialog/Modal';
 import type { SalaryStructure, CreateSalaryStructurePayload } from '@/types';
 
 interface OtherItem {
@@ -137,10 +138,15 @@ export default function SalaryStructureFormModal({ structure, onClose }: Props) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <Modal
+      open
+      onClose={onClose}
+      titleId="salary-structure-form-title"
+      size="2xl"
+      panelClassName="max-h-[90vh]"
+    >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <h3 className="text-base font-semibold text-slate-900">
+          <h3 id="salary-structure-form-title" className="text-base font-semibold text-slate-900">
             {isEdit ? 'Edit Template' : 'New Template'}
           </h3>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded">
@@ -235,8 +241,7 @@ export default function SalaryStructureFormModal({ structure, onClose }: Props) 
             {isEdit ? 'Update' : 'Create'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -8,6 +8,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import CustomSelect from '@/components/ui/CustomSelect';
 import { TextInput, FieldLabel } from '@/components/ui/FormField';
 import { useToast } from '@/components/ui/Toast';
+import Modal from '@/components/ui/dialog/Modal';
 
 const HOLD_TYPE_OPTIONS = [
   { value: 'processing', label: 'Hold (Processing)' },
@@ -184,9 +185,15 @@ export default function StopPaymentFlags({ payGroupId, monthYear }: StopPaymentF
       )}
 
       {resolveConfirmId !== null && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-sm w-full mx-4">
-            <h4 className="text-sm font-semibold text-slate-900 mb-2">Resolve Stop Payment Flag?</h4>
+        <Modal
+          open
+          onClose={() => setResolveConfirmId(null)}
+          titleId="resolve-stop-payment-title"
+          size="sm"
+          panelClassName="p-6"
+          busy={resolveMutation.isPending}
+        >
+            <h4 id="resolve-stop-payment-title" className="text-sm font-semibold text-slate-900 mb-2">Resolve Stop Payment Flag?</h4>
             <p className="text-xs text-slate-500 mb-4">
               This will clear the hold and allow payroll processing to proceed for this employee.
             </p>
@@ -203,8 +210,7 @@ export default function StopPaymentFlags({ payGroupId, monthYear }: StopPaymentF
                 Resolve
               </Button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </SurfaceCard>
   );
@@ -258,10 +264,9 @@ function CreateStopPaymentFlagModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+    <Modal open onClose={onClose} titleId="add-stop-payment-title" size="md" panelClassName="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-semibold text-slate-900">Add Stop Payment Flag</h4>
+          <h4 id="add-stop-payment-title" className="text-sm font-semibold text-slate-900">Add Stop Payment Flag</h4>
           <Button variant="ghost" size="sm" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
@@ -316,8 +321,7 @@ function CreateStopPaymentFlagModal({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -358,10 +362,9 @@ function EditStopPaymentFlagModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+    <Modal open onClose={onClose} titleId="edit-stop-payment-title" size="md" panelClassName="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="text-sm font-semibold text-slate-900">Edit Stop Payment Flag</h4>
+          <h4 id="edit-stop-payment-title" className="text-sm font-semibold text-slate-900">Edit Stop Payment Flag</h4>
           <Button variant="ghost" size="sm" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
@@ -393,7 +396,6 @@ function EditStopPaymentFlagModal({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

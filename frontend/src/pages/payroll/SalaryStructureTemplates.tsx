@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Copy, Pencil, Trash2, Calculator, ChevronDown, ChevronRight, X, Save } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import type { SalaryStructure, SalaryStructureBreakdown, CreateSalaryStructurePayload } from '@/types';
+import Modal from '@/components/ui/dialog/Modal';
 
 interface OtherEarning {
   name: string;
@@ -531,10 +532,18 @@ export default function SalaryStructureTemplates() {
       </div>
 
       {(showCreateModal || editingId) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <Modal
+          open
+          onClose={() => {
+            setShowCreateModal(false);
+            setEditingId(null);
+          }}
+          titleId="salary-structure-template-title"
+          size="2xl"
+          panelClassName="max-h-[90vh]"
+        >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">
+              <h3 id="salary-structure-template-title" className="text-lg font-medium text-gray-900">
                 {editingId ? 'Edit Structure' : 'New Salary Structure'}
               </h3>
               <button
@@ -736,8 +745,7 @@ export default function SalaryStructureTemplates() {
                 {editingId ? 'Update' : 'Create'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

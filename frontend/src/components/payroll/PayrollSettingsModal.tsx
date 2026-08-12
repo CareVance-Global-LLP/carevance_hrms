@@ -3,6 +3,7 @@ import { X, Save, Building2, Loader2, CheckCircle } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
+import Modal from '@/components/ui/dialog/Modal';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import type { PayrollOrganizationSettings } from '@/types';
 
@@ -98,10 +99,16 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-black/40">
-      <div className="w-full max-w-[560px] bg-white rounded-xl shadow-2xl flex flex-col max-h-[90vh]">
+    <Modal
+      open
+      onClose={onClose}
+      titleId="payroll-settings-title"
+      widthClassName="max-w-[560px]"
+      panelClassName="max-h-[90vh]"
+      busy={saveMutation.isPending}
+    >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <div className="text-base font-bold text-slate-900">Payroll Settings</div>
+          <div id="payroll-settings-title" className="text-base font-bold text-slate-900">Payroll Settings</div>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-md transition-colors">
             <X className="h-4 w-4 text-slate-500" />
           </button>
@@ -290,7 +297,6 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
             {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

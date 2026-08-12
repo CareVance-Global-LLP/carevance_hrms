@@ -39,6 +39,7 @@ class EmployeeWorkspaceController extends Controller
 
         $data = $request->validate([
             'first_name' => 'nullable|string|max:120',
+            'middle_name' => 'nullable|string|max:120',
             'last_name' => 'nullable|string|max:120',
             'display_name' => 'nullable|string|max:120',
             'gender' => 'nullable|string|max:32',

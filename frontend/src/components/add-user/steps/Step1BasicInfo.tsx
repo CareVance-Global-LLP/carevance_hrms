@@ -7,8 +7,10 @@ import CustomSelect from '../../../components/ui/CustomSelect';
 import { TextInput } from '@/components/ui/FormField';
 import type { AddUserWizardForm, IncompleteUserCheck } from './types';
 import {
+  MIN_PASSWORD_LENGTH_ACCEPTED,
   USER_FIELD_LIMITS,
   maxDepartmentsFor,
+  passwordRequirements,
   maxJoiningDate as computeMaxJoiningDate,
   validateUserStep1,
 } from '@/lib/validation/userRules';
@@ -219,8 +221,17 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
   return (
     <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
-      {/* Name Row */}
-      <div className="grid grid-cols-2 gap-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Identity</p>
+      {/*
+        Name row. Three columns rather than two: the middle name is kept as its
+        own field because statutory filings match on the name as printed on the
+        PAN card, and a mismatch is a common cause of 24Q and Form 16 rejection.
+
+        `grid-cols-1 sm:grid-cols-3` rather than a bare `grid-cols-3` — this file
+        previously carried no breakpoints at all, so every row stayed multi-column
+        on a phone and the inputs were unusably narrow.
+      */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
           <label htmlFor={fieldId('f1')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Briefcase className="h-3.5 w-3.5 text-slate-400" />
@@ -241,6 +252,18 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
           {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
         </div>
         <div>
+          <label htmlFor={fieldId('f1m')} className="block text-sm font-medium text-slate-700 mb-1.5">
+            Middle Name <span className="text-slate-400 font-normal">(optional)</span>
+          </label>
+          <TextInput
+            id={fieldId('f1m')}
+            type="text"
+            value={form.middleName}
+            onChange={(e) => setForm((p) => ({ ...p, middleName: e.target.value }))}
+            placeholder="as printed on PAN"
+          />
+        </div>
+        <div>
           <label htmlFor={fieldId('f2')} className="block text-sm font-medium text-slate-700 mb-1.5">Last Name</label>
           <TextInput
             id={fieldId('f2')}
@@ -253,7 +276,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       </div>
 
       {/* Email & Phone */}
-      <div className="grid grid-cols-2 gap-4">
+      {/*
+        Three fields, so this is three-up once there is room. As a two-column
+        grid the third — Phone — wrapped onto its own row with an empty cell
+        beside it, which is what it looked like in the running app.
+      */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <label htmlFor={fieldId('f3')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Mail className="h-3.5 w-3.5 text-slate-400" />
@@ -320,7 +348,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             }}
             onBlur={() => handleBlur('password')}
             className={errorClass('password')}
-            placeholder="At least 12 characters"
+            placeholder={`At least ${MIN_PASSWORD_LENGTH_ACCEPTED} characters`}
             autoComplete="new-password"
           />
           {errors.password ? (
@@ -333,6 +361,33 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               Share this with the employee — they can change it from Settings after signing in.
             </p>
           )}
+          {/*
+            Live requirement list rather than one pass/fail message.
+
+            The API's floor is environment-dependent — min(8) outside production,
+            min(12) plus composition in it — and this build cannot tell which one
+            it is talking to. Blocking at 12 refused passwords a local API would
+            take; blocking at 8 with nothing shown would let a production admin
+            pass here and collect a 422. So the 8 blocks and the rest advise.
+          */}
+          {form.password ? (
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1" aria-label="Password requirements">
+              {passwordRequirements(form.password).map((requirement) => (
+                <li
+                  key={requirement.label}
+                  className={`text-[11px] ${
+                    requirement.met
+                      ? 'text-emerald-600'
+                      : requirement.blocking
+                        ? 'text-red-500'
+                        : 'text-amber-600'
+                  }`}
+                >
+                  {requirement.met ? '✓' : '○'} {requirement.label}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
         <div>
           <label htmlFor={fieldId('f5')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
@@ -361,8 +416,9 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         </div>
       </div>
 
+      <p className="border-t border-slate-100 pt-5 mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Access</p>
       {/* Role & Designation */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Building2 className="h-3.5 w-3.5 text-slate-400" />
@@ -464,8 +520,9 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         {errors.departmentIds && <p className="mt-1 text-xs text-red-500">{errors.departmentIds}</p>}
       </div>
 
+      <p className="border-t border-slate-100 pt-5 mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Work</p>
       {/* Date of Joining & Work Location */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor={fieldId('f10')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Calendar className="h-3.5 w-3.5 text-slate-400" />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   X, Play, Loader2, IndianRupee, Users, AlertTriangle, Landmark,
   Check, Download, Wallet, Info, ChevronDown, ChevronUp, FileText,
@@ -9,6 +9,7 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { useToast } from '@/components/ui/Toast';
+import Modal from '@/components/ui/dialog/Modal';
 
 type ProcessMode = 'modal' | 'inline';
 
@@ -19,6 +20,12 @@ interface ProcessAndPayPanelProps {
   onClose?: () => void;
   onComplete?: () => void;
   mode?: ProcessMode;
+  /**
+   * Reports whether a process or disburse call is in flight. The panel already
+   * refuses to close its own button mid-run; the modal wrapper needs the same
+   * fact to stop Escape and a backdrop click abandoning a disbursement.
+   */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 interface ProcessAndPayModalProps {
@@ -61,6 +68,7 @@ export function ProcessAndPayPanel({
   onClose,
   onComplete,
   mode = 'modal',
+  onBusyChange,
 }: ProcessAndPayPanelProps) {
   const { show } = useToast();
   const queryClient = useQueryClient();
@@ -143,6 +151,12 @@ export function ProcessAndPayPanel({
     onClose();
   };
 
+  const isBusy = stage === 'processing' || stage === 'disbursing';
+
+  useEffect(() => {
+    onBusyChange?.(isBusy);
+  }, [isBusy, onBusyChange]);
+
   const run = result?.run;
   const summary = result?.summary;
   const bankFile = result?.bank_file;
@@ -153,7 +167,7 @@ export function ProcessAndPayPanel({
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 p-5 flex items-center justify-between z-10">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <h2 id="process-and-pay-title" className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Play className="h-5 w-5 text-blue-600" />
               Process &amp; Pay — {formatMonthLabel(monthYear)}
             </h2>
@@ -632,19 +646,30 @@ export default function ProcessAndPayModal({
   expectedNetPay,
   onComplete,
 }: ProcessAndPayModalProps) {
+  const [busy, setBusy] = useState(false);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+    <Modal
+      open
+      onClose={onClose}
+      titleId="process-and-pay-title"
+      size="2xl"
+      bare
+      showCloseButton={false}
+      busy={busy}
+    >
       <ProcessAndPayPanel
         mode="modal"
+        onBusyChange={setBusy}
         monthYear={monthYear}
         pendingCount={pendingCount}
         expectedNetPay={expectedNetPay}
         onClose={onClose}
         onComplete={onComplete}
       />
-    </div>
+    </Modal>
   );
 }
 

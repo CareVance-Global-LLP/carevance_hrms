@@ -233,7 +233,17 @@ export const getMaskedId = (idType: string, idNumber: string): string => {
   const normalized = idNumber.replace(/\s/g, '');
 
   switch (idType.toLowerCase()) {
+    /*
+     * Aadhaar shows the last four digits and nothing else.
+     *
+     * This used to render `1234XXXX5678` — the first four AND the last four,
+     * exposing 8 of the 12 digits. UIDAI's own masked-Aadhaar format reveals
+     * only the last four, and the Aadhaar Act's disclosure rules are the reason
+     * a masking helper exists at all. UAN is deliberately no longer grouped
+     * here: it is a PF account number, not an identity document.
+     */
     case 'aadhaar':
+      return 'XXXXXXXX' + normalized.slice(-4);
     case 'uan':
       return normalized.slice(0, 4) + 'XXXX' + normalized.slice(-4);
     case 'pan':

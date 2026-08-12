@@ -65,7 +65,13 @@ const fillValidStep1 = async (user: ReturnType<typeof userEvent.setup>) => {
   set('+91 98765 43210', '9876543210');
   set('e.g., Software Engineer', 'Data Analyst');
   // A temporary password is set at creation time and is required.
-  set('At least 12 characters', 'Temp-Pass-1234!');
+  //
+  // Queried by label, not by placeholder. The placeholder carries the minimum
+  // length, which is environment-dependent and has already moved once — every
+  // test in this file broke the day it changed from 12 to 8.
+  fireEvent.change(screen.getByLabelText(/temporary password/i), {
+    target: { value: 'Temp-Pass-1234!' },
+  });
   // Departments arrive from a query, so wait for the chip rather than assuming
   // it has rendered — under a full-suite run it has not yet.
   await user.click(await screen.findByRole('button', { name: /recruitment/i }));

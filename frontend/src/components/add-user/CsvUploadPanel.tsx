@@ -35,8 +35,16 @@ export default function CsvUploadPanel({
 
   return (
     <div className="space-y-4">
-      <label className="block cursor-pointer rounded-lg border border-dashed border-sky-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(239,246,255,0.9))] p-5 transition hover:border-sky-400 hover:bg-sky-50">
-        <div className="rounded-lg border border-slate-200 bg-white px-6 py-8 text-center shadow-sm">
+      {/*
+        The drop target used to carry a hardcoded near-white gradient:
+        bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(239,246,255,0.9))].
+        theme.css can remap bg-white and the slate scale, but it cannot reach an
+        rgba() baked into an arbitrary-value class — so in dark mode this stayed
+        white and the panel flashed a bright slab around a dark card. Tokens
+        only here.
+      */}
+      <label className="block cursor-pointer rounded-lg border border-dashed border-border-strong bg-surface-sunken p-5 transition hover:border-sky-400 hover:bg-surface-card">
+        <div className="rounded-lg border border-border-strong bg-surface-card px-6 py-8 text-center shadow-sm">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-sky-100 text-sky-700">
             <UploadCloud className="h-7 w-7" />
           </div>
@@ -75,7 +83,7 @@ export default function CsvUploadPanel({
       ) : null}
 
       {isParsing ? (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <div className="rounded-lg border border-border-strong bg-surface-sunken px-4 py-3 text-sm text-slate-600">
           Reading {file?.name}…
         </div>
       ) : null}
@@ -88,7 +96,7 @@ export default function CsvUploadPanel({
       */}
       {preview && !summary ? (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border-strong bg-surface-card px-4 py-3">
             <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
               <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               {rowCount} row{rowCount === 1 ? '' : 's'} ready

@@ -742,7 +742,9 @@ class PayrollCalculatorService
 
     public function getApprovedTaxDeductions(int $userId, ?string $financialYear = null): float
     {
-        $financialYear = $financialYear ?? $this->getCurrentFinancialYear();
+        // Callers pass whatever spelling they hold — '2026', '2026-2027',
+        // 'FY2026-27'. Normalise before the exact-match lookup.
+        $financialYear = self::financialYearKey($financialYear ?? $this->getCurrentFinancialYear());
 
         $declaration = EmployeeTaxDeclaration::where('user_id', $userId)
             ->where('financial_year', $financialYear)
@@ -817,7 +819,7 @@ class PayrollCalculatorService
      */
     public function getApprovedTaxDeductionMap(int $userId, ?string $financialYear = null): array
     {
-        $financialYear = $financialYear ?? $this->getCurrentFinancialYear();
+        $financialYear = self::financialYearKey($financialYear ?? $this->getCurrentFinancialYear());
 
         $declaration = EmployeeTaxDeclaration::where('user_id', $userId)
             ->where('financial_year', $financialYear)
@@ -855,6 +857,52 @@ class PayrollCalculatorService
         $normalized = preg_replace('/^section[_\s-]*/', '', $normalized) ?? $normalized;
 
         return 'section_' . $normalized;
+    }
+
+    /**
+     * Normalise any of the financial-year spellings in circulation to the one
+     * canonical form: 'YYYY-YY'.
+     *
+     * Same problem as exemptionKey() above, one column over, and it went
+     * unnoticed for longer. employee_tax_declarations.financial_year was found
+     * holding four different formats for the same concept:
+     *
+     *     2025-26      84 rows    canonical
+     *     2026-2027    15 rows    four-digit second half
+     *     2026          2 rows    calendar year, written by the frontend
+     *     2026-27       1 row     canonical
+     *
+     * getApprovedTaxDeductionMap() does an exact string match on the canonical
+     * form, so 17 of those 102 declarations were unreachable. An approved
+     * declaration that cannot be found contributes no exemptions at all, and
+     * the employee is taxed as though they had declared nothing — roughly
+     * ₹46,000 a year of excess TDS on a full 80C plus 80D claim.
+     *
+     * Accepts:
+     *   '2026-27', '2026-2027', '2026/27', 'FY2026-27', '2026'
+     * A bare year is read as the year the financial year starts in, which is
+     * what the frontend meant when it sent one.
+     */
+    public static function financialYearKey(string $financialYear): string
+    {
+        $value = strtoupper(trim($financialYear));
+        $value = preg_replace('/^FY[\s\-]*/', '', $value) ?? $value;
+        $value = str_replace('/', '-', $value);
+
+        // 'YYYY-YY' or 'YYYY-YYYY'
+        if (preg_match('/^(\d{4})-(\d{2,4})$/', $value, $m)) {
+            return $m[1] . '-' . substr((string) ((int) $m[1] + 1), -2);
+        }
+
+        // Bare 'YYYY' — the starting year.
+        if (preg_match('/^(\d{4})$/', $value, $m)) {
+            return $m[1] . '-' . substr((string) ((int) $m[1] + 1), -2);
+        }
+
+        // Unrecognised: hand it back untouched rather than inventing a year.
+        // A lookup that finds nothing is recoverable; a lookup that finds the
+        // wrong year's declarations is not.
+        return $financialYear;
     }
 
     public function getCurrentFinancialYear(): string

@@ -2373,20 +2373,24 @@ class PayrollDepartmentController extends Controller
         $monthStart = sprintf('%04d-%02d-01', $year, $month);
         $monthEnd = date('Y-m-t', strtotime($monthStart));
 
-        // Helper: run a query and return null if the underlying table doesn't
-        // exist. Keeps the checklist resilient when an org hasn't installed
-        // every optional module (employee_work_info, reimbursements, etc.).
-        $safeCount = function (callable $callback): int {
-            try {
-                return (int) $callback();
-            } catch (\Throwable $e) {
-                if (str_contains(strtolower($e->getMessage()), 'does not exist')
-                    || str_contains(strtolower($e->getMessage()), 'undefined table')) {
-                    return 0;
-                }
-                throw $e;
-            }
-        };
+        /*
+         * Run a checklist count.
+         *
+         * This used to swallow "undefined table" and return 0, so that an
+         * org without an optional module still got a rendering checklist.
+         * It also swallowed a *mistyped* table name — and it did, for years:
+         * the joiners-and-exits queries below referenced `employee_work_info`
+         * where the table is `employee_work_infos`, so the one check that
+         * would have caught a mid-month joiner reported "no action" on every
+         * run, permanently and silently.
+         *
+         * A count that could not be taken is not zero. The missing-table case
+         * now throws like any other error, so a typo surfaces as a failure
+         * instead of a green tick. If an optional module genuinely needs to be
+         * absent, guard it with Schema::hasTable() at the call site, where the
+         * intent is visible and greppable.
+         */
+        $safeCount = fn (callable $callback): int => (int) $callback();
 
         // 1. Attendance — completed if all expected employees have a payroll_item
         //    with days_present > 0 for this run.
@@ -2406,12 +2410,12 @@ class PayrollDepartmentController extends Controller
         $attendanceHasData = $expectedCount > 0;
 
         // 2. Joinees & Exits — employees whose joining_date OR exit_date falls in this month
-        $joineesCount = $safeCount(fn () => DB::table('employee_work_info as w')
+        $joineesCount = $safeCount(fn () => DB::table('employee_work_infos as w')
             ->join('users as u', 'u.id', '=', 'w.user_id')
             ->where('u.organization_id', $organizationId)
             ->whereBetween('w.joining_date', [$monthStart, $monthEnd])
             ->count());
-        $exitsCount = $safeCount(fn () => DB::table('employee_work_info as w')
+        $exitsCount = $safeCount(fn () => DB::table('employee_work_infos as w')
             ->join('users as u', 'u.id', '=', 'w.user_id')
             ->where('u.organization_id', $organizationId)
             ->whereNotNull('w.exit_date')
@@ -3339,7 +3343,7 @@ class PayrollDepartmentController extends Controller
         // New joiners: employees whose joining_date falls within the pay period month
         // and have an active payroll template.
         $newJoiners = DB::table('users as u')
-            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->join('employee_work_infos as w', 'w.user_id', '=', 'u.id')
             ->join('employee_payroll_templates as t', 't.user_id', '=', 'u.id')
             ->where('u.organization_id', $organizationId)
             ->whereIn('u.role', ['employee', 'manager', 'admin'])
@@ -3355,7 +3359,7 @@ class PayrollDepartmentController extends Controller
                 'w.exit_date',
                 'w.employment_status',
                 'w.designation',
-                'w.department_id',
+                'w.report_group_id as department_id',
             )
             ->get()
             ->map(function ($row) {
@@ -3375,7 +3379,7 @@ class PayrollDepartmentController extends Controller
         // plus employees with exit_date in the pay period.
         $exitResignations = DB::table('resignations as r')
             ->join('users as u', 'u.id', '=', 'r.user_id')
-            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->join('employee_work_infos as w', 'w.user_id', '=', 'u.id')
             ->where('u.organization_id', $organizationId)
             ->where('r.status', 'approved')
             ->whereBetween('r.last_working_date', [$monthStart, $monthEnd])
@@ -3391,7 +3395,7 @@ class PayrollDepartmentController extends Controller
             ->get();
 
         $exitWorkInfo = DB::table('users as u')
-            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->join('employee_work_infos as w', 'w.user_id', '=', 'u.id')
             ->where('u.organization_id', $organizationId)
             ->whereNotNull('w.exit_date')
             ->whereBetween('w.exit_date', [$monthStart, $monthEnd])
@@ -3475,14 +3479,21 @@ class PayrollDepartmentController extends Controller
         $monthEnd = date('Y-m-t', strtotime($monthStart));
 
         // Get employee IDs belonging to this pay group.
-        $payGroupEmployeeIds = DB::table('pay_group_employees')
+        //
+        // Scoped to the caller's organization and to active assignments: a
+        // lapsed assignment must not pull a former member back into this
+        // month's review, and DB::table() bypasses the BelongsToOrganization
+        // global scope so the tenant filter has to be explicit here.
+        $payGroupEmployeeIds = DB::table('pay_group_assignments')
+            ->where('organization_id', $organizationId)
             ->where('pay_group_id', $payGroupId)
+            ->where('is_active', true)
             ->pluck('user_id')
             ->toArray();
 
         // New joiners: employees in this pay group whose joining_date falls within the month.
         $newJoiners = DB::table('users as u')
-            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->join('employee_work_infos as w', 'w.user_id', '=', 'u.id')
             ->join('employee_payroll_templates as t', 't.user_id', '=', 'u.id')
             ->where('u.organization_id', $organizationId)
             ->whereIn('u.id', $payGroupEmployeeIds)
@@ -3499,7 +3510,7 @@ class PayrollDepartmentController extends Controller
                 'w.exit_date',
                 'w.employment_status',
                 'w.designation',
-                'w.department_id',
+                'w.report_group_id as department_id',
             )
             ->get()
             ->map(function ($row) {
@@ -3519,7 +3530,7 @@ class PayrollDepartmentController extends Controller
         // plus employees with exit_date in the month.
         $exitResignations = DB::table('resignations as r')
             ->join('users as u', 'u.id', '=', 'r.user_id')
-            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->join('employee_work_infos as w', 'w.user_id', '=', 'u.id')
             ->where('u.organization_id', $organizationId)
             ->whereIn('u.id', $payGroupEmployeeIds)
             ->where('r.status', 'approved')
@@ -3536,7 +3547,7 @@ class PayrollDepartmentController extends Controller
             ->get();
 
         $exitWorkInfo = DB::table('users as u')
-            ->join('employee_work_info as w', 'w.user_id', '=', 'u.id')
+            ->join('employee_work_infos as w', 'w.user_id', '=', 'u.id')
             ->where('u.organization_id', $organizationId)
             ->whereIn('u.id', $payGroupEmployeeIds)
             ->whereNotNull('w.exit_date')
@@ -3546,23 +3557,30 @@ class PayrollDepartmentController extends Controller
                 'u.name',
                 'u.email',
                 'w.exit_date',
-                'w.exit_reason',
+                // employee_work_infos records that someone left and when, but
+                // not why — there is no exit_reason column. A reason only
+                // exists when the exit came through a resignation, which the
+                // query above covers.
+                'w.employment_status',
             )
             ->get();
 
+        // The two sources have different shapes, so every field is read
+        // defensively: a resignation row has no exit_date and a work-info row
+        // has no resignation_status.
         $exits = $exitResignations->merge($exitWorkInfo)->map(function ($row) {
             return [
                 'user_id' => $row->user_id,
                 'name' => $row->name,
                 'email' => $row->email,
                 'last_working_date' => $row->last_working_date ?? $row->exit_date ?? null,
-                'reason' => $row->resignation_reason ?? $row->exit_reason ?? null,
-                'type' => $row->resignation_status ? 'resignation' : 'work_info_exit',
+                'reason' => $row->resignation_reason ?? null,
+                'type' => ($row->resignation_status ?? null) ? 'resignation' : 'work_info_exit',
             ];
         });
 
         // Outstanding F&F settlements for employees in this pay group.
-        $outstandingFnf = DB::table('fnf_settlements as f')
+        $outstandingFnf = DB::table('full_and_final_settlements as f')
             ->join('users as u', 'u.id', '=', 'f.user_id')
             ->where('u.organization_id', $organizationId)
             ->whereIn('u.id', $payGroupEmployeeIds)

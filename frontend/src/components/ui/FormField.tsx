@@ -226,12 +226,30 @@ export function ToggleInput({
       onClick={() => onChange(!checked)}
       className={cn(
         'relative inline-flex h-7 w-12 items-center rounded-full border transition duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-not-allowed disabled:opacity-60',
-        checked ? 'border-sky-400 bg-sky-500/90' : 'border-slate-200 bg-slate-200'
+        /*
+         * Off-track was `bg-slate-200`, which theme.css remaps to a near-black
+         * neutral in dark mode — measured at rgb(33,44,52) against a knob of
+         * rgb(30,42,51), roughly 1.03:1. The switch was invisible when off.
+         * slate-400 keeps a mid tone in both themes.
+         */
+        checked ? 'border-sky-400 bg-sky-500/90' : 'border-slate-400 bg-slate-400/60'
       )}
     >
       <span
         className={cn(
-          'inline-block h-5 w-5 rounded-full bg-white shadow-sm transition duration-300',
+          /*
+           * Literal white on purpose, not `bg-white`.
+           *
+           * bg-white is remapped dark by theme.css, which is right for a panel
+           * and wrong for a switch knob — the knob has to read as the moving
+           * part against both a grey off-track and a sky on-track. iOS and
+           * Material both keep it light in dark mode for the same reason. No
+           * existing token holds: on-brand flips with the theme and
+           * surface-inverse is dark in light mode.
+           */
+          // A switch knob must stay light in BOTH themes; see the comment above.
+          // eslint-disable-next-line no-restricted-syntax
+          'inline-block h-5 w-5 rounded-full bg-[#ffffff] shadow-sm transition duration-300',
           checked ? 'translate-x-6' : 'translate-x-1'
         )}
       />

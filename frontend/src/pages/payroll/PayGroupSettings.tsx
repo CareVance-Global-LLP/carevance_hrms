@@ -4,6 +4,7 @@ import { Pencil, Trash2, ChevronDown, ChevronRight, X, Save, Settings, Building2
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import type { PayGroupSettings, CreatePayGroupSettingsPayload, SalaryStructure, PayGroupFilingDetail, UpdateFilingDetailsPayload } from '@/types';
+import Modal from '@/components/ui/dialog/Modal';
 
 const INDIAN_STATES = [
   { code: 'andhra_pradesh', name: 'Andhra Pradesh' },
@@ -1156,10 +1157,9 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (targ
 
       {/* Edit Pay Group Modal */}
       {editingId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
+        <Modal open onClose={() => setEditingId(null)} titleId="edit-pay-group-title" size="lg">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Edit Pay Group</h3>
+              <h3 id="edit-pay-group-title" className="text-lg font-medium text-gray-900">Edit Pay Group</h3>
               <button
                 onClick={() => setEditingId(null)}
                 className="p-1 text-gray-400 hover:text-gray-600 rounded"
@@ -1216,16 +1216,20 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (targ
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <Modal
+          open
+          onClose={() => setShowDeleteConfirm(false)}
+          titleId="delete-pay-group-title"
+          size="md"
+          busy={deleteMutation.isPending}
+        >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Delete Pay Group</h3>
+              <h3 id="delete-pay-group-title" className="text-lg font-medium text-gray-900">Delete Pay Group</h3>
               <button
                 onClick={() => setShowDeleteConfirm(false)}
                 className="p-1 text-gray-400 hover:text-gray-600 rounded"
@@ -1261,8 +1265,7 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (targ
                 {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

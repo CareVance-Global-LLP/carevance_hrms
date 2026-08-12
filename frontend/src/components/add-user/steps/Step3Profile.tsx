@@ -1,5 +1,6 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, IndianRupee } from 'lucide-react';
 import EmployeeDetailsSection from '../../../components/EmployeeDetailsSection';
+import CtcBreakupPanel from '@/components/payroll/CtcBreakupPanel';
 import type { AddUserWizardForm } from './types';
 
 interface Step3Props {
@@ -10,7 +11,7 @@ interface Step3Props {
   onGoBack: () => void;
 }
 
-export function Step3Profile({ form, isCreatingUser, creationError, onGoBack }: Step3Props) {
+export function Step3Profile({ form, setForm, isCreatingUser, creationError, onGoBack }: Step3Props) {
   if (isCreatingUser) {
     return (
       <div className="px-6 py-16 text-center space-y-3">
@@ -59,12 +60,40 @@ export function Step3Profile({ form, isCreatingUser, creationError, onGoBack }: 
           Complete the employee's profile below. All fields are optional — the employee can also fill them later.
         </p>
       </div>
-      <div className="p-4">
+      <div className="space-y-6 p-4">
         <EmployeeDetailsSection
           userId={form.userId}
           employeeCode={form.employeeCode || String(form.userId ?? '')}
           editable
         />
+
+        {/*
+          The CTC breakup lands here rather than beside the field in step 1.
+
+          Step 1 is already fourteen fields and the person filling it is still
+          entering identity and access — a salary breakdown there is noise at
+          the wrong moment. By step 3 the account exists and this is the review
+          surface, which is where a number worth checking belongs.
+
+          Every figure comes from lib/payroll/ctcBreakup, which mirrors
+          PayrollCalculatorService constant for constant.
+        */}
+        <section className="rounded-lg border border-border-strong bg-surface-card p-4">
+          <div className="flex items-center gap-2">
+            <IndianRupee className="h-4 w-4 text-slate-400" />
+            <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
+              Salary breakup
+            </h3>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            What the annual CTC entered in step 1 means month to month. When a salary structure is selected there the figures follow it; switch to Custom to override any head.</p>
+          <CtcBreakupPanel
+            annualCtc={form.annualCtc ? String(form.annualCtc) : ''}
+            salaryStructureId={form.salaryStructureId}
+            isMetroCity={form.ctcIsMetroCity}
+            onMetroChange={(value) => setForm((current) => ({ ...current, ctcIsMetroCity: value }))}
+          />
+        </section>
       </div>
     </div>
   );

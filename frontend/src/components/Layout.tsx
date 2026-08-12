@@ -711,7 +711,7 @@ export default function Layout() {
                   onClick={() => setNavDrawerOpen(true)}
                   aria-label="Open navigation"
                   aria-expanded={navDrawerOpen}
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:hidden"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-border-strong bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:hidden"
                 >
                   <Menu className="h-5 w-5" aria-hidden="true" />
                 </button>
@@ -739,7 +739,7 @@ export default function Layout() {
                     'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
                     notificationsOpen
                       ? 'border-sky-200 bg-sky-50 text-sky-700'
-                      : 'border-slate-200 bg-white text-slate-500 hover:bg-white'
+                      : 'border-border-strong bg-white text-slate-500 hover:bg-white'
                   )}
                 >
                   <Bell className="h-5 w-5" />
@@ -756,7 +756,7 @@ export default function Layout() {
                     tone="light"
                     backgroundColor="rgba(255,255,255,0.95)"
                   >
-                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                    <div className="flex items-center justify-between border-b border-border-strong/40 px-4 py-3">
                       <p className="text-sm font-semibold contrast-text-primary">Notifications</p>
                       <div className="flex items-center gap-3">
                         <Link
@@ -845,7 +845,7 @@ export default function Layout() {
                     'relative flex h-11 shrink-0 items-center rounded-lg border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
                     profileOpen
                       ? 'border-sky-200 bg-sky-50 text-sky-900'
-                      : 'border-slate-200 bg-white hover:bg-white',
+                      : 'border-border-strong bg-white hover:bg-white',
                     'gap-2 px-2 sm:gap-3 sm:px-3'
                   )}
                 >
@@ -868,7 +868,7 @@ export default function Layout() {
                     tone="light"
                     backgroundColor="rgba(255,255,255,0.95)"
                   >
-                    <div className="border-b border-slate-100 px-3 py-3">
+                    <div className="border-b border-border-strong/40 px-3 py-3">
                       <p className="text-sm font-semibold text-slate-900">{user?.name || 'Admin'}</p>
                       <p className="text-xs capitalize text-slate-500">{resolveUserRoleLabel(user)}</p>
                     </div>
@@ -965,7 +965,7 @@ export default function Layout() {
                 tone="light"
                 backgroundColor="rgba(255,255,255,0.95)"
               >
-                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div className="flex items-center justify-between border-b border-border-strong/40 px-4 py-3">
                   <p className="text-sm font-semibold contrast-text-primary">Notifications</p>
                   <div className="flex items-center gap-3">
                     <Link
@@ -997,7 +997,7 @@ export default function Layout() {
                         onClick={() => {
                           void openNotification(n);
                         }}
-                        className={`w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50/80 ${n.is_read ? '' : 'bg-sky-50/70'}`}
+                        className={`w-full border-b border-border-strong/40 px-4 py-3 text-left transition hover:bg-slate-50/80 ${n.is_read ? '' : 'bg-sky-50/70'}`}
                       >
                         {(() => {
                           const notificationDisplay = getNotificationDisplay(String(n.type || ''));
@@ -1029,7 +1029,7 @@ export default function Layout() {
                   tone="light"
                   backgroundColor="rgba(255,255,255,0.95)"
                 >
-                  <div className="border-b border-slate-100 px-3 py-3">
+                  <div className="border-b border-border-strong/40 px-3 py-3">
                     <p className="text-sm font-semibold contrast-text-primary">{user?.name || 'Admin'}</p>
                     <p className="text-xs capitalize contrast-text-muted">{resolveUserRoleLabel(user)}</p>
                   </div>

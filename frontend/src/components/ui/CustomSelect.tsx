@@ -116,17 +116,27 @@ export default function CustomSelect({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          'flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-sm text-gray-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400',
-          open && 'border-blue-400 bg-white ring-2 ring-blue-100',
+          /*
+           * Same tokens as FormField's baseControlClassName, deliberately.
+           *
+           * This used to be `border-gray-200 bg-white`. Both are raw palette
+           * shades, and in dark mode gray-200 resolves to a near-black neutral
+           * against a near-black card — so the control had no visible box at
+           * all and a select rendered as loose text beside a properly bordered
+           * TextInput. `border-border-strong` and `bg-surface-card` are the
+           * semantic tokens that stay legible in both themes.
+           */
+          'flex w-full items-center justify-between rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-left text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-300/30 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-slate-400',
+          open && 'border-sky-400 ring-2 ring-sky-300/30',
           className
         )}
       >
-        <span className={cn('truncate', !selectedOption && 'text-gray-400')}>
+        <span className={cn('truncate', !selectedOption && 'text-slate-400')}>
           {selectedOption ? selectedOption.label : placeholder}
         </span>
         <ChevronDown
           className={cn(
-            'h-4 w-4 shrink-0 text-gray-500 transition-transform',
+            'h-4 w-4 shrink-0 text-slate-500 transition-transform',
             open && 'rotate-180'
           )}
         />
@@ -144,11 +154,11 @@ export default function CustomSelect({
                 zIndex: 9999,
               }}
               role="listbox"
-              className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+              className="overflow-hidden rounded-lg border border-border-strong bg-surface-card shadow-lg"
             >
               <div className="max-h-72 overflow-auto py-1.5">
                 {options.length === 0 ? (
-                  <div className="px-4 py-6 text-sm text-gray-500">
+                  <div className="px-4 py-6 text-sm text-slate-500">
                     No options available
                   </div>
                 ) : (
@@ -168,7 +178,7 @@ export default function CustomSelect({
                         option.disabled && 'cursor-not-allowed opacity-50'
                       )}
                     >
-                      <span className="truncate text-sm font-medium text-gray-900">
+                      <span className="truncate text-sm font-medium text-slate-900">
                         {option.label}
                       </span>
                       {value === option.value ? (

@@ -176,9 +176,9 @@ export default function TopNavigation({
     isCompactDesktopNav ? 'gap-1.5 px-3.5' : 'gap-2 px-4'
   );
   const desktopPillActiveClassName = 'border-blue-600 bg-blue-600 text-white shadow-sm';
-  const desktopPillInactiveClassName = 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white hover:text-slate-950';
+  const desktopPillInactiveClassName = 'border-transparent text-slate-600 hover:border-border-strong hover:bg-white hover:text-slate-950';
   const mobilePillBaseClassName =
-    'w-full rounded-lg border border-slate-200 px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white';
+    'w-full rounded-lg border border-border-strong px-4 py-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white';
 
   useLayoutEffect(() => {
     if (mobile) {
@@ -449,7 +449,7 @@ export default function TopNavigation({
                   </button>
 
                   {expanded ? (
-                    <div role="menu" className="mt-2 space-y-1 rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+                    <div role="menu" className="mt-2 space-y-1 rounded-lg border border-border-strong bg-white p-2 shadow-sm">
                       {(() => {
                         const hasSections = group.items?.some((i) => i.section);
                         if (!hasSections) {
@@ -670,7 +670,7 @@ export default function TopNavigation({
             <div
               ref={dropdownRef}
               role="menu"
-              className="fixed z-[120] max-h-[min(70vh,32rem)] overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white p-2 shadow-sm"
+              className="fixed z-[120] max-h-[min(70vh,32rem)] overflow-y-auto overscroll-contain rounded-lg border border-border-strong bg-white p-2 shadow-sm"
               style={{
                 top: `${dropdownStyle.top}px`,
                 left: `${dropdownStyle.left}px`,
@@ -728,7 +728,7 @@ export default function TopNavigation({
                     }
 
                     return (
-                      <div key={group.label} className={cn(index > 0 ? 'border-t border-slate-100 pt-3' : '')}>
+                      <div key={group.label} className={cn(index > 0 ? 'border-t border-border-strong/40 pt-3' : '')}>
                         <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                           <group.icon className="h-3.5 w-3.5" />
                           <span className="whitespace-nowrap">{group.label}</span>

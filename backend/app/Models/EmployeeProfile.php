@@ -16,6 +16,7 @@ class EmployeeProfile extends Model
         'organization_id',
         'user_id',
         'first_name',
+        'middle_name',
         'last_name',
         'display_name',
         'gender',

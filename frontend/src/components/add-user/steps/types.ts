@@ -18,6 +18,7 @@ export interface IncompleteUserCheck {
 export interface AddUserWizardForm {
   // Step 1: Basic Info (Required)
   firstName: string;
+  middleName: string;
   lastName: string;
   email: string;
   // Set by the admin, handed to the joiner directly. This is what separates
@@ -36,6 +37,14 @@ export interface AddUserWizardForm {
 
   // Step 1: Payroll Info (Optional)
   annualCtc: number | null;
+  /*
+   * Preview-only, not sent to the API.
+   *
+   * The breakup panel needs a basic percentage and a metro flag to show what a
+   * CTC means. The engine derives both server-side at payroll time, so these
+   * exist to drive the on-screen figures and nothing else.
+   */
+  ctcIsMetroCity: boolean;
   payGroupId: number | null;
   salaryStructureId: number | null;
 
@@ -73,6 +82,7 @@ export interface AddUserWizardForm {
 export const defaultForm: AddUserWizardForm = {
   // Step 1
   firstName: '',
+  middleName: '',
   lastName: '',
   email: '',
   password: '',
@@ -90,6 +100,7 @@ export const defaultForm: AddUserWizardForm = {
 
   // Step 1: Payroll Info
   annualCtc: null,
+  ctcIsMetroCity: false,
   payGroupId: null,
   salaryStructureId: null,
 
