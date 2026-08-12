@@ -165,7 +165,7 @@ export default function SearchSuggestInput({
           style={panelStyle}
           id={listboxId}
           role="listbox"
-          className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+          className="overflow-hidden rounded-lg border border-border-strong bg-surface-card shadow-sm"
         >
           {rankedSuggestions.length === 0 ? (
             <div className="px-4 py-3 text-sm text-slate-500">{emptyMessage}</div>

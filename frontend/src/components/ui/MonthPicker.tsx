@@ -106,7 +106,7 @@ export default function MonthPicker({ value, onChange, className }: MonthPickerP
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          'flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100',
+          'flex items-center gap-2 rounded-lg border border-border-strong bg-surface-card px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100',
           open && 'border-blue-400 ring-2 ring-blue-100',
         )}
       >
@@ -121,7 +121,7 @@ export default function MonthPicker({ value, onChange, className }: MonthPickerP
               ref={panelRef}
               role="dialog"
               style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, width: panelPos.width, zIndex: 9999 }}
-              className="rounded-lg border border-slate-200 bg-white p-3 shadow-lg"
+              className="rounded-lg border border-border-strong bg-surface-card p-3 shadow-lg"
             >
               <div className="mb-2 flex items-center justify-between">
                 <button
@@ -159,7 +159,7 @@ export default function MonthPicker({ value, onChange, className }: MonthPickerP
                         'flex items-center justify-center gap-1 rounded-md border py-2 text-xs font-semibold transition-all',
                         isSelected
                           ? 'border-blue-600 bg-blue-600 text-white'
-                          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                          : 'border-border-strong bg-surface-card text-slate-700 hover:bg-slate-50',
                         isCurrent && !isSelected && 'ring-1 ring-blue-400 border-blue-300',
                       )}
                     >

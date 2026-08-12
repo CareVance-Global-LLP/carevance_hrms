@@ -43,7 +43,7 @@ export function DateRangePicker({
 
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)}>
-      <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+      <div className="flex items-center gap-1 rounded-lg border border-border-strong bg-surface-card p-1">
         {PRESET_OPTIONS.map(({ value, label }) => (
           <button
             key={value}
@@ -63,7 +63,7 @@ export function DateRangePicker({
 
       {isCustom && (
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+          <div className="flex items-center gap-1 rounded-lg border border-border-strong bg-surface-card px-2 py-1.5">
             <Calendar className="h-3.5 w-3.5 text-slate-400" />
             <input
               type="date"
@@ -75,7 +75,7 @@ export function DateRangePicker({
             />
           </div>
           <span className="text-xs text-slate-400">to</span>
-          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+          <div className="flex items-center gap-1 rounded-lg border border-border-strong bg-surface-card px-2 py-1.5">
             <Calendar className="h-3.5 w-3.5 text-slate-400" />
             <input
               type="date"
@@ -111,7 +111,7 @@ export function DatePresetPicker({
   }, [options]);
 
   return (
-    <div className={cn('flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1', className)}>
+    <div className={cn('flex items-center gap-1 rounded-lg border border-border-strong bg-surface-card p-1', className)}>
       {availableOptions.map(({ value, label }) => (
         <button
           key={value}

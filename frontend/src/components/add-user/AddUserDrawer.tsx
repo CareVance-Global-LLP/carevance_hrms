@@ -450,7 +450,7 @@ export default function AddUserDrawer({
         */}
         <div className={`flex w-full flex-col gap-6 ${
           presentation === 'modal'
-            ? 'rounded-lg border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.97),rgba(255,255,255,0.99))] p-4 shadow-sm sm:p-6 mt-16 max-w-[72rem] sm:mt-20'
+            ? 'rounded-lg border border-border-strong bg-surface-card p-4 shadow-sm sm:p-6 mt-16 max-w-[72rem] sm:mt-20'
             : 'max-w-[72rem]'
         }`}>
           <div className="flex items-start justify-between gap-4">

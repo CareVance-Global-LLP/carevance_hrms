@@ -247,6 +247,8 @@ export function ToggleInput({
            * existing token holds: on-brand flips with the theme and
            * surface-inverse is dark in light mode.
            */
+          // A switch knob must stay light in BOTH themes; see the comment above.
+          // eslint-disable-next-line no-restricted-syntax
           'inline-block h-5 w-5 rounded-full bg-[#ffffff] shadow-sm transition duration-300',
           checked ? 'translate-x-6' : 'translate-x-1'
         )}
