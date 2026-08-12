@@ -275,7 +275,12 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       </div>
 
       {/* Email & Phone */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/*
+        Three fields, so this is three-up once there is room. As a two-column
+        grid the third — Phone — wrapped onto its own row with an empty cell
+        beside it, which is what it looked like in the running app.
+      */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <label htmlFor={fieldId('f3')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Mail className="h-3.5 w-3.5 text-slate-400" />
