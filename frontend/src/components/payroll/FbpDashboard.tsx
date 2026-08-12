@@ -5,6 +5,7 @@ import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import Modal from '@/components/ui/dialog/Modal';
 
 export default function FbpDashboard() {
   const queryClient = useQueryClient();
@@ -120,10 +121,16 @@ export default function FbpDashboard() {
       </div>
 
       {showAllocate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <SurfaceCard className="p-6 w-full max-w-md mx-4">
+        <Modal
+          open
+          onClose={() => setShowAllocate(false)}
+          titleId="fbp-allocate-title"
+          size="md"
+          panelClassName="p-6"
+          busy={allocateMutation.isPending}
+        >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-slate-900">Allocate FBP Component</h3>
+              <h3 id="fbp-allocate-title" className="text-sm font-semibold text-slate-900">Allocate FBP Component</h3>
               <button onClick={() => setShowAllocate(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="h-4 w-4" />
               </button>
@@ -168,8 +175,7 @@ export default function FbpDashboard() {
                 </Button>
               </div>
             </div>
-          </SurfaceCard>
-        </div>
+        </Modal>
       )}
     </div>
   );

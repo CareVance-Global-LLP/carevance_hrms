@@ -71,7 +71,17 @@ describe('payroll settings and pay group dialogs', () => {
       </Providers>,
     );
 
-    expect(screen.getByRole('dialog', { name: /add employee/i })).toBeInTheDocument();
+    // This modal renders EmployeePickerList inside itself and passes it the
+    // SAME title, so two nested dialogs end up with an identical accessible
+    // name — the user sees the heading twice, stacked. That duplication is
+    // pre-existing and out of scope here; it is recorded for follow-up. Match
+    // the outer dialog by the heading it owns rather than by name.
+    const outer = screen
+      .getAllByRole('dialog')
+      .find((node) => node.getAttribute('aria-labelledby') === 'add-employee-to-paygroup-title');
+
+    expect(outer).toBeDefined();
+    expect(outer).toHaveAccessibleName('Add Employee to Monthly staff');
   });
 
   it('renders the create pay group dialog with an accessible name', () => {

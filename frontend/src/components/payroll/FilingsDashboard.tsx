@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, CalendarClock, HelpCircle, Check } from 'lucide-react';
 import { payrollApi } from '@/services/api';
@@ -8,6 +8,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import HowItWorksCard from './HowItWorksCard';
 import { useToast } from '@/components/ui/Toast';
+import Modal from '@/components/ui/dialog/Modal';
 import type { PayGroupFilingDetail } from '@/types';
 
 import UploadForm16Modal from './UploadForm16Modal';
@@ -451,6 +452,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
   const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'form16' | 'upload-form16' | 'review'>('generate');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [markFiledFor, setMarkFiledFor] = useState<number | null>(null);
+  const markFiledInputRef = useRef<HTMLInputElement>(null);
   const [ackInput, setAckInput] = useState<string>('');
   const [useActualState, _setUseActualState] = useState(false);
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
@@ -1255,15 +1257,24 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
       )}
 
       {markFiledFor !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setMarkFiledFor(null)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">Record as Filed</h3>
+        <Modal
+          open
+          onClose={() => setMarkFiledFor(null)}
+          titleId="record-as-filed-title"
+          size="md"
+          panelClassName="p-6"
+          busy={markFiledMutation.isPending}
+          // The challan input carried autoFocus. The dialog focuses its panel
+          // by default, which would silently win and leave the field unfocused.
+          initialFocusRef={markFiledInputRef}
+        >
+            <h3 id="record-as-filed-title" className="text-lg font-semibold text-slate-900 mb-2">Record as Filed</h3>
             <p className="text-sm text-slate-500 mb-4">
               After you (the human) log in and pay on the government portal, paste the acknowledgement / challan number below. It is recorded in the filing history.
             </p>
             <label className="block text-sm font-medium text-slate-700 mb-1">Acknowledgement / Challan Number</label>
             <input
-              autoFocus
+              ref={markFiledInputRef}
               value={ackInput}
               onChange={(e) => setAckInput(e.target.value)}
               placeholder="e.g. ACK1234567890"
@@ -1280,8 +1291,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                 {markFiledMutation.isPending ? 'Saving...' : 'Save'}
               </Button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Upload Form 16 Modal */}

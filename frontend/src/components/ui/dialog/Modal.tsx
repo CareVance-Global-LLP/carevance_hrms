@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -42,6 +42,12 @@ export interface ModalProps {
   dismissOnBackdrop?: boolean;
   ariaDescribedBy?: string;
   showCloseButton?: boolean;
+  /**
+   * Focus this on open instead of the panel. Only for panels that previously
+   * carried `autoFocus` on a field — the default panel focus would win over it
+   * silently and leave the field unfocused.
+   */
+  initialFocusRef?: RefObject<HTMLElement>;
   footer?: ReactNode;
   children: ReactNode;
 }
@@ -73,6 +79,7 @@ export default function Modal({
   dismissOnBackdrop = true,
   ariaDescribedBy,
   showCloseButton = true,
+  initialFocusRef,
   footer,
   children,
 }: ModalProps) {
@@ -82,6 +89,7 @@ export default function Modal({
     onClose,
     busy,
     dismissOnBackdrop,
+    initialFocusRef,
   });
 
   if (!open) return null;
