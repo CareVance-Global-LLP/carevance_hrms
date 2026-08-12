@@ -8,6 +8,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { payrollApi, employeeWorkspaceApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import Modal from '@/components/ui/dialog/Modal';
+import SlideOver from '@/components/ui/dialog/SlideOver';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import { useToast } from '@/components/ui/Toast';
@@ -304,15 +306,11 @@ export default function PayrollRunDetailModal({
   const missingForCompletion = completenessInfo?.missing_count ?? 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
-      <SurfaceCard
-        className="w-full max-w-4xl h-full max-h-full overflow-hidden flex flex-col animate-slide-in-right rounded-l-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <SlideOver open onClose={onClose} titleId="payroll-run-detail-title" widthClassName="max-w-4xl">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between z-10 flex-shrink-0">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <h2 id="payroll-run-detail-title" className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <FileText className="h-5 w-5 text-blue-600" />
               Run #{run?.id ?? '—'} · {run?.month_year ?? monthYear ?? 'Unknown month'}
               <InfoTooltip
@@ -519,7 +517,6 @@ export default function PayrollRunDetailModal({
             </div>
           </div>
         )}
-      </SurfaceCard>
 
       {/* Disburse confirmation dialog */}
       {showDisburseConfirm && (
@@ -581,7 +578,7 @@ export default function PayrollRunDetailModal({
           isPending={lockMutation.isPending}
         />
       )}
-    </div>
+    </SlideOver>
   );
 }
 
@@ -1060,15 +1057,14 @@ function ConfirmDialog({ icon: Icon, title, message, confirmLabel, tone, isPendi
     danger: 'bg-rose-600 hover:bg-rose-700',
   };
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
-      <SurfaceCard className="w-full max-w-md">
+    <Modal open onClose={onCancel} titleId="run-confirm-dialog-title" size="md" busy={isPending}>
         <div className="p-5">
           <div className="flex items-start gap-3 mb-4">
             <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${tone === 'warning' ? 'bg-amber-100' : tone === 'danger' ? 'bg-rose-100' : 'bg-blue-100'}`}>
               <Icon className={`h-5 w-5 ${tone === 'warning' ? 'text-amber-600' : tone === 'danger' ? 'text-rose-600' : 'text-blue-600'}`} />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+              <h3 id="run-confirm-dialog-title" className="text-lg font-semibold text-slate-900">{title}</h3>
               <p className="text-sm text-slate-600 mt-1">{message}</p>
             </div>
           </div>
@@ -1087,8 +1083,7 @@ function ConfirmDialog({ icon: Icon, title, message, confirmLabel, tone, isPendi
             </Button>
           </div>
         </div>
-      </SurfaceCard>
-    </div>
+    </Modal>
   );
 }
 
@@ -1116,15 +1111,14 @@ function ReasonDialog({
     danger: 'bg-rose-600 hover:bg-rose-700',
   };
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
-      <SurfaceCard className="w-full max-w-md">
+    <Modal open onClose={onCancel} titleId="run-reason-dialog-title" size="md" busy={isPending}>
         <div className="p-5">
           <div className="flex items-start gap-3 mb-4">
             <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${tone === 'warning' ? 'bg-amber-100' : 'bg-rose-100'}`}>
               <Icon className={`h-5 w-5 ${tone === 'warning' ? 'text-amber-600' : 'text-rose-600'}`} />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+              <h3 id="run-reason-dialog-title" className="text-lg font-semibold text-slate-900">{title}</h3>
               <p className="text-sm text-slate-600 mt-1">{message}</p>
             </div>
           </div>
@@ -1153,8 +1147,7 @@ function ReasonDialog({
             </Button>
           </div>
         </div>
-      </SurfaceCard>
-    </div>
+    </Modal>
   );
 }
 
@@ -1171,15 +1164,14 @@ function PartialLockDialog({ data, onCancel, onConfirm, isPending }: PartialLock
   const expected = data?.completeness?.expected_count ?? 0;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
-      <SurfaceCard className="w-full max-w-lg">
+    <Modal open onClose={onCancel} titleId="partial-lock-dialog-title" size="lg" busy={isPending}>
         <div className="p-5">
           <div className="flex items-start gap-3 mb-4">
             <div className="h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
               <AlertTriangle className="h-5 w-5 text-amber-600" />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-slate-900">Lock Partial Run?</h3>
+              <h3 id="partial-lock-dialog-title" className="text-lg font-semibold text-slate-900">Lock Partial Run?</h3>
               <p className="text-sm text-slate-600 mt-1">
                 <strong>{missing} of {expected}</strong> expected employees haven't been processed yet.
                 You can lock anyway, but they'll be excluded from this run.
@@ -1216,8 +1208,7 @@ function PartialLockDialog({ data, onCancel, onConfirm, isPending }: PartialLock
             </Button>
           </div>
         </div>
-      </SurfaceCard>
-    </div>
+    </Modal>
   );
 }
 
