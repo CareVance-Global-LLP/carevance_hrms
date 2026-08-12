@@ -31,7 +31,15 @@ export const EMAIL_BATCH_LIMIT = 50;
 export interface InviteSubmissionPayload {
   organizationId: number;
   emails: string[];
+  /** Role for anyone without an entry in `roleByEmail`. */
   role: InviteUserRole;
+  /**
+   * Per-recipient role overrides, keyed by lower-cased email.
+   *
+   * The API takes one `role` per request (StoreInvitationRequest), so mixed
+   * roles cannot go in a single call. Omit this and behaviour is unchanged.
+   */
+  roleByEmail?: Record<string, InviteUserRole>;
   groupIds: number[];
   projectIds: number[];
   settings: AdditionalInviteSettings;
@@ -264,6 +272,39 @@ const parseCsvLine = (line: string) => {
   return result;
 };
 
+/**
+ * Split recipients into one list per distinct role.
+ *
+ * Same-role recipients are merged even when other roles sit between them in the
+ * input, because each group becomes an HTTP request and merging is what keeps
+ * the request count at one-per-role rather than one-per-run-of-role. Ordering
+ * within a group, and the order of the groups themselves, follows first
+ * appearance — so the requests go out in a predictable order and a partial
+ * failure is still legible in the results list, which is keyed by email anyway.
+ *
+ * Returned as entries rather than a Map purely so the caller can iterate it
+ * without worrying about insertion-order guarantees.
+ */
+export const groupEmailsByRole = (
+  emails: string[],
+  defaultRole: InviteUserRole,
+  overrides?: Record<string, InviteUserRole>,
+): Array<[InviteUserRole, string[]]> => {
+  const groups: Array<[InviteUserRole, string[]]> = [];
+
+  for (const email of emails) {
+    const role = overrides?.[email.trim().toLowerCase()] ?? defaultRole;
+    const existing = groups.find(([groupRole]) => groupRole === role);
+    if (existing) {
+      existing[1].push(email);
+    } else {
+      groups.push([role, [email]]);
+    }
+  }
+
+  return groups;
+};
+
 const chunkItems = <T>(items: T[], chunkSize: number): T[][] => {
   const chunks: T[][] = [];
 
@@ -365,15 +406,27 @@ export const addUserService = {
      * this one now does too, which turns the ceiling into an implementation
      * detail rather than something the admin has to know.
      */
-    const chunks = chunkItems(payload.emails, EMAIL_BATCH_LIMIT);
+    /*
+     * Grouped by role first, then chunked within each group.
+     *
+     * StoreInvitationRequest takes a single `role` for the whole request, so a
+     * batch containing two employees and a manager cannot be one call. Grouping
+     * here means the admin sets a role per person and the transport detail —
+     * one request per distinct role — stays out of the UI.
+     */
+    const groups = groupEmailsByRole(payload.emails, payload.role, payload.roleByEmail);
     let invitedCount = 0;
     const failed: Array<{ email: string; message: string }> = [];
 
-    for (const chunk of chunks) {
+    const requests = groups.flatMap(([role, emails]) =>
+      chunkItems(emails, EMAIL_BATCH_LIMIT).map((chunk) => ({ role, chunk })),
+    );
+
+    for (const { role, chunk } of requests) {
       const response = await invitationApi.create({
         organization_id: payload.organizationId,
         emails: chunk,
-        role: payload.role,
+        role,
         delivery: 'email',
         department_ids: payload.groupIds,
         project_ids: payload.projectIds,

@@ -136,6 +136,14 @@ export default function AddUserDrawer({
   const [emails, setEmails] = useState<string[]>([]);
   const [invalidEmails, setInvalidEmails] = useState<string[]>([]);
   const [role, setRole] = useState<InviteUserRole>('employee');
+  /*
+   * Per-recipient role overrides, keyed by lower-cased email.
+   *
+   * `role` above remains the batch default; this only holds the people who
+   * differ from it. Cleared when a recipient is removed so a re-added address
+   * does not silently inherit a role the admin cannot see.
+   */
+  const [roleByEmail, setRoleByEmail] = useState<Record<string, InviteUserRole>>({});
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>(storedDefaults.groupIds);
   const selectedProjectIds: number[] = [];
   const [rememberDefaults, setRememberDefaults] = useState(storedDefaults.remember);
@@ -336,6 +344,7 @@ export default function AddUserDrawer({
         organizationId: organization.id,
         emails,
         role,
+        roleByEmail,
         groupIds: selectedGroupIds,
         projectIds: selectedProjectIds,
         settings,
@@ -548,8 +557,21 @@ export default function AddUserDrawer({
                 <EmailTagInput
                   emails={emails}
                   invalidEmails={invalidEmails}
-                  onChange={setEmails}
+                  onChange={(next) => {
+                    setEmails(next);
+                    // Drop overrides for anyone no longer in the list.
+                    const keep = new Set(next.map((item) => item.toLowerCase()));
+                    setRoleByEmail((current) =>
+                      Object.fromEntries(Object.entries(current).filter(([key]) => keep.has(key))),
+                    );
+                  }}
                   onInvalidChange={setInvalidEmails}
+                  defaultRole={role}
+                  roleByEmail={roleByEmail}
+                  onRoleChange={(email, nextRole) =>
+                    setRoleByEmail((current) => ({ ...current, [email.toLowerCase()]: nextRole }))
+                  }
+                  allowedRoles={allowedRoles}
                 />
                 {duplicateEmailMessage ? (
                   <FeedbackBanner tone="error" message={duplicateEmailMessage} />
