@@ -3,6 +3,7 @@ import {
   DEFAULT_BASIC_PERCENTAGE,
   EMPLOYEE_PF_RATE,
   EMPLOYER_PF_RATE,
+  ESI_GROSS_THRESHOLD,
   GRATUITY_RATE,
   METRO_HRA_PERCENTAGE_OF_BASIC,
   NON_METRO_HRA_PERCENTAGE_OF_BASIC,
@@ -10,6 +11,7 @@ import {
   calculateCtcBreakup,
   formatRupees,
   pfWages,
+  resolvePtAmount,
 } from './ctcBreakup';
 
 /*
@@ -186,5 +188,62 @@ describe('salary structure inputs', () => {
     expect(b.nps).toBeCloseTo(4_000, 2);
     expect(b.vpf).toBeCloseTo(2_000, 2);
     expect(b.netBeforeTax).toBeCloseTo(b.gross - b.employeePf - b.nps - b.vpf, 2);
+  });
+});
+
+describe('ESI', () => {
+  it('applies at or below the gross threshold and takes 0.75% off take-home', () => {
+    // A CTC low enough that gross lands under ₹21,000.
+    const b = calculateCtcBreakup({ annualCtc: 240_000 }); // ₹20,000 a month
+    expect(b.gross).toBeLessThanOrEqual(ESI_GROSS_THRESHOLD);
+    expect(b.esiApplicable).toBe(true);
+    expect(b.employeeEsi).toBeCloseTo(b.gross * 0.0075, 2);
+    expect(b.employerEsi).toBeCloseTo(b.gross * 0.0325, 2);
+    expect(b.netBeforeTax).toBeCloseTo(b.gross - b.employeePf - b.employeeEsi, 2);
+  });
+
+  it('does not apply above the threshold', () => {
+    const b = calculateCtcBreakup({ annualCtc: 1_200_000 });
+    expect(b.gross).toBeGreaterThan(ESI_GROSS_THRESHOLD);
+    expect(b.esiApplicable).toBe(false);
+    expect(b.employeeEsi).toBe(0);
+    expect(b.employerEsi).toBe(0);
+  });
+
+  it('does not take employer ESI out of CTC, because the engine does not', () => {
+    // calculateSalaryComponents subtracts only employer PF and gratuity.
+    const b = calculateCtcBreakup({ annualCtc: 240_000 });
+    expect(b.gross).toBeCloseTo(b.monthlyCtc - b.employerPf - b.gratuity, 2);
+  });
+});
+
+describe('resolvePtAmount', () => {
+  // Maharashtra's monthly table, as PTStateService holds it.
+  const maharashtra = [
+    { min: 0, max: 7500, amount: 0 },
+    { min: 7501, max: 10000, amount: 175 },
+    { min: 10001, max: null, amount: 200 },
+  ];
+
+  it('picks the band the gross falls in', () => {
+    expect(resolvePtAmount(maharashtra, 5000)).toBe(0);
+    expect(resolvePtAmount(maharashtra, 9000)).toBe(175);
+    expect(resolvePtAmount(maharashtra, 50_000)).toBe(200);
+  });
+
+  it('treats a null max as the open-ended top band', () => {
+    expect(resolvePtAmount(maharashtra, 10_000_000)).toBe(200);
+  });
+
+  it('returns zero for a state that levies none, rather than guessing', () => {
+    // Several states levy no PT at all — an empty table is a real answer.
+    expect(resolvePtAmount([], 50_000)).toBe(0);
+    expect(resolvePtAmount(null, 50_000)).toBe(0);
+    expect(resolvePtAmount(undefined, 50_000)).toBe(0);
+  });
+
+  it('returns zero for a gross of zero or nonsense', () => {
+    expect(resolvePtAmount(maharashtra, 0)).toBe(0);
+    expect(resolvePtAmount(maharashtra, Number.NaN)).toBe(0);
   });
 });

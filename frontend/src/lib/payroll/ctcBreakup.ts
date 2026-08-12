@@ -26,6 +26,12 @@ export const EMPLOYEE_PF_RATE = 0.12;
 export const EMPLOYER_PF_RATE = 0.12;
 /** PayrollCalculatorService::GRATUITY_RATE */
 export const GRATUITY_RATE = 0.0481;
+/** PayrollCalculatorService::ESI_GROSS_THRESHOLD — ESI applies at or below this gross. */
+export const ESI_GROSS_THRESHOLD = 21000;
+/** PayrollCalculatorService::ESI_EMPLOYEE_RATE */
+export const ESI_EMPLOYEE_RATE = 0.0075;
+/** PayrollCalculatorService::ESI_EMPLOYER_RATE */
+export const ESI_EMPLOYER_RATE = 0.0325;
 
 /** Defaults from PayrollCalculatorService::calculateSalaryBreakdown. */
 export const DEFAULT_BASIC_PERCENTAGE = 0.4;
@@ -93,9 +99,14 @@ export interface CtcBreakup {
   specialAllowance: number;
   gross: number;
   employeePf: number;
+  /** 0.75% of gross, and only at or below the ESI threshold. */
+  employeeEsi: number;
+  esiApplicable: boolean;
   nps: number;
   vpf: number;
   employerPf: number;
+  /** 3.25% of gross. An employer cost, like employer PF. */
+  employerEsi: number;
   gratuity: number;
   /** Gross less the employee's own deductions. Excludes tax — see the note above. */
   netBeforeTax: number;
@@ -162,9 +173,25 @@ export function calculateCtcBreakup({
   const specialAllowance = Math.max(0, gross - fixedComponents);
 
   const employeePf = pfWages(basic) * EMPLOYEE_PF_RATE;
+
+  /*
+   * ESI, which this module previously omitted entirely.
+   *
+   * It applies only at or below a gross of ESI_GROSS_THRESHOLD, so it is
+   * invisible on most salaries and was easy to miss — and materially wrong for
+   * everyone below it, where 0.75% comes off take-home.
+   *
+   * Employer ESI is NOT subtracted from CTC here, because the engine does not
+   * either: calculateSalaryComponents takes only employer PF and gratuity out
+   * before gross. Mirroring that matters more than tidiness.
+   */
+  const esiApplicable = gross > 0 && gross <= ESI_GROSS_THRESHOLD;
+  const employeeEsi = esiApplicable ? gross * ESI_EMPLOYEE_RATE : 0;
+  const employerEsi = esiApplicable ? gross * ESI_EMPLOYER_RATE : 0;
+
   const nps = basic * npsPercentage;
   const vpf = basic * vpfPercentage;
-  const netBeforeTax = gross - employeePf - nps - vpf;
+  const netBeforeTax = gross - employeePf - employeeEsi - nps - vpf;
 
   // basic PLUS DA — the labour-code floor is on the pair, not on basic alone.
   const basicShareOfCtc = monthlyCtc > 0 ? (basic + da) / monthlyCtc : 0;
@@ -179,9 +206,12 @@ export function calculateCtcBreakup({
     specialAllowance,
     gross,
     employeePf,
+    employeeEsi,
+    esiApplicable,
     nps,
     vpf,
     employerPf,
+    employerEsi,
     gratuity,
     netBeforeTax,
     takeHomeRatio: safeCtc > 0 ? (netBeforeTax * 12) / safeCtc : 0,
@@ -244,4 +274,35 @@ export function structureToConfig(structure: {
     npsPercentage: pct(structure.nps_percentage),
     vpfPercentage: pct(structure.vpf_percentage),
   };
+}
+
+/** A monthly professional-tax band, as `/payroll/pt-states/{state}/configuration` returns it. */
+export interface PtSlab {
+  min: number;
+  max: number | null;
+  amount: number;
+}
+
+/**
+ * Professional tax for a monthly gross, from a state's slab table.
+ *
+ * PT is state-levied and several states levy none at all, so the caller must
+ * supply the state's slabs — there is deliberately no default. `max: null`
+ * marks the open-ended top band.
+ *
+ * Mirrors PTStateService::resolveSlabAmount, with one documented simplification:
+ * the engine also applies special month rates, such as Maharashtra's higher
+ * February instalment that brings the top band to the ₹2,500 annual cap. This
+ * returns the ordinary monthly amount, because the panel shows a typical month
+ * rather than a specific one.
+ */
+export function resolvePtAmount(slabs: PtSlab[] | null | undefined, monthlyGross: number): number {
+  if (!Array.isArray(slabs) || slabs.length === 0) return 0;
+  if (!Number.isFinite(monthlyGross) || monthlyGross <= 0) return 0;
+
+  const band = slabs.find(
+    (slab) => monthlyGross >= slab.min && (slab.max === null || slab.max === undefined || monthlyGross <= slab.max),
+  );
+
+  return band && Number.isFinite(band.amount) ? band.amount : 0;
 }

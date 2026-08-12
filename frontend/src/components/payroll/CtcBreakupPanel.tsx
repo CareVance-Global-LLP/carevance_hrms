@@ -12,6 +12,7 @@ import {
   type BreakupLine,
   calculateCtcBreakup,
   formatRupees,
+  resolvePtAmount,
   structureToConfig,
 } from '@/lib/payroll/ctcBreakup';
 
@@ -64,6 +65,29 @@ export default function CtcBreakupPanel({
    * Shares the query key step 1 uses, so this is served from cache rather than
    * refetching the list the admin already loaded to pick a structure.
    */
+  /*
+   * Professional tax needs a state, and the wizard never collects one — Work
+   * Location is Office/Remote/Hybrid, which says nothing about which state
+   * levies PT. So the panel asks. Left blank it shows a dash, which is honest:
+   * several states levy no PT at all, and guessing would put a number on screen
+   * that payroll then contradicts.
+   */
+  const [ptStateCode, setPtStateCode] = useState('');
+
+  const ptStatesQuery = useQuery({
+    queryKey: ['pt-states'],
+    queryFn: async () => (await payrollApi.getPTStates()).data,
+    staleTime: 60 * 60 * 1000,
+    enabled: parsedCtc > 0,
+  });
+
+  const ptConfigQuery = useQuery({
+    queryKey: ['pt-state-configuration', ptStateCode],
+    queryFn: async () => (await payrollApi.getPTConfiguration(ptStateCode)).data,
+    enabled: Boolean(ptStateCode),
+    staleTime: 60 * 60 * 1000,
+  });
+
   const structuresQuery = useQuery({
     queryKey: ['add-user-salary-structures'],
     queryFn: async () => {
@@ -150,6 +174,11 @@ export default function CtcBreakupPanel({
       </div>
     );
   }
+
+  const ptSlabs = ptConfigQuery.data?.configuration?.monthly ?? null;
+  const ptAmount = resolvePtAmount(ptSlabs, breakup.gross);
+  const ptStates = ptStatesQuery.data?.all_states ?? [];
+  const ptStateHasNone = Boolean(ptStateCode) && ptConfigQuery.data && ptConfigQuery.data.has_pt === false;
 
   const editing = mode === 'custom' && edited;
   const patch = (changes: Partial<EditableConfig>) =>
@@ -293,6 +322,29 @@ export default function CtcBreakupPanel({
         </div>
       ) : null}
 
+      {/*
+        PT is state-levied, so it cannot be shown without knowing the state —
+        and the wizard collects Work Location as Office/Remote/Hybrid, which
+        does not say. Asking here is what turns the dash into a number.
+      */}
+      <div>
+        <FieldLabel hint="for professional tax">Work state</FieldLabel>
+        <select
+          value={ptStateCode}
+          onChange={(event) => setPtStateCode(event.target.value)}
+          aria-label="Work state for professional tax"
+          className="w-full rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-300/30"
+        >
+          <option value="">Not set — professional tax not shown</option>
+          {ptStates.map((state: any) => (
+            <option key={state.code ?? state.state} value={state.code ?? state.state}>
+              {state.name ?? state.state}
+              {state.has_pt === false ? ' — levies none' : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {!breakup.meetsLabourCodeFloor ? (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="font-semibold">Basic{breakup.da > 0 ? ' plus DA' : ''} is {Math.round(breakup.basicShareOfCtc * 100)}% of CTC</p>
@@ -343,6 +395,15 @@ export default function CtcBreakupPanel({
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums text-slate-900">{formatRupees(breakup.employeePf)}</td>
               </tr>
+              {breakup.esiApplicable ? (
+                <tr className="border-b border-border-strong/40">
+                  <td className="px-4 py-2 align-top">
+                    <span className="text-slate-700">Employee ESI</span>
+                    <span className="block text-[11px] text-slate-500">0.75% of gross, applies at or below ₹21,000</span>
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-900">{formatRupees(breakup.employeeEsi)}</td>
+                </tr>
+              ) : null}
               {breakup.nps > 0 ? (
                 <tr className="border-b border-border-strong/40">
                   <td className="px-4 py-2"><span className="text-slate-700">NPS</span></td>
@@ -359,13 +420,22 @@ export default function CtcBreakupPanel({
                 <td className="px-4 py-2 align-top">
                   <span className="text-slate-700">Professional tax</span>
                   {/*
-                    Not estimated. PT is state-levied, several states levy none,
-                    and PTStateService is the authority — guessing here would put
-                    a number on screen that payroll then contradicts.
+                    Resolved from the state's own slab table via
+                    /payroll/pt-states, not estimated. With no state chosen this
+                    stays a dash rather than a guess — several states levy none,
+                    so a default would be wrong in both directions.
                   */}
-                  <span className="block text-[11px] text-slate-500">state-levied — applied at payroll run</span>
+                  <span className="block text-[11px] text-slate-500">
+                    {!ptStateCode
+                      ? 'set a work state above to show this'
+                      : ptStateHasNone
+                        ? 'this state levies no professional tax'
+                        : 'from the state slab table'}
+                  </span>
                 </td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-500">—</td>
+                <td className="px-4 py-2 text-right tabular-nums text-slate-900">
+                  {ptStateCode && !ptConfigQuery.isLoading ? formatRupees(ptAmount) : <span className="text-slate-500">—</span>}
+                </td>
               </tr>
               <tr className="border-b border-border-strong/40">
                 <td className="px-4 py-2 align-top">
@@ -374,6 +444,15 @@ export default function CtcBreakupPanel({
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums text-slate-600">{formatRupees(breakup.employerPf)}</td>
               </tr>
+              {breakup.esiApplicable ? (
+                <tr className="border-b border-border-strong/40">
+                  <td className="px-4 py-2 align-top">
+                    <span className="text-slate-700">Employer ESI</span>
+                    <span className="block text-[11px] text-slate-500">3.25% of gross</span>
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-600">{formatRupees(breakup.employerEsi)}</td>
+                </tr>
+              ) : null}
               <tr>
                 <td className="px-4 py-2 align-top">
                   <span className="text-slate-700">Gratuity provision</span>
@@ -390,10 +469,14 @@ export default function CtcBreakupPanel({
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
           Monthly, before income tax
         </p>
-        <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950">{formatRupees(breakup.netBeforeTax)}</p>
+        <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950">
+          {formatRupees(breakup.netBeforeTax - ptAmount)}
+        </p>
         <p className="mt-1 text-xs text-slate-600">
-          {Math.round(breakup.takeHomeRatio * 100)}% of the {formatRupees(parsedCtc)} CTC. Income tax and
-          professional tax are applied at the payroll run and are not included here.
+          {Math.round(((breakup.netBeforeTax - ptAmount) * 12) / parsedCtc * 100)}% of the{' '}
+          {formatRupees(parsedCtc)} CTC.{' '}
+          {ptStateCode ? 'Professional tax is included.' : 'Professional tax is not included — no work state set.'}{' '}
+          Income tax is applied at the payroll run and is not included here.
         </p>
       </div>
     </div>
