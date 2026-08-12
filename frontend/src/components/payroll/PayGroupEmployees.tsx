@@ -36,6 +36,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import AddEmployeeToPayGroupModal from './AddEmployeeToPayGroupModal';
+import Modal from '@/components/ui/dialog/Modal';
 
 interface PayGroupEmployeesProps {
   payGroupId: number;
@@ -804,11 +805,10 @@ function SetCtcModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <SurfaceCard className="w-full max-w-md p-6">
+    <Modal open onClose={onClose} titleId="set-ctc-and-process-title" size="md" panelClassName="p-6" busy={isSaving}>
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Set CTC &amp; Process</h3>
+            <h3 id="set-ctc-and-process-title" className="text-lg font-semibold text-slate-900">Set CTC &amp; Process</h3>
             <p className="text-sm text-slate-500 mt-0.5">{employee.name}</p>
           </div>
           <button
@@ -861,8 +861,7 @@ function SetCtcModal({
             {isSaving ? 'Saving…' : 'Set & Process'}
           </Button>
         </div>
-      </SurfaceCard>
-    </div>
+    </Modal>
   );
 }
 
