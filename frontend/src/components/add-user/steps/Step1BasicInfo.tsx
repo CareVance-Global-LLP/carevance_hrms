@@ -275,7 +275,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       </div>
 
       {/* Email & Phone */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor={fieldId('f3')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Mail className="h-3.5 w-3.5 text-slate-400" />
@@ -411,7 +411,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       </div>
 
       {/* Role & Designation */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Building2 className="h-3.5 w-3.5 text-slate-400" />
@@ -514,7 +514,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       </div>
 
       {/* Date of Joining & Work Location */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label htmlFor={fieldId('f10')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Calendar className="h-3.5 w-3.5 text-slate-400" />

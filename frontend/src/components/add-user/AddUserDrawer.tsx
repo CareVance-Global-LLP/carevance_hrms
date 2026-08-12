@@ -802,6 +802,8 @@ export default function AddUserDrawer({
                 onCopy={() => copyLinkMutation.mutate()}
                 isGenerating={linkMutation.isPending}
                 isCopying={copyLinkMutation.isPending}
+                role={role}
+                expiresInHours={expiresInHours}
               />
             ) : null}
 
