@@ -86,13 +86,10 @@ export function Step3Profile({ form, setForm, isCreatingUser, creationError, onG
             </h3>
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            What the annual CTC entered in step 1 means month to month. Change the basic percentage or the
-            work city to see the effect.
-          </p>
+            What the annual CTC entered in step 1 means month to month. When a salary structure is selected there the figures follow it; switch to Custom to override any head.</p>
           <CtcBreakupPanel
             annualCtc={form.annualCtc ? String(form.annualCtc) : ''}
-            basicPercentage={form.ctcBasicPercentage}
-            onBasicPercentageChange={(value) => setForm((current) => ({ ...current, ctcBasicPercentage: value }))}
+            salaryStructureId={form.salaryStructureId}
             isMetroCity={form.ctcIsMetroCity}
             onMetroChange={(value) => setForm((current) => ({ ...current, ctcIsMetroCity: value }))}
           />

@@ -124,3 +124,67 @@ describe('formatRupees', () => {
     expect(formatRupees(Number.NaN)).toBe('₹0');
   });
 });
+
+describe('salary structure inputs', () => {
+  const ctc = 1_200_000;
+
+  it('uses the structure percentages instead of the engine defaults', () => {
+    const b = calculateCtcBreakup({
+      annualCtc: ctc,
+      basicPercentage: 0.5,
+      hraPercentageOfBasic: 0.6,
+    });
+    expect(b.basic).toBeCloseTo(50_000, 2);
+    expect(b.hra).toBeCloseTo(30_000, 2);
+  });
+
+  it('adds named allowances and shrinks special allowance to match', () => {
+    // CTC is the ceiling, so a structure redistributes the same number rather
+    // than increasing it. Gross must not move.
+    const plain = calculateCtcBreakup({ annualCtc: ctc });
+    const withAllowances = calculateCtcBreakup({
+      annualCtc: ctc,
+      allowances: [
+        { label: 'Internet', amount: 1000 },
+        { label: 'Meal', amount: 2200 },
+      ],
+    });
+
+    expect(withAllowances.gross).toBeCloseTo(plain.gross, 2);
+    expect(withAllowances.allowances).toHaveLength(2);
+    expect(withAllowances.specialAllowance).toBeCloseTo(plain.specialAllowance - 3200, 2);
+  });
+
+  it('drops allowances with no value rather than rendering empty rows', () => {
+    const b = calculateCtcBreakup({
+      annualCtc: ctc,
+      allowances: [
+        { label: 'Internet', amount: 0 },
+        { label: 'Books', amount: Number.NaN },
+        { label: 'Meal', amount: 500 },
+      ],
+    });
+    expect(b.allowances).toEqual([{ label: 'Meal', amount: 500 }]);
+  });
+
+  it('counts DA toward the labour-code floor, not just basic', () => {
+    // 40% basic alone fails the 50% floor; 40% basic + 15% DA of basic does not
+    // reach it either, but 40% + 30% of basic does — the point is that DA counts.
+    const basicOnly = calculateCtcBreakup({ annualCtc: ctc, basicPercentage: 0.45 });
+    expect(basicOnly.meetsLabourCodeFloor).toBe(false);
+
+    const withDa = calculateCtcBreakup({ annualCtc: ctc, basicPercentage: 0.45, daPercentage: 0.2 });
+    expect(withDa.da).toBeCloseTo(45_000 * 0.2, 2);
+    // basic 45% + DA (20% of basic = 9% of CTC) = 54% of CTC
+    expect(withDa.basicShareOfCtc).toBeCloseTo(0.54, 4);
+    expect(withDa.meetsLabourCodeFloor).toBe(true);
+  });
+
+  it('takes NPS and VPF off take-home as employee deductions', () => {
+    const b = calculateCtcBreakup({ annualCtc: ctc, npsPercentage: 0.1, vpfPercentage: 0.05 });
+    // basic is 40,000 — 40% of the 100,000 monthly CTC.
+    expect(b.nps).toBeCloseTo(4_000, 2);
+    expect(b.vpf).toBeCloseTo(2_000, 2);
+    expect(b.netBeforeTax).toBeCloseTo(b.gross - b.employeePf - b.nps - b.vpf, 2);
+  });
+});
