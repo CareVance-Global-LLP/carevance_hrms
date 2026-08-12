@@ -27,6 +27,8 @@ import type { AddUserWizardForm } from '@/components/add-user/steps/types';
 export const USER_FIELD_LIMITS = {
   /** employee_profiles.first_name — EmployeeWorkspaceController::updateProfile 'max:120' */
   firstName: 120,
+  /** employee_profiles.middle_name — EmployeeWorkspaceController::updateProfile 'max:120' */
+  middleName: 120,
   /** employee_profiles.last_name — EmployeeWorkspaceController::updateProfile 'max:120' */
   lastName: 120,
   /** users.email — UserController::store 'max:255' */
@@ -128,6 +130,37 @@ const tooLong = (max: number) => `Use ${max} characters or fewer`;
  * characters" — because the person reading it is mid-form and wants to know
  * what to do, not what the validator is called.
  */
+/**
+ * Split a stored `users.name` back into first, middle and last.
+ *
+ * The wizard composes `users.name` from three fields and the API stores it as
+ * one string, so rehydrating an incomplete user has to reverse that. The naive
+ * version — token 0 is the first name, the rest is the last name — puts a
+ * middle name into the last-name field, and the next save writes it back that
+ * way permanently.
+ *
+ * Middle is everything between the first and last token, so a compound surname
+ * entered as a middle name survives the round trip; a two-part name has no
+ * middle, which is the common case.
+ */
+export function splitDisplayName(name?: string | null): {
+  firstName: string;
+  middleName: string;
+  lastName: string;
+} {
+  const parts = String(name ?? '').trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) return { firstName: '', middleName: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0], middleName: '', lastName: '' };
+  if (parts.length === 2) return { firstName: parts[0], middleName: '', lastName: parts[1] };
+
+  return {
+    firstName: parts[0],
+    middleName: parts.slice(1, -1).join(' '),
+    lastName: parts[parts.length - 1],
+  };
+}
+
 export function validateUserStep1(form: AddUserWizardForm): UserFieldErrors {
   const errors: UserFieldErrors = {};
 

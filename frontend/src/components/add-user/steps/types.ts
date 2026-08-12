@@ -18,6 +18,7 @@ export interface IncompleteUserCheck {
 export interface AddUserWizardForm {
   // Step 1: Basic Info (Required)
   firstName: string;
+  middleName: string;
   lastName: string;
   email: string;
   // Set by the admin, handed to the joiner directly. This is what separates
@@ -73,6 +74,7 @@ export interface AddUserWizardForm {
 export const defaultForm: AddUserWizardForm = {
   // Step 1
   firstName: '',
+  middleName: '',
   lastName: '',
   email: '',
   password: '',

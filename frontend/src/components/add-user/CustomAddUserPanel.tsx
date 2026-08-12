@@ -17,7 +17,7 @@ import {
   saveWizardDraft,
 } from './wizardDraft';
 import EmployeeDetailsSection from '@/components/EmployeeDetailsSection';
-import { isUserStep1Valid, validateUserStep1 } from '@/lib/validation/userRules';
+import { isUserStep1Valid, splitDisplayName, validateUserStep1 } from '@/lib/validation/userRules';
 
 // ── Helper: Extract user-friendly error message ────────────
 
@@ -61,6 +61,7 @@ function extractFieldErrors(error: any): Partial<Record<keyof AddUserWizardForm,
   const fieldMapping: Record<string, keyof AddUserWizardForm> = {
     name: 'firstName',
     first_name: 'firstName',
+    middle_name: 'middleName',
     last_name: 'lastName',
     email: 'email',
     phone: 'phone',
@@ -94,6 +95,7 @@ function extractFieldErrors(error: any): Partial<Record<keyof AddUserWizardForm,
  */
 const FIELD_STEP: Partial<Record<keyof AddUserWizardForm, 1 | 2 | 3>> = {
   firstName: 1,
+  middleName: 1,
   lastName: 1,
   email: 1,
   phone: 1,
@@ -356,7 +358,12 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
   const createUserMutation = useMutation({
     mutationFn: async (formData: AddUserWizardForm) => {
-      const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+      // Middle name sits between the other two so `users.name` reads as it does
+      // on the PAN card, which is what the statutory filings match against.
+      const fullName = [formData.firstName, formData.middleName, formData.lastName]
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join(' ');
 
       // Step A: Create user
       const userResponse = await api.post('/users', {
@@ -394,6 +401,7 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
         try {
           await api.put(`/employees/${userId}/profile`, {
             first_name: formData.firstName || undefined,
+            middle_name: formData.middleName || undefined,
             last_name: formData.lastName || undefined,
             phone: formData.phone || undefined,
             personal_email: formData.email || undefined,
@@ -592,8 +600,12 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
       const updatedForm = {
         ...form,
         userId,
-        firstName: userData.name?.split(' ')[0] || form.firstName,
-        lastName: userData.name?.split(' ').slice(1).join(' ') || form.lastName,
+        // splitDisplayName, not a bare split: this used to take token 0 as the
+        // first name and everything after it as the last name, which puts a
+        // middle name into the last-name field the moment one exists.
+        firstName: splitDisplayName(userData.name).firstName || form.firstName,
+        middleName: splitDisplayName(userData.name).middleName || form.middleName,
+        lastName: splitDisplayName(userData.name).lastName || form.lastName,
         email: userData.email || form.email,
         phone: userData.phone || form.phone,
         role: userData.role || form.role,

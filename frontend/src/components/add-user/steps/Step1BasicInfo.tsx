@@ -219,8 +219,16 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
   return (
     <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
-      {/* Name Row */}
-      <div className="grid grid-cols-2 gap-4">
+      {/*
+        Name row. Three columns rather than two: the middle name is kept as its
+        own field because statutory filings match on the name as printed on the
+        PAN card, and a mismatch is a common cause of 24Q and Form 16 rejection.
+
+        `grid-cols-1 sm:grid-cols-3` rather than a bare `grid-cols-3` — this file
+        previously carried no breakpoints at all, so every row stayed multi-column
+        on a phone and the inputs were unusably narrow.
+      */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
           <label htmlFor={fieldId('f1')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Briefcase className="h-3.5 w-3.5 text-slate-400" />
@@ -239,6 +247,18 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             placeholder="John"
           />
           {errors.firstName && <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>}
+        </div>
+        <div>
+          <label htmlFor={fieldId('f1m')} className="block text-sm font-medium text-slate-700 mb-1.5">
+            Middle Name <span className="text-slate-400 font-normal">(optional)</span>
+          </label>
+          <TextInput
+            id={fieldId('f1m')}
+            type="text"
+            value={form.middleName}
+            onChange={(e) => setForm((p) => ({ ...p, middleName: e.target.value }))}
+            placeholder="as printed on PAN"
+          />
         </div>
         <div>
           <label htmlFor={fieldId('f2')} className="block text-sm font-medium text-slate-700 mb-1.5">Last Name</label>

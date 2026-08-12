@@ -3,6 +3,7 @@ import { defaultForm, type AddUserWizardForm } from '@/components/add-user/steps
 import {
   USER_FIELD_LIMITS,
   isValidPhone,
+  splitDisplayName,
   maxDepartmentsFor,
   MIN_PASSWORD_LENGTH,
   maxJoiningDate,
@@ -178,5 +179,44 @@ describe('department cap', () => {
     expect(maxDepartmentsFor('employee')).toBe(1);
     expect(maxDepartmentsFor('manager')).toBe(1);
     expect(maxDepartmentsFor('admin')).toBe(Infinity);
+  });
+});
+
+describe('splitDisplayName', () => {
+  it('returns empty parts for an empty name', () => {
+    expect(splitDisplayName('')).toEqual({ firstName: '', middleName: '', lastName: '' });
+    expect(splitDisplayName(null)).toEqual({ firstName: '', middleName: '', lastName: '' });
+  });
+
+  it('treats a single token as the first name', () => {
+    expect(splitDisplayName('Asha')).toEqual({ firstName: 'Asha', middleName: '', lastName: '' });
+  });
+
+  it('treats two tokens as first and last, with no middle', () => {
+    expect(splitDisplayName('Asha Rao')).toEqual({ firstName: 'Asha', middleName: '', lastName: 'Rao' });
+  });
+
+  it('puts everything between the ends into the middle name', () => {
+    // The bug this replaces: a bare split took token 0 as first and the REST as
+    // last, so "Kumari Rao" landed in the last-name field and was saved back
+    // that way.
+    expect(splitDisplayName('Asha Kumari Rao')).toEqual({
+      firstName: 'Asha',
+      middleName: 'Kumari',
+      lastName: 'Rao',
+    });
+    expect(splitDisplayName('Asha Kumari Devi Rao')).toEqual({
+      firstName: 'Asha',
+      middleName: 'Kumari Devi',
+      lastName: 'Rao',
+    });
+  });
+
+  it('collapses irregular whitespace', () => {
+    expect(splitDisplayName('  Asha   Kumari  Rao ')).toEqual({
+      firstName: 'Asha',
+      middleName: 'Kumari',
+      lastName: 'Rao',
+    });
   });
 });
