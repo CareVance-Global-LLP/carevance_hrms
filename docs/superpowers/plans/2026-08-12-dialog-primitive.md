@@ -15,7 +15,7 @@
 - All work happens on branch `feat/dialog-primitive`. Do not commit to `main`.
 - All commands run from `frontend/` unless stated otherwise.
 - `npx tsc --noEmit` must stay at 0 errors after every task.
-- `npx eslint src --ext ts,tsx` must stay at 0 errors after every task.
+- `npx eslint src --ext ts,tsx` currently reports **251 pre-existing errors across 78 files** (unused vars and imports). It is not a clean gate and cannot be treated as one — `npm run lint`, which adds `--max-warnings 0`, fails on this repo today. Lint only the paths you touched: `npx eslint <touched paths> --ext ts,tsx` must be 0. Do not attempt to fix unrelated files.
 - Test regressions are judged by failing test **name**, never by count, against `.github/baselines/vitest.txt` (57 names). New tests must add passing names only.
 - Vitest 4 has no `basic` reporter. Run `npx vitest run <path>` with no `--reporter` flag.
 - `vitest.config` sets `globals: false` — every test file imports `describe`, `it`, `expect`, `vi` explicitly from `vitest`.
@@ -1255,7 +1255,7 @@ Expected: the five new SlideOver tests PASS. Existing failures must match names 
 - [ ] **Step 8: Verify the gates**
 
 Run: `npx tsc --noEmit` — exit 0.
-Run: `npx eslint src --ext ts,tsx` — exit 0.
+Run: `npx eslint <the paths this task touched> --ext ts,tsx` — exit 0. (Repo-wide lint is not clean; see Global Constraints.)
 
 - [ ] **Step 9: Commit**
 
@@ -1449,7 +1449,7 @@ Expected: failing test names identical to `.github/baselines/vitest.txt`. Diff t
 - [ ] **Step 6: Verify the gates**
 
 Run: `npx tsc --noEmit` — exit 0.
-Run: `npx eslint src --ext ts,tsx` — exit 0.
+Run: `npx eslint <the paths this task touched> --ext ts,tsx` — exit 0. (Repo-wide lint is not clean; see Global Constraints.)
 
 - [ ] **Step 7: Commit**
 
@@ -1576,7 +1576,7 @@ Expected: four files, and the deleted lines should be the wrapper, the `SurfaceC
 - [ ] **Step 6: Verify the gates**
 
 Run: `npx tsc --noEmit` — exit 0.
-Run: `npx eslint src --ext ts,tsx` — exit 0.
+Run: `npx eslint <the paths this task touched> --ext ts,tsx` — exit 0. (Repo-wide lint is not clean; see Global Constraints.)
 
 - [ ] **Step 7: Commit**
 
@@ -1634,7 +1634,7 @@ Expected: PASS, 6 tests.
 - [ ] **Step 5: Verify the gates**
 
 Run: `npx tsc --noEmit` — exit 0.
-Run: `npx eslint src --ext ts,tsx` — exit 0.
+Run: `npx eslint <the paths this task touched> --ext ts,tsx` — exit 0. (Repo-wide lint is not clean; see Global Constraints.)
 
 - [ ] **Step 6: Commit**
 
@@ -1698,7 +1698,7 @@ Expected: PASS, 5 tests.
 - [ ] **Step 5: Verify the gates**
 
 Run: `npx tsc --noEmit` — exit 0.
-Run: `npx eslint src --ext ts,tsx` — exit 0.
+Run: `npx eslint <the paths this task touched> --ext ts,tsx` — exit 0. (Repo-wide lint is not clean; see Global Constraints.)
 
 - [ ] **Step 6: Commit**
 
@@ -1785,7 +1785,7 @@ Expected: PASS, 2 tests. The second one is the whole reason `dialogStack` exists
 - [ ] **Step 6: Verify the gates**
 
 Run: `npx tsc --noEmit` — exit 0.
-Run: `npx eslint src --ext ts,tsx` — exit 0.
+Run: `npx eslint <the paths this task touched> --ext ts,tsx` — exit 0. (Repo-wide lint is not clean; see Global Constraints.)
 
 - [ ] **Step 7: Commit**
 
@@ -1832,7 +1832,7 @@ Expected: PASS, 3 tests.
 - [ ] **Step 5: Verify the gates**
 
 Run: `npx tsc --noEmit` — exit 0.
-Run: `npx eslint src --ext ts,tsx` — exit 0.
+Run: `npx eslint <the paths this task touched> --ext ts,tsx` — exit 0. (Repo-wide lint is not clean; see Global Constraints.)
 
 - [ ] **Step 6: Commit**
 
@@ -1869,7 +1869,7 @@ Extract the failing test names and compare against `.github/baselines/vitest.txt
 - [ ] **Step 4: Run the remaining gates**
 
 Run: `npx tsc --noEmit` — exit 0.
-Run: `npx eslint src --ext ts,tsx` — exit 0.
+Run: `npx eslint <the paths this task touched> --ext ts,tsx` — exit 0. (Repo-wide lint is not clean; see Global Constraints.)
 Run: `npm run build` — succeeds.
 
 - [ ] **Step 5: Record what is left**
