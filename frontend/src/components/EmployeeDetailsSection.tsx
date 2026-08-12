@@ -4,6 +4,7 @@ import { Briefcase, FileText, CreditCard, Building2, Download, Eye } from 'lucid
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
+import { validateGovernmentId } from '@/lib/idValidation';
 import { canAccess } from '@/lib/permissions';
 import { employeeWorkspaceApi } from '@/services/api';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
@@ -24,6 +25,20 @@ interface EmployeeDetailsSectionProps {
   editable?: boolean;
 }
 
+/** What a given ID type should look like, shown before anything is typed. */
+const govIdHint = (idType?: string): string => {
+  switch ((idType || '').toLowerCase()) {
+    case 'aadhaar': return '12 digits';
+    case 'pan': return 'ABCDE1234F';
+    case 'passport': return 'One letter then 7 digits';
+    case 'driving_license': return 'State code then numbers';
+    case 'voter_id': return 'ABC1234567';
+    case 'uan': return '12 digits';
+    case 'esi': return '17 digits';
+    default: return 'ID number';
+  }
+};
+
 export default function EmployeeDetailsSection({ userId, employeeCode, showHeader = false, editable }: EmployeeDetailsSectionProps) {
   // Use the numeric userId as the lookup key whenever available — it's
   // always accurate, while employee_code strings can be mangled or
@@ -34,7 +49,16 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [aboutForm, setAboutForm] = useState<Record<string, string>>({});
   const [workForm, setWorkForm] = useState<Record<string, any>>({});
-  const [govForm, setGovForm] = useState<Record<string, any>>({ id_type: 'AADHAAR', id_number: '', status: 'pending' });
+  const [govForm, setGovForm] = useState<Record<string, any>>({ id_type: 'aadhaar', id_number: '', status: 'pending' });
+
+  /*
+   * Derived, not state: recomputing on render keeps the message in step with
+   * the field instead of trailing it by a keystroke, which is what a second
+   * useState here would do.
+   */
+  const govIdCheck = govForm.id_number
+    ? validateGovernmentId(govForm.id_type || 'aadhaar', govForm.id_number)
+    : null;
   const [bankForm, setBankForm] = useState<Record<string, any>>({
     bank_name: '',
     account_number: '',
@@ -128,7 +152,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     }),
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Government ID saved successfully.' });
-      setGovForm({ id_type: 'AADHAAR', id_number: '', status: 'pending' });
+      setGovForm({ id_type: 'aadhaar', id_number: '', status: 'pending' });
       await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
     },
     onError: (error: any) => {
@@ -424,23 +448,60 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
               <div>
                 <FieldLabel>ID Type</FieldLabel>
                 <SelectInput
-                  value={govForm.id_type || 'AADHAAR'}
+                  value={govForm.id_type || 'aadhaar'}
                   onChange={(event) => setGovForm((current) => ({ ...current, id_type: event.target.value }))}
                 >
-                  <option value="AADHAAR">Aadhaar</option>
-                  <option value="PAN">PAN</option>
-                  <option value="PASSPORT">Passport</option>
-                  <option value="DRIVING_LICENSE">Driving License</option>
-                  <option value="VOTER_ID">Voter ID</option>
+                  {/*
+                    Lower-case values, and two more types.
+                    
+                    This list wrote 'AADHAAR' while EmployeeDetailWorkspace wrote
+                    'aadhaar', so employee_government_ids holds both spellings for
+                    the same kind of ID. User::statutoryId reads case-insensitively
+                    so filings still resolve, but anything grouping on the raw
+                    value sees them as different types. UAN and ESI were missing
+                    here and are needed for PF and insurance.
+                  */}
+                  <option value="aadhaar">Aadhaar</option>
+                  <option value="pan">PAN</option>
+                  <option value="passport">Passport</option>
+                  <option value="driving_license">Driving License</option>
+                  <option value="voter_id">Voter ID</option>
+                  <option value="uan">UAN (PF)</option>
+                  <option value="esi">ESI Number</option>
                 </SelectInput>
               </div>
               <div>
                 <FieldLabel>ID Number</FieldLabel>
+                {/*
+                  Validated as you type, against lib/idValidation — Aadhaar runs
+                  a real Verhoeff checksum, PAN matches ABCDE1234F.
+
+                  The server validates too and returns 422, so this form used to
+                  accept anything and surface the failure only after Save. The
+                  validators already existed and EmployeeDetailWorkspace already
+                  used them; this form did not.
+                */}
                 <TextInput
                   value={govForm.id_number || ''}
                   onChange={(event) => setGovForm((current) => ({ ...current, id_number: event.target.value }))}
-                  placeholder="Enter ID number"
+                  placeholder={govIdHint(govForm.id_type)}
+                  className={
+                    govIdCheck?.error
+                      ? 'border-rose-400 focus:border-rose-500'
+                      : govIdCheck?.valid
+                        ? 'border-emerald-400 focus:border-emerald-500'
+                        : undefined
+                  }
                 />
+                <p className="mt-1 text-xs">
+                  {govIdCheck?.error ? (
+                    <span className="text-rose-500">{govIdCheck.error}</span>
+                  ) : govIdCheck?.valid ? (
+                    <span className="text-emerald-600">Format valid — not a check that it belongs to this person</span>
+                  ) : (
+                    <span className="text-slate-400">Expected: {govIdHint(govForm.id_type)}</span>
+                  )}
+                </p>
               </div>
               <div>
                 <FieldLabel>Proof Document</FieldLabel>
