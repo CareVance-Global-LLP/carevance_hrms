@@ -14,12 +14,12 @@ import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
 import InviteLinkPanel from '@/components/add-user/InviteLinkPanel';
 import CsvUploadPanel from '@/components/add-user/CsvUploadPanel';
 import CustomAddUserPanel from '@/components/add-user/CustomAddUserPanel';
+import { useCsvInviteRoute } from '@/components/add-user/useCsvInviteRoute';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import {
   addUserService,
   AdditionalInviteSettings,
-  CsvParseResult,
   InviteUserRole,
 } from '@/services/addUser';
 
@@ -152,10 +152,6 @@ export default function AddUserDrawer({
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [inviteUrl, setInviteUrl] = useState('');
   const [linkEmail, setLinkEmail] = useState('');
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvPreview, setCsvPreview] = useState<CsvParseResult | null>(null);
-  const [csvSummary, setCsvSummary] = useState<{ parsedCount: number; successCount: number; errorCount: number } | null>(null);
-  const [csvError, setCsvError] = useState<string | null>(null);
   /*
    * Shared by all three invite tabs.
    *
@@ -196,13 +192,49 @@ export default function AddUserDrawer({
     retry: false,
   });
 
+  /*
+   * The CSV route owns its own file, preview and import result now.
+   *
+   * Feedback banners and cache invalidation stay here because all four routes
+   * share them; the hook reports outcomes and the shell decides what to say.
+   */
+  const csv = useCsvInviteRoute({
+    organizationId: organization?.id,
+    groups: groupsQuery.data || [],
+    projects: projectsQuery.data || [],
+    defaultProjectIds: selectedProjectIds,
+    settings,
+    joiningDate,
+    toErrorMessage: extractInviteError,
+    onImported: async ({ invitedCount, failedMessages, deferred }) => {
+      saveDefaultsIfNeeded();
+      setFeedback({
+        tone: failedMessages.length > 0 ? 'error' : 'success',
+        message:
+          failedMessages.length > 0
+            ? `Imported ${invitedCount} row(s) with ${failedMessages.length} issue(s).`
+            : deferred.length > 0
+              ? `Imported ${invitedCount} row(s) successfully. ${deferred.join(' ')}`
+              : `Imported ${invitedCount} row(s) successfully.`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['add-user-members', organization?.id] }),
+      ]);
+      onCompleted?.();
+    },
+    onFailed: (message) => setFeedback({ tone: 'error', message }),
+  });
+
   const seats = seatsQuery.data?.seats ?? null;
   const seatsRemaining = seats && seats.max > 0 ? Math.max(0, seats.remaining) : null;
   const pendingRecipients = activeTab === 'email'
     ? emails.length
     : activeTab === 'link'
       ? (linkEmail.trim() ? 1 : 0)
-      : csvPreview?.rows.length ?? 0;
+      : csv.pendingRecipientCount;
   const seatShortfall = seatsRemaining !== null && pendingRecipients > seatsRemaining
     ? pendingRecipients - seatsRemaining
     : 0;
@@ -241,8 +273,7 @@ export default function AddUserDrawer({
   useEffect(() => {
     if (!open) return;
     setFeedback(null);
-    setCsvError(null);
-    setCsvSummary(null);
+    csv.clearResult();
   }, [activeTab, open]);
 
   useEffect(() => {
@@ -305,21 +336,6 @@ export default function AddUserDrawer({
    * in the prose, and there was nothing to give back to whoever produced the
    * spreadsheet.
    */
-  const downloadCsvErrors = () => {
-    if (!csvPreview?.errors.length) return;
-
-    const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
-    const content = ['issue', ...csvPreview.errors.map(escape)].join('\n');
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'carevance-import-issues.csv';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  };
 
   const saveDefaultsIfNeeded = () => {
     if (!rememberDefaults) {
@@ -418,78 +434,6 @@ export default function AddUserDrawer({
    * that before committing costs nothing and turns the riskiest tab into the
    * one you can check.
    */
-  const parseCsvMutation = useMutation({
-    mutationFn: async (file: File) => {
-      if (!addUserService.isSupportedImportFile(file.name)) {
-        throw new Error('Only CSV and XLSX files are supported.');
-      }
-
-      return addUserService.parseImportFile(file, groupsQuery.data || [], projectsQuery.data || []);
-    },
-    onSuccess: (parsed) => {
-      setCsvPreview(parsed);
-      setCsvSummary(null);
-      setCsvError(
-        parsed.rows.length === 0
-          ? parsed.errors[0] || 'No usable rows found in this file.'
-          : null
-      );
-    },
-    onError: (error: any) => {
-      const message = extractInviteError(error, 'Could not read this file.');
-      setCsvPreview(null);
-      setCsvError(message);
-    },
-  });
-
-  const csvMutation = useMutation({
-    mutationFn: async () => {
-      if (!organization?.id) {
-        throw new Error('Organization context is required to import users.');
-      }
-      if (!csvPreview) {
-        throw new Error('Select a file first.');
-      }
-
-      return addUserService.sendParsedRows(csvPreview, {
-        organizationId: organization.id,
-        defaultGroupIds: [],
-        defaultProjectIds: selectedProjectIds,
-        settings,
-        joiningDate: joiningDate || undefined,
-      });
-    },
-    onSuccess: async ({ parsed, result }) => {
-      saveDefaultsIfNeeded();
-      setCsvSummary({
-        parsedCount: parsed.rows.length,
-        successCount: result.invitedCount,
-        errorCount: result.failed.length,
-      });
-      setCsvError(result.failed.length > 0 ? result.failed.map((item) => item.message).join(' ') : null);
-      setFeedback({
-        tone: result.failed.length > 0 ? 'error' : 'success',
-        message:
-          result.failed.length > 0
-            ? `Imported ${result.invitedCount} row(s) with ${result.failed.length} issue(s).`
-            : result.deferredAssignments.length > 0
-              ? `Imported ${result.invitedCount} row(s) successfully. ${result.deferredAssignments.join(' ')}`
-              : `Imported ${result.invitedCount} row(s) successfully.`,
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-users'] }),
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
-        queryClient.invalidateQueries({ queryKey: ['add-user-members', organization?.id] }),
-      ]);
-      onCompleted?.();
-    },
-    onError: (error: any) => {
-      const message = extractInviteError(error, 'Failed to process CSV import.');
-      setCsvError(message);
-      setFeedback({ tone: 'error', message });
-    },
-  });
 
   if (!open) return null;
 
@@ -583,23 +527,17 @@ export default function AddUserDrawer({
             {activeTab === 'csv' ? (
               <>
                 <CsvUploadPanel
-                  file={csvFile}
-                  preview={csvPreview}
-                  isParsing={parseCsvMutation.isPending}
-                  isImporting={csvMutation.isPending}
-                  summary={csvSummary}
-                  errorMessage={csvError}
+                  file={csv.file}
+                  preview={csv.preview}
+                  isParsing={csv.isParsing}
+                  isImporting={csv.isImporting}
+                  summary={csv.summary}
+                  errorMessage={csv.errorMessage}
                   departmentNameFor={departmentNameFor}
-                  onSelectFile={(file) => {
-                    setCsvFile(file);
-                    setCsvPreview(null);
-                    setCsvSummary(null);
-                    setCsvError(null);
-                    if (file) parseCsvMutation.mutate(file);
-                  }}
+                  onSelectFile={csv.selectFile}
                   onDownloadTemplate={addUserService.downloadCsvTemplate}
-                  onConfirmImport={() => csvMutation.mutate()}
-                  onDownloadErrors={downloadCsvErrors}
+                  onConfirmImport={() => csv.confirmImport()}
+                  onDownloadErrors={csv.downloadErrors}
                 />
                 <div className="h-px bg-slate-200" />
               </>
